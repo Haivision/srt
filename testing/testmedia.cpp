@@ -273,6 +273,53 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                     cc.source.set(in);
                 }
 
+                // Check if there's a key with 'srto.' prefix.
+
+                UriParser::query_it start = check.parameters().lower_bound("srto.");
+
+                SRT_SOCKOPT_CONFIG* config = nullptr;
+                bool all_clear = true;
+                vector<string> fails;
+                map<string, string> options;
+
+                if (start != check.parameters().end())
+                {
+                    for (; start != check.parameters().end(); ++start)
+                    {
+                        auto& y = *start;
+                        if (y.first.substr(0, 5) != "srto.")
+                            break;
+
+                        options[y.first.substr(5)] = y.second;
+                    }
+                }
+
+                if (!options.empty())
+                {
+                    config = srt_create_config();
+
+                    for (auto o: srt_options)
+                    {
+                        if (!options.count(o.name))
+                            continue;
+                        string value = options.at(o.name);
+                        bool ok = o.apply<SocketOption::SRT>(config, value);
+                        if ( !ok )
+                        {
+                            fails.push_back(o.name);
+                            all_clear = false;
+                        }
+                    }
+
+                    if (!all_clear)
+                    {
+                        srt_delete_config(config);
+                        Error("With //group, failed to set options: " + Printable(fails));
+                    }
+
+                    cc.options = config;
+                }
+
                 m_group_nodes.push_back(cc);
             }
 
@@ -827,10 +874,16 @@ void SrtCommon::OpenGroupClient()
         ++i;
         SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, psa, namelen);
         gd.weight = c.weight;
+        gd.config = c.options;
         targets.push_back(gd);
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+
+    // Delete config objects before prospective exception
+    for (auto& gd: targets)
+        srt_delete_config(gd.config);
+
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");

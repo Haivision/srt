@@ -1314,6 +1314,61 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     }
 }
 
+bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
+{
+    // Check first if this option is allowed to be set
+    // as on a member socket.
+
+    switch (optname)
+    {
+    case SRTO_SNDBUF:
+    case SRTO_RCVBUF:
+    case SRTO_UDP_RCVBUF:
+    case SRTO_UDP_SNDBUF:
+    case SRTO_SNDDROPDELAY:
+    case SRTO_NAKREPORT:
+    case SRTO_CONNTIMEO:
+    case SRTO_LOSSMAXTTL:
+    case SRTO_PEERIDLETIMEO:
+    case SRTO_GROUPSTABTIMEO:
+        break;
+
+    default:
+        // Other options are not allowed
+        return false;
+
+    }
+
+    // Header size will get the size likely aligned, but it won't
+    // hurt if the memory size will be up to 4 bytes more than
+    // needed - and it's better to not risk that alighment rules
+    // will make these calculations result in less space than needed.
+    const size_t headersize = sizeof(SingleOption);
+    const size_t payload = min(sizeof(uint32_t), optlen);
+    unsigned char* mem = new unsigned char[headersize + payload];
+    SingleOption* option = reinterpret_cast<SingleOption*>(mem);
+    option->option = optname;
+    option->length = optlen;
+    memcpy(option->storage, optval, optlen);
+
+    options.push_back(option);
+
+    return true;
+}
+
+SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
+{
+    SRT_SOCKOPT this_opt = SRTO_VERSION;
+    for (size_t i = 0; i < opt.options.size(); ++i)
+    {
+        SRT_SocketOptionObject::SingleOption* o = opt.options[i];
+        HLOGC(mglog.Debug, log << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
+        this_opt = SRT_SOCKOPT(o->option);
+        setOpt(this_opt, o->storage, o->length);
+    }
+    return SRT_SUCCESS;
+}
+
 bool CUDT::setstreamid(SRTSOCKET u, const std::string &sid)
 {
     CUDT *that = getUDTHandle(u);

@@ -56,6 +56,7 @@ protected:
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
         sockaddr_any source;
+        SRT_SOCKOPT_CONFIG* options = nullptr;
 
         Connection(string h, int p): host(h), port(p), source(AF_INET) {}
     };

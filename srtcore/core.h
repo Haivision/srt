@@ -255,6 +255,32 @@ struct MetricOp<PacketMetric>
     }
 };
 
+struct SRT_SocketOptionObject
+{
+    struct SingleOption
+    {
+        uint16_t option;
+        uint16_t length;
+        unsigned char storage[1]; // NOTE: Variable length object!
+    };
+
+    std::vector<SingleOption*> options;
+
+    SRT_SocketOptionObject() {}
+
+    ~SRT_SocketOptionObject()
+    {
+        for (size_t i = 0; i < options.size(); ++i)
+        {
+            // Convert back
+            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
+            delete [] mem;
+        }
+    }
+
+    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
+};
+
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -1289,6 +1315,10 @@ private:
     /// @param optlen [out] size of "optval".
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
+
+    /// Applies the configuration set on the socket.
+    /// Any errors in this process are reported by exception.
+    SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 
     /// read the performance data with bytes counters since bstats() 
     ///  

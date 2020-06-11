@@ -1242,6 +1242,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // It must be MANUALLY removed from this list in case we need it deleted.
         SRTSOCKET sid = newSocket(&ns);
 
+        SRT_SocketOptionObject* config = targets[tii].config;
+
         // XXX Support non-blocking mode:
         // If the group has nonblocking set for connect (SNDSYN),
         // then it must set so on the socket. Then, the connection
@@ -1259,6 +1261,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 HLOGC(mglog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
                 error_reason = "setting group-derived option: #" + Sprint(g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
+            }
+
+            // Do not try to set a user option if failed already.
+            if (config)
+            {
+                error_reason = "user option";
+                ns->core().applyMemberConfigObject(*config);
             }
 
             error_reason = "bound address";
@@ -2364,7 +2373,6 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          m_ClosedSockets[*q] = as;
          m_Sockets.erase(*q);
       }
-
    }
 
    // remove from peer rec

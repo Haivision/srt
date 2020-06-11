@@ -48,6 +48,28 @@ int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
     return CUDT::configureGroup(socketgroup, str);
 }
+
+SRT_SOCKOPT_CONFIG* srt_create_config()
+{
+    return new SRT_SocketOptionObject;
+}
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
+
+int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
+{
+    if (!config)
+        return -1;
+
+    if (!config->add(option, contents, len))
+        return -1;
+
+    return 0;
+}
+
 // int srt_bind_multicast()
 
 // Binding and connection management
