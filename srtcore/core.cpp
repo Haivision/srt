@@ -665,7 +665,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_PBKEYLEN:
-    case _DEPRECATED_SRTO_SNDPBKEYLEN:
+    case SRTO_SNDPBKEYLEN_DEPRECATED:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 #ifdef SRT_ENABLE_ENCRYPTION

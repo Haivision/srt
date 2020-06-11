@@ -589,12 +589,12 @@ public:
     // "Constructor delegation" is also only C++11 feature.
     explicit UniquePtr(element_type* p = 0) throw() : Base(p) {}
     UniquePtr(UniquePtr& a) throw() : Base(a) { }
-    template<typename _Tp1>
-    UniquePtr(UniquePtr<_Tp1>& a) throw() : Base(a) {}
+    template<typename Type1>
+    UniquePtr(UniquePtr<Type1>& a) throw() : Base(a) {}
 
     UniquePtr& operator=(UniquePtr& a) throw() { return Base::operator=(a); }
-    template<typename _Tp1>
-    UniquePtr& operator=(UniquePtr<_Tp1>& a) throw() { return Base::operator=(a); }
+    template<typename Type1>
+    UniquePtr& operator=(UniquePtr<Type1>& a) throw() { return Base::operator=(a); }
 
     // Good, now we need to add some parts of the API of unique_ptr.
 
