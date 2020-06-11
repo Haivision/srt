@@ -6968,7 +6968,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     {
         steady_clock::time_point tstime SRT_ATR_UNUSED;
         int32_t seqno;
-        if (stillConnected() && !timeout && !(m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance)))
+        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
