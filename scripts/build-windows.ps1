@@ -66,3 +66,6 @@ msbuild SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
 
 # return to the directory previously occupied before running the script
 Pop-Location
+
+# pass back the exit code from msbuild
+return $LASTEXITCODE

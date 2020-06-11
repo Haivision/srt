@@ -11,7 +11,7 @@ platform:
   - x86
 
 build_script:
-  - ps: Push-Location -Path .\scripts; .\build-windows.ps1; Pop-Location
+  - ps: .\scripts\build-windows.ps1
     
 test_script:
   - ps: if ( $VS_VERSION -eq '2015' ) { ctest --extra-verbose -C $Env:CONFIGURATION }
