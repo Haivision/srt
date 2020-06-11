@@ -651,7 +651,7 @@ where:
 * `srcaddr`: address to which `id` should be bound (or a form of "any")
 * `peeraddr`: address to which `id` should be connected
 * `weight`: the weight parameter for the link (group-type dependent)
-* `config`: the configuration object, if used (see `srt_create_config()`)
+* `config`: the configuration object, if used (see [`srt_create_config()`](#srt_create_config))
 * `errorcode`: status of the connecting operation
 
 The `srt_perpare_endpoint` sets these fields to default values. After that
@@ -663,7 +663,7 @@ parameter's meaning is dependent on the group type:
 * BALANCING: relative expected load on this link for fixed algorithm
 
 The `config` parameter is used to provide options to be set separately
-on a socket for particular connection - see #srt_create_config.
+on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
 
 ### SRT_SOCKGROUPDATA
 
@@ -685,7 +685,7 @@ where:
 
 * `id`: member socket ID
 * `peeraddr`: address to which `id` should be connected
-* `sockstate`: current connection status (see `srt_getsockstate`)
+* `sockstate`: current connection status (see [`srt_getsockstate`](#srt_getsockstate))
 * `memberstate`: current state of the member (see below)
 * `result`: result of the operation (if this operation recently updated this structure)
 
@@ -707,7 +707,7 @@ defines a backup link that is ready to take over when the
 currently active (running) link gets unstable.
 
 * `SRT_GST_RUNNING`: The connection is established and at least
-one packet has been alredy sent or received over it.
+one packet has already been sent or received over it.
 
 * `SRT_GST_BROKEN`: The connection got broken. Broken connections
 are not to be revived. Note also that this state is only possible
@@ -731,7 +731,7 @@ active link would be "silenced", that is, turn into
 `SRT_GST_IDLE`.
 
 
-### Functions to be used on groups:
+## Functions to be used on groups:
 
 ### srt_create_group
 
@@ -932,10 +932,10 @@ int srt_config_add(SRT_SOCKOPT_CONFIG* c, SRT_SOCKOPT opt, void* val, int len);
 ```
 
 Adds a configuration option to the configuration object.
-Parameters have similar meaning as `srt_setsockflag`. Note
-that not every option is allowed to be set this way, however
-the option - if allowed - also isn't checked if it doesn't
-violate other preconditions - this will be checked when the
+Parameters have meanings similar to `srt_setsockflag`. Note
+that not every option is allowed to be set this way. However,
+the option (if allowed) isn't checked if it doesn't
+violate other preconditions. This will be checked when the
 option is being set on the socket, which may fail as a part
 of the connection process done by `srt_connect_group`.
 
