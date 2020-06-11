@@ -20,14 +20,15 @@ if($Env:APPVEYOR){
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' } else { $VS_VERSION='2015' }
     $CONFIGURATION = $Env:CONFIGURATION
 }
+
 # persist VS_VERSION so it can be used in an artifact name later
 $Env:VS_VERSION = $VS_VERSION 
 
 # select the appropriate cmake generator string given the environment
-if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
-if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019' }
-if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015' }
-if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64' }
+if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019'; $MSBUILDVER = "16.0" }
+if ( $VS_VERSION -eq '2019' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019'; $MSBUILDVER = "16.0" }
+if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015'; $MSBUILDVER = "14.0" }
+if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0" }
 
 # clear any previous build and create & enter the build directory
 Remove-Item -Path $PSScriptRoot/../_build -Recurse -Force -ErrorAction SilentlyContinue
@@ -61,11 +62,24 @@ else {
 # run the set-version-metadata script to inject build numbers into appveyors console and the resulting DLL
 . $PSScriptRoot/set-version-metadata.ps1
 
-# execute msbuild to perform compilation and linking
-msbuild SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+# execute msbuild to perform compilation and linking - if outside of appveyor, use vswhere to find msbuild
+if($Env:APPVEYOR) { 
+    msbuild SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+}
+else {
+    # assumes Visual Studio 2017 Update 2 or newer installed
+    Push-Location "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\"
+    $path = .\vswhere -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+    Pop-Location
+    if ($path) {
+       & $path SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+    }
+}
 
 # return to the directory previously occupied before running the script
 Pop-Location
 
-# pass back the exit code from msbuild
-return $LASTEXITCODE
+# if msbuild returned non-zero, throw to cause failure in CI
+if($LASTEXITCODE -ne 0){
+    throw
+}
