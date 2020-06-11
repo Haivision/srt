@@ -8,7 +8,6 @@ SRT API Functions
   * [srt_socket](#srt_socket)
   * [srt_create_socket](#srt_create_socket)
   * [srt_bind](#srt_bind)
-  * [srt_create_socket](#srt_create_socket)
   * [srt_bind_acquire](#srt_bind_acquire)
   * [srt_getsockstate](#srt_getsockstate)
   * [srt_getsndbuffer](#srt_getsndbuffer)
