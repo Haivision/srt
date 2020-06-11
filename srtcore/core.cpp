@@ -6879,13 +6879,11 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
         }
 
-        enterCS(m_RcvBufferLock);
         if (!m_pRcvBuffer->isRcvDataReady())
         {
             // read is not available any more
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
         }
-        leaveCS(m_RcvBufferLock);
 
         if (res == 0)
         {
@@ -6972,10 +6970,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     {
         steady_clock::time_point tstime SRT_ATR_UNUSED;
         int32_t seqno;
-        enterCS(m_RcvBufferLock);
-        bool rcvready = m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance);
-        leaveCS(m_RcvBufferLock);
-        if (stillConnected() && !timeout && !rcvready)
+        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance))
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -7015,15 +7010,11 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 {
                     HLOGP(tslog.Debug, "receiveMessage: DATA COND: KICKED.");
                 }
-
-                enterCS(m_RcvBufferLock);
-                rcvready = m_pRcvBuffer->isRcvDataReady();
-                leaveCS(m_RcvBufferLock);
-            } while (stillConnected() && !timeout && (!rcvready));
+            } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
 
             HLOGC(tslog.Debug,
                   log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
-                      << " timeout=" << timeout << " data-ready=" << rcvready);
+                      << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady();
         }
 
         /* XXX DEBUG STUFF - enable when required
@@ -7055,10 +7046,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
         }
     } while ((res == 0) && !timeout);
 
-    enterCS(m_RcvBufferLock);
-    const bool rcvready = m_pRcvBuffer->isRcvDataReady();
-    leaveCS(m_RcvBufferLock);
-    if (!rcvready)
+    if (!m_pRcvBuffer->isRcvDataReady())
     {
         // Falling here means usually that res == 0 && timeout == true.
         // res == 0 would repeat the above loop, unless there was also a timeout.

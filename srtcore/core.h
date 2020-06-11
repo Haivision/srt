@@ -1617,7 +1617,7 @@ private: // synchronization: mutexes and conditions
     srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
-    srt::sync::Mutex m_RecvLock;                 // used to synchronize "recv" call
+    srt::sync::Mutex m_RecvLock;                 // used to synchronize "recv" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
     srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
     srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
 
