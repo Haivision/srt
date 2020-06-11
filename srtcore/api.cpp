@@ -2373,7 +2373,6 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          m_ClosedSockets[*q] = as;
          m_Sockets.erase(*q);
       }
-
    }
 
    // remove from peer rec
