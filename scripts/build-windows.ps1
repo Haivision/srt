@@ -41,7 +41,7 @@ if ( $VS_VERSION -eq '2019' ) {
         -A "$DEVENV_PLATFORM" `
         -DCMAKE_BUILD_TYPE=$CONFIGURATION `
         -DENABLE_STDCXX_SYNC=ON `
-        -DOPENSSL_USE_STATIC_LIBS=OFF
+        -DOPENSSL_USE_STATIC_LIBS=ON
 }
 else {
     # get pthreads (still using pthreads in VS2015)
