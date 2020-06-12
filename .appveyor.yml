@@ -14,7 +14,7 @@ platform:
 build_script:
   - ps: $VSIMG = $Env:APPVEYOR_BUILD_WORKER_IMAGE; $CNFG = $Env:CONFIGURATION
   # only perform debug builds against 2019 (helps avoid endlessly long build times)
-  - ps: if ($VSIMG -match 'Visual Studio 2019' -and $CNFG -ne "Release") { Exit-AppveyorBuild }
+  - ps: if ($VSIMG -match '2019' -and $CNFG -ne "Release") { Exit-AppveyorBuild }
   # use a few differing arguments depending on VS version to excercise different options during builds
   - ps: if ($VSIMG -match '2019' -and $CNFG -ne "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "ON" -BUILD_APPS "OFF" }
   - ps: if ($VSIMG -match '2019') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "ON" -UNIT_TESTS "ON" }
