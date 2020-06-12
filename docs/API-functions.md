@@ -715,20 +715,19 @@ state if it is read by `srt_sendmsg2` or `srt_recvmsg2` just after
 the link failure has been detected. Otherwise, the broken link simply 
 disappears from the member list.
 
-Note that this state is only notified as one, however the
-internal member state is separate for sending and receiving.
-There are however some consistency rules: if the state in one
-direction is `RUNNING`, in the other direction it may be `IDLE`,
-and in this case resulting state is `RUNNING`. In all other
-cases the states are the same in both directions.
+Note that internally the member state is separate for sending and
+receiving. If the `memberstate` field of `SRT_SOCKGROUPDATA` is
+`SRT_GST_RUNNING`, it means that this is the state in at least one
+direction, while in the other direction it may be `SRT_GST_IDLE`. In all
+other cases the states should be the same in both directions.
 
-The states normally should start with `SRT_GST_PENDING` and then
-turn into `SRT_GST_IDLE`. Once the new link is used for sending
-the data, it turns into `SRT_GST_RUNNING`. In case of backup
-groups, if the link was activated, but then it was decided that
-another link needs to remain the only active, the currently
-active link would be "silenced", that is, turn into
-`SRT_GST_IDLE`.
+States should normally start with `SRT_GST_PENDING` and then
+turn into `SRT_GST_IDLE`. Once a new link is used for sending data, 
+the state becomes `SRT_GST_RUNNING`. 
+In case of `SRT_GTYPE_BACKUP` type group, if a link is in
+`SRT_GST_RUNNING` state, but another link is chosen to remain
+as the only active one, this link will be "silenced" (its state will
+become `SRT_GST_IDLE`).
 
 
 ## Functions to be used on groups:
