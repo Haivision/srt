@@ -15,6 +15,7 @@ param (
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
+$projectRoot = (Join-Path $PSScriptRoot "/.." -Resolve)
 
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
 if ( $Env:APPVEYOR ) { 
@@ -33,7 +34,7 @@ if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERAT
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0" }
 
 # clear any previous build and create & enter the build directory
-$buildDir = Join-Path $PSScriptRoot "/../_build" -Resolve
+$buildDir = Join-Path "$projectRoot" "_build"
 Write-Host "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
 Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
