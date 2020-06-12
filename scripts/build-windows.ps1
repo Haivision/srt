@@ -15,7 +15,7 @@ param (
     [Parameter()][String]$STATIC_LINK_SSL = "ON",
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
-    [Parameter()][String]$ENABLE_UNITTESTS = "OFF"
+    [Parameter()][String]$UNIT_TESTS = "OFF"
 )
 
 # make all errors trigger a script stop, rather than just carry on
@@ -31,7 +31,7 @@ if ( $Env:APPVEYOR ) {
     #if not statically linking OpenSSL, set flag to gather the specific openssl package from the build server into package
     if ( $STATIC_LINK_SSL -eq 'OFF' ) { $Env:GATHER_SSL_INTO_PACKAGE = $true }
     #if unit tests are on, set flag to actually execute ctest step
-    if ( $ENABLE_UNITTESTS -eq 'ON' ) { $Env:RUN_UNIT_TESTS = $true }
+    if ( $UNIT_TESTS -eq 'ON' ) { $Env:RUN_UNIT_TESTS = $true }
     
     $CONFIGURATION = $Env:CONFIGURATION
 
@@ -99,7 +99,7 @@ $cmakeCommand = "cmake ../ -G$CMAKE_GENERATOR `
                     -DENABLE_STDCXX_SYNC=$CXX11 `
                     -DENABLE_APPS=$BUILD_APPS `
                     -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL `
-                    -DENABLE_UNITTESTS=$ENABLE_UNITTESTS"
+                    -DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
 if ( $VS_VERSION -eq '2019' ) {
