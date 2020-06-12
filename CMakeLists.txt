@@ -708,7 +708,7 @@ target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
 if (MICROSOFT)		
 	if (OPENSSL_USE_STATIC_LIBS)			
-		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib))
+		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
 	endif()
