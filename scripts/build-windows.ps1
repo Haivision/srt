@@ -33,9 +33,35 @@ if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERAT
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0" }
 
 # clear any previous build and create & enter the build directory
-Remove-Item -Path $PSScriptRoot/../_build -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $PSScriptRoot/../_build -ErrorAction SilentlyContinue
-Push-Location $PSScriptRoot/../_build
+$buildDir = Join-Path $PSScriptRoot "/../_build" -Resolve
+Write-Host "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
+Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
+Push-Location $buildDir
+
+# check cmake is installed
+if ($null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue)) 
+{ 
+    $installCmake = Read-Host "Unable to find cmake in your PATH - would you like to download and install automatically? [yes/no]"
+   
+    if ($installCmake -eq "y" -or $installCmake -eq "yes") {
+        #download cmake 3.17.3 64-bit and run MSI for user
+        $client = New-Object System.Net.WebClient        
+        $tempDownloadFile = New-TemporaryFile
+        $cmakeMsiFile = "$tempDownloadFile.cmake-3.17.3-win64-x64.msi"
+        Write-Host "Downloading cmake (temporary file location $cmakeMsiFile)"
+        Write-Host "Note: select the option to add cmake to path for this script to operate"
+        $client.DownloadFile("https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-win64-x64.msi", "$cmakeMsiFile")
+        Start-Process $cmakeMsiFile -Wait
+        Remove-Item $cmakeMsiFile
+        Write-Host "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
+        exit
+    }
+    else{
+        Write-Host "Quitting because cmake is required"     
+        exit
+    }
+}
 
 # choose some different options depending on VS version
 if ( $VS_VERSION -eq '2019' ) {
@@ -46,6 +72,10 @@ if ( $VS_VERSION -eq '2019' ) {
         -DENABLE_STDCXX_SYNC=ON `
         -DENABLE_APPS=OFF `
         -DOPENSSL_USE_STATIC_LIBS=ON
+
+    if($LASTEXITCODE -ne 0) {
+        exit
+    }
 }
 else {
     # get pthreads (still using pthreads in VS2015)
@@ -60,6 +90,10 @@ else {
     -DCMAKE_BUILD_TYPE=$CONFIGURATION `
     -DENABLE_STDCXX_SYNC=OFF `
     -DENABLE_UNITTESTS=ON
+    
+    if($LASTEXITCODE -ne 0) {
+        exit
+    }
 }
 
 # run the set-version-metadata script to inject build numbers into appveyors console and the resulting DLL
@@ -70,10 +104,22 @@ if($Env:APPVEYOR) {
     msbuild SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
 }
 else {
-    # assumes Visual Studio 2017 Update 2 or newer installed
-    Push-Location "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\"
-    $path = .\vswhere -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
-    Pop-Location
+    # check vswhere has been added to path, or is in the well-known location (true if VS2017 Update 2 or later installed)
+    if ($null -eq (Get-Command "vswhere.exe" -ErrorAction SilentlyContinue)) { 
+        if ($null -eq (Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue)) {
+            Write-Host "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
+            exit
+        }
+        else {
+            $path = & "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -version $MSBUILDVER `
+                        -requires Microsoft.Component.MSBuild `
+                        -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+        }
+    }
+    else{
+        $path = vswhere -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+    }
+    
     if ($path) {
        & $path SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
     }
