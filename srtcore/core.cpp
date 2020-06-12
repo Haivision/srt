@@ -13530,8 +13530,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon *perf, bool clear)
     perf->byteRecvUniqueTotal = m_stats.recv.total.fullBytes();
     perf->byteRcvDropTotal    = m_stats.recvDrop.total.fullBytes();
 
-    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
-
+    const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
     perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
 
