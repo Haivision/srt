@@ -22,6 +22,7 @@ param (
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
+
 $projectRoot = (Join-Path $PSScriptRoot "/.." -Resolve)
 
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
@@ -30,8 +31,10 @@ if ( $Env:APPVEYOR ) {
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { $VS_VERSION='2015' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' }
+
     #if not statically linking OpenSSL, set flag to gather the specific openssl package from the build server into package
     if ( $STATIC_LINK_SSL -eq 'OFF' ) { $Env:GATHER_SSL_INTO_PACKAGE = $true }
+
     #if unit tests are on, set flag to actually execute ctest step
     if ( $UNIT_TESTS -eq 'ON' ) { $Env:RUN_UNIT_TESTS = $true }
     
@@ -102,7 +105,7 @@ if ( $CXX11 -eq "OFF" ) {
 }
 
 if ($STATIC_LINK_SSL -eq "ON") {
-    # requesting a statick link will implicitly enable encryption support
+    # requesting a static link will implicitly enable encryption support
     Write-Host "Static linking to OpenSSL requested, will force encryption feature ON"
     $ENABLE_ENCRYPTION = "ON"
 }
