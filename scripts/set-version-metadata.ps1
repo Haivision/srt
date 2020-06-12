@@ -33,7 +33,7 @@ $FileDescriptionStringRegex = '(\bVALUE\s+\"FileDescription\"\s*\,\s*\")([^\"]*\
 
 Get-ChildItem -Path "../srtcore/srt_shared.rc" | ForEach-Object {
     $fileName = $_
-    Write-Host "Processing metadata changes for file: $fileName"
+    Write-Output "Processing metadata changes for file: $fileName"
 
     $FileLines = Get-Content -path $fileName 
     

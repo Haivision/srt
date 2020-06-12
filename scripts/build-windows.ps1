@@ -61,7 +61,7 @@ if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR
 
 # clear any previous build and create & enter the build directory
 $buildDir = Join-Path "$projectRoot" "_build"
-Write-Host "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
+Write-Output "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
 Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
 Push-Location $buildDir
@@ -76,16 +76,16 @@ if ($null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue))
         $client = New-Object System.Net.WebClient        
         $tempDownloadFile = New-TemporaryFile
         $cmakeMsiFile = "$tempDownloadFile.cmake-3.17.3-win64-x64.msi"
-        Write-Host "Downloading cmake (temporary file location $cmakeMsiFile)"
-        Write-Host "Note: select the option to add cmake to path for this script to operate"
+        Write-Output "Downloading cmake (temporary file location $cmakeMsiFile)"
+        Write-Output "Note: select the option to add cmake to path for this script to operate"
         $client.DownloadFile("https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-win64-x64.msi", "$cmakeMsiFile")
         Start-Process $cmakeMsiFile -Wait
         Remove-Item $cmakeMsiFile
-        Write-Host "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
+        Write-Output "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
         exit
     }
     else{
-        Write-Host "Quitting because cmake is required"     
+        Write-Output "Quitting because cmake is required"     
         exit
     }
 }
@@ -93,7 +93,7 @@ if ($null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue))
 if ( $CXX11 -eq "OFF" ) {
     # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
     if ( $VS_VERSION -gt 2015 ) { 
-        Write-Host "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
+        Write-Output "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
         exit
     }
     if ( $DEVENV_PLATFORM -eq 'Win32' ) { 
@@ -106,7 +106,7 @@ if ( $CXX11 -eq "OFF" ) {
 
 if ($STATIC_LINK_SSL -eq "ON") {
     # requesting a static link will implicitly enable encryption support
-    Write-Host "Static linking to OpenSSL requested, will force encryption feature ON"
+    Write-Output "Static linking to OpenSSL requested, will force encryption feature ON"
     $ENABLE_ENCRYPTION = "ON"
 }
 
@@ -125,7 +125,7 @@ if ( $VS_VERSION -eq '2019' ) {
 
 # fire cmake to build project files
 $execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags"
-Write-Host $execVar
+Write-Output $execVar
 Invoke-Expression "& $execVar"
 
 # check build ran OK, exit if cmake failed
@@ -144,7 +144,7 @@ else {
     # check vswhere has been added to path, or is in the well-known location (true if VS2017 Update 2 or later installed)
     if ($null -eq (Get-Command "vswhere.exe" -ErrorAction SilentlyContinue)) { 
         if ($null -eq (Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue)) {
-            Write-Host "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
+            Write-Output "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
             exit
         }
         else {
@@ -161,7 +161,7 @@ else {
        & $msBuildPath SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
     } 
     else {
-        Write-Host "Failed to locate msbuild - cannot complete build"
+        Write-Output "Failed to locate msbuild - cannot complete build"
         return -1
     }
 }
