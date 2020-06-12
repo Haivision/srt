@@ -12,10 +12,12 @@ param (
     [Parameter()][String]$VS_VERSION = "2019",
     [Parameter()][String]$CONFIGURATION = "Release"
 )
+
+# make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
 
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
-if($Env:APPVEYOR){ 
+if ( $Env:APPVEYOR ) { 
     if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' } else { $VS_VERSION='2015' }
     $CONFIGURATION = $Env:CONFIGURATION
@@ -42,6 +44,7 @@ if ( $VS_VERSION -eq '2019' ) {
         -A "$DEVENV_PLATFORM" `
         -DCMAKE_BUILD_TYPE=$CONFIGURATION `
         -DENABLE_STDCXX_SYNC=ON `
+        -DENABLE_APPS=OFF `
         -DOPENSSL_USE_STATIC_LIBS=ON
 }
 else {
@@ -49,7 +52,7 @@ else {
     if ( $DEVENV_PLATFORM -eq 'Win32' ) { 
         nuget install cinegy.pthreads-win32-2015 -version 2.9.1.24 -OutputDirectory ../_packages
     }
-    else{        
+    else {        
         nuget install cinegy.pthreads-win64-2015 -version 2.9.1.24 -OutputDirectory ../_packages
     }
     #fire cmake to build project files ready for VS2015 msbuild
