@@ -89,11 +89,15 @@ if ($null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue))
 
 if ( $CXX11 -eq "OFF" ) {
     # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
+    if ( $VS_VERSION -gt 2015 ) { 
+        Write-Host "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
+        exit
+    }
     if ( $DEVENV_PLATFORM -eq 'Win32' ) { 
-        nuget install cinegy.pthreads-win32-2015 -version 2.9.1.24 -OutputDirectory ../_packages
+        nuget install cinegy.pthreads-win32-$VS_VERSION -version 2.9.1.24 -OutputDirectory ../_packages
     }
     else {        
-        nuget install cinegy.pthreads-win64-2015 -version 2.9.1.24 -OutputDirectory ../_packages
+        nuget install cinegy.pthreads-win64-$VS_VERSION -version 2.9.1.24 -OutputDirectory ../_packages
     }
 }
 
