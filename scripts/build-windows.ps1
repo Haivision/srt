@@ -4,15 +4,17 @@
 # Usable on a Windows PC with Powershell and Visual studio, 
 # or called by CI systems like AppVeyor
 #
-# By default produces a VS2019 64-bit Release binary using C++11 threads, statically
-# linked to OpenSSL and with test apps
+# By default produces a VS2019 64-bit Release binary using C++11 threads, without
+# encryption or unit tests enabled, but including test apps.
+# Before enabling any encryption options, please install OpenSSL (or customize)
 ################################################################################
 
 param (
     [Parameter()][String]$VS_VERSION = "2019",
     [Parameter()][String]$CONFIGURATION = "Release",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
-    [Parameter()][String]$STATIC_LINK_SSL = "ON",
+    [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
+    [Parameter()][String]$STATIC_LINK_SSL = "OFF",
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
     [Parameter()][String]$UNIT_TESTS = "OFF"
@@ -93,10 +95,17 @@ if ( $CXX11 -eq "OFF" ) {
     }
 }
 
+if ($STATIC_LINK_SSL -eq "ON") {
+    # requesting a statick link will implicitly enable encryption support
+    Write-Host "Static linking to OpenSSL requested, will force encryption feature ON"
+    $ENABLE_ENCRYPTION = "ON"
+}
+
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
+                "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
                 "-DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL " + 
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
 

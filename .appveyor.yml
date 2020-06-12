@@ -20,7 +20,7 @@ build_script:
   - ps: if ($Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "OFF" -CXX11 "OFF" -UNIT_TESTS "OFF" -BUILD_APPS "OFF" }
 
 test_script:
-  - ps: if ( $Env:RUN_UNIT_TESTS ) { ctest --extra-verbose -C $Env:CONFIGURATION }
+  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest --extra-verbose -C $Env:CONFIGURATION; cd ../ }
   
 after_build:
 - cmd: >-
