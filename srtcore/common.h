@@ -1361,6 +1361,7 @@ public:
 namespace srt_logging
 {
 std::string SockStatusStr(SRT_SOCKSTATUS s);
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
 }
 
 // Version parsing

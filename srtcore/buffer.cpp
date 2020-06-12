@@ -561,8 +561,6 @@ void CSndBuffer::ackData(int offset)
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    updAvgBufSize(steady_clock::now());
 #endif
-
-   CGlobEvent::triggerEvent();
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -673,7 +671,6 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
    updAvgBufSize(steady_clock::now());
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
-// CTimer::triggerEvent();
    return(dpkts);
 }
 
@@ -996,8 +993,6 @@ int CRcvBuffer::ackData(int len)
    m_iMaxPos -= len;
    if (m_iMaxPos < 0)
       m_iMaxPos = 0;
-
-   CGlobEvent::triggerEvent();
 
    // Returned value is the distance towards the starting
    // position from m_iLastAckPos, which is in sync with CUDT::m_iRcvLastSkipAck.

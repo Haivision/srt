@@ -19,7 +19,7 @@ There are three types of statistics:
 
 - **Accumulated:** the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., [pktSentTotal](#pktSentTotal), etc.,
 - **Interval-based:** the statistic is accumulated during a specified time interval (e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds) from the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
-- **Instantaneous:** the statistic is obtained at the moment the `srt_bstats()` function is called, e.g., [msRTT](#msRTT), etc.
+- **Instantaneous:** the statistic is obtained at the moment the `srt_bistats()` function is called, e.g., [msRTT](#msRTT), etc.
 
 
 | Statistic                                           | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
