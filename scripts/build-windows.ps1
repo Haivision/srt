@@ -93,21 +93,16 @@ if ( $CXX11 -eq "OFF" ) {
     }
 }
 
-# build the cmake command from arguments
-$cmakeCommand = "cmake ../ -G$CMAKE_GENERATOR `
-                    -DCMAKE_BUILD_TYPE=$CONFIGURATION `
-                    -DENABLE_STDCXX_SYNC=$CXX11 `
-                    -DENABLE_APPS=$BUILD_APPS `
-                    -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL `
-                    -DENABLE_UNITTESTS=$UNIT_TESTS"
+# build the cmake command flags from arguments
+$cmakeFlags = "-DENABLE_STDCXX_SYNC=$CXX11 -DENABLE_APPS=$BUILD_APPS -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL -DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
 if ( $VS_VERSION -eq '2019' ) {
-    $cmakeCommand += " -A $DEVENV_PLATFORM"
+    $cmakeFlags += " -A $DEVENV_PLATFORM"
 }
 
 # fire cmake to build project files
-& $cmakeCommand
+& cmake ../ -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$CONFIGURATION $cmakeFlags 
 
 # check build ran OK, exit if cmake failed
 if($LASTEXITCODE -ne 0) {
