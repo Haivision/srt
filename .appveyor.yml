@@ -14,7 +14,7 @@ platform:
 build_script:
   # use a few differing arguments depending on VS version to excercise different options during builds
   - ps: if ($Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "ON" -CXX11 "ON" -UNIT_TESTS "OFF" -BUILD_APPS "OFF"}
-  - ps: if ($Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "ON" -CXX11 "ON" -UNIT_TESTS "ON" -BUILD_APPS "OFF"}
+  - ps: if ($Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "ON" -CXX11 "ON" -UNIT_TESTS "ON" -BUILD_APPS "ON"}
   - ps: if ($Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL "OFF" -CXX11 "OFF" -UNIT_TESTS "OFF" -BUILD_APPS "OFF" }
 
 test_script:
