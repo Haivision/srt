@@ -648,7 +648,7 @@ typedef struct SRT_GroupMemberConfig_
 where:
 
 * `id`: member socket ID (filled back as output)
-* `srcaddr`: address to which `id` should be bound (or a form of "any")
+* `srcaddr`: address to which `id` should be bound
 * `peeraddr`: address to which `id` should be connected
 * `weight`: the weight parameter for the link (group-type dependent)
 * `config`: the configuration object, if used (see [`srt_create_config()`](#srt_create_config))
@@ -709,11 +709,11 @@ currently active (running) link gets unstable.
 * `SRT_GST_RUNNING`: The connection is established and at least
 one packet has already been sent or received over it.
 
-* `SRT_GST_BROKEN`: The connection got broken. Broken connections
-are not to be revived. Note also that this state is only possible
-to be seen when this state was read by `srt_sendmsg2` or `srt_recvmsg2`,
-just after the failure for this link has been detected, otherwise
-the broken link simply disappears from the member list
+* `SRT_GST_BROKEN`: The connection was broken. Broken connections
+are not to be revived. Note also that it is only possible to see this
+state if it is read by `srt_sendmsg2` or `srt_recvmsg2` just after
+the link failure has been detected. Otherwise, the broken link simply 
+disappears from the member list.
 
 Note that this state is only notified as one, however the
 internal member state is separate for sending and receiving.
@@ -827,7 +827,7 @@ This function does almost the same as calling `srt_connect` or `srt_connect_bind
 item specified in `name` array. However if you did this in blocking mode, the
 first call to `srt_connect` would block until the connection is established,
 whereas this function blocks until any of the specified connections is
-established. 
+established.
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
 difference, except that the `SRT_SOCKGROUPCONFIG` structure allows you
@@ -835,8 +835,9 @@ to add extra configuration data used by groups. Note also that this function
 accepts only groups, not sockets.
 
 The elements of the `name` array need to be prepared with the use of the
-`srt_prepare_endpoint` function. Note that it is **NOT** required that every
-address you specify for it is of the same family.
+[`srt_prepare_endpoint`](#srt_prepare_endpoint) function. Note that it is
+**NOT** required that every target address you specify for it is of the same
+family.
 
 Return value and errors in this function are the same as in `srt_connect`,
 although this function reports success when at least one connection has
@@ -849,7 +850,7 @@ The fields of `SRT_SOCKGROUPCONFIG` structure have the following meaning:
 Input:
 
 * `id`: unused, should be -1 (default when created by `srt_prepare_endpoint`)
-* `srcaddr`: bind to this address prior to connecting, if some address is set here
+* `srcaddr`: address to bind before connecting, if specified (see below for details)
 * `peeraddr`: target address to connect
 * `weight`: weight value to be set on the link
 * `config`: socket options to be set on the socket before connecting
@@ -864,6 +865,46 @@ Output:
 * `config`: unchanged (the object should be manually deleted upon return)
 * `errorcode`: status of connection for that link (`SRT_SUCCESS` if succeeded)
 
+The procedure of connecting for every connection definition specified
+in the `name` array is performed the following way:
+
+1. The socket for this connection is first created
+
+2. Socket options derived from the group are set on that socket.
+
+3. If `config` is not NULL, configuration options stored there are set on that socket.
+
+4. If source address is specified (that is `srcaddr` value is **not**
+default empty, as described in [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG)),
+then the binding operation is being done on the socket (see `srt_bind`).
+
+5. The socket is added to the group as a member.
+
+6. The socket is being connected to the target address, as specified
+in the `peeraddr` field.
+
+During this process there can be errors at any stage. There are two
+possibilities as to what may happen in this case:
+
+1. If creation of a new socket has failed, which may only happen due to
+problems with system resources, then the whole loop is interrupted and no
+further items in the array are processed. All sockets that got created until
+then, and for which the connection attempt has at least successfully started,
+remain group members, although the function will return immediately with an
+error status (that is, without waiting for the first successful connection). If
+your application wants to do any partial recovery from this situation, it can
+only use epoll mechanism to wait for readiness.
+
+2. In any other case, if an error occurs at any stage of the above process, the
+processing is interrupted for this very array item only, the socket used for it
+is immediately closed, and the processing of the next elements continues. In case
+of connection process, it also passes two stages - parameter check and the process
+itself. Failure at the parameter check breaks this process, while if this check
+passed, this item is considered correctly processed, even if the connection
+attempt is going to fail later. If this function is called in the blocking mode,
+it then blocks until at least one connection reports success or if all of them
+fail. Connections that continue in the background after this function exits can
+be then checked status by [`srt_group_data`](#srt_group_data).
 
 ### srt_prepare_endpoint
 
@@ -883,20 +924,27 @@ additional data:
 The following fields are set by this function:
 
 * `id`: -1 (unused for input)
-* `srcaddr`: set to the form of `INADDR_ANY`, or copied from `src` if not NULL
+* `srcaddr`: default empty (see below) or copied from `src`
 * `peeraddr`: copied from `adr`
 * `weight`: 0
 * `config`: `NULL`
 * `errorcode`: `SRT_SUCCESS`
 
-If `src` is NULL, then `srcaddr` will stay with default address `INADDR_ANY`
-and port `0`. If the content of this field is different, the socket will be
-first bound to the given address (see `srt_bind`).
+The default empty `srcaddr` is set the following way:
 
-The `adr` parameter is obligatory. Note though that this function has no
-possibility of reporting errors - these would be reported only by
-`srt_connect_group`, separately for every individual connection, and the
-status can be obtained from `errorcode` field.
+* `ss_family` set to the same value as `adr->sa_family`
+* empty address (`INADDR_ANY` for IPv4 and `in6addr_any` for IPv6)
+* port number 0
+
+If `src` is not NULL, then `srcaddr` is copied from `src`. Otherwise
+it will remain as default empty.
+
+The `adr` parameter is obligatory. If `src` parameter is not NULL,
+then both `adr` and `src` must have the same value of `sa_family`.
+
+Note though that this function has no possibility of reporting errors - these
+would be reported only by `srt_connect_group`, separately for every individual
+connection, and the status can be obtained from `errorcode` field.
 
 
 ### srt_create_config
