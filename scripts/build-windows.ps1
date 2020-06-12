@@ -22,6 +22,10 @@ if ( $Env:APPVEYOR ) {
     if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' } else { $VS_VERSION='2015' }
     $CONFIGURATION = $Env:CONFIGURATION
+
+    #appveyor has many openssl installations - place the latest one in the default location
+    Remove-Item -Path "C:\OpenSSL-Win32" -Recurse | Out-Null
+    Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" | Out-Null
 }
 
 # persist VS_VERSION so it can be used in an artifact name later
