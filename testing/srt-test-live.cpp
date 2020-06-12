@@ -791,6 +791,15 @@ int main( int argc, char** argv )
     alarm(0);
     end_time = time(0);
 
+    if (!src || !tar)
+    {
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
+
+        cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
+        return 2;
+    }
+
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
@@ -820,7 +829,12 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << "[." << VerbNoEOL;
                 alarm(timeout);
+            }
+            else
+            {
+                alarm(0);
             }
             Verb() << " << ... " << VerbNoEOL;
             const bytevector& data = src->Read(chunk);
@@ -833,6 +847,7 @@ int main( int argc, char** argv )
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << ".] " << VerbNoEOL;
                 alarm(0);
             }
 
@@ -950,4 +965,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-
