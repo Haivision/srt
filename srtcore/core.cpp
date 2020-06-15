@@ -9394,7 +9394,8 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
-        LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
+        LOGC(mglog.Error, log << CONID() << "IPE: Overridding with seq %" << seq << " DISCREPANCY against current %"
+                << m_iSndCurrSeqNo << " and next sched %" << m_iSndNextSeqNo << " - diff=" << diff);
         return false;
     }
 
@@ -13695,7 +13696,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
         {
             // We believe that all running links use the same seq.
             // But we can do some sanity check.
-            LOGC(dlog.Error, log << "grp/sendBackup: IPE: another running link seq discrepancy: %" << lastseq
+            LOGC(dlog.Error, log << "grp/sendBackup: @" << w_u.m_SocketID << ": IPE: another running link seq discrepancy: %" << lastseq
                     << " vs. previous %" << w_curseq << " - fixing");
             w_u.overrideSndSeqNo(w_curseq);
         }
@@ -13862,7 +13863,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             }
             else
             {
-                HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
+                LOGC(dlog.Warn, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
                         << " LINK ACTIVATED (pri: " << d->weight << ").");
             }
             // Note: this will override the sequence number
@@ -14665,17 +14666,15 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         {
             // This may happen in case when the link to be activated is already running.
             skip_initial = -distance;
-            HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
+            LOGC(dlog.Warn, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
                     << " from BACKWARD %" << curseq << " - DENIED; skip " << skip_initial << " packets" );
         }
         else
         {
-#if ENABLE_HEAVY_LOGGING
-            int32_t old = core.schedSeqNo();
-            bool su = core.overrideSndSeqNo(curseq);
+            IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
+            bool su ATR_UNUSED = core.overrideSndSeqNo(curseq);
             HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
                     << (su ? " - succeeded" : " - FAILED!"));
-#endif
         }
     }
 
@@ -14701,12 +14700,15 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         if (stat == -1)
         {
             // Stop sending if one sending ended up with error
+            LOGC(dlog.Warn, log << "sendBackupRexmit: sending from buffer stopped at %"
+                    << core.schedSeqNo() << " and FAILED");
             return -1;
         }
     }
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
+    LOGC(dlog.Warn, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
 }
 
