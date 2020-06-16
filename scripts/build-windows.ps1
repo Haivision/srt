@@ -20,10 +20,14 @@ param (
     [Parameter()][String]$UNIT_TESTS = "OFF"
 )
 
+# cmake can be optionally installed (useful when running interactively on a developer station).
+# The URL for automatic download is defined below, and can be adjusted as needed
+$cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-win64-x64.msi"
+
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
 
-$projectRoot = (Join-Path $PSScriptRoot "/.." -Resolve)
+$projectRoot = Join-Path $PSScriptRoot "/.." -Resolve
 
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
 if ( $Env:APPVEYOR ) { 
@@ -41,7 +45,7 @@ if ( $Env:APPVEYOR ) {
     $CONFIGURATION = $Env:CONFIGURATION
 
     #appveyor has many openssl installations - place the latest one in the default location unless VS2013
-    if( $VS_VERSION -ne '2013' ){
+    if( $VS_VERSION -ne '2013' ) {
         Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
         Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
         Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
@@ -67,18 +71,17 @@ New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out
 Push-Location $buildDir
 
 # check cmake is installed
-if ($null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue)) 
-{ 
+if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) { 
     $installCmake = Read-Host "Unable to find cmake in your PATH - would you like to download and install automatically? [yes/no]"
    
-    if ($installCmake -eq "y" -or $installCmake -eq "yes") {
-        # download cmake 3.17.3 64-bit and run MSI for user
+    if ( $installCmake -eq "y" -or $installCmake -eq "yes" ) {
+        # download cmake and run MSI for user
         $client = New-Object System.Net.WebClient        
         $tempDownloadFile = New-TemporaryFile
-        $cmakeMsiFile = "$tempDownloadFile.cmake-3.17.3-win64-x64.msi"
-        Write-Output "Downloading cmake (temporary file location $cmakeMsiFile)"
+        $cmakeMsiFile = "$tempDownloadFile.cmake-windows.msi"
+        Write-Output "Downloading cmake from $cmakeUrl (temporary file location $cmakeMsiFile)"
         Write-Output "Note: select the option to add cmake to path for this script to operate"
-        $client.DownloadFile("https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-win64-x64.msi", "$cmakeMsiFile")
+        $client.DownloadFile("$cmakeUrl", "$cmakeMsiFile")
         Start-Process $cmakeMsiFile -Wait
         Remove-Item $cmakeMsiFile
         Write-Output "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
@@ -104,10 +107,12 @@ if ( $CXX11 -eq "OFF" ) {
     }
 }
 
-if ($STATIC_LINK_SSL -eq "ON") {
-    # requesting a static link will implicitly enable encryption support
-    Write-Output "Static linking to OpenSSL requested, will force encryption feature ON"
-    $ENABLE_ENCRYPTION = "ON"
+if ( $STATIC_LINK_SSL -eq "ON" ) {
+    if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
+        # requesting a static link implicitly requires encryption support
+        Write-Output "Static linking to OpenSSL requested, will force encryption feature ON"
+        $ENABLE_ENCRYPTION = "ON"
+    }
 }
 
 # build the cmake command flags from arguments
@@ -129,47 +134,35 @@ Write-Output $execVar
 Invoke-Expression "& $execVar"
 
 # check build ran OK, exit if cmake failed
-if($LASTEXITCODE -ne 0) {
+if( $LASTEXITCODE -ne 0 ) {
     return $LASTEXITCODE
 }
 
 # run the set-version-metadata script to inject build numbers into appveyors console and the resulting DLL
 . $PSScriptRoot/set-version-metadata.ps1
 
-# execute msbuild to perform compilation and linking - if outside of appveyor, use vswhere to find msbuild
-if($Env:APPVEYOR) { 
-    msbuild SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
-}
-else {
-    # check vswhere has been added to path, or is in the well-known location (true if VS2017 Update 2 or later installed)
-    if ($null -eq (Get-Command "vswhere.exe" -ErrorAction SilentlyContinue)) { 
-        if ($null -eq (Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue)) {
+# look for msbuild
+$msBuildPath = Get-Command "msbuild.exe" -ErrorAction SilentlyContinue
+if ( $null -eq $msBuildPath ) { 
+    # no mbsuild in the path, so try to locate with 'vswhere'
+    $vsWherePath = Get-Command "vswhere.exe" -ErrorAction SilentlyContinue
+    if ( $null -eq $vsWherePath ) { 
+        # no vswhere in the path, so check the Microsoft published location (true since VS2017 Update 2)
+        $vsWherePath = Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue
+        if ( $null -eq $vsWherePath ) {
             Write-Output "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
             exit
         }
-        else {
-            $msBuildPath = & "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -version $MSBUILDVER `
-                        -requires Microsoft.Component.MSBuild `
-                        -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
-        }
-    }
-    else{
-        $msBuildPath = vswhere -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
-    }
-    
-    if ($msBuildPath) {
-       & $msBuildPath SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
-    } 
-    else {
-        Write-Output "Failed to locate msbuild - cannot complete build"
-        return -1
-    }
+    }    
+    $msBuildPath = & $vsWherePath -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
 }
+
+& $msBuildPath SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
 
 # return to the directory previously occupied before running the script
 Pop-Location
 
 # if msbuild returned non-zero, throw to cause failure in CI
-if($LASTEXITCODE -ne 0){
+if( $LASTEXITCODE -ne 0 ) {
     throw
 }
