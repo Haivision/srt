@@ -80,26 +80,25 @@ class AvgBufSize
 
 public:
     AvgBufSize()
-        : m_iBytesCountMAvg(0)
-        , m_iCountMAvg(0)
-        , m_iTimespanMAvg(0)
-    {
-    }
+        : m_dBytesCountMAvg(0.0)
+        , m_dCountMAvg(0.0)
+        , m_dTimespanMAvg(0.0)
+    { }
 
 public:
     bool isTimeToUpdate(const time_point& now) const;
     void update(const time_point& now, int pkts, int bytes, int timespan_ms);
 
 public:
-    inline int pkts() const { return m_iCountMAvg; }
-    inline int timespan_ms() const { return m_iTimespanMAvg; }
-    inline int bytes() const { return m_iBytesCountMAvg; }
+    inline double pkts() const { return m_dCountMAvg; }
+    inline double timespan_ms() const { return m_dTimespanMAvg; }
+    inline double bytes() const { return m_dBytesCountMAvg; }
 
 private:
     time_point m_tsLastSamplingTime;
-    int        m_iBytesCountMAvg;
-    int        m_iCountMAvg;
-    int        m_iTimespanMAvg;
+    double     m_dBytesCountMAvg;
+    double     m_dCountMAvg;
+    double     m_dTimespanMAvg;
 };
 #endif // SRT_ENABLE_SNDBUFSZ_MAVG || SRT_ENABLE_RCVBUFSZ_MAVG
 

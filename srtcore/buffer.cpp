@@ -65,7 +65,7 @@ using namespace srt::sync;
 
 bool AvgBufSize::isTimeToUpdate(const time_point& now) const
 {
-    const int      usMAvgBasePeriod = 1000000; // us
+    const int      usMAvgBasePeriod = 1000000; // 1s in microseconds
     const int      us2ms            = 1000;
     const int      msMAvgPeriod     = (usMAvgBasePeriod / SRT_MAVG_SAMPLING_RATE) / us2ms;
     const uint64_t elapsed_ms       = count_milliseconds(now - m_tsLastSamplingTime); // ms since last sampling
@@ -74,20 +74,15 @@ bool AvgBufSize::isTimeToUpdate(const time_point& now) const
 
 void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes, int timespan_ms)
 {
-    const uint64_t elapsed_ms = count_milliseconds(now - m_tsLastSamplingTime); // ms since last sampling
-    m_tsLastSamplingTime      = now;
-
-    HLOGC(dlog.Debug,
-          log << "AvgBufSize::update: elapsed " << elapsed_ms << " ms, " << pkts << " pkts " << bytes
-              << " bytes, timespan " << timespan_ms << " ms");
-
+    const uint64_t elapsed_ms       = count_milliseconds(now - m_tsLastSamplingTime); // ms since last sampling
+    m_tsLastSamplingTime            = now;
     const uint64_t one_second_in_ms = 1000;
     if (elapsed_ms > one_second_in_ms)
     {
         // No sampling in last 1 sec, initialize average
-        m_iCountMAvg      = pkts;
-        m_iBytesCountMAvg = bytes;
-        m_iTimespanMAvg   = timespan_ms;
+        m_dCountMAvg      = pkts;
+        m_dBytesCountMAvg = bytes;
+        m_dTimespanMAvg   = timespan_ms;
         return;
     }
 
@@ -98,9 +93,9 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     //   +----------------------------------+-------+
     //  -1                                 LST      0(now)
     //
-    m_iCountMAvg      = avg_iir_w<1000>(m_iCountMAvg, pkts, elapsed_ms);
-    m_iBytesCountMAvg = avg_iir_w<1000>(m_iBytesCountMAvg, bytes, elapsed_ms);
-    m_iTimespanMAvg   = avg_iir_w<1000>(m_iTimespanMAvg, timespan_ms, elapsed_ms);
+    m_dCountMAvg      = avg_iir_w<1000, double>(m_dCountMAvg, pkts, elapsed_ms);
+    m_dBytesCountMAvg = avg_iir_w<1000, double>(m_dBytesCountMAvg, bytes, elapsed_ms);
+    m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
 CSndBuffer::CSndBuffer(int size, int mss)
@@ -617,9 +612,13 @@ int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());
 
-    w_bytes = m_mavg.bytes();
-    w_tsp   = m_mavg.timespan_ms();
-    return m_mavg.pkts();
+    // Average number of packets and timespan could be small,
+    // so rounding is beneficial, while for the number of
+    // bytes in the buffer is a higher value, so rounding can be omitted,
+    // but probably better to round all three values.
+    w_bytes = static_cast<int>(round(m_mavg.bytes()));
+    w_tsp   = static_cast<int>(round(m_mavg.timespan_ms()));
+    return static_cast<int>(round(m_mavg.pkts()));
 }
 
 void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
@@ -1580,9 +1579,13 @@ int CRcvBuffer::debugGetSize() const
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
 int CRcvBuffer::getRcvAvgDataSize(int& bytes, int& timespan)
 {
-    timespan = m_mavg.timespan_ms();
-    bytes    = m_mavg.bytes();
-    return m_mavg.pkts();
+    // Average number of packets and timespan could be small,
+    // so rounding is beneficial, while for the number of
+    // bytes in the buffer is a higher value, so rounding can be omitted,
+    // but probably better to round all three values.
+    timespan = static_cast<int>(round(m_mavg.timespan_ms()));
+    bytes    = static_cast<int>(round(m_mavg.bytes()));
+    return static_cast<int>(round(m_mavg.pkts()));
 }
 
 /* Update moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
