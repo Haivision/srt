@@ -14688,14 +14688,22 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         if (distance < 0)
         {
             // This may happen in case when the link to be activated is already running.
+            // Getting sequences backwards is not allowed, as sending them makes no
+            // sense - they are already ACK-ed or are behind the ISN. Instead, skip all
+            // packets that are in the past towards the scheduling sequence.
             skip_initial = -distance;
             LOGC(dlog.Warn, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
                     << " from BACKWARD %" << curseq << " - DENIED; skip " << skip_initial << " packets" );
         }
         else
         {
+            // In case when the next planned sequence on this link is behind
+            // the firstmost sequence in the backup buffer, synchronize the
+            // sequence with it first so that they go hand-in-hand with
+            // sequences already used by the link from which packets were
+            // copied to the backup buffer.
             IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
-            bool su ATR_UNUSED = core.overrideSndSeqNo(curseq);
+            const bool su ATR_UNUSED = core.overrideSndSeqNo(curseq);
             HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
                     << (su ? " - succeeded" : " - FAILED!"));
         }
@@ -14731,7 +14739,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
-    LOGC(dlog.Warn, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
+    HLOGC(dlog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
 }
 
