@@ -630,7 +630,7 @@ The following group types are collected in an `SRT_GROUP_TYPE` enum:
 
 ### SRT_SOCKGROUPCONFIG
 
-This structrure is used to define entry points for connections for the
+This structure is used to define entry points for connections for the
 `srt_connect_group` function:
 
 ```
