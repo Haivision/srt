@@ -98,6 +98,11 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
+const int round_val(double val)
+{
+    return static_cast<int>(round(val));
+}
+
 CSndBuffer::CSndBuffer(int size, int mss)
     : m_BufLock()
     , m_pBlock(NULL)
@@ -616,9 +621,9 @@ int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
     // so rounding is beneficial, while for the number of
     // bytes in the buffer is a higher value, so rounding can be omitted,
     // but probably better to round all three values.
-    w_bytes = static_cast<int>(round(m_mavg.bytes()));
-    w_tsp   = static_cast<int>(round(m_mavg.timespan_ms()));
-    return static_cast<int>(round(m_mavg.pkts()));
+    w_bytes = round_val(m_mavg.bytes());
+    w_tsp   = round_val(m_mavg.timespan_ms());
+    return round_val(m_mavg.pkts());
 }
 
 void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
@@ -1583,9 +1588,9 @@ int CRcvBuffer::getRcvAvgDataSize(int& bytes, int& timespan)
     // so rounding is beneficial, while for the number of
     // bytes in the buffer is a higher value, so rounding can be omitted,
     // but probably better to round all three values.
-    timespan = static_cast<int>(round(m_mavg.timespan_ms()));
-    bytes    = static_cast<int>(round(m_mavg.bytes()));
-    return static_cast<int>(round(m_mavg.pkts()));
+    timespan = round_val(m_mavg.timespan_ms());
+    bytes    = round_val(m_mavg.bytes());
+    return round_val(m_mavg.pkts());
 }
 
 /* Update moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
