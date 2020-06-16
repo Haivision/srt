@@ -13698,7 +13698,30 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
             // But we can do some sanity check.
             LOGC(dlog.Error, log << "grp/sendBackup: @" << w_u.m_SocketID << ": IPE: another running link seq discrepancy: %" << lastseq
                     << " vs. previous %" << w_curseq << " - fixing");
-            w_u.overrideSndSeqNo(w_curseq);
+
+            // Override must be done with a sequence number greater by one.
+
+            // Example:
+            //
+            // Link 1 before sending: curr=1114, next=1115
+            // After sending it reports pktseq=1115
+            //
+            // Link 2 before sending: curr=1110, next=1111 (->lastseq before sending)
+            // THIS CHECK done after sending:
+            //  -- w_curseq(1115) != lastseq(1111)
+            //
+            // NOW: Link 1 after sending is:
+            // curr=1115, next=1116
+            //
+            // The value of w_curseq here = 1115, while overrideSndSeqNo
+            // calls setInitialSndSeq(seq), which sets:
+            // - curr = seq - 1
+            // - next = seq
+            //
+            // So, in order to set curr=1115, next=1116
+            // this must set to 1115+1.
+
+            w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
         }
 
         // If this link is already found as unstable,
