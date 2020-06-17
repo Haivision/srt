@@ -41,6 +41,7 @@
 using namespace std;
 
 using srt_logging::SockStatusStr;
+using srt_logging::MemberStatusStr;
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -263,6 +264,60 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 if (check.parameters().count("weight"))
                 {
                     cc.weight = stoi(check.queryValue("weight"));
+                }
+
+                if (check.parameters().count("source"))
+                {
+                    UriParser hostport(check.queryValue("source"), UriParser::EXPECT_HOST);
+                    sockaddr_in in = CreateAddrInet(hostport.host(), hostport.portno());
+                    cc.source.set(in);
+                }
+
+                // Check if there's a key with 'srto.' prefix.
+
+                UriParser::query_it start = check.parameters().lower_bound("srto.");
+
+                SRT_SOCKOPT_CONFIG* config = nullptr;
+                bool all_clear = true;
+                vector<string> fails;
+                map<string, string> options;
+
+                if (start != check.parameters().end())
+                {
+                    for (; start != check.parameters().end(); ++start)
+                    {
+                        auto& y = *start;
+                        if (y.first.substr(0, 5) != "srto.")
+                            break;
+
+                        options[y.first.substr(5)] = y.second;
+                    }
+                }
+
+                if (!options.empty())
+                {
+                    config = srt_create_config();
+
+                    for (auto o: srt_options)
+                    {
+                        if (!options.count(o.name))
+                            continue;
+                        string value = options.at(o.name);
+                        bool ok = o.apply<SocketOption::SRT>(config, value);
+                        if ( !ok )
+                        {
+                            fails.push_back(o.name);
+                            all_clear = false;
+                        }
+                    }
+
+                    if (!all_clear)
+                    {
+                        srt_delete_config(config);
+                        Error("With //group, failed to set options: " + Printable(fails));
+                    }
+
+                    cc.options = config;
                 }
 
                 m_group_nodes.push_back(cc);
@@ -804,7 +859,7 @@ void SrtCommon::OpenGroupClient()
     if (m_group_data.empty())
         m_group_data.resize(1);
 
-    vector<SRT_SOCKGROUPDATA> targets;
+    vector<SRT_SOCKGROUPCONFIG> targets;
     int namelen = sizeof (sockaddr_in);
 
     Verb() << "Connecting to nodes:";
@@ -817,12 +872,18 @@ void SrtCommon::OpenGroupClient()
             << "?weight=" << c.weight
             << " ... " << VerbNoEOL;
         ++i;
-        SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
+        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, psa, namelen);
         gd.weight = c.weight;
+        gd.config = c.options;
         targets.push_back(gd);
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+
+    // Delete config objects before prospective exception
+    for (auto& gd: targets)
+        srt_delete_config(gd.config);
+
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");
@@ -838,7 +899,7 @@ void SrtCommon::OpenGroupClient()
         // one index can be used to index them all. You don't
         // have to check if they have equal addresses because they
         // are equal by definition.
-        if (targets[i].id != -1 && targets[i].status < SRTS_BROKEN)
+        if (targets[i].id != -1 && targets[i].errorcode == SRT_SUCCESS)
         {
             m_group_nodes[i].socket = targets[i].id;
         }
@@ -899,7 +960,7 @@ void SrtCommon::OpenGroupClient()
     for (auto& d: m_group_data)
     {
         // id, status, result, peeraddr
-        Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+        Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
             << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
     }
 
@@ -1136,17 +1197,19 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         const SRT_SOCKGROUPDATA& d = grpdata[i];
         SRTSOCKET id = d.id;
 
-        SRT_SOCKSTATUS status = d.status;
+        SRT_SOCKSTATUS status = d.sockstate;
         int result = d.result;
+        SRT_MEMBERSTATUS mstatus = d.memberstate;
 
         if (result != -1 && status == SRTS_CONNECTED)
         {
-            // Everything's ok. Don't do anything.
+            // Short report with the state.
+            Verb() << "G@" << id << "<" << MemberStatusStr(mstatus) << "> " << VerbNoEOL;
             continue;
         }
         // id, status, result, peeraddr
-        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+        Verb() << "\n\tG@" << id << " <" << SockStatusStr(status) << "/" << MemberStatusStr(mstatus) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr)) << VerbNoEOL;
 
         if (status >= SRTS_BROKEN)
         {
@@ -1950,6 +2013,7 @@ bytevector SrtSource::Read(size_t chunk)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }
@@ -2035,6 +2099,7 @@ void SrtTarget::Write(const bytevector& data)
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
+            PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
             for (size_t i = 0; i < mctrl.grpdata_size; ++i)
                 PrintSrtStats(mctrl.grpdata[i].id, need_stats_report, need_bw_report, need_stats_report);
         }

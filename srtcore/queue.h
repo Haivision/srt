@@ -51,8 +51,8 @@ modified by
 *****************************************************************************/
 
 
-#ifndef __UDT_QUEUE_H__
-#define __UDT_QUEUE_H__
+#ifndef INC_SRT_QUEUE_H
+#define INC_SRT_QUEUE_H
 
 #include "channel.h"
 #include "common.h"
@@ -101,6 +101,10 @@ public:     // Storage size operations
 
    int shrink();
 
+public:
+   int size() const     { return m_iSize - m_iCount; }
+   int capacity() const { return m_iSize; }
+
 public:     // Operations on units
 
       /// find an available unit for incoming packet.
@@ -118,23 +122,23 @@ public:
 private:
    struct CQEntry
    {
-      CUnit* m_pUnit;		// unit queue
-      char* m_pBuffer;		// data buffer
-      int m_iSize;		// size of each queue
+      CUnit* m_pUnit;   // unit queue
+      char* m_pBuffer;  // data buffer
+      int m_iSize;      // size of each queue
 
       CQEntry* m_pNext;
    }
-   *m_pQEntry,			// pointer to the first unit queue
-   *m_pCurrQueue,		// pointer to the current available queue
-   *m_pLastQueue;		// pointer to the last unit queue
+   *m_pQEntry,          // pointer to the first unit queue
+   *m_pCurrQueue,       // pointer to the current available queue
+   *m_pLastQueue;       // pointer to the last unit queue
 
-   CUnit* m_pAvailUnit;         // recent available unit
+   CUnit* m_pAvailUnit; // recent available unit
 
-   int m_iSize;			// total size of the unit queue, in number of packets
-   int m_iCount;		// total number of valid packets in the queue
+   int m_iSize;         // total size of the unit queue, in number of packets
+   int m_iCount;        // total number of valid (occupied) packets in the queue
 
-   int m_iMSS;			// unit buffer size
-   int m_iIPversion;		// IP version
+   int m_iMSS;          // unit buffer size
+   int m_iIPversion;    // IP version
 
 private:
    CUnitQueue(const CUnitQueue&);

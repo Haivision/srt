@@ -13,4 +13,5 @@ test_seqno.cpp
 test_socket_options.cpp
 test_sync.cpp
 test_timer.cpp
+test_unitqueue.cpp
 test_utilities.cpp

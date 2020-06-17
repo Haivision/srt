@@ -43,8 +43,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *****************************************************************************/
 
-#ifndef INC__HANDSHAKE_H
-#define INC__HANDSHAKE_H
+#ifndef INC_SRT_HANDSHAKE_H
+#define INC_SRT_HANDSHAKE_H
 
 #include <vector>
 
@@ -105,7 +105,7 @@ enum SrtDataStruct
     SRT_HS_LATENCY,
 
     // Keep it always last
-    SRT_HS__SIZE
+    SRT_HS_E_SIZE
 };
 
 // For HSv5 the lo and hi part is used for particular side's latency

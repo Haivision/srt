@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__URL_PARSER_H
-#define INC__URL_PARSER_H
+#ifndef INC_SRT_URL_PARSER_H
+#define INC_SRT_URL_PARSER_H
 
 #include <string>
 #include <map>
@@ -52,6 +52,7 @@ public:
     std::string hostport() const { return host() + ":" + port(); }
     std::string path() const;
     std::string queryValue(const std::string& strKey) const;
+    std::string makeUri();
     ParamProxy operator[](const std::string& key) { return ParamProxy(m_mapQuery, key); }
     const std::map<std::string, std::string>& parameters() const { return m_mapQuery; }
     typedef std::map<std::string, std::string>::const_iterator query_it;
@@ -73,10 +74,11 @@ private:
     std::string m_port;
     std::string m_path;
     Type m_uriType;
+    DefaultExpect m_expect;
 
     std::map<std::string, std::string> m_mapQuery;
 };
 
 //#define TEST1 1
 
-#endif // _FMS_URL_PARSER_H_
+#endif // INC_SRT_URL_PARSER_H

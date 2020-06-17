@@ -8,7 +8,6 @@ SRT API Functions
   * [srt_socket](#srt_socket)
   * [srt_create_socket](#srt_create_socket)
   * [srt_bind](#srt_bind)
-  * [srt_create_socket](#srt_create_socket)
   * [srt_bind_acquire](#srt_bind_acquire)
   * [srt_getsockstate](#srt_getsockstate)
   * [srt_getsndbuffer](#srt_getsndbuffer)
@@ -708,26 +707,40 @@ int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA output[], size_t* in
 
 * `socketgroup` an existing socket group ID
 * `output` points to an output array
-* `inoutlen` points to a variable set to array's size
+* `inoutlen` points to a variable that stores the size of the `output` array,
+  and is set to the filled array's size
 
 This function obtains the current member state of the group specified in
 `socketgroup`. The `output` should point to an array large enough to hold
-all the elements, and `inoutlen` to a variable preset to the size of this array.
-The current number of members will be written back to `inoutlen`. If the size
-is enough for the current number of members, the `output` array will be
-filled with group data and the function will return 0. Otherwise the array
-will not be filled and `SRT_ERROR` will be returned.
+all the elements. The `inoutlen` should point to a variable initially set
+to the size of the `output` array.
+The current number of members will be written back to `inoutlen`.
+
+If the size of the `output` array is enough for the current number of members,
+the `output` array will be filled with group data and the function will return
+the number of elements filled.
+Otherwise the array will not be filled and `SRT_ERROR` will be returned.
+
+This function can be used to get the group size by setting `output` to `NULL`,
+and providing `socketgroup` and `inoutlen`.
 
 - Returns:
 
-   * 0, if successful
+   * the number of data elements filled, on success
    * -1, on error
 
 - Errors:
 
    * `SRT_EINVPARAM` reported if `socketgroup` is not an existing group ID
-   * `SRT_SUCCESS` if the array was too small
+   * `SRT_ELARGEMSG` reported if `inoutlen` if less than the size of the group
 
+| in:output | in:inoutlen    | returns      | out:output | out:inoutlen | Error |
+|-----------|----------------|--------------|-----------|--------------|--------|
+| NULL      | NULL           | -1           | NULL      | NULL         | `SRT_EINVPARAM` |
+| NULL      | ptr            | 0            | NULL      | group.size() | ✖️ |
+| ptr       | NULL           | -1           | ✖️         | NULL         | `SRT_EINVPARAM` |
+| ptr       | ≥ group.size   | group.size() | group.data | group.size | ✖️ |
+| ptr       | < group.size   | -1           | ✖️         | group.size  | `SRT_ELARGEMSG` |
 
 
 ### srt_connect_group

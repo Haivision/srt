@@ -164,7 +164,7 @@ int CUnitQueue::increase()
     char *   tempb = NULL;
 
     // all queues have the same size
-    int size = m_pQEntry->m_iSize;
+    const int size = m_pQEntry->m_iSize;
 
     try
     {
@@ -216,24 +216,21 @@ CUnit *CUnitQueue::getNextAvailUnit()
     if (m_iCount >= m_iSize)
         return NULL;
 
-    CQEntry *entrance = m_pCurrQueue;
-
+    int units_checked = 0;
     do
     {
-        for (CUnit *sentinel = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize - 1; m_pAvailUnit != sentinel;
-             ++m_pAvailUnit)
-            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
-                return m_pAvailUnit;
-
-        if (m_pCurrQueue->m_pUnit->m_iFlag == CUnit::FREE)
+        const CUnit *end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
+        for (; m_pAvailUnit != end; ++m_pAvailUnit, ++units_checked)
         {
-            m_pAvailUnit = m_pCurrQueue->m_pUnit;
-            return m_pAvailUnit;
+            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
+            {
+                return m_pAvailUnit;
+            }
         }
 
         m_pCurrQueue = m_pCurrQueue->m_pNext;
         m_pAvailUnit = m_pCurrQueue->m_pUnit;
-    } while (m_pCurrQueue != entrance);
+    } while (units_checked < m_iSize);
 
     increase();
 

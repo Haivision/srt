@@ -19,7 +19,7 @@ There are three types of statistics:
 
 - **Accumulated:** the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., [pktSentTotal](#pktSentTotal), etc.,
 - **Interval-based:** the statistic is accumulated during a specified time interval (e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds) from the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
-- **Instantaneous:** the statistic is obtained at the moment the `srt_bstats()` function is called, e.g., [msRTT](#msRTT), etc.
+- **Instantaneous:** the statistic is obtained at the moment the `srt_bistats()` function is called, e.g., [msRTT](#msRTT), etc.
 
 
 | Statistic                                           | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
@@ -131,7 +131,7 @@ If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)),
 
 ### pktSentUniqueTotal 
 
-The number of *unique* DATA packets sent by the SRT sender. Available for sender. 
+The total number of *unique* DATA packets sent by the SRT sender. Available for sender. 
 
 This value contains only *unique* *original* DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
 
@@ -139,14 +139,14 @@ This value corresponds to the number of original DATA packets sent by the SRT se
 
 ### pktRecvUniqueTotal
 
-The number of *unique* original, retransmitted or recovered by the packet filter DATA packets *received in time*, *decrypted without errors* and, as a result, scheduled for delivery to the upstream application by the SRT receiver. Available for receiver.
+The total number of *unique* original, retransmitted or recovered by the packet filter DATA packets *received in time*, *decrypted without errors* and, as a result, scheduled for delivery to the upstream application by the SRT receiver. Available for receiver.
 
 Unique means "first arrived" DATA packets. There is no difference whether a packet is original or, in case of loss, retransmitted or recovered by the packet filter. Whichever packet comes first is taken into account. 
 
 This statistic doesn't count
 
 - duplicate packets (retransmitted or sent several times by defective hardware/software), 
-- arrived too late packets (retransmitted or original packets arrived out of order) and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
+- arrived too late packets (retransmitted or original packets arrived out of order) that were already dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
 - arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
 DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
@@ -209,19 +209,23 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 ### pktSndDropTotal
 
-The total number of "too late to send" packets dropped by the sender (refer to `SRTO_TLPKTDROP` in [API.md](API.md)). Available for sender.
+The total number of _dropped_ by the SRT sender DATA packets that have no chance to be delivered in time (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for sender.
 
-The total delay before TLPKTDROP mechanism is triggered consists of the `SRTO_PEERLATENCY`, plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10 ms). The delay used is the timespan between the very first packet and the latest packet in the sender's buffer.
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
+
+The delay before TLPKTDROP mechanism is triggered is calculated as follows 
+`SRTO_PEERLATENCY + SRTO_SNDDROPDELAY + 2 * interval between sending ACKs`,
+where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds an extra to `SRTO_PEERLATENCY` delay, the default `interval between sending ACKs` is 10 milliseconds. The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds. Refer to `SRTO_PEERLATENCY`, `SRTO_SNDDROPDELAY` socket options in [API.md](API.md).
 
 ### pktRcvDropTotal
 
-The total number of "too late to deliver" missing packets. Available for receiver.
+The total number of _dropped_ by the SRT receiver and, as a result, not delivered to the upstream application DATA packets (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for receiver.
 
-Missing packets means lost or not yet received out-of-order packets. The receiver drops only those packets that are missing by the time there is at least one packet ready to be delivered to the upstream application.
+This statistic counts
+- arrived too late packets (retransmitted or original packets arrived out of order),
+- arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
 
-Also includes packets that failed to be decrypted (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)). These packets are present in the receiver's buffer and not dropped at the moment the decryption has failed.
-
- `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options should be enabled (refer to in [API.md](API.md)).
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
 
 ### pktRcvUndecryptTotal
 
@@ -704,4 +708,3 @@ Timestamp-based Packet Delivery Delay value set on the socket via `SRTO_RCVLATEN
 The value is used to apply TSBPD delay for reading the received data on the socket. Receiver side.
 
 If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
-

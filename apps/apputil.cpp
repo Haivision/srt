@@ -328,16 +328,19 @@ public:
         output << "},";
         output << "\"send\":{";
         output << "\"packets\":" << mon.pktSent << ",";
+        output << "\"packetsUnique\":" << mon.pktSentUnique << ",";
         output << "\"packetsLost\":" << mon.pktSndLoss << ",";
         output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
         output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
         output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
         output << "\"bytes\":" << mon.byteSent << ",";
+        output << "\"bytesUnique\":" << mon.byteSentUnique << ",";
         output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsSendRate;
         output << "},";
         output << "\"recv\": {";
         output << "\"packets\":" << mon.pktRecv << ",";
+        output << "\"packetsUnique\":" << mon.pktRecvUnique << ",";
         output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
         output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
         output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
@@ -346,6 +349,7 @@ public:
         output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
         output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
         output << "\"bytes\":" << mon.byteRecv << ",";
+        output << "\"bytesUnique\":" << mon.byteRecvUnique << ",";
         output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
         output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
         output << "\"mbitRate\":" << mon.mbpsRecvRate;
