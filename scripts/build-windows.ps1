@@ -21,8 +21,9 @@ param (
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
-# The URL for automatic download is defined below, and can be adjusted as needed
-$cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v3.17.3/cmake-3.17.3-win64-x64.msi"
+# The URL for automatic download is defined later in the script, but it should be possible to just vary the 
+# specific version set below and the URL should be stable enough to still work - you have been warned.
+$cmakeVersion = "3.17.3"
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
@@ -78,7 +79,9 @@ if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) {
         # download cmake and run MSI for user
         $client = New-Object System.Net.WebClient        
         $tempDownloadFile = New-TemporaryFile
-        $cmakeMsiFile = "$tempDownloadFile.cmake-windows.msi"
+        
+        $cmakeUrl = "https://github.com/Kitware/CMake/releases/download/v$cmakeVersion/cmake-$cmakeVersion-win64-x64.msi"
+        $cmakeMsiFile = "$tempDownloadFile.cmake-$cmakeVersion-win64-x64.msi"
         Write-Output "Downloading cmake from $cmakeUrl (temporary file location $cmakeMsiFile)"
         Write-Output "Note: select the option to add cmake to path for this script to operate"
         $client.DownloadFile("$cmakeUrl", "$cmakeMsiFile")
