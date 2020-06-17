@@ -263,11 +263,16 @@ when receiving.
 
 ### SRT_REJX_CONFLICT
 
-The resource being accessed is already locked for modification. This error
-should only be reported for `m=publish` when the resource being
-accessed is read-only. Note that it doesn't mean that the resource is not
-modifiable under current authorization restrictions, but that it is currently
-disabled completely for modifications.
+The resource being accessed (as specified by `r` and `h` keys) is locked for
+modification. This error should only be reported for `m=publish` when the
+resource being accessed is read-only because another client (not necessarily
+connected through SRT):
+
+* is currently publishing into this resource
+* has reserved this resource ID for publishing
+
+Note that this error should be reported when there is no other reason for
+having a problem accessing the resource.
 
 
 ### SRT_REJX_NOTSUP_MEDIA
