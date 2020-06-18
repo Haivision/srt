@@ -368,22 +368,86 @@ void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
 
 // XXX This has void return and the first argument is passed by reference.
 // Consider simply returning sockaddr_any by value.
-void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int ver)
+void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int agent_family, const sockaddr_any& peer)
 {
-   if (AF_INET == ver)
+   if (agent_family == AF_INET)
    {
       sockaddr_in* a = (&w_addr.sin);
       a->sin_addr.s_addr = ip[0];
    }
-   else
+   else // AF_INET6
    {
-      sockaddr_in6* a = (&w_addr.sin6);
-      for (int i = 0; i < 4; ++ i)
+      static const uint32_t ipv4on6_mask [4] =
       {
-         a->sin6_addr.s6_addr[i * 4] = ip[i] & 0xFF;
-         a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
-         a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
-         a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
+          0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0
+      };
+      static const uint8_t* ipv4on6_mask_u8 = (uint8_t*)ipv4on6_mask;
+
+      static const uint16_t ipv4on6_model [8] =
+      {
+          0, 0, 0, 0, 0, 0xFFFF, 0, 0
+      };
+
+
+      // Apply this mask on the address, so that it only clears
+      // the exact IPv4 address. The result should be identical
+      // with the model
+      uint8_t actual_model[16];
+      for (int i = 0; i < 16; ++i)
+          actual_model[i] = peer.sin6.sin6_addr.s6_addr[i] & ipv4on6_mask_u8[i];
+
+      bool is_mapped_ipv4 = (0 == memcmp(actual_model, ipv4on6_model, 16));
+
+      // Check if the peer address is a model of IPv4-mapped-on-IPv6.
+      // If so, it means that the `ip` array should be interpreted as IPv4.
+
+      sockaddr_in6* a = (&w_addr.sin6);
+
+      if (!is_mapped_ipv4)
+      {
+          // Here both agent and peer use IPv6, in which case
+          // `ip` contains the full IPv6 address, so just copy
+          // it as is.
+          for (int i = 0; i < 4; ++ i)
+          {
+              a->sin6_addr.s6_addr[i * 4] = ip[i] & 0xFF;
+              a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
+              a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
+              a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
+          }
+      }
+      else // IPv4 mapped on IPv6
+      {
+          // Here agent uses IPv6 with IPPROTO_IPV6/IPV6_V6ONLY == 0
+          // In this case, the address in `ip` uses only the `ip[0]`
+          // element carrying the IPv4 address, rest of the elements
+          // is 0. This address must be interpreted as IPv4, but set
+          // as the IPv4-on-IPv6 address.
+          //
+          // Unfortunately, sockaddr_in6 doesn't give any straightforward
+          // method for it, although the official size of a single element
+          // of the IPv6 address is 16-bit.
+
+          memset((a->sin6_addr.s6_addr), 0, sizeof a->sin6_addr.s6_addr);
+
+          // There are also available sin6_addr.s6_addr32, but
+          // this is kinda nonportable.
+          uint32_t* paddr32 = (uint32_t*)a->sin6_addr.s6_addr;
+          uint16_t* paddr16 = (uint16_t*)a->sin6_addr.s6_addr;
+
+          // layout: of IPv4 address 192.168.128.2
+          // 16-bit:
+          // [0000: 0000: 0000: 0000: 0000: FFFF: 192.168:128.2]
+          // 8-bit
+          // [00/00/00/00/00/00/00/00/00/00/FF/FF/192/168/128/2]
+          // 32-bit
+          // [00000000 && 00000000 && 0000FFFF && 192.168.128.2]
+
+          // Spreading every 16-bit word separately to avoid endian dilemmas
+          paddr16[2 * 2 + 0] = 0;
+          paddr16[2 * 2 + 1] = 0xFFFF;
+
+          paddr32[3] = ip[0]; // IPv4 address encoded here
       }
    }
 }

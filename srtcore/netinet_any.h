@@ -33,7 +33,19 @@ struct sockaddr_any
         sockaddr_in6 sin6;
         sockaddr sa;
     };
-    socklen_t len;
+
+    // The type is intended to be the same as the length
+    // parameter in ::accept, ::bind and ::connect functions.
+
+    // XXX Hard to say if this shouldn't be fixed.
+    // The problem is, socket functions use:
+    // system, on Linux: socklen_t (resolves to: unsigned int)
+    // system, on Windows: int
+    // SRT: int
+    // Hard to preserve portability without compromising simplicity in SRT API.
+    typedef int len_t;
+    len_t len;
+
     static size_t storage_size()
     {
         typedef union
@@ -44,7 +56,6 @@ struct sockaddr_any
         } ucopy;
         return sizeof (ucopy);
     }
-
 
     void reset()
     {
@@ -67,7 +78,19 @@ struct sockaddr_any
         // Overriding family as required in the parameters
         // and the size then accordingly.
         sa.sa_family = domain == AF_INET || domain == AF_INET6 ? domain : AF_UNSPEC;
-        len = size();
+        switch (domain)
+        {
+        case AF_INET:
+            len = len_t(sizeof (sockaddr_in));
+            break;
+
+            // Use size of sin6 as the default size
+            // len must be properly set so that the
+            // family-less sockaddr is passed to bind/accept
+        default:
+            len = len_t(sizeof (sockaddr_in6));
+            break;
+        }
     }
 
     sockaddr_any(const sockaddr_storage& stor)
@@ -76,7 +99,7 @@ struct sockaddr_any
         set((const sockaddr*)&stor);
     }
 
-    sockaddr_any(const sockaddr* source, socklen_t namelen = 0)
+    sockaddr_any(const sockaddr* source, len_t namelen = 0)
     {
         if (namelen == 0)
             set(source);
@@ -102,20 +125,22 @@ struct sockaddr_any
         else
         {
             // Error fallback: no other families than IP are regarded.
+            // Note: socket set up this way isn't intended to be used
+            // for bind/accept.
             sa.sa_family = AF_UNSPEC;
             len = 0;
         }
     }
 
-    void set(const sockaddr* source, socklen_t namelen)
+    void set(const sockaddr* source, len_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (source->sa_family == AF_INET && namelen >= socklen_t(sizeof sin))
+        if (source->sa_family == AF_INET && namelen >= len_t(sizeof sin))
         {
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
-        else if (source->sa_family == AF_INET6 && namelen >= socklen_t(sizeof sin6))
+        else if (source->sa_family == AF_INET6 && namelen >= len_t(sizeof sin6))
         {
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data
@@ -159,15 +184,15 @@ struct sockaddr_any
         len = sizeof sin6;
     }
 
-    static socklen_t size(int family)
+    static len_t size(int family)
     {
         switch (family)
         {
         case AF_INET:
-            return socklen_t(sizeof (sockaddr_in));
+            return len_t(sizeof (sockaddr_in));
 
         case AF_INET6:
-            return socklen_t(sizeof (sockaddr_in6));
+            return len_t(sizeof (sockaddr_in6));
 
         default:
             return 0; // fallback
@@ -192,7 +217,7 @@ struct sockaddr_any
         return isempty;
     }
 
-    socklen_t size() const
+    len_t size() const
     {
         return size(sa.sa_family);
     }
@@ -221,6 +246,18 @@ struct sockaddr_any
 
     sockaddr* get() { return &sa; }
     const sockaddr* get() const { return &sa; }
+
+    // Sometimes you need to get the address
+    void* get_addr()
+    {
+        if (sa.sa_family == AF_INET)
+            return &sin.sin_addr.s_addr;
+
+        if (sa.sa_family == AF_INET6)
+            return &sin6.sin6_addr;
+
+        return NULL;
+    }
 
     template <int> struct TypeMap;
 

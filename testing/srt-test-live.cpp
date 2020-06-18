@@ -64,7 +64,7 @@
 #include <chrono>
 #include <thread>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
