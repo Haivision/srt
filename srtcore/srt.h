@@ -829,7 +829,6 @@ SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 
-// XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
