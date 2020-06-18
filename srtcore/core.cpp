@@ -6805,9 +6805,24 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         // Now seqno is the sequence to which it was scheduled
         // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:"
+                << (w_mctrl.srctime ? FormatTime(ts_srctime) : "none")
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
+
+        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
+        {
+            LOGC(mglog.Error,
+                log << "Wrong source time was provided. Sending is rejected.");
+            throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
+        }
+
+        if (w_mctrl.srctime && (!m_bMessageAPI || !m_bTsbPd))
+        {
+            HLOGC(dlog.Warn,
+                log << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
+            w_mctrl.srctime = 0;
+        }
 
         // w_mctrl.seqno is INPUT-OUTPUT value:
         // - INPUT: the current sequence number to be placed for the next scheduled packet
