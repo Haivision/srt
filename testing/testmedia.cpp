@@ -269,8 +269,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 if (check.parameters().count("source"))
                 {
                     UriParser hostport(check.queryValue("source"), UriParser::EXPECT_HOST);
-                    sockaddr_any adr = CreateAddr(hostport.host(), hostport.portno());
-                    cc.source = adr;
+                    cc.source = CreateAddr(hostport.host(), hostport.portno());
                 }
 
                 // Check if there's a key with 'srto.' prefix.
@@ -439,9 +438,8 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     }
 
     auto sa = CreateAddr(host, port);
-    sockaddr* psa = sa.get();
     Verb() << "Binding a server on " << host << ":" << port << " ...";
-    stat = srt_bind(m_bindsock, psa, sizeof sa);
+    stat = srt_bind(m_bindsock, sa.get(), sizeof sa);
     if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
@@ -538,21 +536,17 @@ void SrtCommon::AcceptNewClient()
     }
     else
     {
-        sockaddr_any peeraddr;
-        int len = sizeof peeraddr;
+        sockaddr_any peeraddr(AF_INET6);
         string peer = "<?PEER?>";
-        if (-1 != srt_getpeername(m_sock, peeraddr.get(), &len))
+        if (-1 != srt_getpeername(m_sock, (peeraddr.get()), (&peeraddr.len)))
         {
-            peeraddr.len = len;
             peer = SockaddrToString(peeraddr);
         }
 
-        sockaddr_any agentaddr;
-        len = sizeof agentaddr;
+        sockaddr_any agentaddr(AF_INET6);
         string agent = "<?AGENT?>";
-        if (-1 != srt_getsockname(m_sock, agentaddr.get(), &len))
+        if (-1 != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
         {
-            agentaddr.len = len;
             agent = SockaddrToString(agentaddr);
         }
 
