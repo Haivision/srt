@@ -174,7 +174,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     // whole host results to have [] at edge positions, they are stripped,
     // otherwise they remain. In both cases the search for the colon
     // separating the port specification starts only after ].
-    size_t i6pos = m_host.find("[");
+    const size_t i6pos = m_host.find("[");
     size_t i6end = string::npos;
 
     // Search for the "path" part only behind the closed bracket,
