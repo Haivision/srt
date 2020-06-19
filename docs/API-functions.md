@@ -1182,7 +1182,7 @@ when you are allowed to send or retrieve a part of the message.
 (specified as 0), the current system time (absolute microseconds since epoch) is 
 used.
    * [OUT] Receiver only. Specifies the time when the packet was intended to be
-delivered to the receiver.
+delivered to the receiver (microseconds since SRT clock epoch).
 
 * `pktseq`: Receiver only. Reports the sequence number for the packet carrying
 out the payload being returned. If the payload is carried out by more than one
@@ -1256,6 +1256,7 @@ with the rest of the buffer next time to send it completely. In both
   * `SRT_ECONNLOST`: Socket `u` used for the operation has lost its connection.
   * `SRT_EINVALMSGAPI`: Incorrect API usage in **message mode**:
     * **live mode**: trying to send more bytes at once than `SRTO_PAYLOADSIZE`
+    or wrong source time was provided.
   * `SRT_EINVALBUFFERAPI`: Incorrect API usage in **stream mode**:
     * Reserved for future use. The congestion controller object
       used for this mode doesn't use any restrictions on this call for now,
