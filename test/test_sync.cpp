@@ -271,19 +271,29 @@ TEST(SyncEvent, WaitFor)
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
-        const steady_clock::time_point start = steady_clock::now();
         UniqueLock lock(mutex);
-        EXPECT_FALSE(cond.wait_for(lock, timeout));
+        const steady_clock::time_point start = steady_clock::now();
+        const bool on_timeout = !cond.wait_for(lock, timeout);
         const steady_clock::time_point stop = steady_clock::now();
+#if defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
+        // This check somehow fails on AppVeyor Windows VM with VS 2015 and pthreads.
+        // - SyncEvent::wait_for( 50us) took 6us
+        // - SyncEvent::wait_for(100us) took 4us
+        if (on_timeout)
+            EXPECT_GE(count_microseconds(stop - start), tout_us);
+#endif
+
         if (tout_us < 1000)
         {
-            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took " << count_microseconds(stop - start)
-                << "us" << endl;
+            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took "
+                << count_microseconds(stop - start) << "us"
+                << (on_timeout ? "" : " (SPURIOUS)") << endl;
         }
         else
         {
             cerr << "SyncEvent::wait_for(" << count_milliseconds(timeout) << " ms) took "
-                << count_microseconds(stop - start) / 1000.0 << " ms" << endl;
+                << count_microseconds(stop - start) / 1000.0 << " ms"
+                << (on_timeout ? "" : " (SPURIOUS)") << endl;
         }
     }
 
