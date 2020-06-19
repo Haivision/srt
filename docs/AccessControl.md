@@ -102,12 +102,16 @@ connection and is therefore required to know what the caller is attempting to do
 
 Examples:
 
-```#!::u=admin,r=bluesbrothers1_hi```
+```
+#!::u=admin,r=bluesbrothers1_hi
+```
 
 This specifies the username and the resource name of the stream to be served 
 to the caller.
 
-```#!::u=johnny,t=file,m=publish,r=results.csv```
+```
+#!::u=johnny,t=file,m=publish,r=results.csv
+```
 
 This specifies that the file is expected to be transmitted from the caller to 
 the listener and its name is `results.csv`.
@@ -117,7 +121,7 @@ the listener and its name is `results.csv`.
 
 The listener callback handler is also able to decide about rejecting the
 incoming connection. In a normal situation, the rejection code is predefined
-as `SRT_REJ_RESOURCE`. The handler can, however, sets its own rejection
+as `SRT_REJ_RESOURCE`. The handler can, however, set its own rejection
 code. There are two number spaces intended for this purpose (as the range
 below `SRT_REJC_PREDEFINED` is reserved for internal codes):
 
@@ -144,14 +148,14 @@ Such a code can be set by using the `srt_setrejectreason` function.
 
 The SRT-specific codes are:
 
-### SRT_REJX_FALLBACK
+#### SRT_REJX_FALLBACK
 
 This code should be set by the callback handler in the beginning in case 
 the application needs to be informed that the callback handler
 actually has interpreted the incoming connection, but hasn't set a
 more appropriate code describing the situation.
 
-### SRT_REJX_KEY_NOTSUP
+#### SRT_REJX_KEY_NOTSUP
 
 Indicates there was a key specified in the StreamID string that this application
 doesn't support. Note that it's not obligatory for the application to
@@ -161,7 +165,7 @@ while rejecting any others. It is also up to the application
 to decide to return this specific error, or more generally report
 the syntax error with `SRT_REJX_BAD_REQUEST`.
 
-### SRT_REJX_FILEPATH
+#### SRT_REJX_FILEPATH
 
 The resource type designates a file, and the path either has the wrong syntax
 or is not found. In the case where `t=file`, the path should be specified under
@@ -174,7 +178,7 @@ application should decide whether and how to handle all other situations (like
 directory path, special markers in the path to be interpreted by the
 application, etc.), or to report this error.
 
-### SRT_REJX_HOSTNOTFOUND
+#### SRT_REJX_HOSTNOTFOUND
 
 The host specified in the `h` key cannot be identified. The `h` key is
 generally for a situation when you have multiple DNS names for a host,
@@ -188,13 +192,13 @@ case it should report this error.
 
 The other error codes are HTTP codes adopted for SRT:
 
-### SRT_REJX_BAD_REQUEST
+#### SRT_REJX_BAD_REQUEST
 
 General syntax error. This can be reported in any case when parsing
 the StreamID contents failed, or it cannot be properly interpreted.
 
 
-### SRT_REJX_UNAUTHORIZED
+#### SRT_REJX_UNAUTHORIZED
 
 Authentication failed, which makes the client unauthorized to access the
 resource. This error, however, confirms that the syntax is correct and
@@ -208,7 +212,7 @@ connection has specified a resource that is not within the frames
 of that authentication.
 
 
-### SRT_REJX_OVERLOAD
+#### SRT_REJX_OVERLOAD
 
 The server is too heavily loaded to process your request, or you
 have exceeded credits for accessing the service and the resource.
@@ -221,7 +225,7 @@ can recharge itself, or that can be granted depending on available
 service resources.
 
 
-### SRT_REJX_FORBIDDEN
+#### SRT_REJX_FORBIDDEN
 
 Access denied to the resource for any reason. This error is
 independent of an authorization or authentication error (as reported
@@ -235,7 +239,7 @@ specify a valid session, but the authorization region for this
 session does not embrace the specified resource.
 
 
-### SRT_REJX_NOTFOUND
+#### SRT_REJX_NOTFOUND
 
 The resource specified in the `r` key (in combination with the `h` key)
 is not found at this time. This error should be only reported if the
@@ -244,14 +248,14 @@ visible. Otherwise the application might report authorization
 errors.
 
 
-### SRT_REJX_BAD_MODE
+#### SRT_REJX_BAD_MODE
 
 The mode specified in the `m` key in StreamID is not supported for this request.
 This may apply to read-only or write-only resources, as well for when interactive 
 (bidirectional) access is not valid for a resource.
 
 
-### SRT_REJX_UNACCEPTABLE
+#### SRT_REJX_UNACCEPTABLE
 
 Applies when the parameters specified in SocketID cannot be satisfied for the
 requested resource, or when `m=publish` but the data format is not acceptable.
@@ -261,7 +265,7 @@ details of the resource specification) such that it cannot be provided
 when receiving.
 
 
-### SRT_REJX_CONFLICT
+#### SRT_REJX_CONFLICT
 
 The resource being accessed (as specified by `r` and `h` keys) is locked for
 modification. This error should only be reported for `m=publish` when the
@@ -275,7 +279,7 @@ Note that this error should be reported when there is no other reason for
 having a problem accessing the resource.
 
 
-### SRT_REJX_NOTSUP_MEDIA
+#### SRT_REJX_NOTSUP_MEDIA
 
 The media type is not supported by the application. The media type is
 specified in the `t` key. The currently standard types are
@@ -283,7 +287,7 @@ specified in the `t` key. The currently standard types are
 is not obliged to support all of the standard types.
 
 
-### SRT_REJX_LOCKED
+#### SRT_REJX_LOCKED
 
 The resource being accessed is locked against any access. This is similar to
 `SRT_REJX_CONFLICT`, but in this case the resource is locked for reading 
@@ -291,7 +295,7 @@ and writing. This is for when the resource should be shown as existing and
 available to the client, but access is temporarily blocked.
 
 
-### SRT_REJX_FAILED_DEPEND 
+#### SRT_REJX_FAILED_DEPEND 
 
 The dependent entity for the request is not present. In this case the
 dependent entity is the session, which should be specified in the `s`
@@ -299,14 +303,14 @@ key. This means that the specified session ID is nonexistent or it
 has already expired.
 
 
-### SRT_REJX_ISE
+#### SRT_REJX_ISE
 
 Internal server error. This is for a general case when a request has
 been correctly verified, with no related problems found, but an 
 unexpected error occurs after the processing of the request has started.
 
 
-### SRT_REJX_UNIMPLEMENTED
+#### SRT_REJX_UNIMPLEMENTED
 
 The request was correctly recognized, but the current software version
 of the service (be it SRT or any other software component) doesn't
@@ -319,7 +323,7 @@ being deprecated, or older features that are no longer supported
 (for this case the general `SRT_REJX_BAD_REQUEST` is more appropriate).
 
 
-### SRT_REJX_GW
+#### SRT_REJX_GW
 
 The server acts as a gateway and the target endpoint rejected the
 connection. The reason the connection was rejected is unspecified. 
@@ -329,21 +333,21 @@ gateway itself. Use this error with some other mechanism to report
 the original target error, if possible.
 
 
-### SRT_REJX_DOWN
+#### SRT_REJX_DOWN
 
 The service is down for maintenance. This can only be reported 
 when the service has been temporarily replaced by a stub that is only
 reporting this error, while the real service is down for maintenance.
 
 
-### SRT_REJX_VERSION
+#### SRT_REJX_VERSION
 
 Application version not supported. This can refer to an application feature 
 that is unsupported (possibly from an older SRT version), or to a feature 
 that is no longer supported because of backward compatibility requirements.
 
 
-### SRT_REJX_NOROOM
+#### SRT_REJX_NOROOM
 
 The data stream cannot be archived due to a lack of storage space. This is
 reported when a request to send a file or a live stream to be archived is
