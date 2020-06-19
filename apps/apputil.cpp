@@ -77,30 +77,62 @@ int inet_pton(int af, const char * src, void * dst)
 }
 #endif // _WIN32 && !HAVE_INET_PTON
 
-sockaddr_in CreateAddrInet(const string& name, unsigned short port)
+sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family)
 {
-    sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(port);
-
-    if ( name != "" )
+    // Handle empty name.
+    // If family is specified, empty string resolves to ANY of that family.
+    // If not, it resolves to IPv4 ANY (to specify IPv6 any, use [::]).
+    if (name == "")
     {
-        if ( inet_pton(AF_INET, name.c_str(), &sa.sin_addr) == 1 )
-            return sa;
-
-        // XXX RACY!!! Use getaddrinfo() instead. Check portability.
-        // Windows/Linux declare it.
-        // See:
-        //  http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-        hostent* he = gethostbyname(name.c_str());
-        if ( !he || he->h_addrtype != AF_INET )
-            throw invalid_argument("CreateAddrInet: host not found: " + name);
-
-        sa.sin_addr = *(in_addr*)he->h_addr_list[0];
+        sockaddr_any result(pref_family == AF_INET6 ? pref_family : AF_INET);
+        result.hport(port);
+        return result;
     }
 
-    return sa;
+    bool first6 = pref_family != AF_INET;
+    int families[2] = {AF_INET6, AF_INET};
+    if (!first6)
+    {
+        families[0] = AF_INET;
+        families[1] = AF_INET6;
+    }
+
+    for (int i = 0; i < 2; ++i)
+    {
+        int family = families[i];
+        sockaddr_any result (family);
+
+        // Try to resolve the name by pton first
+        if (inet_pton(family, name.c_str(), result.get_addr()) == 1)
+        {
+            result.hport(port); // same addr location in ipv4 and ipv6
+            return result;
+        }
+    }
+
+    // If not, try to resolve by getaddrinfo
+    // This time, use the exact value of pref_family
+
+    sockaddr_any result;
+    addrinfo fo = {
+        0,
+        pref_family,
+        0, 0,
+        0, 0,
+        NULL, NULL
+    };
+
+    addrinfo* val = nullptr;
+    int erc = getaddrinfo(name.c_str(), nullptr, &fo, &val);
+    if (erc == 0)
+    {
+        result.set(val->ai_addr);
+        result.len = result.size();
+        result.hport(port); // same addr location in ipv4 and ipv6
+    }
+    freeaddrinfo(val);
+
+    return result;
 }
 
 string Join(const vector<string>& in, string sep)

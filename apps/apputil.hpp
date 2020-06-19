@@ -18,6 +18,8 @@
 #include <vector>
 #include <memory>
 
+#include "netinet_any.h"
+
 #if _WIN32
 
 // Keep this below commented out.
@@ -69,7 +71,7 @@ inline int SysError() { return ::GetLastError(); }
 inline int SysError() { return errno; }
 #endif
 
-sockaddr_in CreateAddrInet(const std::string& name, unsigned short port);
+sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
 
