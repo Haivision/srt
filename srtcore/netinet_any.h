@@ -42,9 +42,9 @@ struct sockaddr_any
 
     // This is the type used by system functions
 #ifdef _WIN32
-    typedef int slen_t;
+    typedef int syslen_t;
 #else
-    typedef socklen_t slen_t;
+    typedef socklen_t syslen_t;
 #endif
 
     // Note: by having `len_t` type here the usage in
@@ -53,7 +53,7 @@ struct sockaddr_any
     // but just do it on your own risk, as there's no guarantee
     // that sizes of `int` and `socklen_t` do not differ. The safest
     // way seems to be using an intermediate proxy to be written
-    // back here from the value of `slen_t`.
+    // back here from the value of `syslen_t`.
     len_t len;
 
     static size_t storage_size()
@@ -142,7 +142,7 @@ struct sockaddr_any
         }
     }
 
-    void set(const sockaddr* source, slen_t namelen)
+    void set(const sockaddr* source, syslen_t namelen)
     {
         // It's not safe to copy it directly, so check.
         if (source->sa_family == AF_INET && namelen >= len_t(sizeof sin))
@@ -150,7 +150,7 @@ struct sockaddr_any
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
-        else if (source->sa_family == AF_INET6 && namelen >= slen_t(sizeof sin6))
+        else if (source->sa_family == AF_INET6 && namelen >= syslen_t(sizeof sin6))
         {
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data
