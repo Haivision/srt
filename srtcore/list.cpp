@@ -122,6 +122,17 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
     int       loc     = (m_iHead + offset + m_iSize) % m_iSize;
 
+    if (loc < 0)
+    {
+        // The size of the CSndLossList should be at least the size of the flow window.
+        // It means that all the packets sender has sent should fit within m_iSize.
+        // If the new loss does not fit, there is some error.
+        LOGC(mglog.Error, log << "IPE: New loss record is too old. Ignoring. "
+            << "First loss seqno " << m_caSeq[m_iHead].seqstart
+            << ", insert seqno " << seqno1 << ":" << seqno2);
+        return 0;
+    }
+
     if (offset < 0)
     {
         insertHead(loc, seqno1, seqno2);
@@ -153,6 +164,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
             {
                 // No overlap
+                // TODO: Here we should actually insert right after i, not at loc.
                 insertAfter(loc, i, seqno1, seqno2);
             }
             else
@@ -347,6 +359,7 @@ int32_t CSndLossList::popLostSeq()
 
 void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)
 {
+    SRT_ASSERT(pos >= 0);
     m_caSeq[pos].seqstart = seqno1;
     SRT_ASSERT(m_caSeq[pos].seqend == SRT_SEQNO_NONE);
     if (seqno2 != seqno1)
