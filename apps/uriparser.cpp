@@ -168,7 +168,26 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
-    idx = m_host.find("/");
+    // Handle the IPv6 specification in square brackets.
+    // This actually handles anything specified in [] so potentially
+    // you can also specify the usual hostname here as well. If the
+    // whole host results to have [] at edge positions, they are stripped,
+    // otherwise they remain. In both cases the search for the colon
+    // separating the port specification starts only after ].
+    const size_t i6pos = m_host.find("[");
+    size_t i6end = string::npos;
+
+    // Search for the "path" part only behind the closed bracket,
+    // if both open and close brackets were found
+    size_t path_since = 0;
+    if (i6pos != string::npos)
+    {
+        i6end = m_host.find("]", i6pos);
+        if (i6end != string::npos)
+            path_since = i6end;
+    }
+
+    idx = m_host.find("/", path_since);
     if (idx != string::npos)
     {
         m_path = m_host.substr(idx, m_host.size() - idx);
@@ -206,11 +225,50 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host = realhost;
     }
 
-    idx = m_host.find(":");
+    bool stripbrackets = false;
+    size_t hostend = 0;
+    if (i6pos != string::npos)
+    {
+        // IPv6 IP address. Find the terminating ]
+        hostend = m_host.find("]", i6pos);
+        idx = m_host.rfind(":");
+        if (hostend != string::npos)
+        {
+            // Found the end. But not necessarily it was
+            // at the beginning. If it was at the beginning,
+            // strip them from the host name.
+
+            size_t lasthost = idx;
+            if (idx != string::npos && idx < hostend)
+            {
+                idx = string::npos;
+                lasthost = m_host.size();
+            }
+
+            if (i6pos == 0 && hostend == lasthost - 1)
+            {
+                stripbrackets = true;
+            }
+        }
+    }
+    else
+    {
+        idx = m_host.rfind(":");
+    }
+
     if (idx != string::npos)
     {
         m_port = m_host.substr(idx + 1, m_host.size() - (idx + 1));
+
+        // Extract host WITHOUT stripping brackets
         m_host = m_host.substr(0, idx);
+    }
+
+    if (stripbrackets)
+    {
+        if (!hostend)
+            hostend = m_host.size() - 1;
+        m_host = m_host.substr(1, hostend - 1);
     }
 
     if ( m_port == "" && m_host != "" )
@@ -297,7 +355,8 @@ int main( int argc, char** argv )
     cout << "SCHEME INDEX: " << int(parser.type()) << endl;
     cout << "PROTOCOL: " << parser.proto() << endl;
     cout << "HOST: " << parser.host() << endl;
-    cout << "PORT: " << parser.portno() << endl;
+    cout << "PORT (string): " << parser.port() << endl;
+    cout << "PORT (numeric): " << parser.portno() << endl;
     cout << "PATH: " << parser.path() << endl;
     cout << "PARAMETERS:\n";
     for (auto& p: parser.parameters()) 

@@ -102,7 +102,16 @@ void CChannel::createSocket(int family)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
-        ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
+    {
+        int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
+        if (res == -1)
+        {
+            int err = errno;
+            char msg[160];
+            LOGC(mglog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
+                    << ": " << SysStrError(err, msg, 159));
+        }
+    }
 
 }
 
