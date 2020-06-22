@@ -372,7 +372,7 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     RejectData* data = (RejectData*)op;
 
     srt_setrejectreason(acpsock, data->code);
-    UDT::setstreamid(acpsock, data->streaminfo);
+    srt::setstreamid(acpsock, data->streaminfo);
 
     return -1;
 }
@@ -687,7 +687,7 @@ int main( int argc, char** argv )
     }
 
 
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -709,7 +709,7 @@ int main( int argc, char** argv )
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 

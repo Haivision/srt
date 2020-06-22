@@ -670,7 +670,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_PBKEYLEN:
-    case SRTO_SNDPBKEYLEN_DEPRECATED:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 #ifdef SRT_ENABLE_ENCRYPTION
@@ -11772,7 +11771,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SENDER: RD(false);
     case SRTO_TSBPDMODE: RD(false);
-    case SRTO_TSBPDDELAY:
+    case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
     case SRTO_PEERLATENCY: RD(SRT_LIVE_DEF_LATENCY_MS);
     case SRTO_TLPKTDROP: RD(true);

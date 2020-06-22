@@ -67,6 +67,7 @@ proc resolve opt {
 		set opt [string range $opt 0 $pos-1]
 	}
 	set var [string toupper [string map {- _ + x} $opt]]
+
 	return [list --$opt $var $type $mark]
 }
 
@@ -153,8 +154,10 @@ foreach a $argv {
 
 	set type ""
 
-	if { [string first = $a] != -1 } {
-		lassign [split $a =] a val
+	if { [set a1 [string first = $a]] != -1 } {
+		# Do not split. Options may include =.
+		set val [string range $a $a1+1 end]
+		set a [string range $a 0 $a1-1]
 	}
 
 	if { [dict exists $::alias $a] } {

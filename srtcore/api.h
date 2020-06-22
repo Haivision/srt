@@ -231,7 +231,7 @@ public:
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
    void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
-   int select(ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout);
+   int select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
    int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
    int epoll_create();
    int epoll_clear_usocks(int eid);
