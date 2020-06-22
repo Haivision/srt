@@ -377,29 +377,21 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int agent_fami
    }
    else // AF_INET6
    {
-      static const uint32_t ipv4on6_mask [4] =
-      {
-          0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0
-      };
-      static const uint8_t* ipv4on6_mask_u8 = (uint8_t*)ipv4on6_mask;
+      // Check if the peer address is a model of IPv4-mapped-on-IPv6.
+      // If so, it means that the `ip` array should be interpreted as IPv4.
 
+      uint16_t* peeraddr16 = (uint16_t*)peer.sin6.sin6_addr.s6_addr;
       static const uint16_t ipv4on6_model [8] =
       {
           0, 0, 0, 0, 0, 0xFFFF, 0, 0
       };
 
+      // Compare only first 6 words. Remaining 2 words
+      // comprise the IPv4 address, if these first 6 match.
+      const uint16_t* mbegin = ipv4on6_model;
+      const uint16_t* mend = ipv4on6_model + 6;
 
-      // Apply this mask on the address, so that it only clears
-      // the exact IPv4 address. The result should be identical
-      // with the model
-      uint8_t actual_model[16];
-      for (int i = 0; i < 16; ++i)
-          actual_model[i] = peer.sin6.sin6_addr.s6_addr[i] & ipv4on6_mask_u8[i];
-
-      bool is_mapped_ipv4 = (0 == memcmp(actual_model, ipv4on6_model, 16));
-
-      // Check if the peer address is a model of IPv4-mapped-on-IPv6.
-      // If so, it means that the `ip` array should be interpreted as IPv4.
+      bool is_mapped_ipv4 = (std::mismatch(mbegin, mend, peeraddr16).first == mend);
 
       sockaddr_in6* a = (&w_addr.sin6);
 
@@ -408,9 +400,14 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int agent_fami
           // Here both agent and peer use IPv6, in which case
           // `ip` contains the full IPv6 address, so just copy
           // it as is.
+
+          // XXX Possibly, a simple
+          // memcpy( (a->sin6_addr.s6_addr), ip, 16);
+          // would do the same thing, and faster. The address in `ip`,
+          // even though coded here as uint32_t, is still big endian.
           for (int i = 0; i < 4; ++ i)
           {
-              a->sin6_addr.s6_addr[i * 4] = ip[i] & 0xFF;
+              a->sin6_addr.s6_addr[i * 4 + 0] = ip[i] & 0xFF;
               a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
               a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
               a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
