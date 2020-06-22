@@ -145,7 +145,7 @@ struct sockaddr_any
     void set(const sockaddr* source, syslen_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (source->sa_family == AF_INET && namelen >= len_t(sizeof sin))
+        if (source->sa_family == AF_INET && namelen >= syslen_t(sizeof sin))
         {
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
