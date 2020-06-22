@@ -343,10 +343,56 @@ if (NOT ENABLE_CXX11)
 	if (ENABLE_STDCXX_SYNC)
 		message(ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
 	endif()
+	if (DEFINED USE_CXX_STD)
+		message(ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
+	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
 	set(CMAKE_CXX_STANDARD 11)
 endif()
+
+if (DEFINED USE_CXX_STD)
+	string(SUBSTRING "${USE_CXX_STD}" 0 3 STDPFX)
+	if (${STDPFX} GREATER 0)
+		set (STDCXX ${USE_CXX_STD})
+		set (USE_CXX_STD "c++${STDCXX}")
+	else()
+		string(SUBSTRING "${USE_CXX_STD}" 3 2 STDCXX)
+	endif()
+	if (NOT STDCXX STREQUAL "")
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+		set (STDCXX 03)
+	endif()
+	if (${STDCXX} LESS 11)
+		if (ENABLE_STDCXX_SYNC)
+			message(ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+		endif()
+		# This enforces C++03 standard on SRT.
+		# Apps still use C++11
+
+		# Set this through independent flags
+		set (USE_CXX_STD_LIB ${STDCXX})
+		set (USE_CXX_STD_APP 11)
+	else()
+		# This enforces this standard on both apps and library,
+		# so set this as global C++ standard option
+		set (CMAKE_CXX_STANDARD ${STDCXX})
+
+		# Do not set variables to not duplicate flags
+		set (USE_CXX_STD_LIB "")
+		set (USE_CXX_STD_APP "")
+	endif()
+	
+	message(STATUS "C++ VERSION: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	endif()
+else()
+	set (USE_CXX_STD_LIB "")
+	set (USE_CXX_STD_APP "")
+endif()
+
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
 # add extra warning flags for gccish compilers
@@ -641,6 +687,10 @@ if (ENABLE_SHARED)
 	endif()
 endif()
 
+if (NOT USE_CXX_STD_LIB STREQUAL "")
+	set_target_properties(srt_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_LIB})
+endif()
+
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
@@ -795,14 +845,6 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if (HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
-	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
-	set (CFLAGS_CXX_STANDARD "-std=c++11")
-else()
-	message(STATUS "C++ VERSION: leaving default, not a GNU compiler, assuming C++11 or newer is default.")
-	set (CFLAGS_CXX_STANDARD "")
-endif()
-
 # If static is available, link apps against static one.
 # Otherwise link against shared one.
 
@@ -825,7 +867,9 @@ macro(srt_add_program name)
 endmacro()
 
 macro(srt_make_application name)
-	target_compile_options(${name} PRIVATE ${CFLAGS_CXX_STANDARD})
+	if (NOT USE_CXX_STD_APP STREQUAL "")
+		set_target_properties(${name} PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+	endif()
 
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
@@ -843,10 +887,9 @@ macro(srt_make_application name)
 		# XXX not sure about Mac.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
 		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
-	endif()
 
-	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}" ${FORCE_RPATH})
+		set_target_properties(${name} PROPERTIES ${FORCE_RPATH})
+	endif()
 
 	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
@@ -888,7 +931,9 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
-	target_compile_options(srtsupport_virtual PUBLIC ${CFLAGS_CXX_STANDARD})
+	if (NOT USE_CXX_STD_APP STREQUAL "")
+		set_target_properties(srtsupport_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+	endif()
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
 	# Applications
@@ -933,7 +978,9 @@ if (ENABLE_APPS)
 			# Avoid misleading syntax error.
 			srt_add_testprogram(uriparser-test)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
-			target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+			if (NOT USE_CXX_STD_APP STREQUAL "")
+				set_target_properties(uriparser-test PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+			endif()
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
