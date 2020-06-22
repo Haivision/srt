@@ -4122,6 +4122,11 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
    return CUDT::getsockstate(u);
 }
 
+} // namespace UDT
+
+namespace srt
+{
+
 void setloglevel(LogLevel::type ll)
 {
     CGuard gg(srt_logger_config.mutex);
@@ -4193,4 +4198,4 @@ int setrejectreason(SRTSOCKET u, int value)
     return CUDT::rejectReason(u, value);
 }
 
-}  // namespace UDT
+}  // namespace srt
