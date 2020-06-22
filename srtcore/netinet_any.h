@@ -37,13 +37,23 @@ struct sockaddr_any
     // The type is intended to be the same as the length
     // parameter in ::accept, ::bind and ::connect functions.
 
-    // XXX Hard to say if this shouldn't be fixed.
-    // The problem is, socket functions use:
-    // system, on Linux: socklen_t (resolves to: unsigned int)
-    // system, on Windows: int
-    // SRT: int
-    // Hard to preserve portability without compromising simplicity in SRT API.
+    // This is the type used by SRT.
     typedef int len_t;
+
+    // This is the type used by system functions
+#ifdef _WIN32
+    typedef int syslen_t;
+#else
+    typedef socklen_t syslen_t;
+#endif
+
+    // Note: by having `len_t` type here the usage in
+    // API functions is here limited to SRT. For system
+    // functions you can pass the address here as (socklen_t*)&sa.len,
+    // but just do it on your own risk, as there's no guarantee
+    // that sizes of `int` and `socklen_t` do not differ. The safest
+    // way seems to be using an intermediate proxy to be written
+    // back here from the value of `syslen_t`.
     len_t len;
 
     static size_t storage_size()
@@ -132,15 +142,15 @@ struct sockaddr_any
         }
     }
 
-    void set(const sockaddr* source, len_t namelen)
+    void set(const sockaddr* source, syslen_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (source->sa_family == AF_INET && namelen >= len_t(sizeof sin))
+        if (source->sa_family == AF_INET && namelen >= syslen_t(sizeof sin))
         {
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
-        else if (source->sa_family == AF_INET6 && namelen >= len_t(sizeof sin6))
+        else if (source->sa_family == AF_INET6 && namelen >= syslen_t(sizeof sin6))
         {
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data
@@ -248,7 +258,8 @@ struct sockaddr_any
     const sockaddr* get() const { return &sa; }
 
     // Sometimes you need to get the address
-    void* get_addr()
+    // the way suitable for e.g. inet_ntop.
+    const void* get_addr() const
     {
         if (sa.sa_family == AF_INET)
             return &sin.sin_addr.s_addr;
@@ -257,6 +268,12 @@ struct sockaddr_any
             return &sin6.sin6_addr;
 
         return NULL;
+    }
+
+    void* get_addr()
+    {
+        const sockaddr_any* that = this;
+        return (void*)that->get_addr();
     }
 
     template <int> struct TypeMap;

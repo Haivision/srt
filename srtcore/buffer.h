@@ -72,6 +72,36 @@ modified by
 // a +% b : shift a by b
 // a == b : equality is same as for just numbers
 
+#if defined(SRT_ENABLE_SNDBUFSZ_MAVG) || defined(SRT_ENABLE_RCVBUFSZ_MAVG)
+/// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
+class AvgBufSize
+{
+    typedef srt::sync::steady_clock::time_point time_point;
+
+public:
+    AvgBufSize()
+        : m_dBytesCountMAvg(0.0)
+        , m_dCountMAvg(0.0)
+        , m_dTimespanMAvg(0.0)
+    { }
+
+public:
+    bool isTimeToUpdate(const time_point& now) const;
+    void update(const time_point& now, int pkts, int bytes, int timespan_ms);
+
+public:
+    inline double pkts() const { return m_dCountMAvg; }
+    inline double timespan_ms() const { return m_dTimespanMAvg; }
+    inline double bytes() const { return m_dBytesCountMAvg; }
+
+private:
+    time_point m_tsLastSamplingTime;
+    double     m_dBytesCountMAvg;
+    double     m_dCountMAvg;
+    double     m_dTimespanMAvg;
+};
+#endif // SRT_ENABLE_SNDBUFSZ_MAVG || SRT_ENABLE_RCVBUFSZ_MAVG
+
 
 class CSndBuffer
 {
@@ -232,10 +262,7 @@ private:
    srt::sync::steady_clock::time_point m_tsLastOriginTime;
 
 #ifdef SRT_ENABLE_SNDBUFSZ_MAVG
-   srt::sync::steady_clock::time_point m_tsLastSamplingTime;
-   int m_iCountMAvg;
-   int m_iBytesCountMAvg;
-   int m_TimespanMAvg;
+   AvgBufSize m_mavg;
 #endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
    int m_iInRatePktsCount;  // number of payload bytes added since InRateStartTime
@@ -585,10 +612,7 @@ private:
    static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 #ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-   time_point m_tsLastSamplingTime;
-   int m_TimespanMAvg;
-   int m_iCountMAvg;
-   int m_iBytesCountMAvg;
+   AvgBufSize m_mavg;
 #endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    int m_TsbPdDriftHisto100us[22];              // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
