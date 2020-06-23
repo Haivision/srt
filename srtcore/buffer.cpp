@@ -177,7 +177,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
-    uint64_t& w_srctime = w_mctrl.srctime;
+    int64_t& w_srctime  = w_mctrl.srctime;
     int&      w_ttl     = w_mctrl.msgttl;
     int       size      = len / m_iMSS;
     if ((len % m_iMSS) != 0)
@@ -246,9 +246,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_ullSourceTime_us = w_srctime;
-        s->m_tsOriginTime     = time;
-        s->m_iTTL             = w_ttl;
+        s->m_llSourceTime_us = w_srctime;
+        s->m_tsOriginTime    = time;
+        s->m_iTTL            = w_ttl;
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
@@ -394,10 +394,10 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 
 steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& block)
 {
-    if (block.m_ullSourceTime_us)
+    if (block.m_llSourceTime_us)
     {
         const steady_clock::duration since_epoch = block.m_tsOriginTime.time_since_epoch();
-        const steady_clock::duration delta       = microseconds_from(block.m_ullSourceTime_us) - since_epoch;
+        const steady_clock::duration delta       = microseconds_from(block.m_llSourceTime_us) - since_epoch;
         return block.m_tsOriginTime + delta;
     }
 
@@ -2024,7 +2024,7 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl, int upto)
 }
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-void CRcvBuffer::debugTraceJitter(uint64_t rplaytime)
+void CRcvBuffer::debugTraceJitter(int64_t rplaytime)
 {
     uint64_t now = CTimer::getTime();
     if ((now - rplaytime) / 10 < 10)
@@ -2038,33 +2038,7 @@ void CRcvBuffer::debugTraceJitter(uint64_t rplaytime)
 }
 #endif /* SRT_DEBUG_TSBPD_OUTJITTER */
 
-/*
-int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl)
-{
-    int p, q;
-    bool passack;
-
-#ifdef ENABLE_HEAVY_LOGGING
-    reportBufferStats();
-#endif
-    bool empty = accessMsg(Ref(p), Ref(q), Ref(passack), Ref(msgctl.srctime), -1);
-    if (empty)
-        return 0;
-
-
-    // This should happen just once. By 'empty' condition
-    // we have a guarantee that m_pUnit[p] exists and is valid.
-    CPacket& pkt1 = m_pUnit[p]->m_Packet;
-    // This returns the sequence number and message number to
-    // the API caller.
-    msgctl.pktseq = pkt1.getSeqNo();
-    msgctl.msgno = pkt1.getMsgSeq();
-
-    return extractData(data, len, p, q, passack);
-}
-*/
-
-bool CRcvBuffer::accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto)
+bool CRcvBuffer::accessMsg(int& w_p, int& w_q, bool& w_passack, int64_t& w_playtime, int upto)
 {
     // This function should do the following:
     // 1. Find the first packet starting the next message (or just next packet)

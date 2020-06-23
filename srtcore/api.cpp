@@ -3237,7 +3237,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
 
 int CUDT::sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     mctrl.msgttl = ttl;
@@ -3281,7 +3281,7 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
     return ret;
 }
 
-int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     int ret = recvmsg2(u, buf, len, (mctrl));
@@ -3846,20 +3846,19 @@ int recv(SRTSOCKET u, char* buf, int len, int flags)
 
 int sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
    return CUDT::sendmsg(u, buf, len, ttl, inorder, srctime);
 }
 
-int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
 int recvmsg(SRTSOCKET u, char* buf, int len)
 {
-   uint64_t srctime;
-
+   int64_t srctime;
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
