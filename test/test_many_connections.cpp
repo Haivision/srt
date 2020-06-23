@@ -32,9 +32,9 @@ protected:
         // cleanup any pending stuff, but no exceptions allowed
     }
 
-    const size_t NSOCK = 1000;
-protected:
+    const size_t NSOCK = 255;
 
+protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
@@ -66,14 +66,17 @@ protected:
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
 
         // Fill the buffer with random data
+        time_t now;
+        time(&now);
+        unsigned int randseed = now % 255;
+        srand(randseed);
         for (int i = 0; i < SRT_LIVE_DEF_PLSIZE; ++i)
-            buf[i] = rand() % 255;
+            buf[i] = rand_r(&randseed) % 255;
 
         m_server_sock = srt_create_socket();
 
         ASSERT_NE(srt_bind(m_server_sock, psa, sizeof m_sa), -1);
         ASSERT_NE(srt_listen(m_server_sock, NSOCK), -1);
-
     }
 
     void TearDown() override
@@ -105,7 +108,6 @@ protected:
     }
 
 protected:
-
     SOCKET m_udp_sock = INVALID_SOCKET;
     sockaddr_in m_sa = sockaddr_in();
     SRTSOCKET m_server_sock = SRT_INVALID_SOCK;
@@ -153,7 +155,6 @@ TEST_F(TestConnection, Multiple)
     EXPECT_EQ(srt_close(m_server_sock), 0);
 
     ex.wait();
-
 }
 
 
