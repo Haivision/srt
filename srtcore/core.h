@@ -981,6 +981,7 @@ public: //API
     static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
     static int rejectReason(SRTSOCKET s);
     static int rejectReason(SRTSOCKET s, int value);
+    static int64_t socketStartTime(SRTSOCKET s);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.

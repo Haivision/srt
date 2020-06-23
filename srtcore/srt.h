@@ -987,6 +987,10 @@ const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion();
 
+SRT_API int64_t srt_time_now();
+
+SRT_API int64_t srt_connection_time(SRTSOCKET sock);
+
 #ifdef __cplusplus
 }
 #endif

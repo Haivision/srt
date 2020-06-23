@@ -11186,6 +11186,15 @@ int CUDT::rejectReason(SRTSOCKET u, int value)
     return 0;
 }
 
+int64_t CUDT::socketStartTime(SRTSOCKET u)
+{
+    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    if (!s || !s->m_pUDT)
+        return APIError(MJ_NOTSUP, MN_SIDINVAL);
+
+    return count_microseconds(s->m_pUDT->m_stats.tsStartTime.time_since_epoch());
+}
+
 bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.

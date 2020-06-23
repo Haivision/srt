@@ -387,4 +387,14 @@ uint32_t srt_getversion()
     return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
 }
 
+int64_t srt_time_now()
+{
+    return srt::sync::count_microseconds(srt::sync::steady_clock::now().time_since_epoch());
+}
+
+int64_t srt_connection_time(SRTSOCKET sock)
+{
+    return CUDT::socketStartTime(sock);
+}
+
 }
