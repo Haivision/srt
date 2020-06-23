@@ -108,8 +108,8 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::setloglevel(lev);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     bool verbo = OptionPresent(params, o_verbose);
     if (verbo)

@@ -629,7 +629,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
    // (the family is used exactly as the one taken from what has been returned
    // by getsockaddr)
-   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family(), peer);
 
    // protect the m_Sockets structure.
    enterCS(m_GlobControlLock);
@@ -4122,6 +4122,11 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
    return CUDT::getsockstate(u);
 }
 
+} // namespace UDT
+
+namespace srt
+{
+
 void setloglevel(LogLevel::type ll)
 {
     CGuard gg(srt_logger_config.mutex);
@@ -4193,4 +4198,4 @@ int setrejectreason(SRTSOCKET u, int value)
     return CUDT::rejectReason(u, value);
 }
 
-}  // namespace UDT
+}  // namespace srt

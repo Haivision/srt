@@ -69,15 +69,43 @@ written by
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
 
+#if defined(__cplusplus) && __cplusplus > 201406
+#define SRT_HAVE_CXX17 1
+#else
+#define SRT_HAVE_CXX17 0
+#endif
+
+
+// Stadnard attributes
+
 // When compiling in C++17 mode, use the standard C++17 attributes
 // (out of these, only [[deprecated]] is supported in C++14, so
 // for all lesser standard use compiler-specific attributes).
-#if defined(SRT_NO_DEPRECATED)
+#if SRT_HAVE_CXX17
 
-// Unused: do not issue an unused variable warning
+// Unused: DO NOT issue a warning if this entity is unused.
+#define SRT_ATR_UNUSED [[maybe_unused]]
+
+// Nodiscard: issue a warning if the return value was discarded.
+#define SRT_ATR_NODISCARD [[nodiscard]]
+
+// GNUG is GNU C/C++; this syntax is also supported by Clang
+#elif defined(__GNUC__)
+#define SRT_ATR_UNUSED __attribute__((unused))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(_MSC_VER)
+#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
+#define SRT_ATR_NODISCARD _Check_return_
+#else
 #define SRT_ATR_UNUSED
+#define SRT_ATR_NODISCARD
+#endif
 
-// Deprecated: function or symbol is deprecated
+
+// DEPRECATED attributes
+
+// There's needed DEPRECATED and DEPRECATED_PX, as some compilers require them
+// before the entity, others after the entity.
 // The *_PX version is the prefix attribute, which applies only
 // to functions (Microsoft compilers).
 
@@ -85,35 +113,29 @@ written by
 //
 // SRT_ATR_DEPRECATED_PX retval function(arguments) SRT_ATR_DEPRECATED;
 //
+
+// When SRT_NO_DEPRECATED defined, do not issue any deprecation warnings.
+// Regardless of the compiler type.
+#if defined(SRT_NO_DEPRECATED)
+
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX
 
-// Nodiscard: issue a warning if the return value was discarded.
-#define SRT_ATR_NODISCARD
+#elif SRT_HAVE_CXX17
 
-#elif defined(__cplusplus) && __cplusplus > 201406
-
-#define SRT_ATR_UNUSED [[maybe_unused]]
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX [[deprecated]]
-#define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined(__GNUC__)
-#define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
-#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #elif defined(_MSC_VER)
-#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
 #define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
 #define SRT_ATR_DEPRECATED // no postfix-type modifier
-#define SRT_ATR_NODISCARD _Check_return_
 #else
-#define SRT_ATR_UNUSED
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
-#define SRT_ATR_NODISCARD
 #endif
 
 #ifdef __cplusplus
@@ -829,7 +851,6 @@ SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 
-// XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future

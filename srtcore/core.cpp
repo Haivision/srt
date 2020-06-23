@@ -5155,7 +5155,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
     s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
-    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, s->m_SelfAddr.family());
+    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, s->m_SelfAddr.family(), m_PeerAddr);
 
     s->m_Status = SRTS_CONNECTED;
 
@@ -6805,9 +6805,24 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         // Now seqno is the sequence to which it was scheduled
         // XXX Conversion from w_mctrl.srctime -> steady_clock::time_point need not be accurrate.
-        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:" << FormatTime(ts_srctime)
+        HLOGC(dlog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:"
+                << (w_mctrl.srctime ? FormatTime(ts_srctime) : "none")
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
+
+        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
+        {
+            LOGC(mglog.Error,
+                log << "Wrong source time was provided. Sending is rejected.");
+            throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
+        }
+
+        if (w_mctrl.srctime && (!m_bMessageAPI || !m_bTsbPd))
+        {
+            HLOGC(dlog.Warn,
+                log << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
+            w_mctrl.srctime = 0;
+        }
 
         // w_mctrl.seqno is INPUT-OUTPUT value:
         // - INPUT: the current sequence number to be placed for the next scheduled packet
@@ -9394,7 +9409,8 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
-        LOGC(mglog.Error, log << "IPE: Overridding seq %" << seq << " DISCREPANCY against current next sched %" << m_iSndNextSeqNo);
+        LOGC(mglog.Error, log << CONID() << "IPE: Overridding with seq %" << seq << " DISCREPANCY against current %"
+                << m_iSndCurrSeqNo << " and next sched %" << m_iSndNextSeqNo << " - diff=" << diff);
         return false;
     }
 
@@ -13519,8 +13535,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon *perf, bool clear)
     perf->byteRecvUniqueTotal = m_stats.recv.total.fullBytes();
     perf->byteRcvDropTotal    = m_stats.recvDrop.total.fullBytes();
 
-    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
-
+    const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
     perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
 
@@ -13696,9 +13711,32 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t d, const steady_clock::time_poi
         {
             // We believe that all running links use the same seq.
             // But we can do some sanity check.
-            LOGC(dlog.Error, log << "grp/sendBackup: IPE: another running link seq discrepancy: %" << lastseq
+            LOGC(dlog.Error, log << "grp/sendBackup: @" << w_u.m_SocketID << ": IPE: another running link seq discrepancy: %" << lastseq
                     << " vs. previous %" << w_curseq << " - fixing");
-            w_u.overrideSndSeqNo(w_curseq);
+
+            // Override must be done with a sequence number greater by one.
+
+            // Example:
+            //
+            // Link 1 before sending: curr=1114, next=1115
+            // After sending it reports pktseq=1115
+            //
+            // Link 2 before sending: curr=1110, next=1111 (->lastseq before sending)
+            // THIS CHECK done after sending:
+            //  -- w_curseq(1115) != lastseq(1111)
+            //
+            // NOW: Link 1 after sending is:
+            // curr=1115, next=1116
+            //
+            // The value of w_curseq here = 1115, while overrideSndSeqNo
+            // calls setInitialSndSeq(seq), which sets:
+            // - curr = seq - 1
+            // - next = seq
+            //
+            // So, in order to set curr=1115, next=1116
+            // this must set to 1115+1.
+
+            w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
         }
 
         // If this link is already found as unstable,
@@ -13863,7 +13901,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>& idlers,
             }
             else
             {
-                HLOGC(dlog.Debug, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
+                LOGC(dlog.Warn, log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
                         << " LINK ACTIVATED (pri: " << d->weight << ").");
             }
             // Note: this will override the sequence number
@@ -14665,18 +14703,24 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         if (distance < 0)
         {
             // This may happen in case when the link to be activated is already running.
+            // Getting sequences backwards is not allowed, as sending them makes no
+            // sense - they are already ACK-ed or are behind the ISN. Instead, skip all
+            // packets that are in the past towards the scheduling sequence.
             skip_initial = -distance;
-            HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
+            LOGC(dlog.Warn, log << "sendBackupRexmit: OVERRIDE attempt to %" << core.schedSeqNo()
                     << " from BACKWARD %" << curseq << " - DENIED; skip " << skip_initial << " packets" );
         }
         else
         {
-#if ENABLE_HEAVY_LOGGING
-            int32_t old = core.schedSeqNo();
-            bool su = core.overrideSndSeqNo(curseq);
+            // In case when the next planned sequence on this link is behind
+            // the firstmost sequence in the backup buffer, synchronize the
+            // sequence with it first so that they go hand-in-hand with
+            // sequences already used by the link from which packets were
+            // copied to the backup buffer.
+            IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
+            const bool su ATR_UNUSED = core.overrideSndSeqNo(curseq);
             HLOGC(dlog.Debug, log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
                     << (su ? " - succeeded" : " - FAILED!"));
-#endif
         }
     }
 
@@ -14702,12 +14746,15 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         if (stat == -1)
         {
             // Stop sending if one sending ended up with error
+            LOGC(dlog.Warn, log << "sendBackupRexmit: sending from buffer stopped at %"
+                    << core.schedSeqNo() << " and FAILED");
             return -1;
         }
     }
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
+    HLOGC(dlog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
 }
 

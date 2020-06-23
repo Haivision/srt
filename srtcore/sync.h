@@ -662,21 +662,21 @@ template<>
 struct DurationUnitName<DUNIT_US>
 {
     static const char* name() { return "us"; }
-    static double count(const steady_clock::duration& dur) { return count_microseconds(dur); }
+    static double count(const steady_clock::duration& dur) { return static_cast<double>(count_microseconds(dur)); }
 };
 
 template<>
 struct DurationUnitName<DUNIT_MS>
 {
     static const char* name() { return "ms"; }
-    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000.0; }
+    static double count(const steady_clock::duration& dur) { return static_cast<double>(count_microseconds(dur))/1000.0; }
 };
 
 template<>
 struct DurationUnitName<DUNIT_S>
 {
     static const char* name() { return "s"; }
-    static double count(const steady_clock::duration& dur) { return count_microseconds(dur)/1000000.0; }
+    static double count(const steady_clock::duration& dur) { return static_cast<double>(count_microseconds(dur))/1000000.0; }
 };
 
 template<eDurationUnit UNIT>

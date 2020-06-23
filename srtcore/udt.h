@@ -300,19 +300,6 @@ UDT_API const char* getlasterror_desc();
 UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
 UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
 
-// This is a C++ SRT API extension. This is not a part of legacy UDT API.
-UDT_API void setloglevel(srt_logging::LogLevel::type ll);
-UDT_API void addlogfa(srt_logging::LogFA fa);
-UDT_API void dellogfa(srt_logging::LogFA fa);
-UDT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
-UDT_API void resetlogfa(const int* fara, size_t fara_size);
-UDT_API void setlogstream(std::ostream& stream);
-UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
-UDT_API void setlogflags(int flags);
-
-UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
-UDT_API std::string getstreamid(UDTSOCKET u);
-
 }  // namespace UDT
 
 // This is a log configuration used inside SRT.
@@ -321,7 +308,47 @@ UDT_API std::string getstreamid(UDTSOCKET u);
 // own logger FA objects, or create their own. The object of this type
 // is required to initialize the logger FA object.
 namespace srt_logging { struct LogConfig; }
-UDT_API extern srt_logging::LogConfig srt_logger_config;
+SRT_API extern srt_logging::LogConfig srt_logger_config;
+
+namespace srt
+{
+
+// This is a C++ SRT API extension. This is not a part of legacy UDT API.
+SRT_API void setloglevel(srt_logging::LogLevel::type ll);
+SRT_API void addlogfa(srt_logging::LogFA fa);
+SRT_API void dellogfa(srt_logging::LogFA fa);
+SRT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
+SRT_API void resetlogfa(const int* fara, size_t fara_size);
+SRT_API void setlogstream(std::ostream& stream);
+SRT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
+SRT_API void setlogflags(int flags);
+
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
+
+// Namespace alias
+namespace logging {
+    using namespace srt_logging;
+}
+
+}
+
+// Planned deprecated removal: rel1.6.0
+// There's also no portable way possible to enforce a deprecation
+// compiler warning, so leaving as is.
+namespace UDT
+{
+    // Backward-compatible aliases, just for a case someone was using it.
+    using srt::setloglevel;
+    using srt::addlogfa;
+    using srt::dellogfa;
+    using srt::resetlogfa;
+    using srt::setlogstream;
+    using srt::setloghandler;
+    using srt::setlogflags;
+    using srt::setstreamid;
+    using srt::getstreamid;
+}
 
 
 #endif /* __cplusplus */

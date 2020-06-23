@@ -214,7 +214,7 @@ to be dropped before sending (so -1 should be passed here).
 The `srctime` parameter is an SRT addition for applications (i.e. gateways)
 forwarding SRT streams. It permits pulling and pushing of the sender's original time
 stamp, converted to local time and drift adjusted. The srctime parameter is the
-number of usec (since epoch) in local time. If the connection is not between
+number of usec (since epoch) in local SRT clock time. If the connection is not between
 SRT peers or if Timestamp-Based Packet Delivery mode (TSBPDMODE) is not enabled
 (see Options), the extracted srctime will be 0. Passing srctime = 0 in sendmsg
 is like using the API without srctime and the local send time will be used (if
