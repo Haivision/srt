@@ -1,8 +1,12 @@
+#define _CRT_RAND_S // For Windows, rand_s 
+
 #include <gtest/gtest.h>
 #include <chrono>
 #include <future>
 
 #ifdef _WIN32
+#include <stdlib.h>
+#define rand_r rand_s
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
 #else
 typedef int SOCKET;
@@ -32,7 +36,7 @@ protected:
         // cleanup any pending stuff, but no exceptions allowed
     }
 
-    const size_t NSOCK = 255;
+    static const size_t NSOCK = 255;
 
 protected:
     // SetUp() is run immediately before a test starts.
@@ -56,12 +60,12 @@ protected:
             if (bind_res >= 0)
             {
                 cerr << "Running test on port " << port << "\n";
-                // Close the socket to free the port.
-                ASSERT_NE(closesocket(m_udp_sock), -1);
                 break;
             }
         }
 
+        // Close the socket to free the port.
+        ASSERT_NE(closesocket(m_udp_sock), -1);
         ASSERT_GE(bind_res, 0);
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
 
@@ -113,6 +117,7 @@ protected:
     SRTSOCKET m_server_sock = SRT_INVALID_SOCK;
     vector<SRTSOCKET> m_accepted;
     char buf[SRT_LIVE_DEF_PLSIZE];
+    SRTSOCKET srt_socket_list[NSOCK];
 };
 
 
@@ -121,12 +126,11 @@ TEST_F(TestConnection, Multiple)
 {
     size_t size = SRT_LIVE_DEF_PLSIZE;
 
-    SRTSOCKET srt_socket_list[NSOCK];
-    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+    sockaddr_in lsa = m_sa;
+
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&lsa);
 
     auto ex = std::async([this] { return AcceptLoop(); });
-
-    int no = 0;
 
     for (size_t i = 0; i < NSOCK; i++)
     {
@@ -137,10 +141,13 @@ TEST_F(TestConnection, Multiple)
         int conntimeo = 60;
         srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
 
+        cout << "Connecting #" << i << " to " << SockaddrToString(sockaddr_any(psa)) << "...\n";
+
         //cerr << "Connecting to: " << SockaddrToString(sockaddr_any(psa)) << endl;
-        ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof m_sa), SRT_ERROR);
+        ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof lsa), SRT_ERROR);
 
         // Set now async sending so that sending isn't blocked
+        int no = 0;
         ASSERT_NE(srt_setsockflag(srt_socket_list[i], SRTO_SNDSYN, &no, sizeof no), -1);
     }
 
