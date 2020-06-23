@@ -227,7 +227,7 @@ private:
       int32_t m_iMsgNoBitset;           // message number
       int32_t m_iSeqNo;                 // sequence number for scheduling
       time_point m_tsOriginTime;        // original request time
-      uint64_t m_ullSourceTime_us;
+      int64_t m_llSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block
@@ -410,9 +410,9 @@ public:
    bool isRcvDataReady(time_point& w_tsbpdtime, int32_t& w_curpktseq, int32_t seqdistance);
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-   void debugTraceJitter(uint64_t);
+   void debugTraceJitter(int64_t);
 #else
-   void debugTraceJitter(uint64_t) {}
+   void debugTraceJitter(int64_t) {}
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
 
    bool isRcvDataReady();
@@ -533,7 +533,7 @@ public:
 
 private:
    int extractData(char *data, int len, int p, int q, bool passack);
-   bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
+   bool accessMsg(int& w_p, int& w_q, bool& w_passack, int64_t& w_playtime, int upto);
 
    /// Describes the state of the first N packets
    std::string debugTimeState(size_t first_n_pkts) const;

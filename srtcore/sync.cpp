@@ -125,6 +125,7 @@ const int64_t s_cpu_frequency = get_cpu_frequency();
 // Sync utilities section
 //
 ////////////////////////////////////////////////////////////////////////////////
+#ifndef ENABLE_STDCXX_SYNC
 
 static timespec us_to_timespec(const uint64_t time_us)
 {
@@ -133,6 +134,7 @@ static timespec us_to_timespec(const uint64_t time_us)
     timeout.tv_nsec        = (time_us % 1000000) * 1000;
     return timeout;
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
