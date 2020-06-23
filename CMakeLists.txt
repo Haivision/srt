@@ -193,19 +193,26 @@ if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
 	if (${COMPILER_TYPE} STREQUAL gcc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL cc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL icc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	else()
 		# Use blindly <command> for C compiler and <command>++ for C++.
 		# At least this matches clang.
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
+		if (${COMPILER_TYPE} STREQUAL clang)
+			set (HAVE_COMPILER_GNU_COMPAT 1)
+		endif()
 	endif()
 	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+	unset(USING_DEFAULT_COMPILER_PREFIX)
 else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
@@ -322,13 +329,32 @@ if (USE_GNUSTL)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 endif()
 
+if (USING_DEFAULT_COMPILER_PREFIX)
 # Detect if the compiler is GNU compatable for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
+
+	# See https://gcc.gnu.org/projects/cxx-status.html
+	# At the bottom there's information about C++98, which is default up to 6.1 version.
+	# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
+	if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
+	    message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
+		set (FORCE_CXX_STANDARD 1)
+	else() 
+	    message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
+	endif()
 else()
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
+
+else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
+
+	# Force the C++ standard as C++11
+	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
+	set (FORCE_CXX_STANDARD 1)
+	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
 
 if (DISABLE_CXX11)
@@ -350,6 +376,8 @@ elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
 	set(CMAKE_CXX_STANDARD 11)
 endif()
+
+message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
 if (DEFINED USE_CXX_STD)
 	string(SUBSTRING "${USE_CXX_STD}" 0 3 STDPFX)
@@ -375,11 +403,12 @@ if (DEFINED USE_CXX_STD)
 
 		# Set this through independent flags
 		set (USE_CXX_STD_LIB ${STDCXX})
-		set (USE_CXX_STD_APP 11)
+		set (USE_CXX_STD_APP "")
 	else()
 		# This enforces this standard on both apps and library,
 		# so set this as global C++ standard option
 		set (CMAKE_CXX_STANDARD ${STDCXX})
+		unset (FORCE_CXX_STANDARD)
 
 		# Do not set variables to not duplicate flags
 		set (USE_CXX_STD_LIB "")
@@ -393,7 +422,9 @@ else()
 	set (USE_CXX_STD_APP "")
 endif()
 
-message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+if (FORCE_CXX_STANDARD)
+	set (USE_CXX_STD_APP 11)
+endif()
 
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
