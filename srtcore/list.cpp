@@ -184,7 +184,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     return m_iLength - origlen;
 }
 
-void CSndLossList::remove(int32_t seqno)
+void CSndLossList::removeUpTo(int32_t seqno)
 {
     CGuard listguard(m_ListLock);
 
