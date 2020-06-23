@@ -131,6 +131,12 @@ TEST_F(TestConnection, Multiple)
     for (size_t i = 0; i < NSOCK; i++)
     {
         srt_socket_list[i] = srt_create_socket();
+
+        // Give it 60s timeout, many platforms fail to process
+        // so many connections in a short time.
+        int conntimeo = 60;
+        srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
+
         //cerr << "Connecting to: " << SockaddrToString(sockaddr_any(psa)) << endl;
         ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof m_sa), SRT_ERROR);
 
