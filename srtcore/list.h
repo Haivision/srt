@@ -71,12 +71,12 @@ public:
 
    int insert(int32_t seqno1, int32_t seqno2);
 
-      /// Remove ALL the seq. no. that are not greater than the parameter.
+      /// Remove the given sequence number and all numbers that precede it.
       /// @param [in] seqno sequence number.
 
-   void remove(int32_t seqno);
+   void removeUpTo(int32_t seqno);
 
-      /// Read the loss length.
+      /// Read the loss length.∏
       /// @return The length of the list.
 
    int getLossLength() const;
