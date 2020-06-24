@@ -193,19 +193,26 @@ if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
 	if (${COMPILER_TYPE} STREQUAL gcc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL cc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL icc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	else()
 		# Use blindly <command> for C compiler and <command>++ for C++.
 		# At least this matches clang.
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
+		if (${COMPILER_TYPE} STREQUAL clang)
+			set (HAVE_COMPILER_GNU_COMPAT 1)
+		endif()
 	endif()
 	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+	unset(USING_DEFAULT_COMPILER_PREFIX)
 else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
@@ -322,13 +329,35 @@ if (USE_GNUSTL)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 endif()
 
+if (USING_DEFAULT_COMPILER_PREFIX)
 # Detect if the compiler is GNU compatable for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
+
+	# See https://gcc.gnu.org/projects/cxx-status.html
+	# At the bottom there's information about C++98, which is default up to 6.1 version.
+	# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
+	if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
+	    message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
+		set (FORCE_CXX_STANDARD 1)
+	elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
+		message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
+		set (FORCE_CXX_STANDARD 1)
+	else() 
+	    message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
+	endif()
 else()
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
+
+else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
+
+	# Force the C++ standard as C++11
+	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
+	set (FORCE_CXX_STANDARD 1)
+	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
 
 if (DISABLE_CXX11)
@@ -343,11 +372,62 @@ if (NOT ENABLE_CXX11)
 	if (ENABLE_STDCXX_SYNC)
 		message(ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
 	endif()
+	if (DEFINED USE_CXX_STD)
+		message(ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
+	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
 	set(CMAKE_CXX_STANDARD 11)
 endif()
+
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+
+if (DEFINED USE_CXX_STD)
+	string(SUBSTRING "${USE_CXX_STD}" 0 3 STDPFX)
+	if (${STDPFX} GREATER 0)
+		set (STDCXX ${USE_CXX_STD})
+		set (USE_CXX_STD "c++${STDCXX}")
+	else()
+		string(SUBSTRING "${USE_CXX_STD}" 3 2 STDCXX)
+	endif()
+	if (NOT STDCXX STREQUAL "")
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+		set (STDCXX 03)
+	endif()
+	if (${STDCXX} LESS 11)
+		if (ENABLE_STDCXX_SYNC)
+			message(ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+		endif()
+		# This enforces C++03 standard on SRT.
+		# Apps still use C++11
+
+		# Set this through independent flags
+		set (USE_CXX_STD_LIB ${STDCXX})
+		set (USE_CXX_STD_APP "")
+	else()
+		# This enforces this standard on both apps and library,
+		# so set this as global C++ standard option
+		set (CMAKE_CXX_STANDARD ${STDCXX})
+		unset (FORCE_CXX_STANDARD)
+
+		# Do not set variables to not duplicate flags
+		set (USE_CXX_STD_LIB "")
+		set (USE_CXX_STD_APP "")
+	endif()
+	
+	message(STATUS "C++ VERSION: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	endif()
+else()
+	set (USE_CXX_STD_LIB "")
+	set (USE_CXX_STD_APP "")
+endif()
+
+if (FORCE_CXX_STANDARD)
+	set (USE_CXX_STD_APP 11)
+endif()
 
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
@@ -641,6 +721,10 @@ if (ENABLE_SHARED)
 	endif()
 endif()
 
+if (NOT USE_CXX_STD_LIB STREQUAL "")
+	set_target_properties(srt_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_LIB})
+endif()
+
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
@@ -795,14 +879,6 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if (HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
-	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
-	set (CFLAGS_CXX_STANDARD "-std=c++11")
-else()
-	message(STATUS "C++ VERSION: leaving default, not a GNU compiler, assuming C++11 or newer is default.")
-	set (CFLAGS_CXX_STANDARD "")
-endif()
-
 # If static is available, link apps against static one.
 # Otherwise link against shared one.
 
@@ -825,7 +901,9 @@ macro(srt_add_program name)
 endmacro()
 
 macro(srt_make_application name)
-	target_compile_options(${name} PRIVATE ${CFLAGS_CXX_STANDARD})
+	if (NOT USE_CXX_STD_APP STREQUAL "")
+		set_target_properties(${name} PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+	endif()
 
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
@@ -843,10 +921,9 @@ macro(srt_make_application name)
 		# XXX not sure about Mac.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
 		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
-	endif()
 
-	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}" ${FORCE_RPATH})
+		set_target_properties(${name} PROPERTIES ${FORCE_RPATH})
+	endif()
 
 	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
@@ -888,7 +965,9 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
-	target_compile_options(srtsupport_virtual PUBLIC ${CFLAGS_CXX_STANDARD})
+	if (NOT USE_CXX_STD_APP STREQUAL "")
+		set_target_properties(srtsupport_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+	endif()
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
 	# Applications
@@ -933,7 +1012,9 @@ if (ENABLE_APPS)
 			# Avoid misleading syntax error.
 			srt_add_testprogram(uriparser-test)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
-			target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+			if (NOT USE_CXX_STD_APP STREQUAL "")
+				set_target_properties(uriparser-test PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
+			endif()
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
