@@ -67,7 +67,6 @@ proc resolve opt {
 		set opt [string range $opt 0 $pos-1]
 	}
 	set var [string toupper [string map {- _ + x} $opt]]
-
 	return [list --$opt $var $type $mark]
 }
 
