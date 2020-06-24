@@ -6546,7 +6546,7 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             m_iSndLastDataAck = fakeack;
 
             int32_t minlastack = CSeqNo::decseq(m_iSndLastDataAck);
-            m_pSndLossList->remove(minlastack);
+            m_pSndLossList->removeUpTo(minlastack);
             /* If we dropped packets not yet sent, advance current position */
             // THIS MEANS: m_iSndCurrSeqNo = MAX(m_iSndCurrSeqNo, m_iSndLastDataAck-1)
             if (CSeqNo::seqcmp(m_iSndCurrSeqNo, minlastack) < 0)
@@ -8204,7 +8204,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         }
 
         // remove any loss that predates 'ack' (not to be considered loss anymore)
-        m_pSndLossList->remove(CSeqNo::decseq(m_iSndLastDataAck));
+        m_pSndLossList->removeUpTo(CSeqNo::decseq(m_iSndLastDataAck));
 
         // acknowledge the sending buffer (remove data that predate 'ack')
         m_pSndBuffer->ackData(offset);
@@ -9006,7 +9006,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
             // only one msg drop request is necessary
-            m_pSndLossList->remove(seqpair[1]);
+            m_pSndLossList->removeUpTo(seqpair[1]);
 
             // skip all dropped packets
             m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1]));

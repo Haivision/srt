@@ -228,7 +228,6 @@ SRT_API SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
 
 }  // namespace UDT
 
-
 // This is a log configuration used inside SRT.
 // Applications using SRT, if they want to use the logging mechanism
 // are free to create their own logger configuration objects for their
@@ -250,8 +249,8 @@ SRT_API void setlogstream(std::ostream& stream);
 SRT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 SRT_API void setlogflags(int flags);
 
-SRT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
-SRT_API std::string getstreamid(UDTSOCKET u);
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
 
 // Namespace alias
 namespace logging {
