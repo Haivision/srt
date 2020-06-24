@@ -406,7 +406,7 @@ if (DEFINED USE_CXX_STD)
 
 		# Set this through independent flags
 		set (USE_CXX_STD_LIB ${STDCXX})
-		set (USE_CXX_STD_APP 11)
+		set (USE_CXX_STD_APP "")
 	else()
 		# This enforces this standard on both apps and library,
 		# so set this as global C++ standard option
