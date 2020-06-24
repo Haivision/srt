@@ -382,14 +382,22 @@ endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
+if (CMAKE_MAJOR_VERSION LESS 3)
+	set (FORCE_CXX_STANDARD_GNUONLY 1)
+endif()
+
 if (DEFINED USE_CXX_STD)
-	string(SUBSTRING "${USE_CXX_STD}" 0 3 STDPFX)
-	if (${STDPFX} GREATER 0)
+
+	if (USE_CXX_STD MATCHES "([^+]+\\++)([0-9]*)")
+		set (STDPFX ${CMAKE_MATCH_1})
+		set (STDCXX ${CMAKE_MATCH_2})
+	elseif (USE_CXX_STD MATCHES "[0-9]*")
+		set (STDPFX c++)
 		set (STDCXX ${USE_CXX_STD})
-		set (USE_CXX_STD "c++${STDCXX}")
 	else()
-		string(SUBSTRING "${USE_CXX_STD}" 3 2 STDCXX)
+		message(ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
 	endif()
+
 	if (NOT STDCXX STREQUAL "")
 
 	# Handle C++98 < C++11
@@ -407,6 +415,15 @@ if (DEFINED USE_CXX_STD)
 		# Set this through independent flags
 		set (USE_CXX_STD_LIB ${STDCXX})
 		set (USE_CXX_STD_APP "")
+		set (FORCE_CXX_STANDARD 1)
+		message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+	elseif (FORCE_CXX_STANDARD_GNUONLY)
+		# CMake is too old to handle CMAKE_CXX_STANDARD,
+		# use bare GNU options.
+		set (FORCE_CXX_STANDARD 1)
+		set (USE_CXX_STD_APP ${STDCXX})
+		set (USE_CXX_STD_LIB ${STDCXX})
+		message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
 	else()
 		# This enforces this standard on both apps and library,
 		# so set this as global C++ standard option
@@ -416,9 +433,10 @@ if (DEFINED USE_CXX_STD)
 		# Do not set variables to not duplicate flags
 		set (USE_CXX_STD_LIB "")
 		set (USE_CXX_STD_APP "")
+		message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
 	endif()
 	
-	message(STATUS "C++ VERSION: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
 	endif()
 else()
 	set (USE_CXX_STD_LIB "")
@@ -721,9 +739,22 @@ if (ENABLE_SHARED)
 	endif()
 endif()
 
-if (NOT USE_CXX_STD_LIB STREQUAL "")
-	set_target_properties(srt_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_LIB})
-endif()
+macro(srt_set_stdcxx targetname spec)
+	if (NOT ${spec} STREQUAL "")
+		if (FORCE_CXX_STANDARD_GNUONLY)
+			target_compile_options(${targetname} PRIVATE -std=c++${spec})
+			message(STATUS "C++ STD: ${targetname}: forced C++${spec} standard - GNU option")
+		else()
+			set_target_properties(srt_virtual PROPERTIES CXX_STANDARD ${spec})
+			message(STATUS "C++ STD: ${targetname}: forced C++${spec} standard - portable way")
+		endif()
+	else()
+		message(STATUS "APP: ${targetname}: using default C++ standard")
+	endif()
+endmacro()
+
+
+srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
@@ -901,10 +932,9 @@ macro(srt_add_program name)
 endmacro()
 
 macro(srt_make_application name)
-	if (NOT USE_CXX_STD_APP STREQUAL "")
-		set_target_properties(${name} PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
-	endif()
 
+	srt_set_stdcxx(${name} "${USE_CXX_STD_APP}")
+	
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
 	# is added as is.
@@ -965,9 +995,7 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
-	if (NOT USE_CXX_STD_APP STREQUAL "")
-		set_target_properties(srtsupport_virtual PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
-	endif()
+	srt_set_stdcxx(srtsupport_virtual "${USE_CXX_STD_APP}")
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
 	# Applications
