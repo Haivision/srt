@@ -409,6 +409,8 @@ if (DEFINED USE_CXX_STD)
 		if (ENABLE_STDCXX_SYNC)
 			message(ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
 		endif()
+		# Set back to 98 because cmake doesn't understand 03.
+		set (STDCXX 98)
 		# This enforces C++03 standard on SRT.
 		# Apps still use C++11
 
