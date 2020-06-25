@@ -367,17 +367,48 @@ else()
 	set (ENABLE_CXX11 1)
 endif()
 
+function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
+
+	set (STDPFX c++)
+	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
+		set (STDPFX ${CMAKE_MATCH_1})
+		set (STDCXX ${CMAKE_MATCH_2})
+	elseif (stdval MATCHES "[0-9]*")
+		set (STDCXX ${stdval})
+	else()
+		set (STDCXX 0)
+	endif()
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+			set (STDCXX 03)
+	endif()
+
+	# return
+	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
+	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
+endfunction()
+
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
 	if (ENABLE_STDCXX_SYNC)
-		message(ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
 	endif()
 	if (DEFINED USE_CXX_STD)
-		message(ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
+		message(FATAL_ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
 	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
-	set(CMAKE_CXX_STANDARD 11)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		# If defined, make sure it's at least C++11
+		if (${STDCXX} LESS 11)
+			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
 endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
@@ -387,58 +418,48 @@ if (CMAKE_MAJOR_VERSION LESS 3)
 endif()
 
 if (DEFINED USE_CXX_STD)
+	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
 
-	if (USE_CXX_STD MATCHES "([^+]+\\++)([0-9]*)")
-		set (STDPFX ${CMAKE_MATCH_1})
-		set (STDCXX ${CMAKE_MATCH_2})
-	elseif (USE_CXX_STD MATCHES "[0-9]*")
-		set (STDPFX c++)
-		set (STDCXX ${USE_CXX_STD})
-	else()
-		message(ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
+	if (${STDCXX} EQUAL 0)
+		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
 	endif()
 
 	if (NOT STDCXX STREQUAL "")
 
-	# Handle C++98 < C++11
-	# Please fix this around 2070 year.
-	if (${STDCXX} GREATER 80)
-		set (STDCXX 03)
-	endif()
-	if (${STDCXX} LESS 11)
-		if (ENABLE_STDCXX_SYNC)
-			message(ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+		if (${STDCXX} LESS 11)
+			if (ENABLE_STDCXX_SYNC)
+				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+			endif()
+			# Set back to 98 because cmake doesn't understand 03.
+			set (STDCXX 98)
+			# This enforces C++03 standard on SRT.
+			# Apps still use C++11
+
+			# Set this through independent flags
+			set (USE_CXX_STD_LIB ${STDCXX})
+			set (USE_CXX_STD_APP "")
+			set (FORCE_CXX_STANDARD 1)
+			message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+		elseif (FORCE_CXX_STANDARD_GNUONLY)
+			# CMake is too old to handle CMAKE_CXX_STANDARD,
+			# use bare GNU options.
+			set (FORCE_CXX_STANDARD 1)
+			set (USE_CXX_STD_APP ${STDCXX})
+			set (USE_CXX_STD_LIB ${STDCXX})
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
+		else()
+			# This enforces this standard on both apps and library,
+			# so set this as global C++ standard option
+			set (CMAKE_CXX_STANDARD ${STDCXX})
+			unset (FORCE_CXX_STANDARD)
+
+			# Do not set variables to not duplicate flags
+			set (USE_CXX_STD_LIB "")
+			set (USE_CXX_STD_APP "")
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
 		endif()
-		# Set back to 98 because cmake doesn't understand 03.
-		set (STDCXX 98)
-		# This enforces C++03 standard on SRT.
-		# Apps still use C++11
 
-		# Set this through independent flags
-		set (USE_CXX_STD_LIB ${STDCXX})
-		set (USE_CXX_STD_APP "")
-		set (FORCE_CXX_STANDARD 1)
-		message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
-	elseif (FORCE_CXX_STANDARD_GNUONLY)
-		# CMake is too old to handle CMAKE_CXX_STANDARD,
-		# use bare GNU options.
-		set (FORCE_CXX_STANDARD 1)
-		set (USE_CXX_STD_APP ${STDCXX})
-		set (USE_CXX_STD_LIB ${STDCXX})
-		message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
-	else()
-		# This enforces this standard on both apps and library,
-		# so set this as global C++ standard option
-		set (CMAKE_CXX_STANDARD ${STDCXX})
-		unset (FORCE_CXX_STANDARD)
-
-		# Do not set variables to not duplicate flags
-		set (USE_CXX_STD_LIB "")
-		set (USE_CXX_STD_APP "")
-		message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
-	endif()
-	
-	message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
 	endif()
 else()
 	set (USE_CXX_STD_LIB "")
@@ -446,7 +467,15 @@ else()
 endif()
 
 if (FORCE_CXX_STANDARD)
-	set (USE_CXX_STD_APP 11)
+	message(STATUS "C++ STD: Forcing C++11 on applications")
+	if (USE_CXX_STD_APP STREQUAL "")
+		set (USE_CXX_STD_APP 11)
+	endif()
+
+	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
+		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
+		set (USE_CXX_STD_LIB 11)
+	endif()
 endif()
 
 # add extra warning flags for gccish compilers
@@ -742,13 +771,14 @@ if (ENABLE_SHARED)
 endif()
 
 macro(srt_set_stdcxx targetname spec)
-	if (NOT ${spec} STREQUAL "")
+	set (stdcxxspec ${spec})
+	if (NOT "${stdcxxspec}" STREQUAL "")
 		if (FORCE_CXX_STANDARD_GNUONLY)
-			target_compile_options(${targetname} PRIVATE -std=c++${spec})
-			message(STATUS "C++ STD: ${targetname}: forced C++${spec} standard - GNU option")
+			target_compile_options(${targetname} PRIVATE -std=c++${stdcxxspec})
+			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
 		else()
-			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${spec})
-			message(STATUS "C++ STD: ${targetname}: forced C++${spec} standard - portable way")
+			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
+			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 		endif()
 	else()
 		message(STATUS "APP: ${targetname}: using default C++ standard")
@@ -985,7 +1015,7 @@ endif()
 
 if (ENABLE_APPS)
 
-	message(STATUS "APPS: ENABLED")
+	message(STATUS "APPS: ENABLED, std=${USE_CXX_STD_APP}")
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
@@ -1037,14 +1067,13 @@ if (ENABLE_APPS)
 		endmacro()
 
 		srt_add_testprogram(utility-test)
+		srt_set_stdcxx(utility-test "${USE_CXX_STD_APP}")
 		if (NOT WIN32)
 			# This program is symlinked under git-cygwin.
 			# Avoid misleading syntax error.
 			srt_add_testprogram(uriparser-test)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
-			if (NOT USE_CXX_STD_APP STREQUAL "")
-				set_target_properties(uriparser-test PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
-			endif()
+			srt_set_stdcxx(uriparser-test "${USE_CXX_STD_APP}")
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
