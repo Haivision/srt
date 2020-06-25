@@ -199,6 +199,9 @@ m_ClosedSockets()
    m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
+   // XXX An unlikely exception thrown from the below calls
+   // might destroy the application before `main`. This shouldn't
+   // be a problem in general.
    setupMutex(m_GlobControlLock, "GlobControl");
    setupMutex(m_IDLock, "ID");
    setupMutex(m_InitLock, "Init");
@@ -257,8 +260,15 @@ int CUDTUnited::startup()
 
    m_bClosing = false;
 
-   setupMutex(m_GCStopLock, "GCStop");
-   setupCond(m_GCStopCond, "GCStop");
+   try
+   {
+       setupMutex(m_GCStopLock, "GCStop");
+       setupCond(m_GCStopCond, "GCStop");
+   }
+   catch (...)
+   {
+       return -1;
+   }
    if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
       return -1;
 
@@ -2529,6 +2539,26 @@ void CUDTUnited::updateMux(
            // port was specified as 0.
            m.m_pChannel->open(addr);
        }
+
+       sockaddr_any sa;
+       m.m_pChannel->getSockAddr((sa));
+       m.m_iPort = sa.hport();
+
+       m.m_pTimer = new CTimer;
+
+       m.m_pSndQueue = new CSndQueue;
+       m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
+       m.m_pRcvQueue = new CRcvQueue;
+       m.m_pRcvQueue->init(
+               32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
+               m.m_pChannel, m.m_pTimer);
+
+       m_mMultiplexer[m.m_iID] = m;
+
+       s->m_pUDT->m_pSndQueue = m.m_pSndQueue;
+       s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
+       s->m_iMuxID = m.m_iID;
+
    }
    catch (CUDTException& e)
    {
@@ -2536,25 +2566,12 @@ void CUDTUnited::updateMux(
       delete m.m_pChannel;
       throw;
    }
-
-   sockaddr_any sa;
-   m.m_pChannel->getSockAddr((sa));
-   m.m_iPort = sa.hport();
-
-   m.m_pTimer = new CTimer;
-
-   m.m_pSndQueue = new CSndQueue;
-   m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
-   m.m_pRcvQueue = new CRcvQueue;
-   m.m_pRcvQueue->init(
-      32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
-      m.m_pChannel, m.m_pTimer);
-
-   m_mMultiplexer[m.m_iID] = m;
-
-   s->m_pUDT->m_pSndQueue = m.m_pSndQueue;
-   s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
-   s->m_iMuxID = m.m_iID;
+   catch (...)
+   {
+      m.m_pChannel->close();
+      delete m.m_pChannel;
+      throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+   }
 
    HLOGF(mglog.Debug, 
       "creating new multiplexer for port %i\n", m.m_iPort);
@@ -2771,7 +2788,7 @@ SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
     {
         return APIError(e);
     }
-    catch (const std::bad_alloc& e)
+    catch (...)
     {
         return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
     }

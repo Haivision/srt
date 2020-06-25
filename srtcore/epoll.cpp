@@ -85,6 +85,7 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
+   // Exception -> CUDTUnited ctor.
    setupMutex(m_EPollLock, "EPoll");
 }
 

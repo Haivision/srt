@@ -3593,7 +3593,16 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     }
     else
     {
-        gp = &newGroup(gtp);
+        try
+        {
+            gp = &newGroup(gtp);
+        }
+        catch (...)
+        {
+            // Expected exceptions are only those referring to system resources
+            return -1;
+        }
+
         if (!gp->applyFlags(link_flags, m_SrtHsSide))
         {
             // Wrong settings. Must reject. Delete group.

@@ -21,6 +21,11 @@ srt_c_api.cpp
 window.cpp
 srt_compat.c
 sync.cpp
+
+SOURCES - !ENABLE_STDCXX_SYNC
+sync_posix.cpp
+
+SOURCES - ENABLE_STDCXX_SYNC
 sync_cxx11.cpp
 
 PUBLIC HEADERS
