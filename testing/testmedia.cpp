@@ -2037,7 +2037,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 
     ++counter;
 
-    return data;
+    return MediaPacket(data, mctrl.srctime);
 }
 
 SrtTarget::SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)

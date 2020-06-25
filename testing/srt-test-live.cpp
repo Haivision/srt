@@ -805,7 +805,7 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    if (transmit_use_sourcetime && src.uri.type() != UriParser::SRT)
+    if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
     {
         Verb() << "WARNING: -st option is effective only if the target type is SRT";
     }
