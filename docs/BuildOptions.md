@@ -301,6 +301,9 @@ usage would still be productive, while without system-supported waiting this
 option may increase the likelihood of switching to the right thread at the time
 when it is expected to be revived.
 
+**`--use-c++-std=<standard>`**
+
+
 
 **`--use-gnustl`**
 
@@ -371,4 +374,26 @@ respectively:
 This should be the exact command used as a C compiler, possibly with
 version suffix, e.g. `clang-1.7.0`. If this option is used together
 with `--with-compiler-prefix`, its prefix will be added in front.
+
+**`--with-extralibs=<library-list>`**
+
+This is an option required for unusual situations when a platform-specific
+workaround is needed and some extra libraries must be passed explicitly
+for linkage. The argument is a space-separated list of linker options
+or library names.
+
+There are some known sitautions where it may be necessary:
+
+1. Some older Linux systems do not ship `clock_gettime` functions by
+default in their libc, and need an extra librt. If you are using POSIX
+monotonic clocks (see `--enable-monotonic-clock`), this might be required
+to add `-lrd` through this option. Although this situation is tried to
+be autodetected and this option added automatically, it might sometimes fail.
+
+2. On some systems (found so far on OpenSuSE), if you use C++11 sync
+(see `--enable-stdc++-sync`), the gcc compiler relies on gthreads, which
+relies on pthreads, and happens to define inline source functions in
+the header that refers to `pthread_create`, the compiler however doesn't
+link against pthreads by default. To work this around, add `-pthreads`
+using this option.
 
