@@ -1042,9 +1042,7 @@ if (ENABLE_APPS)
 			# Avoid misleading syntax error.
 			srt_add_testprogram(uriparser-test)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
-			if (NOT USE_CXX_STD_APP STREQUAL "")
-				set_target_properties(uriparser-test PROPERTIES CXX_STANDARD ${USE_CXX_STD_APP})
-			endif()
+			srt_set_stdcxx(uriparser-test ${USE_CXX_STD_APP})
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
