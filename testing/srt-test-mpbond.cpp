@@ -247,9 +247,9 @@ int main( int argc, char** argv )
         for (;;)
         {
             Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;
