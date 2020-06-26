@@ -220,8 +220,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
-   // (some space left)
-   SRTO_PACKETFILTER = 60          // Add and configure a packet filter
+   SRTO_SMPINBW,             // Internally sampled input rate (Get only for SRTO_OUPACEMODE==SRT_OPM_SMPINBW or SRT_OPM_INBWADJ)
+   SRTO_PACKETFILTER = 60    // Add and configure a packet filter
+   SRTO_OUTPACEMODE,         // Set the parameters defining the output pace (See SRT_OUTPACEMODE enum)
 } SRT_SOCKOPT;
 
 
@@ -318,6 +319,16 @@ static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hd
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
+
+typedef enum SRT_OUTPACEMODE
+{
+    SRT_OPM_UNSET,      //unset, API/ABI backward compatible mode
+    SRT_OPM_UNTAMED,    //unlimited: SRTO_MAXBW == -1)
+    SRT_OPM_CAPPED,     //capped by (SRTO_MAXBW > )
+    SRT_OPM_SMPINBW,    //based on internally sampled input rate and configured overhead: maxoutBW = sampled-input-bw * (1+SRTO_OVERHEAD/100)
+    SRT_OPM_INBWSET,    //based on configured input rate and overhead (SRTO_INPUTBW): maxoutBW = SRTO_INPUTBW * (1+SRTO_OVERHEAD/100)
+    SRT_OPM_INBWADJ     //based on configured input rate and overhead, adjusted to internally sampled input rate when overshoot configured value
+}SRT_OUTPACEMODE;
 
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon

@@ -606,8 +606,29 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyPop++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
         }
-
+#if 0 //>>duB:debug OutPace
+        if (!pkt.isControl())
+        {
+                static uint64_t prev_ots = 0;
+                uint64_t diff_ots;
+                static int prev_its = 0;
+                int its = pkt.getMsgTimeStamp();
+                char *ots_str = " ots: ";
+                if ((ts > prev_ots)) {
+                    ots_str = " ots: ";
+                    diff_ots = ts - prev_ots;
+                }else{
+                    ots_str = " ots: -";
+                    diff_ots = prev_ots - ts;
+                }
+                uint64_t ointerval = self->m_pSndUList->m_pHeap[0]->m_pUDT->m_ullInterval_tk;
+                LOGC(mglog.Note, log << self->CONID() << "chn:SENDING SIZE " << pkt.getLength() << " SEQ: " << pkt.getSeqNo() << " its: " << its-prev_its << ots_str << diff_ots <<"/" << ointerval);
+                if(ts > 1)prev_ots = ts;
+                prev_its = its;
+        }
+#else
         HLOGC(mglog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
+#endif
         self->m_pChannel->sendto(addr, pkt);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)

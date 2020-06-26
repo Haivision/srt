@@ -303,7 +303,8 @@ enum EInitEvent
 {
     TEV_INIT_RESET = 0,
     TEV_INIT_INPUTBW,
-    TEV_INIT_OHEADBW
+    TEV_INIT_OHEADBW,
+    TEV_INIT_OUTPACEMODE
 };
 
 class CPacket;

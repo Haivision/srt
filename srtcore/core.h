@@ -128,7 +128,7 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 11;
+static const size_t SRT_SOCKOPT_NPOST = 12;
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
@@ -1447,7 +1447,9 @@ private: // Identification
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
+                                                 // 0: use sampled input bandwidth (sinBW) (internally measured)
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
+    SRT_OUTPACEMODE m_iOutPaceMode;              // Output Pace Mode
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
     SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake

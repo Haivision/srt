@@ -589,7 +589,7 @@ controls the maximum bandwidth together with `SRTO_OHEADBW` option according
 to the formula: `MAXBW = INPUTBW * (100 + OHEADBW) / 100`. When this option
 is set to 0 (automatic) then the real INPUTBW value will be estimated from
 the rate of the input (cases when the application calls the `srt_send*`
-function) during transmission. 
+function) during transmission (See get-only option `SRTO_SMPINBW`).
 
 - *Recommended: set this option to the predicted bitrate of your live stream
 and keep default 25% value for `SRTO_OHEADBW`.
@@ -836,13 +836,29 @@ packets were lost*
 `SRTO_INPUTBW` option set to 0 (automatic) otherwise your stream will
 choke and break quickly at any rising packet loss.*
 
-- ***To do: set-only. get should be supported.***
+---
+
+| OptName               | Since | Binding | Type   | Units  | Default  | Range   |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------- |
+| `SRTO_OUTPACEMODE`    | 1.5.x | post    | `int`  |        |          | enum    |
+
+- **[GET or SET]** - Output Pace Mode (OPM).
+- `SRT_OPM_UNSET`  : unset (API/ABI backward compatibility mode). Default.
+- `SRT_OPM_UNTAMED`: infinite (the limit in Live Mode is 1Gbps).
+- `SRT_OPM_CAPPED` : `SRTO_MAXBW` caps the output rate.
+- `SRT_OPM_INBWSET`: `SRTO_INPUTBW` and `SRTO_OHEADBW` define the output rate.
+- `SRT_OPM_SMPINBW`: `SRTO_SMPINBW` and `SRTO_OHEADBW` define the output rate.
+- `SRT_OPM_INBWADJ`: The maximum of `SRTO_INPUTBW` or `SRTO_SMPINBW`, and `SRTO_OHEADBW` define the output rate
+
+The only OPM that requires setting `SRTO_OUTPACEMODE` is `SRT_OPM_INBWADJ`. All the other
+modes correspond to pre-1.5.x implicit OPMs set with `SRTO_MAXBW`, `SRTO_INPUTBW`, and `SRTO_OHEADBW`.
+For details see [Output Pace Control](output-pace-control.md).
 
 ---
 
 | OptName               | Since | Binding | Type   | Units  | Default  | Range   |
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------- |
-| `SRTO_PACKETFILTER`   | 1.4.0 | pre     | string |        |          | [...512]| 
+| `SRTO_PACKETFILTER`   | 1.4.0 | pre     | string |        |          | [...512]|
 
 - **[SET]** - Set up the packet filter. The string must match appropriate syntax
 for packet filter setup.
@@ -1119,6 +1135,18 @@ otherwise the connection is rejected.
 - ***TODO: might be reasonable to allow an "adaptive" congestion controller,
 which will make the side that sets it accept whatever controller type is set
 by the peer, including different per connection***
+
+---
+
+| OptName          | Since | Binding | Type      | Units   | Default  | Range  |
+| ---------------- | ----- | ------- | --------- | ------- | -------- | ------ |
+| `SRTO_SMPINBW`   | 1.5.x | n/a     | `int64_t` | bytes/s | n/a      | 0..    |
+
+- **[GET only]** - get the current value of the input rate measured by the internal input rate sampler
+(SMPINBW). A non-zero value is returned only if SMPINBW is active, hence:
+- socket is connected, and
+	- `SRTO_OUTPACEMODE` is set to `SRT_OPM_SMPINBW` or `SRT_OPM_INBWADJ`, or
+	- `SRTO_OUTPACEMODE` is unset and `SRTO_INPUTBW` is set to 0.
 
 ---
 
