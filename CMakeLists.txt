@@ -1146,15 +1146,6 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
-
-	set (SOURCES_suflip
-		${CMAKE_CURRENT_SOURCE_DIR}/examples/suflip.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/uriparser.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/apputil.cpp
-	)
-	srt_add_program(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 
