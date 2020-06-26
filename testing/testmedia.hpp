@@ -125,7 +125,7 @@ protected:
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(string host, int port);
-    void SetupRendezvous(string adapter, int port);
+    void SetupRendezvous(string adapter, string host, int port);
 
     void OpenServer(string host, int port, int backlog = 1)
     {
@@ -140,7 +140,7 @@ protected:
     void OpenRendezvous(string adapter, string host, int port)
     {
         PrepareClient();
-        SetupRendezvous(adapter, port);
+        SetupRendezvous(adapter, host, port);
         ConnectClient(host, port);
     }
 

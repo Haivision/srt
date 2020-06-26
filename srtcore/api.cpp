@@ -1589,8 +1589,19 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
        // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
        s->m_Status = SRTS_OPENED;
    }
-   else if (s->m_Status != SRTS_OPENED)
-      throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+   else
+   {
+       if (s->m_Status != SRTS_OPENED)
+           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+       // status = SRTS_OPENED, so family should be known already.
+       if (target_addr.family() != s->m_SelfAddr.family())
+       {
+           LOGP(mglog.Error, "srt_connect: socket is bound to a different family than target address");
+           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+       }
+   }
+
 
    // connect_complete() may be called before connect() returns.
    // So we need to update the status before connect() is called,
