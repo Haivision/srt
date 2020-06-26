@@ -193,7 +193,7 @@ SRT_API int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* 
 SRT_API int send(SRTSOCKET u, const char* buf, int len, int flags);
 SRT_API int recv(SRTSOCKET u, char* buf, int len, int flags);
 
-SRT_API int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
+SRT_API int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, int64_t srctime = 0);
 SRT_API int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
 SRT_API int recvmsg(SRTSOCKET u, char* buf, int len);
 
