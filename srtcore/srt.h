@@ -221,8 +221,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
    SRTO_SMPINBW,             // Internally sampled input rate (Get only for SRTO_OUPACEMODE==SRT_OPM_SMPINBW or SRT_OPM_INBWADJ)
-   SRTO_PACKETFILTER = 60    // Add and configure a packet filter
-   SRTO_OUTPACEMODE,         // Set the parameters defining the output pace (See SRT_OUTPACEMODE enum)
+   SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
+   SRTO_OUTPACEMODE          // Set the parameters defining the output pace (See SRT_OUTPACEMODE enum)
 } SRT_SOCKOPT;
 
 
