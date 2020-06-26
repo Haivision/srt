@@ -2487,6 +2487,7 @@ void CUDTUnited::updateMux(
                s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
                s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
                s->m_iMuxID = i->second.m_iID;
+               s->m_SelfAddr.family(addr.family());
                return;
             }
          }
@@ -2551,6 +2552,7 @@ void CUDTUnited::updateMux(
    sockaddr_any sa;
    m.m_pChannel->getSockAddr((sa));
    m.m_iPort = sa.hport();
+   s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
 
    m.m_pTimer = new CTimer;
 
