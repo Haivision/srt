@@ -23,7 +23,6 @@ written by
 #include <string.h>
 #include <stdlib.h>
 
-#include "srt4udt.h"
 #include "logging_api.h"
 
 ////////////////////////////////////////////////////////////////////////////////
