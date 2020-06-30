@@ -1071,7 +1071,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
 
       // listening socket is closed
-      throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+      throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
 
    if (pw_addr != NULL && pw_addrlen != NULL)

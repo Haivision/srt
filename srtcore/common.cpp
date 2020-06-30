@@ -118,6 +118,9 @@ const string& CUDTException::getErrorString() const
            m_strMsg += ": abort for security reasons";
            break;
 
+        case MN_CLOSED:
+           m_strMsg += ": socket closed during operation";
+
         default:
            break;
         }

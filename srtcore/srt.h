@@ -439,6 +439,7 @@ enum CodeMinor
     MN_REJECTED        =  2,
     MN_NORES           =  3,
     MN_SECURITY        =  4,
+    MN_CLOSED          =  5,
     // MJ_CONNECTION
     MN_CONNLOST        =  1,
     MN_NOCONN          =  2,
@@ -488,6 +489,7 @@ typedef enum SRT_ERRNO
     SRT_ECONNREJ        = MN(SETUP, REJECTED),
     SRT_ESOCKFAIL       = MN(SETUP, NORES),
     SRT_ESECFAIL        = MN(SETUP, SECURITY),
+    SRT_ESCLOSED        = MN(SETUP, CLOSED),
 
     SRT_ECONNFAIL       = MJ(CONNECTION),
     SRT_ECONNLOST       = MN(CONNECTION, CONNLOST),
