@@ -446,6 +446,7 @@ enum CodeMinor
     // MJ_SYSTEMRES
     MN_THREAD          =  1,
     MN_MEMORY          =  2,
+    MN_OBJECT          =  3,
     // MJ_FILESYSTEM
     MN_SEEKGFAIL       =  1,
     MN_READFAIL        =  2,
@@ -498,6 +499,7 @@ typedef enum SRT_ERRNO
     SRT_ERESOURCE       = MJ(SYSTEMRES),
     SRT_ETHREAD         = MN(SYSTEMRES, THREAD),
     SRT_ENOBUF          = MN(SYSTEMRES, MEMORY),
+    SRT_ESYSOBJ         = MN(SYSTEMRES, OBJECT),
 
     SRT_EFILE           = MJ(FILESYSTEM),
     SRT_EINVRDOFF       = MN(FILESYSTEM, SEEKGFAIL),

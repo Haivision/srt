@@ -11952,6 +11952,11 @@ void CUDTGroup::close()
 
         // A non-managed group may only be closed if there are no
         // sockets in the group.
+
+        // XXX Fortunately there are currently no non-self-managed
+        // groups, so this error cannot ever happen, but this error
+        // has the overall code suggesting that it's about the listener,
+        // so either the name should be changed here, or a different code used.
         if (!m_selfManaged && !m_Group.empty())
             throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
 

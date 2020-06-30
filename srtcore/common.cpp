@@ -120,6 +120,7 @@ const string& CUDTException::getErrorString() const
 
         case MN_CLOSED:
            m_strMsg += ": socket closed during operation";
+           break;
 
         default:
            break;
@@ -155,6 +156,11 @@ const string& CUDTException::getErrorString() const
 
         case MN_MEMORY:
            m_strMsg += ": unable to allocate buffers";
+           break;
+
+
+        case MN_OBJECT:
+           m_strMsg += ": unable to allocate system object";
            break;
 
         default:
