@@ -902,9 +902,6 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    CUDTSocket* s = locateSocket(u);
    if (!s)
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-   // This problem should never happen because `srt_listen` function should have
-   // checked this situation before and not set listen state in result. To the user
-   // inform about the invalid state universal way.
 
    CGuard cg(s->m_ControlLock);
 
