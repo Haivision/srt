@@ -1860,7 +1860,7 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
 }
 
 int CUDTUnited::select(
-   ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout)
+   UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
    const steady_clock::time_point entertime = steady_clock::now();
 
@@ -3254,7 +3254,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
 
 int CUDT::sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     mctrl.msgttl = ttl;
@@ -3298,7 +3298,7 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
     return ret;
 }
 
-int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     int ret = recvmsg2(u, buf, len, (mctrl));
@@ -3374,9 +3374,9 @@ int64_t CUDT::recvfile(
 
 int CUDT::select(
    int,
-   ud_set* readfds,
-   ud_set* writefds,
-   ud_set* exceptfds,
+   UDT::UDSET* readfds,
+   UDT::UDSET* writefds,
+   UDT::UDSET* exceptfds,
    const timeval* timeout)
 {
    if ((!readfds) && (!writefds) && (!exceptfds))
@@ -3863,20 +3863,19 @@ int recv(SRTSOCKET u, char* buf, int len, int flags)
 
 int sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
    return CUDT::sendmsg(u, buf, len, ttl, inorder, srctime);
 }
 
-int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
 int recvmsg(SRTSOCKET u, char* buf, int len)
 {
-   uint64_t srctime;
-
+   int64_t srctime;
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
@@ -4129,7 +4128,7 @@ const char* geterror_desc(int code, int err)
    return(e.getErrorMessage());
 }
 
-int bstats(SRTSOCKET u, TRACEBSTATS* perf, bool clear)
+int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
 {
    return CUDT::bstats(u, perf, clear);
 }
