@@ -321,9 +321,7 @@ struct CBytePerfMon
    int      pktRcvUndecryptTotal;       // number of undecrypted packets
    uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
    uint64_t byteRecvTotal;              // total number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLossTotal;           // total number of lost bytes
-#endif
    uint64_t byteRetransTotal;           // total number of retransmitted bytes
    uint64_t byteSndDropTotal;           // number of too-late-to-send dropped bytes
    uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
@@ -353,9 +351,7 @@ struct CBytePerfMon
    int      pktRcvUndecrypt;            // number of undecrypted packets
    uint64_t byteSent;                   // number of sent data bytes, including retransmissions
    uint64_t byteRecv;                   // number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLoss;                // number of retransmitted bytes
-#endif
    uint64_t byteRetrans;                // number of retransmitted bytes
    uint64_t byteSndDrop;                // number of too-late-to-send dropped bytes
    uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)

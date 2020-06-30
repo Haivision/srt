@@ -63,6 +63,11 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
+// You can change this value at build config by using "ENFORCE" options.
+#if !defined(SRT_MAVG_SAMPLING_RATE)
+#define SRT_MAVG_SAMPLING_RATE 40
+#endif
+
 bool AvgBufSize::isTimeToUpdate(const time_point& now) const
 {
     const int      usMAvgBasePeriod = 1000000; // 1s in microseconds
@@ -265,9 +270,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     updateInputRate(time, size, len);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(time);
-#endif
 
     leaveCS(m_BufLock);
 
@@ -597,17 +600,13 @@ void CSndBuffer::ackData(int offset)
 
     m_iCount -= offset;
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(steady_clock::now());
-#endif
 }
 
 int CSndBuffer::getCurrBufSize() const
 {
     return m_iCount;
 }
-
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
@@ -635,8 +634,6 @@ void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
     const int pkts        = getCurrBufSize((bytes), (timespan_ms));
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
-
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
 int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
 {
@@ -684,9 +681,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     // (even if "should remain") is the first after the last removed one.
     w_first_msgno = ++MsgNo(msgno);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(steady_clock::now());
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
     return (dpkts);
 }
@@ -1579,7 +1574,6 @@ int CRcvBuffer::debugGetSize() const
     return size;
 }
 
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
 int CRcvBuffer::getRcvAvgDataSize(int& bytes, int& timespan)
 {
@@ -1603,7 +1597,6 @@ void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
     const int pkts        = getRcvDataSize(bytes, timespan_ms);
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
 /* Return acked data pkts, bytes, and timespan (ms) of the receive buffer */
 int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
