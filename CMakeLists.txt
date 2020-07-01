@@ -735,6 +735,12 @@ set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
 # ---
 # Target: srt. DEFINITION ONLY. Haicrypt flag settings follow.
 # ---
+
+if (ENABLE_SHARED AND MICROSOFT)
+	#add resource files to shared library, to set DLL metadata on Windows DLLs
+	set (EXTRA_WIN32_SHARED 1)
+endif()
+
 MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
 	PUBLIC_HEADERS HEADERS_srt
@@ -759,15 +765,6 @@ add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
 	set_target_properties(srt_virtual PROPERTIES POSITION_INDEPENDENT_CODE 1)
-
-	#add resource files to shared library, to set DLL metadata on Windows DLLs
-	if (MICROSOFT)
-		MafReadDir(srtcore filelist.maf
-			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
-		)
-		
-		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
-	endif()
 endif()
 
 macro(srt_set_stdcxx targetname spec)
@@ -791,7 +788,7 @@ srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt} ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
