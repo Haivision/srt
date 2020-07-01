@@ -1533,7 +1533,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // Finished, delete epoll.
     if (eid != -1)
     {
-        HLOGC(mglog.Debug, log << "connect FIRST IN THE GROUP finished, removing EID " << eid);
+        HLOGC(mglog.Debug, log << "connect FIRST IN THE GROUP finished, removing E" << eid);
         srt_epoll_release(eid);
     }
 
@@ -2110,12 +2110,16 @@ int CUDTUnited::epoll_remove_entity(const int eid, EntityType* ent)
     HLOGC(dlog.Debug, log << "epoll_remove_usock: CLEARING readiness on E" << eid << " of @" << ent->id());
     ent->removeEPollEvents(eid);
 
+    // First remove the EID from the subscribed in the socket so that
+    // a possible call to update_events:
+    // - if happens before this call, can find the epoll bit update possible
+    // - if happens after this call, will not strike this EID
+    HLOGC(dlog.Debug, log << "epoll_remove_usock: REMOVING E" << eid << " from back-subscirbers in @" << ent->id());
+    ent->removeEPollID(eid);
+
     HLOGC(dlog.Debug, log << "epoll_remove_usock: CLEARING subscription on E" << eid << " of @" << ent->id());
     int no_events = 0;
     int ret = m_EPoll.update_usock(eid, ent->id(), &no_events);
-
-    HLOGC(dlog.Debug, log << "epoll_remove_usock: REMOVING E" << eid << " from back-subscirbers in @" << ent->id());
-    ent->removeEPollID(eid);
 
     return ret;
 }
