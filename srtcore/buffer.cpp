@@ -950,17 +950,40 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
     int lastack = m_iLastAckPos;
     int rs      = len;
 
+    int32_t trace_seq ATR_UNUSED = SRT_SEQNO_NONE;
+    int trace_shift ATR_UNUSED = -1;
+
     while ((p != lastack) && (rs > 0))
     {
-        int unitsize = (int)m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-        if (unitsize > rs)
-            unitsize = rs;
+#if ENABLE_LOGGING
+        ++trace_shift;
+#endif
+        // Skip empty units. Note that this shouldn't happen
+        // in case of a file transfer.
+        if (!m_pUnit[p])
+        {
+            p = shiftFwd(p);
+            LOGC(mglog.Error, log << "readBufferToFile: IPE: NULL unit found in file transmission, last good %"
+                    << trace_seq << " + " << trace_shift);
+            continue;
+        }
 
-        ofs.write(m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
+        CPacket& pkt = m_pUnit[p]->m_Packet;
+
+#if ENABLE_LOGGING
+        trace_seq = pkt.getSeqNo();
+#endif
+        int pktlen = pkt.getLength();
+        int remain_pktlen = pktlen - m_iNotch;
+
+        int unitsize = std::min(remain_pktlen, rs);
+
+        ofs.write(pkt.m_pcData + m_iNotch, unitsize);
         if (ofs.fail())
             break;
 
-        if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+        // XXX isn't it then the same as if (rs >= remain_pktlen) ?
+        if ((rs > unitsize) || (rs == remain_pktlen))
         {
             freeUnitAt(p);
 
