@@ -244,8 +244,10 @@ const SocketOption srt_options [] {
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr}
+#ifdef SRT_ENABLE_BINDTODEVICE
+    { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
+#endif
+    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr}
 };
 }
 
