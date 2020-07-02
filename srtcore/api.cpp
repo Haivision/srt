@@ -1850,7 +1850,7 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
 }
 
 int CUDTUnited::select(
-   ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout)
+   UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
    const steady_clock::time_point entertime = steady_clock::now();
 
@@ -3357,9 +3357,9 @@ int64_t CUDT::recvfile(
 
 int CUDT::select(
    int,
-   ud_set* readfds,
-   ud_set* writefds,
-   ud_set* exceptfds,
+   UDT::UDSET* readfds,
+   UDT::UDSET* writefds,
+   UDT::UDSET* exceptfds,
    const timeval* timeout)
 {
    if ((!readfds) && (!writefds) && (!exceptfds))
@@ -4111,7 +4111,7 @@ const char* geterror_desc(int code, int err)
    return(e.getErrorMessage());
 }
 
-int bstats(SRTSOCKET u, TRACEBSTATS* perf, bool clear)
+int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
 {
    return CUDT::bstats(u, perf, clear);
 }

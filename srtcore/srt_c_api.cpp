@@ -116,7 +116,7 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
-    CUDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+    CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
     // Just as a safety precaution, check the structs.
