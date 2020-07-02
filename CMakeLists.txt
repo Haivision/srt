@@ -739,6 +739,7 @@ set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
 if (ENABLE_SHARED AND MICROSOFT)
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
 	set (EXTRA_WIN32_SHARED 1)
+	message(STATUS "WIN32: extra resource file will be added")
 endif()
 
 MafReadDir(srtcore filelist.maf
