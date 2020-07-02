@@ -133,8 +133,8 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::setloglevel(lev);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     // Check verbose option before extracting the argument so that Verb()s
     // can be displayed also when they report something about option parsing.
@@ -183,7 +183,7 @@ int main( int argc, char** argv )
     for (size_t i = 0; i < args.size(); ++i)
     {
         UriParser u(args[i], UriParser::EXPECT_HOST);
-        sockaddr_in sa = CreateAddrInet(u.host(), u.portno());
+        sockaddr_any sa = CreateAddr(u.host(), u.portno());
 
         SRTSOCKET s = srt_create_socket();
 
@@ -191,7 +191,7 @@ int main( int argc, char** argv )
         int gcon = 1;
         srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
 
-        srt_bind(s, (sockaddr*)&sa, sizeof sa);
+        srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 
         listeners.push_back(s);

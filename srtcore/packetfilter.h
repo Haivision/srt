@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__PACKETFILTER_H
-#define INC__PACKETFILTER_H
+#ifndef INC_SRT_PACKETFILTER_H
+#define INC_SRT_PACKETFILTER_H
 
 #include <cstdlib>
 #include <map>

@@ -48,6 +48,28 @@ int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
     return CUDT::configureGroup(socketgroup, str);
 }
+
+SRT_SOCKOPT_CONFIG* srt_create_config()
+{
+    return new SRT_SocketOptionObject;
+}
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
+
+int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
+{
+    if (!config)
+        return -1;
+
+    if (!config->add(option, contents, len))
+        return -1;
+
+    return 0;
+}
+
 // int srt_bind_multicast()
 
 // Binding and connection management
@@ -65,13 +87,13 @@ int srt_connect_bind(SRTSOCKET u,
     return CUDT::connect(u, source, target, target_len);
 }
 
-SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
 {
-    SRT_SOCKGROUPDATA data;
-    data.result = 0;
-    data.status = SRTS_INIT;
+    SRT_SOCKGROUPCONFIG data;
+    data.errorcode = SRT_SUCCESS;
     data.id = -1;
     data.weight = 0;
+    data.config = NULL;
     if (src)
         memcpy(&data.srcaddr, src, namelen);
     else
@@ -85,7 +107,7 @@ SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct 
 }
 
 int srt_connect_group(SRTSOCKET group,
-        SRT_SOCKGROUPDATA name [], int arraysize)
+        SRT_SOCKGROUPCONFIG name [], int arraysize)
 {
     return CUDT::connectLinks(group, name, arraysize);
 }
@@ -94,7 +116,7 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
-    CUDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+    CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
     // Just as a safety precaution, check the structs.
@@ -139,7 +161,7 @@ int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
 int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(SRTSOCKET u, char * buf, int len) { uint64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
+int srt_recvmsg(SRTSOCKET u, char * buf, int len) { int64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
 int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block)
 {
     if (!path || !offset )
@@ -363,6 +385,16 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 uint32_t srt_getversion()
 {
     return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
+}
+
+int64_t srt_time_now()
+{
+    return srt::sync::count_microseconds(srt::sync::steady_clock::now().time_since_epoch());
+}
+
+int64_t srt_connection_time(SRTSOCKET sock)
+{
+    return CUDT::socketStartTime(sock);
 }
 
 }

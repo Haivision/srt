@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 
 #ifdef _WIN32
-#define INC__WIN_WINTIME // exclude gettimeofday from srt headers
+#define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
 #endif
 
 #include "srt.h"

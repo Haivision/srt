@@ -41,6 +41,7 @@
 using namespace std;
 
 using srt_logging::SockStatusStr;
+using srt_logging::MemberStatusStr;
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -265,6 +266,59 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                     cc.weight = stoi(check.queryValue("weight"));
                 }
 
+                if (check.parameters().count("source"))
+                {
+                    UriParser hostport(check.queryValue("source"), UriParser::EXPECT_HOST);
+                    cc.source = CreateAddr(hostport.host(), hostport.portno());
+                }
+
+                // Check if there's a key with 'srto.' prefix.
+
+                UriParser::query_it start = check.parameters().lower_bound("srto.");
+
+                SRT_SOCKOPT_CONFIG* config = nullptr;
+                bool all_clear = true;
+                vector<string> fails;
+                map<string, string> options;
+
+                if (start != check.parameters().end())
+                {
+                    for (; start != check.parameters().end(); ++start)
+                    {
+                        auto& y = *start;
+                        if (y.first.substr(0, 5) != "srto.")
+                            break;
+
+                        options[y.first.substr(5)] = y.second;
+                    }
+                }
+
+                if (!options.empty())
+                {
+                    config = srt_create_config();
+
+                    for (auto o: srt_options)
+                    {
+                        if (!options.count(o.name))
+                            continue;
+                        string value = options.at(o.name);
+                        bool ok = o.apply<SocketOption::SRT>(config, value);
+                        if ( !ok )
+                        {
+                            fails.push_back(o.name);
+                            all_clear = false;
+                        }
+                    }
+
+                    if (!all_clear)
+                    {
+                        srt_delete_config(config);
+                        Error("With //group, failed to set options: " + Printable(fails));
+                    }
+
+                    cc.options = config;
+                }
+
                 m_group_nodes.push_back(cc);
             }
 
@@ -383,10 +437,9 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
     }
 
-    sockaddr_in sa = CreateAddrInet(host, port);
-    sockaddr* psa = (sockaddr*)&sa;
+    auto sa = CreateAddr(host, port);
     Verb() << "Binding a server on " << host << ":" << port << " ...";
-    stat = srt_bind(m_bindsock, psa, sizeof sa);
+    stat = srt_bind(m_bindsock, sa.get(), sizeof sa);
     if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
@@ -434,12 +487,11 @@ void SrtCommon::StealFrom(SrtCommon& src)
 
 void SrtCommon::AcceptNewClient()
 {
-    sockaddr_in scl;
-    int sclen = sizeof scl;
+    sockaddr_any scl;
 
     Verb() << " accept..." << VerbNoEOL;
 
-    m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
+    m_sock = srt_accept(m_bindsock, (scl.get()), (&scl.len));
     if (m_sock == SRT_INVALID_SOCK)
     {
         srt_close(m_bindsock);
@@ -484,7 +536,21 @@ void SrtCommon::AcceptNewClient()
     }
     else
     {
-        Verb() << " connected.";
+        sockaddr_any peeraddr(AF_INET6);
+        string peer = "<?PEER?>";
+        if (-1 != srt_getpeername(m_sock, (peeraddr.get()), (&peeraddr.len)))
+        {
+            peer = SockaddrToString(peeraddr);
+        }
+
+        sockaddr_any agentaddr(AF_INET6);
+        string agent = "<?AGENT?>";
+        if (-1 != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
+        {
+            agent = SockaddrToString(agentaddr);
+        }
+
+        Verb() << " connected [" << agent << "] <-- " << peer;
     }
     ::transmit_throw_on_interrupt = false;
 
@@ -710,9 +776,8 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
-    sockaddr_in localsa = CreateAddrInet(host, port);
-    sockaddr* psa = (sockaddr*)&localsa;
-    int stat = srt_bind(m_sock, psa, sizeof localsa);
+    auto lsa = CreateAddr(host, port);
+    int stat = srt_bind(m_sock, lsa.get(), sizeof lsa);
     if (stat == SRT_ERROR)
         Error("srt_bind");
 }
@@ -804,25 +869,30 @@ void SrtCommon::OpenGroupClient()
     if (m_group_data.empty())
         m_group_data.resize(1);
 
-    vector<SRT_SOCKGROUPDATA> targets;
-    int namelen = sizeof (sockaddr_in);
+    vector<SRT_SOCKGROUPCONFIG> targets;
+    int namelen = sizeof (sockaddr_any);
 
     Verb() << "Connecting to nodes:";
     int i = 1;
     for (Connection& c: m_group_nodes)
     {
-        sockaddr_in sa = CreateAddrInet(c.host, c.port);
-        sockaddr* psa = (sockaddr*)&sa;
+        auto sa = CreateAddr(c.host, c.port);
         Verb() << "\t[" << i << "] " << c.host << ":" << c.port
             << "?weight=" << c.weight
             << " ... " << VerbNoEOL;
         ++i;
-        SRT_SOCKGROUPDATA gd = srt_prepare_endpoint(NULL, psa, namelen);
+        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, sa.get(), namelen);
         gd.weight = c.weight;
+        gd.config = c.options;
         targets.push_back(gd);
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+
+    // Delete config objects before prospective exception
+    for (auto& gd: targets)
+        srt_delete_config(gd.config);
+
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");
@@ -838,7 +908,7 @@ void SrtCommon::OpenGroupClient()
         // one index can be used to index them all. You don't
         // have to check if they have equal addresses because they
         // are equal by definition.
-        if (targets[i].id != -1 && targets[i].status < SRTS_BROKEN)
+        if (targets[i].id != -1 && targets[i].errorcode == SRT_SUCCESS)
         {
             m_group_nodes[i].socket = targets[i].id;
         }
@@ -899,7 +969,7 @@ void SrtCommon::OpenGroupClient()
     for (auto& d: m_group_data)
     {
         // id, status, result, peeraddr
-        Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
+        Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
             << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
     }
 
@@ -974,10 +1044,9 @@ void SrtCommon::OpenGroupClient()
 
 void SrtCommon::ConnectClient(string host, int port)
 {
-    sockaddr_in sa = CreateAddrInet(host, port);
-    sockaddr* psa = (sockaddr*)&sa;
+    auto sa = CreateAddr(host, port);
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
-    int stat = srt_connect(m_sock, psa, sizeof sa);
+    int stat = srt_connect(m_sock, sa.get(), sizeof sa);
     if (stat == SRT_ERROR)
     {
         int reason = srt_getrejectreason(m_sock);
@@ -1061,10 +1130,9 @@ void SrtCommon::SetupRendezvous(string adapter, int port)
 
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    sockaddr_in localsa = CreateAddrInet(adapter, outport);
-    sockaddr* plsa = (sockaddr*)&localsa;
+    auto localsa = CreateAddr(adapter, outport);
     Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
-    int stat = srt_bind(m_sock, plsa, sizeof localsa);
+    int stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {
         srt_close(m_sock);
@@ -1136,17 +1204,19 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         const SRT_SOCKGROUPDATA& d = grpdata[i];
         SRTSOCKET id = d.id;
 
-        SRT_SOCKSTATUS status = d.status;
+        SRT_SOCKSTATUS status = d.sockstate;
         int result = d.result;
+        SRT_MEMBERSTATUS mstatus = d.memberstate;
 
         if (result != -1 && status == SRTS_CONNECTED)
         {
-            // Everything's ok. Don't do anything.
+            // Short report with the state.
+            Verb() << "G@" << id << "<" << MemberStatusStr(mstatus) << "> " << VerbNoEOL;
             continue;
         }
         // id, status, result, peeraddr
-        Verb() << "GROUP SOCKET: @" << id << " <" << SockStatusStr(status) << "> (=" << result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+        Verb() << "\n\tG@" << id << " <" << SockStatusStr(status) << "/" << MemberStatusStr(mstatus) << "> (=" << result << ") PEER:"
+            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr)) << VerbNoEOL;
 
         if (status >= SRTS_BROKEN)
         {
@@ -1164,12 +1234,11 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         if (n.socket != SRT_INVALID_SOCK)
             continue;
 
-        sockaddr_in sa = CreateAddrInet(n.host, n.port);
-        sockaddr* psa = (sockaddr*)&sa;
+        auto sa = CreateAddr(n.host, n.port);
         Verb() << "[" << i << "] RECONNECTING to node " << n.host << ":" << n.port << " ... " << VerbNoEOL;
         ++i;
 
-        int insock = srt_connect(m_sock, psa, sizeof sa);
+        int insock = srt_connect(m_sock, sa.get(), sa.size());
         if (insock == SRT_ERROR)
         {
             // Whatever. Skip the node.
@@ -2096,7 +2165,7 @@ void SrtModel::Establish(std::string& w_name)
         if (w_name != "")
         {
             Verb() << "Connect with requesting stream [" << w_name << "]";
-            UDT::setstreamid(m_sock, w_name);
+            srt::setstreamid(m_sock, w_name);
         }
         else
         {
@@ -2240,7 +2309,7 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_in sadr;
+    sockaddr_any sadr;
     string adapter;
     map<string, string> m_options;
 
@@ -2253,98 +2322,100 @@ protected:
         int yes = 1;
         ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
 
-        sadr = CreateAddrInet(host, port);
+        sadr = CreateAddr(host, port);
 
         bool is_multicast = false;
-
-        if (attr.count("multicast"))
+        if (sadr.family() == AF_INET)
         {
-            if (!IsMulticast(sadr.sin_addr))
+            if (attr.count("multicast"))
             {
-                throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
+                if (!IsMulticast(sadr.sin.sin_addr))
+                {
+                    throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
+                }
+                is_multicast = true;
             }
-            is_multicast = true;
-        }
-        else if (IsMulticast(sadr.sin_addr))
-        {
-            is_multicast = true;
-        }
-
-        if (is_multicast)
-        {
-            ip_mreq_source mreq_ssm;
-            ip_mreq mreq;
-            sockaddr_in maddr;
-            int opt_name;
-            void* mreq_arg_ptr;
-            socklen_t mreq_arg_size;
-
-            adapter = attr.count("adapter") ? attr.at("adapter") : string();
-            if (adapter == "")
+            else if (IsMulticast(sadr.sin.sin_addr))
             {
-                Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin_family = AF_INET;
-                maddr.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin_port = htons(port); // necessary for temporary use
-            }
-            else
-            {
-                Verb() << "Multicast: home address: " << adapter << ":" << port;
-                maddr = CreateAddrInet(adapter, port);
+                is_multicast = true;
             }
 
-            if (attr.count("source"))
+            if (is_multicast)
             {
-                /* this is an ssm.  we need to use the right struct and opt */
-                opt_name = IP_ADD_SOURCE_MEMBERSHIP;
-                mreq_ssm.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
-                mreq_ssm.imr_interface.s_addr = maddr.sin_addr.s_addr;
-                inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
-                mreq_arg_size = sizeof(mreq_ssm);
-                mreq_arg_ptr = &mreq_ssm;
-            }
-            else
-            {
-                opt_name = IP_ADD_MEMBERSHIP;
-                mreq.imr_multiaddr.s_addr = sadr.sin_addr.s_addr;
-                mreq.imr_interface.s_addr = maddr.sin_addr.s_addr;
-                mreq_arg_size = sizeof(mreq);
-                mreq_arg_ptr = &mreq;
-            }
+                ip_mreq_source mreq_ssm;
+                ip_mreq mreq;
+                sockaddr_any maddr;
+                int opt_name;
+                void* mreq_arg_ptr;
+                socklen_t mreq_arg_size;
+
+                adapter = attr.count("adapter") ? attr.at("adapter") : string();
+                if (adapter == "")
+                {
+                    Verb() << "Multicast: home address: INADDR_ANY:" << port;
+                    maddr.sin.sin_family = AF_INET;
+                    maddr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
+                    maddr.sin.sin_port = htons(port); // necessary for temporary use
+                }
+                else
+                {
+                    Verb() << "Multicast: home address: " << adapter << ":" << port;
+                    maddr = CreateAddr(adapter, port);
+                }
+
+                if (attr.count("source"))
+                {
+                    /* this is an ssm.  we need to use the right struct and opt */
+                    opt_name = IP_ADD_SOURCE_MEMBERSHIP;
+                    mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
+                    mreq_ssm.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                    inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
+                    mreq_arg_size = sizeof(mreq_ssm);
+                    mreq_arg_ptr = &mreq_ssm;
+                }
+                else
+                {
+                    opt_name = IP_ADD_MEMBERSHIP;
+                    mreq.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
+                    mreq.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                    mreq_arg_size = sizeof(mreq);
+                    mreq_arg_ptr = &mreq;
+                }
 
 #ifdef _WIN32
-            const char* mreq_arg = (const char*)mreq_arg_ptr;
-            const auto status_error = SOCKET_ERROR;
+                const char* mreq_arg = (const char*)mreq_arg_ptr;
+                const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = mreq_arg_ptr;
-            const auto status_error = -1;
+                const void* mreq_arg = mreq_arg_ptr;
+                const auto status_error = -1;
 #endif
 
 #if defined(_WIN32) || defined(__CYGWIN__)
-            // On Windows it somehow doesn't work when bind()
-            // is called with multicast address. Write the address
-            // that designates the network device here.
-            // Also, sets port sharing when working with multicast
-            sadr = maddr;
-            int reuse = 1;
-            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
-            if (shareAddrRes == status_error)
-            {
-                throw runtime_error("marking socket for shared use failed");
-            }
-            Verb() << "Multicast(Windows): will bind to home address";
+                // On Windows it somehow doesn't work when bind()
+                // is called with multicast address. Write the address
+                // that designates the network device here.
+                // Also, sets port sharing when working with multicast
+                sadr = maddr;
+                int reuse = 1;
+                int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+                if (shareAddrRes == status_error)
+                {
+                    throw runtime_error("marking socket for shared use failed");
+                }
+                Verb() << "Multicast(Windows): will bind to home address";
 #else
-            Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
+                Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
 #endif
-            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
+                int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
 
-            if (res == status_error)
-            {
-                Error(errno, "adding to multicast membership failed");
+                if (res == status_error)
+                {
+                    Error(errno, "adding to multicast membership failed");
+                }
+
+                attr.erase("multicast");
+                attr.erase("adapter");
             }
-
-            attr.erase("multicast");
-            attr.erase("adapter");
         }
 
         // The "ttl" options is handled separately, it maps to both IP_TTL
@@ -2454,8 +2525,8 @@ public:
         Setup(host, port, attr);
         if (adapter != "")
         {
-            sockaddr_in maddr = CreateAddrInet(adapter, 0);
-            in_addr addr = maddr.sin_addr;
+            auto maddr = CreateAddr(adapter, 0);
+            in_addr addr = maddr.sin.sin_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
             if (res == -1)

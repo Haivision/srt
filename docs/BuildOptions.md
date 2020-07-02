@@ -12,7 +12,7 @@ The `cmake` build system was tested on the following platforms:
  - Linux (various flavors)
  - macOS (see this [separate document](build_iOS.md))
  - Windows with MinGW
- - Windows with Microsoft Visual Studio
+ - Windows with Microsoft Visual Studio (see this [separate document](build-win.md))
  - Android (see this [separate document](Android/Compiling.md))
  - Cygwin (only for testing)
 
@@ -187,65 +187,10 @@ stuck if the system clock is modified during an SRT transmission. This option
 will be removed when the problem is fixed globally.
 
 
-**`--enable-pktinfo`** (default: OFF)
+**`--enable-stdcxx-sync`** (default: OFF)
 
-This option allows the extraction of a target IP address from incoming
-UDP packets and the forceful setting of the source IP address in outgoing
-UDP packets. This ensures that if a packet comes in from a peer that requests a
-new connection, the agent will respond with a UDP packet that has the
-same source IP address as the one to which the peer is trying to connect.
-
-When this option is OFF (default), the source IP address in an outgoing 
-UDP packet will be set automatically the following way:
-
-* For a given destination IP address in the UDP packet to be sent, find
-the routing table entry that matches this address, then get its network device
-and configured network broadcast address
-
-* Set the **first** local IP address that matches the broadcast
-address found above as the source IP address for this UDP packet.
-
-Example: Let's say you have the following local IP addresses:
-
-* 192.168.10.11: broadcast 192.168.10.0
-* 10.0.1.15: broadcast 10.0.1.0
-* 10.0.1.20: broadcast 10.0.1.0
-
-When a caller is contacting this first address (no matter where it came from), 
-the response packet will be sent back to this address. The route path will use 
-this first address as well, so the source IP address will be 192.168.10.11, same as
-the one that was contacted.
-
-If the caller handshake packet comes from the address that matches the 10.0.1.0 
-broadcast (which is common to the second and third addresses), and the target 
-address is 10.0.1.20, the response packet will be sent back to this address over 
-the network assigned to the 10.0.1.0 broadcast. But the source address will then 
-be 10.0.1.15 because it is the first local address assigned to the route path.
-
-When this happens, the caller peer will see a mismatch between the source 
-10.0.1.15 address and the address it tried to contact (i.e. 10.0.1.20). It will 
-be treated as an attack attempt and rejected.
-
-This problem can be slightly mitigated by binding the listening socket to a 
-specific address. So, if you bind it to 10.0.1.20 in the above example, then 
-wherever you try to send a packet over that socket it will always have the 
-source address 10.0.1.20 (and the fix provided by this option will also not 
-apply in this case). However, this problem still exists if the listener socket 
-is bound to the "whole machine" (i.e. set to "any" address).
-
-When this option is ON, a mechanism is added to forcefully set the source
-IP address in such a response packet (e.g. to 10.0.1.20 in the above example).
-This address is first extracted from the incoming packet as the
-target address, which fixes the problem, as this will be interpreted by
-the caller peer correctly.
-
-This feature is turned off by default because the impact on performance is 
-currently unknown. The problem is that it causes the CMSG information to be read 
-from (and set on) every packet when a socket is bound to "any" address. The 
-CMSG information will effectively be extracted from every incoming packet, as 
-long as the socket, through which it is sent or received, is not bound to a
-specific address, including data packets coming in within the frames of an
-existing connection.
+This option enables the standard C++ `thread` and `chrono` libraries (available since C++11)
+to be used by SRT instead of the `pthreads`.
 
 
 **`--enable-profile`** (default: OFF)
@@ -356,6 +301,9 @@ usage would still be productive, while without system-supported waiting this
 option may increase the likelihood of switching to the right thread at the time
 when it is expected to be revived.
 
+**`--use-c++-std=<standard>`**
+
+
 
 **`--use-gnustl`**
 
@@ -426,4 +374,26 @@ respectively:
 This should be the exact command used as a C compiler, possibly with
 version suffix, e.g. `clang-1.7.0`. If this option is used together
 with `--with-compiler-prefix`, its prefix will be added in front.
+
+**`--with-extralibs=<library-list>`**
+
+This is an option required for unusual situations when a platform-specific
+workaround is needed and some extra libraries must be passed explicitly
+for linkage. The argument is a space-separated list of linker options
+or library names.
+
+There are some known sitautions where it may be necessary:
+
+1. Some older Linux systems do not ship `clock_gettime` functions by
+default in their libc, and need an extra librt. If you are using POSIX
+monotonic clocks (see `--enable-monotonic-clock`), this might be required
+to add `-lrd` through this option. Although this situation is tried to
+be autodetected and this option added automatically, it might sometimes fail.
+
+2. On some systems (found so far on OpenSuSE), if you use C++11 sync
+(see `--enable-stdc++-sync`), the gcc compiler relies on gthreads, which
+relies on pthreads, and happens to define inline source functions in
+the header that refers to `pthread_create`, the compiler however doesn't
+link against pthreads by default. To work this around, add `-pthreads`
+using this option.
 

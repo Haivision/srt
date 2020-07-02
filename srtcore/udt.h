@@ -64,8 +64,8 @@ modified by
  * file doesn't contain _FUNCTIONS_ predicted to be used in C - see udtc.h
  */
 
-#ifndef __UDT_H__
-#define __UDT_H__
+#ifndef INC_SRT_UDT_H
+#define INC_SRT_UDT_H
 
 #include "srt.h"
 
@@ -97,9 +97,6 @@ modified by
 #endif
 
 
-// Legacy/backward/deprecated
-#define UDT_API SRT_API
-
 ////////////////////////////////////////////////////////////////////////////////
 
 //if compiling on VC6.0 or pre-WindowsXP systems
@@ -107,83 +104,6 @@ modified by
 
 //if compiling with MinGW, it only works on XP or above
 //use -D_WIN32_WINNT=0x0501
-
-
-////////////////////////////////////////////////////////////////////////////////
-
-#ifdef __cplusplus
-// This facility is used only for select() function.
-// This is considered obsolete and the epoll() functionality rather should be used.
-typedef std::set<SRTSOCKET> ud_set;
-#define UD_CLR(u, uset) ((uset)->erase(u))
-#define UD_ISSET(u, uset) ((uset)->find(u) != (uset)->end())
-#define UD_SET(u, uset) ((uset)->insert(u))
-#define UD_ZERO(uset) ((uset)->clear())
-#endif
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Legacy names
-
-#define UDT_MSS SRTO_MSS
-#define UDT_SNDSYN SRTO_SNDSYN
-#define UDT_RCVSYN SRTO_RCVSYN
-#define UDT_FC SRTO_FC
-#define UDT_SNDBUF SRTO_SNDBUF
-#define UDT_RCVBUF SRTO_RCVBUF
-#define UDT_LINGER SRTO_LINGER
-#define UDP_SNDBUF SRTO_UDP_SNDBUF
-#define UDP_RCVBUF SRTO_UDP_RCVBUF
-#define UDT_MAXMSG SRTO_MAXMSG
-#define UDT_MSGTTL SRTO_MSGTTL
-#define UDT_RENDEZVOUS SRTO_RENDEZVOUS
-#define UDT_SNDTIMEO SRTO_SNDTIMEO
-#define UDT_RCVTIMEO SRTO_RCVTIMEO
-#define UDT_REUSEADDR SRTO_REUSEADDR
-#define UDT_MAXBW SRTO_MAXBW
-#define UDT_STATE SRTO_STATE
-#define UDT_EVENT SRTO_EVENT
-#define UDT_SNDDATA SRTO_SNDDATA
-#define UDT_RCVDATA SRTO_RCVDATA
-#define SRT_SENDER SRTO_SENDER
-#define SRT_TSBPDMODE SRTO_TSBPDMODE
-#define SRT_TSBPDDELAY SRTO_TSBPDDELAY
-#define SRT_INPUTBW SRTO_INPUTBW
-#define SRT_OHEADBW SRTO_OHEADBW
-#define SRT_PASSPHRASE SRTO_PASSPHRASE
-#define SRT_PBKEYLEN SRTO_PBKEYLEN
-#define SRT_KMSTATE SRTO_KMSTATE
-#define SRT_IPTTL SRTO_IPTTL
-#define SRT_IPTOS SRTO_IPTOS
-#define SRT_TLPKTDROP SRTO_TLPKTDROP
-#define SRT_TSBPDMAXLAG SRTO_TSBPDMAXLAG
-#define SRT_RCVNAKREPORT SRTO_NAKREPORT
-#define SRT_CONNTIMEO SRTO_CONNTIMEO
-#define SRT_SNDPBKEYLEN SRTO_SNDPBKEYLEN
-#define SRT_RCVPBKEYLEN SRTO_RCVPBKEYLEN
-#define SRT_SNDPEERKMSTATE SRTO_SNDPEERKMSTATE
-#define SRT_RCVKMSTATE SRTO_RCVKMSTATE
-
-#define UDT_EPOLL_OPT SRT_EPOLL_OPT
-#define UDT_EPOLL_IN SRT_EPOLL_IN
-#define UDT_EPOLL_OUT SRT_EPOLL_OUT
-#define UDT_EPOLL_ERR SRT_EPOLL_ERR
-
-/* Binary backward compatibility obsolete options */
-#define SRT_NAKREPORT   SRT_RCVNAKREPORT
-
-#if !defined(SRT_DISABLE_LEGACY_UDTSTATUS)
-#define UDTSTATUS    SRT_SOCKSTATUS
-#define INIT         SRTS_INIT
-#define OPENED       SRTS_OPENED
-#define LISTENING    SRTS_LISTENING
-#define CONNECTING   SRTS_CONNECTING
-#define CONNECTED    SRTS_CONNECTED
-#define BROKEN       SRTS_BROKEN
-#define CLOSING      SRTS_CLOSING
-#define CLOSED       SRTS_CLOSED
-#define NONEXIST     SRTS_NONEXIST
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -243,75 +163,68 @@ namespace UDT
 
 typedef CUDTException ERRORINFO;
 typedef CPerfMon TRACEINFO;
-typedef struct CBytePerfMon TRACEBSTATS;
-typedef ud_set UDSET;
 
-UDT_API extern const SRTSOCKET INVALID_SOCK;
+// This facility is used only for select() function.
+// This is considered obsolete and the epoll() functionality rather should be used.
+typedef std::set<SRTSOCKET> UDSET;
+#define UD_CLR(u, uset) ((uset)->erase(u))
+#define UD_ISSET(u, uset) ((uset)->find(u) != (uset)->end())
+#define UD_SET(u, uset) ((uset)->insert(u))
+#define UD_ZERO(uset) ((uset)->clear())
+
+SRT_API extern const SRTSOCKET INVALID_SOCK;
 #undef ERROR
-UDT_API extern const int ERROR;
+SRT_API extern const int ERROR;
 
-UDT_API int startup();
-UDT_API int cleanup();
-UDT_API UDTSOCKET socket();
-inline UDTSOCKET socket(int , int , int ) { return socket(); }
-UDT_API int bind(UDTSOCKET u, const struct sockaddr* name, int namelen);
-UDT_API int bind2(UDTSOCKET u, UDPSOCKET udpsock);
-UDT_API int listen(UDTSOCKET u, int backlog);
-UDT_API UDTSOCKET accept(UDTSOCKET u, struct sockaddr* addr, int* addrlen);
-UDT_API int connect(UDTSOCKET u, const struct sockaddr* name, int namelen);
-UDT_API int close(UDTSOCKET u);
-UDT_API int getpeername(UDTSOCKET u, struct sockaddr* name, int* namelen);
-UDT_API int getsockname(UDTSOCKET u, struct sockaddr* name, int* namelen);
-UDT_API int getsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
-UDT_API int setsockopt(UDTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
-UDT_API int send(UDTSOCKET u, const char* buf, int len, int flags);
-UDT_API int recv(UDTSOCKET u, char* buf, int len, int flags);
+SRT_API int startup();
+SRT_API int cleanup();
+SRT_API SRTSOCKET socket();
+inline SRTSOCKET socket(int , int , int ) { return socket(); }
+SRT_API int bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API int bind2(SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API int listen(SRTSOCKET u, int backlog);
+SRT_API SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
+SRT_API int connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API int close(SRTSOCKET u);
+SRT_API int getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API int getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+SRT_API int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
+SRT_API int send(SRTSOCKET u, const char* buf, int len, int flags);
+SRT_API int recv(SRTSOCKET u, char* buf, int len, int flags);
 
-UDT_API int sendmsg(UDTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, uint64_t srctime = 0);
-UDT_API int recvmsg(UDTSOCKET u, char* buf, int len, uint64_t& srctime);
-UDT_API int recvmsg(UDTSOCKET u, char* buf, int len);
+SRT_API int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = -1, bool inorder = false, int64_t srctime = 0);
+SRT_API int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime);
+SRT_API int recvmsg(SRTSOCKET u, char* buf, int len);
 
-UDT_API int64_t sendfile(UDTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
-UDT_API int64_t recvfile(UDTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
-UDT_API int64_t sendfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 364000);
-UDT_API int64_t recvfile2(UDTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 7280000);
+SRT_API int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = 364000);
+SRT_API int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = 7280000);
+SRT_API int64_t sendfile2(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 364000);
+SRT_API int64_t recvfile2(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block = 7280000);
 
 // select and selectEX are DEPRECATED; please use epoll. 
-UDT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, const struct timeval* timeout);
-UDT_API int selectEx(const std::vector<UDTSOCKET>& fds, std::vector<UDTSOCKET>* readfds,
-                     std::vector<UDTSOCKET>* writefds, std::vector<UDTSOCKET>* exceptfds, int64_t msTimeOut);
+SRT_API int select(int nfds, UDSET* readfds, UDSET* writefds, UDSET* exceptfds, const struct timeval* timeout);
+SRT_API int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds,
+                     std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
 
-UDT_API int epoll_create();
-UDT_API int epoll_add_usock(int eid, UDTSOCKET u, const int* events = NULL);
-UDT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-UDT_API int epoll_remove_usock(int eid, UDTSOCKET u);
-UDT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
-UDT_API int epoll_update_usock(int eid, UDTSOCKET u, const int* events = NULL);
-UDT_API int epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-UDT_API int epoll_wait(int eid, std::set<UDTSOCKET>* readfds, std::set<UDTSOCKET>* writefds, int64_t msTimeOut,
+SRT_API int epoll_create();
+SRT_API int epoll_add_usock(int eid, SRTSOCKET u, const int* events = NULL);
+SRT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
+SRT_API int epoll_remove_usock(int eid, SRTSOCKET u);
+SRT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
+SRT_API int epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
+SRT_API int epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
+SRT_API int epoll_wait(int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut,
                        std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
-UDT_API int epoll_wait2(int eid, UDTSOCKET* readfds, int* rnum, UDTSOCKET* writefds, int* wnum, int64_t msTimeOut,
+SRT_API int epoll_wait2(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                         SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
-UDT_API int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
-UDT_API int epoll_release(int eid);
-UDT_API ERRORINFO& getlasterror();
-UDT_API int getlasterror_code();
-UDT_API const char* getlasterror_desc();
-UDT_API int bstats(UDTSOCKET u, TRACEBSTATS* perf, bool clear = true);
-UDT_API SRT_SOCKSTATUS getsockstate(UDTSOCKET u);
-
-// This is a C++ SRT API extension. This is not a part of legacy UDT API.
-UDT_API void setloglevel(srt_logging::LogLevel::type ll);
-UDT_API void addlogfa(srt_logging::LogFA fa);
-UDT_API void dellogfa(srt_logging::LogFA fa);
-UDT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
-UDT_API void resetlogfa(const int* fara, size_t fara_size);
-UDT_API void setlogstream(std::ostream& stream);
-UDT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
-UDT_API void setlogflags(int flags);
-
-UDT_API bool setstreamid(UDTSOCKET u, const std::string& sid);
-UDT_API std::string getstreamid(UDTSOCKET u);
+SRT_API int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+SRT_API int epoll_release(int eid);
+SRT_API ERRORINFO& getlasterror();
+SRT_API int getlasterror_code();
+SRT_API const char* getlasterror_desc();
+SRT_API int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear = true);
+SRT_API SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
 
 }  // namespace UDT
 
@@ -321,7 +234,47 @@ UDT_API std::string getstreamid(UDTSOCKET u);
 // own logger FA objects, or create their own. The object of this type
 // is required to initialize the logger FA object.
 namespace srt_logging { struct LogConfig; }
-UDT_API extern srt_logging::LogConfig srt_logger_config;
+SRT_API extern srt_logging::LogConfig srt_logger_config;
+
+namespace srt
+{
+
+// This is a C++ SRT API extension. This is not a part of legacy UDT API.
+SRT_API void setloglevel(srt_logging::LogLevel::type ll);
+SRT_API void addlogfa(srt_logging::LogFA fa);
+SRT_API void dellogfa(srt_logging::LogFA fa);
+SRT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
+SRT_API void resetlogfa(const int* fara, size_t fara_size);
+SRT_API void setlogstream(std::ostream& stream);
+SRT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
+SRT_API void setlogflags(int flags);
+
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
+
+// Namespace alias
+namespace logging {
+    using namespace srt_logging;
+}
+
+}
+
+// Planned deprecated removal: rel1.6.0
+// There's also no portable way possible to enforce a deprecation
+// compiler warning, so leaving as is.
+namespace UDT
+{
+    // Backward-compatible aliases, just for a case someone was using it.
+    using srt::setloglevel;
+    using srt::addlogfa;
+    using srt::dellogfa;
+    using srt::resetlogfa;
+    using srt::setlogstream;
+    using srt::setloghandler;
+    using srt::setlogflags;
+    using srt::setstreamid;
+    using srt::getstreamid;
+}
 
 
 #endif /* __cplusplus */
