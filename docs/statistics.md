@@ -22,91 +22,91 @@ There are three types of statistics:
 - **Instantaneous:** the statistic is obtained at the moment the `srt_bistats()` function is called, e.g., [msRTT](#msRTT), etc.
 
 
-| Statistic                                           | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
-| --------------------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
-| [msTimeStamp](#msTimeStamp)                         | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
-| [pktSentTotal](#pktSentTotal)                       | accumulated       | packets             | ✓                    | -                      | int64_t   |
-| [pktRecvTotal](#pktRecvTotal)                       | accumulated       | packets             | -                    | ✓                      | int64_t   |
-| [pktSentUniqueTotal](#pktSentUniqueTotal)           | accumulated       | packets             | ✓                    | -                      | int64_t   |
-| [pktRecvUniqueTotal](#pktRecvUniqueTotal)           | accumulated       | packets             | -                    | ✓                      | int64_t   |
-| [pktSndLossTotal](#pktSndLossTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvLossTotal](#pktRcvLossTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRetransTotal](#pktRetransTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvRetransTotal](#pktRcvRetransTotal)           | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktSentACKTotal](#pktSentACKTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRecvACKTotal](#pktRecvACKTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [pktSentNAKTotal](#pktSentNAKTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRecvNAKTotal](#pktRecvNAKTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [usSndDurationTotal](#usSndDurationTotal)           | accumulated       | us (microseconds)   | ✓                    | -                      | int64_t   |
-| [pktSndDropTotal](#pktSndDropTotal)                 | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvDropTotal](#pktRcvDropTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)       | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktSndFilterExtraTotal](#pktSndFilterExtraTotal)   | accumulated       | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)   | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal) | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvFilterLossTotal](#pktRcvFilterLossTotal)     | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [byteSentTotal](#byteSentTotal)                     | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRecvTotal](#byteRecvTotal)                     | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
-| [byteSentUniqueTotal](#byteSentUniqueTotal)         | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRecvUniqueTotal](#byteRecvUniqueTotal)         | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRcvLossTotal](#byteRcvLossTotal)               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRetransTotal](#byteRetransTotal)               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
-| [byteSndDropTotal](#byteSndDropTotal)               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRcvDropTotal](#byteRcvDropTotal)               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRcvUndecryptTotal](#byteRcvUndecryptTotal)     | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
-| [pktSent](#pktSent)                                 | interval-based    | packets             | ✓                    | -                      | int64_t   |
-| [pktRecv](#pktRecv)                                 | interval-based    | packets             | -                    | ✓                      | int64_t   |
-| [pktSentUnique](#pktSentUnique)                     | interval-based    | packets             | ✓                    | -                      | int64_t   |
-| [pktRecvUnique](#pktRecvUnique)                     | interval-based    | packets             | -                    | ✓                      | int64_t   |
-| [pktSndLoss](#pktSndLoss)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvLoss](#pktRcvLoss)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRetrans](#pktRetrans)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvRetrans](#pktRcvRetrans)                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktSentACK](#pktSentACK)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRecvACK](#pktRecvACK)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktSentNAK](#pktSentNAK)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRecvNAK](#pktRecvNAK)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktSndFilterExtra](#pktSndFilterExtra)             | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvFilterExtra](#pktRcvFilterExtra)             | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvFilterSupply](#pktRcvFilterSupply)           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvFilterLoss](#pktRcvFilterLoss)               | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [mbpsSendRate](#mbpsSendRate)                       | interval-based    | Mbps                | ✓                    | -                      | double    |
-| [mbpsRecvRate](#mbpsRecvRate)                       | interval-based    | Mbps                | -                    | ✓                      | double    |
-| [usSndDuration](#usSndDuration)                     | interval-based    | us (microseconds)   | ✓                    | -                      | int64_t   |
-| [pktReorderDistance](#pktReorderDistance)           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktReorderTolerance](#pktReorderTolerance)         | interval-based    |                     |                      |                        | int32_t   |
-| [pktRcvAvgBelatedTime](#pktRcvAvgBelatedTime)       |                   |                     |                      |                        | double    |
-| [pktRcvBelated](#pktRcvBelated)                     |                   |                     |                      |                        | int64_t   |
-| [pktSndDrop](#pktSndDrop)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
-| [pktRcvDrop](#pktRcvDrop)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvUndecrypt](#pktRcvUndecrypt)                 | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [byteSent](#byteSent)                               | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRecv](#byteRecv)                               | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| [byteSentUnique](#byteSentUnique)                   | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRecvUnique](#byteRecvUnique)                   | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRcvLoss](#byteRcvLoss)                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRetrans](#byteRetrans)                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
-| [byteSndDrop](#byteSndDrop)                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
-| [byteRcvDrop](#byteRcvDrop)                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| [byteRcvUndecrypt](#byteRcvUndecrypt)               | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
-| [usPktSndPeriod](#usPktSndPeriod)                   | instantaneous     | us (microseconds)   | ✓                    | -                      | double    |
-| [pktFlowWindow](#pktFlowWindow)                     | instantaneous     | packets             | ✓                    | -                      | int32_t   |
-| [pktCongestionWindow](#pktCongestionWindow)         | instantaneous     | packets             | ✓                    | -                      | int32_t   |
-| [pktFlightSize](#pktFlightSize)                     | instantaneous     | packets             | ✓                    | -                      | int32_t   |
-| [msRTT](#msRTT)                                     | instantaneous     | ms (milliseconds)   | ✓                    | ✓                      | double    |
-| [mbpsBandwidth](#mbpsBandwidth)                     | instantaneous     | Mbps                | ✓                    | ✓                      | double    |
-| [byteAvailSndBuf](#byteAvailSndBuf)                 | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
-| [byteAvailRcvBuf](#byteAvailRcvBuf)                 | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
-| [mbpsMaxBW](#mbpsMaxBW)                             | instantaneous     | Mbps                | ✓                    | -                      | double    |
-| [byteMSS](#byteMSS)                                 | instantaneous     | bytes               | ✓                    | ✓                      | int32_t   |
-| [pktSndBuf](#pktSndBuf)                             | instantaneous     | packets             | ✓                    | -                      | int32_t   |
-| [byteSndBuf](#byteSndBuf)                           | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
-| [msSndBuf](#msSndBuf)                               | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
-| [msSndTsbPdDelay](#msSndTsbPdDelay)                 | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
-| [pktRcvBuf](#pktRcvBuf)                             | instantaneous     | packets             | -                    | ✓                      | int32_t   |
-| [byteRcvBuf](#byteRcvBuf)                           | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
-| [msRcvBuf](#msRcvBuf)                               | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
-| [msRcvTsbPdDelay](#msRcvTsbPdDelay)                 | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
+| Statistic                                                     | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
+| ------------------------------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
+| [msTimeStamp](#msTimeStamp)                                   | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
+| [pktSentTotal](#pktSentTotal)                                 | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvTotal](#pktRecvTotal)                                 | accumulated       | packets             | -                    | ✓                      | int64_t   |
+| [pktSentUniqueTotal](#pktSentUniqueTotal)                     | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUniqueTotal](#pktRecvUniqueTotal)                     | accumulated       | packets             | -                    | ✓                      | int64_t   |
+| [pktSndLossTotal](#pktSndLossTotal)                           | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvLossTotal](#pktRcvLossTotal)                           | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRetransTotal](#pktRetransTotal)                           | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvRetransTotal](#pktRcvRetransTotal)                     | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktSentACKTotal](#pktSentACKTotal)                           | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRecvACKTotal](#pktRecvACKTotal)                           | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [pktSentNAKTotal](#pktSentNAKTotal)                           | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRecvNAKTotal](#pktRecvNAKTotal)                           | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [usSndDurationTotal](#usSndDurationTotal)                     | accumulated       | us (microseconds)   | ✓                    | -                      | int64_t   |
+| [pktSndDropTotal](#pktSndDropTotal)                           | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvDropTotal](#pktRcvDropTotal)                           | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvUndecryptTotal](#pktRcvUndecryptTotal)                 | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktSndFilterExtraTotal](#pktSndFilterExtraTotal)             | accumulated       | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)             | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvFilterRecoveredTotal](#pktRcvFilterRecoveredTotal)     | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvFilterUnrecoveredTotal](#pktRcvFilterUnrecoveredTotal) | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [byteSentTotal](#byteSentTotal)                               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecvTotal](#byteRecvTotal)                               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [byteSentUniqueTotal](#byteSentUniqueTotal)                   | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecvUniqueTotal](#byteRecvUniqueTotal)                   | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRcvLossTotal](#byteRcvLossTotal)                         | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRetransTotal](#byteRetransTotal)                         | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
+| [byteSndDropTotal](#byteSndDropTotal)                         | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRcvDropTotal](#byteRcvDropTotal)                         | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRcvUndecryptTotal](#byteRcvUndecryptTotal)               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [pktSent](#pktSent)                                           | interval-based    | packets             | ✓                    | -                      | int64_t   |
+| [pktRecv](#pktRecv)                                           | interval-based    | packets             | -                    | ✓                      | int64_t   |
+| [pktSentUnique](#pktSentUnique)                               | interval-based    | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUnique](#pktRecvUnique)                               | interval-based    | packets             | -                    | ✓                      | int64_t   |
+| [pktSndLoss](#pktSndLoss)                                     | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvLoss](#pktRcvLoss)                                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRetrans](#pktRetrans)                                     | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvRetrans](#pktRcvRetrans)                               | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktSentACK](#pktSentACK)                                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRecvACK](#pktRecvACK)                                     | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktSentNAK](#pktSentNAK)                                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRecvNAK](#pktRecvNAK)                                     | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktSndFilterExtra](#pktSndFilterExtra)                       | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvFilterExtra](#pktRcvFilterExtra)                       | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvFilterSupply](#pktRcvFilterSupply)                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvFilterLoss](#pktRcvFilterLoss)                         | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [mbpsSendRate](#mbpsSendRate)                                 | interval-based    | Mbps                | ✓                    | -                      | double    |
+| [mbpsRecvRate](#mbpsRecvRate)                                 | interval-based    | Mbps                | -                    | ✓                      | double    |
+| [usSndDuration](#usSndDuration)                               | interval-based    | us (microseconds)   | ✓                    | -                      | int64_t   |
+| [pktReorderDistance](#pktReorderDistance)                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktReorderTolerance](#pktReorderTolerance)                   | interval-based    |                     |                      |                        | int32_t   |
+| [pktRcvAvgBelatedTime](#pktRcvAvgBelatedTime)                 |                   |                     |                      |                        | double    |
+| [pktRcvBelated](#pktRcvBelated)                               |                   |                     |                      |                        | int64_t   |
+| [pktSndDrop](#pktSndDrop)                                     | interval-based    | packets             | ✓                    | -                      | int32_t   |
+| [pktRcvDrop](#pktRcvDrop)                                     | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvUndecrypt](#pktRcvUndecrypt)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [byteSent](#byteSent)                                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecv](#byteRecv)                                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [byteSentUnique](#byteSentUnique)                             | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRecvUnique](#byteRecvUnique)                             | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRcvLoss](#byteRcvLoss)                                   | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRetrans](#byteRetrans)                                   | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
+| [byteSndDrop](#byteSndDrop)                                   | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
+| [byteRcvDrop](#byteRcvDrop)                                   | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [byteRcvUndecrypt](#byteRcvUndecrypt)                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [usPktSndPeriod](#usPktSndPeriod)                             | instantaneous     | us (microseconds)   | ✓                    | -                      | double    |
+| [pktFlowWindow](#pktFlowWindow)                               | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| [pktCongestionWindow](#pktCongestionWindow)                   | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| [pktFlightSize](#pktFlightSize)                               | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| [msRTT](#msRTT)                                               | instantaneous     | ms (milliseconds)   | ✓                    | ✓                      | double    |
+| [mbpsBandwidth](#mbpsBandwidth)                               | instantaneous     | Mbps                | ✓                    | ✓                      | double    |
+| [byteAvailSndBuf](#byteAvailSndBuf)                           | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
+| [byteAvailRcvBuf](#byteAvailRcvBuf)                           | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
+| [mbpsMaxBW](#mbpsMaxBW)                                       | instantaneous     | Mbps                | ✓                    | -                      | double    |
+| [byteMSS](#byteMSS)                                           | instantaneous     | bytes               | ✓                    | ✓                      | int32_t   |
+| [pktSndBuf](#pktSndBuf)                                       | instantaneous     | packets             | ✓                    | -                      | int32_t   |
+| [byteSndBuf](#byteSndBuf)                                     | instantaneous     | bytes               | ✓                    | -                      | int32_t   |
+| [msSndBuf](#msSndBuf)                                         | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
+| [msSndTsbPdDelay](#msSndTsbPdDelay)                           | instantaneous     | ms (milliseconds)   | ✓                    | -                      | int32_t   |
+| [pktRcvBuf](#pktRcvBuf)                                       | instantaneous     | packets             | -                    | ✓                      | int32_t   |
+| [byteRcvBuf](#byteRcvBuf)                                     | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
+| [msRcvBuf](#msRcvBuf)                                         | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
+| [msRcvTsbPdDelay](#msRcvTsbPdDelay)                           | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
 
 
 # Detailed Description
@@ -149,7 +149,7 @@ This statistic doesn't count
 - arrived too late packets (retransmitted or original packets arrived out of order) that were already dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
 - arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
-DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
+DATA packets recovered by the packet filter ([pktRcvFilterRecoveredTotal](#pktRcvFilterRecoveredTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
 ### pktSndLossTotal
 
@@ -247,13 +247,13 @@ Packet filter control packets contain only control information necessary for the
 
 If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
-### pktRcvFilterSupplyTotal
+### pktRcvFilterRecoveredTotal
 
 The total number of lost DATA packets recovered by the packet filter at the receiver side (e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
 If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
-### pktRcvFilterLossTotal
+### pktRcvFilterUnrecoveredTotal
 
 The total number of lost DATA packets **not** recovered by the packet filter at the receiver side (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
 
@@ -360,13 +360,13 @@ Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and
 
 ### pktRcvFilterSupply
 
-Same as `pktRcvFilterSupplyTotal`, but for a specified interval.
+Same as `pktRcvFilterRecoveredTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 ### pktRcvFilterLoss
 
-Same as `pktRcvFilterLossTotal`, but for a specified interval.
+Same as `pktRcvFilterUnrecoveredTotal`, but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 

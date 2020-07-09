@@ -7459,15 +7459,15 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
     perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
 
-    perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
-    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
-    perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
-    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
-    perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
-    perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-    perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-    perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-    perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+    perf->byteSentTotal                = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+    perf->byteSentUniqueTotal          = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
+    perf->byteRecvTotal                = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+    perf->byteRecvUniqueTotal          = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
+    perf->byteRetransTotal             = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
+    perf->pktSndFilterExtraTotal       = m_stats.sndFilterExtraTotal;
+    perf->pktRcvFilterExtraTotal       = m_stats.rcvFilterExtraTotal;
+    perf->pktRcvFilterRecoveredTotal   = m_stats.pktRcvFilterRecoveredTotal;
+    perf->pktRcvFilterUnrecoveredTotal = m_stats.rcvFilterLossTotal;
 
 #ifdef SRT_ENABLE_LOSTBYTESCOUNT
     perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);

@@ -385,10 +385,10 @@ struct CBytePerfMon
    int      msRcvBuf;                   // Undelivered timespan (msec) of UDT receiver
    int      msRcvTsbPdDelay;            // Timestamp-based Packet Delivery Delay
 
-   int      pktSndFilterExtraTotal;     // number of control packets supplied by packet filter
-   int      pktRcvFilterExtraTotal;     // number of control packets received and not supplied back
-   int      pktRcvFilterSupplyTotal;    // number of packets that the filter supplied extra (e.g. FEC rebuilt)
-   int      pktRcvFilterLossTotal;      // number of packet loss not coverable by filter
+   int      pktSndFilterExtraTotal;       // number of control packets supplied by packet filter
+   int      pktRcvFilterExtraTotal;       // number of control packets received and not supplied back
+   int      pktRcvFilterRecoveredTotal;   // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+   int      pktRcvFilterUnrecoveredTotal; // number of packet loss not coverable by filter
 
    int      pktSndFilterExtra;          // number of control packets supplied by packet filter
    int      pktRcvFilterExtra;          // number of control packets received and not supplied back
