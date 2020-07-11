@@ -464,7 +464,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-        CHandShake& w_hs, int& w_error)
+        CHandShake& w_hs, int& w_error, string& w_streaminfo)
 {
    CUDTSocket* ns = NULL;
 
@@ -606,6 +606,9 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
            {
                w_error = ns->m_pUDT->m_RejectReason;
 
+               // Save the STREAMID contents in case when a user changed it
+               // in the listener callback
+               w_streaminfo = ns->m_pUDT->m_sStreamName;
                error = 1;
                goto ERR_ROLLBACK;
            }

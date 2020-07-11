@@ -2838,6 +2838,79 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
     return SRT_CMD_NONE;
 }
 
+void CUDT::interpretRejectionMessage(const CHandShake& hs, const CPacket& hspkt)
+{
+    // This is simply part of the same procedure as done in interpretSrtHandshake(),
+    // it just extracts the contents of a prospective SRT_CMD_SID extension.
+    // If not present, do nothing.
+
+    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
+    if (!IsSet(ext_flags, CHandShake::HS_EXT_CONFIG) || hspkt.getLength() <= CHandShake::m_iContentSize)
+        return;
+
+    uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
+    size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
+
+    // XXX Probably common parts with interpretSrtHandshake() can be done for this loop
+
+    uint32_t *begin    = p;
+    uint32_t *next     = 0;
+    size_t    length   = size / sizeof(uint32_t);
+    size_t    blocklen = 0;
+
+    for (;;) // This is one shot loop, unless REPEATED by 'continue'.
+    {
+        int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
+
+        HLOGC(mglog.Debug,
+                log << "interpretRejectionMessage: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
+
+        const size_t bytelen = blocklen * sizeof(uint32_t);
+        if (cmd == SRT_CMD_SID)
+        {
+            if (!bytelen || bytelen > MAX_SID_LENGTH)
+            {
+                LOGC(mglog.Error,
+                        log << "interpretRejectionMessage: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
+                        << " - PROTOCOL ERROR, REJECTING");
+                return;
+            }
+            // Copied through a cleared array. This is because the length is aligned to 4
+            // where the padding is filled by zero bytes. For the case when the string is
+            // exactly of a 4-divisible length, we make a big array with maximum allowed size
+            // filled with zeros. Copying to this array should then copy either only the valid
+            // characters of the string (if the lenght is divisible by 4), or the string with
+            // padding zeros. In all these cases in the resulting array we should have all
+            // subsequent characters of the string plus at least one '\0' at the end. This will
+            // make it a perfect NUL-terminated string, to be used to initialize a string.
+            char target[MAX_SID_LENGTH + 1];
+            memset((target), 0, MAX_SID_LENGTH + 1);
+            memcpy((target), begin + 1, bytelen);
+
+            // Un-swap on big endian machines
+            ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
+
+            m_sStreamName = target;
+            HLOGC(mglog.Debug,
+                    log << "REJECTION MESSAGE SID [" << m_sStreamName << "] (bytelen=" << bytelen
+                    << " blocklen=" << blocklen << ")");
+        }
+        else if (cmd == SRT_CMD_NONE)
+        {
+            break;
+        }
+        else
+        {
+            // Found some block that is not interesting here. Skip this and get the next one.
+            HLOGC(mglog.Debug, log << "interpretRejectionMessage: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
+        }
+
+        if (!NextExtensionBlock((begin), next, (length)))
+            break;
+    }
+
+}
+
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
 bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                                  const CPacket&    hspkt,
@@ -2860,22 +2933,26 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     if (hs.m_iVersion < HS_VERSION_SRT1)
         return true; // do nothing
 
-    // Anyway, check if the handshake contains any extra data.
-    if (hspkt.getLength() <= CHandShake::m_iContentSize)
-    {
-        m_RejectReason = SRT_REJ_ROGUE;
-        // This would mean that the handshake was at least HSv5, but somehow no extras were added.
-        // Dismiss it then, however this has to be logged.
-        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found!");
-        return false;
-    }
+    // It's not necessary to check size to fit in the basic handshake,
+    // it's already done during handshake serialization.
 
-    // We still believe it should work, let's check the flags.
+    // Now check the obligatory HS flags. HSX is required, KMX and CONFIG optional.
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if (ext_flags == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension flags are set!");
+        return false;
+    }
+
+    // Anyway, check if the handshake contains any extra data.
+    // The size must enclose at least the obligatory HSREQ extension, plus the header
+    if (hspkt.getLength() < CHandShake::m_iContentSize + (SRT_HS__SIZE + 1) * sizeof(int32_t))
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        // This would mean that the handshake was at least HSv5, but somehow no extras were added.
+        // Dismiss it then, however this has to be logged.
+        LOGC(mglog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found (size=" << hspkt.getLength() << ")!");
         return false;
     }
 
@@ -4861,6 +4938,8 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
+        // Extract STREAMID extension, if present, and set it back on a socket.
+        interpretRejectionMessage(m_ConnRes, response);
         return CONN_REJECT;
     }
 
@@ -10413,18 +10492,49 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
     }
 }
 
-// XXX This is quite a mystery, why this function has a return value
-// and what the purpose for it was. There's just one call of this
-// function in the whole code and in that call the return value is
-// ignored. Actually this call happens in the CRcvQueue::worker thread,
-// where it makes a response for incoming UDP packet that might be
-// a connection request. Should any error occur in this process, there
-// is no way to "report error" that happened here. Basing on that
-// these values in original UDT code were quite like the values
-// for m_iReqType, they have been changed to URQ_* symbols, which
-// may mean that the intent for the return value was to send this
-// value back as a control packet back to the connector.
-//
+// This function does the same as the fragment that prepares the handshake
+// in CUDT::createSrtHandshake. This should only copy one type of extension
+// with contents possible to be specified as a string. Many extensions have
+// specific ways of extracting the data into the extension, hence this is
+// not refactored into single functions.
+size_t CUDT::addHandshakeExtension(char* data, int cmd, size_t hs_size, std::string contents)
+{
+    size_t ra_size = hs_size / sizeof(int32_t);
+
+    // Now attach the SRT handshake for HSREQ
+    size_t    offset = ra_size;
+    uint32_t *p      = reinterpret_cast<uint32_t *>(data);
+    // NOTE: since this point, ra_size has a size in int32_t elements, NOT BYTES.
+
+    // The first 4-byte item is the CMD/LENGTH spec.
+    uint32_t *pcmdspec = p + offset; // Remember the location to be filled later, when we know the length
+    ++offset;
+
+    // Now prepare the string with 4-byte alignment. The string size is limited
+    // to half the payload size. Just a sanity check to not pack too much into
+    // the conclusion packet.
+    size_t size_limit = m_iMaxSRTPayloadSize / 2;
+
+    if (contents.size() >= size_limit)
+    {
+        contents = "#!::="; // size error
+    }
+
+    size_t wordsize         = (contents.size() + 3) / 4;
+    size_t aligned_bytesize = wordsize * 4;
+
+    memset((p + offset), 0, aligned_bytesize);
+    memcpy((p + offset), contents.data(), contents.size());
+    // Preswap to little endian (in place due to possible padding zeros)
+    HtoILA((uint32_t *)(p + offset), (uint32_t *)(p + offset), wordsize);
+
+    ra_size   = wordsize;
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+
+    return hs_size + sizeof (*pcmdspec) + aligned_bytesize;
+}
+
+
 // This function is run when the CRcvQueue object is reading packets
 // from the multiplexer (@c CRcvQueue::worker_RetrieveUnit) and the
 // target socket ID is 0.
@@ -10629,7 +10739,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     else
     {
         int error  = SRT_REJ_UNKNOWN;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        string streaminfo_msg;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error), (streaminfo_msg));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10676,8 +10787,20 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             HLOGC(mglog.Debug,
                   log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
                       << RequestTypeStr(hs.m_iReqType));
+            bool has_message =! streaminfo_msg.empty();
+
+            if (has_message)
+            {
+                hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+            }
+
             size_t size = CHandShake::m_iContentSize;
             hs.store_to((packet.m_pcData), (size));
+
+            if (has_message)
+            {
+                size = addHandshakeExtension((packet.m_pcData), SRT_CMD_SID, size, streaminfo_msg);
+            }
             packet.setLength(size);
             packet.m_iID        = id;
             setPacketTS(packet, steady_clock::now());

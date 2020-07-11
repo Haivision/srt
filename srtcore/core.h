@@ -1216,6 +1216,7 @@ private:
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+                      void interpretRejectionMessage(const CHandShake& hs, const CPacket& pkt);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
@@ -1713,6 +1714,7 @@ private: // Generation and processing of packets
     /// @param packet contents of the packet
     /// @return URQ code, possibly containing reject reason
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
+    size_t addHandshakeExtension(char *data, int cmd, size_t hs_size, std::string contents);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);

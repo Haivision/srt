@@ -1242,11 +1242,17 @@ socket used for `srt_connect` and GET on the socket retrieved from `srt_accept`)
 This string can be used completely free-form, however it's highly recommended
 to follow the [SRT Access Control guidlines](AccessControl.md).
 
+- This entry can be also used to pass back the rejection message from the listener
+to the caller, if it was set in the listener callback handler and the handler
+decided to reject the connection. In this case the message will be available
+at the caller side after the application finds out that the connection failed
+due to rejection (`SRT_ECONNREJ` error or `SRT_EPOLL_ERR` epoll flag).
+
 As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `UDT::setstreamid` and
 `UDT::getstreamid`. This option doesn't make sense in Rendezvous connection;
 the result might be that simply one side will override the value from the other
-side and it's the matter of luck which one would win
+side and it's a matter of luck which one would win.
 
 ---
 
