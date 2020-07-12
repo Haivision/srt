@@ -733,7 +733,7 @@ SRT_API       int srt_cleanup(void);
 // and socket creation doesn't need any arguments. Use srt_create_socket().
 // Planned deprecation removal: rel1.6.0
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
-SRT_API       SRTSOCKET srt_create_socket();
+SRT_API       SRTSOCKET srt_create_socket(void);
 
 // Group management
 
@@ -775,7 +775,7 @@ SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
-SRT_API SRT_SOCKOPT_CONFIG* srt_create_config();
+SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
 SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
 
@@ -938,9 +938,9 @@ SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(int id);
 
-SRT_API uint32_t srt_getversion();
+SRT_API uint32_t srt_getversion(void);
 
-SRT_API int64_t srt_time_now();
+SRT_API int64_t srt_time_now(void);
 
 SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
