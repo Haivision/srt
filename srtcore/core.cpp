@@ -605,7 +605,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             break;
         }
-        m_iOutPaceMode = *(SRT_OUTPACEMODE *)optval;
+        m_iOutPaceMode =cast_optval<SRT_OUTPACEMODE>(optval, optlen);
         if (m_bConnected)
             updateCC(TEV_INIT, TEV_INIT_OUTPACEMODE);
         break;
@@ -1126,24 +1126,31 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen          = sizeof(bool);
         break;
 
-   case SRTO_OUTPACEMODE:
-       *(int *)optval = m_iOutPaceMode;
-       optlen = sizeof(int);
-       if (m_iOutPaceMode == SRT_OPM_UNSET) {
-           //unset return the equivalence based on pre-outpacemode settings
-           if(m_llMaxBW == -1 || m_llMaxBW == BW_INFINITE) {
-               *(int *)optval = SRT_OPM_UNTAMED;
-           }else if (m_llMaxBW > 0) {
-               *(int *)optval = SRT_OPM_CAPPED;
-           }else if (m_llMaxBW == 0) {
-               //Automatic based on set or sampled inputBW
-               if(m_llInputBW > 0)  *(int *)optval = SRT_OPM_INBWSET;
-               else
-               if(m_llInputBW == 0) *(int *)optval = SRT_OPM_SMPINBW;
-           }
-           //SRT_OPM_UNSET returned on invalid/ambiguous setting
-       }
-       break;
+    case SRTO_OUTPACEMODE:
+        *(int*)optval = m_iOutPaceMode;
+        optlen        = sizeof(int);
+        if (m_iOutPaceMode == SRT_OPM_UNSET)
+        {
+            // unset return the equivalence based on pre-outpacemode settings
+            if (m_llMaxBW == -1 || m_llMaxBW == BW_INFINITE)
+            {
+                *(int*)optval = SRT_OPM_UNTAMED;
+            }
+            else if (m_llMaxBW > 0)
+            {
+                *(int*)optval = SRT_OPM_CAPPED;
+            }
+            else if (m_llMaxBW == 0)
+            {
+                // Automatic based on set or sampled inputBW
+                if (m_llInputBW > 0)
+                    *(int*)optval = SRT_OPM_INBWSET;
+                else if (m_llInputBW == 0)
+                    *(int*)optval = SRT_OPM_SMPINBW;
+            }
+            // SRT_OPM_UNSET returned on invalid/ambiguous setting
+        }
+        break;
 
    case SRTO_MAXBW:
         *(int64_t *)optval = m_llMaxBW;
@@ -1155,28 +1162,29 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
        optlen             = sizeof(int64_t);
        break;
 
-   case SRTO_SMPINBW:
-      *(int64_t*)optval = 0LL;
-      if((m_iOutPaceMode == SRT_OPM_SMPINBW)
-      || (m_iOutPaceMode == SRT_OPM_INBWADJ)
-      || ((m_iOutPaceMode == SRT_OPM_UNSET) && (m_llInputBW == 0LL)))
-      {
-	  if(m_pSndBuffer){
-	      //return sampled internally measured input bw
-	      uint64_t llSmpInputBW;
-	      llSmpInputBW = m_pSndBuffer->getInputRate(); //Auto input rate
-	      if( m_pSndBuffer->getInRatePeriod() != 0) { //sampling active
-		  *(int64_t*)optval =llSmpInputBW;
-	      }
-	  }
-      }
-      optlen = sizeof(int64_t);
-      break;
+    case SRTO_SMPINBW:
+        *(int64_t*)optval = 0LL;
+        if ((m_iOutPaceMode == SRT_OPM_SMPINBW) || (m_iOutPaceMode == SRT_OPM_INBWADJ) ||
+            ((m_iOutPaceMode == SRT_OPM_UNSET) && (m_llInputBW == 0LL)))
+        {
+            if (m_pSndBuffer)
+            {
+                // return sampled internally measured input bw
+                uint64_t llSmpInputBW;
+                llSmpInputBW = m_pSndBuffer->getInputRate(); // Auto input rate
+                if (m_pSndBuffer->getInRatePeriod() != 0)
+                { // sampling active
+                    *(int64_t*)optval = llSmpInputBW;
+                }
+            }
+        }
+        optlen = sizeof(int64_t);
+        break;
 
-   case SRTO_OHEADBW:
-      *(int *)optval = m_iOverheadBW;
-      optlen = sizeof(int);
-      break;
+    case SRTO_OHEADBW:
+        *(int *)optval = m_iOverheadBW;
+        optlen = sizeof(int);
+        break;
 
     case SRTO_STATE:
         *(int32_t *)optval = s_UDTUnited.getStatus(m_SocketID);
@@ -7763,8 +7771,8 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
         // This requests internal input rate sampling.
         if (((m_llMaxBW == 0 && m_llInputBW == 0) || (m_iOutPaceMode == SRT_OPM_SMPINBW))
-        // or we adjust InputBW with sampled internal input rate when higher to adjust to encoder bitrate overshoot
-        ||  (m_iOutPaceMode == SRT_OPM_INBWADJ))
+            // or we adjust InputBW with sampled internal input rate when higher to adjust to encoder bitrate overshoot
+            ||  (m_iOutPaceMode == SRT_OPM_INBWADJ))
         {
             // Get auto-calculated input rate, Bytes per second
             const int64_t inputbw = m_pSndBuffer->getInputRate();

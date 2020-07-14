@@ -328,7 +328,7 @@ typedef enum SRT_OUTPACEMODE
     SRT_OPM_SMPINBW,    //based on internally sampled input rate and configured overhead: maxoutBW = sampled-input-bw * (1+SRTO_OVERHEAD/100)
     SRT_OPM_INBWSET,    //based on configured input rate and overhead (SRTO_INPUTBW): maxoutBW = SRTO_INPUTBW * (1+SRTO_OVERHEAD/100)
     SRT_OPM_INBWADJ     //based on configured input rate and overhead, adjusted to internally sampled input rate when overshoot configured value
-}SRT_OUTPACEMODE;
+} SRT_OUTPACEMODE;
 
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
