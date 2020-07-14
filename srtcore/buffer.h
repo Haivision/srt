@@ -72,7 +72,6 @@ modified by
 // a +% b : shift a by b
 // a == b : equality is same as for just numbers
 
-#if defined(SRT_ENABLE_SNDBUFSZ_MAVG) || defined(SRT_ENABLE_RCVBUFSZ_MAVG)
 /// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
 class AvgBufSize
 {
@@ -100,7 +99,6 @@ private:
     double     m_dCountMAvg;
     double     m_dTimespanMAvg;
 };
-#endif // SRT_ENABLE_SNDBUFSZ_MAVG || SRT_ENABLE_RCVBUFSZ_MAVG
 
 
 class CSndBuffer
@@ -177,10 +175,8 @@ public:
 
    int dropLateData(int& bytes, int32_t& w_first_msgno, const srt::sync::steady_clock::time_point& too_late_time);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    void updAvgBufSize(const srt::sync::steady_clock::time_point& time);
    int getAvgBufSize(int& bytes, int& timespan);
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(int& bytes, int& timespan);
 
    uint64_t getInRatePeriod() const { return m_InRatePeriod; }
@@ -265,9 +261,7 @@ private:
    int m_iBytesCount;                   // number of payload bytes in queue
    time_point m_tsLastOriginTime;
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    AvgBufSize m_mavg;
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
    int m_iInRatePktsCount;  // number of payload bytes added since InRateStartTime
    int m_iInRateBytesCount;  // number of payload bytes added since InRateStartTime
@@ -354,7 +348,6 @@ public:
       /// @return size in pkts of acked data.
 
    int getRcvDataSize(int& bytes, int &spantime);
-#if SRT_ENABLE_RCVBUFSZ_MAVG
 
       /// Query a 1 sec moving average of how many data was received and acknowledged.
       /// @param [out] bytes bytes
@@ -368,7 +361,6 @@ public:
       /// @return none.
 
    void updRcvAvgDataSize(const time_point& now);
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
       /// Query the received average payload size.
       /// @return size (bytes) of payload size
@@ -615,9 +607,7 @@ private:
    /// Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
    static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
    AvgBufSize m_mavg;
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    int m_TsbPdDriftHisto100us[22];              // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
    int m_TsbPdDriftHisto1ms[22];                // Histogram of TsbPD drift (-10.0 .. +10.0 ms, in 1.0 ms increment)
