@@ -739,7 +739,6 @@ The table below provides a summary of SRT group statistics: name, type, unit of 
 | [pktSentUniqueTotal](#group-pktSentUniqueTotal)   | accumulated       | packets             | ✓                    | -                      | int64_t   |
 | [pktRecvUniqueTotal](#group-pktRecvUniqueTotal)   | accumulated       | packets             | -                    | ✓                      | int64_t   |
 | [pktRcvDropTotal](#group-pktRcvDropTotal)         | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvDiscardTotal](#group-pktRcvDiscardTotal)   | accumulated       | packets             | -                    | ✓                      | int32_t   |
 | [byteSentUniqueTotal](#group-byteSentUniqueTotal) | accumulated       | packets             | ✓                    | -                      | int64_t   |
 | [byteRecvUniqueTotal](#group-byteRecvUniqueTotal) | accumulated       | packets             | -                    | ✓                      | int64_t   |
 | [byteRcvDropTotal](#group-byteRcvDropTotal)       | accumulated       | packets             | -                    | ✓                      | int32_t   |
@@ -786,12 +785,6 @@ A packet is considered dropped by the socket group if it has been dropped by the
 For example, if a packet with a particular sequence number has been dropped over one or several links, but has not been dropped over at least one link, it is *not* considered dropped by the socket group and can be delivered to the upstream application. Only if a packet has been dropped over all the links from the group, it is considered dropped by the socket group and can not be delivered to the upstream application.
 
 In fact, only sockets can drop the packets and the group is simply responsible for delivering received over multiple sockets packets to the application.
-
-### pktRcvDiscardTotal <a name="group-pktRcvDiscardTotal"></a>
-
-The number of *discarded* by the socket group packets. Available for receiver. 
-
-This statistic counts packets that have been received over any of the links, but then discarded by the socket group as being a duplicate of the same packet received over another link previously.
 
 ### byteSentUniqueTotal <a name="group-byteSentUniqueTotal"></a>
 
