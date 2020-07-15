@@ -720,28 +720,35 @@ If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
 
 # SRT Group Statistics
 
-TODO:
+SRT group statistics is implemented for SRT Connection Bonding feature and available since SRT v1.5.0. Check the following documentation and code examples for details:
 
-- Function to access group statistics + refer to Connection Bonding documentation
-- Check the types of statistics
-- Corresponding statistics in bytes
-- Interval-based + statistics in bytes
+- [Introduction in bonding feature](https://github.com/Haivision/srt/blob/master/docs/bonding-intro.md),
+- [The concept of socket groups](https://github.com/Haivision/srt/blob/master/docs/socket-groups.md). Here you will also find the information regarding `srt-test-live`  application to use for testing SRT Connection Bonding,
+- Check also [API](https://github.com/Haivision/srt/blob/master/docs/API.md) and [API functions](https://github.com/Haivision/srt/blob/master/docs/API-functions.md) documentation for the Connection Bonding related updates,
+- Code examples: simple [client](https://github.com/Haivision/srt/blob/master/examples/test-c-client-bonding.c) and [server](https://github.com/Haivision/srt/blob/master/examples/test-c-server-bonding.c) implementation.
+
+`srt_bistats(SRTSOCKET u, ...)`  can be used with a socket group ID as a first argument to get statistics for a group. Most values of the `SRT_TRACEBSTATS` will be filled with zeros except for the fields listed in [Summary Table](#group-summary-table) below. Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
 
 ## Summary Table <a name="group-summary-table"></a>
 
 The table below provides a summary of SRT group statistics: name, type, unit of measurement, data type, and whether it is calculated by the sender or receiver. See sections [Accumulated Statistics](#group-accumulated-statistics) and [Interval-Based Statistics](#group-interval-based-statistics) for a detailed description of each statistic.
 
-| Statistic                                       | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
-| ----------------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
-| [msTimeStamp](#group-msTimeStamp)               | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
-| [pktSentUniqueTotal](#group-pktSentUniqueTotal) | accumulated       | packets             | ✓                    | -                      | int64_t   |
-| [pktRecvUniqueTotal](#group-pktRecvUniqueTotal) | accumulated       | packets             | -                    | ✓                      | int64_t   |
-| [pktRcvDropTotal](#group-pktRcvDropTotal)       | accumulated       | packets             | -                    | ✓                      | int32_t   |
-| [pktRcvDiscardTotal](#group-pktRcvDiscardTotal) | accumulated       | packets             | -                    | ✓                      | int32_t   |
-|                                                 |                   |                     |                      |                        |           |
-|                                                 |                   |                     |                      |                        |           |
-|                                                 |                   |                     |                      |                        |           |
-|                                                 |                   |                     |                      |                        |           |
+| Statistic                                         | Type of Statistic | Unit of Measurement | Available for Sender | Available for Receiver | Data Type |
+| ------------------------------------------------- | ----------------- | ------------------- | -------------------- | ---------------------- | --------- |
+| [msTimeStamp](#group-msTimeStamp)                 | accumulated       | ms (milliseconds)   | ✓                    | ✓                      | int64_t   |
+| [pktSentUniqueTotal](#group-pktSentUniqueTotal)   | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUniqueTotal](#group-pktRecvUniqueTotal)   | accumulated       | packets             | -                    | ✓                      | int64_t   |
+| [pktRcvDropTotal](#group-pktRcvDropTotal)         | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvDiscardTotal](#group-pktRcvDiscardTotal)   | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [byteSentUniqueTotal](#group-byteSentUniqueTotal) | accumulated       | packets             | ✓                    | -                      | int64_t   |
+| [byteRecvUniqueTotal](#group-byteRecvUniqueTotal) | accumulated       | packets             | -                    | ✓                      | int64_t   |
+| [byteRcvDropTotal](#group-byteRcvDropTotal)       | accumulated       | packets             | -                    | ✓                      | int32_t   |
+| [pktSentUnique](#group-pktSentUnique)             | interval-based    | packets             | ✓                    | -                      | int64_t   |
+| [pktRecvUnique](#group-pktRecvUnique)             | interval-based    | packets             | -                    | ✓                      | int64_t   |
+| [pktRcvDrop](#group-pktRcvDrop)                   | interval-based    | packets             | -                    | ✓                      | int32_t   |
+| [byteSentUnique](#group-byteSentUnique)           | interval-based    | packets             | ✓                    | -                      | int64_t   |
+| [byteRecvUnique](#group-byteRecvUnique)           | interval-based    | packets             | -                    | ✓                      | int64_t   |
+| [byteRcvDrop](#group-byteRcvDrop)                 | interval-based    | packets             | -                    | ✓                      | int32_t   |
 
 ## Accumulated Statistics <a name="group-accumulated-statistics"></a>
 
@@ -786,9 +793,43 @@ The number of *discarded* by the socket group packets. Available for receiver.
 
 This statistic counts packets that have been received over any of the links, but then discarded by the socket group as being a duplicate of the same packet received over another link previously.
 
+### byteSentUniqueTotal <a name="group-byteSentUniqueTotal"></a>
+
+Same as [pktSentUniqueTotal](#group-pktSentUniqueTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for sender.
+
+### byteRecvUniqueTotal <a name="group-byteRecvUniqueTotal"></a>
+
+Same as [pktRecvUniqueTotal](#group-pktRecvUniqueTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+
+### byteRcvDropTotal <a name="group-byteRcvDropTotal"></a>
+
+Same as [pktRcvDropTotal](#group-pktRcvDropTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
+
 ## Interval-Based Statistics <a name="group-interval-based-statistics"></a>
 
-TODO
+### pktSentUnique <a name="group-pktSentUnique"></a>
+
+Same as [pktSentUniqueTotal](#group-pktSentUniqueTotal), but for a specified interval.
+
+### pktRecvUnique <a name="group-pktRecvUnique"></a>
+
+Same as [pktRecvUniqueTotal](#group-pktRecvUniqueTotal), but for a specified interval.
+
+### pktRcvDrop <a name="group-pktRcvDrop"></a>
+
+Same as [pktRcvDropTotal](#group-pktRcvDropTotal), but for a specified interval.
+
+### byteSentUnique <a name="group-byteSentUnique"></a>
+
+Same as [byteSentUniqueTotal](#group-byteSentUniqueTotal), but for a specified interval.
+
+### byteRecvUnique <a name="group-byteRecvUnique"></a>
+
+Same as [byteRecvUniqueTotal](#group-byteRecvUniqueTotal), but for a specified interval.
+
+### byteRcvDrop <a name="group-byteRcvDrop"></a>
+
+Same as [byteRcvDropTotal](#group-byteRcvDropTotal), but for a specified interval.
 
 ## Formulas <a name="group-formulas"></a>
 
