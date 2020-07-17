@@ -629,7 +629,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
    // (the family is used exactly as the one taken from what has been returned
    // by getsockaddr)
-   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family());
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family(), peer);
 
    // protect the m_Sockets structure.
    enterCS(m_GlobControlLock);
@@ -1850,7 +1850,7 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
 }
 
 int CUDTUnited::select(
-   ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout)
+   UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
    const steady_clock::time_point entertime = steady_clock::now();
 
@@ -2460,10 +2460,8 @@ void CUDTUnited::updateMux(
           // given port in the same family as requested address.
           if ((i->second.m_iIPversion == addr.family())
                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
-#ifdef SRT_ENABLE_IPOPTS
                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
-#endif
                   && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
                   &&  i->second.m_bReusable)
           {
@@ -2486,20 +2484,16 @@ void CUDTUnited::updateMux(
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
    m.m_iIPversion = addr.family();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
-#endif
    m.m_iRefCount = 1;
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
    m.m_pChannel = new CChannel();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
    m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-#endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
    if (s->m_pUDT->m_iIpV6Only != -1)
@@ -3237,7 +3231,7 @@ int CUDT::send(SRTSOCKET u, const char* buf, int len, int)
 
 int CUDT::sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     mctrl.msgttl = ttl;
@@ -3281,7 +3275,7 @@ int CUDT::recv(SRTSOCKET u, char* buf, int len, int)
     return ret;
 }
 
-int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int CUDT::recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     int ret = recvmsg2(u, buf, len, (mctrl));
@@ -3357,9 +3351,9 @@ int64_t CUDT::recvfile(
 
 int CUDT::select(
    int,
-   ud_set* readfds,
-   ud_set* writefds,
-   ud_set* exceptfds,
+   UDT::UDSET* readfds,
+   UDT::UDSET* writefds,
+   UDT::UDSET* exceptfds,
    const timeval* timeout)
 {
    if ((!readfds) && (!writefds) && (!exceptfds))
@@ -3846,20 +3840,19 @@ int recv(SRTSOCKET u, char* buf, int len, int flags)
 
 int sendmsg(
    SRTSOCKET u, const char* buf, int len, int ttl, bool inorder,
-   uint64_t srctime)
+   int64_t srctime)
 {
    return CUDT::sendmsg(u, buf, len, ttl, inorder, srctime);
 }
 
-int recvmsg(SRTSOCKET u, char* buf, int len, uint64_t& srctime)
+int recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime)
 {
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
 int recvmsg(SRTSOCKET u, char* buf, int len)
 {
-   uint64_t srctime;
-
+   int64_t srctime;
    return CUDT::recvmsg(u, buf, len, srctime);
 }
 
@@ -4112,7 +4105,7 @@ const char* geterror_desc(int code, int err)
    return(e.getErrorMessage());
 }
 
-int bstats(SRTSOCKET u, TRACEBSTATS* perf, bool clear)
+int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
 {
    return CUDT::bstats(u, perf, clear);
 }
@@ -4121,6 +4114,11 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 {
    return CUDT::getsockstate(u);
 }
+
+} // namespace UDT
+
+namespace srt
+{
 
 void setloglevel(LogLevel::type ll)
 {
@@ -4193,4 +4191,4 @@ int setrejectreason(SRTSOCKET u, int value)
     return CUDT::rejectReason(u, value);
 }
 
-}  // namespace UDT
+}  // namespace srt

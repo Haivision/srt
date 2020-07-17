@@ -63,6 +63,11 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
+// You can change this value at build config by using "ENFORCE" options.
+#if !defined(SRT_MAVG_SAMPLING_RATE)
+#define SRT_MAVG_SAMPLING_RATE 40
+#endif
+
 bool AvgBufSize::isTimeToUpdate(const time_point& now) const
 {
     const int      usMAvgBasePeriod = 1000000; // 1s in microseconds
@@ -98,7 +103,7 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
-const int round_val(double val)
+int round_val(double val)
 {
     return static_cast<int>(round(val));
 }
@@ -177,7 +182,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
-    uint64_t& w_srctime = w_mctrl.srctime;
+    int64_t& w_srctime  = w_mctrl.srctime;
     int&      w_ttl     = w_mctrl.msgttl;
     int       size      = len / m_iMSS;
     if ((len % m_iMSS) != 0)
@@ -195,12 +200,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     }
 
     const steady_clock::time_point time = steady_clock::now();
-    if (w_srctime == 0)
-    {
-        HLOGC(dlog.Debug, log << CONID() << "addBuffer: DEFAULT SRCTIME - overriding with current time.");
-        w_srctime = count_microseconds(time.time_since_epoch());
-    }
-    int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
+    const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     HLOGC(dlog.Debug,
           log << CONID() << "addBuffer: adding " << size << " packets (" << len << " bytes) to send, msgno="
@@ -251,9 +251,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_ullSourceTime_us = w_srctime;
-        s->m_tsOriginTime     = time;
-        s->m_iTTL             = w_ttl;
+        s->m_llSourceTime_us = w_srctime;
+        s->m_tsOriginTime    = time;
+        s->m_iTTL            = w_ttl;
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
@@ -270,9 +270,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     updateInputRate(time, size, len);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(time);
-#endif
 
     leaveCS(m_BufLock);
 
@@ -397,6 +395,18 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
+steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& block)
+{
+    if (block.m_llSourceTime_us)
+    {
+        const steady_clock::duration since_epoch = block.m_tsOriginTime.time_since_epoch();
+        const steady_clock::duration delta       = microseconds_from(block.m_llSourceTime_us) - since_epoch;
+        return block.m_tsOriginTime + delta;
+    }
+
+    return block.m_tsOriginTime;
+}
+
 int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
 {
     // No data to read
@@ -442,15 +452,10 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     {
         m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
     }
+
     w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
-
-    // TODO: FR #930. Use source time if it is provided.
-    w_srctime = m_pCurrBlock->m_tsOriginTime;
-    /* *srctime =
-       m_pCurrBlock->m_ullSourceTime_us ? m_pCurrBlock->m_ullSourceTime_us :
-       m_pCurrBlock->m_tsOriginTime;*/
-
-    m_pCurrBlock = m_pCurrBlock->m_pNext;
+    w_srctime         = getSourceTime(*m_pCurrBlock);
+    m_pCurrBlock      = m_pCurrBlock->m_pNext;
 
     HLOGC(dlog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
 
@@ -569,10 +574,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     w_packet.m_iMsgNo = p->m_iMsgNoBitset;
 
     // TODO: FR #930. Use source time if it is provided.
-    w_srctime = p->m_tsOriginTime;
-    /*w_srctime =
-       p->m_ullSourceTime_us ? p->m_ullSourceTime_us :
-       p->m_tsOriginTime;*/
+    w_srctime = getSourceTime(*p);
 
     HLOGC(dlog.Debug,
           log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.m_iSeqNo
@@ -598,17 +600,13 @@ void CSndBuffer::ackData(int offset)
 
     m_iCount -= offset;
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(steady_clock::now());
-#endif
 }
 
 int CSndBuffer::getCurrBufSize() const
 {
     return m_iCount;
 }
-
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
@@ -636,8 +634,6 @@ void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
     const int pkts        = getCurrBufSize((bytes), (timespan_ms));
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
-
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
 int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
 {
@@ -685,9 +681,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     // (even if "should remain") is the first after the last removed one.
     w_first_msgno = ++MsgNo(msgno);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
     updAvgBufSize(steady_clock::now());
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
 
     return (dpkts);
 }
@@ -1580,7 +1574,6 @@ int CRcvBuffer::debugGetSize() const
     return size;
 }
 
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
 int CRcvBuffer::getRcvAvgDataSize(int& bytes, int& timespan)
 {
@@ -1604,7 +1597,6 @@ void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
     const int pkts        = getRcvDataSize(bytes, timespan_ms);
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
 /* Return acked data pkts, bytes, and timespan (ms) of the receive buffer */
 int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
@@ -2025,7 +2017,7 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl, int upto)
 }
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-void CRcvBuffer::debugTraceJitter(uint64_t rplaytime)
+void CRcvBuffer::debugTraceJitter(int64_t rplaytime)
 {
     uint64_t now = CTimer::getTime();
     if ((now - rplaytime) / 10 < 10)
@@ -2039,33 +2031,7 @@ void CRcvBuffer::debugTraceJitter(uint64_t rplaytime)
 }
 #endif /* SRT_DEBUG_TSBPD_OUTJITTER */
 
-/*
-int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl)
-{
-    int p, q;
-    bool passack;
-
-#ifdef ENABLE_HEAVY_LOGGING
-    reportBufferStats();
-#endif
-    bool empty = accessMsg(Ref(p), Ref(q), Ref(passack), Ref(msgctl.srctime), -1);
-    if (empty)
-        return 0;
-
-
-    // This should happen just once. By 'empty' condition
-    // we have a guarantee that m_pUnit[p] exists and is valid.
-    CPacket& pkt1 = m_pUnit[p]->m_Packet;
-    // This returns the sequence number and message number to
-    // the API caller.
-    msgctl.pktseq = pkt1.getSeqNo();
-    msgctl.msgno = pkt1.getMsgSeq();
-
-    return extractData(data, len, p, q, passack);
-}
-*/
-
-bool CRcvBuffer::accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto)
+bool CRcvBuffer::accessMsg(int& w_p, int& w_q, bool& w_passack, int64_t& w_playtime, int upto)
 {
     // This function should do the following:
     // 1. Find the first packet starting the next message (or just next packet)

@@ -229,12 +229,10 @@ void SrtCommon::StealFrom(SrtCommon& src)
 
 bool SrtCommon::AcceptNewClient()
 {
-    sockaddr_in scl;
-    int sclen = sizeof scl;
-
+    sockaddr_any scl;
     Verb() << " accept... ";
 
-    m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
+    m_sock = srt_accept(m_bindsock, scl.get(), &scl.len);
     if ( m_sock == SRT_INVALID_SOCK )
     {
         srt_close(m_bindsock);

@@ -23,7 +23,6 @@ written by
 #include <string.h>
 #include <stdlib.h>
 
-#include "srt4udt.h"
 #include "logging_api.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,15 +68,43 @@ written by
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
 
+#if defined(__cplusplus) && __cplusplus > 201406
+#define SRT_HAVE_CXX17 1
+#else
+#define SRT_HAVE_CXX17 0
+#endif
+
+
+// Stadnard attributes
+
 // When compiling in C++17 mode, use the standard C++17 attributes
 // (out of these, only [[deprecated]] is supported in C++14, so
 // for all lesser standard use compiler-specific attributes).
-#if defined(SRT_NO_DEPRECATED)
+#if SRT_HAVE_CXX17
 
-// Unused: do not issue an unused variable warning
+// Unused: DO NOT issue a warning if this entity is unused.
+#define SRT_ATR_UNUSED [[maybe_unused]]
+
+// Nodiscard: issue a warning if the return value was discarded.
+#define SRT_ATR_NODISCARD [[nodiscard]]
+
+// GNUG is GNU C/C++; this syntax is also supported by Clang
+#elif defined(__GNUC__)
+#define SRT_ATR_UNUSED __attribute__((unused))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
+#elif defined(_MSC_VER)
+#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
+#define SRT_ATR_NODISCARD _Check_return_
+#else
 #define SRT_ATR_UNUSED
+#define SRT_ATR_NODISCARD
+#endif
 
-// Deprecated: function or symbol is deprecated
+
+// DEPRECATED attributes
+
+// There's needed DEPRECATED and DEPRECATED_PX, as some compilers require them
+// before the entity, others after the entity.
 // The *_PX version is the prefix attribute, which applies only
 // to functions (Microsoft compilers).
 
@@ -85,35 +112,29 @@ written by
 //
 // SRT_ATR_DEPRECATED_PX retval function(arguments) SRT_ATR_DEPRECATED;
 //
+
+// When SRT_NO_DEPRECATED defined, do not issue any deprecation warnings.
+// Regardless of the compiler type.
+#if defined(SRT_NO_DEPRECATED)
+
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX
 
-// Nodiscard: issue a warning if the return value was discarded.
-#define SRT_ATR_NODISCARD
+#elif SRT_HAVE_CXX17
 
-#elif defined(__cplusplus) && __cplusplus > 201406
-
-#define SRT_ATR_UNUSED [[maybe_unused]]
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX [[deprecated]]
-#define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined(__GNUC__)
-#define SRT_ATR_UNUSED __attribute__((unused))
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
-#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #elif defined(_MSC_VER)
-#define SRT_ATR_UNUSED __pragma(warning(suppress: 4100 4101))
 #define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
 #define SRT_ATR_DEPRECATED // no postfix-type modifier
-#define SRT_ATR_NODISCARD _Check_return_
 #else
-#define SRT_ATR_UNUSED
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
-#define SRT_ATR_NODISCARD
 #endif
 
 #ifdef __cplusplus
@@ -170,8 +191,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_LINGER = 7,          // waiting for unsent data when closing
    SRTO_UDP_SNDBUF = 8,      // UDP sending buffer size
    SRTO_UDP_RCVBUF = 9,      // UDP receiving buffer size
-   // XXX Free space for 2 options
-   // after deprecated ones are removed
+   // (some space left)
    SRTO_RENDEZVOUS = 12,     // rendezvous connection mode
    SRTO_SNDTIMEO = 13,       // send() timeout
    SRTO_RCVTIMEO = 14,       // recv() timeout
@@ -184,7 +204,6 @@ typedef enum SRT_SOCKOPT {
    SRTO_SENDER = 21,         // Sender mode (independent of conn mode), for encryption, tsbpd handshake.
    SRTO_TSBPDMODE = 22,      // Enable/Disable TsbPd. Enable -> Tx set origin timestamp, Rx deliver packet at origin time + delay
    SRTO_LATENCY = 23,        // NOT RECOMMENDED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
-   SRTO_TSBPDDELAY = 23,     // DEPRECATED. ALIAS: SRTO_LATENCY
    SRTO_INPUTBW = 24,        // Estimated input stream rate.
    SRTO_OHEADBW,             // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
    SRTO_PASSPHRASE = 26,     // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
@@ -198,9 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_VERSION = 34,        // Local SRT Version
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
-   // deprecated: SRTO_TWOWAYDATA, SRTO_SNDPBKEYLEN, SRTO_RCVPBKEYLEN (@c below)
-   SRTO_SNDPBKEYLEN_DEPRECATED = 38, // (needed to use inside the code without generating -Wswitch)
-   //
+   // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
    SRTO_LOSSMAXTTL,          // Maximum possible packet reorder tolerance (number of packets to receive after loss to send lossreport)
@@ -259,46 +276,9 @@ enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
 #define SRT_DEPRECATED_OPTION(value) ((enum SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
-// DEPRECATED OPTIONS:
-
-// SRTO_TWOWAYDATA: not to be used. SRT connection is always bidirectional if
-// both clients support HSv5 - that is, since version 1.3.0. This flag was
-// introducted around 1.2.0 version when full bidirectional support was added,
-// but the bidirectional feature was decided no to be enabled due to huge
-// differences between bidirectional support (especially concerning encryption)
-// with HSv4 and HSv5 (that is, HSv4 was decided to remain unidirectional only,
-// even though partial support is already provided in this version).
-
-#define SRTO_TWOWAYDATA SRT_DEPRECATED_OPTION(37)
-
-// This has been deprecated a long time ago, treat this as never implemented.
-// The value is also already reused for another option.
-#define SRTO_TSBPDMAXLAG SRT_DEPRECATED_OPTION(32)
-
-// This option is a derivative from UDT; the mechanism that uses it is now
-// settable by SRTO_CONGESTION, or more generally by SRTO_TRANSTYPE. The freed
-// number has been reused for a read-only option SRTO_ISN. This option should
-// have never been used anywhere, just for safety this is temporarily declared
-// as deprecated.
-#define SRTO_CC SRT_DEPRECATED_OPTION(3)
-
-// These two flags were derived from UDT, but they were never used.
-// Probably it didn't make sense anyway. The maximum size of the message
-// in File/Message mode is defined by SRTO_SNDBUF, and the MSGTTL is
-// a parameter used in `srt_sendmsg` and `srt_sendmsg2`.
-#define SRTO_MAXMSG SRT_DEPRECATED_OPTION(10)
-#define SRTO_MSGTTL SRT_DEPRECATED_OPTION(11)
-
-// These flags come from an older experimental implementation of bidirectional
-// encryption support, which were used two different SEKs, KEKs and passphrases
-// per direction. The current implementation uses just one in both directions,
-// so SRTO_PBKEYLEN should be used for both cases.
-#define SRTO_SNDPBKEYLEN SRT_DEPRECATED_OPTION(38)
-#define SRTO_RCVPBKEYLEN SRT_DEPRECATED_OPTION(39)
-
-// Keeping old name for compatibility (deprecated)
-#define SRTO_SMOOTHER SRT_DEPRECATED_OPTION(47)
-#define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
+// Note that there are no deprecated options at the moment, but the mechanism
+// stays so that it can be used in future. Example:
+// #define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
 
 typedef enum SRT_TRANSTYPE
 {
@@ -351,9 +331,7 @@ struct CBytePerfMon
    int      pktRcvUndecryptTotal;       // number of undecrypted packets
    uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
    uint64_t byteRecvTotal;              // total number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLossTotal;           // total number of lost bytes
-#endif
    uint64_t byteRetransTotal;           // total number of retransmitted bytes
    uint64_t byteSndDropTotal;           // number of too-late-to-send dropped bytes
    uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
@@ -383,9 +361,7 @@ struct CBytePerfMon
    int      pktRcvUndecrypt;            // number of undecrypted packets
    uint64_t byteSent;                   // number of sent data bytes, including retransmissions
    uint64_t byteRecv;                   // number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLoss;                // number of retransmitted bytes
-#endif
    uint64_t byteRetrans;                // number of retransmitted bytes
    uint64_t byteSndDrop;                // number of too-late-to-send dropped bytes
    uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
@@ -502,8 +478,6 @@ enum CodeMinor
     MN_CONGESTION      =  4
 };
 
-SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISSTREAM SRT_ATR_DEPRECATED = (enum CodeMinor)(9);
-SRT_ATR_DEPRECATED_PX static const enum CodeMinor MN_ISDGRAM SRT_ATR_DEPRECATED = (enum CodeMinor)(10);
 
 // Stupid, but effective. This will be #undefined, so don't worry.
 #define MJ(major) (1000 * MJ_##major)
@@ -560,8 +534,6 @@ typedef enum SRT_ERRNO
     SRT_EPEERERR        = MJ(PEERERROR)
 } SRT_ERRNO;
 
-static const SRT_ERRNO SRT_EISSTREAM SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALMSGAPI);
-static const SRT_ERRNO SRT_EISDGRAM  SRT_ATR_DEPRECATED = (SRT_ERRNO) MN(NOTSUP, INVALBUFFERAPI);
 
 #undef MJ
 #undef MN
@@ -590,6 +562,7 @@ enum SRT_REJECT_REASON
 };
 
 // XXX This value remains for some time, but it's deprecated
+// Planned deprecation removal: rel1.6.0.
 #define SRT_REJ__SIZE SRT_REJ_E_SIZE
 
 // Reject category codes:
@@ -764,8 +737,9 @@ SRT_API       int srt_cleanup(void);
 //
 // DEPRECATED: srt_socket with 3 arguments. All these arguments are ignored
 // and socket creation doesn't need any arguments. Use srt_create_socket().
+// Planned deprecation removal: rel1.6.0
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
-SRT_API       SRTSOCKET srt_create_socket();
+SRT_API       SRTSOCKET srt_create_socket(void);
 
 // Group management
 
@@ -807,13 +781,14 @@ SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
-SRT_API SRT_SOCKOPT_CONFIG* srt_create_config();
+SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
 SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
+// Planned deprecation removal: rel1.6.0
 SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
 static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
@@ -840,14 +815,13 @@ SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 
-// XXX Note that the srctime functionality doesn't work yet and needs fixing.
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
    int msgttl;           // TTL for a message, default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;     // source timestamp (usec), 0: use internal time     
+   int64_t srctime;      // source time since epoch (usec), 0: use internal time (sender)
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
    SRT_SOCKGROUPDATA* grpdata;
@@ -885,11 +859,6 @@ SRT_API extern const SRT_MSGCTRL srt_msgctrl_default;
 // Msg2: Supply extra parameters in SRT_MSGCTRL. When receiving, these
 // parameters will be filled, as needed. NULL is acceptable, in which case
 // the defaults are used.
-
-// NOTE: srt_send and srt_recv have the last "..." left to allow ignore a
-// deprecated and unused "flags" parameter. After confirming that all
-// compat applications that pass useless 0 there are fixed, this will be
-// removed.
 
 //
 // Sending functions
@@ -975,7 +944,11 @@ SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(int id);
 
-SRT_API uint32_t srt_getversion();
+SRT_API uint32_t srt_getversion(void);
+
+SRT_API int64_t srt_time_now(void);
+
+SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
 #ifdef __cplusplus
 }

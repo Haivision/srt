@@ -116,7 +116,7 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
-    CUDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+    CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
     // Just as a safety precaution, check the structs.
@@ -161,7 +161,7 @@ int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
 int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(SRTSOCKET u, char * buf, int len) { uint64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
+int srt_recvmsg(SRTSOCKET u, char * buf, int len) { int64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
 int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block)
 {
     if (!path || !offset )
@@ -385,6 +385,16 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 uint32_t srt_getversion()
 {
     return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
+}
+
+int64_t srt_time_now()
+{
+    return srt::sync::count_microseconds(srt::sync::steady_clock::now().time_since_epoch());
+}
+
+int64_t srt_connection_time(SRTSOCKET sock)
+{
+    return CUDT::socketStartTime(sock);
 }
 
 }

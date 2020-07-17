@@ -1,5 +1,4 @@
-SRT API Functions
-=================
+# SRT API Functions
 
 - [**Library Initialization**](#Library-Initialization)
   * [srt_startup](#srt_startup)
@@ -72,10 +71,11 @@ SRT API Functions
   * [srt_addlogfa, srt_dellogfa, srt_resetlogfa](#srt_addlogfa-srt_dellogfa-srt_resetlogfa)
   * [srt_setloghandler](#srt_setloghandler)
   * [srt_setlogflags](#srt_setlogflags)
+- [**Time Access**](#time-access)
+  * [srt_time_now](#srt_time_now)
+  * [srt_connection_time](#srt_connection_time)
 
-
-Library initialization
-----------------------
+## Library initialization
 
 ### srt_startup
 ```
@@ -118,8 +118,7 @@ relying on this behavior is stronly discouraged.
 This means that if you call `srt_startup` multiple times, you need to call the 
 `srt_cleanup` function exactly the same number of times.
 
-Creating and configuring sockets
---------------------------------
+## Creating and configuring sockets
 
 ### srt_socket
 ```
@@ -270,8 +269,7 @@ last user closed.
 
   * `SRT_EINVSOCK`: Socket `u` indicates no valid socket ID
 
-Connecting
-----------
+## Connecting
 
 ### srt_listen
 ```
@@ -626,8 +624,7 @@ IMPORTANT: It's not allowed to perform a rendezvous connection to two
 different families (that is, both `local_name` and `remote_name` must be `AF_INET` or
 `AF_INET6`).
 
-Socket group management
------------------------
+## Socket group management
 
 ### SRT_GROUP_TYPE
 
@@ -678,7 +675,7 @@ on a socket for a particular connection  (see [`srt_create_config()`](#srt_creat
 
 The most important structure for the group member status is `SRT_SOCKGROUPDATA`:
 
-```
+```c++
 typedef struct SRT_SocketGroupData_
 {
     SRTSOCKET id;
@@ -1021,8 +1018,7 @@ Errors:
 * `SRT_EINVPARAM`: this option is not allowed to be set on a socket
 being a group member
 
-Options and properties
-----------------------
+## Options and properties
 
 ### srt_getpeername
 ```
@@ -1131,21 +1127,20 @@ where x = ("%d", (version>>16) & 0xff), etc.
   * srt version as an unsigned 32-bit integer
 
 
-Helper data types for transmission
-----------------------------------
+## Helper data types for transmission
 
 ### SRT_MSGCTRL
 
 The `SRT_MSGCTRL` structure:
 
-```
+```c++
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
    int msgttl;           // TTL for a message, default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
-   int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;     // source timestamp (usec), 0: use internal time     
+   int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
+   int64_t srctime;      // source time (microseconds since SRT internal clock epoch)
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
 } SRT_MSGCTRL;
@@ -1154,11 +1149,11 @@ typedef struct SRT_MsgCtrl_
 The `SRT_MSGCTRL` structure is used in `srt_sendmsg2` and `srt_recvmsg2` calls 
 and specifies some special extra parameters:
 
-* `flags`: [IN, OUT]. RESERVED FOR FUTURE USE (should be 0). This is
+- `flags`: [IN, OUT]. RESERVED FOR FUTURE USE (should be 0). This is
 intended to specify some special options controlling the details of how the
 called function should work.
 
-* `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
+- `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
 sending messages (in `[ms]`). Not used for receiving messages. If this value
 is not negative, it defines the maximum time up to which this message should
 stay scheduled for sending for the sake of later retransmission. A message
@@ -1167,29 +1162,30 @@ is always sent for the first time, but the UDP packet carrying it may be
 the message is not successfully resent before TTL expires, further retransmission
 is given up and the message is discarded.
 
-* `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
+- `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
 be extracted by the receiver in the order of sending. This can be meaningful if 
 a packet loss has happened, and a particular message must wait for retransmission 
 so that it can be reassembled and then delivered. When this flag is false, the 
 message can be delivered even if there are any previous messages still waiting 
 for completion.
 
-* `boundary`: RESERVED FOR FUTURE USE. Intended to be used in a special mode 
+- `boundary`: RESERVED FOR FUTURE USE. Intended to be used in a special mode 
 when you are allowed to send or retrieve a part of the message.
 
-* `srctime`:
-   * [IN] Sender only. Specifies the application-provided timestamp. If not used
-(specified as 0), the current system time (absolute microseconds since epoch) is 
-used.
-   * [OUT] Receiver only. Specifies the time when the packet was intended to be
-delivered to the receiver.
+- `srctime`:
+  - [OUT] Receiver only. Specifies the time when the packet was intended to be
+delivered to the receiving application (in microseconds since SRT clock epoch).
+  - [IN] Sender only. Specifies the application-provided timestamp to be asociated
+with the packet. If not provided (specified as 0), the current time of SRT internal clock
+is used.
+  - For details on how to use `srctime` please refer to (Time Access)[#time-access] section.
 
-* `pktseq`: Receiver only. Reports the sequence number for the packet carrying
+- `pktseq`: Receiver only. Reports the sequence number for the packet carrying
 out the payload being returned. If the payload is carried out by more than one
 UDP packet, only the sequence of the first one is reported. Note that in
 **live mode** there's always one UDP packet per message.
 
-* `msgno`: Message number that can be sent by both sender and receiver,
+- `msgno`: Message number that can be sent by both sender and receiver,
 although it is required that this value remain monotonic in subsequent send calls. 
 Normally message numbers start with 1 and increase with every message sent.
 
@@ -1206,8 +1202,8 @@ object and can be used as a source for assignment. Note that you cannot pass
 this constant object into any of the API functions because they require it to be 
 mutable, as they use some fields to output values.
 
-Transmission
-------------
+## Transmission
+
 ### srt_send, srt_sendmsg, srt_sendmsg2
 ```
 int srt_send(SRTSOCKET u, const char* buf, int len);
@@ -1256,6 +1252,7 @@ with the rest of the buffer next time to send it completely. In both
   * `SRT_ECONNLOST`: Socket `u` used for the operation has lost its connection.
   * `SRT_EINVALMSGAPI`: Incorrect API usage in **message mode**:
     * **live mode**: trying to send more bytes at once than `SRTO_PAYLOADSIZE`
+    or wrong source time was provided.
   * `SRT_EINVALBUFFERAPI`: Incorrect API usage in **stream mode**:
     * Reserved for future use. The congestion controller object
       used for this mode doesn't use any restrictions on this call for now,
@@ -1406,8 +1403,7 @@ don't know what value to chose.
   * `SRT_ERDPERM`: The read from file operation has failed (`srt_sendfile`).
   * `SRT_EWRPERM`: The write to file operation has failed (`srt_recvfile`).
 
-Diagnostics
------------
+## Diagnostics
 
 General notes concerning the "getlasterror" diagnostic functions: when an API
 function ends up with error, this error information is stored in a thread-local
@@ -1619,8 +1615,7 @@ is not availble - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
   * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_PREDEFINED`
 
 
-Performance tracking
---------------------
+## Performance tracking
 
 General note concerning sequence numbers used in SRT: they are 32-bit "circular
 numbers" with the most significant bit not included. For example 0x7FFFFFFF
@@ -1654,8 +1649,7 @@ Reports the current statistics
 `SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
 of the fields please refer to the document [statistics.md](statistics.md).
 
-Asynchronous operations (epoll)
--------------------------------
+## Asynchronous operations (epoll)
 
 The epoll system is currently the only method for using multiple sockets in one
 thread with having the blocking operation moved to epoll waiting so that it can
@@ -1981,8 +1975,7 @@ Deletes the epoll container.
 
   * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
-Logging control
----------------
+## Logging control
 
 SRT has a widely used system of logs, as this is usually the only way to determine
 how the internals are working, without changing the rules by the act of tracing.
@@ -2015,7 +2008,7 @@ The constants for this value are those from `<sys/syslog.h>`
 
 ### srt_addlogfa, srt_dellogfa, srt_resetlogfa
 
-```
+```c++
 void srt_addlogfa(int fa);
 void srt_dellogfa(int fa);
 void srt_resetlogfa(const int* fara, size_t fara_size);
@@ -2034,7 +2027,8 @@ if strictly required for the development), or some duplicated information
 (so you may want to turn this FA on, while turning off the others).
 
 ### srt_setloghandler
-```
+
+```c++
 void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 typedef void SRT_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 ```
@@ -2043,7 +2037,8 @@ By default logs are printed to standard error stream. This function replaces
 the sending to a stream with a handler function that will receive them.
 
 ### srt_setlogflags
-```
+
+```c++
 void srt_setlogflags(int flags);
 ```
 
@@ -2056,9 +2051,95 @@ will provide this information on its own.
 
 The following flags are available, as collected in `logging_api.h` public header:
 
-* `SRT_LOGF_DISABLE_TIME`: Do not provide the time in the header
-* `SRT_LOGF_DISABLE_THREADNAME`: Do not provide the thread name in the header
-* `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
-* `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
+- `SRT_LOGF_DISABLE_TIME`: Do not provide the time in the header
+- `SRT_LOGF_DISABLE_THREADNAME`: Do not provide the thread name in the header
+- `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
+- `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
+
+## Time Access
+
+The following set of functions is intended to retrieve timestamps from the clock used by SRT.
+The sender can pass the timestamp in `MSGCTRL::srctime` of the `srt_sendmsg2(..)`
+function together with the packet being submitted to SRT.
+If the `srctime` value is not provided (the default value of 0 is set), SRT will use internal
+clock and assign the packet submission time as the packet timestamp.
+If the sender wants to explicitly assign a timestamp
+to a certain packet. this timestamp MUST be taken from SRT Time Access functions.
+The time value provided MUST equal or exceed the connection start time (`srt_connection_time(..)`)
+of the SRT socket passed to `srt_sendmsg2(..)`.
+
+The current time value as of the SRT internal clock can be retrieved using the `srt_time_now()` function.
+
+There are two known cases where you might want to use `srctime`:
+
+1. SRT passthrough (for stream gateways).
+You may wish to simply retrieve packets from an SRT source and pass them transparently
+to an SRT output (possibly re-encrypting). In that case, every packet you read
+should preserve the original value of `srctime` as obtained from `srt_recvmsg2`,
+and the original `srctime` for each packet should be then passed to `srt_sendmsg2`.
+This mechanism could be used to avoid jitter resulting from varying differences between
+the time of receiving and sending the same packet.
+
+2. Stable timing source.
+In the case of a live streaming procedure, when spreading packets evenly into the stream,
+you might want to predefine times for every single packet to keep time intervals perfectly equal.
+Or, if you believe that your input signal delivers packets at the exact times that should be
+assigned to them, you might want to preserve these times at the SRT receiving side
+to avoid jitter that may result from varying time differences between the packet arrival
+and the moment when sending it over SRT. In such cases you might do the following:
+
+    - At the packet arrival time, grab the current time at that moment using `srt_time_now()`.
+
+    - When you want a precalculated packet time, use a private relative time counter
+    set at the moment when the connection was made. From the moment when your first packet
+    is ready, start precalculating packet times relative to the connection start time obtained
+    from `srt_connection_time()`. Although you still have to synchronize sending times with these
+    predefined times, by explicitly specifying the source time you avoid the jitter
+    resulting from a lost accuracy due to waiting time and unfortunate thread scheduling.
+
+Note that  `srctime` uses an internally defined clock
+that is intended to be monotonic (the definition depends on the build flags,
+see below). Because of that **the application should not define this time basing
+on values obtained from the system functions for getting the current system time**
+(such as `time`, `ftime` or `gettimeofday`). To avoid problems and
+misunderstanding you should rely exclusively on time values provided by
+`srt_time_now()` and `srt_connection_time()` functions.
+
+The clock used by SRT internal clock, is determined by the following build flags:
+- `ENABLE_MONOTONIC` makes use of `CLOCK_MONOTONIC` with `clock_gettime` function.
+- `ENABLE_STDXXX_SYNC` makes use of `std::chrono::steady_clock`.
+
+The default is currently to use the system clock as internal SRT clock,
+although it's highly recommended to use one of the above monotonic clocks,
+as system clock is vulnerable to time modifications during transmission.
+
+### srt_time_now
+
+```c++
+int64_t srt_time_now();
+```
+
+Get time in microseconds elapsed since epoch using SRT internal clock (steady or monotonic clock).
+
+- Returns:
+  - Current time in microseconds elapsed since epoch of SRT internal clock.
+
+### srt_connection_time
+
+```c++
+int64_t srt_connection_time(SRTSOCKET sock);
+```
+
+Get connection time in microseconds elapsed since epoch using SRT internal clock (steady or monotonic clock).
+The connection time represents the time when SRT socket was open to establish a connection.
+Milliseconds elapsed since connection start time can be determined using [**Performance tracking**](#Performance-tracking)
+functions and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics.md)).
+
+- Returns:
+  - Connection time in microseconds elapsed since epoch of SRT internal clock.
+  - -1 in case of error
+
+- Errors:
+  - `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid SRT socket
 
 [RETURN TO TOP OF PAGE](#SRT-API-Functions)
