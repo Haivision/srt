@@ -1,7 +1,4 @@
-#Output Pace Control
-
-Published: 2020-06-26
-Last Updated: 2020-06-26
+# Output Pace Control
 
 ## Introduction
 This document introduces the Output Pace Mode (OPM) option (`SRTO_OUTPACEMODE`), an option that defines how the options affecting the SRT Sender output rate (`SRTO_MAXBW`, `SRTO_INPUTBW`, and `SRTO_OHEADBW`) are combined to achieve Output Pace Control (OPC).
@@ -66,5 +63,4 @@ This method combines both the internally sampled input bandwidth (sIbw) and the 
 only one that requires the `SRTO_OUTPACEMODE` option since the internal sampling of the input rate was previously enabled by setting SRTO_INPUTBW to 0.
 
 This methods was implemented to overcome weaknesses of `SRT_OPM_SMPINBW` and `SRT_OPM_INBWSET` on an application using a VBR encoder as the input source. The black screen syndrome of `SRT_OPM_SMPINBW` is described above. The weakness of `SRT_OPM_INBWSET` was specific to the hardware VBR encoder used at low bitrates (~200kbps) where the encoded overshot the configured bitrate that was also set in SRT with `SRTO_INPUTBW` with consequences similar to the black screen of the `SRT_OPM_SMPINBW`. By using the maximum of the actual rate sampled internally (sIbw) and the configure input rate (cIbw) both weaknesses are mitigated.
-
 
