@@ -407,7 +407,7 @@ int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) 
 void CChannel::getSockAddr(sockaddr_any& w_addr) const
 {
     // The getsockname function requires only to have enough target
-    // space to copy the socket name, it doesn't have to be corelated
+    // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
     socklen_t namelen = w_addr.storage_size();
