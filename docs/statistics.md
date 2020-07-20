@@ -90,9 +90,7 @@ See sections [Accumulated Statistics](#accumulated-statistics), [Interval-Based 
 | [mbpsRecvRate](#mbpsRecvRate)                       | interval-based    | Mbps                | -                    | ✓                      | double    |
 | [usSndDuration](#usSndDuration)                     | interval-based    | us (microseconds)   | ✓                    | -                      | int64_t   |
 | [pktReorderDistance](#pktReorderDistance)           | interval-based    | packets             | -                    | ✓                      | int32_t   |
-| [pktReorderTolerance](#pktReorderTolerance)         | interval-based    |                     |                      |                        | int32_t   |
-| [pktRcvAvgBelatedTime](#pktRcvAvgBelatedTime)       |                   |                     |                      |                        | double    |
-| [pktRcvBelated](#pktRcvBelated)                     |                   |                     |                      |                        | int64_t   |
+| [pktRcvBelated](#pktRcvBelated)                     | interval-based    | packets             | -                    | ✓                      | int64_t   |
 | [pktSndDrop](#pktSndDrop)                           | interval-based    | packets             | ✓                    | -                      | int32_t   |
 | [pktRcvDrop](#pktRcvDrop)                           | interval-based    | packets             | -                    | ✓                      | int32_t   |
 | [pktRcvUndecrypt](#pktRcvUndecrypt)                 | interval-based    | packets             | -                    | ✓                      | int32_t   |
@@ -123,6 +121,8 @@ See sections [Accumulated Statistics](#accumulated-statistics), [Interval-Based 
 | [byteRcvBuf](#byteRcvBuf)                           | instantaneous     | bytes               | -                    | ✓                      | int32_t   |
 | [msRcvBuf](#msRcvBuf)                               | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
 | [msRcvTsbPdDelay](#msRcvTsbPdDelay)                 | instantaneous     | ms (milliseconds)   | -                    | ✓                      | int32_t   |
+| [pktReorderTolerance](#pktReorderTolerance)         | instantaneous     | packets             | -                    | ✓                      | int32_t   |
+| [pktRcvAvgBelatedTime](#pktRcvAvgBelatedTime)       | instantaneous     | ms (milliseconds)   | -                    | ✓                      | double    |
 
 ### Accumulated Statistics
 
@@ -397,44 +397,6 @@ The distance in sequence numbers between the two original (not retransmitted) pa
 that were received out of order. Receiver only.
 
 The traceable distance values are limited by the maximum reorder tolerance set by  `SRTO_LOSSMAXTTL`.
-
-#### pktReorderTolerance
-
-Instant value of the packet reorder tolerance. Receiver side. Refer to [pktReorderDistance](#pktReorderDistance).
-
-`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value. The value defines the maximum
-time-to-live for the original packet, that was received after with a gap in the sequence of incoming packets.
-Those missing packets are expected to come out of order, therefore no loss is reported.
-The actual TTL value (**pktReorderTolerance**) specifies the number of packets to receive further, before considering
-the preceding packets lost, and sending the loss report.
-
-The internal algorithm checks the order of incoming packets and adjusts the tolerance based on the reorder
-distance (**pktReorderTolerance**), but not to a value higher than the maximum (`SRTO_LOSSMAXTTL`).
-
-SRT starts from tolerance value set in `SRTO_LOSSMAXTTL` (initial tolerance is set to 0 in SRT v1.4.0 and prior versions).
-Once the receiver receives the first reordered packet, it increases the tolerance to the distance in the sequence
-discontinuity of the two packets. \
-After 10 consecutive original (not retransmitted) packets come in order, the reorder distance
-is decreased by 1 for every such packet.
-
-For example, assume packets with the following sequence
-numbers are being received: \
-1, 2, 4, 3, 5, 7, 6, 10, 8, 9
-SRT starts from 0 tolerance. Receiving packet with sequence number 4 has a discontinuity
-equal to one packet. The loss is reported to the sender.
-With the next packet (sequence number 3) a reordering is detected. Reorder tolerance is increased to 1. \
-The next sequence discontinuity is detected when the packet with sequence number 7 is received.
-The current tolerance value is 1, which is equal to the gap (between 5 and 7). No loss is reported. \
-Next packet with sequence number 10 has a higher sequence discontinuity equal to 2.
-Missing packets with sequence numbers 8 and 9 will be reported lost with the next received packet
-(reorder distance is still at 1).
-The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
-The packet with sequence number 9 is reported lost.
-
-#### pktRcvAvgBelatedTime
-
-Accumulated difference between the current time and the time-to-play of a packet 
-that is received late.
 
 #### pktRcvBelated
 
@@ -717,6 +679,45 @@ Timestamp-based Packet Delivery Delay value set on the socket via `SRTO_RCVLATEN
 The value is used to apply TSBPD delay for reading the received data on the socket. Receiver side.
 
 If `SRTO_TSBPDMODE` is off (default for **file mode**), 0 is returned.
+
+#### pktReorderTolerance
+
+Instant value of the packet reorder tolerance. Receiver side. Refer to [pktReorderDistance](#pktReorderDistance).
+
+`SRTO_LOSSMAXTTL` sets the maximum reorder tolerance value. The value defines the maximum
+time-to-live for the original packet, that was received after with a gap in the sequence of incoming packets.
+Those missing packets are expected to come out of order, therefore no loss is reported.
+The actual TTL value (**pktReorderTolerance**) specifies the number of packets to receive further, before considering
+the preceding packets lost, and sending the loss report.
+
+The internal algorithm checks the order of incoming packets and adjusts the tolerance based on the reorder
+distance (**pktReorderTolerance**), but not to a value higher than the maximum (`SRTO_LOSSMAXTTL`).
+
+SRT starts from tolerance value set in `SRTO_LOSSMAXTTL` (initial tolerance is set to 0 in SRT v1.4.0 and prior versions).
+Once the receiver receives the first reordered packet, it increases the tolerance to the distance in the sequence
+discontinuity of the two packets. \
+After 10 consecutive original (not retransmitted) packets come in order, the reorder distance
+is decreased by 1 for every such packet.
+
+For example, assume packets with the following sequence
+numbers are being received: \
+1, 2, 4, 3, 5, 7, 6, 10, 8, 9
+SRT starts from 0 tolerance. Receiving packet with sequence number 4 has a discontinuity
+equal to one packet. The loss is reported to the sender.
+With the next packet (sequence number 3) a reordering is detected. Reorder tolerance is increased to 1. \
+The next sequence discontinuity is detected when the packet with sequence number 7 is received.
+The current tolerance value is 1, which is equal to the gap (between 5 and 7). No loss is reported. \
+Next packet with sequence number 10 has a higher sequence discontinuity equal to 2.
+Missing packets with sequence numbers 8 and 9 will be reported lost with the next received packet
+(reorder distance is still at 1).
+The next received packet has sequence number 8. Reorder tolerance value is increased to 2.
+The packet with sequence number 9 is reported lost.
+
+#### pktRcvAvgBelatedTime
+
+Accumulated difference between the current time and the time-to-play of a packet 
+that is received late.
+
 
 ## SRT Group Statistics
 
