@@ -309,11 +309,11 @@ Same as [pktRcvUndecryptTotal](#pktRcvUndecryptTotal), but expressed in bytes, i
 
 #### pktSent
 
-Same as `pktSentTotal`, but for a specified interval.
+Same as [pktSentTotal](#pktSentTotal), but for a specified interval.
 
 #### pktRecv
 
-Same as `pktRecvTotal`, but for a specified interval.
+Same as [pktRecvTotal](#pktRecvTotal), but for a specified interval.
 
 #### pktSentUnique
 
@@ -325,57 +325,57 @@ Same as [pktRecvUniqueTotal](#pktRecvUniqueTotal), but for a specified interval.
 
 #### pktSndLoss
 
-Same as `pktSndLossTotal`, but for a specified interval.
+Same as [pktSndLossTotal](#pktSndLossTotal), but for a specified interval.
 
 #### pktRcvLoss
 
-Same as `pktRcvLossTotal`, but for a specified interval.
+Same as [pktRcvLossTotal](#pktRcvLossTotal), but for a specified interval.
 
 #### pktRetrans
 
-Same as `pktRetransTotal`, but for a specified interval.
+Same as [pktRetransTotal](#pktRetransTotal), but for a specified interval.
 
 #### pktRcvRetrans
 
-Same as `pktRcvRetransTotal`, but for a specified interval.
+Same as [pktRcvRetransTotal](#pktRcvRetransTotal), but for a specified interval.
 
 #### pktSentACK
 
-Same as `pktSentACKTotal`, but for a specified interval.
+Same as [pktSentACKTotal](#pktSentACKTotal), but for a specified interval.
 
 #### pktRecvACK
 
-Same as `pktRecvACKTotal`, but for a specified interval.
+Same as [pktRecvACKTotal](#pktRecvACKTotal), but for a specified interval.
 
 #### pktSentNAK
 
-Same as `pktSentNAKTotal`, but for a specified interval.
+Same as [pktSentNAKTotal](#pktSentNAKTotal), but for a specified interval.
 
 #### pktRecvNAK
 
-Same as `pktRecvNAKTotal`, but for a specified interval.
+Same as [pktRecvNAKTotal](#pktRecvNAKTotal), but for a specified interval.
 
 #### pktSndFilterExtra
 
-Same as `pktSndFilterExtraTotal`, but for a specified interval.
+Same as [pktSndFilterExtraTotal](#pktSndFilterExtraTotal), but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 #### pktRcvFilterExtra
 
-Same as `pktRcvFilterExtraTotal`, but for a specified interval.
+Same as [pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal), but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 #### pktRcvFilterSupply
 
-Same as `pktRcvFilterSupplyTotal`, but for a specified interval.
+Same as [pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal), but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 #### pktRcvFilterLoss
 
-Same as `pktRcvFilterLossTotal`, but for a specified interval.
+Same as [pktRcvFilterLossTotal](#pktRcvFilterLossTotal), but for a specified interval.
 
 Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
 
@@ -389,7 +389,7 @@ Receiving rate in Mbps. Receiver side.
 
 #### usSndDuration
 
-Same as `usSndDurationTotal`, but measured on a specified interval.
+Same as [usSndDurationTotal](#usSndDurationTotal), but measured on a specified interval.
 
 #### pktReorderDistance
 
@@ -413,23 +413,23 @@ Retransmitted packets can also be considered late.
 
 #### pktSndDrop
 
-Same as `pktSndDropTotal`, but for a specified interval.
+Same as [pktSndDropTotal](#pktSndDropTotal), but for a specified interval.
 
 #### pktRcvDrop
 
-Same as `pktRcvDropTotal`, but for a specified interval.
+Same as [pktRcvDropTotal](#pktRcvDropTotal), but for a specified interval.
 
 #### pktRcvUndecrypt
 
-Same as `pktRcvUndecryptTotal`, but for a specified interval.
+Same as [pktRcvUndecryptTotal](#pktRcvUndecryptTotal), but for a specified interval.
 
 #### byteSent
 
-Same as `byteSentTotal`, but for a specified interval.
+Same as [byteSentTotal](#byteSentTotal), but for a specified interval.
 
 #### byteRecv
 
-Same as `byteRecvTotal`, but for a specified interval.
+Same as [byteRecvTotal](#byteRecvTotal), but for a specified interval.
 
 #### byteSentUnique
 
@@ -441,23 +441,23 @@ Same as [byteRecvUniqueTotal](#byteRecvUniqueTotal), but for a specified interva
 
 #### byteRcvLoss
 
-Same as `byteRcvLossTotal`, but for a specified interval.
+Same as [byteRcvLossTotal](#byteRcvLossTotal), but for a specified interval.
 
 #### byteRetrans
 
-Same as `byteRetransTotal`, but for a specified interval.
+Same as [byteRetransTotal](#byteRetransTotal), but for a specified interval.
 
 #### byteSndDrop
 
-Same as `byteSndDropTotal`, but for a specified interval.
+Same as [byteSndDropTotal](#byteSndDropTotal), but for a specified interval.
 
 #### byteRcvDrop
 
-Same as `byteRcvDropTotal`, but for a specified interval.
+Same as [byteRcvDropTotal](#byteRcvDropTotal), but for a specified interval.
 
 #### byteRcvUndecrypt
 
-Same as `byteRcvUndecryptTotal`, but for a specified interval.
+Same as [byteRcvUndecryptTotal](#byteRcvUndecryptTotal), but for a specified interval.
 
 
 ### Instantaneous Statistics
