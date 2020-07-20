@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_BUFFER_H__
-#define __UDT_BUFFER_H__
+#ifndef INC_SRT_BUFFER_H
+#define INC_SRT_BUFFER_H
 
 
 #include "udt.h"
@@ -72,9 +72,40 @@ modified by
 // a +% b : shift a by b
 // a == b : equality is same as for just numbers
 
+/// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
+class AvgBufSize
+{
+    typedef srt::sync::steady_clock::time_point time_point;
+
+public:
+    AvgBufSize()
+        : m_dBytesCountMAvg(0.0)
+        , m_dCountMAvg(0.0)
+        , m_dTimespanMAvg(0.0)
+    { }
+
+public:
+    bool isTimeToUpdate(const time_point& now) const;
+    void update(const time_point& now, int pkts, int bytes, int timespan_ms);
+
+public:
+    inline double pkts() const { return m_dCountMAvg; }
+    inline double timespan_ms() const { return m_dTimespanMAvg; }
+    inline double bytes() const { return m_dBytesCountMAvg; }
+
+private:
+    time_point m_tsLastSamplingTime;
+    double     m_dBytesCountMAvg;
+    double     m_dCountMAvg;
+    double     m_dTimespanMAvg;
+};
+
 
 class CSndBuffer
 {
+   typedef srt::sync::steady_clock::time_point time_point;
+   typedef srt::sync::steady_clock::duration duration;
+
 public:
 
    // XXX There's currently no way to access the socket ID set for
@@ -144,10 +175,8 @@ public:
 
    int dropLateData(int& bytes, int32_t& w_first_msgno, const srt::sync::steady_clock::time_point& too_late_time);
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
    void updAvgBufSize(const srt::sync::steady_clock::time_point& time);
    int getAvgBufSize(int& bytes, int& timespan);
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
    int getCurrBufSize(int& bytes, int& timespan);
 
    uint64_t getInRatePeriod() const { return m_InRatePeriod; }
@@ -161,7 +190,7 @@ public:
    /// @param [in] bytes  number of payload bytes in those newly added packets
    ///
    /// @return Current size of the data in the sending list.
-   void updateInputRate(const srt::sync::steady_clock::time_point& time, int pkts = 0, int bytes = 0);
+   void updateInputRate(const time_point& time, int pkts = 0, int bytes = 0);
 
 
    void resetInputRateSmpPeriod(bool disable = false)
@@ -169,11 +198,12 @@ public:
        setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US);
    }
 
-
 private:
-
    void increase();
    void setInputRateSmpPeriod(int period);
+
+   struct Block; // Defined below
+   static time_point getSourceTime(const CSndBuffer::Block& block);
 
 private:    // Constants
 
@@ -191,9 +221,9 @@ private:
       int m_iLength;                    // length of the block
 
       int32_t m_iMsgNoBitset;           // message number
-      int32_t m_iSeqNo;                       // sequence number for scheduling
-      srt::sync::steady_clock::time_point m_tsOriginTime;            // original request time
-      uint64_t m_ullSourceTime_us;
+      int32_t m_iSeqNo;                 // sequence number for scheduling
+      time_point m_tsOriginTime;        // original request time
+      int64_t m_llSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block
@@ -229,18 +259,13 @@ private:
    int m_iCount;                        // number of used blocks
 
    int m_iBytesCount;                   // number of payload bytes in queue
-   srt::sync::steady_clock::time_point m_tsLastOriginTime;
+   time_point m_tsLastOriginTime;
 
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
-   srt::sync::steady_clock::time_point m_tsLastSamplingTime;
-   int m_iCountMAvg;
-   int m_iBytesCountMAvg;
-   int m_TimespanMAvg;
-#endif /* SRT_ENABLE_SNDBUFSZ_MAVG */
+   AvgBufSize m_mavg;
 
    int m_iInRatePktsCount;  // number of payload bytes added since InRateStartTime
    int m_iInRateBytesCount;  // number of payload bytes added since InRateStartTime
-   srt::sync::steady_clock::time_point m_tsInRateStartTime;
+   time_point m_tsInRateStartTime;
    uint64_t m_InRatePeriod; // usec
    int m_iInRateBps;        // Input Rate in Bytes/sec
    int m_iAvgPayloadSz;     // Average packet payload size
@@ -323,7 +348,6 @@ public:
       /// @return size in pkts of acked data.
 
    int getRcvDataSize(int& bytes, int &spantime);
-#if SRT_ENABLE_RCVBUFSZ_MAVG
 
       /// Query a 1 sec moving average of how many data was received and acknowledged.
       /// @param [out] bytes bytes
@@ -337,7 +361,6 @@ public:
       /// @return none.
 
    void updRcvAvgDataSize(const time_point& now);
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
 
       /// Query the received average payload size.
       /// @return size (bytes) of payload size
@@ -379,9 +402,9 @@ public:
    bool isRcvDataReady(time_point& w_tsbpdtime, int32_t& w_curpktseq, int32_t seqdistance);
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-   void debugTraceJitter(uint64_t);
+   void debugTraceJitter(int64_t);
 #else
-   void debugTraceJitter(uint64_t) {}
+   void debugTraceJitter(int64_t) {}
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
 
    bool isRcvDataReady();
@@ -476,9 +499,7 @@ public:
 
    time_point getTsbPdTimeBase(uint32_t timestamp_us);
 
-      /// Get packet local delivery time
-      /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
-      /// @return local delivery time (usec)
+   int64_t getDrift() const { return m_DriftTracer.drift(); }
 
 public:
 
@@ -504,7 +525,10 @@ public:
 
 private:
    int extractData(char *data, int len, int p, int q, bool passack);
-   bool accessMsg(int& w_p, int& w_q, bool& w_passack, uint64_t& w_playtime, int upto);
+   bool accessMsg(int& w_p, int& w_q, bool& w_passack, int64_t& w_playtime, int upto);
+
+   /// Describes the state of the first N packets
+   std::string debugTimeState(size_t first_n_pkts) const;
    
    /// thread safe bytes counter of the Recv & Ack buffer
    /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
@@ -578,21 +602,16 @@ private:
    bool m_bTsbPdWrapCheck;              // true: check packet time stamp wrap around
    static const uint32_t TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
 
-   static const int TSBPD_DRIFT_MAX_VALUE = 5000;   // Max drift (usec) above which TsbPD Time Offset is adjusted
-   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;  // Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
-   //int m_iTsbPdDrift;                           // recent drift in the packet time stamp
-   //int64_t m_TsbPdDriftSum;                     // Sum of sampled drift
-   //int m_iTsbPdDriftNbSamples;                  // Number of samples in sum and histogram
+   /// Max drift (usec) above which TsbPD Time Offset is adjusted
+   static const int TSBPD_DRIFT_MAX_VALUE = 5000;
+   /// Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
+   static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
-   time_point m_tsLastSamplingTime;
-   int m_TimespanMAvg;
-   int m_iCountMAvg;
-   int m_iBytesCountMAvg;
-#endif /* SRT_ENABLE_RCVBUFSZ_MAVG */
+   AvgBufSize m_mavg;
 #ifdef SRT_DEBUG_TSBPD_DRIFT
    int m_TsbPdDriftHisto100us[22];              // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
    int m_TsbPdDriftHisto1ms[22];                // Histogram of TsbPD drift (-10.0 .. +10.0 ms, in 1.0 ms increment)
+   int m_iTsbPdDriftNbSamples = 0;              // Number of samples in sum and histogram
    static const int TSBPD_DRIFT_PRT_SAMPLES = 200;    // Number of samples (UMSG_ACKACK packets) to print hostogram
 #endif /* SRT_DEBUG_TSBPD_DRIFT */
 

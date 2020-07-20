@@ -51,8 +51,8 @@ modified by
 *****************************************************************************/
 
 
-#ifndef __UDT_QUEUE_H__
-#define __UDT_QUEUE_H__
+#ifndef INC_SRT_QUEUE_H
+#define INC_SRT_QUEUE_H
 
 #include "channel.h"
 #include "common.h"
@@ -101,6 +101,10 @@ public:     // Storage size operations
 
    int shrink();
 
+public:
+   int size() const     { return m_iSize - m_iCount; }
+   int capacity() const { return m_iSize; }
+
 public:     // Operations on units
 
       /// find an available unit for incoming packet.
@@ -118,23 +122,23 @@ public:
 private:
    struct CQEntry
    {
-      CUnit* m_pUnit;		// unit queue
-      char* m_pBuffer;		// data buffer
-      int m_iSize;		// size of each queue
+      CUnit* m_pUnit;   // unit queue
+      char* m_pBuffer;  // data buffer
+      int m_iSize;      // size of each queue
 
       CQEntry* m_pNext;
    }
-   *m_pQEntry,			// pointer to the first unit queue
-   *m_pCurrQueue,		// pointer to the current available queue
-   *m_pLastQueue;		// pointer to the last unit queue
+   *m_pQEntry,          // pointer to the first unit queue
+   *m_pCurrQueue,       // pointer to the current available queue
+   *m_pLastQueue;       // pointer to the last unit queue
 
-   CUnit* m_pAvailUnit;         // recent available unit
+   CUnit* m_pAvailUnit; // recent available unit
 
-   int m_iSize;			// total size of the unit queue, in number of packets
-   int m_iCount;		// total number of valid packets in the queue
+   int m_iSize;         // total size of the unit queue, in number of packets
+   int m_iCount;        // total number of valid (occupied) packets in the queue
 
-   int m_iMSS;			// unit buffer size
-   int m_iIPversion;		// IP version
+   int m_iMSS;          // unit buffer size
+   int m_iIPversion;    // IP version
 
 private:
    CUnitQueue(const CUnitQueue&);
@@ -377,7 +381,6 @@ public:
 
    int sendto(const sockaddr_any& addr, CPacket& packet);
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Get the IP TTL.
       /// @param [in] ttl IP Time To Live.
       /// @return TTL.
@@ -388,7 +391,6 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
 
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
@@ -537,10 +539,8 @@ struct CMultiplexer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
    int m_iMSS;          // Maximum Segment Size
    int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
    int m_iIpV6Only;     // IPV6_V6ONLY option

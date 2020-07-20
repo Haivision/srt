@@ -28,6 +28,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <common.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -305,17 +306,12 @@ bool DoUpload(UriParser& ut, string path, string filename,
     {
         if (!tar.get())
         {
-            int sockopt = SRTT_FILE;
-
-            tar = Target::Create(ut.uri());
+            tar = Target::Create(ut.makeUri());
             if (!tar.get())
             {
                 cerr << "Unsupported target type: " << ut.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(tar->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
@@ -344,7 +340,6 @@ bool DoUpload(UriParser& ut, string path, string filename,
         assert(efdlen == 1);
 
         SRT_SOCKSTATUS status = srt_getsockstate(s);
-        Verb() << "Event with status " << status << "\n";
 
         switch (status)
         {
@@ -492,17 +487,12 @@ bool DoDownload(UriParser& us, string directory, string filename,
     {
         if (!src.get())
         {
-            int sockopt = SRTT_FILE;
-
-            src = Source::Create(us.uri());
+            src = Source::Create(us.makeUri());
             if (!src.get())
             {
                 cerr << "Unsupported source type: " << us.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(src->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
@@ -672,6 +662,9 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     string path = fileuri.path(), directory, filename;
     ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
+
+    // Add some extra parameters.
+    srt_source_uri["transtype"] = "file";
 
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
 }

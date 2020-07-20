@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__SOCKETOPTIONS_HPP
-#define INC__SOCKETOPTIONS_HPP
+#ifndef INC_SRT_SOCKETOPTIONS_HPP
+#define INC_SRT_SOCKETOPTIONS_HPP
 
 #include <string>
 #include <map>
@@ -51,27 +51,34 @@ struct SocketOption
     Type type;
     const std::map<std::string, int>* valmap;
 
-    template <Domain D>
-    bool apply(int socket, std::string value) const;
+    template <Domain D, typename Object = int>
+    bool apply(Object socket, std::string value) const;
 
-    template <Domain D, Type T>
-    bool applyt(int socket, std::string value) const;
+    template <Domain D, Type T, typename Object = int>
+    bool applyt(Object socket, std::string value) const;
 
-    template <Domain D>
-    static int setso(int socket, int protocol, int symbol, const void* data, size_t size);
+    template <Domain D, typename Object>
+    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size);
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
 };
 
 template<>
-inline int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 template<>
-inline int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
+{
+    return srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
+}
+
+
+template<>
+inline int SocketOption::setso<SocketOption::SYSTEM, int>(int socket, int proto, int sym, const void* data, size_t size)
 {
     return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
@@ -168,8 +175,8 @@ inline bool SocketOption::extract<SocketOption::ENUM>(std::string value, OptionV
     return false;
 }
 
-template <SocketOption::Domain D, SocketOption::Type T>
-inline bool SocketOption::applyt(int socket, std::string value) const
+template <SocketOption::Domain D, SocketOption::Type T, typename Object>
+inline bool SocketOption::applyt(Object socket, std::string value) const
 {
     OptionValue o; // common meet point
     int result = -1;
@@ -179,12 +186,12 @@ inline bool SocketOption::applyt(int socket, std::string value) const
 }
 
 
-template<SocketOption::Domain D>
-inline bool SocketOption::apply(int socket, std::string value) const
+template<SocketOption::Domain D, typename Object>
+inline bool SocketOption::apply(Object socket, std::string value) const
 {
     switch ( type )
     {
-#define SRT_HANDLE_TYPE(ty) case ty: return applyt<D, ty>(socket, value)
+#define SRT_HANDLE_TYPE(ty) case ty: return applyt<D, ty, Object>(socket, value)
 
         SRT_HANDLE_TYPE(STRING);
         SRT_HANDLE_TYPE(INT);
@@ -233,6 +240,7 @@ const SocketOption srt_options [] {
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "enforcedencryption", 0, SRTO_ENFORCEDENCRYPTION, SocketOption::PRE, SocketOption::BOOL, nullptr },
+    { "ipv6only", 0, SRTO_IPV6ONLY, SocketOption::PRE, SocketOption::INT, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},

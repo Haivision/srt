@@ -64,7 +64,7 @@
 #include <chrono>
 #include <thread>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -283,10 +283,31 @@ namespace srt_logging
 
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
+    static string gtypes[] = {
+        "undefined", // SRT_GTYPE_UNDEFINED
+        "broadcast",
+        "backup",
+        "balancing",
+        "multicast"
+    };
+
     int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
-    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << VerbNoEOL;
+    if (type != 0)
+    {
+        SRT_GROUP_TYPE gt;
+        size = sizeof gt;
+        if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
+        {
+            if (gt < Size(gtypes))
+                Verb() << " type=" << gtypes[gt] << VerbNoEOL;
+            else
+                Verb() << " type=" << int(gt) << VerbNoEOL;
+        }
+    }
+    Verb() << " connection";
 
     return 0;
 }
@@ -351,7 +372,7 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     RejectData* data = (RejectData*)op;
 
     srt_setrejectreason(acpsock, data->code);
-    UDT::setstreamid(acpsock, data->streaminfo);
+    srt::setstreamid(acpsock, data->streaminfo);
 
     return -1;
 }
@@ -666,7 +687,7 @@ int main( int argc, char** argv )
     }
 
 
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -688,7 +709,7 @@ int main( int argc, char** argv )
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
@@ -770,6 +791,15 @@ int main( int argc, char** argv )
     alarm(0);
     end_time = time(0);
 
+    if (!src || !tar)
+    {
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
+
+        cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
+        return 2;
+    }
+
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
@@ -799,7 +829,12 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << "[." << VerbNoEOL;
                 alarm(timeout);
+            }
+            else
+            {
+                alarm(0);
             }
             Verb() << " << ... " << VerbNoEOL;
             const bytevector& data = src->Read(chunk);
@@ -812,6 +847,7 @@ int main( int argc, char** argv )
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << ".] " << VerbNoEOL;
                 alarm(0);
             }
 
@@ -929,4 +965,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-

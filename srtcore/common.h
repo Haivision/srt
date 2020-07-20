@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_COMMON_H__
-#define __UDT_COMMON_H__
+#ifndef INC_SRT_COMMON_H
+#define INC_SRT_COMMON_H
 
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
@@ -286,7 +286,7 @@ enum ETransmissionEvent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
 
-    TEV__SIZE
+    TEV_E_SIZE
 };
 
 std::string TransmissionEventStr(ETransmissionEvent ev);
@@ -830,7 +830,7 @@ struct CIPAddress
 {
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family);
+   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family, const sockaddr_any& peer);
    static std::string show(const struct sockaddr* adr);
 };
 
@@ -1361,6 +1361,7 @@ public:
 namespace srt_logging
 {
 std::string SockStatusStr(SRT_SOCKSTATUS s);
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
 }
 
 // Version parsing

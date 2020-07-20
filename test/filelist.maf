@@ -2,6 +2,7 @@
 SOURCES
 test_buffer.cpp
 test_connection_timeout.cpp
+test_many_connections.cpp
 test_cryspr.cpp
 test_enforced_encryption.cpp
 test_epoll.cpp
@@ -13,4 +14,5 @@ test_seqno.cpp
 test_socket_options.cpp
 test_sync.cpp
 test_timer.cpp
+test_unitqueue.cpp
 test_utilities.cpp

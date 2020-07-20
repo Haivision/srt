@@ -9,8 +9,8 @@
  */
 
 
-#ifndef INC__SRT_FEC_H
-#define INC__SRT_FEC_H
+#ifndef INC_SRT_FEC_H
+#define INC_SRT_FEC_H
 
 #include <string>
 #include <map>

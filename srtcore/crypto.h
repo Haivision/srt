@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__CRYPTO_H
-#define INC__CRYPTO_H
+#ifndef INC_SRT_CRYPTO_H
+#define INC_SRT_CRYPTO_H
 
 #include <cstring>
 #include <string>

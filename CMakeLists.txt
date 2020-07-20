@@ -83,10 +83,17 @@ foreach(ef ${enforcers})
 	add_definitions(-D${ef}${val})
 endforeach()
 
+# NOTE: Known options you can change using ENFORCE_ variables:
+
+# SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
+# SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
+# SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
+# SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
+# SRT_DEBUG_TLPKTDROP_DROPSEQ 1
+# SRT_DEBUG_SNDQ_HIGHRATE 1
+# SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+
 # option defaults
-# XXX CHANGE: Logging is enabled now by default,
-# use ENABLE_LOGGING=NO in cmake or
-# --disable-logging in configure.
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
 
 # Always turn logging on if the build type is debug
@@ -125,6 +132,11 @@ set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 # Use application-defined group reader
 # (currently the only one implemented)
 add_definitions(-DSRT_ENABLE_APP_READER)
+
+# XXX This was added once as experimental, it is now in force for
+# write-blocking-mode sockets. Still unclear if all issues around
+# closing while data still not written are eliminated.
+add_definitions(-DSRT_ENABLE_CLOSE_SYNCH)
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -193,19 +205,26 @@ if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
 	if (${COMPILER_TYPE} STREQUAL gcc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL cc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	elseif (${COMPILER_TYPE} STREQUAL icc)
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
 	else()
 		# Use blindly <command> for C compiler and <command>++ for C++.
 		# At least this matches clang.
 		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
 		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
+		if (${COMPILER_TYPE} STREQUAL clang)
+			set (HAVE_COMPILER_GNU_COMPAT 1)
+		endif()
 	endif()
 	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+	unset(USING_DEFAULT_COMPILER_PREFIX)
 else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
@@ -322,13 +341,35 @@ if (USE_GNUSTL)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
 endif()
 
+if (USING_DEFAULT_COMPILER_PREFIX)
 # Detect if the compiler is GNU compatable for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
+
+	# See https://gcc.gnu.org/projects/cxx-status.html
+	# At the bottom there's information about C++98, which is default up to 6.1 version.
+	# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
+	if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
+	    message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
+		set (FORCE_CXX_STANDARD 1)
+	elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
+		message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
+		set (FORCE_CXX_STANDARD 1)
+	else() 
+	    message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
+	endif()
 else()
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 0)
+endif()
+
+else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
+
+	# Force the C++ standard as C++11
+	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
+	set (FORCE_CXX_STANDARD 1)
+	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
 
 if (DISABLE_CXX11)
@@ -338,16 +379,116 @@ else()
 	set (ENABLE_CXX11 1)
 endif()
 
+function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
+
+	set (STDPFX c++)
+	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
+		set (STDPFX ${CMAKE_MATCH_1})
+		set (STDCXX ${CMAKE_MATCH_2})
+	elseif (stdval MATCHES "[0-9]*")
+		set (STDCXX ${stdval})
+	else()
+		set (STDCXX 0)
+	endif()
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+			set (STDCXX 03)
+	endif()
+
+	# return
+	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
+	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
+endfunction()
+
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
 	if (ENABLE_STDCXX_SYNC)
-		message(ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+	endif()
+	if (DEFINED USE_CXX_STD)
+		message(FATAL_ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
 	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
-	set(CMAKE_CXX_STANDARD 11)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		# If defined, make sure it's at least C++11
+		if (${STDCXX} LESS 11)
+			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
 endif()
+
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+
+if (CMAKE_MAJOR_VERSION LESS 3)
+	set (FORCE_CXX_STANDARD_GNUONLY 1)
+endif()
+
+if (DEFINED USE_CXX_STD)
+	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+
+	if (${STDCXX} EQUAL 0)
+		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
+	endif()
+
+	if (NOT STDCXX STREQUAL "")
+
+		if (${STDCXX} LESS 11)
+			if (ENABLE_STDCXX_SYNC)
+				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+			endif()
+			# Set back to 98 because cmake doesn't understand 03.
+			set (STDCXX 98)
+			# This enforces C++03 standard on SRT.
+			# Apps still use C++11
+
+			# Set this through independent flags
+			set (USE_CXX_STD_LIB ${STDCXX})
+			set (USE_CXX_STD_APP "")
+			set (FORCE_CXX_STANDARD 1)
+			message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+		elseif (FORCE_CXX_STANDARD_GNUONLY)
+			# CMake is too old to handle CMAKE_CXX_STANDARD,
+			# use bare GNU options.
+			set (FORCE_CXX_STANDARD 1)
+			set (USE_CXX_STD_APP ${STDCXX})
+			set (USE_CXX_STD_LIB ${STDCXX})
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
+		else()
+			# This enforces this standard on both apps and library,
+			# so set this as global C++ standard option
+			set (CMAKE_CXX_STANDARD ${STDCXX})
+			unset (FORCE_CXX_STANDARD)
+
+			# Do not set variables to not duplicate flags
+			set (USE_CXX_STD_LIB "")
+			set (USE_CXX_STD_APP "")
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
+		endif()
+
+		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	endif()
+else()
+	set (USE_CXX_STD_LIB "")
+	set (USE_CXX_STD_APP "")
+endif()
+
+if (FORCE_CXX_STANDARD)
+	message(STATUS "C++ STD: Forcing C++11 on applications")
+	if (USE_CXX_STD_APP STREQUAL "")
+		set (USE_CXX_STD_APP 11)
+	endif()
+
+	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
+		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
+		set (USE_CXX_STD_LIB 11)
+	endif()
+endif()
 
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
@@ -498,7 +639,7 @@ elseif (MICROSOFT)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
 		#search package folders with GLOB to add as extra hint for headers
-		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./packages/cinegy.pthreads-win*/sources)
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./_packages/cinegy.pthreads-win*/sources)
 		if (PTHREAD_PACKAGE_INCLUDE_HINT)
 			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
 		endif()
@@ -513,7 +654,7 @@ elseif (MICROSOFT)
 		endif()
 
 		#search package folders with GLOB to add as extra hint for libs
-		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./_packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
 		if (PTHREAD_PACKAGE_LIB_HINT)
 			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
 		endif()
@@ -641,6 +782,24 @@ if (ENABLE_SHARED)
 	endif()
 endif()
 
+macro(srt_set_stdcxx targetname spec)
+	set (stdcxxspec ${spec})
+	if (NOT "${stdcxxspec}" STREQUAL "")
+		if (FORCE_CXX_STANDARD_GNUONLY)
+			target_compile_options(${targetname} PRIVATE -std=c++${stdcxxspec})
+			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
+		else()
+			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
+			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
+		endif()
+	else()
+		message(STATUS "APP: ${targetname}: using default C++ standard")
+	endif()
+endmacro()
+
+
+srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
+
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
@@ -655,7 +814,11 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		if (OPENSSL_USE_STATIC_LIBS)			
+			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
+		else()
+			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
@@ -689,6 +852,9 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
+		if (OPENSSL_USE_STATIC_LIBS)			
+			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
+		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
 	endif()
@@ -699,8 +865,12 @@ endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-if (MICROSOFT)
-	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
+if (MICROSOFT)		
+	if (OPENSSL_USE_STATIC_LIBS)			
+		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
+	else()
+		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
+	endif()
 elseif (MINGW)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32)
 endif()
@@ -730,9 +900,12 @@ if (ENABLE_SHARED)
 endif()
 
 if (srt_libspec_shared)
-if (MICROSOFT)
-	target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-endif()
+	if (MICROSOFT)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
+		if (OPENSSL_USE_STATIC_LIBS)			
+			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
+		endif()
+	endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
@@ -795,14 +968,6 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIB
 
 # Applications
 
-if (HAVE_COMPILER_GNU_COMPAT AND ENABLE_CXX11)
-	message(STATUS "C++ VERSION: Setting C++11 compat flag for gnu compiler")
-	set (CFLAGS_CXX_STANDARD "-std=c++11")
-else()
-	message(STATUS "C++ VERSION: leaving default, not a GNU compiler, assuming C++11 or newer is default.")
-	set (CFLAGS_CXX_STANDARD "")
-endif()
-
 # If static is available, link apps against static one.
 # Otherwise link against shared one.
 
@@ -825,8 +990,9 @@ macro(srt_add_program name)
 endmacro()
 
 macro(srt_make_application name)
-	target_compile_options(${name} PRIVATE ${CFLAGS_CXX_STANDARD})
 
+	srt_set_stdcxx(${name} "${USE_CXX_STD_APP}")
+	
 	# This is recommended by cmake, but it doesn't work anyway.
 	# What is needed is that this below CMAKE_INSTALL_RPATH (yes, relative)
 	# is added as is.
@@ -843,10 +1009,9 @@ macro(srt_make_application name)
 		# XXX not sure about Mac.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
 		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
-	endif()
 
-	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
-	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD}" ${FORCE_RPATH})
+		set_target_properties(${name} PROPERTIES ${FORCE_RPATH})
+	endif()
 
 	target_link_libraries(${name} ${srt_link_library})
 	if (USE_GNUSTL)
@@ -876,7 +1041,7 @@ endif()
 
 if (ENABLE_APPS)
 
-	message(STATUS "APPS: ENABLED")
+	message(STATUS "APPS: ENABLED, std=${USE_CXX_STD_APP}")
 
 	# Make a virtual library of all shared app files
 	MafReadDir(apps support.maf
@@ -888,7 +1053,7 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
-	target_compile_options(srtsupport_virtual PUBLIC ${CFLAGS_CXX_STANDARD})
+	srt_set_stdcxx(srtsupport_virtual "${USE_CXX_STD_APP}")
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
 	# Applications
@@ -928,12 +1093,13 @@ if (ENABLE_APPS)
 		endmacro()
 
 		srt_add_testprogram(utility-test)
+		srt_set_stdcxx(utility-test "${USE_CXX_STD_APP}")
 		if (NOT WIN32)
 			# This program is symlinked under git-cygwin.
 			# Avoid misleading syntax error.
 			srt_add_testprogram(uriparser-test)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
-			target_compile_options(uriparser-test PRIVATE ${CFLAGS_CXX_STANDARD})
+			srt_set_stdcxx(uriparser-test "${USE_CXX_STD_APP}")
 		endif()
 		
 		srt_add_testprogram(srt-test-live)
@@ -992,15 +1158,6 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
-
-	set (SOURCES_suflip
-		${CMAKE_CURRENT_SOURCE_DIR}/examples/suflip.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/uriparser.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/apps/apputil.cpp
-	)
-	srt_add_program(suflip ${SOURCES_suflip})
-	target_link_libraries(suflip ${srt_link_library})
-	install(TARGETS suflip RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 

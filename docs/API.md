@@ -136,7 +136,7 @@ SRT Usage - listener (server)
         int st = srt_bind(sock, (sockaddr*)&sa, sizeof sa);
         srt_listen(sock, 5);
         while ( !finish ) {
-           socklen_t sa_len = sizeof sa;
+           int sa_len = sizeof sa;
            newsocket = srt_accept(sock, (sockaddr*)&sa, &sa_len);
            HandleNewClient(newsocket, sa);
         }
@@ -214,7 +214,7 @@ to be dropped before sending (so -1 should be passed here).
 The `srctime` parameter is an SRT addition for applications (i.e. gateways)
 forwarding SRT streams. It permits pulling and pushing of the sender's original time
 stamp, converted to local time and drift adjusted. The srctime parameter is the
-number of usec (since epoch) in local time. If the connection is not between
+number of usec (since epoch) in local SRT clock time. If the connection is not between
 SRT peers or if Timestamp-Based Packet Delivery mode (TSBPDMODE) is not enabled
 (see Options), the extracted srctime will be 0. Passing srctime = 0 in sendmsg
 is like using the API without srctime and the local send time will be used (if
@@ -241,7 +241,7 @@ Sending a payload:
 
     nb = srt_send(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_sendmsg2(u, buf, nb, &mc);
 
 
@@ -250,7 +250,7 @@ Receiving a payload:
     nb = srt_recvmsg(u, buf, nb);
     nb = srt_recv(u, buf, nb);
 
-    SRT_MSGCTL mc = srt_msgctl_default;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
     nb = srt_recvmsg2(u, buf, nb, &mc);
 
 
@@ -539,6 +539,21 @@ socket will not be the value returned by `srt_accept` call. Note also that, in
 case of bonding groups, an additional connection to an already connected
 group will still call the listener callback handler, but that connection will
 not be available to the `srt_accept` call.
+
+---
+
+| OptName               | Since | Binding | Type              | Units  | Default  | Range  |
+| --------------------- | ----- | ------- | ----------------- | ------ | -------- | ------ |
+| `SRTO_GROUPTYPE`      |       | pre     | `SRT_GROUP_TYPE`  |        |          | enum   |
+
+- This option is read-only and it is intended to be called inside the listener
+callback handler (see `srt_listen_callback`). Possible values are defined in
+the `SRT_GROUP_TYPE` enumeration type.
+
+- This option returns the group type that is declared in the incoming connection.
+If the incoming connection is not going to make a group-member connection, then
+the value returned is `SRT_GTYPE_UNDEFINED`. If this option is read in any other
+context than inside the listener callback handler, the value is undefined.
 
 ---
 
@@ -1133,14 +1148,15 @@ The [buffer mode](#transmission-method-buffer) settings set `SRTO_SNDDROPDELAY` 
 
 - **[SET]** - Sets an extra delay before TLPKTDROP is triggered on the data
   sender. TLPKTDROP discards packets reported as lost if it is already too late
-to send them (the receiver would discard them even if received).  The total
-delay before TLPKTDROP is triggered consists of the LATENCY (`SRTO_PEERLATENCY`),
-plus `SRTO_SNDDROPDELAY`, plus 2 * the ACK interval (default ACK interval is 10ms).
-The minimum total delay is 1 second.
+to send them (the receiver would discard them even if received). The
+delay before TLPKTDROP mechanism is triggered consists of the SRT latency (`SRTO_PEERLATENCY`),
+plus `SRTO_SNDDROPDELAY`, plus `2 * interval between sending ACKs` (the default `interval between sending ACKs` is 10 milliseconds).
+The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds.
+
 A value of -1 discards packet drop.
 `SRTO_SNDDROPDELAY` extends the tolerance for retransmitting packets at
 the expense of more likely retransmitting them uselessly. To be effective, it
-must have a value greater than 1000 - `SRTO_PEERLATENCY`.
+must have a value greater than 1000 - `SRTO_PEERLATENCY` milliseconds.
 
 ---
 

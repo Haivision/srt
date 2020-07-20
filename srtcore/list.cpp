@@ -148,9 +148,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
                 i = m_caSeq[i].inext;
 
             // 3. Check if seqno1 overlaps with (seqbegin, seqend)
-            const int seqend = m_caSeq[i].seqend == SRT_SEQNO_NONE
-                ? m_caSeq[i].seqstart
-                : m_caSeq[i].seqend;
+            const int seqend = m_caSeq[i].seqend == SRT_SEQNO_NONE ? m_caSeq[i].seqstart : m_caSeq[i].seqend;
 
             if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
             {
@@ -184,7 +182,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     return m_iLength - origlen;
 }
 
-void CSndLossList::remove(int32_t seqno)
+void CSndLossList::removeUpTo(int32_t seqno)
 {
     CGuard listguard(m_ListLock);
 

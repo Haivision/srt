@@ -33,8 +33,8 @@ local FF_state_select = {
 }
 fields.FF_state = ProtoField.uint8("srt_dev.FF_state", "FF state", base.HEX, FF_state_select, 0xC0)
 local O_state_select = {
-	[0] = "[ORD_REQUIRED]",
-	[1] = "[ORD_RELAX]"
+	[0] = "[ORD_RELAX]",
+	[1] = "[ORD_REQUIRED]"
 }
 fields.O_state = ProtoField.uint8("srt_dev.O_state", "O state", base.HEX, O_state_select, 0x20)
 local KK_state_select = {
@@ -67,15 +67,24 @@ local msg_type_select = {
 fields.msg_type = ProtoField.uint16("srt_dev.msg_type", "Message Type", base.HEX, msg_type_select, 0x7FFF)
 fields.msg_ext_type = ProtoField.uint16("srt_dev.msg_ext_type", "Message Extented Type", base.DEC)
 
+local flag_state_select = {
+	[0] = "Unset",
+	[1] = "Set"
+}
+
 -- Handshake packet fields
 fields.UDT_version = ProtoField.uint32("srt_dev.UDT_version", "UDT Version", base.DEC)
 fields.sock_type = ProtoField.uint32("srt_dev.sock_type", "Socket Type", base.DEC)
 fields.ency_fld = ProtoField.uint16("srt_dev.ency_fld", "Encryption Field", base.DEC)
-fields.ext_fld = ProtoField.uint16("srt_dev.ext_fld", "Extension Field", base.HEX)
+fields.ext_fld = ProtoField.uint16("srt_dev.ext_fld", "Extension Fields", base.HEX)
+fields.ext_fld_tree = ProtoField.uint16("srt_dev.ext_fld_tree", "Extension Fields Tree", base.HEX)
+fields.hsreq = ProtoField.uint16("srt_dev.hsreq", "HS_EXT_HSREQ", base.HEX, flag_state_select, 0x1)
+fields.kmreq = ProtoField.uint16("srt_dev.kmreq", "HS_EXT_KMREQ", base.HEX, flag_state_select, 0x2)
+fields.config = ProtoField.uint16("srt_dev.config", "HS_EXT_CONFIG", base.HEX, flag_state_select, 0x4)
 fields.isn = ProtoField.uint32("srt_dev.isn", "Initial packet sequence number", base.DEC)
 fields.mss = ProtoField.uint32("srt_dev.mss", "Max Packet Size", base.DEC)
 fields.fc = ProtoField.uint32("srt_dev.fc", "Maximum Flow Window Size", base.DEC)
-fields.conn_type = ProtoField.uint32("srt_dev.conn_type", "Connection Type", base.DEC)
+fields.conn_type = ProtoField.int32("srt_dev.conn_type", "Connection Type", base.DEC)
 fields.sock_id = ProtoField.uint32("srt_dev.sock_id", "Socket ID", base.DEC)
 fields.syn_cookie = ProtoField.uint32("srt_dev.syn_cookie", "SYN cookie", base.DEC)
 fields.peer_ipaddr = ProtoField.none("srt_dev.peer_ipaddr", "Peer IP address", base.NONE)
@@ -89,7 +98,9 @@ local ext_type_select = {
 	[3] = "SRT_CMD_KMREQ",
 	[4] = "SRT_CMD_KMRSP",
 	[5] = "SRT_CMD_SID",
-	[6] = "SRT_CMD_CONGESTION"
+	[6] = "SRT_CMD_CONGESTION",
+	[7] = "SRT_CMD_FILTER",
+	[8] = "SRT_CMD_GROUP"
 }
 fields.ext_type_msg_tree = ProtoField.none("srt_dev.ext_type", "Extension Type Message", base.NONE)
 fields.ext_type = ProtoField.uint16("srt_dev.ext_type", "Extension Type", base.HEX, ext_type_select, 0xF)
@@ -100,8 +111,9 @@ fields.srt_version = ProtoField.uint32("srt_dev.srt_version", "SRT Version", bas
 fields.srt_flags = ProtoField.uint32("srt_dev.srt_flags", "SRT Flags", base.HEX)
 fields.tsbpb_resv = ProtoField.uint16("srt_dev.tsbpb_resv", "TsbPb Receive", base.DEC)
 fields.tsbpb_delay = ProtoField.uint16("srt_dev.tsbpb_delay", "TsbPb Delay", base.DEC)
-fields.rcv_tsbpb_delay = ProtoField.uint16("srt_dev.rcv_tsbpb_delay", "Receive TsbPd Delay", base.DEC)
-fields.snd_tsbpb_delay = ProtoField.uint16("srt_dev.snd_tsbpb_delay", "Send TsbPd Delay", base.DEC)
+fields.tsbpd_delay = ProtoField.uint16("srt_dev.tsbpd_delay", "TsbPd Delay", base.DEC)
+fields.rcv_tsbpd_delay = ProtoField.uint16("srt_dev.rcv_tsbpd_delay", "Receiver TsbPd Delay", base.DEC)
+fields.snd_tsbpd_delay = ProtoField.uint16("srt_dev.snd_tsbpd_delay", "Sender TsbPd Delay", base.DEC)
 
 -- V adn PT status flag
 local V_state_select = {
@@ -132,17 +144,21 @@ fields.klen = ProtoField.uint8("srt_dev.klen", "SEK length(bytes)/4", base.DEC)
 fields.salt = ProtoField.uint32("srt_dev.salt", "Salt key", base.DEC)
 fields.wrap = ProtoField.none("srt_dev.wrap", "Wrap key(s)", base.NONE)
 
--- Handshake packet, ext_type == SRT_CMD_SMOOTHER field
-fields.smoother_block = ProtoField.none("srt_dev.smoother_block", "Smoother Block", base.NONE)
+-- Wrap Field
+fields.ICV = ProtoField.uint64("srt_dev.ICV", "Integerity Check Vector", base.HEX)
+fields.odd_key = ProtoField.stringz("srt_dev.odd_key", "Odd key", base.ASCII)
+fields.even_key = ProtoField.stringz("srt_dev.even_key", "Even key", base.ASCII)
 
--- Handshake packet, ext_type == SRT_CMD_SID field
-fields.sid_block = ProtoField.none("srt_dev.sid_block", "SID Block", base.NONE)
+-- ext_type == SRT_CMD_SID field
+fields.sid = ProtoField.string("srt_dev.sid", "Stream ID", base.ASCII)
+-- ext_type == SRT_CMD_CONGESTION field
+fields.congestion = ProtoField.string("srt_dev.congestion", "Congestion Controller", base.ASCII)
+-- ext_type == SRT_CMD_FILTER field
+fields.filter = ProtoField.string("srt_dev.filter", "Filter", base.ASCII)
+-- ext_type == SRT_CMD_GROUP field
+fields.group = ProtoField.string("srt_dev.group", "Group Data", base.ASCII)
 
 -- SRT flags
-local flag_state_select = {
-	[0] = "Unset",
-	[1] = "Set"
-}
 fields.srt_opt_tsbpdsnd = ProtoField.uint32("srt_dev.srt_opt_tsbpdsnd", "SRT_OPT_TSBPDSND", base.HEX, flag_state_select, 0x1)
 fields.srt_opt_tsbpdrcv = ProtoField.uint32("srt_dev.srt_opt_tsbpdrcv", "SRT_OPT_TSBPDRCV", base.HEX, flag_state_select, 0x2)
 fields.srt_opt_haicrypt = ProtoField.uint32("srt_dev.srt_opt_haicrypt", "SRT_OPT_HAICRYPT", base.HEX, flag_state_select, 0x4)
@@ -153,8 +169,8 @@ fields.srt_opt_stream = ProtoField.uint32("srt_dev.srt_opt_stream", "SRT_OPT_STR
 
 -- ACK fields
 fields.last_ack_pack = ProtoField.uint32("srt_dev.last_ack_pack", "Last ACK Packet Sequence Number", base.DEC)
-fields.rtt = ProtoField.uint32("srt_dev.rtt", "Round Trip Time", base.DEC)
-fields.rtt_variance = ProtoField.uint32("srt_dev.rtt_variance", "Round Trip Time Variance", base.DEC)
+fields.rtt = ProtoField.int32("srt_dev.rtt", "Round Trip Time", base.DEC)
+fields.rtt_variance = ProtoField.int32("srt_dev.rtt_variance", "Round Trip Time Variance", base.DEC)
 fields.buf_size = ProtoField.uint32("srt_dev.buf_size", "Available Buffer Size", base.DEC)
 fields.pack_rcv_rate = ProtoField.uint32("srt_dev.pack_rcv_rate", "Packet Receiving Rate", base.DEC)
 fields.est_link_capacity = ProtoField.uint32("srt_dev.est_link_capacity", "Estimated Link Capacity", base.DEC)
@@ -240,9 +256,9 @@ function srt_dev.dissector (tvb, pinfo, tree)
 						-- Handle sock type
 						local sock_type = tvb(offset, 4):uint()
 						if sock_type == 1 then
-							subtree:add(fields.sock_type, tvb(offset, 4)):append_text(" [SOCK_STREAM]")
+							subtree:add(fields.sock_type, tvb(offset, 4)):append_text(" [SRT_STREAM]")
 						elseif sock_type == 2 then
-							subtree:add(fields.sock_type, tvb(offset, 4)):append_text(" [SOCK_DRAGAM]")
+							subtree:add(fields.sock_type, tvb(offset, 4)):append_text(" [SRT_DRAGAM]")
 						end
 						offset = offset + 4
 					elseif UDT_version == 5 then
@@ -262,20 +278,31 @@ function srt_dev.dissector (tvb, pinfo, tree)
 						-- Handle Extension Field
 						local ext_fld = tvb(offset, 2):int()
 						if ext_fld == 0x4A17 then
-							subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [SrtHSRequest::SRT_MAGIC_CODE]")
-						elseif ext_fld == 0 then
-							subtree:add(fields.ext_fld, tvb(offset, 2))
+							subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [HSv5 MAGIC]")
 						else
-							-- Extension Field is HS_HEX_prefix
+							-- Extension Field is HS_EXT_prefix
 							-- The define is in fiel handshake.h
-							if ext_fld == 1 then
-								subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [CHandShake::HS_EXT_HSREQ]")
-							elseif ext_fld == 2 then
-								subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [CHandShake::HS_EXT_KMREQ]")
-							elseif ext_fld == 4 then
-								subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [CHandShake::HS_EXT_CONFIG]")
-							else
-								subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [Bad Flag]")
+							local ext_fld_tree = subtree:add(fields.ext_fld_tree, tvb(offset, 2))
+							local str_table = { " [" }
+							ext_fld_tree:add(fields.hsreq, tvb(offset, 2))
+							if bit.band(tvb(offset, 2):uint(), 0x1) == 1 then
+								table.insert(str_table, "HS_EXT_HSREQ")
+								table.insert(str_table, " | ")
+							end
+							ext_fld_tree:add(fields.kmreq, tvb(offset, 2)):append_text(" [HS_EXT_KMREQ]")
+							if bit.band(tvb(offset, 2):uint(), 0x2) == 2 then
+								table.insert(str_table, "HS_EXT_KMREQ")
+								table.insert(str_table, " | ")
+							end
+							ext_fld_tree:add(fields.config, tvb(offset, 2)):append_text(" [HS_EXT_CONFIG]")
+							if bit.band(tvb(offset, 2):uint(), 0x4) == 4 then
+								table.insert(str_table, "HS_EXT_CONFIG")
+								table.insert(str_table, " | ")
+							end
+							table.remove(str_table)
+							table.insert(str_table, "]")
+							if ext_fld ~= 0 then
+								ext_fld_tree:append_text(table.concat(str_table))
 							end
 						end
 						offset = offset + 2
@@ -336,7 +363,6 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					the_last_96_bits = the_last_96_bits + tvb(offset + 12, 4):int()
 					if the_last_96_bits == 0 then
 						subtree:add_le(fields.peer_ipaddr_4, tvb(offset, 4))
-						subtree:add(fields.peer_ipaddr, tvb(offset + 4, 12)):append_text(" [Undefined]")
 					else
 						subtree:add_le(fields.peer_ipaddr, tvb(offset, 16))
 					end
@@ -385,11 +411,18 @@ function srt_dev.dissector (tvb, pinfo, tree)
 							SRT_flags_tree:add(fields.srt_opt_stream, tvb(offset, 4))
 							offset = offset + 4
 							
-							-- Handle Rcv TsbPd Delay和Snd TsbPd Delay
-							ext_type_msg_tree:add(fields.rcv_tsbpb_delay, tvb(offset, 2))
-							offset = offset + 2
-							ext_type_msg_tree:add(fields.rcv_tsbpb_delay, tvb(offset, 2))
-							offset = offset + 2
+							-- Handle Recv TsbPd Delay and Snd TsbPd Delay
+							if UDT_version == 4 then
+								ext_type_msg_tree:add(fields.tsbpd_delay, tvb(offset, 2)):append_text(" [Unused in HSv4]")
+								offset = offset + 2
+								ext_type_msg_tree:add(fields.tsbpb_delay, tvb(offset, 2))
+								offset = offset + 2
+							else
+								ext_type_msg_tree:add(fields.rcv_tsbpd_delay, tvb(offset, 2))
+								offset = offset + 2
+								ext_type_msg_tree:add(fields.snd_tsbpd_delay, tvb(offset, 2))
+								offset = offset + 2
+							end
 						elseif ext_type == 3 or ext_type == 4 then
 							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16))
 							if ext_type == 3 then
@@ -483,40 +516,51 @@ function srt_dev.dissector (tvb, pinfo, tree)
 							ext_type_msg_tree:add(fields.klen, tvb(offset, 1))
 							offset = offset + 1
 							
-							-- Handle salt
-							ext_type_msg_tree:add(fields.salt, tvb(offset, slen * 8))
-							offset = offset + slen * 4 * 8
+							-- Handle salt key
+							ext_type_msg_tree:add(fields.salt, tvb(offset, slen * 4))
+							offset = offset + slen * 4
 							
 							-- Handle wrap
-							local wrap_len = klen * 4 * KK + klen * 4 / 2 + 8
-							ext_type_msg_tree:add(fields.wrap, tvb(offset, wrap_len))
-							offset = offset + wrap_len
-						elseif ext_type == 5 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_SID]")
+							-- Handle ICV
+							local wrap_len = 8 + KK * klen
+							local wrap_tree = ext_type_msg_tree:add(fields.wrap, tvb(offset, wrap_len))
+							wrap_tree:add(fields.ICV, tvb(offset, 8))
+							offset = offset + 8
+							-- If KK == 2, first key is Even key
+							if KK == 2 then
+								wrap_tree:add(fields.even_key, tvb(offset, klen))
+								offset = offset + klen;
+							end
+
+							-- Handle Odd key
+							wrap_tree:add(fields.odd_key, tvb(offset, klen))
+							offset = offset + klen;
+						elseif ext_type >= 5 and ext_type <= 8 then
+							local value_size = tvb(offset + 2, 2):uint() * 4
+							local ext_msg_size = 2 + 2 + value_size
+							local type_array = { " [SRT_CMD_SID]", " [SRT_CMD_CONGESTION]", " [SRT_CMD_FILTER]", " [SRT_CMD_GROUP]" }
+							local field_array = { fields.sid, fields.congestion, fields.filter, fields.group }
+							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, ext_msg_size)):append_text(type_array[ext_type - 4])
 							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
 							offset = offset + 2
 							
-							-- Handle Ext Size
+							-- Handle Ext Msg Value Size
 							ext_type_msg_tree:add(fields.ext_size, tvb(offset, 2)):append_text(" (byte/4)")
 							offset = offset + 2
 							
-							-- SID BLOCK
-							ext_type_msg_tree:add(fields.sid_block, tvb(offset, 128))
-							offset = offset + 128
-						elseif ext_type == 6 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_SMOOTHER]")
-							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
-							offset = offset + 2
-							
-							-- Handle Ext Size
-							ext_type_msg_tree:add(fields.ext_size, tvb(offset, 2)):append_text(" (byte/4)")
-							offset = offset + 2
-							
-							-- SMOOTHER BLOCK
-							ext_type_msg_tree:add(fields.smoother_block, tvb(offset, 128))
-							offset = offset + 128
+							-- Value
+							local value_table = {}
+							for pos = 0, value_size - 4, 4 do
+								table.insert(value_table, string.char(tvb(offset + pos + 3, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos + 2, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos + 1, 1):uint()))
+								table.insert(value_table, string.char(tvb(offset + pos, 1):uint()))
+							end
+							local value = table.concat(value_table)
+							ext_type_msg_tree:add(field_array[ext_type - 4], tvb(offset, value_size), value)
+							offset = offset + value_size
 						elseif ext_type == -1 then
-							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, 16)):append_text(" [SRT_CMD_NONE]")
+							local ext_type_msg_tree = subtree:add(fields.ext_type_msg_tree, tvb(offset, tvb:len() - offset)):append_text(" [SRT_CMD_NONE]")
 							ext_type_msg_tree:add(fields.ext_type, tvb(offset, 2))
 							offset = offset + 2
 							
@@ -572,11 +616,16 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					offset = offset + 4
 					
 					-- Handle RTT
+					local rtt = tvb(offset, 4):int()
 					subtree:add(fields.rtt, tvb(offset, 4)):append_text(" μs")
 					offset = offset + 4
 					
 					-- Handle RTT variance
-					subtree:add(fields.rtt_variance, tvb(offset, 4))
+					if rtt < 0 then
+						subtree:add(fields.rtt_variance, tvb(offset, 4), -tvb(offset, 4):int())
+					else
+						subtree:add(fields.rtt_variance, tvb(offset, 4))
+					end
 					offset = offset + 4
 					
 					-- Handle Available Buffer Size(pkts)
@@ -588,7 +637,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					offset = offset + 4
 					
 					-- Handle Estmated Link Capacity
-					subtree:add(fields.est_link_capacity, tvb(offset, 4))
+					subtree:add(fields.est_link_capacity, tvb(offset, 4)):append_text(" pkts/sec")
 					offset = offset + 4
 					
 					-- Handle Receiving Rate(bps)
@@ -606,6 +655,8 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					parse_three_param()
 					
 					-- Handle lost packet sequence
+					-- lua does not support changing loop variables within loops, but in the form of closures
+					-- https://blog.csdn.net/Ai102iA/article/details/75371239
 					local start = offset
 					local ending = tvb:len()
 					local lost_list_tree = subtree:add(fields.lost_list_tree, tvb(offset, ending - offset))
