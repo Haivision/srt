@@ -2507,14 +2507,14 @@ public:
         bytevector data(chunk);
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
-        if (stat == -1)
-            Error(SysError(), "UDP Read/recvfrom");
         int64_t srctime = 0;
-        if (transmit_bw_report)
+        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
+        if (stat == -1)
+            Error(SysError(), "UDP Read/recvfrom");
 
         if (stat < 1)
         {
