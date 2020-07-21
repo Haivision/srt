@@ -662,7 +662,7 @@ typedef int32_t SRT_EPOLL_T;
 
 // Define which epoll flags determine events. All others are special flags.
 #define SRT_EPOLL_EVENTTYPES (SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_UPDATE | SRT_EPOLL_ERR)
-#define SRT_EPOLL_ETONLY (SRT_EPOLL_UPDATE) // XXX weird bug found without this "0 |", workaround.
+#define SRT_EPOLL_ETONLY (SRT_EPOLL_UPDATE)
 
 enum SRT_EPOLL_FLAGS
 {
