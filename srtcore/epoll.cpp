@@ -307,10 +307,6 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
     // et_evts = all events, if SRT_EPOLL_ET, or only those that are always ET otherwise.
     int32_t et_evts = edgeTriggered ? evts : evts & SRT_EPOLL_ETONLY;
-
-    IF_HEAVY_LOGGING(ostringstream evos);
-    IF_HEAVY_LOGGING(PrintEpollEvent(evos, evts, et_evts));
-    HLOGC(dlog.Debug, log << "srt_epoll_update_usock: TO UPDATE: " << evos.str());
     if (evts)
     {
         pair<CEPollDesc::ewatch_t::iterator, bool> iter_new = d.addWatch(u, evts, et_evts);
