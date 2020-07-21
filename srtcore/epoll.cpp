@@ -328,8 +328,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
             // Update the watch configuration, including edge
             wait.watch = evts;
-            if (edgeTriggered)
-                wait.edge = evts;
+            wait.edge = et_evts;
 
             // Now it should look exactly like newly added
             // and the state is also updated
