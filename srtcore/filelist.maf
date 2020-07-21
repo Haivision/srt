@@ -12,6 +12,7 @@ crypto.cpp
 epoll.cpp
 fec.cpp
 handshake.cpp
+jitter_tracer.cpp
 list.cpp
 logger_default.cpp
 logger_defs.cpp
@@ -62,6 +63,7 @@ core.h
 crypto.h
 epoll.h
 handshake.h
+jitter_tracer.h
 list.h
 logging.h
 md5.h

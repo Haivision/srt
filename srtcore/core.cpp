@@ -6920,6 +6920,8 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
 #endif
         }
+
+        m_JitterTracer.onDataPktDelivery(srt::sync::steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
         return res;
     }
 
@@ -7052,6 +7054,8 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             return APIError(MJ_AGAIN, MN_XMTIMEOUT, 0);
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
     }
+
+    m_JitterTracer.onDataPktDelivery(srt::sync::steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
     return res;
 }
@@ -9829,6 +9833,14 @@ int srt::CUDT::processData(CUnit* in_unit)
     // We expect the 16th and 17th packet to be sent regularly,
     // otherwise measurement must be rejected.
     m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
+
+    // The 17th packet is a probing packet that arrives with reduced IAT
+    if (!retransmitted && ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) != 1))
+    {
+        const uint32_t timestamp = packet.getMsgTimeStamp();
+        const time_point tsbpdTime = m_pRcvBuffer->getTsbPdTimeBase(timestamp);
+        m_JitterTracer.onDataPktArrival(packet, tsbpdTime);
+    }
 
     enterCS(m_StatsLock);
     m_stats.rcvr.recvd.count(pktsz);
