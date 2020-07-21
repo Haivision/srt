@@ -23,6 +23,20 @@ extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern size_t transmit_chunk_size;
 extern bool transmit_printformat_json;
+extern bool transmit_use_sourcetime;
+
+struct MediaPacket
+{
+    bytevector payload;
+    int64_t time = 0;
+
+    MediaPacket(bytevector&& src): payload(std::move(src)) {}
+    MediaPacket(bytevector&& src, int64_t stime): payload(std::move(src)), time(stime) {}
+
+    MediaPacket(const bytevector& src): payload(src) {}
+    MediaPacket(const bytevector& src, int64_t stime): payload(src), time(stime) {}
+    MediaPacket() {}
+};
 
 
 class Location
@@ -37,7 +51,7 @@ public:
 class Source: public virtual Location
 {
 public:
-    virtual bytevector Read(size_t chunk) = 0;
+    virtual MediaPacket Read(size_t chunk) = 0;
     virtual bool End() = 0;
     static std::unique_ptr<Source> Create(const std::string& url);
     virtual ~Source() {}
@@ -54,7 +68,7 @@ public:
 class Target: public virtual Location
 {
 public:
-    virtual void Write(const bytevector& portion) = 0;
+    virtual void Write(const MediaPacket& portion) = 0;
     virtual bool Broken() = 0;
     virtual size_t Still() { return 0; }
     static std::unique_ptr<Target> Create(const std::string& url);
