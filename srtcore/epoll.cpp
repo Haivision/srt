@@ -776,7 +776,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
                     st[i->fd] = i->events;
                     IF_HEAVY_LOGGING(singles << "@" << i->fd << ":");
                     IF_HEAVY_LOGGING(PrintEpollEvent(singles, i->events, i->parent->edgeOnly()));
-                    bool edged ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
+                    const bool edged ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
                     IF_HEAVY_LOGGING(singles << (edged ? "<^> " : " "));
                 }
 
@@ -964,4 +964,3 @@ string CEPollDesc::DisplayEpollWatch()
 }
 
 #endif
-
