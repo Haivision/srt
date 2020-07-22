@@ -467,9 +467,12 @@ Exchange for the initial key is done in the handshake.
 encrypted and will be decrypted by the receiver. This state is only possible on
 both sides in both directions simultaneously.
 
-- `SRT_KM_S_NOSECRET`: (HSv5 only) This site has set password, but data will 
-be received as plain. This also means that sending the data from this party
-will not be received by the peer due to impossible decryption.
+- `SRT_KM_S_NOSECRET`: If this state is in the sending direction
+(`SRTO_SNDKMSTATE`), then it means that the sending party has set a
+passphrase, but the peer did not. In this case the sending party can receive
+unencrypted packets from the peer, but packets it sends to the peer will be
+encrypted and the peer will not be able to decrypt them. 
+This state is only possible in HSv5.
 
 - `SRT_KM_S_BADSECRET`: The password is wrong (set differently on each party);
 encrypted payloads won't be decrypted in either direction.
@@ -524,7 +527,7 @@ to the following legend:
 1. **Since**
 
 Defines the SRT version when this option was first introduced. If this field
-is empty, it's an option derived from UDT. Version 0.0.0 is the oldest version
+is empty, it's an option derived from UDT. "Version 0.0.0" is the oldest version
 of SRT ever created and put into use.
 
 2. **Binding**
@@ -935,6 +938,7 @@ SCTP protocol.
 
 - The minimum SRT version that is required from the peer. A connection to a
 peer that does not satisfy the minimum version requirement will be rejected.
+Format is explained at `SRTO_VERSION` option.
 
 ---
 
@@ -1513,8 +1517,8 @@ on `SRTO_MSS` value.
 - Local SRT version. This is the highest local version supported if not
   connected, or the highest version supported by the peer if connected.
 
-- The version format in hex is 0x00XXYYZZ for x.y.z in human readable form, 
-where x = ("%d", (version>>16) & 0xff), etc.
+- The version format in hex is 0x00XXYYZZ for x.y.z in human readable form.
+For example, version 1.4.2 is encoded as `0x010402`.
 
 
 Transmission types
