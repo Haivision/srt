@@ -414,33 +414,35 @@ to the system setsockopt/getsockopt functions.
 Types used in socket options
 ----------------------------
 
-Possible types of options are:
+Possible types of socket options are:
 
-* `int32_t` - usually you can treat it as `int` equivalent, as this type
-wasn't changed the size on 64-bit systems, although the definition is using
-`int32_t` type so that the bit size is fixed by definition. In some cases
-the value is expressed using an enumeration type (see below).
+* `int32_t` - this type can usually be treated as an `int` equivalent since
+this type does not change size on 64-bit systems. For clarity, options use
+this fixed size integer. In some cases the value is expressed using an
+enumeration type (see below).
 
-* `int64_t` - some options need the paramter specified as 64-bit integer
+* `int64_t` - Some options need the paramter specified as 64-bit integer
 
-* `bool` - You need to use a boolean type, the builtin one in C++ and the
-one from `<stdbool.h>` for C, although when setting an option, passing the
-value through `int` type is also tolerated and properly recognized. When
-getting an option, however, you better use the `bool` type, although you
-can risk passing a variable of `int` type initialized with 0 and then check if
-the resulting value is equal to 0 (just don't compare the result with 1).
+* `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
+for C++). When setting an option, passing the value through an `int` type is
+also properly recognized. When getting an option, however, you should use the
+`bool` type, although you can risk passing a variable of `int` type initialized
+with 0 and then check if the resulting value is equal to 0 (just don't compare
+the result with 1).
 
-* `string` - When setting, you pass the character array pointer as value
-and the string length as length. When getting, you have to pass a long
-enough array (with specified size in the size variable). Every option with
-this type that can be read should specify the maximum length of that array.
+* `string` - When setting an option, pass the character array pointer as value
+and the string length as length. When getting, pass an array of sufficient size
+(as specified in the size variable). Every option with this type that can be
+read should specify the maximum length of that array.
 
 
 Enumeration types used in options
 ---------------------------------
 
 
-### 1. `SRT_TRANSTYPE`. Used by `SRTO_TRANSTYPE` option:
+### 1. `SRT_TRANSTYPE`
+
+Used by `SRTO_TRANSTYPE` option:
 
 * `SRTT_LIVE`: Live mode.
 * `SRTT_FILE`: File mode.
@@ -448,41 +450,41 @@ Enumeration types used in options
 See below [Transmission types](#transmission-types) for details.
 
 
-### 2. `SRT_KM_STATE`. This defined encryption state as performed by the Key
-Material Exchange, used by `SRTO_RCVKMSTATE`, `SRTO_SNDKMSTATE` and
-`SRTO_KMSTATE` options:
+### 2. `SRT_KM_STATE`
+
+The defined encryption state as performed by the Key Material Exchange, used
+by `SRTO_RCVKMSTATE`, `SRTO_SNDKMSTATE` and `SRTO_KMSTATE` options:
 
 - `SRT_KM_S_UNSECURED`: no encryption/descryption. If this state is only on
 the receiver, received encrypted packets will be dropped.
 
 - `SRT_KM_S_SECURING`: pending security (HSv4 only). This is a temporary state
-used only if the connection is made has HSv4 and the Key Material Exchange is
-not finished yet. On HSv5 not possible because Key Material Exchange for the
-initial key is done in the handshake.
+used only if the connection uses HSv4 and the Key Material Exchange is
+not finished yet. On HSv5 this is not possible because the Key Material
+Exchange for the initial key is done in the handshake.
 
 - `SRT_KM_S_SECURED`: KM exchange was successful and the data will be sent
-enrypted and decrypted by the receiver. This state is only possible on both
-sides in both directions simultaneously.
+encrypted and will be decrypted by the receiver. This state is only possible on
+both sides in both directions simultaneously.
 
 - `SRT_KM_S_NOSECRET`: (HSv5 only) This site has set password, but data will 
 be received as plain. This also means that sending the data from this party
 will not be received by the peer due to impossible decryption.
 
-- `SRT_KM_S_BADSECRET`: The password is wrong (set differently on each party),
-encrypted payloads won't be decrypted in any direction.
+- `SRT_KM_S_BADSECRET`: The password is wrong (set differently on each party);
+encrypted payloads won't be decrypted in either direction.
 
 Note that with the default value of `SRTO_ENFORCEDENCRYPTION` option (true),
-the state is equal on both sides in both directions and it can be only
+the state is equal on both sides in both directions, and it can be only
 `SRT_KM_S_UNSECURED` or `SRT_KM_S_SECURED` (in other cases the connection
 is rejected). Otherwise it may happen that either both sides have different
-password and the state is `SRT_KM_S_BADSECRET` in both direction, or we
-have a situation where only one party has set a password, in which case
-the party that hasn't set the password has:
+password and the state is `SRT_KM_S_BADSECRET` in both directions, or only
+one party has set a password, in which case the KM state is as follows:
 
-* `SRT_KM_S_NOSECRET` on `SRTO_RCVKMSTATE`
-* `SRT_KM_S_UNSECURED` on `SRTO_SNDKMSTATE`
-
-and its peer the other way around.
+|                          | `SRTO_RCVKMSTATE`    | `SRTO_SNDKMSTATE`    |
+|--------------------------|----------------------|----------------------|
+| Party with no password:  | `SRT_KM_S_NOSECRET`  | `SRT_KM_S_UNSECURED` |
+| Party with password:     | `SRT_KM_S_UNSECURED` | `SRT_KM_S_NOSECRET`  |
 
 
 Getting and setting options
@@ -508,15 +510,16 @@ convenience, the setting option function may accept both `int32_t` and `bool`
 types, but this is not so in the case of getting an option value.
 
 **UDT project legacy note**: Almost all options from the UDT library are
-derived (there are a few deleted, including some deprecated already in UDT),
-many new SRT options have been added. All options are available exclusively
+derived (there are a few deleted, including some deprecated already in UDT).
+Many new SRT options have been added. All options are available exclusively
 with the `SRTO_` prefix. Old names are provided as alias names in the `udt.h`
 legacy/C++ API file. Note the translation rules:
 * `UDT_` prefix from UDT options was changed to the prefix `SRTO_`
 * `UDP_` prefix from UDT options was changed to the prefix `SRTO_UDP_`
 * `SRT_` prefix in older SRT versions was changed to `SRTO_`
 
-The below table shows the characteristics of the options. Legend:
+The table further below shows the characteristics of the options, according
+to the following legend:
 
 1. **Since**
 
@@ -543,23 +546,23 @@ post-bound options that have important meaning when set prior to connecting.
 
 The data type of the option; see above.
 
-4. Units
+4. **Units**
 
 Roughly specified unit, if the value defines things like length or time.
-It can also define more precisely, what kind of specialization can be used
+It can also define more precisely what kind of specialization can be used
 when the type is integer:
 
 * enum: the possible values are defined in an enumeration type
 * flags: the integer value is a collection of bit flags
 
-5. Default
+5. **Default**
 
-The exact default value, if it can be easily specified. For more complicated
-state of the default state of particular option, it will be explained in the
+The exact default value, if it can be easily specified. For a more complicated
+state of the default state of a particular option, it will be explained in the
 description (when marked by asterisk). For non-settable options this field is
 empty.
 
-6. Range
+6. **Range**
 
 If a value of an integer type has a limited range, or only specified value
 allowed, it will be specified here, otherwise empty. A ranged value can be
@@ -574,11 +577,11 @@ in square brackets.
 If the range contains additionally an asterisk, it means that more elaborate
 restrictions on the value apply, as explained in the description.
 
-7. Dir
+7. **Dir**
 
 Option direction: W if can be set, R if can be retrieved, RW if both.
 
-6. Entity
+6. **Entity**
 
 This describes whether the option can be set on the socket or the group.
 The G and S options may appear together, in which case both possibilities apply.
@@ -596,14 +599,11 @@ Possible specifications are:
 * I: If set on a group, it will be taken and managed exclusively by the group
 
 * +: This option is also allowed to be set individually on a group member
-socket through a configuration object in `SRT_SOCKGROUPCONFIG`. Note that
-this setting may override the setting derived from the group.
+socket through a configuration object in `SRT_SOCKGROUPCONFIG` prepared by
+`srt_create_config`. Note that this setting may override the setting derived
+from the group.
 
-Options that are marked with + can be set option values through the configuration
-object prepared by `srt_create_config`.
-
-This option list is sorted alphabetically. Note that some options can be
-either only a retrieved (GET) or specified (SET) value.
+This option list is sorted alphabetically.
 
 
 | OptName            | Since | Binding |   Type    | Units  | Default  | Range  | Dir | Entity |
@@ -638,7 +638,7 @@ being acknowledged)
 
 | OptName              | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPCONNECT`  |       | pre     | `int32_t` |        | 0        | 0...1  | W   | S      |
+| `SRTO_GROUPCONNECT`  | 1.5.0 | pre     | `int32_t` |        | 0        | 0...1  | W   | S      |
 
 - When this flag is set to 1 on a listener socket, it allows this socket to
 accept group connections. When set to the default 0, group connections will be
@@ -687,24 +687,23 @@ the Backup-type group.
 
 - This value should be set with a thoroughly selected balance and correspond to
 the maximum stretched response time between two consecutive ACK messages. By default
-ACK messages are sent every 10ms (so this interval is not dependent on RTT at all),
-and so should be the distance between two consecutive received ACK messages,
-however the network jitter in public internet causes these intervals to be
-stretched even to multiplicity of that interval. Both great and little values
-of this option have consequences:
+ACK messages are sent every 10ms (so this interval is not dependent on the network
+latency), and so should be the interval between two consecutive received ACK
+messages. Note, however, that the network jitter on the public internet causes
+these intervals to be stretched, even to multiples of that interval. Both large
+and small values of this option have consequences:
 
-- Great value of this option prevents overreaction on highly streteched response
-times, but this value comprises a latency penalty - the latency must be greater
-than this value or otherwise switching to another link won't be able to preserve
-smooth signal sending. High values will also contribute to higher burst of
-packets sent at the moment when an idle link is activated.
+- Large values of this option prevent overreaction on highly stretched response
+times, but introduce a latency penalty - the latency must be greater
+than this value (otherwise switching to another link won't preserve
+smooth signal sending). Large values will also contribute to higher packet
+bursts sent at the moment when an idle link is activated.
 
-- Little value of this option lives up to the low latency reqirements very
-well, however too little values may cause overreaction on even slightly
-stretched response times. This is unwanted, as the link switch should
-ideally happen only when the currently active link is really broken, as
-every link switching costs extra overhead (it counts for 100% for a time
-of one ACK interval).
+- Smaller values of this option respect low latency requirements very
+well, may cause overreaction on even slightly stretched response times. This is
+unwanted, as a link switch should ideally happen only when the currently active
+link is really broken, as every link switch costs extra overhead (it counts
+for 100% for a time of one ACK interval).
 
 - Note that the value of this option is not allowed to exceed the value of
 `SRTO_PEERIDLETIMEO`. Usually it is only meaningful if you change the latter
@@ -901,9 +900,10 @@ therefore the default -1 remains even in live mode.*
 | `SRTO_MESSAGEAPI`    | 1.3.0 | pre     | bool       |         | true     |        | W   | GSD    |
 
 - When set, this socket uses the Message API[\*], otherwise it uses 
-Stream API. Note that in live mode (see `SRTO_TRANSTYPE` option) there's only 
-message API available. In File mode you can chose to use one of two modes (note
-that the default for this option is changed with `SRTO_TRANSTYPE` option):
+Stream API. Note that in live mode (see `SRTO_TRANSTYPE` option) only the
+message API is available. In File mode you can chose to use one of two modes
+(note that the default for this option is changed with `SRTO_TRANSTYPE`
+option):
 
   - Stream API (default for file mode). In this mode you may send 
   as many data as you wish with one sending instruction, or even use dedicated 
@@ -1014,8 +1014,8 @@ For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_PASSPHRASE`    | 0.0.0 | pre     | string     |         | ""       |[10..79]| W   | GSD    |
 
-- Sets the passphrase for encryption. This turns encryption on on this side (or
-turns it off, if empty passphrase is passed).
+- Sets the passphrase for encryption. This enables encryption on this party (or
+disables it, if empty passphrase is passed).
 
 - The passphrase is the shared secret between the sender and the receiver. It is 
 used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2) 
@@ -1038,9 +1038,9 @@ otherwise the connection is rejected by default (see also `SRTO_ENFORCEDENCRYPTI
 - Sets the maximum declared size of a single call to sending function in Live
 mode. When set to 0, there's no limit for a single sending call.
 
-- For Live mode: Default value is 1316, can be increased up to 1456. Mind the
-`SRTO_PACKETFILTER` option, as with this option an additional header space is
-usually required, which decreases the maximum value for this option.
+- For Live mode: Default value is 1316, can be increased up to 1456. Note that
+with the `SRTO_PACKETFILTER` option additional header space is usually required,
+which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
 
 - For File mode: Default value is 0 and it's recommended not to be changed.
 
@@ -1132,10 +1132,10 @@ for the version format.
 | `SRTO_RCVBUF`        |       | pre     | `int32_t`  | bytes   | 8192 bufs  | *      | RW  | GSD+   |
 
 
-- Receive Buffer Size, in bytes. Note however that the internal setting of this
+- Receive Buffer Size, in bytes. Note, however, that the internal setting of this
 value is in the number of buffers, each one of size equal to SRT payload size,
 which is the value of `SRTO_MSS` decreased by UDP and SRT header sizes (28 and 16).
-The value set here will be effectively aligned to the multiplicity of payload size.
+The value set here will be effectively aligned to the multiple of payload size.
 
 - Minimum value: 32 buffers (46592 with default value of `SRTO_MSS`).
 - Maximum value: `SRTO_FC` number of buffers (receiver buffer must not be greater than FC size).
@@ -1167,18 +1167,18 @@ The value set here will be effectively aligned to the multiplicity of payload si
 - Latency value in the receiving direction. This value is only significant when
 `SRTO_TSBPDMODE` is set to true.
 
-- Latency is the time that should elapse since the moment when the packet was
-sent and the moment when it's delivered to the receiver application in the
-receiving function. This time should be a buffer time large enough to cover
-the time spent for sending, unexpectedly extended RTT time, and the time needed
-to retransmit the lost UDP packet. The effective latency value will be the
-maximum of this options' value and the value of `SRTO_PEERLATENCY` set by the
-peer side. **This option in pre-1.3.0 version is available only as**
-`SRTO_LATENCY`. Note that the real latency value may be slightly different
-than this setting due to impossibility of perfectly measuring the exact same
-time point in both parties simultaneously; the most important meaning of
-latency is that the actual value of it once set with the connection is
-kept constant during the whole time of the connection.
+- Latency refers to the time that elapses from the moment a packet is sent 
+to the moment when it's delivered to a receiver application. The SRT latency 
+setting should be a time buffer large enough to cover the time spent for
+sending, unexpectedly extended RTT time, and the time needed to retransmit any
+lost UDP packet. The effective latency value will be the maximum between the 
+`SRTO_RCVLATENCY` value and the value of `SRTO_PEERLATENCY` set by 
+the peer side. **This option in pre-1.3.0 version is available only as** 
+`SRTO_LATENCY`. Note that the real latency value may be slightly different 
+than this setting due to the impossibility of perfectly measuring exactly the 
+same point in time at both parties simultaneously. What is important with 
+latency is that its actual value, once set with the connection, is kept constant 
+throughout the duration of a connection.
 
 - Default value: 120 in Live mode, 0 in File mode (see `SRTO_TRANSTYPE`).
 
@@ -1315,9 +1315,9 @@ rather change the whole set of options through `SRTO_TRANSTYPE` option.
 | `SRTO_SNDDROPDELAY`  | 1.3.2 | pre     | `int32_t`  | ms      | *         | -1..   | W   | GSD+   |
 
 - Sets an extra delay before TLPKTDROP is triggered on the data sender.
-Extra, that is, it is added to the default drop delay time interval value.
-The longer the time, the more probable that packets would be retransmitted
-uselessly because they will be dropped by the receiver anyway.
+This delay is added to the default drop delay time interval value. Keep in mind
+that the longer the delay, the more probable it becomes that packets would be
+retransmitted uselessly because they will be dropped by the receiver anyway.
 
 - TLPKTDROP discards packets reported as lost if it is already too late
 to send them (the receiver would discard them even if received). The delay
@@ -1326,7 +1326,7 @@ before TLPKTDROP mechanism is triggered consists of the SRT latency
 sending ACKs` (the default `interval between sending ACKs` is 10 milliseconds).
 The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds.
 
-- Special value -1: Do not drop packets on the sender at all (retransmit them always when requested).
+- **Special value -1**: Do not drop packets on the sender at all (retransmit them always when requested).
 
 - Default: 0 in Live mode, -1 in File mode.
 
@@ -1388,21 +1388,21 @@ if in "non-blocking mode". The -1 value means no time limit.
 | -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
 | `SRTO_STREAMID`      | 1.3.0 | pre     | `string`   |         | ""        | [512]  | RW  | GSD    |
 
-- A string that can be set on the socket prior to connecting. This stream ID
-will be able to be retrieved by the listener side from the socket that is
-returned from `srt_accept` and was connected by a socket with that set stream
-ID (so you usually use SET on the socket used for `srt_connect` and GET on the
-socket retrieved from `srt_accept`). This string can be used completely
-free-form, however it's highly recommended to follow the
-[SRT Access Control guidlines](AccessControl.md).
+- A string that can be set on the socket prior to connecting. The listener side 
+will be able to retrieve this stream ID from the socket that is returned from 
+`srt_accept` (for a connected socket with that stream ID). You usually use SET 
+on the socket used for `srt_connect`, and GET on the socket retrieved from 
+`srt_accept`. This string can be used completely free-form. However, it's highly 
+recommended to follow the [SRT Access Control guidlines](AccessControl.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and
 `srt::getstreamid`.
 
-- This option doesn't make sense in Rendezvous connection; the result might be
-that simply one side will override the value from the other side and it's the
-matter of luck which one would win
+- This option is not useful for a Rendezvous connection, since once side would
+override the value from the other side resulting in an arbitrary winner. Also
+in this connection both peers are known from upside to one another and both
+have equivalent roles in the connection.
 
 ---
 
