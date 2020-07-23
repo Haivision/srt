@@ -903,28 +903,32 @@ int CRcvBuffer::readBuffer(char* data, int len)
             return -1;
         }
 
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
+
         if (m_bTsbPdMode)
         {
             HLOGC(dlog.Debug,
                   log << CONID() << "readBuffer: chk if time2play:"
                       << " NOW=" << FormatTime(now)
-                      << " PKT TS=" << FormatTime(getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp())));
+                      << " PKT TS=" << FormatTime(getPktTsbPdTime(pkt.getMsgTimeStamp())));
 
-            if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
+            if ((getPktTsbPdTime(pkt.getMsgTimeStamp()) > now))
                 break; /* too early for this unit, return whatever was copied */
         }
 
-        int unitsize = (int)m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-        if (unitsize > rs)
-            unitsize = rs;
+        const int pktlen = pkt.getLength();
+        const int remain_pktlen = pktlen - m_iNotch;
+
+        const int unitsize = std::min(remain_pktlen, rs);
 
         HLOGC(dlog.Debug,
               log << CONID() << "readBuffer: copying buffer #" << p << " targetpos=" << int(data - begin)
                   << " sourcepos=" << m_iNotch << " size=" << unitsize << " left=" << (unitsize - rs));
-        memcpy((data), m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
+        memcpy((data), pkt.m_pcData + m_iNotch, unitsize);
+
         data += unitsize;
 
-        if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+        if (rs >= remain_pktlen)
         {
             freeUnitAt(p);
             p = shiftFwd(p);
@@ -968,25 +972,23 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
             continue;
         }
 
-        CPacket& pkt = m_pUnit[p]->m_Packet;
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
 
 #if ENABLE_LOGGING
         trace_seq = pkt.getSeqNo();
 #endif
-        int pktlen = pkt.getLength();
-        int remain_pktlen = pktlen - m_iNotch;
+        const int pktlen = pkt.getLength();
+        const int remain_pktlen = pktlen - m_iNotch;
 
-        int unitsize = std::min(remain_pktlen, rs);
+        const int unitsize = std::min(remain_pktlen, rs);
 
         ofs.write(pkt.m_pcData + m_iNotch, unitsize);
         if (ofs.fail())
             break;
 
-        // XXX isn't it then the same as if (rs >= remain_pktlen) ?
-        if ((rs > unitsize) || (rs == remain_pktlen))
+        if (rs >= remain_pktlen)
         {
             freeUnitAt(p);
-
             p = shiftFwd(p);
 
             m_iNotch = 0;
