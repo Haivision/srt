@@ -12637,24 +12637,24 @@ void CUDTGroup::getGroupCount(size_t& w_size, bool& w_still_alive)
 
 void CUDTGroup::fillGroupData(
         SRT_MSGCTRL& w_out, // MSGCTRL to be written
-        const SRT_MSGCTRL& in, // MSGCTRL read from the data-providing socket
-        SRT_SOCKGROUPDATA* out_grpdata, // grpdata as passed in MSGCTRL
-        size_t out_grpdata_size) // grpdata_size as passed in MSGCTRL
+        const SRT_MSGCTRL& in // MSGCTRL read from the data-providing socket
+        )
 {
-    w_out = in;
+    SRT_SOCKGROUPDATA* grpdata = w_out.grpdata;
+
+    w_out = in; // NOTE: This will write NULL to grpdata and 0 to grpdata_size!
 
     // User did not wish to read the group data at all.
-    if (!out_grpdata)
+    if (!grpdata)
     {
         w_out.grpdata = NULL;
         w_out.grpdata_size = 0;
         return;
     }
 
-    int st = getGroupData((out_grpdata), (&out_grpdata_size));
-    w_out.grpdata_size = out_grpdata_size;
+    int st = getGroupData((grpdata), (&w_out.grpdata_size));
     // On error, rewrite NULL.
-    w_out.grpdata = st == 0 ? out_grpdata : NULL;
+    w_out.grpdata = st == SRT_ERROR ? grpdata : NULL;
 }
 
 struct FLookupSocketWithEvent
@@ -12744,10 +12744,6 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
     // if it was ever seen broken, so that it's skipped.
     set<CUDTSocket*> broken;
 
-    // Remember them now because they will be overwritten.
-    SRT_SOCKGROUPDATA* out_grpdata = (w_mc.grpdata);
-    size_t out_grpdata_size = w_mc.grpdata_size;
-
     size_t output_size = 0;
 
     for (;;)
@@ -12771,7 +12767,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet %" << pos->mctrl.pktseq << " #" << pos->mctrl.msgno
                         << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
                 memcpy(buf, &pos->packet[0], pos->packet.size());
-                fillGroupData((w_mc), pos->mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), pos->mctrl);
                 len = pos->packet.size();
                 pos->packet.clear();
 
@@ -13176,7 +13172,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
                 HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " DELIVERING");
                 output_size = stat;
-                fillGroupData((w_mc), mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), mctrl);
 
                 // Update stats as per delivery
                 m_stats.recv.Update(output_size);
@@ -13335,7 +13331,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                         << ": " << BufferStamp(&pkt[0], pkt.size()));
 
                 memcpy(buf, &pkt[0], pkt.size());
-                fillGroupData((w_mc), slowest_kangaroo->second.mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), slowest_kangaroo->second.mctrl);
                 len = pkt.size();
                 pkt.clear();
 
