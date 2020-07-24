@@ -12654,7 +12654,7 @@ void CUDTGroup::fillGroupData(
 
     int st = getGroupData((grpdata), (&w_out.grpdata_size));
     // On error, rewrite NULL.
-    w_out.grpdata = st == SRT_ERROR ? grpdata : NULL;
+    w_out.grpdata = st != SRT_ERROR ? grpdata : NULL;
 }
 
 struct FLookupSocketWithEvent
