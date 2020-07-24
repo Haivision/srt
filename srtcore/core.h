@@ -536,9 +536,7 @@ public:
     /// the group data array as requested.
     void fillGroupData(
             SRT_MSGCTRL& w_out, //< MSGCTRL to be written
-            const SRT_MSGCTRL& in, //< MSGCTRL read from the data-providing socket
-            SRT_SOCKGROUPDATA* out_grpdata, //< grpdata as passed in MSGCTRL
-            size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
+            const SRT_MSGCTRL& in //< MSGCTRL read from the data-providing socket
             );
 
 #if ENABLE_HEAVY_LOGGING
