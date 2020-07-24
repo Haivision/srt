@@ -12640,21 +12640,34 @@ void CUDTGroup::fillGroupData(
         const SRT_MSGCTRL& in // MSGCTRL read from the data-providing socket
         )
 {
+    // Preserve the data that will be overwritten by assignment
     SRT_SOCKGROUPDATA* grpdata = w_out.grpdata;
+    size_t grpdata_size = w_out.grpdata_size;
 
     w_out = in; // NOTE: This will write NULL to grpdata and 0 to grpdata_size!
+
+    w_out.grpdata = NULL; // Make sure it's done, for any case
+    w_out.grpdata_size = 0;
 
     // User did not wish to read the group data at all.
     if (!grpdata)
     {
-        w_out.grpdata = NULL;
-        w_out.grpdata_size = 0;
         return;
     }
 
-    int st = getGroupData((grpdata), (&w_out.grpdata_size));
-    // On error, rewrite NULL.
-    w_out.grpdata = st != SRT_ERROR ? grpdata : NULL;
+    int st = getGroupData((grpdata), (&grpdata_size));
+
+    // Always write back the size, no matter if the data were filled.
+    w_out.grpdata_size = grpdata_size;
+
+    if (st == SRT_ERROR)
+    {
+        // Keep NULL in grpdata
+        return;
+    }
+
+    // Write back original data
+    w_out.grpdata = grpdata;
 }
 
 struct FLookupSocketWithEvent
