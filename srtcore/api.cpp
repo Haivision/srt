@@ -1861,7 +1861,7 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
 }
 
 int CUDTUnited::select(
-   ud_set* readfds, ud_set* writefds, ud_set* exceptfds, const timeval* timeout)
+   UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
    const steady_clock::time_point entertime = steady_clock::now();
 
@@ -2471,10 +2471,8 @@ void CUDTUnited::updateMux(
           // given port in the same family as requested address.
           if ((i->second.m_iIPversion == addr.family())
                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
-#ifdef SRT_ENABLE_IPOPTS
                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
-#endif
                   && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
                   &&  i->second.m_bReusable)
           {
@@ -2498,20 +2496,16 @@ void CUDTUnited::updateMux(
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
    m.m_iIPversion = addr.family();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
-#endif
    m.m_iRefCount = 1;
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
    m.m_pChannel = new CChannel();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
    m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-#endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
    if (s->m_pUDT->m_iIpV6Only != -1)
@@ -3370,9 +3364,9 @@ int64_t CUDT::recvfile(
 
 int CUDT::select(
    int,
-   ud_set* readfds,
-   ud_set* writefds,
-   ud_set* exceptfds,
+   UDT::UDSET* readfds,
+   UDT::UDSET* writefds,
+   UDT::UDSET* exceptfds,
    const timeval* timeout)
 {
    if ((!readfds) && (!writefds) && (!exceptfds))
@@ -4124,7 +4118,7 @@ const char* geterror_desc(int code, int err)
    return(e.getErrorMessage());
 }
 
-int bstats(SRTSOCKET u, TRACEBSTATS* perf, bool clear)
+int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
 {
    return CUDT::bstats(u, perf, clear);
 }

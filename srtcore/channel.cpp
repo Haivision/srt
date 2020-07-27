@@ -73,10 +73,8 @@ using namespace srt_logging;
 
 CChannel::CChannel():
 m_iSocket(),
-#ifdef SRT_ENABLE_IPOPTS
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
-#endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
 m_iIpV6Only(-1)
@@ -196,7 +194,6 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
-#ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
           if (m_BindAddr.family() == AF_INET)
@@ -259,7 +256,6 @@ void CChannel::setUDPSockOpt()
               }
           }
       }
-#endif
 
 
 #ifdef UNIX
@@ -326,7 +322,6 @@ void CChannel::setIpV6Only(int ipV6Only)
    m_iIpV6Only = ipV6Only;
 }
 
-#ifdef SRT_ENABLE_IPOPTS
 int CChannel::getIpTTL() const
 {
    socklen_t size = sizeof(m_iIpTTL);
@@ -379,7 +374,6 @@ void CChannel::setIpToS(int tos)
    m_iIpToS = tos;
 }
 
-#endif
 
 int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
@@ -407,7 +401,7 @@ int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) 
 void CChannel::getSockAddr(sockaddr_any& w_addr) const
 {
     // The getsockname function requires only to have enough target
-    // space to copy the socket name, it doesn't have to be corelated
+    // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
     socklen_t namelen = w_addr.storage_size();
