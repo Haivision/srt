@@ -1248,10 +1248,13 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one aoth
 | ------------------------------- | ----- | ------- | ------ | ------ | ------- | ------ | --- | ------ |
 | `SRTO_RETRANSMISSION_ALGORITHM` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] | W   | GSD    |
 
-* **[GET or SET]** - Retransmission algorithm to use (SENDER option).
+- Retransmission algorithm to use (SENDER option):
+   - 0 - Default (retranmsit on every loss report).
+   - 1 - Reduced retransmissions (not more often than once per RTT) - reduced bandwidth consumption.
 
-* 0 - Default (retranmsit on every loss report).
-* 1 - Reduced retransmissions (not more often than once per RTT) - reduced bandwidth consumption.
+- This option is effective only on the sending side and it influences the
+decision as to whether particular reported lost packets should be retransmitted
+at certain time or not.
 
 ---
 
