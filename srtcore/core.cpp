@@ -12377,7 +12377,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             srt_epoll_add_usock(m_SndEID, (*b)->id, &modes);
         }
 
-        int len = blocked.size();
+        const int blocklen = blocked.size();
 
         int blst = 0;
         CEPoll::fmap_t sready;
@@ -12428,8 +12428,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     // This must be wrapped in try-catch because on error it throws an exception.
                     // Possible return values are only 0, in case when len was passed 0, or a positive
                     // >0 value that defines the size of the data that it has sent, that is, in case
-                    // of Live mode, equal to 'len'.
-                    stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                    // of Live mode, equal to 'blocklen'.
+                    stat = d->ps->core().sendmsg2(buf, blocklen, (w_mc));
                 }
                 catch (CUDTException& e)
                 {
@@ -12450,7 +12450,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // All others are wipeme.
             for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
             {
-                if (is->stat == len)
+                if (is->stat == blocklen)
                 {
                     // Successful.
                     successful.push_back(is->d);
