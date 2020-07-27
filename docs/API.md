@@ -1244,6 +1244,17 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one aoth
 
 ---
 
+| OptName                         | Since | Binding | Type   | Units  | Default | Range  | Dir | Entity |
+| ------------------------------- | ----- | ------- | ------ | ------ | ------- | ------ | --- | ------ |
+| `SRTO_RETRANSMISSION_ALGORITHM` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] | W   | GSD    |
+
+* **[GET or SET]** - Retransmission algorithm to use (SENDER option).
+
+* 0 - Default (retranmsit on every loss report).
+* 1 - Reduced retransmissions (not more often than once per RTT) - reduced bandwidth consumption.
+
+---
+
 | OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
 | `SRTO_REUSEADDR`  |       | pre     | `bool`     |         | true       |        | RW  | GSD    |

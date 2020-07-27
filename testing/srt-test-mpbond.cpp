@@ -19,7 +19,7 @@
 
 #define REQUIRE_CXX11 1
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -247,9 +247,9 @@ int main( int argc, char** argv )
         for (;;)
         {
             Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;

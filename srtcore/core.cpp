@@ -235,17 +235,13 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_Linger.l_onoff  = 0;
     m_Linger.l_linger = 0;
     m_bRendezvous     = false;
-#ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = seconds_from(DEF_CONNTIMEO_S);
-#endif
     m_iSndTimeOut = -1;
     m_iRcvTimeOut = -1;
     m_bReuseAddr  = true;
     m_llMaxBW     = -1;
-#ifdef SRT_ENABLE_IPOPTS
     m_iIpTTL = -1;
     m_iIpToS = -1;
-#endif
     m_CryptoSecret.len = 0;
     m_iSndCryptoKeyLen = 0;
     // Cfg
@@ -260,6 +256,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
     m_OPT_GroupConnect      = 0;
     m_HSGroupType           = SRT_GTYPE_UNDEFINED;
+    m_iOPT_RexmitAlgo       = 0;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -301,17 +298,13 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
     m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
-#ifdef SRT_ENABLE_CONNTIMEO
     m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
-#endif
     m_iSndTimeOut = ancestor.m_iSndTimeOut;
     m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
     m_bReuseAddr  = true; // this must be true, because all accepted sockets share the same port with the listener
     m_llMaxBW     = ancestor.m_llMaxBW;
-#ifdef SRT_ENABLE_IPOPTS
     m_iIpTTL = ancestor.m_iIpTTL;
     m_iIpToS = ancestor.m_iIpToS;
-#endif
     m_llInputBW             = ancestor.m_llInputBW;
     m_iOverheadBW           = ancestor.m_iOverheadBW;
     m_bDataSender           = ancestor.m_bDataSender;
@@ -321,6 +314,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_bOPT_TLPktDrop        = ancestor.m_bOPT_TLPktDrop;
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
+    m_iOPT_RexmitAlgo       = ancestor.m_iOPT_RexmitAlgo;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
     m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
     m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
@@ -560,7 +554,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             updateCC(TEV_INIT, TEV_INIT_RESET);
         break;
 
-#ifdef SRT_ENABLE_IPOPTS
     case SRTO_IPTTL:
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
@@ -574,7 +567,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
         m_iIpToS = cast_optval<int>(optval, optlen);
         break;
-#endif
 
     case SRTO_INPUTBW:
         m_llInputBW = cast_optval<int64_t>(optval, optlen);
@@ -735,11 +727,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_bRcvNakReport = cast_optval<bool>(optval, optlen);
         break;
 
-#ifdef SRT_ENABLE_CONNTIMEO
     case SRTO_CONNTIMEO:
         m_tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
         break;
-#endif
 
     case SRTO_LOSSMAXTTL:
         m_iMaxReorderTolerance = cast_optval<int>(optval, optlen);
@@ -1004,7 +994,13 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
             m_uOPT_StabilityTimeout = val * 1000;
         }
+        break;
 
+    case SRTO_RETRANSMISSION_ALGORITHM:
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+        m_iOPT_RexmitAlgo = cast_optval<int32_t>(optval, optlen);
         break;
 
     default:
@@ -1140,7 +1136,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
-#ifdef SRT_ENABLE_IPOPTS
     case SRTO_IPTTL:
         if (m_bOpened)
             *(int32_t *)optval = m_pSndQueue->getIpTTL();
@@ -1156,7 +1151,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t *)optval = m_iIpToS;
         optlen = sizeof(int32_t);
         break;
-#endif
 
     case SRTO_SENDER:
         *(int32_t *)optval = m_bDataSender;
@@ -1243,12 +1237,10 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen             = sizeof(int32_t);
         break;
 
-#ifdef SRT_ENABLE_CONNTIMEO
     case SRTO_CONNTIMEO:
         *(int*)optval = count_milliseconds(m_tdConnTimeOut);
         optlen        = sizeof(int);
         break;
-#endif
 
     case SRTO_MINVERSION:
         *(uint32_t *)optval = m_lMinimumPeerSrtVersion;
@@ -1458,9 +1450,7 @@ void CUDT::clearData()
         m_stats.rcvFilterLoss     = 0;
 
         m_stats.traceBytesRetrans = 0;
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
         m_stats.traceRcvBytesLoss = 0;
-#endif
         m_stats.sndBytesDropTotal        = 0;
         m_stats.rcvBytesDropTotal        = 0;
         m_stats.traceSndBytesDrop        = 0;
@@ -3675,7 +3665,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     steady_clock::time_point rcv_buffer_time_base;
     bool rcv_buffer_wrap_period = false;
-    steady_clock::duration rcv_buffer_udrift;
+    steady_clock::duration rcv_buffer_udrift(0);
     if (m_bTsbPd && gp->getBufferTimeBase(this, (rcv_buffer_time_base), (rcv_buffer_wrap_period), (rcv_buffer_udrift)))
     {
         // We have at least one socket in the group, each socket should have
@@ -3930,11 +3920,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
     // function
-#ifdef SRT_ENABLE_CONNTIMEO
     steady_clock::duration ttl = m_tdConnTimeOut;
-#else
-    steady_clock::duration ttl = seconds_from(3);
-#endif
 
     if (m_bRendezvous)
         ttl *= 10;
@@ -5624,9 +5610,7 @@ void *CUDT::tsbpd(void *param)
 
         enterCS(self->m_RcvBufferLock);
 
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
         self->m_pRcvBuffer->updRcvAvgDataSize(steady_clock::now());
-#endif
 
         if (self->m_bTLPktDrop)
         {
@@ -5775,7 +5759,7 @@ void CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
     m_stats.rcvDropTotal += seqlen;
     m_stats.traceRcvDrop += seqlen;
     /* Estimate dropped/skipped bytes from average payload */
-    int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+    const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
     m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
     m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
     leaveCS(m_StatsLock);
@@ -7373,7 +7357,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
 
-        unitsize = int((torecv == -1 || torecv >= block) ? block : torecv);
+        unitsize = int((torecv > block) ? block : torecv);
         recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
 
         if (recvsize > 0)
@@ -7434,9 +7418,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
     perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
     perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
     perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
-#endif
 
     perf->pktSndDrop  = m_stats.traceSndDrop;
     perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
@@ -7469,9 +7451,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
     perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
 
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
     perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
-#endif
     perf->pktSndDropTotal  = m_stats.sndDropTotal;
     perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
     perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
@@ -7509,7 +7489,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     {
         if (m_pSndBuffer)
         {
-#ifdef SRT_ENABLE_SNDBUFSZ_MAVG
             if (instantaneous)
             {
                 /* Get instant SndBuf instead of moving average for application-based Algorithm
@@ -7520,9 +7499,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             {
                 perf->pktSndBuf = m_pSndBuffer->getAvgBufSize((perf->byteSndBuf), (perf->msSndBuf));
             }
-#else
-            perf->pktSndBuf = m_pSndBuffer->getCurrBufSize((perf->byteSndBuf), (perf->msSndBuf));
-#endif
             perf->byteSndBuf += (perf->pktSndBuf * pktHdrSize);
             //<
             perf->byteAvailSndBuf = (m_iSndBufSize - perf->pktSndBuf) * m_iMSS;
@@ -7541,7 +7517,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         {
             perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_iMSS;
             // new>
-#ifdef SRT_ENABLE_RCVBUFSZ_MAVG
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
@@ -7550,9 +7525,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
             }
-#else
-            perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
-#endif
             //<
         }
         else
@@ -7600,9 +7572,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.sndDuration                                                       = 0;
         m_stats.traceRcvRetrans                                                   = 0;
         m_stats.traceRcvBelated                                                   = 0;
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
         m_stats.traceRcvBytesLoss = 0;
-#endif
 
         m_stats.sndFilterExtra = 0;
         m_stats.rcvFilterExtra = 0;
@@ -8529,7 +8499,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
                 HLOGC(mglog.Debug, log << CONID() << "rcv LOSSREPORT: %"
                     << losslist[i] << " (1 packet)");
-                int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
 
                 enterCS(m_StatsLock);
                 m_stats.traceSndLoss += num;
@@ -8609,7 +8579,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // inaccurate. Additionally it won't lock if TSBPD mode is off, and
         // won't update anything. Note that if you set TSBPD mode and use
         // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-        steady_clock::duration udrift;
+        steady_clock::duration udrift(0);
         steady_clock::time_point newtimebase;
         const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
                 (udrift), (newtimebase));
@@ -8959,6 +8929,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     CGuard ackguard(m_RecvAckLock);
+    const steady_clock::time_point time_now = steady_clock::now();
+    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT - 4 * m_iRTTVar);
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
@@ -8988,6 +8960,19 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
             continue;
+        }
+
+        if (m_bPeerNakReport && m_iOPT_RexmitAlgo != 0)
+        {
+            const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
+            if (tsLastRexmit >= time_nak)
+            {
+                HLOGC(mglog.Debug, log << CONID() << "REXMIT: ignoring seqno "
+                    << w_packet.m_iSeqNo << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
+                    << " RTT=" << m_iRTT << " RTTVar=" << m_iRTTVar
+                    << " now=" << FormatTime(time_now));
+                continue;
+            }
         }
 
         int msglen;
@@ -9584,7 +9569,8 @@ int CUDT::processData(CUnit* in_unit)
             int    loss = diff - 1; // loss is all that is above diff == 1
             m_stats.traceRcvLoss += loss;
             m_stats.rcvLossTotal += loss;
-            uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+            const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+            const uint64_t lossbytes = loss * avgpayloadsz;
             m_stats.traceRcvBytesLoss += lossbytes;
             m_stats.rcvBytesLossTotal += lossbytes;
             HLOGC(mglog.Debug,
@@ -11788,10 +11774,8 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     case SRTO_SNDDATA: RD(0);
     case SRTO_RCVDATA: RD(0);
 
-#ifdef SRT_ENABLE_IPOPTS
     case SRTO_IPTTL: RD(0);
     case SRTO_IPTOS: RD(0);
-#endif
 
     case SRTO_SENDER: RD(false);
     case SRTO_TSBPDMODE: RD(false);
@@ -11804,9 +11788,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     case SRTO_VERSION: RD(SRT_DEF_VERSION);
     case SRTO_PEERVERSION: RD(0);
 
-#ifdef SRT_ENABLE_CONNTIMEO
     case SRTO_CONNTIMEO: RD(-1);
-#endif
 
     case SRTO_MINVERSION: RD(0);
     case SRTO_STREAMID: RD(std::string());
@@ -12418,7 +12400,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             srt_epoll_add_usock(m_SndEID, (*b)->id, &modes);
         }
 
-        int len = blocked.size();
+        const int blocklen = blocked.size();
 
         int blst = 0;
         CEPoll::fmap_t sready;
@@ -12469,8 +12451,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     // This must be wrapped in try-catch because on error it throws an exception.
                     // Possible return values are only 0, in case when len was passed 0, or a positive
                     // >0 value that defines the size of the data that it has sent, that is, in case
-                    // of Live mode, equal to 'len'.
-                    stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                    // of Live mode, equal to 'blocklen'.
+                    stat = d->ps->core().sendmsg2(buf, blocklen, (w_mc));
                 }
                 catch (CUDTException& e)
                 {
@@ -12491,7 +12473,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // All others are wipeme.
             for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
             {
-                if (is->stat == len)
+                if (is->stat == blocklen)
                 {
                     // Successful.
                     successful.push_back(is->d);
@@ -12679,24 +12661,24 @@ void CUDTGroup::getGroupCount(size_t& w_size, bool& w_still_alive)
 
 void CUDTGroup::fillGroupData(
         SRT_MSGCTRL& w_out, // MSGCTRL to be written
-        const SRT_MSGCTRL& in, // MSGCTRL read from the data-providing socket
-        SRT_SOCKGROUPDATA* out_grpdata, // grpdata as passed in MSGCTRL
-        size_t out_grpdata_size) // grpdata_size as passed in MSGCTRL
+        const SRT_MSGCTRL& in // MSGCTRL read from the data-providing socket
+        )
 {
-    w_out = in;
+    SRT_SOCKGROUPDATA* grpdata = w_out.grpdata;
+
+    w_out = in; // NOTE: This will write NULL to grpdata and 0 to grpdata_size!
 
     // User did not wish to read the group data at all.
-    if (!out_grpdata)
+    if (!grpdata)
     {
         w_out.grpdata = NULL;
         w_out.grpdata_size = 0;
         return;
     }
 
-    int st = getGroupData((out_grpdata), (&out_grpdata_size));
-    w_out.grpdata_size = out_grpdata_size;
+    int st = getGroupData((grpdata), (&w_out.grpdata_size));
     // On error, rewrite NULL.
-    w_out.grpdata = st == 0 ? out_grpdata : NULL;
+    w_out.grpdata = st != SRT_ERROR ? grpdata : NULL;
 }
 
 struct FLookupSocketWithEvent
@@ -12786,10 +12768,6 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
     // if it was ever seen broken, so that it's skipped.
     set<CUDTSocket*> broken;
 
-    // Remember them now because they will be overwritten.
-    SRT_SOCKGROUPDATA* out_grpdata = (w_mc.grpdata);
-    size_t out_grpdata_size = w_mc.grpdata_size;
-
     size_t output_size = 0;
 
     for (;;)
@@ -12813,7 +12791,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 HLOGC(dlog.Debug, log << "group/recv: delivering AHEAD packet %" << pos->mctrl.pktseq << " #" << pos->mctrl.msgno
                         << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
                 memcpy(buf, &pos->packet[0], pos->packet.size());
-                fillGroupData((w_mc), pos->mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), pos->mctrl);
                 len = pos->packet.size();
                 pos->packet.clear();
 
@@ -13218,7 +13196,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
                 HLOGC(dlog.Debug, log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " DELIVERING");
                 output_size = stat;
-                fillGroupData((w_mc), mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), mctrl);
 
                 // Update stats as per delivery
                 m_stats.recv.Update(output_size);
@@ -13377,7 +13355,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                         << ": " << BufferStamp(&pkt[0], pkt.size()));
 
                 memcpy(buf, &pkt[0], pkt.size());
-                fillGroupData((w_mc), slowest_kangaroo->second.mctrl, (out_grpdata), out_grpdata_size);
+                fillGroupData((w_mc), slowest_kangaroo->second.mctrl);
                 len = pkt.size();
                 pkt.clear();
 
@@ -13476,7 +13454,7 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
             continue;
 
         steady_clock::time_point this_timebase;
-        steady_clock::duration this_udrift;
+        steady_clock::duration this_udrift(0);
         bool wrp = gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase((this_timebase), (this_udrift));
 
         udrift = std::min(udrift, this_udrift);
@@ -14261,7 +14239,7 @@ RetryWaitBlocked:
                 continue;
             }
             CUDT& ce = d->ps->core();
-            steady_clock::duration td;
+            steady_clock::duration td(0);
             if (!is_zero(ce.m_tsTmpActiveTime)
                     && count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {

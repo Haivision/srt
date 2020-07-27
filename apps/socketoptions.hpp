@@ -244,7 +244,8 @@ const SocketOption srt_options [] {
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr}
+    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "rexmitalgo", 0, SRTO_RETRANSMISSION_ALGORITHM, SocketOption::PRE, SocketOption::INT, nullptr }
 };
 }
 

@@ -381,7 +381,6 @@ public:
 
    int sendto(const sockaddr_any& addr, CPacket& packet);
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Get the IP TTL.
       /// @param [in] ttl IP Time To Live.
       /// @return TTL.
@@ -392,7 +391,6 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
 
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
@@ -541,10 +539,8 @@ struct CMultiplexer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
    int m_iMSS;          // Maximum Segment Size
    int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
    int m_iIpV6Only;     // IPV6_V6ONLY option
