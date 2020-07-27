@@ -2558,7 +2558,6 @@ void CUDTUnited::updateMux(
        s->m_pUDT->m_pSndQueue = m.m_pSndQueue;
        s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
        s->m_iMuxID = m.m_iID;
-
    }
    catch (CUDTException& e)
    {
