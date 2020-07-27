@@ -5751,7 +5751,7 @@ void CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
     m_stats.rcvDropTotal += seqlen;
     m_stats.traceRcvDrop += seqlen;
     /* Estimate dropped/skipped bytes from average payload */
-    int avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+    const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
     m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
     m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
     leaveCS(m_StatsLock);
@@ -7349,7 +7349,7 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
 
-        unitsize = int((torecv == -1 || torecv >= block) ? block : torecv);
+        unitsize = int((torecv > block) ? block : torecv);
         recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
 
         if (recvsize > 0)
@@ -9546,7 +9546,8 @@ int CUDT::processData(CUnit* in_unit)
             int    loss = diff - 1; // loss is all that is above diff == 1
             m_stats.traceRcvLoss += loss;
             m_stats.rcvLossTotal += loss;
-            uint64_t lossbytes = loss * m_pRcvBuffer->getRcvAvgPayloadSize();
+            const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+            const uint64_t lossbytes = loss * avgpayloadsz;
             m_stats.traceRcvBytesLoss += lossbytes;
             m_stats.rcvBytesLossTotal += lossbytes;
             HLOGC(mglog.Debug,
