@@ -491,7 +491,7 @@ either only a retrieved (GET) or specified (SET) value.
 | --------------------- | ----- | ------- | -------- | ------ | -------- | ------ |
 | `SRTO_BINDTODEVICE`   | 1.5.0 | pre     | `string` |        |          |        |
 
-- Refets to `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level. This
+- Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level. This
 effectively limits the packets received by this socket to only those that are
 targeted to that device. The device is specified by name passed as string. The
 setting becomes effective after binding the socket (including default-binding
