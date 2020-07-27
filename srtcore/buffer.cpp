@@ -794,7 +794,7 @@ CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     , m_iBytesCount(0)
     , m_iAckedPktsCount(0)
     , m_iAckedBytesCount(0)
-    , m_iAvgPayloadSz(7 * 188)
+    , m_uAvgPayloadSz(7 * 188)
     , m_bTsbPdMode(false)
     , m_tdTsbPdDelay(0)
     , m_bTsbPdWrapCheck(false)
@@ -843,7 +843,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
     {
         m_iBytesCount += bytes; /* added or removed bytes from rcv buffer */
         if (bytes > 0)          /* Assuming one pkt when adding bytes */
-            m_iAvgPayloadSz = ((m_iAvgPayloadSz * (100 - 1)) + bytes) / 100;
+            m_uAvgPayloadSz = ((m_uAvgPayloadSz * (100 - 1)) + bytes) / 100;
     }
     else // acking/removing pkts to/from buffer
     {
@@ -1672,9 +1672,9 @@ int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
     return m_iAckedPktsCount;
 }
 
-int CRcvBuffer::getRcvAvgPayloadSize() const
+unsigned CRcvBuffer::getRcvAvgPayloadSize() const
 {
-    return m_iAvgPayloadSz;
+    return m_uAvgPayloadSz;
 }
 
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
@@ -2140,7 +2140,6 @@ string CRcvBuffer::debugTimeState(size_t first_n_pkts) const
         }
 
         const CPacket& pkt = unit->m_Packet;
-        pkt.getMsgTimeStamp();
         ss << "pkt[" << i << "] ts=" << pkt.getMsgTimeStamp() << ", ";
     }
     return ss.str();

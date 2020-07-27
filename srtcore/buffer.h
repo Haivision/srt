@@ -365,7 +365,7 @@ public:
       /// Query the received average payload size.
       /// @return size (bytes) of payload size
 
-   int getRcvAvgPayloadSize() const;
+   unsigned getRcvAvgPayloadSize() const;
 
 
       /// Mark the message to be dropped from the message list.
@@ -581,7 +581,7 @@ private:
    int m_iBytesCount;                   // Number of payload bytes in the buffer
    int m_iAckedPktsCount;               // Number of acknowledged pkts in the buffer
    int m_iAckedBytesCount;              // Number of acknowledged payload bytes in the buffer
-   int m_iAvgPayloadSz;                 // Average payload size for dropped bytes estimation
+   unsigned m_uAvgPayloadSz;           // Average payload size for dropped bytes estimation
 
    bool m_bTsbPdMode;                   // true: apply TimeStamp-Based Rx Mode
    duration m_tdTsbPdDelay;        // aggreed delay
