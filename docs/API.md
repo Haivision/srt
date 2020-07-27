@@ -1070,6 +1070,17 @@ and both must use bind/connect to one another.
 
 ---
 
+| OptName                         | Since | Binding | Type   | Units  | Default | Range  |
+| ------------------------------- | ----- | ------- | ------ | ------ | ------- | ------ |
+| `SRTO_RETRANSMISSION_ALGORITHM` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] |
+
+* **[GET or SET]** - Retransmission algorithm to use (SENDER option).
+
+* 0 - Default (retranmsit on every loss report).
+* 1 - Reduced retransmissions (not more often than once per RTT) - reduced bandwidth consumption.
+
+---
+
 | OptName               | Since | Binding | Type  | Units  | Default  | Range       |
 | --------------------- | ----- | ------- | ----- | ------ | -------- | ----------- |
 | `SRTO_REUSEADDR`      |       | pre     |       |        | true     | true, false |

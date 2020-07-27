@@ -536,9 +536,7 @@ public:
     /// the group data array as requested.
     void fillGroupData(
             SRT_MSGCTRL& w_out, //< MSGCTRL to be written
-            const SRT_MSGCTRL& in, //< MSGCTRL read from the data-providing socket
-            SRT_SOCKGROUPDATA* out_grpdata, //< grpdata as passed in MSGCTRL
-            size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
+            const SRT_MSGCTRL& in //< MSGCTRL read from the data-providing socket
             );
 
 #if ENABLE_HEAVY_LOGGING
@@ -1407,17 +1405,13 @@ private: // Identification
     int m_iUDPRcvBufSize;                        // UDP receiving buffer size
     bool m_bRendezvous;                          // Rendezvous connection mode
 
-#ifdef SRT_ENABLE_CONNTIMEO
     duration m_tdConnTimeOut;    // connect timeout in milliseconds
-#endif
     int m_iSndTimeOut;                           // sending timeout in milliseconds
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
     bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
     int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
-#ifdef SRT_ENABLE_IPOPTS
     int m_iIpTTL;
     int m_iIpToS;
-#endif
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
     // created later and takes values from these.
@@ -1443,6 +1437,7 @@ private: // Identification
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
     uint32_t m_uOPT_StabilityTimeout;
+    int m_iOPT_RexmitAlgo;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds

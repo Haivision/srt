@@ -68,7 +68,7 @@ using namespace std;
 using namespace srt::sync;
 
 #if ENABLE_HEAVY_LOGGING
-static void PrintEpollEvent(ostream& os, int events);
+static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0);
 #endif
 
 namespace srt_logging
@@ -305,6 +305,8 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     int32_t evts = events ? *events : uint32_t(SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR);
     bool edgeTriggered = evts & SRT_EPOLL_ET;
     evts &= ~SRT_EPOLL_ET;
+
+    // et_evts = all events, if SRT_EPOLL_ET, or only those that are always ET otherwise.
     int32_t et_evts = edgeTriggered ? evts : evts & SRT_EPOLL_ETONLY;
     if (evts)
     {
@@ -329,8 +331,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
             // Update the watch configuration, including edge
             wait.watch = evts;
-            if (edgeTriggered)
-                wait.edge = evts;
+            wait.edge = et_evts;
 
             // Now it should look exactly like newly added
             // and the state is also updated
@@ -764,6 +765,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
             if (!empty || msTimeOut == 0)
             {
+                IF_HEAVY_LOGGING(ostringstream singles);
                 // If msTimeOut == 0, it means that we need the information
                 // immediately, we don't want to wait. Therefore in this case
                 // report also when none is ready.
@@ -773,11 +775,16 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
                 {
                     ++total;
                     st[i->fd] = i->events;
-                    d.checkEdge(i++); // NOTE: potentially deletes `i`
+                    IF_HEAVY_LOGGING(singles << "@" << i->fd << ":");
+                    IF_HEAVY_LOGGING(PrintEpollEvent(singles, i->events, i->parent->edgeOnly()));
+                    const bool edged ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
+                    IF_HEAVY_LOGGING(singles << (edged ? "<^> " : " "));
                 }
 
+                // Logging into 'singles' because it notifies as to whether
+                // the edge-triggered event has been cleared
                 HLOGC(dlog.Debug, log << "EID " << d.m_iID << " rdy=" << total << ": "
-                        << DisplayEpollResults(st)
+                        << singles.str()
                         << " TRACKED: " << d.DisplayEpollWatch());
                 return total;
             }
@@ -905,13 +912,13 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
 
 // Debug use only.
 #if ENABLE_HEAVY_LOGGING
-static void PrintEpollEvent(ostream& os, int events)
+static ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 {
     static pair<int, const char*> const namemap [] = {
-        make_pair(SRT_EPOLL_IN, "[R]"),
-        make_pair(SRT_EPOLL_OUT, "[W]"),
-        make_pair(SRT_EPOLL_ERR, "[E]"),
-        make_pair(SRT_EPOLL_UPDATE, "[U]")
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
     };
 
     int N = Size(namemap);
@@ -919,8 +926,15 @@ static void PrintEpollEvent(ostream& os, int events)
     for (int i = 0; i < N; ++i)
     {
         if (events & namemap[i].first)
-            os << namemap[i].second;
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+        }
     }
+
+    return os;
 }
 
 string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset)
@@ -943,7 +957,7 @@ string CEPollDesc::DisplayEpollWatch()
     for (ewatch_t::const_iterator i = m_USockWatchState.begin(); i != m_USockWatchState.end(); ++i)
     {
         os << "@" << i->first << ":";
-        PrintEpollEvent(os, i->second.watch);
+        PrintEpollEvent(os, i->second.watch, i->second.edge);
         os << " ";
     }
 
@@ -951,4 +965,3 @@ string CEPollDesc::DisplayEpollWatch()
 }
 
 #endif
-
