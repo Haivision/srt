@@ -23,7 +23,6 @@ written by
 #include <string.h>
 #include <stdlib.h>
 
-#include "srt4udt.h"
 #include "logging_api.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -217,7 +216,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_NAKREPORT = 33,      // Enable receiver to send periodic NAK reports
    SRTO_VERSION = 34,        // Local SRT Version
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
-   SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Ccaller default: 3000, rendezvous (x 10)
+   SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
@@ -321,9 +320,7 @@ struct CBytePerfMon
    int      pktRcvUndecryptTotal;       // number of undecrypted packets
    uint64_t byteSentTotal;              // total number of sent data bytes, including retransmissions
    uint64_t byteRecvTotal;              // total number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLossTotal;           // total number of lost bytes
-#endif
    uint64_t byteRetransTotal;           // total number of retransmitted bytes
    uint64_t byteSndDropTotal;           // number of too-late-to-send dropped bytes
    uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
@@ -353,9 +350,7 @@ struct CBytePerfMon
    int      pktRcvUndecrypt;            // number of undecrypted packets
    uint64_t byteSent;                   // number of sent data bytes, including retransmissions
    uint64_t byteRecv;                   // number of received bytes
-#ifdef SRT_ENABLE_LOSTBYTESCOUNT
    uint64_t byteRcvLoss;                // number of retransmitted bytes
-#endif
    uint64_t byteRetrans;                // number of retransmitted bytes
    uint64_t byteSndDrop;                // number of too-late-to-send dropped bytes
    uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
@@ -695,13 +690,6 @@ inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
     return SRT_EPOLL_OPT( (int)a1 | (int)a2 );
 }
 
-inline bool operator&(int flags, SRT_EPOLL_OPT eflg)
-{
-    // Using an enum prevents treating int automatically as enum,
-    // requires explicit enum to be passed here, and minimizes the
-    // risk that the right side value will contain multiple flags.
-    return (flags & int(eflg)) != 0;
-}
 #endif
 
 
@@ -737,7 +725,7 @@ SRT_API       int srt_cleanup(void);
 // and socket creation doesn't need any arguments. Use srt_create_socket().
 // Planned deprecation removal: rel1.6.0
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
-SRT_API       SRTSOCKET srt_create_socket();
+SRT_API       SRTSOCKET srt_create_socket(void);
 
 // Group management
 
@@ -779,7 +767,7 @@ SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
-SRT_API SRT_SOCKOPT_CONFIG* srt_create_config();
+SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
 SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
 
@@ -942,9 +930,9 @@ SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
 const char* srt_rejectreason_str(int id);
 
-SRT_API uint32_t srt_getversion();
+SRT_API uint32_t srt_getversion(void);
 
-SRT_API int64_t srt_time_now();
+SRT_API int64_t srt_time_now(void);
 
 SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
