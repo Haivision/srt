@@ -3657,7 +3657,7 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     steady_clock::time_point rcv_buffer_time_base;
     bool rcv_buffer_wrap_period = false;
-    steady_clock::duration rcv_buffer_udrift;
+    steady_clock::duration rcv_buffer_udrift(0);
     if (m_bTsbPd && gp->getBufferTimeBase(this, (rcv_buffer_time_base), (rcv_buffer_wrap_period), (rcv_buffer_udrift)))
     {
         // We have at least one socket in the group, each socket should have
@@ -8571,7 +8571,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // inaccurate. Additionally it won't lock if TSBPD mode is off, and
         // won't update anything. Note that if you set TSBPD mode and use
         // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-        steady_clock::duration udrift;
+        steady_clock::duration udrift(0);
         steady_clock::time_point newtimebase;
         const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
                 (udrift), (newtimebase));
@@ -13435,7 +13435,7 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
             continue;
 
         steady_clock::time_point this_timebase;
-        steady_clock::duration this_udrift;
+        steady_clock::duration this_udrift(0);
         bool wrp = gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase((this_timebase), (this_udrift));
 
         udrift = std::min(udrift, this_udrift);
@@ -14220,7 +14220,7 @@ RetryWaitBlocked:
                 continue;
             }
             CUDT& ce = d->ps->core();
-            steady_clock::duration td;
+            steady_clock::duration td(0);
             if (!is_zero(ce.m_tsTmpActiveTime)
                     && count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {
