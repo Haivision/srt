@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 
@@ -30,8 +22,9 @@ written by
 #ifndef HCRYPT_CTX_H
 #define HCRYPT_CTX_H
 
+#include <stdbool.h>
 #include <sys/types.h>
-#include <openssl/aes.h>		//AES_KEY for kek
+#include "hcrypt.h"
 
 #if !defined(HAISRT_VERSION_INT)
 #include "haicrypt.h"
@@ -61,6 +54,8 @@ typedef struct tag_hcrypt_Ctx {
 #define HCRYPT_CTX_F_ANNOUNCE   0x0200  /* Announce KM */
 #define HCRYPT_CTX_F_TTSEND     0x0400  /* time to send */
         unsigned         flags;
+#define hcryptCtx_GetKeyFlags(ctx)      ((ctx)->flags & HCRYPT_CTX_F_xSEK)
+#define hcryptCtx_GetKeyIndex(ctx)      (((ctx)->flags & HCRYPT_CTX_F_xSEK)>>1)
 
 #define HCRYPT_CTX_S_INIT       1
 #define HCRYPT_CTX_S_SARDY      2   /* Security Association (KEK) ready */
@@ -87,8 +82,6 @@ typedef struct tag_hcrypt_Ctx {
         size_t           sek_len;
         unsigned char    sek[HAICRYPT_KEY_MAX_SZ];
 
-        AES_KEY          aes_kek;
-
         hcrypt_MsgInfo * msg_info;  /* Transport message handler */
         unsigned         pkt_cnt;   /* Key usage counter */
 
@@ -100,67 +93,5 @@ typedef struct tag_hcrypt_Ctx {
         unsigned char    MSpfx_cache[HCRYPT_CTX_MAX_MS_PFX_SZ];
 } hcrypt_Ctx;
 
-typedef void *hcrypt_CipherData;
-
-typedef struct {
-        /*
-        * open:
-        * Create a cipher instance
-        * Allocate output buffers 
-        */
-        hcrypt_CipherData *(*open)(
-            size_t max_len);                                /* Maximum packet length that will be encrypted/decrypted */
-
-        /*
-        * close:
-        * Release any cipher resources
-        */
-        int     (*close)(
-            hcrypt_CipherData *crypto_data);                /* Cipher handle, internal data */
-
-        /*
-        * setkey:
-        * Set the Odd or Even, Encryption or Decryption key.
-        * Context (ctx) tells if it's for Odd or Even key (hcryptCtx_GetKeyIndex(ctx))
-        * A Context flags (ctx->flags) also tells if this is an encryption or decryption context (HCRYPT_CTX_F_ENCRYPT)
-        */
-        int (*setkey)(
-            hcrypt_CipherData *crypto_data,                 /* Cipher handle, internal data */
-            hcrypt_Ctx *ctx,                                /* HaiCrypt Context (cipher, keys, Odd/Even, etc..) */
-            unsigned char *key, size_t key_len);            /* New Key */
-
-        /*
-        * encrypt:
-        * Submit a list of nbin clear transport packets (hcrypt_DataDesc *in_data) to encryption
-        * returns *nbout encrypted data packets of length out_len_p[] into out_p[]
-        *
-        * If cipher implements deferred encryption (co-processor, async encryption),
-        * it may return no encrypted packets, or encrypted packets for clear text packets of a previous call.  
-        */
-        int (*encrypt)(
-            hcrypt_CipherData *crypto_data,                 /* Cipher handle, internal data */
-            hcrypt_Ctx *ctx,                                /* HaiCrypt Context (cipher, keys, Odd/Even, etc..) */
-            hcrypt_DataDesc *in_data, int nbin,             /* Clear text transport packets: header and payload */
-            void *out_p[], size_t out_len_p[], int *nbout); /* Encrypted packets */
-
-        /*
-        * decrypt:
-        * Submit a list of nbin encrypted transport packets (hcrypt_DataDesc *in_data) to decryption
-        * returns *nbout clear text data packets of length out_len_p[] into out_p[]
-        *
-        * If cipher implements deferred decryption (co-processor, async encryption),
-        * it may return no decrypted packets, or decrypted packets for encrypted packets of a previous call.
-        */
-        int (*decrypt)(
-            hcrypt_CipherData *crypto_data,                 /* Cipher handle, internal data */
-            hcrypt_Ctx *ctx,                                /* HaiCrypt Context (cipher, keys, Odd/Even, etc..) */
-            hcrypt_DataDesc *in_data, int nbin,             /* Clear text transport packets: header and payload */
-            void *out_p[], size_t out_len_p[], int *nbout); /* Encrypted packets */
-
-        int     (*getinbuf)(hcrypt_CipherData *crypto_data, size_t hdr_len, size_t in_len, unsigned int pad_factor, unsigned char **in_pp);
-} hcrypt_Cipher;
-
-#define hcryptCtx_GetKeyFlags(ctx)      ((ctx)->flags & HCRYPT_CTX_F_xSEK)
-#define hcryptCtx_GetKeyIndex(ctx)      (((ctx)->flags & HCRYPT_CTX_F_xSEK)>>1)
 
 #endif /* HCRYPT_CTX_H */

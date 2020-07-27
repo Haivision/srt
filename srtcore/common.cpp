@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2016, The Board of Trustees of the University of Illinois.
@@ -60,316 +50,44 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-
-#ifndef WIN32
-   #include <cstring>
-   #include <cerrno>
-   #include <unistd.h>
-   #if __APPLE__
-      #include "TargetConditionals.h"
-   #endif
-   #if defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
-      #include <mach/mach_time.h>
-   #endif
-#else
-   #include <winsock2.h>
-   #include <ws2tcpip.h>
-   #include <win/wintime.h>
-#endif
+#define SRT_IMPORT_TIME 1
+#include "platform_sys.h"
 
 #include <string>
 #include <sstream>
 #include <cmath>
+#include <iostream>
+#include <iomanip>
+#include <iterator>
+#include <vector>
+#include "udt.h"
 #include "md5.h"
 #include "common.h"
+#include "netinet_any.h"
+#include "logging.h"
+#include "threadname.h"
 
 #include <srt_compat.h> // SysStrError
 
-bool CTimer::m_bUseMicroSecond = false;
-uint64_t CTimer::s_ullCPUFrequency = CTimer::readCPUFrequency();
-
-pthread_mutex_t CTimer::m_EventLock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t CTimer::m_EventCond = PTHREAD_COND_INITIALIZER;
-
-CTimer::CTimer():
-m_ullSchedTime(),
-m_TickCond(),
-m_TickLock()
-{
-    pthread_mutex_init(&m_TickLock, NULL);
-    pthread_cond_init(&m_TickCond, NULL);
-}
-
-CTimer::~CTimer()
-{
-    pthread_mutex_destroy(&m_TickLock);
-    pthread_cond_destroy(&m_TickCond);
-}
-
-void CTimer::rdtsc(uint64_t &x)
-{
-   if (m_bUseMicroSecond)
-   {
-      x = getTime();
-      return;
-   }
-
-   #ifdef IA32
-      uint32_t lval, hval;
-      //asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
-      //asm volatile ("xor %eax, %eax; cpuid");
-      asm volatile ("rdtsc" : "=a" (lval), "=d" (hval));
-      //asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
-      x = hval;
-      x = (x << 32) | lval;
-   #elif defined(IA64)
-      asm ("mov %0=ar.itc" : "=r"(x) :: "memory");
-   #elif defined(AMD64)
-      uint32_t lval, hval;
-      asm ("rdtsc" : "=a" (lval), "=d" (hval));
-      x = hval;
-      x = (x << 32) | lval;
-   #elif defined(WIN32)
-      //HANDLE hCurThread = ::GetCurrentThread(); 
-      //DWORD_PTR dwOldMask = ::SetThreadAffinityMask(hCurThread, 1); 
-      BOOL ret = QueryPerformanceCounter((LARGE_INTEGER *)&x);
-      //SetThreadAffinityMask(hCurThread, dwOldMask);
-      if (!ret)
-         x = getTime() * s_ullCPUFrequency;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
-      x = mach_absolute_time();
-   #else
-      // use system call to read time clock for other archs
-      x = getTime();
-   #endif
-}
-
-uint64_t CTimer::readCPUFrequency()
-{
-   uint64_t frequency = 1;  // 1 tick per microsecond.
-
-   #if defined(IA32) || defined(IA64) || defined(AMD64)
-      uint64_t t1, t2;
-
-      rdtsc(t1);
-      timespec ts;
-      ts.tv_sec = 0;
-      ts.tv_nsec = 100000000;
-      nanosleep(&ts, NULL);
-      rdtsc(t2);
-
-      // CPU clocks per microsecond
-      frequency = (t2 - t1) / 100000;
-   #elif defined(WIN32)
-      int64_t ccf;
-      if (QueryPerformanceFrequency((LARGE_INTEGER *)&ccf))
-         frequency = ccf / 1000000;
-   #elif defined(OSX) || defined(TARGET_OS_IOS) || defined(TARGET_OS_TV)
-      mach_timebase_info_data_t info;
-      mach_timebase_info(&info);
-      frequency = info.denom * 1000ULL / info.numer;
-   #endif
-
-   // Fall back to microsecond if the resolution is not high enough.
-   if (frequency < 10)
-   {
-      frequency = 1;
-      m_bUseMicroSecond = true;
-   }
-   return frequency;
-}
-
-uint64_t CTimer::getCPUFrequency()
-{
-   return s_ullCPUFrequency;
-}
-
-void CTimer::sleep(uint64_t interval)
-{
-   uint64_t t;
-   rdtsc(t);
-
-   // sleep next "interval" time
-   sleepto(t + interval);
-}
-
-void CTimer::sleepto(uint64_t nexttime)
-{
-   // Use class member such that the method can be interrupted by others
-   m_ullSchedTime = nexttime;
-
-   uint64_t t;
-   rdtsc(t);
-
-   while (t < m_ullSchedTime)
-   {
-#ifndef NO_BUSY_WAITING
-#ifdef IA32
-       __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-#elif IA64
-       __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
-#elif AMD64
-       __asm__ volatile ("nop; nop; nop; nop; nop;");
-#endif
-#else
-       timeval now;
-       timespec timeout;
-       gettimeofday(&now, 0);
-       if (now.tv_usec < 990000)
-       {
-           timeout.tv_sec = now.tv_sec;
-           timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-       }
-       else
-       {
-           timeout.tv_sec = now.tv_sec + 1;
-           timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-       }
-       THREAD_PAUSED();
-       pthread_mutex_lock(&m_TickLock);
-       pthread_cond_timedwait(&m_TickCond, &m_TickLock, &timeout);
-       pthread_mutex_unlock(&m_TickLock);
-       THREAD_RESUMED();
-#endif
-
-       rdtsc(t);
-   }
-}
-
-void CTimer::interrupt()
-{
-   // schedule the sleepto time to the current CCs, so that it will stop
-   rdtsc(m_ullSchedTime);
-   tick();
-}
-
-void CTimer::tick()
-{
-    pthread_cond_signal(&m_TickCond);
-}
-
-uint64_t CTimer::getTime()
-{
-   //For Cygwin and other systems without microsecond level resolution, uncomment the following three lines
-   //uint64_t x;
-   //rdtsc(x);
-   //return x / s_ullCPUFrequency;
-   //Specific fix may be necessary if rdtsc is not available either.
-
-	timeval t;
-	gettimeofday(&t, 0);
-	return t.tv_sec * 1000000ULL + t.tv_usec;
-}
-
-void CTimer::triggerEvent()
-{
-    pthread_cond_signal(&m_EventCond);
-}
-
-void CTimer::waitForEvent()
-{
-    timeval now;
-    timespec timeout;
-    gettimeofday(&now, 0);
-    if (now.tv_usec < 990000)
-    {
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = (now.tv_usec + 10000) * 1000;
-    }
-    else
-    {
-        timeout.tv_sec = now.tv_sec + 1;
-        timeout.tv_nsec = (now.tv_usec + 10000 - 1000000) * 1000;
-    }
-    pthread_mutex_lock(&m_EventLock);
-    pthread_cond_timedwait(&m_EventCond, &m_EventLock, &timeout);
-    pthread_mutex_unlock(&m_EventLock);
-}
-
-void CTimer::sleep()
-{
-   #ifndef WIN32
-      usleep(10);
-   #else
-      Sleep(1);
-   #endif
-}
+using namespace srt::sync;
 
 
-//
-// Automatically lock in constructor
-CGuard::CGuard(pthread_mutex_t& lock):
-m_Mutex(lock),
-m_iLocked()
-{
-    m_iLocked = pthread_mutex_lock(&m_Mutex);
-}
-
-// Automatically unlock in destructor
-CGuard::~CGuard()
-{
-    if (0 == m_iLocked)
-        pthread_mutex_unlock(&m_Mutex);
-}
-
-int CGuard::enterCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_lock(&lock);
-}
-
-int CGuard::leaveCS(pthread_mutex_t& lock)
-{
-    return pthread_mutex_unlock(&lock);
-}
-
-void CGuard::createMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_init(&lock, NULL);
-}
-
-void CGuard::releaseMutex(pthread_mutex_t& lock)
-{
-    pthread_mutex_destroy(&lock);
-}
-
-void CGuard::createCond(pthread_cond_t& cond)
-{
-    pthread_cond_init(&cond, NULL);
-}
-
-void CGuard::releaseCond(pthread_cond_t& cond)
-{
-    pthread_cond_destroy(&cond);
-}
-
-//
 CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
-   if (-1 == err)
-      #ifndef WIN32
-         m_iErrno = errno;
-      #else
-         m_iErrno = GetLastError();
-      #endif
+   if (err == -1)
+       m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
 }
 
-CUDTException::CUDTException(const CUDTException& e):
-m_iMajor(e.m_iMajor),
-m_iMinor(e.m_iMinor),
-m_iErrno(e.m_iErrno),
-m_strMsg()
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
+    return getErrorString().c_str();
 }
 
-CUDTException::~CUDTException()
-{
-}
-
-const char* CUDTException::getErrorMessage()
+const string& CUDTException::getErrorString() const
 {
    // translate "Major:Minor" code into text message.
 
@@ -393,11 +111,7 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_NORES:
-#ifdef HAI_PATCH
            m_strMsg += ": unable to create/configure SRT socket";
-#else  /* HAI_PATCH */
-           m_strMsg += ": unable to create/configure UDP socket";
-#endif /* HAI_PATCH */
            break;
 
         case MN_SECURITY:
@@ -510,12 +224,12 @@ const char* CUDTException::getErrorMessage()
            m_strMsg += ": Cannot call connect on UNBOUND socket in rendezvous connection setup";
            break;
 
-        case MN_ISSTREAM:
-           m_strMsg += ": This operation is not supported in SOCK_STREAM mode";
+        case MN_INVALMSGAPI:
+           m_strMsg += ": Incorrect use of Message API (sendmsg/recvmsg).";
            break;
 
-        case MN_ISDGRAM:
-           m_strMsg += ": This operation is not supported in SOCK_DGRAM mode";
+        case MN_INVALBUFFERAPI:
+           m_strMsg += ": Incorrect use of Buffer API (send/recv) or File API (sendfile/recvfile).";
            break;
 
         case MN_BUSY:
@@ -523,16 +237,15 @@ const char* CUDTException::getErrorMessage()
            break;
 
         case MN_XSIZE:
-#ifdef HAI_PATCH
            m_strMsg += ": Message is too large to send (it must be less than the SRT send buffer size)";
-#else  /* HAI_PATCH */
-           m_strMsg += ": Message is too large to send (it must be less than the UDT send buffer size)";
-#endif /* HAI_PATCH */
            break;
 
         case MN_EIDINVAL:
            m_strMsg += ": Invalid epoll ID";
            break;
+
+        case MN_EEMPTY:
+           m_strMsg += ": All sockets removed from epoll, waiting would deadlock";
 
         default:
            break;
@@ -583,12 +296,7 @@ const char* CUDTException::getErrorMessage()
       m_strMsg += ": " + SysStrError(m_iErrno);
    }
 
-   // period
-   #ifndef WIN32
-   m_strMsg += ".";
-   #endif
-
-   return m_strMsg.c_str();
+   return m_strMsg;
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
@@ -610,48 +318,6 @@ void CUDTException::clear()
    m_iMinor = MN_NONE;
    m_iErrno = 0;
 }
-
-// XXX Move these into udt.h
-const int CUDTException::SUCCESS = 0;
-const int CUDTException::ECONNSETUP = UDT_XCODE(MJ_SETUP, 0);
-const int CUDTException::ENOSERVER =  UDT_XCODE(MJ_SETUP, MN_TIMEOUT);
-const int CUDTException::ECONNREJ =   UDT_XCODE(MJ_SETUP, MN_REJECTED);
-const int CUDTException::ESOCKFAIL =  UDT_XCODE(MJ_SETUP, MN_NORES);
-const int CUDTException::ESECFAIL =   UDT_XCODE(MJ_SETUP, MN_SECURITY);
-const int CUDTException::ECONNFAIL = 2000;
-const int CUDTException::ECONNLOST = 2001;
-const int CUDTException::ENOCONN = 2002;
-const int CUDTException::ERESOURCE = 3000;
-const int CUDTException::ETHREAD = 3001;
-const int CUDTException::ENOBUF = 3002;
-const int CUDTException::EFILE = 4000;
-const int CUDTException::EINVRDOFF = 4001;
-const int CUDTException::ERDPERM = 4002;
-const int CUDTException::EINVWROFF = 4003;
-const int CUDTException::EWRPERM = 4004;
-const int CUDTException::EINVOP = 5000;
-const int CUDTException::EBOUNDSOCK = 5001;
-const int CUDTException::ECONNSOCK = 5002;
-const int CUDTException::EINVPARAM = 5003;
-const int CUDTException::EINVSOCK = 5004;
-const int CUDTException::EUNBOUNDSOCK = 5005;
-const int CUDTException::ENOLISTEN = 5006;
-const int CUDTException::ERDVNOSERV = 5007;
-const int CUDTException::ERDVUNBOUND = 5008;
-const int CUDTException::ESTREAMILL = 5009;
-const int CUDTException::EDGRAMILL = 5010;
-const int CUDTException::EDUPLISTEN = 5011;
-const int CUDTException::ELARGEMSG = 5012;
-const int CUDTException::EINVPOLLID = 5013;
-const int CUDTException::EASYNCFAIL = 6000;
-const int CUDTException::EASYNCSND = 6001;
-const int CUDTException::EASYNCRCV = 6002;
-const int CUDTException::ETIMEOUT = 6003;
-#ifdef SRT_ENABLE_ECN
-const int CUDTException::ECONGEST = 6004;
-#endif /* SRT_ENABLE_ECN */ 
-const int CUDTException::EPEERERR = 7000;
-const int CUDTException::EUNKNOWN = -1;
 
 #undef UDT_XCODE
 
@@ -684,39 +350,101 @@ bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
    return false;
 }
 
-void CIPAddress::ntop(const sockaddr* addr, uint32_t ip[4], int ver)
+void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
 {
-   if (AF_INET == ver)
-   {
-      sockaddr_in* a = (sockaddr_in*)addr;
-      ip[0] = a->sin_addr.s_addr;
-   }
-   else
-   {
-      sockaddr_in6* a = (sockaddr_in6*)addr;
+    if (addr.family() == AF_INET)
+    {
+        ip[0] = addr.sin.sin_addr.s_addr;
+    }
+    else
+    {
+      const sockaddr_in6* a = &addr.sin6;
       ip[3] = (a->sin6_addr.s6_addr[15] << 24) + (a->sin6_addr.s6_addr[14] << 16) + (a->sin6_addr.s6_addr[13] << 8) + a->sin6_addr.s6_addr[12];
       ip[2] = (a->sin6_addr.s6_addr[11] << 24) + (a->sin6_addr.s6_addr[10] << 16) + (a->sin6_addr.s6_addr[9] << 8) + a->sin6_addr.s6_addr[8];
       ip[1] = (a->sin6_addr.s6_addr[7] << 24) + (a->sin6_addr.s6_addr[6] << 16) + (a->sin6_addr.s6_addr[5] << 8) + a->sin6_addr.s6_addr[4];
       ip[0] = (a->sin6_addr.s6_addr[3] << 24) + (a->sin6_addr.s6_addr[2] << 16) + (a->sin6_addr.s6_addr[1] << 8) + a->sin6_addr.s6_addr[0];
-   }
+    }
 }
 
-void CIPAddress::pton(sockaddr* addr, const uint32_t ip[4], int ver)
+// XXX This has void return and the first argument is passed by reference.
+// Consider simply returning sockaddr_any by value.
+void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], int agent_family, const sockaddr_any& peer)
 {
-   if (AF_INET == ver)
+   if (agent_family == AF_INET)
    {
-      sockaddr_in* a = (sockaddr_in*)addr;
+      sockaddr_in* a = (&w_addr.sin);
       a->sin_addr.s_addr = ip[0];
    }
-   else
+   else // AF_INET6
    {
-      sockaddr_in6* a = (sockaddr_in6*)addr;
-      for (int i = 0; i < 4; ++ i)
+      // Check if the peer address is a model of IPv4-mapped-on-IPv6.
+      // If so, it means that the `ip` array should be interpreted as IPv4.
+
+      uint16_t* peeraddr16 = (uint16_t*)peer.sin6.sin6_addr.s6_addr;
+      static const uint16_t ipv4on6_model [8] =
       {
-         a->sin6_addr.s6_addr[i * 4] = ip[i] & 0xFF;
-         a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
-         a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
-         a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
+          0, 0, 0, 0, 0, 0xFFFF, 0, 0
+      };
+
+      // Compare only first 6 words. Remaining 2 words
+      // comprise the IPv4 address, if these first 6 match.
+      const uint16_t* mbegin = ipv4on6_model;
+      const uint16_t* mend = ipv4on6_model + 6;
+
+      bool is_mapped_ipv4 = (std::mismatch(mbegin, mend, peeraddr16).first == mend);
+
+      sockaddr_in6* a = (&w_addr.sin6);
+
+      if (!is_mapped_ipv4)
+      {
+          // Here both agent and peer use IPv6, in which case
+          // `ip` contains the full IPv6 address, so just copy
+          // it as is.
+
+          // XXX Possibly, a simple
+          // memcpy( (a->sin6_addr.s6_addr), ip, 16);
+          // would do the same thing, and faster. The address in `ip`,
+          // even though coded here as uint32_t, is still big endian.
+          for (int i = 0; i < 4; ++ i)
+          {
+              a->sin6_addr.s6_addr[i * 4 + 0] = ip[i] & 0xFF;
+              a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
+              a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
+              a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
+          }
+      }
+      else // IPv4 mapped on IPv6
+      {
+          // Here agent uses IPv6 with IPPROTO_IPV6/IPV6_V6ONLY == 0
+          // In this case, the address in `ip` uses only the `ip[0]`
+          // element carrying the IPv4 address, rest of the elements
+          // is 0. This address must be interpreted as IPv4, but set
+          // as the IPv4-on-IPv6 address.
+          //
+          // Unfortunately, sockaddr_in6 doesn't give any straightforward
+          // method for it, although the official size of a single element
+          // of the IPv6 address is 16-bit.
+
+          memset((a->sin6_addr.s6_addr), 0, sizeof a->sin6_addr.s6_addr);
+
+          // There are also available sin6_addr.s6_addr32, but
+          // this is kinda nonportable.
+          uint32_t* paddr32 = (uint32_t*)a->sin6_addr.s6_addr;
+          uint16_t* paddr16 = (uint16_t*)a->sin6_addr.s6_addr;
+
+          // layout: of IPv4 address 192.168.128.2
+          // 16-bit:
+          // [0000: 0000: 0000: 0000: 0000: FFFF: 192.168:128.2]
+          // 8-bit
+          // [00/00/00/00/00/00/00/00/00/00/FF/FF/192/168/128/2]
+          // 32-bit
+          // [00000000 && 00000000 && 0000FFFF && 192.168.128.2]
+
+          // Spreading every 16-bit word separately to avoid endian dilemmas
+          paddr16[2 * 2 + 0] = 0;
+          paddr16[2 * 2 + 1] = 0xFFFF;
+
+          paddr32[3] = ip[0]; // IPv4 address encoded here
       }
    }
 }
@@ -790,7 +518,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
 
-    static string udt_types [] = {
+    static const char* const udt_types [] = {
         "handshake",
         "keepalive",
         "ack",
@@ -802,30 +530,292 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "peererror", //8
     };
 
-    static string srt_types [] = {
-        "",
-        "hsreq",
-        "hsrsp",
-        "kmreq",
-        "kmrsp",
+    static const char* const srt_types [] = {
+        "EXT:none",
+        "EXT:hsreq",
+        "EXT:hsrsp",
+        "EXT:kmreq",
+        "EXT:kmrsp",
+        "EXT:sid",
+        "EXT:congctl",
+        "EXT:group"
     };
 
-#define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
     if ( mt == UMSG_EXT )
     {
-        // Returrn "EXT:" with srt message name
-        string val = "SRT:";
-        if ( extt <= 0 || extt > LEN(srt_types) )
+        if ( extt >= Size(srt_types) )
             return "EXT:unknown";
 
-        return val + srt_types[extt];
+        return srt_types[extt];
     }
 
-    if ( size_t(mt) > LEN(udt_types) )
+    if ( size_t(mt) > Size(udt_types) )
         return "unknown";
-
-#undef LEN
 
     return udt_types[mt];
 }
+
+std::string ConnectStatusStr(EConnectStatus cst)
+{
+    return
+          cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
+        : cst == CONN_RUNNING ? "RUNNING"
+        : cst == CONN_ACCEPT ? "ACCEPTED"
+        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
+        : cst == CONN_AGAIN ? "AGAIN"
+        : cst == CONN_CONFUSED ? "MISSING HANDSHAKE"
+        : "REJECTED";
+}
+
+std::string TransmissionEventStr(ETransmissionEvent ev)
+{
+    static const char* const vals [] =
+    {
+        "init",
+        "ack",
+        "ackack",
+        "lossreport",
+        "checktimer",
+        "send",
+        "receive",
+        "custom"
+    };
+
+    size_t vals_size = Size(vals);
+
+    if (size_t(ev) >= vals_size)
+        return "UNKNOWN";
+    return vals[ev];
+}
+
+extern const char* const srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter type collision",
+    "Group settings collision",
+    "Connection timeout"
+};
+
+const char* srt_rejectreason_str(int id)
+{
+    if (id >= SRT_REJC_PREDEFINED)
+    {
+        return "Application-defined rejection reason";
+    }
+
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
+}
+
+bool SrtParseConfig(string s, SrtConfig& w_config)
+{
+    using namespace std;
+
+    vector<string> parts;
+    Split(s, ',', back_inserter(parts));
+
+    w_config.type = parts[0];
+
+    for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
+    {
+        vector<string> keyval;
+        Split(*i, ':', back_inserter(keyval));
+        if (keyval.size() != 2)
+            return false;
+        w_config.parameters[keyval[0]] = keyval[1];
+    }
+
+    return true;
+}
+
+
+// Some logging imps
+#if ENABLE_LOGGING
+
+namespace srt_logging
+{
+
+
+std::string SockStatusStr(SRT_SOCKSTATUS s)
+{
+    if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
+        return "???";
+
+    static struct AutoMap
+    {
+        // Values start from 1, so do -1 to avoid empty cell
+        std::string names[int(SRTS_NONEXIST)-1+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRTS_##statename-1] = #statename
+            SINI(INIT);
+            SINI(OPENED);
+            SINI(LISTENING);
+            SINI(CONNECTING);
+            SINI(CONNECTED);
+            SINI(BROKEN);
+            SINI(CLOSING);
+            SINI(CLOSED);
+            SINI(NONEXIST);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)-1];
+}
+
+std::string MemberStatusStr(SRT_MEMBERSTATUS s)
+{
+    if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
+        return "???";
+
+    static struct AutoMap
+    {
+        std::string names[int(SRT_GST_BROKEN)+1];
+
+        AutoMap()
+        {
+#define SINI(statename) names[SRT_GST_##statename] = #statename
+            SINI(PENDING);
+            SINI(IDLE);
+            SINI(RUNNING);
+            SINI(BROKEN);
+#undef SINI
+        }
+    } names;
+
+    return names.names[int(s)];
+}
+
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+{
+    if (that_enabled)
+    {
+        i_file = "";
+        i_line = 0;
+        flags = that.src_config->flags;
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
+}
+
+LogDispatcher::Proxy LogDispatcher::operator()()
+{
+    return Proxy(*this);
+}
+
+void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+{
+    using namespace std;
+
+    char tmp_buf[512];
+    if ( !isset(SRT_LOGF_DISABLE_TIME) )
+    {
+        // Not necessary if sending through the queue.
+        timeval tv;
+        gettimeofday(&tv, 0);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
+
+        strftime(tmp_buf, 512, "%X.", &tm);
+        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+    }
+
+    string out_prefix;
+    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
+    {
+        out_prefix = prefix;
+    }
+
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
+    {
+        serr << "/" << tmp_buf << out_prefix << ": ";
+    }
+    else
+    {
+        serr << out_prefix << ": ";
+    }
+}
+
+std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
+{
+    if ( pretty_function == "" )
+        return "";
+    size_t pos = pretty_function.find('(');
+    if ( pos == std::string::npos )
+        return pretty_function; // return unchanged.
+
+    pretty_function = pretty_function.substr(0, pos);
+
+    // There are also template instantiations where the instantiating
+    // parameters are encrypted inside. Therefore, search for the first
+    // open < and if found, search for symmetric >.
+
+    int depth = 1;
+    pos = pretty_function.find('<');
+    if ( pos != std::string::npos )
+    {
+        size_t end = pos+1;
+        for(;;)
+        {
+            ++pos;
+            if ( pos == pretty_function.size() )
+            {
+                --pos;
+                break;
+            }
+            if ( pretty_function[pos] == '<' )
+            {
+                ++depth;
+                continue;
+            }
+
+            if ( pretty_function[pos] == '>' )
+            {
+                --depth;
+                if ( depth <= 0 )
+                    break;
+                continue;
+            }
+        }
+
+        std::string afterpart = pretty_function.substr(pos+1);
+        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
+    }
+
+    // Now see how many :: can be found in the name.
+    // If this occurs more than once, take the last two.
+    pos = pretty_function.rfind("::");
+
+    if ( pos == std::string::npos || pos < 2 )
+        return pretty_function; // return whatever this is. No scope name.
+
+    // Find the next occurrence of :: - if found, copy up to it. If not,
+    // return whatever is found.
+    pos -= 2;
+    pos = pretty_function.rfind("::", pos);
+    if ( pos == std::string::npos )
+        return pretty_function; // nothing to cut
+
+    return pretty_function.substr(pos+2);
+}
+
+} // (end namespace srt_logging)
+
+#endif

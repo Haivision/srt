@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 
@@ -26,10 +18,11 @@ written by
 *****************************************************************************/
 
 #include <string.h>				/* memcpy */
+#include <stdio.h>
 #include <haicrypt.h>
 #include "hcrypt.h"
 
-#ifndef WIN32
+#ifndef _WIN32
 
 /* RFC6070 PBKDF2 Tests Vectors */
 
@@ -127,7 +120,7 @@ static int hc_ut_pbkdf2(unsigned verbose)
 			gettimeofday(&tstart, NULL);
 		}	
 
-		PKCS5_PBKDF2_HMAC_SHA1(tv[i].pwd, tv[i].pwd_len, 
+		hcrypt_pbkdf2_hmac_sha1(tv[i].pwd, tv[i].pwd_len, 
 			tv[i].salt, tv[i].salt_len, 
 			tv[i].cnt, tv[i].dk_len, dk);
 
@@ -174,7 +167,7 @@ int hc_ut_encrypt_ctr_speed(void)
 #ifdef HAICRYPT_USE_OPENSSL_EVP_CBC
 	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP_CBC();
 #else
-	crypto_cfg.cipher = HaiCryptCipher_OpenSSL_EVP();
+	crypto_cfg.cipher = HaiCryptCipher_Get_Instance();
 #endif
 	crypto_cfg.key_len = (size_t)128/8;
 	crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
@@ -228,4 +221,4 @@ int main(int argc, char *argv[])
 	return(nbe);
 }
 
-#endif // WIN32
+#endif // _WIN32

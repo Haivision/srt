@@ -1,19 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
  */
 
 
@@ -28,7 +20,7 @@ written by
 *****************************************************************************/
 
 #include <string.h>		/* memcpy */
-#ifdef WIN32
+#ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <win/wintime.h>
@@ -37,7 +29,7 @@ written by
 #endif
 #include "hcrypt.h"
 
-int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, HaiCrypt_Cfg *cfg)
+int hcryptCtx_Tx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
 	ctx->cfg.key_len = cfg->key_len;
 
@@ -60,21 +52,21 @@ int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 
 	/* Generate Salt */
 	ctx->salt_len = HAICRYPT_SALT_SZ;
-	if (0 > (iret = hcrypt_Prng(ctx->salt, ctx->salt_len))) {
+	if (0 > (iret = crypto->cryspr->prng(ctx->salt, ctx->salt_len))) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(salt[%zd]) failed\n", ctx->salt_len);
 		return(iret);
 	}
 
 	/* Generate SEK */
 	ctx->sek_len = ctx->cfg.key_len;
-	if (0 > (iret = hcrypt_Prng(ctx->sek, ctx->sek_len))) {
+	if (0 > (iret = crypto->cryspr->prng(ctx->sek, ctx->sek_len))) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(sek[%zd] failed\n", ctx->sek_len);
 		return(iret);
 	}
 
-	/* Set SEK in cipher */
-	if (crypto->cipher->setkey(crypto->cipher_data, ctx, ctx->sek, ctx->sek_len)) {
-		HCRYPT_LOG(LOG_ERR, "cipher setkey(sek[%zd]) failed\n", ctx->sek_len);
+	/* Set SEK in cryspr */
+	if (crypto->cryspr->ms_setkey(crypto->cryspr_cb, ctx, ctx->sek, ctx->sek_len)) {
+		HCRYPT_LOG(LOG_ERR, "cryspr setkey(sek[%zd]) failed\n", ctx->sek_len);
 		return(-1);
 	}
 
@@ -82,9 +74,72 @@ int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 	HCRYPT_PRINTKEY(ctx->sek, ctx->sek_len, "sek");
 
 	/* Regenerate KEK if Password-based (uses newly generated salt and sek_len) */
-	if ((0 < ctx->cfg.pwd_len)
-	&&	(0 > (iret = hcryptCtx_GenSecret(crypto, ctx)))) {
+	if (0 < ctx->cfg.pwd_len) {
+		iret = hcryptCtx_GenSecret(crypto, ctx);
+		if (iret < 0)
+			return(iret);
+	}
+
+	/* Assemble the new Keying Material message */
+	if (0 != (iret = hcryptCtx_Tx_AsmKM(crypto, ctx, NULL))) {
 		return(iret);
+	}
+	if ((HCRYPT_CTX_S_KEYED <= ctx->alt->status)
+	&&  hcryptMsg_KM_HasBothSek(ctx->alt->KMmsg_cache)) {
+		/* 
+		 * previous context KM announced in alternate (odd/even) KM, 
+		 * reassemble it without our KM
+		*/
+		hcryptCtx_Tx_AsmKM(crypto, ctx->alt, NULL);
+	}
+
+	/* Initialize the Media Stream message prefix cache */
+	ctx->msg_info->resetCache(ctx->MSpfx_cache, HCRYPT_MSG_PT_MS, ctx->flags & HCRYPT_CTX_F_xSEK);
+	ctx->pkt_cnt = 1;
+
+	ctx->status = HCRYPT_CTX_S_KEYED;
+	return(0);
+}
+
+int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_Session* cryptoSrc)
+{
+	int iret;
+
+	ASSERT(HCRYPT_CTX_S_SARDY <= ctx->status);
+
+	const hcrypt_Ctx* ctxSrc = cryptoSrc->ctx;
+	if (!ctxSrc)
+	{
+		/* Probbly the context is not yet completely initialized, so
+		 * use blindly the first context from the pair
+		 */
+		ctxSrc = &cryptoSrc->ctx_pair[0];
+	}
+
+	/* Copy SALT (instead of generating) */
+	ctx->salt_len = ctxSrc->salt_len;
+	memcpy(ctx->salt, ctxSrc->salt, ctx->salt_len);
+
+	/* Copy SEK */
+	ctx->sek_len = ctxSrc->sek_len;
+	memcpy(ctx->sek, ctxSrc->sek, ctx->sek_len);
+
+	/* Set SEK in cryspr */
+	if (crypto->cryspr->ms_setkey(crypto->cryspr_cb, ctx, ctx->sek, ctx->sek_len)) {
+		HCRYPT_LOG(LOG_ERR, "cryspr setkey(sek[%zd]) failed\n", ctx->sek_len);
+		return(-1);
+	}
+
+	HCRYPT_LOG(LOG_NOTICE, "clone-keyed crypto context[%d]\n", (ctx->flags & HCRYPT_CTX_F_xSEK)/2);
+	HCRYPT_PRINTKEY(ctx->sek, ctx->sek_len, "sek");
+
+	/* Regenerate KEK if Password-based (uses newly generated salt and sek_len) */
+	/* (note for CloneKey imp: it's expected that the same passphrase-salt pair
+	   shall generate the same KEK. GenSecret also prints the KEK */
+	if (0 < ctx->cfg.pwd_len) {
+		iret = hcryptCtx_GenSecret(crypto, ctx);
+		if (iret < 0)
+			return(iret);
 	}
 
 	/* Assemble the new Keying Material message */
@@ -129,7 +184,7 @@ int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto)
 	ASSERT(HCRYPT_CTX_S_SARDY <= new_ctx->status);
 
 	/* Keep same KEK, configuration, and salt */
-	memcpy(&new_ctx->aes_kek, &ctx->aes_kek, sizeof(new_ctx->aes_kek));
+//	memcpy(&new_ctx->aes_kek, &ctx->aes_kek, sizeof(new_ctx->aes_kek));
 	memcpy(&new_ctx->cfg, &ctx->cfg, sizeof(new_ctx->cfg));
 
 	new_ctx->salt_len = ctx->salt_len;
@@ -137,13 +192,16 @@ int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto)
 
 	/* Generate new SEK */
 	new_ctx->sek_len = new_ctx->cfg.key_len;
-	if (0 > hcrypt_Prng(new_ctx->sek, new_ctx->sek_len)) {
+
+	HCRYPT_LOG(LOG_DEBUG, "refresh/generate SEK. salt_len=%d sek_len=%d\n", (int)new_ctx->salt_len, (int)new_ctx->sek_len);
+
+	if (0 > crypto->cryspr->prng(new_ctx->sek, new_ctx->sek_len)) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(sek[%zd] failed\n", new_ctx->sek_len);
 		return(-1);
 	}
-	/* Cipher's dependent key */
-	if (crypto->cipher->setkey(crypto->cipher_data, new_ctx, new_ctx->sek, new_ctx->sek_len)) {
-		HCRYPT_LOG(LOG_ERR, "%s", "cipher setkey(sek) failed\n");
+	/* Cryspr's dependent key */
+	if (crypto->cryspr->ms_setkey(crypto->cryspr_cb, new_ctx, new_ctx->sek, new_ctx->sek_len)) {
+		HCRYPT_LOG(LOG_ERR, "refresh cryspr setkey(sek[%d]) failed\n", new_ctx->sek_len);
 		return(-1);
 	}
 
@@ -262,7 +320,7 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 	} else {
 		seks = ctx->sek;
 	}
-	if (0 > hcrypt_WrapKey(&ctx->aes_kek,
+	if (0 > crypto->cryspr->km_wrap(crypto->cryspr_cb,
 		&km_msg[HCRYPT_MSG_KM_OFS_SALT + ctx->salt_len],
 		seks, sek_cnt * ctx->sek_len)) {
 
@@ -278,6 +336,10 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 	hcrypt_Ctx *ctx = crypto->ctx;
 
 	ASSERT(NULL != ctx);
+
+	HCRYPT_LOG(LOG_DEBUG, "KM[%d] KEY STATUS: pkt_cnt=%u against ref.rate=%u and pre.announce=%u\n",
+						  (ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2,
+						  ctx->pkt_cnt, crypto->km.refresh_rate, crypto->km.pre_announce);
 
 	if ((ctx->pkt_cnt > crypto->km.refresh_rate)
 	||  (ctx->pkt_cnt == 0)) {	//rolled over
@@ -327,13 +389,13 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 			if (crypto->ctx_pair[0].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[0].flags |= HCRYPT_CTX_F_TTSEND;
 			if (crypto->ctx_pair[1].flags & HCRYPT_CTX_F_ANNOUNCE) crypto->ctx_pair[1].flags |= HCRYPT_CTX_F_TTSEND;
 		}
-    }
+	}
 
 	return(0);
 }
 
 int hcryptCtx_Tx_InjectKM(hcrypt_Session *crypto,
-	void *out_p[], size_t out_len_p[], int maxout)
+	void *out_p[], size_t out_len_p[], int maxout ATR_UNUSED)
 {
 	int i, nbout = 0;
 

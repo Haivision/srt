@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -60,16 +50,17 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_CHANNEL_H__
-#define __UDT_CHANNEL_H__
+#ifndef INC_SRT_CHANNEL_H
+#define INC_SRT_CHANNEL_H
 
-
+#include "platform_sys.h"
 #include "udt.h"
 #include "packet.h"
-
+#include "netinet_any.h"
 
 class CChannel
 {
+   void createSocket(int family);
 public:
 
    // XXX There's currently no way to access the socket ID set for
@@ -79,18 +70,19 @@ public:
    std::string CONID() const { return ""; }
 
    CChannel();
-   CChannel(int version);
    ~CChannel();
 
       /// Open a UDP channel.
-      /// @param addr [in] The local address that UDP will use.
+      /// @param [in] addr The local address that UDP will use.
 
-   void open(const sockaddr* addr = NULL);
+   void open(const sockaddr_any& addr);
+
+   void open(int family);
 
       /// Open a UDP channel based on an existing UDP socket.
-      /// @param udpsock [in] UDP socket descriptor.
+      /// @param [in] udpsock UDP socket descriptor.
 
-   void open(UDPSOCKET udpsock);
+   void attach(UDPSOCKET udpsock, const sockaddr_any& adr);
 
       /// Disconnect and close the UDP entity.
 
@@ -107,53 +99,57 @@ public:
    int getRcvBufSize();
 
       /// Set the UDP sending buffer size.
-      /// @param size [in] expected UDP sending buffer size.
+      /// @param [in] size expected UDP sending buffer size.
 
    void setSndBufSize(int size);
 
       /// Set the UDP receiving buffer size.
-      /// @param size [in] expected UDP receiving buffer size.
+      /// @param [in] size expected UDP receiving buffer size.
 
    void setRcvBufSize(int size);
 
-      /// Query the socket address that the channel is using.
-      /// @param addr [out] pointer to store the returned socket address.
+      /// Set the IPV6ONLY option.
+      /// @param [in] IPV6ONLY value.
 
-   void getSockAddr(sockaddr* addr) const;
+   void setIpV6Only(int ipV6Only);
+
+      /// Query the socket address that the channel is using.
+      /// @param [out] addr pointer to store the returned socket address.
+
+   void getSockAddr(sockaddr_any& addr) const;
 
       /// Query the peer side socket address that the channel is connect to.
-      /// @param addr [out] pointer to store the returned socket address.
+      /// @param [out] addr pointer to store the returned socket address.
 
-   void getPeerAddr(sockaddr* addr) const;
+   void getPeerAddr(sockaddr_any& addr) const;
 
       /// Send a packet to the given address.
-      /// @param addr [in] pointer to the destination address.
-      /// @param packet [in] reference to a CPacket entity.
+      /// @param [in] addr pointer to the destination address.
+      /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data sent.
 
-   int sendto(const sockaddr* addr, CPacket& packet) const;
+   int sendto(const sockaddr_any& addr, CPacket& packet) const;
 
       /// Receive a packet from the channel and record the source address.
-      /// @param addr [in] pointer to the source address.
-      /// @param packet [in] reference to a CPacket entity.
+      /// @param [in] addr pointer to the source address.
+      /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   int recvfrom(sockaddr* addr, CPacket& packet) const;
+   EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
-      /// @param ttl [in] IP Time To Live.
+      /// @param [in] ttl IP Time To Live.
       /// @return none.
 
    void setIpTTL(int ttl);
 
       /// Set the IP Type of Service.
-      /// @param tos [in] IP Type of Service.
+      /// @param [in] tos IP Type of Service.
 
    void setIpToS(int tos);
 
       /// Get the IP TTL.
-      /// @param ttl [in] IP Time To Live.
+      /// @param [in] ttl IP Time To Live.
       /// @return TTL.
 
    int getIpTTL() const;
@@ -162,22 +158,25 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
+
+   int ioctlQuery(int type) const;
+   int sockoptQuery(int level, int option) const;
+
+   const sockaddr* bindAddress() { return m_BindAddr.get(); }
+   const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
 private:
    void setUDPSockOpt();
 
 private:
-   int m_iIPversion;                    // IP version
-   int m_iSockAddrSize;                 // socket address structure size (pre-defined to avoid run-time test)
 
    UDPSOCKET m_iSocket;                 // socket descriptor
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
+   int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
+   sockaddr_any m_BindAddr;
 };
 
 

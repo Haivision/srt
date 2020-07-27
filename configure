@@ -1,34 +1,45 @@
 #!/usr/bin/tclsh
 
-# 
+#
 # SRT - Secure, Reliable, Transport
-# Copyright (c) 2017 Haivision Systems Inc.
-# 
-# This library is free software; you can redistribute it and/or
-# modify it under the terms of the GNU Lesser General Public
-# License as published by the Free Software Foundation; either
-# version 2.1 of the License, or (at your option) any later version.
-# 
-# This library is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# Lesser General Public License for more details.
-# 
-# You should have received a copy of the GNU Lesser General Public
-# License along with this library; If not, see <http://www.gnu.org/licenses/>
-# 
+# Copyright (c) 2018 Haivision Systems Inc.
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
 
 # This is a general-purpose configure script, which is a user-friendly
-# wrapper to call the cmake. Note that --help shows you only the options
-# that are explicitly defined, but which exactly options are really
-# supported, depends on what is defined in CMakeLists.txt. Just every
-# case of --long-option is changed into LONG_OPTION cmake variable.
-# However some of options MENTIONED IN THE HELP TEXT may be handled
-# by the configure script before passing to cmake (and maybe turned
-# into something else).
+# wrapper to call the "cmake" command.
+
+# There are two options that are handled specifically:
 #
-# The build-specific option processing is done in configure-data.tcl file.
+# --help: show the list of official options
+# --prefix: alias to --cmake-install-prefix
+
+# The processing done automatically on all options by default is:
+# Every option like:
+#    --long-c++-option
+#    --cmake-special-option=ON
+# Turns into:
+#    -DLONG_CXX_OPTION=1
+#    -DCMAKE_SPECIAL_OPTION=ON
 #
+# In the configuration file, "configure-data.tcl", you can add
+# special processing for options and define explicit options
+# in the "::options" dictionary. Explicit options (in contrast
+# to "blind" options) have additional properties:
+#
+# - only those options are mentioned with --help
+# - you can pass a value for this option without = character
+# - you can specify --disable-option instead of --enable-option=0
+#
+# In "configure-data.tcl", beside ::options, you can define "preprocess" and
+# "postprocess" procedures. In "preprocess", use ::optval array to modify the
+# list of options to be processed further. Additionally in "postprocess"
+# procedure you can influence directly the options for "cmake" command in
+# ::cmakeopt variable (modifying ::optval in "postprocess" is useless).
+
 # The idea is that CMakeLists.txt contains things that are highly
 # customizable, but no system or option autodetection AWA "sensible
 # defaults" are provided. This is done by this script.
@@ -59,6 +70,31 @@ proc resolve opt {
 	return [list --$opt $var $type $mark]
 }
 
+# Check if a --disable option has its --enable counterpart. If so,
+# then just invert the option.
+proc resolve_disablers {} {
+	set enablers ""
+	set optkeys_len [llength $::optkeys]
+	for {set pos 0} {$pos < $optkeys_len} {incr pos} {
+		set opt [lindex $::optkeys $pos]
+		if { [string match --disable-* $opt] } {
+			set inverted enable-[string range $opt 10 end]
+			if { $inverted in [dict keys $::options] } {
+				lset ::optkeys $pos --$inverted
+				set val $::optval($opt)
+				unset ::optval($opt)
+				if { $val == "" || ![string is boolean $val] } {
+					set ::optval(--$inverted) 0
+				} else {
+					set ::optval(--$inverted) [expr {!$val}]
+				}
+
+				puts "NOTE: $opt changed into --$inverted=$::optval(--$inverted)"
+			}
+		}
+	}
+}
+
 foreach {o desc} $options {
 	lassign [resolve $o] optname optvar opttype optmark
 	set opt($optname) [list $optvar $opttype $optmark]
@@ -77,6 +113,10 @@ if { $argv == "--help" } {
 		}
 		puts stderr "\t$o$imark - $info($o)"
 	}
+
+	puts stderr "NOTE1: Option list may be incomplete. Refer to variables in CMakeLists.txt"
+	puts stderr "NOTE2: Non-internal options turn e.g. --enable-c++11 into cmake -DENABLE_CXX11=1"
+	puts stderr "NOTE3: You can use --disable-x instead of --enable-x=0 for the above options."
 	
 	exit 1
 }
@@ -113,8 +153,10 @@ foreach a $argv {
 
 	set type ""
 
-	if { [string first = $a] != -1 } {
-		lassign [split $a =] a val
+	if { [set a1 [string first = $a]] != -1 } {
+		# Do not split. Options may include =.
+		set val [string range $a $a1+1 end]
+		set a [string range $a 0 $a1-1]
 	}
 
 	if { [dict exists $::alias $a] } {
@@ -154,7 +196,26 @@ if { $saveopt != "" } {
 	error "Extra unhandled argument: $saveopt"
 }
 
+# Save the original call into config-status.sh
+
+set ofd [open config-status.sh w]
+puts $ofd "#!/bin/bash"
+puts -nonewline $ofd "$argv0 "
+foreach a $argv {
+	set len 1
+	if {[catch {llength $a} len] || $len > 1 } {
+		puts -nonewline $ofd "'$a' "
+	} else {
+		puts -nonewline $ofd "$a "
+	}
+}
+puts $ofd ""
+close $ofd
+file attributes config-status.sh -permissions +x
+
 set cmakeopt ""
+
+resolve_disablers
 
 if { [info proc preprocess] != "" } {
 	preprocess

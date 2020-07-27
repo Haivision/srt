@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -60,6 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cmath>
 #include <cstring>
 #include "common.h"
@@ -67,6 +59,7 @@ modified by
 #include <algorithm>
 
 using namespace std;
+using namespace srt::sync;
 
 namespace ACKWindowTools
 {
@@ -75,7 +68,7 @@ void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t s
 {
    r_aSeq[r_iHead].iACKSeqNo = seq;
    r_aSeq[r_iHead].iACK = ack;
-   r_aSeq[r_iHead].TimeStamp = CTimer::getTime();
+   r_aSeq[r_iHead].tsTimeStamp = steady_clock::now();
 
    r_iHead = (r_iHead + 1) % size;
 
@@ -99,12 +92,12 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
             r_ack = r_aSeq[i].iACK;
 
             // calculate RTT
-            int rtt = int(CTimer::getTime() - r_aSeq[i].TimeStamp);
+            const int rtt = count_microseconds(steady_clock::now() - r_aSeq[i].tsTimeStamp);
 
             if (i + 1 == r_iHead)
             {
                r_iTail = r_iHead = 0;
-               r_aSeq[0].iACKSeqNo = -1;
+               r_aSeq[0].iACKSeqNo = SRT_SEQNO_NONE;
             }
             else
                r_iTail = (i + 1) % size;
@@ -128,7 +121,7 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
          r_ack = r_aSeq[j].iACK;
 
          // calculate RTT
-         int rtt = int(CTimer::getTime() - r_aSeq[j].TimeStamp);
+         const int rtt = count_microseconds(steady_clock::now() - r_aSeq[j].tsTimeStamp);
 
          if (j == r_iHead)
          {
@@ -158,7 +151,7 @@ void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeW
       r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
 
    for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = (1500 - SRT_DATA_PKTHDR_SIZE); //based on 1 pkt/sec set in r_pktWindow[i]
+      r_bytesWindow[i] = CPacket::SRT_MAX_PAYLOAD_SIZE; //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 
@@ -186,7 +179,6 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
       {
          ++ count;  //packet counter
          sum += *p; //usec counter
-////#ifdef SRT_ENABLE_BSTATS
          bytes += (unsigned long)*bp;   //byte counter
       }
       ++ p;     //advance packet pointer
@@ -196,7 +188,7 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
    // claculate speed, or return 0 if not enough valid value
    if (count > (asize >> 1))
    {
-      bytes += (SRT_DATA_PKTHDR_SIZE * count); //Add protocol headers to bytes received
+      bytes += (CPacket::SRT_DATA_HDR_SIZE * count); //Add protocol headers to bytes received
       bytesps = (unsigned long)ceil(1000000.0 / (double(sum) / double(bytes)));
       return (int)ceil(1000000.0 / (sum / count));
    }
@@ -205,26 +197,37 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
       bytesps = 0;
       return 0;
    }
-/* #else
-      }
-      ++ p;
-   }
-
-   // claculate speed, or return 0 if not enough valid value
-   if (count > (ASIZE >> 1))
-      return (int)ceil(1000000.0 / (sum / count));
-   else
-      return 0;
-#endif
-*/
 }
 
 int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
+    // This calculation does more-less the following:
+    //
+    // 1. Having example window:
+    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+    // 2. This window is now sorted, but we only know the value in the middle:
+    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+    // 3. Now calculate:
+    //   - lower: 90/8 = 11.25
+    //   - upper: 90*8 = 720
+    // 4. Now calculate the arithmetic median from all these values,
+    //    but drop those from outside the <lower, upper> range:
+    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
+    // 5. Calculate the median from the extracted range,
+    //    NOTE: the median is actually repeated once, so size is +1.
+    //
+    //    values = { 50, 51, 55, 80, 90, 100, 600 };
+    //    sum = 90 + accumulate(values); ==> 1026
+    //    median = sum/(1 + values.size()); ==> 147
+    //
+    // For comparison: the overall arithmetic median from this window == 430
+    //
+    // 6. Returned value = 1M/median
+
    // get median value, but cannot change the original value order in the window
    std::copy(window, window + psize - 1, replica);
    std::nth_element(replica, replica + (psize / 2), replica + psize - 1);
-   //std::sort(replica, replica + psize);
+   //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
    int median = replica[psize / 2];
 
    int count = 1;

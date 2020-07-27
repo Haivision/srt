@@ -1,22 +1,12 @@
-/*****************************************************************************
+/*
  * SRT - Secure, Reliable, Transport
- * Copyright (c) 2017 Haivision Systems Inc.
+ * Copyright (c) 2018 Haivision Systems Inc.
  * 
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- * 
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; If not, see <http://www.gnu.org/licenses/>
- * 
- * Based on UDT4 SDK version 4.11
- *****************************************************************************/
+ */
 
 /*****************************************************************************
 Copyright (c) 2001 - 2011, The Board of Trustees of the University of Illinois.
@@ -60,23 +50,76 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_PACKET_H__
-#define __UDT_PACKET_H__
-
+#ifndef INC_SRT_PACKET_H
+#define INC_SRT_PACKET_H
 
 #include "udt.h"
 #include "common.h"
 #include "utilities.h"
+#include "netinet_any.h"
+#include "packetfilter_api.h"
 
-#include <haicrypt.h>
-
-#ifdef WIN32
-   struct iovec
-   {
-      int iov_len;
-      char* iov_base;
-   };
+//////////////////////////////////////////////////////////////////////////////
+// The purpose of the IOVector class is to proide a platform-independet interface
+// to the WSABUF on Windows and iovec on Linux, that can be easilly converted
+// to the native structure for use in WSARecvFrom() and recvmsg(...) functions 
+class IOVector
+#ifdef _WIN32
+    : public WSABUF
+#else
+    : public iovec
 #endif
+{
+public:
+
+    inline void set(void  *buffer, size_t length)
+    {
+#ifdef _WIN32
+        len = (ULONG)length;
+        buf = (CHAR*)buffer;
+#else
+        iov_base = (void*)buffer;
+        iov_len = length;
+#endif
+    }
+
+    inline char*& dataRef()
+    {
+#ifdef _WIN32
+        return buf;
+#else
+        return (char*&) iov_base;
+#endif
+    }
+
+    inline char* data()
+    {
+#ifdef _WIN32
+        return buf;
+#else
+        return (char*)iov_base;
+#endif
+    }
+
+    inline size_t size() const
+    {
+#ifdef _WIN32
+        return (size_t) len;
+#else
+        return iov_len;
+#endif
+    }
+
+    inline void setLength(size_t length)
+    {
+#ifdef _WIN32
+        len = length;
+#else
+        iov_len = length;
+#endif
+    }
+};
+
 
 /// To define packets in order in the buffer. This is public due to being used in buffer.
 enum PacketBoundary
@@ -117,7 +160,7 @@ inline int32_t CreateControlExtSeqNo(int exttype)
     return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(UMSG_EXT)) | SEQNO_EXTTYPE::wrap(exttype);
 }
 
-// MSGNO breakdown: B B|O|K K|M M M M M M M M M M M...M
+// MSGNO breakdown: B B|O|K K|R|M M M M M M M M M M...M
 typedef Bits<31, 30> MSGNO_PACKET_BOUNDARY;
 typedef Bits<29> MSGNO_PACKET_INORDER;
 typedef Bits<28, 27> MSGNO_ENCKEYSPEC;
@@ -131,11 +174,14 @@ typedef Bits<26, 0> MSGNO_SEQ_OLD;
 // The message should be extracted as PMASK_MSGNO_SEQ, if REXMIT is supported, and PMASK_MSGNO_SEQ_OLD otherwise.
 
 const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
+const int MSGNO_SEQ_MAX = MSGNO_SEQ::mask;
 
 #else
 // Old bit breakdown - no rexmit flag
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
+
+typedef RollNumber<MSGNO_SEQ::size-1, 1> MsgNo;
 
 
 // constexpr in C++11 !
@@ -168,6 +214,7 @@ inline EncryptionKeySpec GetEncryptionKeySpec(int32_t msgno)
 
 const int32_t PUMASK_SEQNO_PROBE = 0xF;
 
+std::string PacketMessageFlagStr(uint32_t msgno_field);
 
 class CChannel;
 
@@ -181,15 +228,18 @@ public:
    CPacket();
    ~CPacket();
 
+   void allocate(size_t size);
+   void deallocate();
+
       /// Get the payload or the control information field length.
       /// @return the payload or the control information field length.
 
-   int getLength() const;
+   size_t getLength() const;
 
       /// Set the payload or the control information field length.
       /// @param len [in] the payload or the control information field length.
 
-   void setLength(int len);
+   void setLength(size_t len);
 
       /// Pack a Control packet.
       /// @param pkttype [in] packet type filed.
@@ -197,12 +247,12 @@ public:
       /// @param rparam [in] pointer to the second data structure, explained by the packet type.
       /// @param size [in] size of rparam, in number of bytes;
 
-   void pack(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
+   void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
 
       /// Read the packet vector.
       /// @return Pointer to the packet vector.
 
-   iovec* getPacketVector();
+   IOVector* getPacketVector();
 
    uint32_t* getHeader() { return m_nHeader; }
 
@@ -229,9 +279,12 @@ public:
    bool isControl() const
    {
        // read bit 0
-       // This "0!=" is a "special Microsoft aware conversion to bool"
-       // which gets rid of a warning.
-       return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[PH_SEQNO]);
+       return 0!=  SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]);
+   }
+
+   void setControl(UDTMessageType type)
+   {
+       m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type);
    }
 
       /// Read the extended packet type.
@@ -245,11 +298,11 @@ public:
    int32_t getAckSeqNo() const;
    uint16_t getControlFlags() const;
 
-   // Note: this will return a stupid value, if the packet
+   // Note: this will return a "singular" value, if the packet
    // contains the control message
    int32_t getSeqNo() const
    {
-       return m_nHeader[PH_SEQNO];
+       return m_nHeader[SRT_PH_SEQNO];
    }
 
       /// Read the message boundary flag bit.
@@ -271,32 +324,14 @@ public:
       /// Read the message sequence number.
       /// @return packet header field [1]
 
-   int32_t getMsgSeq(bool has_rexmit) const;
+   int32_t getMsgSeq(bool has_rexmit = true) const;
 
       /// Read the message crypto key bits.
       /// @return packet header field [1] (bit 3~4).
 
    EncryptionKeySpec getMsgCryptoFlags() const;
+   void setMsgCryptoFlags(EncryptionKeySpec spec);
 
-      /// Encrypt packet if crypto context present
-      /// @param hcrypto  HaiCrypt handle.
-      /// @retval -1 encryption enabled and failed.
-      /// @retval 0 encryption deferred (parallel processing).
-      /// @retval >0 bytes in packet (clear text, encrypted current or older (deferred) packet).
-
-
-   EncryptionStatus encrypt(HaiCrypt_Handle hcrypto);
-
-      /// Decrypt packet if crypto context present
-      /// @param hcrypto  HaiCrypt handle.
-      /// @retval -1 packet encrypted but no crypto context or decryption failed.
-      /// @retval 0 decryption deferred (parallel processing).
-      /// @retval >0 bytes in packet (clear text oo decrypted current or older (deferred) packet).
-
-
-   EncryptionStatus decrypt(HaiCrypt_Handle hcrypto);
-
-#ifdef SRT_ENABLE_TSBPD
       /// Read the message time stamp.
       /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
 
@@ -312,25 +347,11 @@ protected:
    static const uint32_t TIMESTAMP_MASK = MAX_TIMESTAMP; // this value to be also used as a mask
 public:
 
-#endif /* SRT_ENABLE_TSBPD */
-
       /// Clone this packet.
       /// @return Pointer to the new packet.
 
    CPacket* clone() const;
 
-   enum PacketHeaderFields
-   {
-       PH_FIRST = 0, // Must be first, this is for loops
-       PH_SEQNO = 0, //< sequence number
-       PH_MSGNO = 1, //< message number
-       PH_TIMESTAMP = 2, //< time stamp
-       PH_ID = 3, //< socket ID
-       // Must be the last value - this is size of all, not a field id
-       PH_SIZE = 4
-   };
-
-   //static const size_t PH_SIZE = 4;
    enum PacketVectorFields
    {
        PV_HEADER = 0,
@@ -339,99 +360,74 @@ public:
        PV_SIZE = 2
    };
 
+public:
+    void toNL();
+    void toHL();
+
 protected:
    // Length in bytes
 
    // DynamicStruct is the same as array of given type and size, just it
    // enforces that you index it using a symbol from symbolic enum type, not by a bare integer.
 
-   typedef DynamicStruct<uint32_t, PH_SIZE, PacketHeaderFields> HEADER_TYPE;
+   typedef DynamicStruct<uint32_t, SRT_PH_E_SIZE, SrtPktHeaderFields> HEADER_TYPE;
    HEADER_TYPE m_nHeader;  //< The 128-bit header field
 
-   //uint32_t m_nHeader[PH_SIZE];               //< The 128-bit header field
-   iovec m_PacketVector[PV_SIZE];             //< The 2-demension vector of UDT packet [header, data]
+   // XXX NOTE: iovec here is not portable. On Windows there's a different
+   // (although similar) structure defined, which means that this way the
+   // Windows function that is an equivalent of `recvmsg` cannot be used.
+   // For example, something like that:
+   // class IoVector: public iovec { public: size_t size() { return iov_len; } char* data() { return iov_base; } };
+   // class IoVector: public WSAMSG { public: size_t size() { return len; } char* data() { return buf; } };
+   IOVector m_PacketVector[PV_SIZE];             //< The 2-demension vector of UDT packet [header, data]
 
-   int32_t __pad;
+   int32_t m_extra_pad;
+   bool m_data_owned;
 
 protected:
    CPacket& operator=(const CPacket&);
+   CPacket (const CPacket&);
 
 public:
 
    int32_t& m_iSeqNo;                   // alias: sequence number
    int32_t& m_iMsgNo;                   // alias: message number
    int32_t& m_iTimeStamp;               // alias: timestamp
-   int32_t& m_iID;			// alias: socket ID
+   int32_t& m_iID;                      // alias: socket ID
    char*& m_pcData;                     // alias: data/control information
 
+   // Experimental: sometimes these references don't work!
+   char* getData();
+   char* release();
+
    //static const int m_iPktHdrSize;	// packet header size
-   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size
+   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
    // Used in many computations
+   // Actually this can be also calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
    static const size_t UDP_HDR_SIZE = 28; // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
 
+   static const size_t SRT_DATA_HDR_SIZE = UDP_HDR_SIZE + HDR_SIZE;
+
+   // Some well known data
+   static const size_t ETH_MAX_MTU_SIZE = 1500;
+
+   // And derived
+   static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
+
+   // Packet interface
+   char* data() { return m_pcData; }
+   const char* data() const { return m_pcData; }
+   size_t size() const { return getLength(); }
+   uint32_t header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
+
 #if ENABLE_LOGGING
-   std::string MessageFlagStr();
+   std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+   std::string Info();
+#else
+   std::string MessageFlagStr() { return std::string(); }
+   std::string Info() { return std::string(); }
 #endif
 };
-
-////////////////////////////////////////////////////////////////////////////////
-
-enum UDTRequestType
-{
-    URQ_INDUCTION_TYPES = 0, // used to check in one place. Consdr rm.
-
-    URQ_INDUCTION = 1, // First part for client-server connection
-    URQ_RENDEZVOUS = 0, // First part for rendezvous connection
-
-    URQ_CONCLUSION = -1, // Second part of handshake negotiation
-    URQ_AGREEMENT = -2, // Extra (last) step for rendezvous only
-
-    // Note: the client-server connection uses:
-    // --> INDUCTION (empty)
-    // <-- INDUCTION (cookie)
-    // --> CONCLUSION (cookie)
-    // <-- CONCLUSION (ok)
-
-    // The rendezvous connection uses:
-    // --> RENDEZVOUS (effective only if peer is also connecting)
-    // <-- CONCLUSION
-    // --> AGREEMENT
-
-    // Errors reported by the peer, also used as useless error codes
-    // in handshake processing functions.
-    URQ_FAILURE_TYPES = 1000,
-    URQ_ERROR_REJECT = 1002,
-    URQ_ERROR_INVALID = 1004
-};
-
-class CHandShake
-{
-public:
-   CHandShake();
-
-   int serialize(char* buf, int& size);
-   int deserialize(const char* buf, int size);
-
-public:
-   // This is the size of SERIALIZED handshake.
-   // Might be defined as simply sizeof(CHandShake), but the
-   // enum values would have to be forced as int32_t, which is only
-   // available in C++11. Theoretically they are all 32-bit, but
-   // such a statement is not reliable and not portable.
-   static const int m_iContentSize;	// Size of hand shake data
-
-public:
-   int32_t m_iVersion;          // UDT version
-   int32_t m_iType;             // UDT socket type
-   int32_t m_iISN;              // random initial sequence number
-   int32_t m_iMSS;              // maximum segment size
-   int32_t m_iFlightFlagSize;   // flow control window size
-   int32_t m_iReqType;          // connection request type: 1: regular connection request, 0: rendezvous connection request, -1/-2: response
-   int32_t m_iID;		// socket ID
-   int32_t m_iCookie;		// cookie
-   uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
-};
-
 
 #endif

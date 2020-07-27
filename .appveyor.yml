@@ -3,23 +3,29 @@ configuration:
   - Debug
 
 image:
-  - Visual Studio 2013
+  - Visual Studio 2019
   - Visual Studio 2015
+  - Visual Studio 2013
 
 platform:
   - x64
+  - x86
 
 build_script:
-  # build pthread
-  - git clone https://github.com/GerHobbelt/pthread-win32.git C:/pthread-src
-  - ps: "if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' } else { $VS_VERSION='2015' }"
-  - ps: "msbuild C:/pthread-src/pthread.${VS_VERSION}.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64"
-  - ps: mkdir C:/pthread-win32
-  - ps: mkdir C:/pthread-win32/include
-  - ps: mkdir C:/pthread-win32/lib
-  - ps: cp C:/pthread-src/*.h C:/pthread-win32/include
-  - ps: cp C:/pthread-src/bin/x64_MSVC${VS_VERSION}.${Env:CONFIGURATION}/pthread_lib.lib C:/pthread-win32/lib
-  # build SRT
-  - ps: if ( $VS_VERSION -eq "2013" ) { $CMAKE_GENERATOR = "Visual Studio 12 2013 Win64" } else { $CMAKE_GENERATOR = "Visual Studio 14 2015 Win64" }
-  - ps: cmake . -G"$CMAKE_GENERATOR" -DCMAKE_BUILD_TYPE=$Env:CONFIGURATION
-  - ps: msbuild SRT.sln /p:Configuration=$Env:CONFIGURATION /p:Platform=x64
+  - ps: $VSIMG = $Env:APPVEYOR_BUILD_WORKER_IMAGE; $CNFG = $Env:CONFIGURATION
+  # use a few differing arguments depending on VS version to exercise different options during builds
+  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -UNIT_TESTS ON }
+  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Debug")   { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS OFF }
+  - ps: if ($VSIMG -match '2015' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS OFF }
+  - ps: if ($VSIMG -match '2015' -and $CNFG -eq "Debug")   { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS OFF }
+  - ps: if ($VSIMG -match '2013' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -CXX11 OFF -BUILD_APPS OFF }
+  - ps: if ($VSIMG -match '2013' -and $CNFG -eq "Debug")   { Exit-AppveyorBuild } # just skip 2013 debug build for speed
+
+test_script:
+  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest --extra-verbose -C $Env:CONFIGURATION; cd ../ }
+  
+after_build:
+- cmd: >-
+    scripts/gather-package.bat
+        7z a SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip %APPVEYOR_BUILD_FOLDER%\package\*
+        appveyor PushArtifact SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip
