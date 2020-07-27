@@ -994,6 +994,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
             m_uOPT_StabilityTimeout = val * 1000;
         }
+        break;
 
     case SRTO_RETRANSMISSION_ALGORITHM:
         if (m_bConnected)
