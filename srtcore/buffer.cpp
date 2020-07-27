@@ -252,8 +252,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_SOLO] - 1 packet per message
 
         s->m_llSourceTime_us = w_srctime;
-        s->m_tsOriginTime    = time;
-        s->m_iTTL            = w_ttl;
+        s->m_tsOriginTime = time;
+        s->m_tsRexmitTime = time_point();
+        s->m_iTTL = w_ttl;
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
@@ -576,11 +577,32 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // TODO: FR #930. Use source time if it is provided.
     w_srctime = getSourceTime(*p);
 
+    // This function is called when packet retransmission is triggered.
+    // Therefore we are setting the rexmit time.
+    p->m_tsRexmitTime = steady_clock::now();
+
     HLOGC(dlog.Debug,
           log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.m_iSeqNo
               << " size=" << readlen << " to send [REXMIT]");
 
     return readlen;
+}
+
+srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
+{
+    CGuard bufferguard(m_BufLock);
+    const Block* p = m_pFirstBlock;
+
+    // XXX Suboptimal procedure to keep the blocks identifiable
+    // by sequence number. Consider using some circular buffer.
+    for (int i = 0; i < offset; ++i)
+    {
+        SRT_ASSERT(p);
+        p = p->m_pNext;
+    }
+
+    SRT_ASSERT(p);
+    return p->m_tsRexmitTime;
 }
 
 void CSndBuffer::ackData(int offset)
@@ -794,7 +816,7 @@ CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     , m_iBytesCount(0)
     , m_iAckedPktsCount(0)
     , m_iAckedBytesCount(0)
-    , m_iAvgPayloadSz(7 * 188)
+    , m_uAvgPayloadSz(7 * 188)
     , m_bTsbPdMode(false)
     , m_tdTsbPdDelay(0)
     , m_bTsbPdWrapCheck(false)
@@ -843,7 +865,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
     {
         m_iBytesCount += bytes; /* added or removed bytes from rcv buffer */
         if (bytes > 0)          /* Assuming one pkt when adding bytes */
-            m_iAvgPayloadSz = ((m_iAvgPayloadSz * (100 - 1)) + bytes) / 100;
+            m_uAvgPayloadSz = ((m_uAvgPayloadSz * (100 - 1)) + bytes) / 100;
     }
     else // acking/removing pkts to/from buffer
     {
@@ -898,28 +920,32 @@ int CRcvBuffer::readBuffer(char* data, int len)
             return -1;
         }
 
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
+
         if (m_bTsbPdMode)
         {
             HLOGC(dlog.Debug,
                   log << CONID() << "readBuffer: chk if time2play:"
                       << " NOW=" << FormatTime(now)
-                      << " PKT TS=" << FormatTime(getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp())));
+                      << " PKT TS=" << FormatTime(getPktTsbPdTime(pkt.getMsgTimeStamp())));
 
-            if ((getPktTsbPdTime(m_pUnit[p]->m_Packet.getMsgTimeStamp()) > now))
+            if ((getPktTsbPdTime(pkt.getMsgTimeStamp()) > now))
                 break; /* too early for this unit, return whatever was copied */
         }
 
-        int unitsize = (int)m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-        if (unitsize > rs)
-            unitsize = rs;
+        const int pktlen = pkt.getLength();
+        const int remain_pktlen = pktlen - m_iNotch;
+
+        const int unitsize = std::min(remain_pktlen, rs);
 
         HLOGC(dlog.Debug,
               log << CONID() << "readBuffer: copying buffer #" << p << " targetpos=" << int(data - begin)
                   << " sourcepos=" << m_iNotch << " size=" << unitsize << " left=" << (unitsize - rs));
-        memcpy((data), m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
+        memcpy((data), pkt.m_pcData + m_iNotch, unitsize);
+
         data += unitsize;
 
-        if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+        if (rs >= remain_pktlen)
         {
             freeUnitAt(p);
             p = shiftFwd(p);
@@ -945,20 +971,41 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
     int lastack = m_iLastAckPos;
     int rs      = len;
 
+    int32_t trace_seq ATR_UNUSED = SRT_SEQNO_NONE;
+    int trace_shift ATR_UNUSED = -1;
+
     while ((p != lastack) && (rs > 0))
     {
-        int unitsize = (int)m_pUnit[p]->m_Packet.getLength() - m_iNotch;
-        if (unitsize > rs)
-            unitsize = rs;
+#if ENABLE_LOGGING
+        ++trace_shift;
+#endif
+        // Skip empty units. Note that this shouldn't happen
+        // in case of a file transfer.
+        if (!m_pUnit[p])
+        {
+            p = shiftFwd(p);
+            LOGC(mglog.Error, log << "readBufferToFile: IPE: NULL unit found in file transmission, last good %"
+                    << trace_seq << " + " << trace_shift);
+            continue;
+        }
 
-        ofs.write(m_pUnit[p]->m_Packet.m_pcData + m_iNotch, unitsize);
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
+
+#if ENABLE_LOGGING
+        trace_seq = pkt.getSeqNo();
+#endif
+        const int pktlen = pkt.getLength();
+        const int remain_pktlen = pktlen - m_iNotch;
+
+        const int unitsize = std::min(remain_pktlen, rs);
+
+        ofs.write(pkt.m_pcData + m_iNotch, unitsize);
         if (ofs.fail())
             break;
 
-        if ((rs > unitsize) || (rs == int(m_pUnit[p]->m_Packet.getLength()) - m_iNotch))
+        if (rs >= remain_pktlen)
         {
             freeUnitAt(p);
-
             p = shiftFwd(p);
 
             m_iNotch = 0;
@@ -1672,9 +1719,9 @@ int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan)
     return m_iAckedPktsCount;
 }
 
-int CRcvBuffer::getRcvAvgPayloadSize() const
+unsigned CRcvBuffer::getRcvAvgPayloadSize() const
 {
-    return m_iAvgPayloadSz;
+    return m_uAvgPayloadSz;
 }
 
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
@@ -2140,7 +2187,6 @@ string CRcvBuffer::debugTimeState(size_t first_n_pkts) const
         }
 
         const CPacket& pkt = unit->m_Packet;
-        pkt.getMsgTimeStamp();
         ss << "pkt[" << i << "] ts=" << pkt.getMsgTimeStamp() << ", ";
     }
     return ss.str();

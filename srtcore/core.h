@@ -536,9 +536,7 @@ public:
     /// the group data array as requested.
     void fillGroupData(
             SRT_MSGCTRL& w_out, //< MSGCTRL to be written
-            const SRT_MSGCTRL& in, //< MSGCTRL read from the data-providing socket
-            SRT_SOCKGROUPDATA* out_grpdata, //< grpdata as passed in MSGCTRL
-            size_t out_grpdata_size  //< grpdata_size as passed in MSGCTRL
+            const SRT_MSGCTRL& in //< MSGCTRL read from the data-providing socket
             );
 
 #if ENABLE_HEAVY_LOGGING
@@ -1439,6 +1437,7 @@ private: // Identification
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
     uint32_t m_uOPT_StabilityTimeout;
+    int m_iOPT_RexmitAlgo;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds

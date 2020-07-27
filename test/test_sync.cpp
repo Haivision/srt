@@ -279,8 +279,9 @@ TEST(SyncEvent, WaitFor)
         // This check somehow fails on AppVeyor Windows VM with VS 2015 and pthreads.
         // - SyncEvent::wait_for( 50us) took 6us
         // - SyncEvent::wait_for(100us) took 4us
-        if (on_timeout)
+        if (on_timeout) {
             EXPECT_GE(count_microseconds(stop - start), tout_us);
+        }
 #endif
 
         if (tout_us < 1000)
