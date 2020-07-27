@@ -614,9 +614,8 @@ This option list is sorted alphabetically.
 | `SRTO_CONNTIMEO`   | 1.1.2 | pre     | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
 
 - Connect timeout. This option applies to the caller and rendezvous connection
-modes. The connect timeout is 10 times the value set for the rendezvous mode
-(which can be used as a workaround for this connection problem with earlier
-versions).
+modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
+will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 ---
 
@@ -1071,7 +1070,7 @@ which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
   - HSv5: On the sending party it will default to 16 if not changed the default 
   0 and the passphrase was set. The party that has set this value to non-zero 
   value will advertise it at the beginning of the handshake. Actually there are 
-  two intended methods of defining it, and all other uses are considered an
+  three intended methods of defining it, and all other uses are considered an
   undefined behavior:
   
     - **Unidirectional**: the sender shall set `PBKEYLEN` and the receiver shall 
