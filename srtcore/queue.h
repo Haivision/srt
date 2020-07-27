@@ -381,7 +381,6 @@ public:
 
    int sendto(const sockaddr_any& addr, CPacket& packet);
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Get the IP TTL.
       /// @param [in] ttl IP Time To Live.
       /// @return TTL.
@@ -392,7 +391,6 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
 
 #ifdef SRT_ENABLE_BINDTODEVICE
    bool getBind(char* dst, size_t len) const;
@@ -545,10 +543,8 @@ struct CMultiplexer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
    std::string m_BindToDevice;
 #endif

@@ -137,7 +137,6 @@ public:
 
    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
       /// @param [in] ttl IP Time To Live.
       /// @return none.
@@ -159,7 +158,6 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
 
 #ifdef SRT_ENABLE_BINDTODEVICE
    void setBind(const std::string& name);
@@ -178,10 +176,8 @@ private:
 private:
 
    UDPSOCKET m_iSocket;                 // socket descriptor
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
    std::string m_BindToDevice;
 #endif

@@ -108,6 +108,8 @@ protected:
             m_accepted.push_back(acp);
         }
 
+        m_accept_exit = true;
+
         for (auto s: m_accepted)
         {
             srt_close(s);
@@ -121,6 +123,7 @@ protected:
     vector<SRTSOCKET> m_accepted;
     char buf[SRT_LIVE_DEF_PLSIZE];
     SRTSOCKET srt_socket_list[NSOCK];
+    volatile bool m_accept_exit = false;
 };
 
 
@@ -135,6 +138,8 @@ TEST_F(TestConnection, Multiple)
 
     auto ex = std::async([this] { return AcceptLoop(); });
 
+    cout << "Opening " << NSOCK << " connections\n";
+
     for (size_t i = 0; i < NSOCK; i++)
     {
         srt_socket_list[i] = srt_create_socket();
@@ -144,7 +149,7 @@ TEST_F(TestConnection, Multiple)
         int conntimeo = 60;
         srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
 
-        cout << "Connecting #" << i << " to " << SockaddrToString(sockaddr_any(psa)) << "...\n";
+        //cout << "Connecting #" << i << " to " << SockaddrToString(sockaddr_any(psa)) << "...\n";
 
         //cerr << "Connecting to: " << SockaddrToString(sockaddr_any(psa)) << endl;
         ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof lsa), SRT_ERROR);
@@ -161,11 +166,16 @@ TEST_F(TestConnection, Multiple)
             EXPECT_GT(srt_send(srt_socket_list[i], buf, size), 0);
         }
     }
+    cout << "Sending finished, closing caller sockets\n";
 
     for (size_t i = 0; i < NSOCK; i++)
     {
         EXPECT_EQ(srt_close(srt_socket_list[i]), SRT_SUCCESS);
     }
+    // Up to this moment the server sock should survive
+    cout << "Closing server socket\n";
+
+    EXPECT_EQ(m_accept_exit, false);
 
     // Close server socket to break the accept loop
     EXPECT_EQ(srt_close(m_server_sock), 0);

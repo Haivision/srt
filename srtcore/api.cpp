@@ -2460,10 +2460,8 @@ void CUDTUnited::updateMux(
           // given port in the same family as requested address.
           if ((i->second.m_iIPversion == addr.family())
                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
-#ifdef SRT_ENABLE_IPOPTS
                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
-#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
                   && (i->second.m_BindToDevice == s->m_pUDT->m_BindToDevice)
 #endif
@@ -2489,10 +2487,8 @@ void CUDTUnited::updateMux(
    CMultiplexer m;
    m.m_iMSS = s->m_pUDT->m_iMSS;
    m.m_iIPversion = addr.family();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
-#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
    m.m_BindToDevice = s->m_pUDT->m_BindToDevice;
 #endif
@@ -2502,12 +2498,10 @@ void CUDTUnited::updateMux(
    m.m_iID = s->m_SocketID;
 
    m.m_pChannel = new CChannel();
-#ifdef SRT_ENABLE_IPOPTS
    m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
    m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
-   m.m_pChannel->setBind(m.m_BindToDevice);
+       m.m_pChannel->setBind(m.m_BindToDevice);
 #endif
    m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
    m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);

@@ -159,7 +159,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bytevector Read(size_t chunk) override;
+    MediaPacket Read(size_t chunk) override;
     bytevector GroupRead(size_t chunk);
     bool GroupCheckPacketAhead(bytevector& output);
 
@@ -189,7 +189,7 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    void Write(const bytevector& data) override;
+    void Write(const MediaPacket& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }
