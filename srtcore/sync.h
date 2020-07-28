@@ -457,7 +457,7 @@ class CSync
     UniqueLock* m_locker;
 
 public:
-    // Locked version: must be declared only after the declaration of ScopedLock,
+    // Locked version: must be declared only after the declaration of UniqueLock,
     // which has locked the mutex. On this delegate you should call only
     // signal_locked() and pass the ScopedLock variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
@@ -528,7 +528,7 @@ public:
     // when you don't care whether the associated mutex is locked or not (you
     // accept the case that a mutex isn't locked and the signal gets effectively
     // missed), or you somehow know that the mutex is locked, but you don't have
-    // access to the associated ScopedLock object. This function, although it does
+    // access to the associated UniqueLock object. This function, although it does
     // the same thing as signal_locked() and broadcast_locked(), is here for
     // the user to declare explicitly that the signal/broadcast is done without
     // being prematurely certain that the associated mutex is locked.
