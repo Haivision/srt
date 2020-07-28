@@ -55,12 +55,19 @@ The next two characters are:
 
 The form of the key-value pair is:
 
-- `key1=value1,key2=value2`...
+```js
+key1=value1,key2=value2...
+```
 
 ## Standard Keys
 
 Beside the general syntax, there are several top-level keys treated as standard
-keys. Other keys can be used as needed.
+keys. All single letter key definitions, including those not listed in this section,
+are reserved for future use. Users can additionally use custom key definitions
+with `user_*` or `companyname_*` prefixes, where `user` and `companyname` are
+to be replaced with an actual user or company name.
+
+The existing key values must not be extended, and must not differ from those described in this section.
 
 The following keys are standard:
 
@@ -72,8 +79,8 @@ password.
 selection should the listener party be able to serve multiple resources.
 - `h`: **Host Name** identifies the hostname of the resource. For example,
 to request a stream with the URI `somehost.com/videos/querry.php?vid=366` the
-`hostname` field should have “somehost.com”, and the resource name can have
-“videos/querry.php?vid=366” or simply "366". Note that this is still a key to be
+`hostname` field should have `somehost.com`, and the resource name can have
+`videos/querry.php?vid=366` or simply `366`. Note that this is still a key to be
 specified explicitly. Support tools that apply simplifications and URI extraction
 are expected to insert only the host portion of the URI here.
 - `s`: **Session ID** is a temporary resource identifier negotiated with
