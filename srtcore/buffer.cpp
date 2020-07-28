@@ -590,7 +590,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
 srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
     const Block* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
