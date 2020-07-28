@@ -459,7 +459,7 @@ class CSync
 public:
     // Locked version: must be declared only after the declaration of UniqueLock,
     // which has locked the mutex. On this delegate you should call only
-    // signal_locked() and pass the ScopedLock variable that should remain locked.
+    // signal_locked() and pass the UniqueLock variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
     CSync(Condition& cond, UniqueLock& g)
         : m_cond(&cond), m_locker(&g)
