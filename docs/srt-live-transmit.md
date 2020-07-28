@@ -274,7 +274,7 @@ Examples:
 * `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
 * (different IP versions for binding and target address)
 
-Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
+Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by `srt-live-transmit`:
 
 - **mode**: enforce caller, listener or rendezvous mode
 - **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). This can be used only in **caller mode**.
@@ -282,16 +282,56 @@ Some parameters handled for SRT medium are specific, all others are socket optio
 - **timeout**: sets `SRTO_RCVTIMEO` for input medium or `SRTO_SNDTIMEO` for output medium
 - **adapter**: sets the adapter for listening in *listener* or *rendezvous* mode
 
-All other parameters are SRT socket options. Here are some most characteristic options:
+All other parameters are SRT socket options. The following have the following value types:
 
-- **latency**: Sets the maximum accepted transmission latency and should be >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
-- **passphrase**: Sets the password for the encrypted transmission.
-- **pbkeylen**:  Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
-- **tlpktdrop**: Whether to drop packets that are not delivered on time. Default is on.
-- **conntimeo**: Connection timeout (in ms). Caller default: 3000, rendezvous (x 10)
+- `bool`. Possible values: `yes`/`no`, `on`/`off`, `true`/`false`, `1`/`0`.
+- `bytes` positive integer [1; INT32_MAX].
+- `ms` - positive integer value of milliseconds.
 
-For the complete list of options, please refer to the SRT header file `srt.h` and search for `SRT_SOCKOPT` enum type. Please note that the set of available options may be version dependent. All options are available under the lowercase name of the option without the `SRTO_` prefix. For example, `SRTO_PASSPHRASE` can be set using
-a **passphrase** parameter. The mapping table `srt_options` can be found in `common/socketoptions.hpp` file.
+| URI param            | Values           | SRT Option                | Description |
+| -------------------- | ---------------- | ------------------------- | ----------- |
+| `congestion`         | {`live`, `file`} | `SRTO_CONGESTION`         | Type of congestion control. |
+| `conntimeo`          | `ms`             | `SRTO_CONNTIMEO`          | Connection timeout. |
+| `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
+| `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |
+| `groupconnect`       | {`0`, `1`}       | `SRTO_GROUPCONNECT`       | Accept group connections. |
+| `groupstabtimeo`     | `ms`             | `SRTO_GROUPSTABTIMEO`     | Group stability timeout. |
+| `inputbw`            | `bytes`          | `SRTO_INPUTBW`            | Input bandwidth. |
+| `iptos`              | 0..255           | `SRTO_IPTOS`              | IP socket type of service |
+| `ipttl`              | 1..255           | `SRTO_IPTTL`              | Defines IP socket "time to live" option. |
+| `ipv6only`           | -1..1            | `SRTO_IPV6ONLY`           | Allow only IPv6. |
+| `kmpreannounce`      | 0..              | `SRTO_KMPREANNOUNCE`      | Duration of Stream Encryption key switchover (in packets). |
+| `kmrefreshrate`      | 0..              | `SRTO_KMREFRESHRATE`      | Stream encryption key refresh rate (in packets). |
+| `latency`            | 0..              | `SRTO_LATENCY`            | Defines the maximum accepted transmission latency. |
+| `linger`             | 0..              | `SRTO_LINGER`             | Link linger value |
+| `lossmaxttl`         | 0..              | `SRTO_LOSSMAXTTL`         | Packet reorder tolerance. |
+| `maxbw`              | 0..              | `SRTO_MAXBW`              | Bandwidth limit in bytes |
+| `messageapi`         | `bool`           | `SRTO_MESSAGEAPI`         | Enable SRT message mode. |
+| `minversion`         | maj.min.rev      | `SRTO_MINVERSION`         | Minimum SRT library version of a peer. |
+| `mss`                | 76..             | `SRTO_MSS`                | MTU size |
+| `nakreport`          | `bool`           | `SRTO_NAKREPORT`          | Enables/disables periodic NAK reports |
+| `oheadbw`            | 5..100           | `SRTO_OHEADBW`            | limits bandwidth overhead, percents |
+| `packetfilter`       | `string`         | `SRTO_PACKETFILTER`       | Set up the packet filter. |
+| `passphrase`         | `string`         | `SRTO_PASSPHRASE`         | Password for the encrypted transmission. |
+| `payloadsize`        | 0..              | `SRTO_PAYLOADSIZE`        | Maximum payload size. |
+| `pbkeylen`           | {16, 24, 32}     | `SRTO_PBKEYLEN`           | Crypto key length in bytes. |
+| `peeridletimeo`      | `ms`             | `SRTO_PEERIDLETIMEO`      | Peer idle timeout. |
+| `peerlatency`        | `ms`             | `SRTO_PEERLATENCY`        | Minimum receiver latency to be requested by sender. |
+| `rcvbuf`             | `bytes`          | `SRTO_RCVBUF`             | Receiver buffer size |
+| `rcvlatency`         | `ms`             | `SRTO_RCVLATENCY`         | Receiver-side latency. |
+| `rexmitalgo`         | {`0`, `1`}       | `SRTO_RETRANSMITALGOR`    | Packet retransmission algorithm to use. |
+| `sndbuf`             | `bytes`          | `SRTO_SNDBUF`             | Sender buffer size. |
+| `snddropdelay`       | `ms`             | `SRTO_SNDDROPDELAY`       | Sender's delay before dropping packets. |
+| `streamid`           | `string`         | `SRTO_STREAMID`           | Stream ID (settable in caller mode only, visible on the listener peer). |
+| `tlpktdrop`          | `bool`           | `SRTO_TLPKTDROP`          | Drop too late packets. |
+| `transtype`          | {`live`, `file`} | `SRTO_TRANSTYPE`          | Transmission type |
+| `tsbpdmode`          | `bool`           | `SRTO_TSBPDMODE`          | Timestamp-based packet delivery mode. |
+
+The list of socket options can also be found in SRT header file `srt.h` (`SRT_SOCKOPT` enum type).
+Please note that the set of available options may be version dependent.
+All options are available under the lowercase name of the option without the `SRTO_` prefix.
+For example, `SRTO_PASSPHRASE` can be set using a **passphrase** parameter.
+The mapping table `srt_options` can be found in `common/socketoptions.hpp` file.
 
 Important thing about the options (which holds true also for options for
 TCP and UDP, even though it's not described anywhere explicitly) is
@@ -317,8 +357,8 @@ but this space must be part of the parameter and not extracted by a
 shell (using **"** **"** quotes or backslash).
 
 - **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
-    - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
-    - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
+  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
+  - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
 - **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.
 - **-buffering** - Enable source buffering up to the specified number of packets. Default: 10. Minimum: 1 (no buffering).
