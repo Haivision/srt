@@ -83,10 +83,17 @@ foreach(ef ${enforcers})
 	add_definitions(-D${ef}${val})
 endforeach()
 
+# NOTE: Known options you can change using ENFORCE_ variables:
+
+# SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
+# SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
+# SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
+# SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
+# SRT_DEBUG_TLPKTDROP_DROPSEQ 1
+# SRT_DEBUG_SNDQ_HIGHRATE 1
+# SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+
 # option defaults
-# XXX CHANGE: Logging is enabled now by default,
-# use ENABLE_LOGGING=NO in cmake or
-# --disable-logging in configure.
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
 
 # Always turn logging on if the build type is debug
@@ -125,6 +132,11 @@ set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 # Use application-defined group reader
 # (currently the only one implemented)
 add_definitions(-DSRT_ENABLE_APP_READER)
+
+# XXX This was added once as experimental, it is now in force for
+# write-blocking-mode sockets. Still unclear if all issues around
+# closing while data still not written are eliminated.
+add_definitions(-DSRT_ENABLE_CLOSE_SYNCH)
 
 if (NOT ENABLE_LOGGING)
 	set (ENABLE_HEAVY_LOGGING OFF)
@@ -735,6 +747,13 @@ set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
 # ---
 # Target: srt. DEFINITION ONLY. Haicrypt flag settings follow.
 # ---
+
+if (ENABLE_SHARED AND MICROSOFT)
+	#add resource files to shared library, to set DLL metadata on Windows DLLs
+	set (EXTRA_WIN32_SHARED 1)
+	message(STATUS "WIN32: extra resource file will be added")
+endif()
+
 MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
 	PUBLIC_HEADERS HEADERS_srt
@@ -759,15 +778,6 @@ add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
 	set_target_properties(srt_virtual PROPERTIES POSITION_INDEPENDENT_CODE 1)
-
-	#add resource files to shared library, to set DLL metadata on Windows DLLs
-	if (MICROSOFT)
-		MafReadDir(srtcore filelist.maf
-			SOURCES_WIN32_SHARED SOURCES_srt_shared_win32
-		)
-		
-		message(STATUS "WINDOWS detected: Adding sources to SRT shared project: ${SOURCES_srt_shared_win32}")
-	endif()
 endif()
 
 macro(srt_set_stdcxx targetname spec)
@@ -791,7 +801,7 @@ srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt} ${SOURCES_srt_shared_win32} ${HEADERS_srt_shared_win32})
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})

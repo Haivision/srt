@@ -61,8 +61,8 @@ SRTSOCKET sock = srt_create_socket();
 The listener needs to bind it first (note: simplified code):
 
 ```
-sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
-srt_bind(sock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("0.0.0.0", 5000);
+srt_bind(sock, sa.get(), sa.len);
 srt_listen(sock, 5);
 sockaddr_in target;
 SRTSOCKET connsock = srt_accept(sock, &target, sizeof target);
@@ -73,8 +73,8 @@ the target:
 
 ```
 SRTSOCKET connsock = srt_create_socket();
-sockaddr_in sa = CreateAddrInet("target.address:5000");
-srt_connect(connsock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("target.address", 5000);
+srt_connect(connsock, sa.get(), sa.len);
 ```
 
 After the connection is established, you use the send/recv functions to
@@ -133,8 +133,8 @@ To handle group connections, you need to set `SRTO_GROUPCONNECT` option:
 int gcon = 1;
 srt_setsockflag(sock, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
 
-sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
-srt_bind(sock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("0.0.0.0", 5000);
+srt_bind(sock, sa.get(), sa.len);
 srt_listen(sock, 5);
 sockaddr_in target;
 SRTSOCKET conngrp = srt_accept(sock, &target, sizeof target);
@@ -155,15 +155,15 @@ SRTSOCKET conngrp = srt_create_group(SRT_GTYPE_BROADCAST);
 This will need to make the first connection this way:
 
 ```
-sockaddr_in sa = CreateAddrInet("target.address.link1:5000");
-srt_connect(conngrp, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("target.address.link1", 5000);
+srt_connect(conngrp, sa.get(), sizeof sa);
 ```
 
 Then further connections can be done by calling `srt_connect` again:
 
 ```
-sockaddr_in sa2 = CreateAddrInet("target.address.link2:5000");
-srt_connect(conngrp, &sa2, sizeof sa2);
+sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
+srt_connect(conngrp, sa.get(), sa2.len);
 ```
 
 IMPORTANT: This method can be easily used in non-blocking mode, as
@@ -176,9 +176,9 @@ So for blocking mode we use a different solution. Let's say, you have
 3 addresses:
 
 ```
-sockaddr_in sa1 = CreateAddrInet("target.address.link1:5000");
-sockaddr_in sa2 = CreateAddrInet("target.address.link2:5000");
-sockaddr_in sa3 = CreateAddrInet("target.address.link3:5000");
+sockaddr_any sa1 = CreateAddr("target.address.link1", 5000);
+sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
+sockaddr_any sa3 = CreateAddr("target.address.link3", 5000);
 ```
 
 You have to prepare the array for them and then use one group-connect function:
