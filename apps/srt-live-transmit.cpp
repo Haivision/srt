@@ -137,6 +137,7 @@ struct LiveTransmitConfig
     string logfile;
     int bw_report = 0;
     bool srctime = false;
+    int buffering = 10;
     int stats_report = 0;
     string stats_out;
     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
@@ -173,6 +174,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
         o_srctime       = {"st", "srctime", "sourcetime"},
+        o_buffering     = {"buffering"},
         o_statsrep      = { "s", "stats", "stats-report-frequency" },
         o_statsout      = { "statsout" },
         o_statspf       = { "pf", "statspf" },
@@ -193,6 +195,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_chunk,        OptionScheme::ARG_ONE },
         { o_bwreport,     OptionScheme::ARG_ONE },
         { o_srctime,      OptionScheme::ARG_ONE },
+        { o_buffering,    OptionScheme::ARG_ONE },
         { o_statsrep,     OptionScheme::ARG_ONE },
         { o_statsout,     OptionScheme::ARG_ONE },
         { o_statspf,      OptionScheme::ARG_ONE },
@@ -243,6 +246,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_chunk,     "<chunk=1456>", "max size of data read in one step, that can fit one SRT packet");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
         PrintOptionHelp(o_srctime,   "<enabled=yes>", "Pass packet time from source to SRT output {yes, no}");
+        PrintOptionHelp(o_buffering, "<packets=n>", "Buffer up to n incoming packets");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
         PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
@@ -278,6 +282,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
     cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
+    cfg.buffering    = Option<OutNumber>(params, o_buffering);
+    cfg.buffering    = cfg.buffering > 0 ? cfg.buffering : 10;
     cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
     cfg.stats_report = Option<OutNumber>(params, o_statsrep);
     cfg.stats_out    = Option<OutString>(params, o_statsout);
@@ -716,7 +722,7 @@ int main(int argc, char** argv)
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
                 if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
-                    while (dataqueue.size() < 10)
+                    while (dataqueue.size() < (size_t) cfg.buffering)
                     {
                         std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
