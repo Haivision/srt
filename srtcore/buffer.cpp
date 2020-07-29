@@ -465,7 +465,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
 
 int32_t CSndBuffer::getMsgNoAt(const int offset)
 {
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
 
     Block* p = m_pFirstBlock;
 
@@ -513,7 +513,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 {
     int32_t& msgno_bitset = w_packet.m_iMsgNo;
 
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
 
     Block* p = m_pFirstBlock;
 
@@ -590,7 +590,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
 srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
     const Block* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
@@ -607,7 +607,7 @@ srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int of
 
 void CSndBuffer::ackData(int offset)
 {
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
 
     bool move = false;
     for (int i = 0; i < offset; ++i)
@@ -632,7 +632,7 @@ int CSndBuffer::getCurrBufSize() const
 
 int CSndBuffer::getAvgBufSize(int& w_bytes, int& w_tsp)
 {
-    CGuard bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
+    ScopedLock bufferguard(m_BufLock); /* Consistency of pkts vs. bytes vs. spantime */
 
     /* update stats in case there was no add/ack activity lately */
     updAvgBufSize(steady_clock::now());
@@ -677,7 +677,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     bool    move   = false;
     int32_t msgno  = 0;
 
-    CGuard bufferguard(m_BufLock);
+    ScopedLock bufferguard(m_BufLock);
     for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++i)
     {
         dpkts++;
@@ -859,7 +859,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes, bool acked)
      *  acked (bytes>0, acked=true),
      *  removed (bytes<0, acked=n/a)
      */
-    CGuard cg(m_BytesCountLock);
+    ScopedLock cg(m_BytesCountLock);
 
     if (!acked) // adding new pkt in RcvBuffer
     {

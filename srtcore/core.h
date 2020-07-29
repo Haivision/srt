@@ -389,7 +389,7 @@ public:
 
     gli_t find(SRTSOCKET id)
     {
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f == m_Group.end())
         {
@@ -408,7 +408,7 @@ public:
     bool remove(SRTSOCKET id)
     {
         bool s = false;
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
         {
@@ -446,7 +446,7 @@ public:
 
     bool empty()
     {
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         return m_Group.empty();
     }
 
@@ -1108,7 +1108,7 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        srt::sync::CGuard cg(m_ConnectionLock);
+        srt::sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
