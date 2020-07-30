@@ -1010,7 +1010,13 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 
    // no "accept" in rendezvous connection setup
    if (ls->m_pUDT->m_bRendezvous)
-      throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
+   {
+       LOGC(mglog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
+       // This problem should never happen because `srt_listen` function should have
+       // checked this situation before and not set listen state in result.
+       // Inform the user about the invalid state in the universal way.
+       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+   }
 
    SRTSOCKET u = CUDT::INVALID_SOCK;
    bool accepted = false;
@@ -1071,14 +1077,14 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
 
       // listening socket is closed
-      throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+      throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
 
    if (pw_addr != NULL && pw_addrlen != NULL)
    {
       CUDTSocket* s = locateSocket(u);
       if (s == NULL)
-         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
 
       // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
       // and the already accepted socket has successfully joined

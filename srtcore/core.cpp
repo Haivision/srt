@@ -4227,6 +4227,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             m_RejectReason = SRT_REJ_TIMEOUT;
+            HLOGC(mglog.Debug, log << "startConnect: TTL time " << FormatTime(ttl_time) << " exceeded, TIMEOUT.");
             break;
         }
     }
@@ -4243,7 +4244,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (e.getErrorCode() == 0)
     {
         if (m_bClosing)                                    // if the socket is closed before connection...
-            e = CUDTException(MJ_SETUP);                   // XXX NO MN ?
+            e = CUDTException(MJ_SETUP, MN_CLOSED, 0);
         else if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES) // connection request rejected
         {
             m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
@@ -11933,6 +11934,11 @@ void CUDTGroup::close()
 
         // A non-managed group may only be closed if there are no
         // sockets in the group.
+
+        // XXX Fortunately there are currently no non-self-managed
+        // groups, so this error cannot ever happen, but this error
+        // has the overall code suggesting that it's about the listener,
+        // so either the name should be changed here, or a different code used.
         if (!m_selfManaged && !m_Group.empty())
             throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
 
