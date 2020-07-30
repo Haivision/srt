@@ -2549,7 +2549,6 @@ public:
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
         }
-
     }
 
     void Write(const MediaPacket& data) override
