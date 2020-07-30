@@ -1765,9 +1765,9 @@ type of entity was passed, even if it was valid.
 
 #### `SRT_EUNBOUNDSOCK`
 
-The operation to be performed on the socket requires that it be first
-bound (using `srt_bind*` functions), explicitly. Currently it's about
-calling `srt_listen`, which cannot work with implicitly bound socket.
+The operation to be performed on a socket requires that it first be
+explicitly bound (using `srt_bind*` functions). Currently it applies when
+calling `srt_listen`, which cannot work with an implicitly bound socket.
 
 #### `SRT_ENOLISTEN`
 
@@ -1776,9 +1776,9 @@ state (`srt_listen` must be called first).
 
 #### `SRT_ERDVNOSERV`
 
-The required operation cannot be performed when the socket is set
-rendezvous mode (`SRTO_RENDEZVOUS` set to true). Usually it's about
-trying to call `srt_listen` on such socket.
+The required operation cannot be performed when the socket is set to
+rendezvous mode (`SRTO_RENDEZVOUS` set to true). Usually applies when
+trying to call `srt_listen` on such a socket.
 
 #### `SRT_ERDVUNBOUND`
 
