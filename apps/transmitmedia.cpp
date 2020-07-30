@@ -703,6 +703,8 @@ public:
             return 0;
         }
 
+        // Save this time to potentially use it for SRT target.
+        pkt.time = srt_time_now();
         if (chunk < pkt.payload.size())
             pkt.payload.resize(chunk);
 

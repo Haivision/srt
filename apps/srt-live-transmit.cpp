@@ -172,7 +172,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_autorecon     = { "a", "auto", "autoreconnect" },
         o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
-        o_srctime       = {"st", "stime", "sourcetime"},
+        o_srctime       = {"st", "srctime", "sourcetime"},
         o_statsrep      = { "s", "stats", "stats-report-frequency" },
         o_statsout      = { "statsout" },
         o_statspf       = { "pf", "statspf" },
@@ -745,13 +745,16 @@ int main(int argc, char** argv)
                 while (!dataqueue.empty())
                 {
                     std::shared_ptr<MediaPacket> pkt = dataqueue.front();
-                    if (!tar.get() || !tar->IsOpen()) {
+                    if (!tar.get() || !tar->IsOpen())
+                    {
                         lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats)) {
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    {
                         lostBytes += pkt->payload.size();
                     }
-                    else {
+                    else
+                    {
                         wroteBytes += pkt->payload.size();
                     }
 
