@@ -456,20 +456,6 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         Error("srt_listen");
     }
 
-    Verb() << " accept... " << VerbNoEOL;
-    ::transmit_throw_on_interrupt = true;
-
-    if (!m_blocking_mode)
-    {
-        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
-
-        int len = 2;
-        SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
-            Error("srt_epoll_wait(srt_conn_epoll)");
-
-        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
-    }
 }
 
 void SrtCommon::StealFrom(SrtCommon& src)
@@ -491,6 +477,19 @@ void SrtCommon::AcceptNewClient()
 {
     sockaddr_any scl;
 
+    ::transmit_throw_on_interrupt = true;
+
+    if (!m_blocking_mode)
+    {
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
+
+        int len = 2;
+        SRTSOCKET ready[2];
+        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+            Error("srt_epoll_wait(srt_conn_epoll)");
+
+        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+    }
     Verb() << " accept..." << VerbNoEOL;
 
     m_sock = srt_accept(m_bindsock, (scl.get()), (&scl.len));
