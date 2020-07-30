@@ -1013,8 +1013,8 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    {
        LOGC(mglog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
        // This problem should never happen because `srt_listen` function should have
-       // checked this situation before and not set listen state in result. To the user
-       // inform about the invalid state universal way.
+       // checked this situation before and not set listen state in result.
+       // Inform the user about the invalid state in the universal way.
        throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
    }
 

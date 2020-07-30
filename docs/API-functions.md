@@ -1633,7 +1633,7 @@ Internal error when setting the right error code.
 
 #### `SRT_SUCCESS`
 
-The value set in case when the last error was cleared and no error occurred lately.
+The value set when the last error was cleared and no error has occurred since then.
 
 #### `SRT_ECONNSETUP`
 
@@ -1641,8 +1641,8 @@ General setup error resulting from internal system state.
 
 #### `SRT_ENOSERVER`
 
-Connection timed out, while attempting to connect to the remote address. Note
-that when it happens, the `srt_getrejectreason` also reports the timeout reason.
+Connection timed out while attempting to connect to the remote address. Note
+that when this happens, `srt_getrejectreason` also reports the timeout reason.
 
 #### `SRT_ECONNREJ`
 
@@ -1662,14 +1662,13 @@ request wasn't properly fulfilled.
 
 #### `SRT_ESCLOSED`
 
-A socket that was vital for the operation called in the blocking mode
+A socket that was vital for an operation called in blocking mode
 has been closed during the operation. Please note that this situation is
 handled differently than the system calls for `connect` and `accept`
-functions for TCP, which in case, when the key socket was closed during
-the operation, simply block indefinitely or until the standard
-timeout. When this error is reported, it usually means that the socket
-passed as the first parameter to `srt_connect*` or `srt_accept` is no
-longer usable.
+functions for TCP, which simply block indefinitely (or until the standard
+timeout) when the key socket was closed during an operation. When this 
+error is reported, it usually means that the socket passed as the first 
+parameter to `srt_connect*` or `srt_accept` is no longer usable.
 
 
 #### `SRT_ECONNFAIL`
@@ -1683,7 +1682,7 @@ This specialzation is reported from the transmission functions.
 
 #### `SRT_ENOCONN`
 
-The socket is not connected. This can be reported also when when the
+The socket is not connected. This can be reported also when the
 connection was broken for a function that checks some characteristic
 socket data.
 
@@ -1728,9 +1727,9 @@ Write permission was denied when trying to write to a file.
 
 #### `SRT_EINVOP`
 
-Invalid operation performed in the current state of the socket. Mainly
-it's about performing any of `srt_bind*` operations on the socket that
-is already bound. The socket that has once been bound, cannot be bound
+Invalid operation performed for the current state of a socket. This mainly
+concerns performing `srt_bind*` operations on a socket that
+is already bound.  Once a socket has been been bound, it cannot be bound
 again.
 
 #### `SRT_EBOUNDSOCK`
@@ -1742,11 +1741,11 @@ that is currently connected is also considered bound.
 
 #### `SRT_ECONNSOCK`
 
-The socket is currently connected and therefore preforming the required
-operation is not possible. Usually it's about setting an option that must
-be set before connecting, alghouth it is allowed to be altered after
-binding. Also when trying to start connecting operation (`srt_connect*`),
-while the socket isn't in the state that allows it (only `SRTS_INIT` or
+The socket is currently connected and therefore performing the required
+operation is not possible. Usually concerns setting an option that must
+be set before connecting (although it is allowed to be altered after
+binding), or when trying to start a connecting operation (`srt_connect*`)
+while the socket isn't in a state that allows it (only `SRTS_INIT` or
 `SRTS_OPENED` are allowed).
 
 #### `SRT_EINVPARAM`
@@ -1783,14 +1782,14 @@ trying to call `srt_listen` on such socket.
 
 #### `SRT_ERDVUNBOUND`
 
-The socket has been set rendezvous mode (`SRTO_RENDEZVOUS` set to
-true), and was tried to be connected without being bound first. The
+An attempt was made to connect to a socket set to rendezvous mode 
+(`SRTO_RENDEZVOUS` set to true) that was not first bound. A
 rendezvous connection requires setting up two addresses and ports
-on both sides of the connection, then set local one with `srt_bind`
-and use the remote one with `srt_connect` (or you can simplify it
-using `srt_rendezvous`). Calling `srt_connect*` on an unbound socket
-(in `SRTS_INIT` state), that is, to be bound implicitly, is only allowed
-for regular caller socket (not rendezvous).
+on both sides of the connection, then setting the local one with `srt_bind`
+and using the remote one with `srt_connect` (or you can simply
+use `srt_rendezvous`). Calling `srt_connect*` on an unbound socket
+(in `SRTS_INIT` state) that is to be bound implicitly is only allowed
+for regular caller sockets (not rendezvous).
 
 #### `SRT_EINVALMSGAPI`
 
@@ -1839,13 +1838,13 @@ The epoll ID passed to an epoll function is invalid
 
 #### `SRT_EPOLLEMPTY`
 
-The epoll container has currently no subscribed sockets. This is reported by an
+The epoll container currently has no subscribed sockets. This is reported by an
 epoll waiting function that would in this case block forever. This problem
-might be reported both in a situation that you have created a new epoll
-container and didn't subscribe any socket to it, or you did, but all these
+might be reported both in a situation where you have created a new epoll
+container and didn't subscribe any sockets to it, or you did, but these
 sockets have been closed (including when closed in a separate thread while the
-waiting function was blocking). Note that this situation can be prevented from
-by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful in case when
+waiting function was blocking). Note that this situation can be prevented
+by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
 you use multiple threads and start waiting without subscribed sockets, so that
 you can subscribe them later from another thread.
 
@@ -1865,7 +1864,7 @@ the function would block the call otherwise).
 
 Receiving operation is not ready to perform. This error is reported
 when trying to perform a receiving operation or accept a new socket from the
-listner socket, when the socket is not ready for that operation, but
+listener socket, when the socket is not ready for that operation, but
 `SRTO_RCVSYN` was set to false (when true, the function would block
 the call otherwise).
 
@@ -1878,9 +1877,9 @@ the function call was blocking, but the required timeout time has passed.
 
 #### `SRT_ECONGEST`
 
-This error is used only in an experimental version that requires
+NOTE: This error is used only in an experimental version that requires
 setting the `SRT_ENABLE_ECN` macro at compile time. Otherwise the
-described below situation results in just usual successful report.
+situation described below results in the usual successful report.
 
 This error should be reported by the sending function in case when
 with `SRTO_TLPKTDROP` set to true there were packets had to be removed
