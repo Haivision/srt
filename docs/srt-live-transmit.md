@@ -222,7 +222,7 @@ specified in the URI:
 
 **IMPORTANT** information about IPv6.
 
-This application can also use the address specified as IPv6. In that case, note
+This application can also use an address specified as IPv6 with
 the following restrictions:
 
 1. The IPv6 address in the URI is specified in square brackets: e.g.
@@ -230,8 +230,9 @@ the following restrictions:
 
 2. In listener mode, if you leave the host empty, the socket is bound to
 `INADDR_ANY` for IPv4 only. If you want to make it listen on IPv6, you need to
-specify the host as `::` (NOTE: you don't use square brackets syntax in the
-adapter specification, as in this case only the host is expected).
+specify the host as `::`.
+NOTE: Don't use square brackets syntax in the adapter specification, 
+as in this case only the host is expected.
 
 3. If you want to listen for connections from both IPv4 and IPv6, mind the
 `ipv6only` option. The default value for this option is system default (see
@@ -239,11 +240,11 @@ system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
 enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
 connections in the same listener.
 
-4. In rendezvous mode you may only interconnect both parties IPv4 or both
-parties IPv6. Unlike listener mode though, if you want to leave the socket
+4. In rendezvous mode you may only interconnect both parties using IPv4, 
+or both using IPv6. Unlike listener mode, if you want to leave the socket
 default-bound (you don't specify `adapter`), the socket will be bound with the
-same IP version as the target address. If you do specify `adapter` though,
-then both this one and target address must be of the same family.
+same IP version as the target address. If you do specify `adapter`,
+then both this address and the target address must be of the same family.
 
 Examples:
 
