@@ -1881,10 +1881,14 @@ NOTE: This error is used only in an experimental version that requires
 setting the `SRT_ENABLE_ECN` macro at compile time. Otherwise the
 situation described below results in the usual successful report.
 
-This error should be reported by the sending function in case when
-with `SRTO_TLPKTDROP` set to true there were packets had to be removed
-from the sender buffer and forgotten because the network is unable
-to live up to the sending rate. 
+This error should be reported by the sending function when, with
+`SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` set to true, some packets were dropped at
+the sender side (see the description of `SRTO_TLPKTDROP` for details). This
+doesn't concern the data that were passed for sending by the sending function
+(these data are placed at the back of the sender buffer, while the dropped
+packets are at the front). In other words, the operation done by the sending
+function is successful, but the application might want to slow down the sending
+rate to avoid congestion.
 
 #### `SRT_EPEERERR`
 
