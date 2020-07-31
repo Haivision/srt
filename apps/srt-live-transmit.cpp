@@ -136,7 +136,7 @@ struct LiveTransmitConfig
     bool log_internal;
     string logfile;
     int bw_report = 0;
-    bool srctime = true;
+    bool srctime = false;
     int stats_report = 0;
     string stats_out;
     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
