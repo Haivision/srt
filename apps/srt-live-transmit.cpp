@@ -283,7 +283,11 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
     cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
     cfg.buffering    = Option<OutNumber>(params, o_buffering);
-    cfg.buffering    = cfg.buffering > 0 ? cfg.buffering : 10;
+    if (cfg.buffering <= 0)
+    {
+        cerr << "ERROR: Buffering value should be positive. Value provided: " << cfg.buffering << "." << endl;
+        return 1;
+    }
     cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
     cfg.stats_report = Option<OutNumber>(params, o_statsrep);
     cfg.stats_out    = Option<OutString>(params, o_statsout);
