@@ -282,13 +282,13 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
     cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
-    const int buffering = Option<OutNumber>(params, o_buffering);
-    if (buffering < 0)
+    const int buffering = Option<OutNumber>(params, "10", o_buffering);
+    if (buffering <= 0)
     {
         cerr << "ERROR: Buffering value should be positive. Value provided: " << buffering << "." << endl;
         return 1;
     }
-    else if (buffering > 0)
+    else
     {
         cfg.buffering = (size_t) buffering;
     }
