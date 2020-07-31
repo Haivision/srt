@@ -137,7 +137,7 @@ struct LiveTransmitConfig
     string logfile;
     int bw_report = 0;
     bool srctime = false;
-    int buffering = 10;
+    size_t buffering = 10;
     int stats_report = 0;
     string stats_out;
     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
@@ -282,11 +282,15 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
     cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
-    cfg.buffering    = Option<OutNumber>(params, o_buffering);
-    if (cfg.buffering <= 0)
+    const int buffering = Option<OutNumber>(params, o_buffering);
+    if (buffering < 0)
     {
-        cerr << "ERROR: Buffering value should be positive. Value provided: " << cfg.buffering << "." << endl;
+        cerr << "ERROR: Buffering value should be positive. Value provided: " << buffering << "." << endl;
         return 1;
+    }
+    else if (buffering > 0)
+    {
+        cfg.buffering = (size_t) buffering;
     }
     cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
     cfg.stats_report = Option<OutNumber>(params, o_statsrep);
@@ -726,7 +730,7 @@ int main(int argc, char** argv)
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
                 if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
-                    while (dataqueue.size() < (size_t) cfg.buffering)
+                    while (dataqueue.size() < cfg.buffering)
                     {
                         std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
