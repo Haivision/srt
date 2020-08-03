@@ -7862,6 +7862,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         }
         else
         {
+            ScopedLock lock(m_RcvLossLock);
             ack = m_pRcvLossList->getFirstLostSeq();
 #if ENABLE_HEAVY_LOGGING
             reason = "first lost";
@@ -8054,6 +8055,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         // Call with no arguments - get loss list from internal data.
         else if (m_pRcvLossList->getLossLength() > 0)
         {
+            ScopedLock lock(m_RcvLossLock);
             // this is periodically NAK report; make sure NAK cannot be sent back too often
 
             // read loss list from the local receiver loss list
