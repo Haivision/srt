@@ -2574,11 +2574,24 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
         return SRT_CMD_REJECT;
     }
 
-    if (bytelen < ((SRT_HS_LATENCY + 1) * sizeof(uint32_t)))
+#if HAVE_CXX11
+    static_assert(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
+#endif
+    if (bytelen < (SRT_HS_E_SIZE * sizeof(uint32_t)))
     {
-        // 3 is the size when containing VERSION, FLAGS and LATENCY. Less size
-        // makes it contain only the first two. Let's make it acceptable, as long
-        // as the latency flags aren't set.
+        // Handshake extension message includes VERSION, FLAGS and LATENCY
+        // (3 x 32 bits). SRT v1.2.0 and earlier might supply shorter extension message,
+        // without LATENCY fields.
+        // It is acceptable, as long as the latency flags are not set on our side.
+        //
+        //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                          SRT Version                          |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                           SRT Flags                           |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |      Receiver TSBPD Delay     |       Sender TSBPD Delay      |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
         if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND) || IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             m_RejectReason = SRT_REJ_ROGUE;
