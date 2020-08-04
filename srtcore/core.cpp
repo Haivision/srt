@@ -2494,7 +2494,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     return true;
 }
 
-int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, int hsv)
+int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
 {
     // Set this start time in the beginning, regardless as to whether TSBPD is being
     // used or not. This must be done in the Initiator as well as Responder.
@@ -2513,18 +2513,18 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
     m_iTsbPdDelay_ms     = m_iOPT_TsbPdDelay;
     m_iPeerTsbPdDelay_ms = m_iOPT_PeerTsbPdDelay;
 
-    if (len < SRT_CMD_HSREQ_MINSZ)
+    if (bytelen < SRT_CMD_HSREQ_MINSZ)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error, "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " invalid", SRT_CMD_HSREQ, len);
+        LOGF(mglog.Error, "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " invalid", SRT_CMD_HSREQ, bytelen);
         return SRT_CMD_NONE;
     }
 
     LOGF(mglog.Note,
          "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " vers=0x%x opts=0x%x delay=%d",
          SRT_CMD_HSREQ,
-         len,
+         bytelen,
          srtdata[SRT_HS_VERSION],
          srtdata[SRT_HS_FLAGS],
          SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
@@ -2582,11 +2582,24 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
         return SRT_CMD_REJECT;
     }
 
-    if (len < SRT_HS_LATENCY + 1)
+#if HAVE_CXX11
+    static_assert(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
+#endif
+    if (bytelen < (SRT_HS_E_SIZE * sizeof(uint32_t)))
     {
-        // 3 is the size when containing VERSION, FLAGS and LATENCY. Less size
-        // makes it contain only the first two. Let's make it acceptable, as long
-        // as the latency flags aren't set.
+        // Handshake extension message includes VERSION, FLAGS and LATENCY
+        // (3 x 32 bits). SRT v1.2.0 and earlier might supply shorter extension message,
+        // without LATENCY fields.
+        // It is acceptable, as long as the latency flags are not set on our side.
+        //
+        //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                          SRT Version                          |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                           SRT Flags                           |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |      Receiver TSBPD Delay     |       Sender TSBPD Delay      |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
         if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND) || IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             m_RejectReason = SRT_REJ_ROGUE;
@@ -2602,7 +2615,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
         return SRT_CMD_HSRSP;
     }
 
-    uint32_t latencystr = srtdata[SRT_HS_LATENCY];
+    const uint32_t latencystr = srtdata[SRT_HS_LATENCY];
 
     if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
     {
@@ -2694,7 +2707,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t len, uint32_t ts, 
     return SRT_CMD_HSRSP;
 }
 
-int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, int hsv)
+int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
 {
     // XXX Check for mis-version
     // With HSv4 we accept only version less than 1.3.0
@@ -2704,10 +2717,10 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t len, uint32_t ts, 
         return SRT_CMD_NONE;
     }
 
-    if (len < SRT_CMD_HSRSP_MINSZ)
+    if (bytelen < SRT_CMD_HSRSP_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(mglog.Error, "HSRSP/rcv: cmd=%d(HSRSP) len=%" PRIzu " invalid", SRT_CMD_HSRSP, len);
+        LOGF(mglog.Error, "HSRSP/rcv: cmd=%d(HSRSP) len=%" PRIzu " invalid", SRT_CMD_HSRSP, bytelen);
         return SRT_CMD_NONE;
     }
 
