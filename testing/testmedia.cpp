@@ -1124,15 +1124,27 @@ void SrtCommon::Error(string src, int reason, int force_result)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
-void SrtCommon::SetupRendezvous(string adapter, int port)
+void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 {
+    sockaddr_any target = CreateAddr(host, port);
+    if (target.family() == AF_UNSPEC)
+    {
+        Error("Unable to resolve target host: " + host);
+    }
+
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    auto localsa = CreateAddr(adapter, outport);
-    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
+    // Prefer the same IPv as target host
+    auto localsa = CreateAddr(adapter, outport, target.family());
+    string showhost = adapter;
+    if (showhost == "")
+        showhost = "ANY";
+    if (target.family() == AF_INET6)
+        showhost = "[" + showhost + "]";
+    Verb() << "Binding rendezvous: " << showhost << ":" << outport << " ...";
     int stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {

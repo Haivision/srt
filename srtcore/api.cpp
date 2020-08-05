@@ -1595,8 +1595,19 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
        // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
        s->m_Status = SRTS_OPENED;
    }
-   else if (s->m_Status != SRTS_OPENED)
-      throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+   else
+   {
+       if (s->m_Status != SRTS_OPENED)
+           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+       // status = SRTS_OPENED, so family should be known already.
+       if (target_addr.family() != s->m_SelfAddr.family())
+       {
+           LOGP(mglog.Error, "srt_connect: socket is bound to a different family than target address");
+           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+       }
+   }
+
 
    // connect_complete() may be called before connect() returns.
    // So we need to update the status before connect() is called,
@@ -2480,6 +2491,7 @@ void CUDTUnited::updateMux(
                s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
                s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
                s->m_iMuxID = i->second.m_iID;
+               s->m_SelfAddr.family(addr.family());
                return;
             }
          }
@@ -2540,6 +2552,7 @@ void CUDTUnited::updateMux(
    sockaddr_any sa;
    m.m_pChannel->getSockAddr((sa));
    m.m_iPort = sa.hport();
+   s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
 
    m.m_pTimer = new CTimer;
 

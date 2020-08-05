@@ -220,6 +220,53 @@ specified in the URI:
     -   The **adapter** parameter can be used to specify the adapter.
     -   The **port** parameter can be used to specify the local port to bind to.
 
+**IMPORTANT** information about IPv6.
+
+This application can also use an address specified as IPv6 with
+the following restrictions:
+
+1. The IPv6 address in the URI is specified in square brackets: e.g.
+`srt://[::1]:5000`.
+
+2. In listener mode, if you leave the host empty, the socket is bound to
+`INADDR_ANY` for IPv4 only. If you want to make it listen on IPv6, you need to
+specify the host as `::`.
+NOTE: Don't use square brackets syntax in the adapter specification, 
+as in this case only the host is expected.
+
+3. If you want to listen for connections from both IPv4 and IPv6, mind the
+`ipv6only` option. The default value for this option is system default (see
+system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
+enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
+connections in the same listener.
+
+4. In rendezvous mode you may only interconnect both parties using IPv4, 
+or both using IPv6. Unlike listener mode, if you want to leave the socket
+default-bound (you don't specify `adapter`), the socket will be bound with the
+same IP version as the target address. If you do specify `adapter`,
+then both this address and the target address must be of the same family.
+
+Examples:
+
+* `srt://:5000` defines listener mode with IPv4.
+
+* `srt://[::]:5000` defines caller mode (!) with IPv6.
+
+* `srt://[::]:5000?mode=listener` defines listener mode with IPv6. If the
+* default value for `IPV6_V6ONLY` system socket option is 0, it will accept
+* also IPv4 connections.
+
+* `srt://192.168.0.5:5000?mode=rendezvous` will make a rendezvous connection
+* with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
+* port 5000.
+
+* `srt://[::1]:5000?mode=rendezvous&port=4000` will make a rendezvous
+* connection with local address `inaddr6_any` (IPv6) and port 4000 to a
+* destination with port 5000.
+
+* `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
+* (different IP versions for binding and target address)
+
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
 
 - **mode**: enforce caller, listener or rendezvous mode

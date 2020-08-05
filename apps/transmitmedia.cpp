@@ -437,25 +437,28 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
+    sockaddr_any sa = CreateAddr(host, port);
+    if (sa.family() == AF_UNSPEC)
+    {
+        Error("OpenRendezvous: invalid target host specification: " + host);
+    }
+
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    sockaddr_any localsa = CreateAddr(adapter, outport);
-	sockaddr* plsa = localsa.get();
+    sockaddr_any localsa = CreateAddr(adapter, outport, sa.family());
 
     Verb() << "Binding a server on " << adapter << ":" << outport;
 
-    stat = srt_bind(m_sock, plsa, sizeof localsa);
+    stat = srt_bind(m_sock, localsa.get(), sizeof localsa);
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
         Error("srt_bind");
     }
 
-    sockaddr_any sa = CreateAddr(host, port);
-	sockaddr* psa = sa.get();
     Verb() << "Connecting to " << host << ":" << port;
 
-    stat = srt_connect(m_sock, psa, sizeof sa);
+    stat = srt_connect(m_sock, sa.get(), sizeof sa);
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
