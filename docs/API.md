@@ -1243,9 +1243,9 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one aoth
 
 ---
 
-| OptName                         | Since | Binding | Type   | Units  | Default | Range  | Dir | Entity |
-| ------------------------------- | ----- | ------- | ------ | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMISSION_ALGORITHM` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] | W   | GSD    |
+| OptName               | Since | Binding | Type   | Units  | Default | Range  | Dir | Entity |
+| --------------------- | ----- | ------- | ------ | ------ | ------- | ------ | --- | ------ |
+| `SRTO_RETRANSMITALGO` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] | W   | GSD    |
 
 - Retransmission algorithm to use (SENDER option):
    - 0 - Default (retranmsit on every loss report).

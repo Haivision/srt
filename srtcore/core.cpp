@@ -256,7 +256,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
     m_OPT_GroupConnect      = 0;
     m_HSGroupType           = SRT_GTYPE_UNDEFINED;
-    m_iOPT_RexmitAlgo       = 0;
+    m_iOPT_RetransmitAlgo       = 0;
     m_bTLPktDrop            = true; // Too-late Packet Drop
     m_bMessageAPI           = true;
     m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
@@ -314,7 +314,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_bOPT_TLPktDrop        = ancestor.m_bOPT_TLPktDrop;
     m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
     m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
-    m_iOPT_RexmitAlgo       = ancestor.m_iOPT_RexmitAlgo;
+    m_iOPT_RetransmitAlgo   = ancestor.m_iOPT_RetransmitAlgo;
     m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
     m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
     m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
@@ -996,11 +996,11 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
         break;
 
-    case SRTO_RETRANSMISSION_ALGORITHM:
+    case SRTO_RETRANSMITALGO:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-        m_iOPT_RexmitAlgo = cast_optval<int32_t>(optval, optlen);
+        m_iOPT_RetransmitAlgo = cast_optval<int32_t>(optval, optlen);
         break;
 
     default:
@@ -8978,7 +8978,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             continue;
         }
 
-        if (m_bPeerNakReport && m_iOPT_RexmitAlgo != 0)
+        if (m_bPeerNakReport && m_iOPT_RetransmitAlgo != 0)
         {
             const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
             if (tsLastRexmit >= time_nak)
