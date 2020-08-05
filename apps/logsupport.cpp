@@ -132,8 +132,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
     {
         for (auto entry: names)
         {
-
-        // Skip "general", it's always on
+            // Skip "general", it's always on
             if (entry.first == "general")
                 continue;
             fas.insert(entry.second);
