@@ -577,6 +577,9 @@ enum SRT_REJECT_REASON
 // Note that 0 is "general".
 
 // Made by #define so that it's available also for C API.
+// NOTE:
+// Use ../scripts/generate-logging-defs.tcl to regenerate.
+
 #define SRT_LOGFA_GENERAL   0
 #define SRT_LOGFA_BSTATS    1
 #define SRT_LOGFA_CONTROL   2

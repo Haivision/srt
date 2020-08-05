@@ -16,6 +16,7 @@
 
 srt_logging::LogLevel::type SrtParseLogLevel(std::string level);
 std::set<srt_logging::LogFA> SrtParseLogFA(std::string fa, std::set<std::string>* punknown = nullptr);
+const std::map<std::string, int> SrtLogFAList();
 
 SRT_API extern std::map<std::string, int> srt_level_names;
 
