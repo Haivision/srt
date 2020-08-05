@@ -581,7 +581,6 @@ enum SRT_REJECT_REASON
 // Use ../scripts/generate-logging-defs.tcl to regenerate.
 
 #define SRT_LOGFA_GENERAL   0
-#define SRT_LOGFA_BSTATS    1
 #define SRT_LOGFA_CONTROL   2
 #define SRT_LOGFA_DATA      3
 #define SRT_LOGFA_TSBPD     4

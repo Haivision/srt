@@ -6,8 +6,8 @@
 
 
 LOGGER(GENERAL,   g, 0);
-LOGGER(CONTROL,   mg, 1);
-LOGGER(DATA,       d, 2);
+LOGGER(CONTROL,   mg, 2);
+LOGGER(DATA,       d, 3);
 LOGGER(TSBPD,     ts, 4);
 LOGGER(REXMIT,    rx, 5);
 // Haicrypt logging - usually off.
