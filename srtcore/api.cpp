@@ -1466,13 +1466,57 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         HLOGC(mglog.Debug, log << "groupConnect: first connection, applying EPOLL WAITING.");
         int len = spawned.size();
         vector<SRTSOCKET> ready(spawned.size());
-        srt_epoll_wait(eid,
-                NULL, NULL,  // IN/ACCEPT
-                &ready[0], &len, // OUT/CONNECT
-                -1, // indefinitely (XXX REGARD CONNECTION TIMEOUT!)
-                NULL, NULL,
-                NULL, NULL
-                );
+        int estat = srt_epoll_wait(eid,
+                    NULL, NULL,  // IN/ACCEPT
+                    &ready[0], &len, // OUT/CONNECT
+                    -1, // indefinitely (FIXME Check if it needs to REGARD CONNECTION TIMEOUT!)
+                    NULL, NULL,
+                    NULL, NULL
+                    );
+
+        // Sanity check. Shouldn't happen if subs are in sync with spawned.
+        if (estat == -1)
+        {
+#if ENABLE_LOGGING
+            CUDTException& x = CUDT::getlasterror();
+            if (x.getErrorCode() != SRT_EPOLLEMPTY)
+            {
+                LOGC(mglog.Error, log << "groupConnect: srt_epoll_wait failed not because empty, unexpected IPE:"
+                        << x.getErrorMessage());
+            }
+#endif
+            HLOGC(mglog.Debug, log << "groupConnect: srt_epoll_wait failed - breaking the wait loop");
+            retval = -1;
+            break;
+        }
+
+        // At the moment when you are going to work with real sockets,
+        // lock the groups so that no one messes up with something here
+        // in the meantime.
+
+        ScopedLock lock (*g.exp_groupLock());
+
+        // Check first if a socket wasn't closed in the meantime. It will be
+        // automatically removed from all EIDs, but there's no sense in keeping
+        // them in 'spawned' map.
+        for (map<SRTSOCKET, CUDTSocket*>::iterator y = spawned.begin();
+                y != spawned.end(); ++y)
+        {
+            SRTSOCKET sid = y->first;
+            if (CUDT::getsockstate(sid) >= SRTS_BROKEN)
+            {
+                HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got BROKEN in the meantine during the check, remove from candidates");
+                // Remove from spawned and try again
+                if (spawned.erase(sid))
+                    broken.push_back(sid);
+
+                srt_epoll_remove_usock(eid, sid);
+                srt_epoll_remove_usock(g.m_SndEID, sid);
+                srt_epoll_remove_usock(g.m_RcvEID, sid);
+
+            }
+        }
+
         // Check the sockets if they were reported due
         // to have connected or due to have failed.
         // Distill successful ones. If distilled nothing, return -1.
@@ -1497,20 +1541,12 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             {
                 HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got BROKEN during background connect, remove & TRY AGAIN");
                 // Remove from spawned and try again
-                spawned.erase(sid);
-                broken.push_back(sid);
-
-                /* XXX This is theoretically cleaner,
-                   although it's not necessary because destroyed
-                   sockets are removed from eids in the end. The problem
-                   is that there's some mistake in the implementation and
-                   those below cause misleading IPE message to be printed.
-                   PR #1127 is intended to fix the misleading IPE report.
+                if (spawned.erase(sid))
+                    broken.push_back(sid);
 
                 srt_epoll_remove_usock(eid, sid);
                 srt_epoll_remove_usock(g.m_SndEID, sid);
                 srt_epoll_remove_usock(g.m_RcvEID, sid);
-                */
 
                 continue;
             }
