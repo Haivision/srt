@@ -236,6 +236,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_Linger.l_linger = 0;
     m_bRendezvous     = false;
     m_tdConnTimeOut = seconds_from(DEF_CONNTIMEO_S);
+    m_bDriftTracer = true;
     m_iSndTimeOut = -1;
     m_iRcvTimeOut = -1;
     m_bReuseAddr  = true;
@@ -294,6 +295,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_iSndBufSize     = ancestor.m_iSndBufSize;
     m_iRcvBufSize     = ancestor.m_iRcvBufSize;
     m_Linger          = ancestor.m_Linger;
+    m_bDriftTracer    = ancestor.m_bDriftTracer;
     m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
     m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
     m_bRendezvous     = ancestor.m_bRendezvous;
@@ -405,6 +407,7 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_OHEADBW,
     SRTO_SNDDROPDELAY,
     SRTO_CONNTIMEO,
+    SRTO_DRIFTTRACER,
     SRTO_LOSSMAXTTL
 };
 
@@ -729,6 +732,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_CONNTIMEO:
         m_tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
+        break;
+
+    case SRTO_DRIFTTRACER:
+        m_bDriftTracer = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_LOSSMAXTTL:
@@ -1239,6 +1246,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_CONNTIMEO:
         *(int*)optval = count_milliseconds(m_tdConnTimeOut);
+        optlen        = sizeof(int);
+        break;
+
+    case SRTO_DRIFTTRACER:
+        *(int*)optval = m_bDriftTracer;
         optlen        = sizeof(int);
         break;
 
@@ -7487,15 +7499,13 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
     perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
-    //>new
     perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
     perf->msRcvTsbPdDelay = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
     perf->byteMSS         = m_iMSS;
 
     perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
 
-    //<
-    uint32_t availbw = (uint64_t)(m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth);
+    const uint32_t availbw = (uint64_t)(m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth);
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
@@ -7520,17 +7530,14 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         else
         {
             perf->byteAvailSndBuf = 0;
-            // new>
             perf->pktSndBuf  = 0;
             perf->byteSndBuf = 0;
             perf->msSndBuf   = 0;
-            //<
         }
 
         if (m_pRcvBuffer)
         {
             perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_iMSS;
-            // new>
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
@@ -7539,16 +7546,13 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
             }
-            //<
         }
         else
         {
             perf->byteAvailRcvBuf = 0;
-            // new>
             perf->pktRcvBuf  = 0;
             perf->byteRcvBuf = 0;
             perf->msRcvBuf   = 0;
-            //<
         }
 
         leaveCS(m_ConnectionLock);
@@ -7557,14 +7561,11 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     {
         perf->byteAvailSndBuf = 0;
         perf->byteAvailRcvBuf = 0;
-        // new>
         perf->pktSndBuf  = 0;
         perf->byteSndBuf = 0;
         perf->msSndBuf   = 0;
-
         perf->byteRcvBuf = 0;
         perf->msRcvBuf   = 0;
-        //<
     }
 
     if (clear)
@@ -7575,10 +7576,8 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.traceRcvBytesDrop      = 0;
         m_stats.traceRcvUndecrypt      = 0;
         m_stats.traceRcvBytesUndecrypt = 0;
-        // new>
         m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
         m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
-        //<
         m_stats.traceSent = m_stats.traceRecv
             = m_stats.traceSentUniq = m_stats.traceRecvUniq
             = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
@@ -8595,13 +8594,16 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // inaccurate. Additionally it won't lock if TSBPD mode is off, and
         // won't update anything. Note that if you set TSBPD mode and use
         // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-        steady_clock::duration udrift(0);
-        steady_clock::time_point newtimebase;
-        const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
-                (udrift), (newtimebase));
-        if (drift_updated && m_parent->m_IncludedGroup)
+        if (m_bDriftTracer)
         {
-            m_parent->m_IncludedGroup->synchronizeDrift(this, udrift, newtimebase);
+            steady_clock::duration udrift(0);
+            steady_clock::time_point newtimebase;
+            const bool drift_updated = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+                    (udrift), (newtimebase));
+            if (drift_updated && m_parent->m_IncludedGroup)
+            {
+                m_parent->m_IncludedGroup->synchronizeDrift(this, udrift, newtimebase);
+            }
         }
 
         // update last ACK that has been received by the sender
@@ -11638,6 +11640,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
     IM(SRTO_CONNTIMEO, m_tdConnTimeOut);
+    IM(SRTO_DRIFTTRACER, m_bDriftTracer);
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, m_llMaxBW);
     IM(SRTO_INPUTBW, m_llInputBW);
@@ -11805,6 +11808,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     case SRTO_PEERVERSION: RD(0);
 
     case SRTO_CONNTIMEO: RD(-1);
+    case SRTO_DRIFTTRACER: RD(true);
 
     case SRTO_MINVERSION: RD(0);
     case SRTO_STREAMID: RD(std::string());
