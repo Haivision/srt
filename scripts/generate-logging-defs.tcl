@@ -48,6 +48,6 @@ while 1 {
 		puts $od ""
 	}
 
-	puts $od "#define $form // $logmark"
+	puts $od "#define $form // ${logmark}log"
 	set prevval $logval
 }
