@@ -1507,15 +1507,18 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             {
                 HLOGC(mglog.Debug, log << "groupConnect: Socket @" << sid << " got BROKEN in the meantine during the check, remove from candidates");
                 // Remove from spawned and try again
-                if (spawned.erase(sid))
-                    broken.push_back(sid);
+                broken.push_back(sid);
 
                 srt_epoll_remove_usock(eid, sid);
                 srt_epoll_remove_usock(g.m_SndEID, sid);
                 srt_epoll_remove_usock(g.m_RcvEID, sid);
-
             }
         }
+
+        // Remove them outside the loop because this can't be done
+        // while iterating over the same container.
+        for (size_t i = 0; i < broken.size(); ++i)
+            spawned.erase(broken[i]);
 
         // Check the sockets if they were reported due
         // to have connected or due to have failed.
@@ -1527,7 +1530,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             map<SRTSOCKET, CUDTSocket*>::iterator x = spawned.find(ready[i]);
             if (x == spawned.end())
             {
-                // Sanity; impossible
+                // Might be removed above - ignore it.
                 continue;
             }
 
