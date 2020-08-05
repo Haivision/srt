@@ -14548,10 +14548,27 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
         if (sendable_pri.empty()
                 || (!idlers.empty() && idlers[0]->weight < *sendable_pri.begin() ))
         {
-            HLOGC(dlog.Debug, log << "grp/sendBackup: found link pri " << idlers[0]->weight << " < "
-                    << (*sendable_pri.begin()) << " (highest from sendable) - will activate an idle link");
             need_activate = true;
-            IF_HEAVY_LOGGING(activate_reason = "found higher pri link");
+#if ENABLE_HEAVY_LOGGING
+            if (sendable_pri.empty())
+            {
+                activate_reason = "no successful links found";
+                LOGC(dlog.Debug, log << "grp/sendBackup: no active links were successful - will activate an idle link");
+            }
+            else if (idlers.empty())
+            {
+                // This should be impossible.
+                activate_reason = "WEIRD (no idle links!)";
+                LOGC(dlog.Debug, log << "grp/sendBackup: BY WEIRD AND IMPOSSIBLE REASON (IPE?) - will activate an idle link");
+            }
+            else
+            {
+                // Only now we are granted that both sendable_pri and idlers are nonempty
+                LOGC(dlog.Debug, log << "grp/sendBackup: found link pri " << idlers[0]->weight << " < "
+                        << (*sendable_pri.begin()) << " (highest from sendable) - will activate an idle link");
+                activate_reason = "found higher pri link";
+            }
+#endif
         }
         else
         {
