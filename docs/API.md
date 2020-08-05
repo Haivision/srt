@@ -621,6 +621,14 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 | OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_DRIFTTRACER`| 1.5.0 | post    | `bool`    |        | true     |        | RW  | GSD    |
+
+- Enables or disables time drift tracer (receiver).
+
+---
+
+| OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_EVENT`      |       |         | `int32_t` | flags  |          |        | R   | S      |
 
 - Returns bit flags set according to the current active events on the socket. 
