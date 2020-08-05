@@ -996,7 +996,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
         break;
 
-    case SRTO_RETRANSMISSION_ALGORITHM:
+    case SRTO_RETRANSMITALGO:
         if (m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
