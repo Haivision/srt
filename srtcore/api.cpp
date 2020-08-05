@@ -1466,7 +1466,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         HLOGC(mglog.Debug, log << "groupConnect: first connection, applying EPOLL WAITING.");
         int len = spawned.size();
         vector<SRTSOCKET> ready(spawned.size());
-        int estat = srt_epoll_wait(eid,
+        const int estat = srt_epoll_wait(eid,
                     NULL, NULL,  // IN/ACCEPT
                     &ready[0], &len, // OUT/CONNECT
                     -1, // indefinitely (FIXME Check if it needs to REGARD CONNECTION TIMEOUT!)
