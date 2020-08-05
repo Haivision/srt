@@ -54,17 +54,18 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        if (data.size() < chunk)
-            data.resize(chunk);
+        if (pkt.payload.size() < chunk)
+            pkt.payload.resize(chunk);
 
-        ifile.read(data.data(), chunk);
+        pkt.time = 0;
+        ifile.read(pkt.payload.data(), chunk);
         size_t nread = ifile.gcount();
-        if ( nread < data.size() )
-            data.resize(nread);
+        if (nread < pkt.payload.size())
+            pkt.payload.resize(nread);
 
-        if (data.empty())
+        if (pkt.payload.empty())
         {
             return 0;
         }
@@ -83,7 +84,7 @@ public:
 
     FileTarget(const string& path): ofile(path, ios::out | ios::trunc | ios::binary) {}
 
-    int Write(const char* data, size_t size, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t size, int64_t time SRT_ATR_UNUSED, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         ofile.write(data, size);
         return !(ofile.bad()) ? (int) size : 0;
@@ -436,25 +437,28 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
+    sockaddr_any sa = CreateAddr(host, port);
+    if (sa.family() == AF_UNSPEC)
+    {
+        Error("OpenRendezvous: invalid target host specification: " + host);
+    }
+
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    sockaddr_any localsa = CreateAddr(adapter, outport);
-	sockaddr* plsa = localsa.get();
+    sockaddr_any localsa = CreateAddr(adapter, outport, sa.family());
 
     Verb() << "Binding a server on " << adapter << ":" << outport;
 
-    stat = srt_bind(m_sock, plsa, sizeof localsa);
+    stat = srt_bind(m_sock, localsa.get(), sizeof localsa);
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
         Error("srt_bind");
     }
 
-    sockaddr_any sa = CreateAddr(host, port);
-	sockaddr* psa = sa.get();
     Verb() << "Connecting to " << host << ":" << port;
 
-    stat = srt_connect(m_sock, psa, sizeof sa);
+    stat = srt_connect(m_sock, sa.get(), sizeof sa);
     if ( stat == SRT_ERROR )
     {
         srt_close(m_sock);
@@ -499,23 +503,26 @@ SrtSource::SrtSource(string host, int port, const map<string,string>& par)
     hostport_copy = os.str();
 }
 
-int SrtSource::Read(size_t chunk, bytevector& data, ostream &out_stats)
+int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
 {
     static unsigned long counter = 1;
 
-    if (data.size() < chunk)
-        data.resize(chunk);
+    if (pkt.payload.size() < chunk)
+        pkt.payload.resize(chunk);
 
-    const int stat = srt_recvmsg(m_sock, data.data(), (int) chunk);
+    SRT_MSGCTRL ctrl;
+    const int stat = srt_recvmsg2(m_sock, pkt.payload.data(), (int) chunk, &ctrl);
     if (stat <= 0)
     {
-        data.clear();
+        pkt.payload.clear();
         return stat;
     }
 
+    pkt.time = ctrl.srctime;
+
     chunk = size_t(stat);
-    if (chunk < data.size())
-        data.resize(chunk);
+    if (chunk < pkt.payload.size())
+        pkt.payload.resize(chunk);
 
     const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
@@ -554,11 +561,13 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
-int SrtTarget::Write(const char* data, size_t size, ostream &out_stats)
+int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &out_stats)
 {
     static unsigned long counter = 1;
 
-    int stat = srt_sendmsg2(m_sock, data, (int) size, nullptr);
+    SRT_MSGCTRL ctrl = srt_msgctrl_default;
+    ctrl.srctime = src_time;
+    int stat = srt_sendmsg2(m_sock, data, (int) size, &ctrl);
     if (stat == SRT_ERROR)
     {
         return stat;
@@ -684,21 +693,23 @@ public:
 #endif
     }
 
-    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        if (data.size() < chunk)
-            data.resize(chunk);
+        if (pkt.payload.size() < chunk)
+            pkt.payload.resize(chunk);
 
-        bool st = cin.read(data.data(), chunk).good();
+        bool st = cin.read(pkt.payload.data(), chunk).good();
         chunk = cin.gcount();
         if (chunk == 0 || !st)
         {
-            data.clear();
+            pkt.payload.clear();
             return 0;
         }
 
-        if (chunk < data.size())
-            data.resize(chunk);
+        // Save this time to potentially use it for SRT target.
+        pkt.time = srt_time_now();
+        if (chunk < pkt.payload.size())
+            pkt.payload.resize(chunk);
 
         return (int) chunk;
     }
@@ -726,7 +737,7 @@ public:
         cout.flush();
     }
 
-    int Write(const char* data, size_t len, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t len, int64_t src_time SRT_ATR_UNUSED, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         cout.write(data, len);
         return (int) len;
@@ -958,25 +969,27 @@ public:
         eof = false;
     }
 
-    int Read(size_t chunk, bytevector& data, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        if (data.size() < chunk)
-            data.resize(chunk);
+        if (pkt.payload.size() < chunk)
+            pkt.payload.resize(chunk);
 
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
-        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, pkt.payload.data(), (int) chunk, 0, (sockaddr*)&sa, &si);
         if (stat < 1)
         {
             if (SysError() != EWOULDBLOCK)
                 eof = true;
-            data.clear();
+            pkt.payload.clear();
             return stat;
         }
 
+        // Save this time to potentially use it for SRT target.
+        pkt.time = srt_time_now();
         chunk = size_t(stat);
-        if ( chunk < data.size() )
-            data.resize(chunk);
+        if (chunk < pkt.payload.size())
+            pkt.payload.resize(chunk);
 
         return stat;
     }
@@ -1012,7 +1025,7 @@ public:
 
     }
 
-    int Write(const char* data, size_t len, ostream & ignored SRT_ATR_UNUSED = cout) override
+    int Write(const char* data, size_t len, int64_t src_time SRT_ATR_UNUSED,  ostream & ignored SRT_ATR_UNUSED = cout) override
     {
         int stat = sendto(m_sock, data, (int) len, 0, (sockaddr*)&sadr, sizeof sadr);
         if ( stat == -1 )

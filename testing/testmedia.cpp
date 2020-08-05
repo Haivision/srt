@@ -50,6 +50,8 @@ size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
 bool transmit_printformat_json = false;
 srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
 void* transmit_accept_hook_op = nullptr;
+bool transmit_use_sourcetime = false;
+
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
@@ -114,7 +116,7 @@ public:
             throw std::runtime_error(path + ": Can't open file for reading");
     }
 
-    bytevector Read(size_t chunk) override { return FileRead(ifile, chunk, filename_copy); }
+    MediaPacket Read(size_t chunk) override { return FileRead(ifile, chunk, filename_copy); }
 
     bool IsOpen() override { return bool(ifile); }
     bool End() override { return ifile.eof(); }
@@ -132,9 +134,9 @@ public:
 
     FileTarget(const string& path): ofile(path, ios::out | ios::trunc | ios::binary) {}
 
-    void Write(const bytevector& data) override
+    void Write(const MediaPacket& data) override
     {
-        ofile.write(data.data(), data.size());
+        ofile.write(data.payload.data(), data.payload.size());
 #ifdef PLEASE_LOG
         extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
@@ -170,11 +172,11 @@ public:
         if (!iofile)
             throw std::runtime_error(path + ": Can't open file for reading");
     }
-    bytevector Read(size_t chunk) override { return FileRead(iofile, chunk, filename_copy); }
+    MediaPacket Read(size_t chunk) override { return FileRead(iofile, chunk, filename_copy); }
 
-    void Write(const bytevector& data) override
+    void Write(const MediaPacket& data) override
     {
-        iofile.write(data.data(), data.size());
+        iofile.write(data.payload.data(), data.payload.size());
     }
 
     bool IsOpen() override { return !!iofile; }
@@ -454,20 +456,6 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         Error("srt_listen");
     }
 
-    Verb() << " accept... " << VerbNoEOL;
-    ::transmit_throw_on_interrupt = true;
-
-    if (!m_blocking_mode)
-    {
-        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
-
-        int len = 2;
-        SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
-            Error("srt_epoll_wait(srt_conn_epoll)");
-
-        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
-    }
 }
 
 void SrtCommon::StealFrom(SrtCommon& src)
@@ -489,6 +477,19 @@ void SrtCommon::AcceptNewClient()
 {
     sockaddr_any scl;
 
+    ::transmit_throw_on_interrupt = true;
+
+    if (!m_blocking_mode)
+    {
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
+
+        int len = 2;
+        SRTSOCKET ready[2];
+        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+            Error("srt_epoll_wait(srt_conn_epoll)");
+
+        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+    }
     Verb() << " accept..." << VerbNoEOL;
 
     m_sock = srt_accept(m_bindsock, (scl.get()), (&scl.len));
@@ -1123,15 +1124,27 @@ void SrtCommon::Error(string src, int reason, int force_result)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
-void SrtCommon::SetupRendezvous(string adapter, int port)
+void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 {
+    sockaddr_any target = CreateAddr(host, port);
+    if (target.family() == AF_UNSPEC)
+    {
+        Error("Unable to resolve target host: " + host);
+    }
+
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    auto localsa = CreateAddr(adapter, outport);
-    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
+    // Prefer the same IPv as target host
+    auto localsa = CreateAddr(adapter, outport, target.family());
+    string showhost = adapter;
+    if (showhost == "")
+        showhost = "ANY";
+    if (target.family() == AF_INET6)
+        showhost = "[" + showhost + "]";
+    Verb() << "Binding rendezvous: " << showhost << ":" << outport << " ...";
     int stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {
@@ -1935,7 +1948,7 @@ RETRY_READING:
 
 #endif
 
-bytevector SrtSource::Read(size_t chunk)
+MediaPacket SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
@@ -2035,7 +2048,7 @@ bytevector SrtSource::Read(size_t chunk)
 
     ++counter;
 
-    return data;
+    return MediaPacket(data, mctrl.srctime);
 }
 
 SrtTarget::SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par)
@@ -2062,7 +2075,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     return 0;
 }
 
-void SrtTarget::Write(const bytevector& data)
+void SrtTarget::Write(const MediaPacket& data)
 {
     static int counter = 1;
     ::transmit_throw_on_interrupt = true;
@@ -2085,7 +2098,12 @@ void SrtTarget::Write(const bytevector& data)
         mctrl.grpdata_size = m_group_data.size();
     }
 
-    int stat = srt_sendmsg2(m_sock, data.data(), data.size(), &mctrl);
+    if (transmit_use_sourcetime)
+    {
+        mctrl.srctime = data.time;
+    }
+
+    int stat = srt_sendmsg2(m_sock, data.payload.data(), data.payload.size(), &mctrl);
 
     // For a socket group, the error is reported only
     // if ALL links from the group have failed to perform
@@ -2118,7 +2136,7 @@ void SrtTarget::Write(const bytevector& data)
         }
     }
 
-    Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), data.size()) << ") " << VerbNoEOL;
+    Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.payload.data(), data.payload.size()) << ") " << VerbNoEOL;
 
     ++counter;
 }
@@ -2223,7 +2241,7 @@ template <class Iface>
 Iface* CreateSrt(const string& host, int port, std::string path, const map<string,string>& par)
 { return new typename Srt<Iface>::type (host, port, path, par); }
 
-bytevector ConsoleRead(size_t chunk)
+MediaPacket ConsoleRead(size_t chunk)
 {
     bytevector data(chunk);
     bool st = cin.read(data.data(), chunk).good();
@@ -2231,12 +2249,16 @@ bytevector ConsoleRead(size_t chunk)
     if (chunk == 0 && !st)
         return bytevector();
 
+    int64_t stime = 0;
+    if (transmit_use_sourcetime)
+        stime = srt_time_now();
+
     if (chunk < data.size())
         data.resize(chunk);
     if (data.empty())
         throw Source::ReadEOF("CONSOLE device");
 
-    return data;
+    return MediaPacket(data, stime);
 }
 
 class ConsoleSource: public virtual Source
@@ -2247,7 +2269,7 @@ public:
     {
     }
 
-    bytevector Read(size_t chunk) override
+    MediaPacket Read(size_t chunk) override
     {
         return ConsoleRead(chunk);
     }
@@ -2264,9 +2286,9 @@ public:
     {
     }
 
-    void Write(const bytevector& data) override
+    void Write(const MediaPacket& data) override
     {
-        cout.write(data.data(), data.size());
+        cout.write(data.payload.data(), data.payload.size());
     }
 
     bool IsOpen() override { return cout.good(); }
@@ -2491,12 +2513,17 @@ public:
         eof = false;
     }
 
-    bytevector Read(size_t chunk) override
+    MediaPacket Read(size_t chunk) override
     {
         bytevector data(chunk);
         sockaddr_in sa;
         socklen_t si = sizeof(sockaddr_in);
+        int64_t srctime = 0;
         int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        if (transmit_use_sourcetime)
+        {
+            srctime = srt_time_now();
+        }
         if (stat == -1)
             Error(SysError(), "UDP Read/recvfrom");
 
@@ -2510,7 +2537,7 @@ public:
         if (chunk < data.size())
             data.resize(chunk);
 
-        return data;
+        return MediaPacket(data, srctime);
     }
 
     bool IsOpen() override { return m_sock != -1; }
@@ -2534,12 +2561,11 @@ public:
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
         }
-
     }
 
-    void Write(const bytevector& data) override
+    void Write(const MediaPacket& data) override
     {
-        int stat = sendto(m_sock, data.data(), data.size(), 0, (sockaddr*)&sadr, sizeof sadr);
+        int stat = sendto(m_sock, data.payload.data(), data.payload.size(), 0, (sockaddr*)&sadr, sizeof sadr);
         if (stat == -1)
             Error(SysError(), "UDP Write/sendto");
     }

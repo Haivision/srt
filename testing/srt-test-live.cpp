@@ -444,6 +444,7 @@ int main( int argc, char** argv )
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -599,7 +600,8 @@ int main( int argc, char** argv )
     {
         transmit_chunk_size = chunk;
     }
-    
+
+    transmit_use_sourcetime = OptionPresent(params, o_stime);
     size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
     transmit_bw_report = Option<OutNumber>(params, "0", o_report);
     bool crashonx = OptionPresent(params, o_crash);
@@ -803,6 +805,11 @@ int main( int argc, char** argv )
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
+    if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
+    {
+        Verb() << "WARNING: -st option is effective only if the target type is SRT";
+    }
+
     Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
     // After the time has been spent in the creation
@@ -837,9 +844,9 @@ int main( int argc, char** argv )
                 alarm(0);
             }
             Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;

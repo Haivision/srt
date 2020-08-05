@@ -394,7 +394,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             size_t shift = 0;
             while (n > 0)
             {
-                int st = tar->Write(buf.data() + shift, n, out_stats);
+                int st = tar->Write(buf.data() + shift, n, 0, out_stats);
                 Verb() << "Upload: " << n << " --> " << st
                     << (!shift ? string() : "+" + Sprint(shift));
                 if (st == SRT_ERROR)
@@ -574,7 +574,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
         if (connected)
         {
-            vector<char> buf(cfg.chunk_size);
+            MediaPacket packet(cfg.chunk_size);
 
             if (!ofile.is_open())
             {
@@ -591,7 +591,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                 cerr << "Writing output to [" << directory << "]" << endl;
             }
 
-            int n = src->Read(cfg.chunk_size, buf, out_stats);
+            int n = src->Read(cfg.chunk_size, packet, out_stats);
             if (n == SRT_ERROR)
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
@@ -607,7 +607,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
             // Write to file any amount of data received
             Verb() << "Download: --> " << n;
-            ofile.write(buf.data(), n);
+            ofile.write(packet.payload.data(), n);
             if (!ofile.good())
             {
                 cerr << "Error writing file" << endl;
