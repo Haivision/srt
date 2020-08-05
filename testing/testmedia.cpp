@@ -2507,7 +2507,7 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, sadr.get(), sadr.size());
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
