@@ -430,7 +430,7 @@ public:
                 // number will collide with any ISN provided by a socket.
                 // Also since now every socket will derive this ISN.
                 m_iLastSchedSeqNo = generateISN();
-                setInitialRxSequence();
+                resetInitialRxSequence();
             }
             s = true;
         }
@@ -839,7 +839,7 @@ public:
 #endif
     }
 
-    void setInitialRxSequence()
+    void resetInitialRxSequence()
     {
         // The app-reader doesn't care about the real sequence number.
         // The first provided one will be taken as a good deal; even if

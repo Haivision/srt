@@ -11934,7 +11934,19 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
     // [[using locked(m_GroupLock)]];
 
     set_currentSchedSequence(core.ISN());
-    setInitialRxSequence(); // XXX NOT core.m_iPeerISN
+
+    // XXX
+    // Might need further investigation as to whether this isn't
+    // wrong for some cases. By having this -1 here the value will be
+    // laziliy set from the first reading one. It is believed that
+    // it covers all possible scenarios, that is:
+    //
+    // - no readers - no problem!
+    // - have some readers and a new is attached - this is set already
+    // - connect multiple links, but none has read yet - you'll be the first.
+    //
+    // Previous implementation used setting to: core.m_iPeerISN
+    resetInitialRxSequence();
 
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
