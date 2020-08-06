@@ -4010,15 +4010,15 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     if (forced_isn == SRT_SEQNO_NONE)
     {
-        // Random Initial Sequence Number (normal mode)
-        srand(count_microseconds(steady_clock::now().time_since_epoch()));
-        m_iISN = m_ConnReq.m_iISN = (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
+        forced_isn = generateISN();
+        HLOGC(mglog.Debug, log << "startConnect: ISN generated = " << forced_isn);
     }
     else
     {
-        // Predefined ISN (for debug purposes)
-        m_iISN = m_ConnReq.m_iISN = forced_isn;
+        HLOGC(mglog.Debug, log << "startConnect: ISN forced = " << forced_isn);
     }
+
+    m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
     m_SndLastAck2Time = steady_clock::now();
@@ -11430,6 +11430,10 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
 
+    // Set this data immediately during creation before
+    // two or more sockets start arguing about it.
+    m_iLastSchedSeqNo = CUDT::generateISN();
+
     // Configure according to type
     switch (gtype)
     {
@@ -11964,7 +11968,19 @@ void CUDTGroup::syncWithSocket(const CUDT& core)
     // [[using locked(m_GroupLock)]];
 
     set_currentSchedSequence(core.ISN());
-    setInitialRxSequence(core.m_iPeerISN);
+
+    // XXX
+    // Might need further investigation as to whether this isn't
+    // wrong for some cases. By having this -1 here the value will be
+    // laziliy set from the first reading one. It is believed that
+    // it covers all possible scenarios, that is:
+    //
+    // - no readers - no problem!
+    // - have some readers and a new is attached - this is set already
+    // - connect multiple links, but none has read yet - you'll be the first.
+    //
+    // Previous implementation used setting to: core.m_iPeerISN
+    resetInitialRxSequence();
 
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
@@ -14956,4 +14972,10 @@ int CUDTGroup::configure(const char* str)
     }
 
     return 0;
+}
+
+// Forwarder needed due to class definition order
+int32_t CUDTGroup::generateISN()
+{
+    return CUDT::generateISN();
 }

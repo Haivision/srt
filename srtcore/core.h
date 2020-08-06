@@ -426,8 +426,11 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = SRT_SEQNO_NONE;
-                setInitialRxSequence(SRT_SEQNO_NONE);
+                // When the group is empty, there's no danger that this
+                // number will collide with any ISN provided by a socket.
+                // Also since now every socket will derive this ISN.
+                m_iLastSchedSeqNo = generateISN();
+                resetInitialRxSequence();
             }
             s = true;
         }
@@ -457,6 +460,7 @@ public:
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    static int32_t generateISN();
 
 private:
     // For Backup, sending all previous packet
@@ -835,7 +839,7 @@ public:
 #endif
     }
 
-    void setInitialRxSequence(int32_t)
+    void resetInitialRxSequence()
     {
         // The app-reader doesn't care about the real sequence number.
         // The first provided one will be taken as a good deal; even if
@@ -1111,6 +1115,14 @@ public: // internal API
         srt::sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
+    }
+
+    static int32_t generateISN()
+    {
+        using namespace srt::sync;
+        // Random Initial Sequence Number (normal mode)
+        srand(count_microseconds(steady_clock::now().time_since_epoch()));
+        return (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
     }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
