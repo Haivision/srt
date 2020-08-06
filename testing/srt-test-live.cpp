@@ -562,6 +562,24 @@ int main( int argc, char** argv )
             cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
             cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
             cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
             return 1;
         }
 
