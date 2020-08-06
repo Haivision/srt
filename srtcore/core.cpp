@@ -9631,6 +9631,35 @@ int CUDT::processData(CUnit* in_unit)
         // Needed for possibly check for needsQuickACK.
         bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
+        bool need_notify_loss = true;
+        // Switch to RUNNING even if there was a discrepancy, unless
+        // it was long way forward.
+        // XXX Important: This code is in the dead function defaultPacketArrival
+        // but normally it should be called here regardless if the packet was
+        // accepted or rejected because if it was belated it may result in a
+        // "runaway train" problem as the IDLE links are being updated the base
+        // reception sequence pointer stating that this link is not receiving.
+        if (m_parent->m_IncludedGroup)
+        {
+            CUDTGroup::gli_t gi = m_parent->m_IncludedIter;
+            if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
+            {
+                HLOGC(mglog.Debug, log << "processData: IN-GROUP rcv state transition "
+                        << srt_log_grp_state[gi->rcvstate]
+                        << " -> RUNNING. NOT checking for loss");
+                gi->rcvstate = SRT_GST_RUNNING;
+
+                // The function unfortunately can't return here.
+                // We just need to skip loss reporting.
+                need_notify_loss = false;
+            }
+            else
+            {
+                HLOGC(mglog.Debug, log << "processData: IN-GROUP rcv state transition NOT DONE - state:"
+                        << srt_log_grp_state[gi->rcvstate]);
+            }
+        }
+
         // Loop over all incoming packets that were filtered out.
         // In case when there is no filter, there's just one packet in 'incoming',
         // the one that came in the input of this function.
@@ -9795,7 +9824,8 @@ int CUDT::processData(CUnit* in_unit)
 
                 HLOGC(dlog.Debug,
                       log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
-                if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
+
+                if (need_notify_loss && CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
                 {
                     int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                     int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
@@ -14837,10 +14867,35 @@ void CUDTGroup::handleKeepalive(gli_t gli)
 {
     // received keepalive for that group member
     // In backup group it means that the link went IDLE.
-    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == SRT_GST_RUNNING)
+    if (m_type == SRT_GTYPE_BACKUP)
     {
-        gli->rcvstate = SRT_GST_IDLE;
-        HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning IDLE");
+        if (gli->rcvstate == SRT_GST_RUNNING)
+        {
+            gli->rcvstate = SRT_GST_IDLE;
+            HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning rcv=IDLE");
+        }
+
+        // When received KEEPALIVE, the sending state should be also
+        // turned IDLE, if the link isn't temporarily activated. The
+        // temporarily activated link will not be measured stability anyway,
+        // while this should clear out the problem when the transmission is
+        // stopped and restarted after a while. This will simply set the current
+        // link as IDLE on the sender when the peer sends a keepalive because the
+        // data stopped coming in and it can't send ACKs therefore.
+        //
+        // This also shouldn't be done for the temporary activated links because
+        // stability timeout could be exceeded for them by a reason that, for example,
+        // the packets come with the past sequences (as they are being synchronized
+        // the sequence per being IDLE and empty buffer), so a large portion of initial
+        // series of packets may come with past sequence, delaying this way with ACK,
+        // which may result not only with exceeded stability timeout (which fortunately
+        // isn't being measured in this case), but also with receiveing keepalive
+        // (therefore we also don't reset the link to IDLE in the temporary activation period).
+        if (gli->sndstate == SRT_GST_RUNNING && is_zero(gli->ps->core().m_tsTmpActiveTime))
+        {
+            gli->sndstate = SRT_GST_IDLE;
+            HLOGC(mglog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
+        }
     }
 }
 
