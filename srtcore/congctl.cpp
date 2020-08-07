@@ -12,7 +12,7 @@
 // This is a controversial thing, so temporarily blocking
 //#define SRT_ENABLE_SYSTEMBUFFER_TRACE
 
-
+#include "platform_sys.h"
 
 
 #ifdef SRT_ENABLE_SYSTEMBUFFER_TRACE
@@ -34,6 +34,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt::sync;
 using namespace srt_logging;
 
 SrtCongestionControlBase::SrtCongestionControlBase(CUDT* parent)
@@ -168,7 +169,8 @@ private:
         const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
-            << " (pktsize=" << pktsize << ", bw=" << m_llSndMaxBW);
+                << " by avg pktsize=" << m_zSndAvgPayloadSize
+                << ", bw=" << m_llSndMaxBW);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -176,7 +178,6 @@ private:
         m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
         updatePktSndPeriod();
 
-#ifdef SRT_ENABLE_NOCWND
         /*
          * UDT default flow control should not trigger under normal SRT operation
          * UDT stops sending if the number of packets in transit (not acknowledged)
@@ -186,9 +187,6 @@ private:
          */
         // XXX Consider making this a socket option.
         m_dCWndSize = m_dMaxCWndSize;
-#else
-        m_dCWndSize = 1000;
-#endif
     }
 
     void updateBandwidth(int64_t maxbw, int64_t bw) ATR_OVERRIDE
@@ -215,7 +213,7 @@ private:
         return SrtCongestion::SRM_FASTREXMIT;
     }
 
-    uint64_t updateNAKInterval(uint64_t nakint_tk, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
+    int64_t updateNAKInterval(int64_t nakint_us, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
     {
         /*
          * duB:
@@ -233,12 +231,12 @@ private:
 
         // Note: this value will still be reshaped to defined minimum,
         // as per minNAKInterval.
-        return nakint_tk / m_iNakReportAccel;
+        return nakint_us / m_iNakReportAccel;
     }
 
-    uint64_t minNAKInterval() ATR_OVERRIDE
+    int64_t minNAKInterval() ATR_OVERRIDE
     {
-        return m_iMinNakInterval_us * CTimer::getCPUFrequency();
+        return m_iMinNakInterval_us;
     }
 
 };
@@ -250,7 +248,7 @@ class FileCC : public SrtCongestionControlBase
 
     // Fields from CUDTCC
     int m_iRCInterval;          // UDT Rate control interval
-    uint64_t m_LastRCTime;      // last rate increase time
+    steady_clock::time_point m_LastRCTime;      // last rate increase time
     bool m_bSlowStart;          // if in slow start phase
     int32_t m_iLastAck;         // last ACKed seq no
     bool m_bLoss;               // if loss happened since last rate increase
@@ -268,7 +266,7 @@ public:
     FileCC(CUDT* parent)
         : SrtCongestionControlBase(parent)
         , m_iRCInterval(CUDT::COMM_SYN_INTERVAL_US)
-        , m_LastRCTime(CTimer::getTime())
+        , m_LastRCTime(steady_clock::now())
         , m_bSlowStart(true)
         , m_iLastAck(parent->sndSeqNo())
         , m_bLoss(false)
@@ -336,8 +334,8 @@ private:
     {
         const int ack = arg.get<EventVariant::ACK>();
 
-        const uint64_t currtime = CTimer::getTime();
-        if (currtime - m_LastRCTime < (uint64_t)m_iRCInterval)
+        const steady_clock::time_point currtime = steady_clock::now();
+        if (count_microseconds(currtime - m_LastRCTime) < m_iRCInterval)
             return;
 
         m_LastRCTime = currtime;
@@ -636,8 +634,16 @@ bool SrtCongestion::configure(CUDT* parent)
     return !!congctl;
 }
 
+void SrtCongestion::dispose()
+{
+    if (congctl)
+    {
+        delete congctl;
+        congctl = 0;
+    }
+}
+
 SrtCongestion::~SrtCongestion()
 {
-    delete congctl;
-    congctl = 0;
+    dispose();
 }

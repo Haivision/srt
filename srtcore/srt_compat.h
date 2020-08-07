@@ -14,8 +14,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef HAISRT_COMPAT_H__
-#define HAISRT_COMPAT_H__
+#ifndef INC_SRT_COMPAT_H
+#define INC_SRT_COMPAT_H
 
 #include <stddef.h>
 #include <time.h>
@@ -78,6 +78,7 @@ SRT_API const char * SysStrError(int errnum, char * buf, size_t buflen);
 
 
 #include <string>
+#include <cstring>
 inline std::string SysStrError(int errnum)
 {
     char buf[1024];
@@ -93,7 +94,10 @@ inline struct tm SysLocalTime(time_t tt)
 	if (rr == 0)
 		return tms;
 #else
-	tms = *localtime_r(&tt, &tms);
+
+    // Ignore the error, state that if something
+    // happened, you simply have a pre-cleared tms.
+    localtime_r(&tt, &tms);
 #endif
 
     return tms;
@@ -102,4 +106,4 @@ inline struct tm SysLocalTime(time_t tt)
 
 #endif // defined C++
 
-#endif // HAISRT_COMPAT_H__
+#endif // INC_SRT_COMPAT_H

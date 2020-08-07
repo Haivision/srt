@@ -13,12 +13,13 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__THREADNAME_H
-#define INC__THREADNAME_H
+#ifndef INC_SRT_THREADNAME_H
+#define INC_SRT_THREADNAME_H
 
 #ifdef __linux__
 
 #include <sys/prctl.h>
+#include <cstdio>
 
 class ThreadName
 {
@@ -59,16 +60,28 @@ public:
 
 #else
 
-// Fake class, which does nothing. You can also take a look how
-// this works in other systems that are not supported here and add
-// the support. This is a fallback for systems that do not support
-// thread names.
+#include "sync.h"
+
+// Fallback version, which simply reports the thread name as
+// T<numeric-id>, and custom names used with `set` are ignored.
+// If you know how to implement this for other systems than
+// Linux, you can make another conditional. This one is now
+// the "ultimate fallback".
 
 class ThreadName
 {
 public:
+    static const size_t BUFSIZE = 128;
 
-    static bool get(char*) { return false; }
+    static bool get(char* output)
+    {
+        // The default implementation will simply try to get the thread ID
+        std::ostringstream bs;
+        bs << "T" << srt::sync::this_thread::get_id();
+        size_t s = bs.str().copy(output, BUFSIZE-1);
+        output[s] = '\0';
+        return true;
+    }
     static bool set(const char*) { return false; }
 
     ThreadName(const char*)

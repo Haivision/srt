@@ -2,6 +2,7 @@
 SOURCES
 srt-test-file.cpp
 testmedia.cpp
+../apps/apputil.cpp
 ../apps/verbose.cpp
 ../apps/socketoptions.cpp
 ../apps/uriparser.cpp

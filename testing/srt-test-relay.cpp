@@ -44,7 +44,6 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
 volatile bool g_program_interrupted = false;
@@ -104,7 +103,7 @@ struct Medium
     class SrtMainLoop* master = nullptr;
     MediumDir* med = nullptr;
     unique_ptr<MediumDir> pinned_med;
-    list<bytevector> buffer;
+    list<MediaPacket> buffer;
     mutex buffer_lock;
     thread thr;
     condition_variable ready;
@@ -211,20 +210,20 @@ struct SourceMedium: Medium<Source>
     void Runner() override;
 
     // External user: call this to get the buffer.
-    bytevector Extract();
+    MediaPacket Extract();
 };
 
 struct TargetMedium: Medium<Target>
 {
     void Runner() override;
 
-    bool Schedule(const bytevector& data)
+    bool Schedule(const MediaPacket& data)
     {
         lock_guard<mutex> lg(buffer_lock);
         if (!running || ::g_program_interrupted)
             return false;
 
-        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << data.size() << "] CLIENT -> BUFFER";
+        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << data.payload.size() << "] CLIENT -> BUFFER";
         buffer.push_back(data);
         ready.notify_one();
         return true;
@@ -301,13 +300,13 @@ void SourceMedium::Runner()
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
     {
-        bytevector input = med->Read(g_chunksize);
-        if (input.empty() && med->End())
+        auto input = med->Read(g_chunksize);
+        if (input.payload.empty() && med->End())
         {
-            Verb() << VerbLock << "Exitting SourceMedium: " << this;
+            Verb() << VerbLock << "Exiting SourceMedium: " << this;
             return;
         }
-        applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
+        applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.payload.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
 
         lock_guard<mutex> g(buffer_lock);
         buffer.push_back(input);
@@ -315,7 +314,7 @@ void SourceMedium::Runner()
     }
 }
 
-bytevector SourceMedium::Extract()
+MediaPacket SourceMedium::Extract()
 {
     if (!master)
         return {};
@@ -325,10 +324,10 @@ bytevector SourceMedium::Extract()
     {
         if (!buffer.empty())
         {
-            bytevector top;
+            MediaPacket top;
             swap(top, *buffer.begin());
             buffer.pop_front();
-            applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << top.size() << "] BUFFER -> CLIENT";
+            applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << top.payload.size() << "] BUFFER -> CLIENT";
             return top;
         }
         else
@@ -360,19 +359,19 @@ void TargetMedium::Runner()
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)
     {
-        bytevector val;
+        MediaPacket val;
         {
             unique_lock<mutex> lg(buffer_lock);
             if (buffer.empty())
             {
                 if (!running)
                 {
-                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exitting.";
+                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exiting.";
                     return;
                 }
 
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
-                applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER update (timeout:"
+                applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER update (timeout:"
                                 << boolalpha << gotsomething << " running: " << running << ")";
                 if (::g_program_interrupted || !running || !med || med->Broken())
                 {
@@ -390,7 +389,7 @@ void TargetMedium::Runner()
                     continue;
             }
             swap(val, *buffer.begin());
-            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER extraction";
+            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER extraction";
 
             buffer.pop_front();
         }
@@ -398,12 +397,12 @@ void TargetMedium::Runner()
         // Check before writing
         if (med->Broken())
         {
-            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER -> DISCARDED (medium broken)";
+            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER -> DISCARDED (medium broken)";
             running = false;
             return;
         }
 
-        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.size() << "] BUFFER -> MEDIUM";
+        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER -> MEDIUM";
         // You get the data to send, send them.
         med->Write(val);
     }
@@ -412,7 +411,7 @@ void TargetMedium::Runner()
 
 int main( int argc, char** argv )
 {
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_logfa = { "lf", "logfa" },
         o_verbose = {"v", "verbose" },
@@ -624,7 +623,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     Verb() << "Establishing SRT connection: " << srt_uri;
 
     ::g_pending_model = &m;
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     ::g_program_established = true;
     ::g_pending_model = nullptr;
@@ -694,16 +693,16 @@ void SrtMainLoop::InputRunner()
     for (;;)
     {
         applog.Debug() << "SrtMainLoop::InputRunner: extracting...";
-        bytevector data = m_input_medium.Extract();
+        auto data = m_input_medium.Extract();
 
-        if (data.empty())
+        if (data.payload.empty())
         {
             Verb() << "INPUT READING INTERRUPTED.";
             break;
         }
 
         //Verb() << "INPUT [" << data.size() << "]  " << VerbNoEOL;
-        applog.Debug() << "SrtMainLoop::InputRunner: [" << data.size() << "] CLIENT -> SRT-RELAY";
+        applog.Debug() << "SrtMainLoop::InputRunner: [" << data.payload.size() << "] CLIENT -> SRT-RELAY";
         m_srt_relay->Write(data);
     }
 }
@@ -744,9 +743,9 @@ void SrtMainLoop::run()
     for (;;)
     {
         applog.Debug() << "SrtMainLoop::run: SRT-RELAY: extracting...";
-        bytevector data = m_srt_source.Extract();
+        auto data = m_srt_source.Extract();
 
-        if (data.empty())
+        if (data.payload.empty())
         {
             Verb() << "SRT READING INTERRUPTED.";
             break;
@@ -760,7 +759,7 @@ void SrtMainLoop::run()
         {
             ++i_next;
             auto& o = *i;
-            applog.Debug() << "SrtMainLoop::run: [" << data.size() << "] SRT-RELAY: resending to output #" << no << "...";
+            applog.Debug() << "SrtMainLoop::run: [" << data.payload.size() << "] SRT-RELAY: resending to output #" << no << "...";
             if (!o->Schedule(data))
             {
                 if (Verbose::on)
@@ -782,7 +781,7 @@ void SrtMainLoop::run()
             any = true;
             ++no;
         }
-        applog.Debug() << "SrtMainLoop::run: [" << data.size() << "] SRT-RELAY -> OUTPUTS: " << Printable(output_report);
+        applog.Debug() << "SrtMainLoop::run: [" << data.payload.size() << "] SRT-RELAY -> OUTPUTS: " << Printable(output_report);
 
         if (Verbose::on)
         {
@@ -792,7 +791,7 @@ void SrtMainLoop::run()
             if (!any)
                 outputs = " --> * (no output)";
 
-            Verb() << VerbLock << "SRT [" << data.size() << "]  " << outputs;
+            Verb() << VerbLock << "SRT [" << data.payload.size() << "]  " << outputs;
         }
     }
 
