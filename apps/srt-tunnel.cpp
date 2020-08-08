@@ -732,7 +732,7 @@ void TcpMedium::Connect()
 {
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = ::connect(m_socket, sa.get(), sizeof sa);
+    int st = ::connect(m_socket, sa.get(), sa.size());
     if (st == -1)
         Error(errno, "connect");
 
