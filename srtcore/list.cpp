@@ -109,7 +109,7 @@ void CSndLossList::traceState() const
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (m_iLength == 0)
     {
@@ -184,7 +184,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::removeUpTo(int32_t seqno)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (0 == m_iLength)
         return;
@@ -296,14 +296,14 @@ void CSndLossList::removeUpTo(int32_t seqno)
 
 int CSndLossList::getLossLength() const
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     return m_iLength;
 }
 
 int32_t CSndLossList::popLostSeq()
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (0 == m_iLength)
     {

@@ -338,12 +338,6 @@ private:
 };
 #endif // ENABLE_STDCXX_SYNC
 
-/// The purpose of this typedef is to reduce the number of changes in the code (renamings)
-/// and produce less merge conflicts with some other parallel work done.
-/// TODO: Replace CGuard with ScopedLock. Use UniqueLock only when required.
-typedef UniqueLock CGuard;
-
-
 inline void enterCS(Mutex& m) { m.lock(); }
 inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
 inline void leaveCS(Mutex& m) { m.unlock(); }
@@ -460,14 +454,14 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 class CSync
 {
     Condition* m_cond;
-    CGuard* m_locker;
+    UniqueLock* m_locker;
 
 public:
-    // Locked version: must be declared only after the declaration of CGuard,
+    // Locked version: must be declared only after the declaration of UniqueLock,
     // which has locked the mutex. On this delegate you should call only
-    // signal_locked() and pass the CGuard variable that should remain locked.
+    // signal_locked() and pass the UniqueLock variable that should remain locked.
     // Also wait() and wait_for() can be used only with this socket.
-    CSync(Condition& cond, CGuard& g)
+    CSync(Condition& cond, UniqueLock& g)
         : m_cond(&cond), m_locker(&g)
     {
         // XXX it would be nice to check whether the owner is also current thread
@@ -514,17 +508,17 @@ public:
     // Static ad-hoc version
     static void lock_signal(Condition& cond, Mutex& m)
     {
-        CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
+        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_one();
     }
 
     static void lock_broadcast(Condition& cond, Mutex& m)
     {
-        CGuard lk(m); // XXX with thread logging, don't use CGuard directly!
+        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_all();
     }
 
-    void signal_locked(CGuard& lk ATR_UNUSED)
+    void signal_locked(UniqueLock& lk ATR_UNUSED)
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();
@@ -534,7 +528,7 @@ public:
     // when you don't care whether the associated mutex is locked or not (you
     // accept the case that a mutex isn't locked and the signal gets effectively
     // missed), or you somehow know that the mutex is locked, but you don't have
-    // access to the associated CGuard object. This function, although it does
+    // access to the associated UniqueLock object. This function, although it does
     // the same thing as signal_locked() and broadcast_locked(), is here for
     // the user to declare explicitly that the signal/broadcast is done without
     // being prematurely certain that the associated mutex is locked.

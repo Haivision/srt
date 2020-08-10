@@ -627,12 +627,13 @@ void TcpMedium::CreateListener()
 {
     int backlog = 5; // hardcoded!
 
-    m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre();
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = ::bind(m_socket, sa.get(), sizeof sa);
+    m_socket = socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    ConfigurePre();
+
+    int stat = ::bind(m_socket, sa.get(), sa.size());
 
     if (stat == -1)
     {
@@ -731,7 +732,7 @@ void TcpMedium::Connect()
 {
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = ::connect(m_socket, sa.get(), sizeof sa);
+    int st = ::connect(m_socket, sa.get(), sa.size());
     if (st == -1)
         Error(errno, "connect");
 

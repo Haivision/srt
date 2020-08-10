@@ -55,6 +55,7 @@
   * [srt_getrejectreason](#srt_getrejectreason)
   * [srt_rejectreason_str](#srt_rejectreason_str)
   * [srt_setrejectreason](#srt_setrejectreason)
+  * [Error Codes](#error-codes)
 - [**Performance tracking**](#Performance-tracking)
   * [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
 - [**Asynchronous operations (epoll)**](#Asynchronous-operations-epoll)
@@ -74,6 +75,7 @@
 - [**Time Access**](#time-access)
   * [srt_time_now](#srt_time_now)
   * [srt_connection_time](#srt_connection_time)
+
 
 ## Library initialization
 
@@ -348,17 +350,17 @@ group, although it's usually for internal use only.
 - Errors:
 
   * `SRT_EINVPARAM`: NULL specified as `addrlen`, when `addr` is not NULL
-  * `SRT_EINVSOCK`: `lsn` designates no valid socket ID. Can also mean Internal
-Error when an error occurred while creating an accepted socket (**BUG?**)
-  * `SRT_ENOLISTEN`: `lsn` is not set up as a listener (`srt_listen` not called,
-or the listener socket has already been closed)
-  * `SRT_ERDVNOSERV`: Internal error (if no `SRT_ENOLISTEN` reported, it means
-that the socket could not be set up as rendezvous because `srt_listen` does
-not allow it)
+  * `SRT_EINVSOCK`: `lsn` designates no valid socket ID. 
+  * `SRT_ENOLISTEN`: `lsn` is not set up as a listener (`srt_listen` not called)
   * `SRT_EASYNCRCV`: No connection reported so far. This error is reported only
 when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
+  * `SRT_ESCLOSED`: The `lsn` socket has been closed while the function was
+blocking the call (if `SRTO_RCVSYN` is set to default true). This includes a
+situation when the socket was closed just at the moment when a connection was
+made and the socket got closed during processing
+
 
 ### srt_accept_bond
 
@@ -536,6 +538,8 @@ left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
   * `SRT_ECONNREJ`: Connection has been rejected
   * `SRT_ENOSERVER`: Connection has been timed out (see `SRTO_CONNTIMEO`)
+  * `SRT_ESCLOSED`: The socket `u` has been closed while the function was
+blocking the call (if `SRTO_RCVSYN` is set to default true)
 
 When `SRT_ECONNREJ` error is reported, you can get the reason for
 a rejected connection from `srt_getrejectreason`. In non-blocking
@@ -1613,6 +1617,287 @@ is not availble - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
 
   * `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid socket
   * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_PREDEFINED`
+
+### Error codes
+
+All functions that return the status via `int` value return -1 (designated as 
+`SRT_ERROR`) always when the call has failed (in case of resource creation
+functions an appropriate symbol is defined, like `SRT_INVALID_SOCK` for
+`SRTSOCKET`). When this happens, the error code can be obtained from the
+`srt_getlasterror` function. The values for the error are collected in an
+`SRT_ERRNO` enum:
+
+#### `SRT_EUNKNOWN`
+
+Internal error when setting the right error code.
+
+#### `SRT_SUCCESS`
+
+The value set when the last error was cleared and no error has occurred since then.
+
+#### `SRT_ECONNSETUP`
+
+General setup error resulting from internal system state.
+
+#### `SRT_ENOSERVER`
+
+Connection timed out while attempting to connect to the remote address. Note
+that when this happens, `srt_getrejectreason` also reports the timeout reason.
+
+#### `SRT_ECONNREJ`
+
+Connection has been rejected. Additional reject reason can be obtained through
+`srt_getrejectreason` (see above).
+
+#### `SRT_ESOCKFAIL`
+
+An error occurred when trying to call a system function on an internally used
+UDP socket. Note that the detailed system error is available in the extra variable
+passed by pointer to `srt_getlasterror`.
+
+#### `SRT_ESECFAIL`
+
+A possible tampering with the handshake packets was detected, or encryption
+request wasn't properly fulfilled.
+
+#### `SRT_ESCLOSED`
+
+A socket that was vital for an operation called in blocking mode
+has been closed during the operation. Please note that this situation is
+handled differently than the system calls for `connect` and `accept`
+functions for TCP, which simply block indefinitely (or until the standard
+timeout) when the key socket was closed during an operation. When this 
+error is reported, it usually means that the socket passed as the first 
+parameter to `srt_connect*` or `srt_accept` is no longer usable.
+
+
+#### `SRT_ECONNFAIL`
+
+General connection failure of unknown details.
+
+#### `SRT_ECONNLOST`
+
+The socket was properly connected, but the connection has been broken.
+This specialzation is reported from the transmission functions.
+
+#### `SRT_ENOCONN`
+
+The socket is not connected. This can be reported also when the
+connection was broken for a function that checks some characteristic
+socket data.
+
+#### `SRT_ERESOURCE`
+
+System or standard library error reported unexpectedly for unknown purpose.
+Usually it means some internal error.
+
+#### `SRT_ETHREAD`
+
+System was unable to spawn a new thread when requried.
+
+#### `SRT_ENOBUF`
+
+System was unable to allocate memory for buffers.
+
+#### `SRT_ESYSOBJ`
+
+System was unable to allocate system specific objects (such as
+sockets, mutexes or condition variables).
+
+#### `SRT_EFILE`
+
+General filesystem error (for functions operating with file transmission).
+
+#### `SRT_EINVRDOFF`
+
+Failure when trying to read from a given position in the file (file could
+be modified while it was read from).
+
+#### `SRT_ERDPERM`
+
+Read permission was denied when trying to read from file.
+
+#### `SRT_EINVWROFF`
+
+Failed to set position in the written file.
+
+#### `SRT_EWRPERM`
+
+Write permission was denied when trying to write to a file.
+
+#### `SRT_EINVOP`
+
+Invalid operation performed for the current state of a socket. This mainly
+concerns performing `srt_bind*` operations on a socket that
+is already bound.  Once a socket has been been bound, it cannot be bound
+again.
+
+#### `SRT_EBOUNDSOCK`
+
+The socket is currently bound and the required operation cannot be
+performed in this state. Usually it's about an option that can only
+be set on the socket before binding (`srt_bind*`). Note that a socket
+that is currently connected is also considered bound.
+
+#### `SRT_ECONNSOCK`
+
+The socket is currently connected and therefore performing the required
+operation is not possible. Usually concerns setting an option that must
+be set before connecting (although it is allowed to be altered after
+binding), or when trying to start a connecting operation (`srt_connect*`)
+while the socket isn't in a state that allows it (only `SRTS_INIT` or
+`SRTS_OPENED` are allowed).
+
+#### `SRT_EINVPARAM`
+
+This error is reported in a variety of situations when call parameters
+for API functions have some requirements defined and these were not
+satisfied. This error should be reported after an initial check of the
+parameters of the call before even performing any operation. This error
+can be easily avoided if you set the values correctly.
+
+#### `SRT_EINVSOCK`
+
+The API function required an ID of an entity (socket or group) and
+it was invalid. Note that some API functions work only with socket or
+only with group, so they would also return this error if inappropriate
+type of entity was passed, even if it was valid.
+
+#### `SRT_EUNBOUNDSOCK`
+
+The operation to be performed on a socket requires that it first be
+explicitly bound (using `srt_bind*` functions). Currently it applies when
+calling `srt_listen`, which cannot work with an implicitly bound socket.
+
+#### `SRT_ENOLISTEN`
+
+The socket passed for the operation is required to be in the listen
+state (`srt_listen` must be called first).
+
+#### `SRT_ERDVNOSERV`
+
+The required operation cannot be performed when the socket is set to
+rendezvous mode (`SRTO_RENDEZVOUS` set to true). Usually applies when
+trying to call `srt_listen` on such a socket.
+
+#### `SRT_ERDVUNBOUND`
+
+An attempt was made to connect to a socket set to rendezvous mode 
+(`SRTO_RENDEZVOUS` set to true) that was not first bound. A
+rendezvous connection requires setting up two addresses and ports
+on both sides of the connection, then setting the local one with `srt_bind`
+and using the remote one with `srt_connect` (or you can simply
+use `srt_rendezvous`). Calling `srt_connect*` on an unbound socket
+(in `SRTS_INIT` state) that is to be bound implicitly is only allowed
+for regular caller sockets (not rendezvous).
+
+#### `SRT_EINVALMSGAPI`
+
+The function was used incorrectly in the message API. This can happen if:
+
+* The parameters specific for the message API in `SRT_MSGCTRL` type parameter
+were incorrectly specified
+
+* The extra parameter check performed by the congestion controller has
+failed
+
+* The socket is a member of a self-managing group, therefore you should
+perform the operation on the group, not on this socket
+
+
+#### `SRT_EINVALBUFFERAPI`
+
+The function was used incorrectly in the stream (buffer) API, that is,
+either the stream-only functions were used with set message API
+(`srt_sendfile`/`srt_recvfile`) or TSBPD mode was used with buffer API
+(`SRTO_TSBPDMODE` set to true) or the congestion controller has failed
+to check call parameters.
+
+#### `SRT_EDUPLISTEN`
+
+The port tried to be bound for listening is already busy. Note that binding
+to the same port is allowed in general (when `SRTO_REUSEADDR` is true on
+every socket that bound it), but only one such socket can be a listener.
+
+#### `SRT_ELARGEMSG`
+
+Size exceeded. This is reported in the following situations:
+
+* Trying to receive a message, but the read-ready message is larger than
+the buffer passed to the receiving function
+
+* Trying to send a message, but the size of this message exceeds the
+size of the preset sender buffer, so it cannot be stored in the sender buffer.
+
+* With getting group data, the array to be filled is too small.
+
+
+#### `SRT_EINVPOLLID`
+
+The epoll ID passed to an epoll function is invalid
+
+#### `SRT_EPOLLEMPTY`
+
+The epoll container currently has no subscribed sockets. This is reported by an
+epoll waiting function that would in this case block forever. This problem
+might be reported both in a situation where you have created a new epoll
+container and didn't subscribe any sockets to it, or you did, but these
+sockets have been closed (including when closed in a separate thread while the
+waiting function was blocking). Note that this situation can be prevented
+by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
+you use multiple threads and start waiting without subscribed sockets, so that
+you can subscribe them later from another thread.
+
+#### `SRT_EASYNCFAIL`
+
+General asynchronous failure (not in use currently).
+
+
+#### `SRT_EASYNCSND`
+
+Sending operation is not ready to perform. This error is reported
+when trying to perform a sending operation on a socket that is not
+ready for sending, but `SRTO_SNDSYN` was set to false (when true,
+the function would block the call otherwise).
+
+#### `SRT_EASYNCRCV`
+
+Receiving operation is not ready to perform. This error is reported
+when trying to perform a receiving operation or accept a new socket from the
+listener socket, when the socket is not ready for that operation, but
+`SRTO_RCVSYN` was set to false (when true, the function would block
+the call otherwise).
+
+#### `SRT_ETIMEOUT`
+
+The operation timed out. This can happen if you have a timeout
+set by an option (`SRTO_RCVTIMEO` or `SRTO_SNDTIMEO`), or passed
+as an extra argument (`srt_epoll_wait` or `srt_accept_bond`) and
+the function call was blocking, but the required timeout time has passed.
+
+#### `SRT_ECONGEST`
+
+NOTE: This error is used only in an experimental version that requires
+setting the `SRT_ENABLE_ECN` macro at compile time. Otherwise the
+situation described below results in the usual successful report.
+
+This error should be reported by the sending function when, with
+`SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` set to true, some packets were dropped at
+the sender side (see the description of `SRTO_TLPKTDROP` for details). This
+doesn't concern the data that were passed for sending by the sending function
+(these data are placed at the back of the sender buffer, while the dropped
+packets are at the front). In other words, the operation done by the sending
+function is successful, but the application might want to slow down the sending
+rate to avoid congestion.
+
+#### `SRT_EPEERERR`
+
+This error is reported in a situation when the receiver peer is
+writing to a file that the agent is sending. When the peer encounters
+an error when writing the received data to a file, it sends the
+`UMSG_PEERERROR` message back to the sender, and the sender reports
+this error from the API sending function.
+
 
 
 ## Performance tracking
