@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2019 Haivision Systems Inc.
  *
@@ -7,8 +7,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
-
-#if !defined(ENABLE_STDCXX_SYNC)
 
 #include <iomanip>
 #include <math.h>
@@ -488,4 +486,3 @@ CUDTException& GetThreadLocalError()
 } // namespace sync
 } // namespace srt
 
-#endif // !defined(ENABLE_STDCXX_SYNC)

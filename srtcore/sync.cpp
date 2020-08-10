@@ -13,9 +13,9 @@
 #include <cmath>
 #include "sync.h"
 #include "srt.h"
-#include "common.h"
 #include "srt_compat.h"
 #include "logging.h"
+#include "common.h"
 
 namespace srt_logging
 {
@@ -30,8 +30,6 @@ namespace sync
 
 std::string FormatTime(const steady_clock::time_point& timestamp)
 {
-#ifndef ENABLE_STDCXX_SYNC
-#endif
     if (is_zero(timestamp))
     {
         // Use special string for 0
@@ -102,8 +100,6 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
 
 } // namespace sync
 } // namespace srt
-
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //

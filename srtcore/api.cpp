@@ -2598,7 +2598,7 @@ void CUDTUnited::updateMux(
        sockaddr_any sa;
        m.m_pChannel->getSockAddr((sa));
        m.m_iPort = sa.hport();
-   s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
+       s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
 
        m.m_pTimer = new CTimer;
 
