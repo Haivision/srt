@@ -236,7 +236,7 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
 #if !defined(ENABLE_STDCXX_SYNC)
 srt::sync::Mutex::Mutex()
 {
-    int err = pthread_mutex_init(&m_mutex, 0);
+    const int err = pthread_mutex_init(&m_mutex, 0);
     if (err)
     {
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
