@@ -73,7 +73,7 @@ script:
     - echo "RUN_SONARCUBE=$RUN_SONARCUBE"
     - if (( "$RUN_SONARCUBE" )); then
         build-wrapper-linux-x86-64 --out-dir bw-output make;
-      else if [ -f build.ninja ]; then
+      elif [ -f build.ninja ]; then
         ninja -v;
       else
         make;
