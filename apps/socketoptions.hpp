@@ -229,6 +229,7 @@ const SocketOption srt_options [] {
     { "snddropdelay", 0, SRTO_SNDDROPDELAY, SocketOption::POST, SocketOption::INT, nullptr},
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "drifttracer", 0, SRTO_DRIFTTRACER, SocketOption::POST, SocketOption::BOOL, nullptr},
     { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::PRE, SocketOption::INT, nullptr},
     { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
@@ -245,7 +246,7 @@ const SocketOption srt_options [] {
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
     { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "rexmitalgo", 0, SRTO_RETRANSMISSION_ALGORITHM, SocketOption::PRE, SocketOption::INT, nullptr }
+    { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
 };
 }
 

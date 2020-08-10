@@ -444,7 +444,7 @@ int main( int argc, char** argv )
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
-        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "stime", "sourcetime"),
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 

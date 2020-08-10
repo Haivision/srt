@@ -96,7 +96,7 @@ CEPoll::~CEPoll()
 
 int CEPoll::create(CEPollDesc** pout)
 {
-   CGuard pg(m_EPollLock);
+   ScopedLock pg(m_EPollLock);
 
    if (++ m_iIDSeed >= 0x7FFFFFFF)
       m_iIDSeed = 0;
@@ -137,7 +137,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
 int CEPoll::clear_usocks(int eid)
 {
     // This should remove all SRT sockets from given eid.
-   CGuard pg (m_EPollLock);
+   ScopedLock pg (m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -159,7 +159,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         LOGC(dlog.Error, log << "CEPoll::clear_ready_usocks: IPE, event flags exceed event types: " << direction);
         return;
     }
-    CGuard pg (m_EPollLock);
+    ScopedLock pg (m_EPollLock);
 
     vector<SRTSOCKET> cleared;
 
@@ -190,7 +190,7 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 
 int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   ScopedLock pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -262,7 +262,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
-   CGuard pg(m_EPollLock);
+   ScopedLock pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -293,7 +293,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 // Need this to atomically modify polled events (ex: remove write/keep read)
 int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
-    CGuard pg(m_EPollLock);
+    ScopedLock pg(m_EPollLock);
     IF_HEAVY_LOGGING(ostringstream evd);
 
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
@@ -365,7 +365,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 
 int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
-   CGuard pg(m_EPollLock);
+   ScopedLock pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
    if (p == m_mPolls.end())
@@ -436,7 +436,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 
 int CEPoll::setflags(const int eid, int32_t flags)
 {
-    CGuard pg(m_EPollLock);
+    ScopedLock pg(m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
     if (p == m_mPolls.end())
         throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -472,7 +472,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
     while (true)
     {
         {
-            CGuard pg(m_EPollLock);
+            ScopedLock pg(m_EPollLock);
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
@@ -542,7 +542,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     while (true)
     {
         {
-            CGuard epollock(m_EPollLock);
+            ScopedLock epollock(m_EPollLock);
 
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
@@ -722,7 +722,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
-        CGuard lg (m_EPollLock);
+        ScopedLock lg (m_EPollLock);
         if (!d.flags(SRT_EPOLL_ENABLE_EMPTY) && d.watch_empty() && msTimeOut < 0)
         {
             // no socket is being monitored, this may be a deadlock
@@ -746,7 +746,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
             // Here we only prevent the pollset be updated simultaneously
             // with unstable reading. 
-            CGuard lg (m_EPollLock);
+            ScopedLock lg (m_EPollLock);
 
             if (!d.flags(SRT_EPOLL_ENABLE_EMPTY) && d.watch_empty())
             {
@@ -783,7 +783,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
                 // Logging into 'singles' because it notifies as to whether
                 // the edge-triggered event has been cleared
-                HLOGC(dlog.Debug, log << "EID " << d.m_iID << " rdy=" << total << ": "
+                HLOGC(dlog.Debug, log << "E" << d.m_iID << " rdy=" << total << ": "
                         << singles.str()
                         << " TRACKED: " << d.DisplayEpollWatch());
                 return total;
@@ -808,7 +808,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
 int CEPoll::release(const int eid)
 {
-   CGuard pg(m_EPollLock);
+   ScopedLock pg(m_EPollLock);
 
    map<int, CEPollDesc>::iterator i = m_mPolls.find(eid);
    if (i == m_mPolls.end())
@@ -842,13 +842,13 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
     IF_HEAVY_LOGGING(debug << "epoll/update: @" << uid << " " << (enable ? "+" : "-"));
     IF_HEAVY_LOGGING(PrintEpollEvent(debug, events));
 
-    CGuard pg (m_EPollLock);
+    ScopedLock pg (m_EPollLock);
     for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
     {
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(dlog.Note, log << "epoll/update: EID " << *i << " was deleted in the meantime");
+            HLOGC(dlog.Note, log << "epoll/update: E" << *i << " was deleted in the meantime");
             // EID invalid, though still present in the socket's subscriber list
             // (dangling in the socket). Postpone to fix the subscruption and continue.
             lost.push_back(*i);
@@ -862,7 +862,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         if (!pwait)
         {
             // As this is mapped in the socket's data, it should be impossible.
-            LOGC(dlog.Error, log << "epoll/update: IPE: update struck EID "
+            LOGC(dlog.Error, log << "epoll/update: IPE: update struck E"
                     << (*i) << " which is NOT SUBSCRIBED to @" << uid);
             continue;
         }
@@ -878,7 +878,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         int changes = pwait->state ^ newstate; // oldState XOR newState
         if (!changes)
         {
-            HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+            HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                     << tracking << " NOT updated: no changes");
             continue; // no changes!
         }
@@ -888,7 +888,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         changes &= pwait->watch;
         if (!changes)
         {
-            HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+            HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                     << tracking << " NOT updated: not subscribed");
             continue; // no change watching
         }
@@ -900,7 +900,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         // - if !enable, it will clear event flags, possibly remove notice if resulted in 0
         ed.updateEventNotice(*pwait, uid, events, enable);
 
-        HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+        HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                 << " TRACKING: " << ed.DisplayEpollWatch());
     }
 

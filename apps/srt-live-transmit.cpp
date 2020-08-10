@@ -136,6 +136,8 @@ struct LiveTransmitConfig
     bool log_internal;
     string logfile;
     int bw_report = 0;
+    bool srctime = false;
+    size_t buffering = 10;
     int stats_report = 0;
     string stats_out;
     SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
@@ -171,6 +173,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_autorecon     = { "a", "auto", "autoreconnect" },
         o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
+        o_srctime       = {"st", "srctime", "sourcetime"},
+        o_buffering     = {"buffering"},
         o_statsrep      = { "s", "stats", "stats-report-frequency" },
         o_statsout      = { "statsout" },
         o_statspf       = { "pf", "statspf" },
@@ -190,6 +194,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_autorecon,    OptionScheme::ARG_ONE },
         { o_chunk,        OptionScheme::ARG_ONE },
         { o_bwreport,     OptionScheme::ARG_ONE },
+        { o_srctime,      OptionScheme::ARG_ONE },
+        { o_buffering,    OptionScheme::ARG_ONE },
         { o_statsrep,     OptionScheme::ARG_ONE },
         { o_statsout,     OptionScheme::ARG_ONE },
         { o_statspf,      OptionScheme::ARG_ONE },
@@ -236,15 +242,17 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_timeout,   "<timeout=0>", "exit timer in seconds");
         PrintOptionHelp(o_timeout_mode, "<mode=0>", "timeout mode (0 - since app start; 1 - like 0, but cancel on connect");
 #endif
-        PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode [yes|no]");
+        PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode {yes, no}");
         PrintOptionHelp(o_chunk,     "<chunk=1456>", "max size of data read in one step, that can fit one SRT packet");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
+        PrintOptionHelp(o_srctime,   "<enabled=yes>", "Pass packet time from source to SRT output {yes, no}");
+        PrintOptionHelp(o_buffering, "<packets=n>", "Buffer up to n incoming packets");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
-        PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format [json|csv|default]");
+        PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
-        PrintOptionHelp(o_loglevel,  "<level=error>", "log level [fatal,error,info,note,warning]");
-        PrintOptionHelp(o_logfa,     "<fas=general,...>", "log functional area [all,general,bstats,control,data,tsbpd,rexmit]");
+        PrintOptionHelp(o_loglevel,  "<level=error>", "log level {fatal,error,info,note,warning}");
+        PrintOptionHelp(o_logfa,     "<fas=general,...>", "log functional area {all,general,bstats,control,data,tsbpd,rexmit}");
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
@@ -273,6 +281,17 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.timeout      = Option<OutNumber>(params, o_timeout);
     cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
     cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
+    cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
+    const int buffering = Option<OutNumber>(params, "10", o_buffering);
+    if (buffering <= 0)
+    {
+        cerr << "ERROR: Buffering value should be positive. Value provided: " << buffering << "." << endl;
+        return 1;
+    }
+    else
+    {
+        cfg.buffering = (size_t) buffering;
+    }
     cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
     cfg.stats_report = Option<OutNumber>(params, o_statsrep);
     cfg.stats_out    = Option<OutString>(params, o_statsout);
@@ -708,15 +727,13 @@ int main(int argc, char** argv)
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
-                std::list<std::shared_ptr<bytevector>> dataqueue;
+                std::list<std::shared_ptr<MediaPacket>> dataqueue;
                 if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
-                    while (dataqueue.size() < 10)
+                    while (dataqueue.size() < cfg.buffering)
                     {
-                        std::shared_ptr<bytevector> pdata(
-                            new bytevector(transmit_chunk_size));
-
-                        const int res = src->Read(transmit_chunk_size, *pdata, out_stats);
+                        std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
+                        const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
@@ -728,28 +745,32 @@ int main(int argc, char** argv)
                             );
                         }
 
-                        if (res == 0 || pdata->empty())
+                        if (res == 0 || pkt->payload.empty())
                         {
                             break;
                         }
 
-                        dataqueue.push_back(pdata);
-                        receivedBytes += (*pdata).size();
+                        dataqueue.push_back(pkt);
+                        receivedBytes += pkt->payload.size();
                     }
                 }
 
-                // if no target, let received data fall to the floor
+                // if there is no target, let the received data be lost
                 while (!dataqueue.empty())
                 {
-                    std::shared_ptr<bytevector> pdata = dataqueue.front();
-                    if (!tar.get() || !tar->IsOpen()) {
-                        lostBytes += (*pdata).size();
+                    std::shared_ptr<MediaPacket> pkt = dataqueue.front();
+                    if (!tar.get() || !tar->IsOpen())
+                    {
+                        lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pdata->data(), pdata->size(), out_stats)) {
-                        lostBytes += (*pdata).size();
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    {
+                        lostBytes += pkt->payload.size();
                     }
                     else
-                        wroteBytes += (*pdata).size();
+                    {
+                        wroteBytes += pkt->payload.size();
+                    }
 
                     dataqueue.pop_front();
                 }

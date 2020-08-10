@@ -28,6 +28,20 @@ extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
 
+struct MediaPacket
+{
+    bytevector payload;
+    int64_t time = 0;
+
+    MediaPacket(bytevector&& src) : payload(std::move(src)) {}
+    MediaPacket(bytevector&& src, int64_t stime) : payload(std::move(src)), time(stime) {}
+
+    MediaPacket(size_t payload_size) : payload(payload_size), time(0) {}
+    MediaPacket(const bytevector& src) : payload(src) {}
+    MediaPacket(const bytevector& src, int64_t stime) : payload(src), time(stime) {}
+    MediaPacket() {}
+};
+
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
 class Location
@@ -40,7 +54,7 @@ public:
 class Source: public Location
 {
 public:
-    virtual int  Read(size_t chunk, bytevector& data, std::ostream &out_stats = std::cout) = 0;
+    virtual int  Read(size_t chunk, MediaPacket& pkt, std::ostream &out_stats = std::cout) = 0;
     virtual bool IsOpen() = 0;
     virtual bool End() = 0;
     static std::unique_ptr<Source> Create(const std::string& url);
@@ -63,7 +77,7 @@ public:
 class Target: public Location
 {
 public:
-    virtual int  Write(const char* data, size_t size, std::ostream &out_stats = std::cout) = 0;
+    virtual int  Write(const char* data, size_t size, int64_t src_time, std::ostream &out_stats = std::cout) = 0;
     virtual bool IsOpen() = 0;
     virtual bool Broken() = 0;
     virtual void Close() {}
