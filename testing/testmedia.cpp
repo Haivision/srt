@@ -2507,7 +2507,7 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, sadr.get(), sadr.size());
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
@@ -2516,16 +2516,17 @@ public:
     MediaPacket Read(size_t chunk) override
     {
         bytevector data(chunk);
-        sockaddr_in sa;
-        socklen_t si = sizeof(sockaddr_in);
+        sockaddr_any sa(sadr.family());
+        socklen_t si = sa.size();
         int64_t srctime = 0;
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &si);
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
             Error(SysError(), "UDP Read/recvfrom");
+        sa.len = si;
 
         if (stat < 1)
         {
