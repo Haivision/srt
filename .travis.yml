@@ -9,6 +9,7 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
+        - ninja-build
     sonarcloud:
         organization: "haivision"
         token:
@@ -59,7 +60,7 @@ script:
         export CXX="x86_64-w64-mingw32-g++";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON" -DUSE_OPENSSL_PC="OFF" -DOPENSSL_ROOT_DIR="$PWD/openssl" -DCMAKE_SYSTEM_NAME="Windows";
       elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
-        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
+        cmake . -G Ninja -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
@@ -72,6 +73,8 @@ script:
     - echo "RUN_SONARCUBE=$RUN_SONARCUBE"
     - if (( "$RUN_SONARCUBE" )); then
         build-wrapper-linux-x86-64 --out-dir bw-output make;
+      elif [ -f build.ninja ]; then
+        ninja -v;
       else
         make;
       fi
