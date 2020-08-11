@@ -103,6 +103,7 @@ written by
 #include <algorithm>
 #include <bitset>
 #include <map>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <iomanip>
@@ -676,7 +677,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 }
 
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
-void FilterIf(InputIterator bg, InputIterator nd,
+inline void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
 {
     for (InputIterator i = bg; i != nd; ++i)
@@ -686,6 +687,16 @@ void FilterIf(InputIterator bg, InputIterator nd,
             continue;
         *out++ = result.first;
     }
+}
+
+template <class Value, class ArgValue>
+inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
+{
+    typename std::vector<Value>::iterator i = std::find(v.begin(), v.end(), val);
+    if (i != v.end())
+        return;
+
+    v.push_back(val);
 }
 
 template <class Signature>

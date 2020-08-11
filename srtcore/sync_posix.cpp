@@ -12,6 +12,7 @@
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
+#include "utilities.h"
 #include "udt.h"
 #include "srt.h"
 #include "srt_compat.h"
@@ -183,7 +184,7 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 
 srt::sync::Mutex::Mutex()
 {
-    int err = pthread_mutex_init(&m_mutex, 0);
+    const int err = pthread_mutex_init(&m_mutex, 0);
     if (err)
     {
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
