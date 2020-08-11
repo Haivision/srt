@@ -183,7 +183,11 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 
 srt::sync::Mutex::Mutex()
 {
-    pthread_mutex_init(&m_mutex, NULL);
+    const int err = pthread_mutex_init(&m_mutex, 0);
+    if (err)
+    {
+        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
 }
 
 srt::sync::Mutex::~Mutex()
