@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2019 Haivision Systems Inc.
  *
@@ -23,8 +23,12 @@ namespace srt_logging
 }
 using namespace srt_logging;
 
+namespace srt
+{
+namespace sync
+{
 
-std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
+std::string FormatTime(const steady_clock::time_point& timestamp)
 {
     if (is_zero(timestamp))
     {
@@ -52,7 +56,7 @@ std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
-std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
+std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
@@ -69,6 +73,33 @@ std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+
+#ifdef ENABLE_STDCXX_SYNC
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
+#else
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+#endif
+{
+    ThreadName tn(name);
+    try
+    {
+#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
+        th = CThread(f, args);
+#else
+        // No move semantics in C++03, therefore using a dedicated function
+        th.create_thread(f, args);
+#endif
+    }
+    catch (const CThreadException& e)
+    {
+        HLOGC(mglog.Debug, log << name << ": failed to start thread. " << e.what());
+        return false;
+    }
+    return true;
+}
+
+} // namespace sync
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -238,35 +269,4 @@ bool srt::sync::CGlobEvent::waitForEvent()
 {
     return g_Sync.lock_wait_for(milliseconds_from(10));
 }
-
-
-namespace srt {
-namespace sync {
-
-#ifdef ENABLE_STDCXX_SYNC
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
-#else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
-#endif
-{
-    ThreadName tn(name);
-    try
-    {
-#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
-        th = CThread(f, args);
-#else
-        // No move semantics in C++03, therefore using a dedicated function
-        th.create_thread(f, args);
-#endif
-    }
-    catch (const CThreadException& e)
-    {
-        HLOGC(mglog.Debug, log << name << ": failed to start thread. " << e.what());
-        return false;
-    }
-    return true;
-}
-
-} // namespace sync
-} // namespace srt
 
