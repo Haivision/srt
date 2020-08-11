@@ -2633,14 +2633,9 @@ void CUDTUnited::updateMux(
 void CUDTUnited::updateMux_exceptionFallback(const CMultiplexer& m)
 {
     // Reverse order of the assigned 
-    if (m.m_pRcvQueue)
-        delete m.m_pRcvQueue;
-
-    if (m.m_pSndQueue)
-        delete m.m_pSndQueue;
-
-    if (m.m_pTimer)
-        delete m.m_pTimer;
+    delete m.m_pRcvQueue;
+    delete m.m_pSndQueue;
+    delete m.m_pTimer;
 
     if (m.m_pChannel)
     {
