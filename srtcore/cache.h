@@ -83,6 +83,7 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
+      // Exception: -> CUDTUnited ctor
       srt::sync::setupMutex(m_Lock, "Cache");
    }
 
