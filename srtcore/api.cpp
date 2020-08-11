@@ -2562,16 +2562,16 @@ void CUDTUnited::updateMux(
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
-   m.m_pChannel = new CChannel();
-   m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
-   m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-   m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
-   m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
-   if (s->m_pUDT->m_iIpV6Only != -1)
-      m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
-
    try
    {
+       m.m_pChannel = new CChannel();
+       m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
+       m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
+       m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
+       m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
+       if (s->m_pUDT->m_iIpV6Only != -1)
+           m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
+
        if (udpsock)
        {
            // In this case, addr contains the address
@@ -2617,19 +2617,36 @@ void CUDTUnited::updateMux(
    }
    catch (CUDTException& e)
    {
-      m.m_pChannel->close();
-      delete m.m_pChannel;
-      throw;
+       updateMux_exceptionFallback(m);
+       throw;
    }
    catch (...)
    {
-      m.m_pChannel->close();
-      delete m.m_pChannel;
-      throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+       updateMux_exceptionFallback(m);
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
    HLOGF(mglog.Debug, 
       "creating new multiplexer for port %i\n", m.m_iPort);
+}
+
+void CUDTUnited::updateMux_exceptionFallback(const CMultiplexer& m)
+{
+    // Reverse order of the assigned 
+    if (m.m_pRcvQueue)
+        delete m.m_pRcvQueue;
+
+    if (m.m_pSndQueue)
+        delete m.m_pSndQueue;
+
+    if (m.m_pTimer)
+        delete m.m_pTimer;
+
+    if (m.m_pChannel)
+    {
+        m.m_pChannel->close();
+        delete m.m_pChannel;
+    }
 }
 
 // XXX This functionality needs strong refactoring.

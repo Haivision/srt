@@ -346,6 +346,7 @@ private:
    CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+   void updateMux_exceptionFallback(const CMultiplexer& m);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
