@@ -3661,6 +3661,8 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
 
     s->m_IncludedGroup = gp;
     s->m_IncludedIter = gp->add(gp->prepareData(s));
+  
+    // Record the remote address in the group data.
 
     return gp->id();
 }
