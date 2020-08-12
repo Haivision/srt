@@ -557,6 +557,8 @@ struct CMultiplexer
        , m_pTimer(NULL)
     {
     }
+
+   void destroy();
 };
 
 #endif

@@ -2499,11 +2499,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       // being currently done in the queues, if any.
       mx.m_pSndQueue->setClosing();
       mx.m_pRcvQueue->setClosing();
-      delete mx.m_pSndQueue;
-      delete mx.m_pRcvQueue;
-      mx.m_pChannel->close();
-      delete mx.m_pTimer;
-      delete mx.m_pChannel;
+      mx.destroy();
       m_mMultiplexer.erase(m);
    }
 }
@@ -2617,12 +2613,12 @@ void CUDTUnited::updateMux(
    }
    catch (CUDTException& e)
    {
-       updateMux_exceptionFallback(m);
+       m.destroy();
        throw;
    }
    catch (...)
    {
-       updateMux_exceptionFallback(m);
+       m.destroy();
        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
@@ -2630,19 +2626,6 @@ void CUDTUnited::updateMux(
       "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
-void CUDTUnited::updateMux_exceptionFallback(const CMultiplexer& m)
-{
-    // Reverse order of the assigned 
-    delete m.m_pRcvQueue;
-    delete m.m_pSndQueue;
-    delete m.m_pTimer;
-
-    if (m.m_pChannel)
-    {
-        m.m_pChannel->close();
-        delete m.m_pChannel;
-    }
-}
 
 // XXX This functionality needs strong refactoring.
 //
