@@ -3557,7 +3557,11 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        m_parent->m_IncludedIter->weight = link_weight;
+        CUDTGroup::gli_t f = m_parent->m_IncludedIter;
+
+        f->weight = link_weight;
+        f->agent = m_parent->m_SelfAddr;
+        f->peer = m_PeerAddr;
     }
 
     m_parent->m_IncludedGroup->debugGroup();
@@ -5940,6 +5944,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         m_iBandwidth = ib.m_iBandwidth;
     }
 
+    m_PeerAddr = peer;
+
     // This should extract the HSREQ and KMREQ portion in the handshake packet.
     // This could still be a HSv4 packet and contain no such parts, which will leave
     // this entity as "non-SRT-handshaken", and await further HSREQ and KMREQ sent
@@ -5988,8 +5994,6 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         m_RejectReason = rr;
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
-
-    m_PeerAddr = peer;
 
     // And of course, it is connected.
     m_bConnected = true;
