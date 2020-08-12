@@ -468,6 +468,35 @@ TEST_F(CSndLossListTest, InsertHeadNegativeOffset01)
     CheckEmptyArray();
 }
 
+// Check the part of the loss report the can fit into the list
+// goes into the list.
+TEST_F(CSndLossListTest, InsertHeadNegativeOffset02)
+{
+    const int32_t head_seqno = 10000000;
+    EXPECT_EQ(m_lossList->insert(head_seqno,     head_seqno), 1);
+    EXPECT_EQ(m_lossList->insert(head_seqno + 1, head_seqno + 1), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+
+    // The offset of the sequence number being added does not fit
+    // into the size of the loss list, it must be ignored.
+    // Normally this situation should not happen.
+
+    const int32_t outofbound_seqno = head_seqno - CSndLossListTest::SIZE;
+    EXPECT_EQ(m_lossList->insert(outofbound_seqno - 1, outofbound_seqno + 1), 3);
+    EXPECT_EQ(m_lossList->getLossLength(), 5);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno - 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 4);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno);
+    EXPECT_EQ(m_lossList->getLossLength(), 3);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno + 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+    EXPECT_EQ(m_lossList->popLostSeq(), 10000000);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+    EXPECT_EQ(m_lossList->popLostSeq(), 10000001);
+
+    CheckEmptyArray();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
 TEST_F(CSndLossListTest, InsertFullListCoalesce)

@@ -124,13 +124,21 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
     if (loc < 0)
     {
-        // The size of the CSndLossList should be at least the size of the flow window.
-        // It means that all the packets sender has sent should fit within m_iSize.
-        // If the new loss does not fit, there is some error.
-        LOGC(mglog.Error, log << "IPE: New loss record is too old. Ignoring. "
-            << "First loss seqno " << m_caSeq[m_iHead].seqstart
-            << ", insert seqno " << seqno1 << ":" << seqno2);
-        return 0;
+        const int offset_seqno2 = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno2);
+        const int loc_seqno2    = (m_iHead + offset_seqno2 + m_iSize) % m_iSize;
+
+        if (loc_seqno2 < 0)
+        {
+            // The size of the CSndLossList should be at least the size of the flow window.
+            // It means that all the packets sender has sent should fit within m_iSize.
+            // If the new loss does not fit, there is some error.
+            LOGC(mglog.Error, log << "IPE: New loss record is too old. Ignoring. "
+                << "First loss seqno " << m_caSeq[m_iHead].seqstart
+                << ", insert seqno " << seqno1 << ":" << seqno2);
+            return 0;
+        }
+
+        loc = loc_seqno2;
     }
 
     if (offset < 0)
