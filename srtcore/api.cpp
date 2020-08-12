@@ -2626,7 +2626,6 @@ void CUDTUnited::updateMux(
       "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
-
 // XXX This functionality needs strong refactoring.
 //
 // This function is going to find a multiplexer for the port contained
