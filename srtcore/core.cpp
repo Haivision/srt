@@ -3580,7 +3580,10 @@ void CUDTGroup::debugGroup()
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        HLOGC(mglog.Debug, log << " ... id=@" << gi->id << " peer=@" << gi->ps->m_PeerID
+        HLOGC(mglog.Debug, log << " ... id { agent=@" << gi->id
+                << " peer=@" << gi->ps->m_PeerID << " } address { agent="
+                << SockaddrToString(gi->agent)
+                << " peer=" << SockaddrToString(gi->peer) << "} "
                 << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
     }
 }
@@ -5870,7 +5873,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(mglog.Debug, log << "acceptAndRespond: setting up data according to handshake");
 
@@ -5915,6 +5918,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
 
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
+    m_parent->m_SelfAddr = agent;
+    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, agent.family(), peer);
     CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
 
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;

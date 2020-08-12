@@ -1248,7 +1248,7 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
-    void acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
