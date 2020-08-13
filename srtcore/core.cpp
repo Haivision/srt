@@ -1330,16 +1330,37 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
 
     switch (optname)
     {
-    case SRTO_SNDBUF:
+    case SRTO_CONNTIMEO:
+    case SRTO_DRIFTTRACER:
+        //SRTO_FC - not allowed to be different among group members
+    case SRTO_GROUPSTABTIMEO:
+        //SRTO_INPUTBW - per transmission setting
+    case SRTO_IPTOS:
+    case SRTO_IPTTL:
+    case SRTO_KMREFRESHRATE:
+    case SRTO_KMPREANNOUNCE:
+        //SRTO_LATENCY - per transmission setting
+        //SRTO_LINGER - not for managed sockets
+    case SRTO_LOSSMAXTTL:
+        //SRTO_MAXBW - per transmission setting
+        //SRTO_MESSAGEAPI - groups are live mode only
+        //SRTO_MINVERSION - per group connection setting
+    case SRTO_NAKREPORT:
+        //SRTO_OHEADBW - per transmission setting
+        //SRTO_PACKETFILTER - per transmission setting
+        //SRTO_PASSPHRASE - per group connection setting
+        //SRTO_PASSPHRASE - per transmission setting
+        //SRTO_PBKEYLEN - per group connection setting
+    case SRTO_PEERIDLETIMEO:
     case SRTO_RCVBUF:
+        //SRTO_RCVSYN - must be always false in groups
+        //SRTO_RCVTIMEO - must be alwyas -1 in groups
+    case SRTO_SNDBUF:
+    case SRTO_SNDDROPDELAY:
+        //SRTO_TLPKTDROP - per transmission setting
+        //SRTO_TSBPDMODE - per transmission setting
     case SRTO_UDP_RCVBUF:
     case SRTO_UDP_SNDBUF:
-    case SRTO_SNDDROPDELAY:
-    case SRTO_NAKREPORT:
-    case SRTO_CONNTIMEO:
-    case SRTO_LOSSMAXTTL:
-    case SRTO_PEERIDLETIMEO:
-    case SRTO_GROUPSTABTIMEO:
         break;
 
     default:
