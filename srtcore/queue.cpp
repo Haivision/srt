@@ -1682,3 +1682,18 @@ void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
         i->second.push(pkt);
     }
 }
+
+
+void CMultiplexer::destroy()
+{
+    // Reverse order of the assigned 
+    delete m_pRcvQueue;
+    delete m_pSndQueue;
+    delete m_pTimer;
+
+    if (m_pChannel)
+    {
+        m_pChannel->close();
+        delete m_pChannel;
+    }
+}

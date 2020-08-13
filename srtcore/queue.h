@@ -547,6 +547,18 @@ struct CMultiplexer
    bool m_bReusable;    // if this one can be shared with others
 
    int m_iID;           // multiplexer ID
+
+   // Constructor should reset all pointers to NULL
+   // to prevent dangling pointer when checking for memory alloc fails
+   CMultiplexer()
+       : m_pSndQueue(NULL)
+       , m_pRcvQueue(NULL)
+       , m_pChannel(NULL)
+       , m_pTimer(NULL)
+    {
+    }
+
+   void destroy();
 };
 
 #endif
