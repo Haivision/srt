@@ -67,8 +67,8 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     {
         // Packet not to be passthru, update stats
         ScopedLock lg(m_parent->m_StatsLock);
-        ++m_parent->m_stats.rcvFilterExtra;
-        ++m_parent->m_stats.rcvFilterExtraTotal;
+        ++m_parent->m_stats.pktsTrace.rcvFilterExtra;
+        ++m_parent->m_stats.pktsTotal.rcvFilterExtra;
     }
 
     // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
@@ -81,8 +81,8 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         if (dist > 0)
         {
             ScopedLock lg(m_parent->m_StatsLock);
-            m_parent->m_stats.rcvFilterLoss += dist;
-            m_parent->m_stats.rcvFilterLossTotal += dist;
+            m_parent->m_stats.pktsTrace.rcvFilterLoss += dist;
+            m_parent->m_stats.pktsTotal.rcvFilterLoss += dist;
         }
         else
         {
@@ -100,8 +100,8 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         InsertRebuilt(w_incoming, m_unitq);
 
         ScopedLock lg(m_parent->m_StatsLock);
-        m_parent->m_stats.rcvFilterSupply += nsupply;
-        m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
+        m_parent->m_stats.pktsTrace.rcvFilterSupply += nsupply;
+        m_parent->m_stats.pktsTrace.rcvFilterSupply += nsupply;
     }
 
     // Now that all units have been filled as they should be,
