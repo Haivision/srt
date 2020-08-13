@@ -89,16 +89,20 @@ CChannel::~CChannel()
 
 void CChannel::createSocket(int family)
 {
-    // construct an socket
-#if defined(SOCK_CLOEXEC)
-    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-#else
-    m_iSocket = ::socket(m_iIPversion, SOCK_DGRAM, 0);
-#endif
 #ifdef _WIN32
     const int invalid = INVALID_SOCKET;
 #else
     const int invalid = -1;
+#endif
+    // construct an socket
+#if defined(O_CLOEXEC)
+    m_iSocket = ::socket(family, SOCK_DGRAM | O_CLOEXEC, IPPROTO_UDP);
+    if (m_iSocket == invalid)
+    {
+        m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    }
+#else
+    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 #endif
 
     if (m_iSocket == invalid)
