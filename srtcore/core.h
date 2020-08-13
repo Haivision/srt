@@ -1729,71 +1729,77 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
+        struct Packets
+        {
+            int64_t sent;                  // total number of sent data packets, including retransmissions
+            int64_t sentUnique;              // total number of sent data packets, excluding rexmit and filter control
+            int64_t recv;                  // total number of received packets
+            int64_t recvUnique;              // total number of received and delivered packets
+            int64_t sndLoss;                   // total number of lost packets (sender side)
+            int64_t rcvLoss;                   // total number of lost packets (receiver side)
+            int64_t retrans;                   // total number of retransmitted packets
+            int64_t rcvRetrans;
+            int64_t sentACK;                   // total number of sent ACK packets
+            int64_t recvACK;                   // total number of received ACK packets
+            int64_t sentNAK;                   // total number of sent NAK packets
+            int64_t recvNAK;                   // total number of received NAK packets
+            int64_t sndDrop;
+            int64_t rcvDrop;
+            int64_t rcvUndecrypt;
+            int64_t sndFilterExtra;
+            int64_t rcvFilterExtra;
+            int64_t rcvFilterSupply;
+            int64_t rcvFilterLoss;
+            int64_t rcvBelated;
+
+            void clear()
+            {
+                *this = {};
+            }
+        };
+
+        struct Bytes
+        {
+            uint64_t bytesSent;            // total number of bytes sent,  including retransmissions
+            uint64_t bytesSentUniq;        // total number of bytes sent,  including retransmissions
+            uint64_t bytesRecv;            // total number of received bytes
+            uint64_t bytesRecvUniq;        // total number of received bytes
+            uint64_t rcvBytesLoss;         // total number of loss bytes (estimate)
+            uint64_t bytesRetrans;         // total number of retransmitted bytes
+            uint64_t sndBytesDrop;
+            uint64_t rcvBytesDrop;
+            uint64_t rcvBytesUndecrypt;
+
+            void clear()
+            {
+                *this = {};
+            }
+        };
+
+        void clear()
+        {
+            pktsTotal.clear();
+            pktsTrace.clear();
+            bytesTotal.clear();
+            bytesTrace.clear();
+            sndDuration = 0;
+            traceBelatedTime = 0;
+            sndDurationTotal = 0;
+            traceReorderDistance = 0;
+            tsLastSampleTime = srt::sync::steady_clock::now();
+        }
+
         time_point tsStartTime;                 // timestamp when the UDT entity is started
-        int64_t sentTotal;                  // total number of sent data packets, including retransmissions
-        int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
-        int64_t recvTotal;                  // total number of received packets
-        int64_t recvUniqTotal;              // total number of received and delivered packets
-        int sndLossTotal;                   // total number of lost packets (sender side)
-        int rcvLossTotal;                   // total number of lost packets (receiver side)
-        int retransTotal;                   // total number of retransmitted packets
-        int sentACKTotal;                   // total number of sent ACK packets
-        int recvACKTotal;                   // total number of received ACK packets
-        int sentNAKTotal;                   // total number of sent NAK packets
-        int recvNAKTotal;                   // total number of received NAK packets
-        int sndDropTotal;
-        int rcvDropTotal;
-        uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
-        uint64_t bytesSentUniqTotal;        // total number of bytes sent,  including retransmissions
-        uint64_t bytesRecvTotal;            // total number of received bytes
-        uint64_t bytesRecvUniqTotal;        // total number of received bytes
-        uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
-        uint64_t bytesRetransTotal;         // total number of retransmitted bytes
-        uint64_t sndBytesDropTotal;
-        uint64_t rcvBytesDropTotal;
-        int m_rcvUndecryptTotal;
-        uint64_t m_rcvBytesUndecryptTotal;
 
-        int sndFilterExtraTotal;
-        int rcvFilterExtraTotal;
-        int rcvFilterSupplyTotal;
-        int rcvFilterLossTotal;
-
-        int64_t m_sndDurationTotal;         // total real time for sending
-
-        time_point tsLastSampleTime;            // last performance sample time
-        int64_t traceSent;                  // number of packets sent in the last trace interval
-        int64_t traceSentUniq;              // number of original packets sent in the last trace interval
-        int64_t traceRecv;                  // number of packets received in the last trace interval
-        int64_t traceRecvUniq;              // number of packets received AND DELIVERED in the last trace interval
-        int traceSndLoss;                   // number of lost packets in the last trace interval (sender side)
-        int traceRcvLoss;                   // number of lost packets in the last trace interval (receiver side)
-        int traceRetrans;                   // number of retransmitted packets in the last trace interval
-        int sentACK;                        // number of ACKs sent in the last trace interval
-        int recvACK;                        // number of ACKs received in the last trace interval
-        int sentNAK;                        // number of NAKs sent in the last trace interval
-        int recvNAK;                        // number of NAKs received in the last trace interval
-        int traceSndDrop;
-        int traceRcvDrop;
-        int traceRcvRetrans;
+        Packets pktsTotal;
+        Bytes   bytesTotal;
+        Packets pktsTrace;
+        Bytes   bytesTrace;
         int traceReorderDistance;
-        double traceBelatedTime;
-        int64_t traceRcvBelated;
-        uint64_t traceBytesSent;            // number of bytes sent in the last trace interval
-        uint64_t traceBytesSentUniq;        // number of bytes sent in the last trace interval
-        uint64_t traceBytesRecv;            // number of bytes sent in the last trace interval
-        uint64_t traceBytesRecvUniq;        // number of bytes sent in the last trace interval
-        uint64_t traceRcvBytesLoss;         // number of bytes bytes lost in the last trace interval (estimate)
-        uint64_t traceBytesRetrans;         // number of bytes retransmitted in the last trace interval
-        uint64_t traceSndBytesDrop;
-        uint64_t traceRcvBytesDrop;
-        int traceRcvUndecrypt;
-        uint64_t traceRcvBytesUndecrypt;
 
-        int sndFilterExtra;
-        int rcvFilterExtra;
-        int rcvFilterSupply;
-        int rcvFilterLoss;
+        int64_t sndDurationTotal;         // total real time for sending
+        time_point tsLastSampleTime;            // last performance sample time
+        double traceBelatedTime;
 
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;         // timers to record the sending Duration
