@@ -13657,6 +13657,18 @@ struct FByWeight //: public std::binary_predicate<CUDTGroup::gli_t, CUDTGroup::g
     }
 };
 
+struct FByOldestActive
+{
+    typedef CUDTGroup::gli_t gli_t;
+    bool operator()(gli_t a, gli_t b)
+    {
+        CUDT& x = a->ps->core();
+        CUDT& y = b->ps->core();
+
+        return x.m_tsTmpActiveTime < y.m_tsTmpActiveTime;
+    }
+};
+
 bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
 {
     SRT_SOCKSTATUS st = SRTS_NONEXIST;
@@ -14386,7 +14398,36 @@ RetryWaitBlocked:
         steady_clock::time_point currtime = steady_clock::now();
 
         vector<gli_t>::iterator b = w_parallel.begin();
+
+        // Additional criterion: if you have multiple links with the same weight,
+        // check if you have at least one with m_tsTmpActiveTime == 0. If not,
+        // sort them additionally by this time.
+
+        vector<gli_t>::iterator b1 = b, e = ++b1;
+
+        // Both e and b1 stand on b+1 position.
+        // We have a guarantee that b+1 still points to a valid element.
+        while (e != w_parallel.end())
+        {
+            if ((*e)->weight != (*b)->weight)
+                break;
+            ++e;
+        }
+
+        if (b1 != e)
+        {
+            // More than 1 link with the same weight. Sorting them according
+            // to a different criterion will not change the previous sorting order
+            // because the elements in this range are equal according to the previous
+            // criterion.
+            // Here find the link with least time. The "trap" zero time matches this
+            // requirement, occasionally.
+            sort(b, e, FByOldestActive());
+        }
+
         HLOGC(dlog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
+
+        // After finding the link to leave active, leave it behind.
         ++b;
         for (; b != w_parallel.end(); ++b)
         {
