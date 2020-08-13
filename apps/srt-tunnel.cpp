@@ -99,7 +99,7 @@ protected:
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
     {
-        string addr = SockaddrToString(sockaddr_any(sa.get(), sizeof sa));
+        string addr = sockaddr_any(sa.get(), sizeof sa).str();
         DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;

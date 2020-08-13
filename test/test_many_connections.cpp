@@ -149,9 +149,8 @@ TEST_F(TestConnection, Multiple)
         int conntimeo = 60;
         srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
 
-        //cout << "Connecting #" << i << " to " << SockaddrToString(sockaddr_any(psa)) << "...\n";
-
-        //cerr << "Connecting to: " << SockaddrToString(sockaddr_any(psa)) << endl;
+        //cerr << "Connecting #" << i << " to " << sockaddr_any(psa).str() << "...\n";
+        //cerr << "Connecting to: " << sockaddr_any(psa).str() << endl;
         ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof lsa), SRT_ERROR);
 
         // Set now async sending so that sending isn't blocked

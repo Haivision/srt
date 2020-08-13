@@ -378,30 +378,4 @@ private:
    CUDTUnited& operator=(const CUDTUnited&);
 };
 
-// Debug support
-inline std::string SockaddrToString(const sockaddr_any& sadr)
-{
-    if (sadr.family() != AF_INET && sadr.family() != AF_INET6)
-        return "unknown:0";
-
-    std::ostringstream output;
-    char hostbuf[1024];
-    int flags;
-
-#if ENABLE_GETNAMEINFO
-    flags = NI_NAMEREQD;
-#else
-    flags = NI_NUMERICHOST | NI_NUMERICSERV;
-#endif
-
-    if (!getnameinfo(sadr.get(), sadr.size(), hostbuf, 1024, NULL, 0, flags))
-    {
-        output << hostbuf;
-    }
-
-    output << ":" << sadr.hport();
-    return output.str();
-}
-
-
 #endif
