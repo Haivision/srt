@@ -16,7 +16,9 @@ written by
 #ifndef INC_SRT_NETINET_ANY_H
 #define INC_SRT_NETINET_ANY_H
 
-#include <cstring>
+#include <cstring> // memcmp
+#include <string>
+#include <sstream>
 #include "platform_sys.h"
 
 // This structure should replace every use of sockaddr and its currently
@@ -350,6 +352,31 @@ struct sockaddr_any
             return memcmp(&sin6.sin6_addr, &in6addr_any, sizeof in6addr_any) == 0;
 
         return false;
+    }
+
+    // Debug support
+    std::string str() const
+    {
+        if (family() != AF_INET && family() != AF_INET6)
+            return "unknown:0";
+
+        std::ostringstream output;
+        char hostbuf[1024];
+        int flags;
+
+    #if ENABLE_GETNAMEINFO
+        flags = NI_NAMEREQD;
+    #else
+        flags = NI_NUMERICHOST | NI_NUMERICSERV;
+    #endif
+
+        if (!getnameinfo(get(), size(), hostbuf, 1024, NULL, 0, flags))
+        {
+            output << hostbuf;
+        }
+
+        output << ":" << hport();
+        return output.str();
     }
 
     bool operator==(const sockaddr_any& other) const
