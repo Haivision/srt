@@ -615,6 +615,7 @@ public:
    /// distance between two sequence numbers.
    ///
    /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
+   /// Note: %> stands for "later than".
    inline static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
