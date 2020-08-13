@@ -3578,7 +3578,11 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        m_parent->m_IncludedIter->weight = link_weight;
+        CUDTGroup::gli_t f = m_parent->m_IncludedIter;
+
+        f->weight = link_weight;
+        f->agent = m_parent->m_SelfAddr;
+        f->peer = m_PeerAddr;
     }
 
     m_parent->m_IncludedGroup->debugGroup();
@@ -3597,7 +3601,10 @@ void CUDTGroup::debugGroup()
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        HLOGC(mglog.Debug, log << " ... id=@" << gi->id << " peer=@" << gi->ps->m_PeerID
+        HLOGC(mglog.Debug, log << " ... id { agent=@" << gi->id
+                << " peer=@" << gi->ps->m_PeerID << " } address { agent="
+                << SockaddrToString(gi->agent)
+                << " peer=" << SockaddrToString(gi->peer) << "} "
                 << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
     }
 }
@@ -3682,6 +3689,8 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
 
     s->m_IncludedGroup = gp;
     s->m_IncludedIter = gp->add(gp->prepareData(s));
+  
+    // Record the remote address in the group data.
 
     return gp->id();
 }
@@ -5885,7 +5894,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(mglog.Debug, log << "acceptAndRespond: setting up data according to handshake");
 
@@ -5930,6 +5939,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
 
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
+    m_parent->m_SelfAddr = agent;
+    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, agent.family(), peer);
     CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
 
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
@@ -5958,6 +5969,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         m_iRTT       = ib.m_iRTT;
         m_iBandwidth = ib.m_iBandwidth;
     }
+
+    m_PeerAddr = peer;
 
     // This should extract the HSREQ and KMREQ portion in the handshake packet.
     // This could still be a HSv4 packet and contain no such parts, which will leave
@@ -6007,8 +6020,6 @@ void CUDT::acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHan
         m_RejectReason = rr;
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
-
-    m_PeerAddr = peer;
 
     // And of course, it is connected.
     m_bConnected = true;
