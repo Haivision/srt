@@ -92,10 +92,11 @@ void CChannel::createSocket(int family)
 #else
     static const int INVALID_SOCKET = -1;
 #endif
+
     // construct an socket
 #if defined(O_CLOEXEC)
     m_iSocket = ::socket(family, SOCK_DGRAM | O_CLOEXEC, IPPROTO_UDP);
-    if (m_iSocket == invalid)
+    if (m_iSocket == INVALID_SOCKET)
     {
         m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
     }
