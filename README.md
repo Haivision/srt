@@ -32,6 +32,8 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * SRT Cookbook: [website](https://srtlab.github.io/srt-cookbook/protocol/threads/), [GitHub](https://github.com/SRTLab/srt-cookbook)
 * SRT RFC: [txt](https://haivision.github.io/srt-rfc/draft-sharabayko-mops-srt.txt), [html](https://haivision.github.io/srt-rfc/draft-sharabayko-mops-srt.html), [GitHub](https://github.com/Haivision/srt-rfc)
 * [Using the `srt-live-transmit` App](docs/srt-live-transmit.md)
+* [Contributing](docs/Contributing.md)
+* [Developer's Guide](docs/Developers.md)
 * [SRT Encryption](docs/encryption.md)
 * [API](docs/API.md)
 * [Reporting problems](docs/reporting.md)
