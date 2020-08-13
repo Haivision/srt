@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_CHANNEL_H__
-#define __UDT_CHANNEL_H__
+#ifndef INC_SRT_CHANNEL_H
+#define INC_SRT_CHANNEL_H
 
 #include "platform_sys.h"
 #include "udt.h"
@@ -137,7 +137,6 @@ public:
 
    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
-#ifdef SRT_ENABLE_IPOPTS
       /// Set the IP TTL.
       /// @param [in] ttl IP Time To Live.
       /// @return none.
@@ -159,7 +158,6 @@ public:
       /// @return ToS.
 
    int getIpToS() const;
-#endif
 
    int ioctlQuery(int type) const;
    int sockoptQuery(int level, int option) const;
@@ -173,10 +171,8 @@ private:
 private:
 
    UDPSOCKET m_iSocket;                 // socket descriptor
-#ifdef SRT_ENABLE_IPOPTS
    int m_iIpTTL;
    int m_iIpToS;
-#endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
    int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)

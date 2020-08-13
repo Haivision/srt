@@ -27,7 +27,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -97,9 +97,9 @@ protected:
     mutex access; // For closing
 
     template <class DerivedMedium, class SocketType>
-    static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
+    static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
     {
-        string addr = SockaddrToString(sockaddr_any((sockaddr*)&sa, sizeof sa));
+        string addr = SockaddrToString(sockaddr_any(sa.get(), sizeof sa));
         DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
@@ -603,9 +603,9 @@ void SrtMedium::CreateListener()
 
     ConfigurePre();
 
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = srt_bind(m_socket, (sockaddr*)&sa, sizeof sa);
+    int stat = srt_bind(m_socket, sa.get(), sizeof sa);
 
     if ( stat == SRT_ERROR )
     {
@@ -627,12 +627,13 @@ void TcpMedium::CreateListener()
 {
     int backlog = 5; // hardcoded!
 
-    m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
+
+    m_socket = socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
-
-    int stat = ::bind(m_socket, (sockaddr*)&sa, sizeof sa);
+    int stat = ::bind(m_socket, sa.get(), sa.size());
 
     if (stat == -1)
     {
@@ -652,9 +653,8 @@ void TcpMedium::CreateListener()
 
 unique_ptr<Medium> SrtMedium::Accept()
 {
-    sockaddr_in sa;
-    int salen = sizeof sa;
-    SRTSOCKET s = srt_accept(m_socket, (sockaddr*)&sa, &salen);
+    sockaddr_any sa;
+    SRTSOCKET s = srt_accept(m_socket, (sa.get()), (&sa.len));
     if (s == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_accept");
@@ -674,13 +674,14 @@ unique_ptr<Medium> SrtMedium::Accept()
 
 unique_ptr<Medium> TcpMedium::Accept()
 {
-    sockaddr_in sa;
+    sockaddr_any sa;
     socklen_t salen = sizeof sa;
-    int s = ::accept(m_socket, (sockaddr*)&sa, &salen);
+    int s = ::accept(m_socket, (sa.get()), (&salen));
     if (s == -1)
     {
         Error(errno, "accept");
     }
+    sa.len = salen;
 
     // Configure 1s timeout
     timeval timeout_1s { 1, 0 };
@@ -714,9 +715,9 @@ void TcpMedium::CreateCaller()
 
 void SrtMedium::Connect()
 {
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = srt_connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    int st = srt_connect(m_socket, sa.get(), sizeof sa);
     if (st == SRT_ERROR)
         Error(UDT::getlasterror(), "srt_connect");
 
@@ -729,9 +730,9 @@ void SrtMedium::Connect()
 
 void TcpMedium::Connect()
 {
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = ::connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    int st = ::connect(m_socket, sa.get(), sa.size());
     if (st == -1)
         Error(errno, "connect");
 

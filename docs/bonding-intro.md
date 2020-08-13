@@ -61,8 +61,8 @@ SRTSOCKET sock = srt_create_socket();
 The listener needs to bind it first (note: simplified code):
 
 ```
-sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
-srt_bind(sock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("0.0.0.0", 5000);
+srt_bind(sock, sa.get(), sa.len);
 srt_listen(sock, 5);
 sockaddr_in target;
 SRTSOCKET connsock = srt_accept(sock, &target, sizeof target);
@@ -73,8 +73,8 @@ the target:
 
 ```
 SRTSOCKET connsock = srt_create_socket();
-sockaddr_in sa = CreateAddrInet("target.address:5000");
-srt_connect(connsock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("target.address", 5000);
+srt_connect(connsock, sa.get(), sa.len);
 ```
 
 After the connection is established, you use the send/recv functions to
@@ -133,8 +133,8 @@ To handle group connections, you need to set `SRTO_GROUPCONNECT` option:
 int gcon = 1;
 srt_setsockflag(sock, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
 
-sockaddr_in sa = CreateAddrInet("0.0.0.0:5000");
-srt_bind(sock, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("0.0.0.0", 5000);
+srt_bind(sock, sa.get(), sa.len);
 srt_listen(sock, 5);
 sockaddr_in target;
 SRTSOCKET conngrp = srt_accept(sock, &target, sizeof target);
@@ -155,15 +155,15 @@ SRTSOCKET conngrp = srt_create_group(SRT_GTYPE_BROADCAST);
 This will need to make the first connection this way:
 
 ```
-sockaddr_in sa = CreateAddrInet("target.address.link1:5000");
-srt_connect(conngrp, &sa, sizeof sa);
+sockaddr_any sa = CreateAddr("target.address.link1", 5000);
+srt_connect(conngrp, sa.get(), sizeof sa);
 ```
 
 Then further connections can be done by calling `srt_connect` again:
 
 ```
-sockaddr_in sa2 = CreateAddrInet("target.address.link2:5000");
-srt_connect(conngrp, &sa2, sizeof sa2);
+sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
+srt_connect(conngrp, sa.get(), sa2.len);
 ```
 
 IMPORTANT: This method can be easily used in non-blocking mode, as
@@ -176,9 +176,9 @@ So for blocking mode we use a different solution. Let's say, you have
 3 addresses:
 
 ```
-sockaddr_in sa1 = CreateAddrInet("target.address.link1:5000");
-sockaddr_in sa2 = CreateAddrInet("target.address.link2:5000");
-sockaddr_in sa3 = CreateAddrInet("target.address.link3:5000");
+sockaddr_any sa1 = CreateAddr("target.address.link1", 5000);
+sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
+sockaddr_any sa3 = CreateAddr("target.address.link3", 5000);
 ```
 
 You have to prepare the array for them and then use one group-connect function:
@@ -227,12 +227,12 @@ return the proper size in `grpdata_size`.
 The application should be interested here in two types of information:
 
 * the size of the filled array
-* the `status` field in every element
+* the `sockstate` field in every element
 
-From the `status` field you can track every member connection as to whether its
+From the `sockstate` field you can track every member connection as to whether its
 state is still `SRTS_CONNECTED`. If a connection is detected as broken after
 the call to a transmission function (`srt_sendmsg2/srt_recvmsg2`) then the
-connection will appear in these data only once, and with `status`
+connection will appear in these data only once, and with `sockstate`
 equal to `SRTS_BROKEN`. It will not appear anymore in later calls, and it won't 
 appear at all if you check the data through `srt_group_data`.
 
@@ -246,7 +246,7 @@ mc.grpdata_size = 3;
 ...
 srt_sendmsg2(conngrp, packetdata.data(), packetdata.size(), &mc);
 for (int i = 0; i < 3; ++i)
-    if (mc.grpdata[i].status == SRTS_BROKEN)
+    if (mc.grpdata[i].sockstate == SRTS_BROKEN)
         ReestablishConnection(mc.grpdata[i].id);
 ```
 
@@ -255,7 +255,7 @@ item in the application's link table, at which point a decision is made. If
 the connection is to be revived, this function should call `srt_connect` on it.
 
 There might be only an attempt to establish the link, in which case
-you'll get first the `SRTS_CONNECTING` status here, and then a failed socket
+you'll get first the `SRTS_CONNECTING` state here, and then a failed socket
 will simply disappear. Therefore the function should also check how many
 items were returned in this array, match them with existing connections,
 and filter out connections that are unexpectedly not established.

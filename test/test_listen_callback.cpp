@@ -4,17 +4,7 @@
 #include <map>
 
 #ifdef _WIN32
-#define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
-#include <winsock2.h>
-
-#if defined(__GNUC__) || defined(__MINGW32__)
-extern "C" {
-    WINSOCK_API_LINKAGE  INT WSAAPI inet_pton( INT Family, PCSTR pszAddrString, PVOID pAddrBuf);
-    WINSOCK_API_LINKAGE  PCSTR WSAAPI inet_ntop(INT  Family, PVOID pAddr, PSTR pStringBuf, size_t StringBufSize);
-}
-#endif
-
-#define INC__WIN_WINTIME // exclude gettimeofday from srt headers
+#define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
 #endif
 
 #include "srt.h"
@@ -63,7 +53,6 @@ TEST(Core, ListenCallback) {
     sockaddr* psa = (sockaddr*)&sa;
 
 
-
     cerr << "TEST 1: Connect to an encrypted socket correctly (should succeed)\n";
 
     client_sock = srt_create_socket();
@@ -73,8 +62,9 @@ TEST(Core, ListenCallback) {
     string password = "thelocalmanager";
 
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+#if SRT_ENABLE_ENCRYPTION
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
-
+#endif
 
     // EXPECTED RESULT: connected successfully
     EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
@@ -83,8 +73,8 @@ TEST(Core, ListenCallback) {
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
 
 
-
     cerr << "TEST 2: Connect with a wrong password (should reject the handshake)\n";
+#if SRT_ENABLE_ENCRYPTION
     client_sock = srt_create_socket();
     ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
@@ -93,13 +83,12 @@ TEST(Core, ListenCallback) {
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
 
-
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
 
     // Close the socket
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
-
+#endif
 
 
     cerr << "TEST 3: Connect with wrong username (should exit on exception)\n";
@@ -110,8 +99,9 @@ TEST(Core, ListenCallback) {
     password = "thelocalmanager"; // (typo :D)
 
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+#if SRT_ENABLE_ENCRYPTION
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
-
+#endif
 
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
@@ -191,8 +181,10 @@ int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct 
     cerr << "TEST: Accessing user '" << username << "', might throw if not found\n";
     string exp_pw = passwd.at(username);
 
+#if SRT_ENABLE_ENCRYPTION
     cerr << "TEST: Setting password '" << exp_pw << "' as per user '" << username << "'\n";
     srt_setsockflag(ns, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+#endif
     return 0;
 }
 

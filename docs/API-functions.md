@@ -1,5 +1,4 @@
-SRT API Functions
-=================
+# SRT API Functions
 
 - [**Library Initialization**](#Library-Initialization)
   * [srt_startup](#srt_startup)
@@ -8,7 +7,6 @@ SRT API Functions
   * [srt_socket](#srt_socket)
   * [srt_create_socket](#srt_create_socket)
   * [srt_bind](#srt_bind)
-  * [srt_create_socket](#srt_create_socket)
   * [srt_bind_acquire](#srt_bind_acquire)
   * [srt_getsockstate](#srt_getsockstate)
   * [srt_getsndbuffer](#srt_getsndbuffer)
@@ -16,6 +14,7 @@ SRT API Functions
 - [**Connecting**](#Connecting)
   * [srt_listen](#srt_listen)
   * [srt_accept](#srt_accept)
+  * [srt_accept_bond](#srt_accept_bond)
   * [srt_listen_callback](#srt_listen_callback)
   * [srt_connect](#srt_connect)
   * [srt_connect_bind](#srt_connect_bind)
@@ -23,7 +22,9 @@ SRT API Functions
   * [srt_rendezvous](#srt_rendezvous)
 - [**Socket group management**](#Socket-group-management)
   * [SRT_GROUP_TYPE](#SRT_GROUP_TYPE)
+  * [SRT_SOCKGROUPCONFIG](#SRT_SOCKGROUPCONFIG)
   * [SRT_SOCKGROUPDATA](#SRT_SOCKGROUPDATA)
+  * [SRT_MEMBERSTATUS](#SRT_MEMBERSTATUS)
   * [srt_create_group](#srt_create_group)
   * [srt_include](#srt_include)
   * [srt_exclude](#srt_exclude)
@@ -31,6 +32,9 @@ SRT API Functions
   * [srt_group_data](#srt_group_data)
   * [srt_connect_group](#srt_connect_group)
   * [srt_prepare_endpoint](#srt_prepare_endpoint)
+  * [srt_create_config](#srt_create_config)
+  * [srt_delete_config](#srt_delete_config)
+  * [srt_config_add](#srt_config_add)
 - [**Options and properties**](#Options-and-properties)
   * [srt_getpeername](#srt_getpeername)
   * [srt_getsockname](#srt_getsockname)
@@ -48,6 +52,10 @@ SRT API Functions
   * [srt_getlasterror](#srt_getlasterror)
   * [srt_strerror](#srt_strerror)
   * [srt_clearlasterror](#srt_clearlasterror)
+  * [srt_getrejectreason](#srt_getrejectreason)
+  * [srt_rejectreason_str](#srt_rejectreason_str)
+  * [srt_setrejectreason](#srt_setrejectreason)
+  * [Error Codes](#error-codes)
 - [**Performance tracking**](#Performance-tracking)
   * [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
 - [**Asynchronous operations (epoll)**](#Asynchronous-operations-epoll)
@@ -56,6 +64,7 @@ SRT API Functions
   * [srt_epoll_remove_usock, srt_epoll_remove_ssock](#srt_epoll_remove_usock-srt_epoll_remove_ssock)
   * [srt_epoll_wait](#srt_epoll_wait)
   * [srt_epoll_uwait](#srt_epoll_uwait)
+  * [srt_epoll_clear_usocks](#srt_epoll_clear_usocks)
   * [srt_epoll_set](#srt_epoll_set)
   * [srt_epoll_release](#srt_epoll_release)
 - [**Logging control**](#Logging-control)
@@ -63,10 +72,12 @@ SRT API Functions
   * [srt_addlogfa, srt_dellogfa, srt_resetlogfa](#srt_addlogfa-srt_dellogfa-srt_resetlogfa)
   * [srt_setloghandler](#srt_setloghandler)
   * [srt_setlogflags](#srt_setlogflags)
+- [**Time Access**](#time-access)
+  * [srt_time_now](#srt_time_now)
+  * [srt_connection_time](#srt_connection_time)
 
 
-Library initialization
-----------------------
+## Library initialization
 
 ### srt_startup
 ```
@@ -109,8 +120,7 @@ relying on this behavior is stronly discouraged.
 This means that if you call `srt_startup` multiple times, you need to call the 
 `srt_cleanup` function exactly the same number of times.
 
-Creating and configuring sockets
---------------------------------
+## Creating and configuring sockets
 
 ### srt_socket
 ```
@@ -261,8 +271,7 @@ last user closed.
 
   * `SRT_EINVSOCK`: Socket `u` indicates no valid socket ID
 
-Connecting
-----------
+## Connecting
 
 ### srt_listen
 ```
@@ -341,17 +350,17 @@ group, although it's usually for internal use only.
 - Errors:
 
   * `SRT_EINVPARAM`: NULL specified as `addrlen`, when `addr` is not NULL
-  * `SRT_EINVSOCK`: `lsn` designates no valid socket ID. Can also mean Internal
-Error when an error occurred while creating an accepted socket (**BUG?**)
-  * `SRT_ENOLISTEN`: `lsn` is not set up as a listener (`srt_listen` not called,
-or the listener socket has already been closed)
-  * `SRT_ERDVNOSERV`: Internal error (if no `SRT_ENOLISTEN` reported, it means
-that the socket could not be set up as rendezvous because `srt_listen` does
-not allow it)
+  * `SRT_EINVSOCK`: `lsn` designates no valid socket ID. 
+  * `SRT_ENOLISTEN`: `lsn` is not set up as a listener (`srt_listen` not called)
   * `SRT_EASYNCRCV`: No connection reported so far. This error is reported only
 when the `lsn` listener socket was configured as non-blocking for reading
 (`SRTO_RCVSYN` set to false); otherwise the call blocks until a connection
 is reported or an error occurs
+  * `SRT_ESCLOSED`: The `lsn` socket has been closed while the function was
+blocking the call (if `SRTO_RCVSYN` is set to default true). This includes a
+situation when the socket was closed just at the moment when a connection was
+made and the socket got closed during processing
+
 
 ### srt_accept_bond
 
@@ -528,9 +537,19 @@ interface prior to connecting. Non-rendezvous sockets (caller sockets) can be
 left without binding - the call to `srt_connect` will bind them automatically.
   * `SRT_ECONNSOCK`: Socket `u` is already connected
   * `SRT_ECONNREJ`: Connection has been rejected
+  * `SRT_ENOSERVER`: Connection has been timed out (see `SRTO_CONNTIMEO`)
+  * `SRT_ESCLOSED`: The socket `u` has been closed while the function was
+blocking the call (if `SRTO_RCVSYN` is set to default true)
 
-In case when `SRT_ECONNREJ` error was reported, you can get the reason for
-a rejected connection from `srt_getrejectreason`.
+When `SRT_ECONNREJ` error is reported, you can get the reason for
+a rejected connection from `srt_getrejectreason`. In non-blocking
+mode (when `SRTO_RCVSYN` is set to false), only `SRT_EINVSOCK`,
+`SRT_ERDVUNBOUND` and `SRT_ECONNSOCK` can be reported. In all other cases
+the function returns immediately with a success, and the only way to obtain
+the connecting status is through the epoll flag with `SRT_EPOLL_ERR`.
+In this case you can also call `srt_getrejectreason` to get the detailed
+reason for the error, including connection timeout (`SRT_REJ_TIMEOUT`).
+
 
 ### srt_connect_bind
 
@@ -609,8 +628,7 @@ IMPORTANT: It's not allowed to perform a rendezvous connection to two
 different families (that is, both `local_name` and `remote_name` must be `AF_INET` or
 `AF_INET6`).
 
-Socket group management
------------------------
+## Socket group management
 
 ### SRT_GROUP_TYPE
 
@@ -620,39 +638,109 @@ The following group types are collected in an `SRT_GROUP_TYPE` enum:
 * `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
 * `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
 
-### SRT_SOCKGROUPDATA
+### SRT_SOCKGROUPCONFIG
 
-The most important structure for the group members is `SRT_SOCKGROUPDATA`:
+This structure is used to define entry points for connections for the
+`srt_connect_group` function:
 
 ```
+typedef struct SRT_GroupMemberConfig_
+{
+    SRTSOCKET id;
+    struct sockaddr_storage srcaddr;
+    struct sockaddr_storage peeraddr;
+    int weight;
+    SRT_SOCKOPT_CONFIG* config;
+    int errorcode;
+} SRT_SOCKGROUPCONFIG;
+```
+
+where:
+
+* `id`: member socket ID (filled back as output)
+* `srcaddr`: address to which `id` should be bound
+* `peeraddr`: address to which `id` should be connected
+* `weight`: the weight parameter for the link (group-type dependent)
+* `config`: the configuration object, if used (see [`srt_create_config()`](#srt_create_config))
+* `errorcode`: status of the connecting operation
+
+The `srt_perpare_endpoint` sets these fields to default values. After that
+you can change the value of `weight` and `config` fields. The `weight`
+parameter's meaning is dependent on the group type:
+
+* BROADCAST: not used
+* BACKUP: positive value of link priority, 0 is the highest
+* BALANCING: relative expected load on this link for fixed algorithm
+
+The `config` parameter is used to provide options to be set separately
+on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
+
+### SRT_SOCKGROUPDATA
+
+The most important structure for the group member status is `SRT_SOCKGROUPDATA`:
+
+```c++
 typedef struct SRT_SocketGroupData_
 {
     SRTSOCKET id;
-    SRT_SOCKSTATUS status;
+    struct sockaddr_storage peeraddr;
+    SRT_SOCKSTATUS sockstate;
+    SRT_MEMBERSTATUS memberstate;
     int result;
-    struct sockaddr_storage srcaddr;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    int priority;
+
 } SRT_SOCKGROUPDATA;
 ```
 
 where:
 
 * `id`: member socket ID
-* `status`: current connection status (see `srt_getsockstate`)
-* `result`: result of the operation (if this operation recently updated this structure)
-* `srcaddr`: address to which `id` should be bound
 * `peeraddr`: address to which `id` should be connected
-* `priority`: priority for backup group
+* `sockstate`: current connection status (see [`srt_getsockstate`](#srt_getsockstate))
+* `memberstate`: current state of the member (see below)
+* `result`: result of the operation (if this operation recently updated this structure)
 
-The priority is set to 0 by default by `srt_prepare_endpoint()` - you can set
-it to a different value afterwards. The default 0 value is the highest priority
-and greater values declare lower priorities. The priority for the backup
-groups determines which link is activated first when the currently active link is
-unstable, and which should keep transmitting when multiple active links are
-currently stable. This is not used by any other group types.
+### SRT_MEMBERSTATUS
 
-Functions to be used on groups:
+The enumeration type that defines the state of the member
+connection in the group:
+
+* `SRT_GST_PENDING`: The connection is in progress, so the socket
+is not currently being used for transmission, even potentially,
+and still has a chance to fail and transit into `SRT_GST_BROKEN`
+without turning into `SRT_GST_IDLE`
+
+* `SRT_GST_IDLE`: The connection is established and ready to
+take over transmission, but it's not used for transmission at
+the moment. This state may last for a short moment in case of
+broadcast or balancing groups. In backup groups this state
+defines a backup link that is ready to take over when the
+currently active (running) link gets unstable.
+
+* `SRT_GST_RUNNING`: The connection is established and at least
+one packet has already been sent or received over it.
+
+* `SRT_GST_BROKEN`: The connection was broken. Broken connections
+are not to be revived. Note also that it is only possible to see this
+state if it is read by `srt_sendmsg2` or `srt_recvmsg2` just after
+the link failure has been detected. Otherwise, the broken link simply 
+disappears from the member list.
+
+Note that internally the member state is separate for sending and
+receiving. If the `memberstate` field of `SRT_SOCKGROUPDATA` is
+`SRT_GST_RUNNING`, it means that this is the state in at least one
+direction, while in the other direction it may be `SRT_GST_IDLE`. In all
+other cases the states should be the same in both directions.
+
+States should normally start with `SRT_GST_PENDING` and then
+turn into `SRT_GST_IDLE`. Once a new link is used for sending data, 
+the state becomes `SRT_GST_RUNNING`. 
+In case of `SRT_GTYPE_BACKUP` type group, if a link is in
+`SRT_GST_RUNNING` state, but another link is chosen to remain
+as the only active one, this link will be "silenced" (its state will
+become `SRT_GST_IDLE`).
+
+
+## Functions to be used on groups:
 
 ### srt_create_group
 
@@ -700,33 +788,47 @@ int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA output[], size_t* in
 
 * `socketgroup` an existing socket group ID
 * `output` points to an output array
-* `inoutlen` points to a variable set to array's size
+* `inoutlen` points to a variable that stores the size of the `output` array,
+  and is set to the filled array's size
 
 This function obtains the current member state of the group specified in
 `socketgroup`. The `output` should point to an array large enough to hold
-all the elements, and `inoutlen` to a variable preset to the size of this array.
-The current number of members will be written back to `inoutlen`. If the size
-is enough for the current number of members, the `output` array will be
-filled with group data and the function will return 0. Otherwise the array
-will not be filled and `SRT_ERROR` will be returned.
+all the elements. The `inoutlen` should point to a variable initially set
+to the size of the `output` array.
+The current number of members will be written back to `inoutlen`.
+
+If the size of the `output` array is enough for the current number of members,
+the `output` array will be filled with group data and the function will return
+the number of elements filled.
+Otherwise the array will not be filled and `SRT_ERROR` will be returned.
+
+This function can be used to get the group size by setting `output` to `NULL`,
+and providing `socketgroup` and `inoutlen`.
 
 - Returns:
 
-   * 0, if successful
+   * the number of data elements filled, on success
    * -1, on error
 
 - Errors:
 
    * `SRT_EINVPARAM` reported if `socketgroup` is not an existing group ID
-   * `SRT_SUCCESS` if the array was too small
+   * `SRT_ELARGEMSG` reported if `inoutlen` if less than the size of the group
 
+| in:output | in:inoutlen    | returns      | out:output | out:inoutlen | Error |
+|-----------|----------------|--------------|-----------|--------------|--------|
+| NULL      | NULL           | -1           | NULL      | NULL         | `SRT_EINVPARAM` |
+| NULL      | ptr            | 0            | NULL      | group.size() | ✖️ |
+| ptr       | NULL           | -1           | ✖️         | NULL         | `SRT_EINVPARAM` |
+| ptr       | ≥ group.size   | group.size() | group.data | group.size | ✖️ |
+| ptr       | < group.size   | -1           | ✖️         | group.size  | `SRT_ELARGEMSG` |
 
 
 ### srt_connect_group
 
 ```
 int srt_connect_group(SRTSOCKET group,
-                      SRT_SOCKGROUPDATA name [], int arraysize);
+                      SRT_SOCKGROUPCONFIG name [], int arraysize);
 ```
 
 This function does almost the same as calling `srt_connect` or `srt_connect_bind`
@@ -734,45 +836,193 @@ This function does almost the same as calling `srt_connect` or `srt_connect_bind
 item specified in `name` array. However if you did this in blocking mode, the
 first call to `srt_connect` would block until the connection is established,
 whereas this function blocks until any of the specified connections is
-established. 
+established.
 
 If you set the group nonblocking mode (`SRTO_RCVSYN` option), there's no
-difference. Note, however, that this function accepts only groups, not
-sockets.
+difference, except that the `SRT_SOCKGROUPCONFIG` structure allows you
+to add extra configuration data used by groups. Note also that this function
+accepts only groups, not sockets.
 
 The elements of the `name` array need to be prepared with the use of the
-`srt_prepare_endpoint` function. Note that it is **NOT** required that every
-address you specify for it is of the same family.
+[`srt_prepare_endpoint`](#srt_prepare_endpoint) function. Note that it is
+**NOT** required that every target address you specify for it is of the same
+family.
 
 Return value and errors in this function are the same as in `srt_connect`,
 although this function reports success when at least one connection has
-succeeded. Which one and how many of them succeeded, can be checked with the
-`srt_group_data` function.
+succeeded. If none has succeeded, this function reports `SRT_ECONNLOST`
+error. Particular connection states can be obtained from the `name`
+array upon return from the `errorcode` field.
 
+The fields of `SRT_SOCKGROUPCONFIG` structure have the following meaning:
+
+Input:
+
+* `id`: unused, should be -1 (default when created by `srt_prepare_endpoint`)
+* `srcaddr`: address to bind before connecting, if specified (see below for details)
+* `peeraddr`: target address to connect
+* `weight`: weight value to be set on the link
+* `config`: socket options to be set on the socket before connecting
+* `errorcode`: unused, should be `SRT_SUCCESS` (default)
+
+Output:
+
+* `id`: The socket created for that connection (-1 if failed to create)
+* `srcaddr`: unchanged
+* `peeraddr`: unchanged
+* `weight`: unchanged
+* `config`: unchanged (the object should be manually deleted upon return)
+* `errorcode`: status of connection for that link (`SRT_SUCCESS` if succeeded)
+
+The procedure of connecting for every connection definition specified
+in the `name` array is performed the following way:
+
+1. The socket for this connection is first created
+
+2. Socket options derived from the group are set on that socket.
+
+3. If `config` is not NULL, configuration options stored there are set on that socket.
+
+4. If source address is specified (that is `srcaddr` value is **not**
+default empty, as described in [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG)),
+then the binding operation is being done on the socket (see `srt_bind`).
+
+5. The socket is added to the group as a member.
+
+6. The socket is being connected to the target address, as specified
+in the `peeraddr` field.
+
+During this process there can be errors at any stage. There are two
+possibilities as to what may happen in this case:
+
+1. If creation of a new socket has failed, which may only happen due to
+problems with system resources, then the whole loop is interrupted and no
+further items in the array are processed. All sockets that got created until
+then, and for which the connection attempt has at least successfully started,
+remain group members, although the function will return immediately with an
+error status (that is, without waiting for the first successful connection). If
+your application wants to do any partial recovery from this situation, it can
+only use epoll mechanism to wait for readiness.
+
+2. In any other case, if an error occurs at any stage of the above process, the
+processing is interrupted for this very array item only, the socket used for it
+is immediately closed, and the processing of the next elements continues. In case
+of connection process, it also passes two stages - parameter check and the process
+itself. Failure at the parameter check breaks this process, while if this check
+passed, this item is considered correctly processed, even if the connection
+attempt is going to fail later. If this function is called in the blocking mode,
+it then blocks until at least one connection reports success or if all of them
+fail. Connections that continue in the background after this function exits can
+be then checked status by [`srt_group_data`](#srt_group_data).
 
 ### srt_prepare_endpoint
 
 ```
-SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
                                        const struct sockaddr* adr, int namelen);
 ```
 
-This function turns the given addresses into the `SRT_SOCKGROUPDATA` structure
-needed by the `srt_connect_group` function.
+This function prepares a default `SRT_SOCKGROUPCONFIG` object as an element
+of the array you can prepare for `srt_connect_group` function, filled with
+additional data:
 
 * `src`: address to which the newly created socket should be bound
 * `adr`: address to which the newly created socket should connect
 * `namelen`: size of both `src` and `adr`
 
-The `src` parameter is optional and can be NULL, in which case the
-`srt_bind` will not be called on the newly created socket for that endpoint.
-The `adr` parameter is obligatory. Note though that this function has no
-possibility of reporting errors - these would be reported only by
-`srt_connect_group`.
+The following fields are set by this function:
+
+* `id`: -1 (unused for input)
+* `srcaddr`: default empty (see below) or copied from `src`
+* `peeraddr`: copied from `adr`
+* `weight`: 0
+* `config`: `NULL`
+* `errorcode`: `SRT_SUCCESS`
+
+The default empty `srcaddr` is set the following way:
+
+* `ss_family` set to the same value as `adr->sa_family`
+* empty address (`INADDR_ANY` for IPv4 and `in6addr_any` for IPv6)
+* port number 0
+
+If `src` is not NULL, then `srcaddr` is copied from `src`. Otherwise
+it will remain as default empty.
+
+The `adr` parameter is obligatory. If `src` parameter is not NULL,
+then both `adr` and `src` must have the same value of `sa_family`.
+
+Note though that this function has no possibility of reporting errors - these
+would be reported only by `srt_connect_group`, separately for every individual
+connection, and the status can be obtained from `errorcode` field.
 
 
-Options and properties
-----------------------
+### srt_create_config
+
+```
+SRT_SOCKOPT_CONFIG* srt_create_config();
+```
+
+Creates a dynamic object for specifying the socket options. You can
+add options to be set on the socket by `srt_config_add` and then
+mount this object into the `config` field in `SRT_SOCKGROUPCONFIG`
+object for that particular connection. After the object is no
+longer needed, you should delete it using `srt_delete_config`.
+
+Returns:
+
+* The pointer to the created object (memory allocation errors apply)
+
+
+### srt_delete_config
+
+```
+void srt_delete_config(SRT_SOCKOPT_CONFIG* c);
+```
+
+Deletes the configurartion object.
+
+
+### srt_config_add
+
+```
+int srt_config_add(SRT_SOCKOPT_CONFIG* c, SRT_SOCKOPT opt, void* val, int len);
+```
+
+Adds a configuration option to the configuration object.
+Parameters have meanings similar to `srt_setsockflag`. Note
+that not every option is allowed to be set this way. However,
+the option (if allowed) isn't checked if it doesn't
+violate other preconditions. This will be checked when the
+option is being set on the socket, which may fail as a part
+of the connection process done by `srt_connect_group`.
+
+This function should be used when this option must be set
+individually on a socket and differently for particular link.
+If you need to set some option the same way on every socket,
+you should rather set this option on the whole group.
+
+The following options are allowed to be set on the member socket:
+
+* `SRTO_SNDBUF`: Allows for larger sender buffer for slower links
+* `SRTO_RCVBUF`: Allows for larger receiver buffer for longer recovery
+* `SRTO_UDP_RCVBUF`: UDP receiver buffer, if this link has a big flight window
+* `SRTO_UDP_SNDBUF`: UDP sender buffer, if this link has a big flight window
+* `SRTO_SNDDROPDELAY`: When particular link tends to drop too eagerly
+* `SRTO_NAKREPORT`: If you don't want NAKREPORT to work for this link
+* `SRTO_CONNTIMEO`: If you want to give more time to connect on this link
+* `SRTO_LOSSMAXTTL`: If this link tends to suffer from UDP reordering
+* `SRTO_PEERIDLETIMEO`: If you want to be more tolerant for temporary outages
+* `SRTO_GROUPSTABTIMEO`: To set ACK jitter tolerance per individual link
+
+
+Returns: 0 if succeeded, -1 when failed
+
+Errors:
+
+* `SRT_EINVPARAM`: this option is not allowed to be set on a socket
+being a group member
+
+## Options and properties
 
 ### srt_getpeername
 ```
@@ -881,21 +1131,20 @@ where x = ("%d", (version>>16) & 0xff), etc.
   * srt version as an unsigned 32-bit integer
 
 
-Helper data types for transmission
-----------------------------------
+## Helper data types for transmission
 
 ### SRT_MSGCTRL
 
 The `SRT_MSGCTRL` structure:
 
-```
+```c++
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
    int msgttl;           // TTL for a message, default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
-   int boundary;         //0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   uint64_t srctime;     // source timestamp (usec), 0: use internal time     
+   int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
+   int64_t srctime;      // source time (microseconds since SRT internal clock epoch)
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
 } SRT_MSGCTRL;
@@ -904,11 +1153,11 @@ typedef struct SRT_MsgCtrl_
 The `SRT_MSGCTRL` structure is used in `srt_sendmsg2` and `srt_recvmsg2` calls 
 and specifies some special extra parameters:
 
-* `flags`: [IN, OUT]. RESERVED FOR FUTURE USE (should be 0). This is
+- `flags`: [IN, OUT]. RESERVED FOR FUTURE USE (should be 0). This is
 intended to specify some special options controlling the details of how the
 called function should work.
 
-* `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
+- `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
 sending messages (in `[ms]`). Not used for receiving messages. If this value
 is not negative, it defines the maximum time up to which this message should
 stay scheduled for sending for the sake of later retransmission. A message
@@ -917,29 +1166,30 @@ is always sent for the first time, but the UDP packet carrying it may be
 the message is not successfully resent before TTL expires, further retransmission
 is given up and the message is discarded.
 
-* `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
+- `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
 be extracted by the receiver in the order of sending. This can be meaningful if 
 a packet loss has happened, and a particular message must wait for retransmission 
 so that it can be reassembled and then delivered. When this flag is false, the 
 message can be delivered even if there are any previous messages still waiting 
 for completion.
 
-* `boundary`: RESERVED FOR FUTURE USE. Intended to be used in a special mode 
+- `boundary`: RESERVED FOR FUTURE USE. Intended to be used in a special mode 
 when you are allowed to send or retrieve a part of the message.
 
-* `srctime`:
-   * [IN] Sender only. Specifies the application-provided timestamp. If not used
-(specified as 0), the current system time (absolute microseconds since epoch) is 
-used.
-   * [OUT] Receiver only. Specifies the time when the packet was intended to be
-delivered to the receiver.
+- `srctime`:
+  - [OUT] Receiver only. Specifies the time when the packet was intended to be
+delivered to the receiving application (in microseconds since SRT clock epoch).
+  - [IN] Sender only. Specifies the application-provided timestamp to be asociated
+with the packet. If not provided (specified as 0), the current time of SRT internal clock
+is used.
+  - For details on how to use `srctime` please refer to (Time Access)[#time-access] section.
 
-* `pktseq`: Receiver only. Reports the sequence number for the packet carrying
+- `pktseq`: Receiver only. Reports the sequence number for the packet carrying
 out the payload being returned. If the payload is carried out by more than one
 UDP packet, only the sequence of the first one is reported. Note that in
 **live mode** there's always one UDP packet per message.
 
-* `msgno`: Message number that can be sent by both sender and receiver,
+- `msgno`: Message number that can be sent by both sender and receiver,
 although it is required that this value remain monotonic in subsequent send calls. 
 Normally message numbers start with 1 and increase with every message sent.
 
@@ -956,8 +1206,8 @@ object and can be used as a source for assignment. Note that you cannot pass
 this constant object into any of the API functions because they require it to be 
 mutable, as they use some fields to output values.
 
-Transmission
-------------
+## Transmission
+
 ### srt_send, srt_sendmsg, srt_sendmsg2
 ```
 int srt_send(SRTSOCKET u, const char* buf, int len);
@@ -1006,6 +1256,7 @@ with the rest of the buffer next time to send it completely. In both
   * `SRT_ECONNLOST`: Socket `u` used for the operation has lost its connection.
   * `SRT_EINVALMSGAPI`: Incorrect API usage in **message mode**:
     * **live mode**: trying to send more bytes at once than `SRTO_PAYLOADSIZE`
+    or wrong source time was provided.
   * `SRT_EINVALBUFFERAPI`: Incorrect API usage in **stream mode**:
     * Reserved for future use. The congestion controller object
       used for this mode doesn't use any restrictions on this call for now,
@@ -1156,8 +1407,7 @@ don't know what value to chose.
   * `SRT_ERDPERM`: The read from file operation has failed (`srt_sendfile`).
   * `SRT_EWRPERM`: The write to file operation has failed (`srt_recvfile`).
 
-Diagnostics
------------
+## Diagnostics
 
 General notes concerning the "getlasterror" diagnostic functions: when an API
 function ends up with error, this error information is stored in a thread-local
@@ -1215,14 +1465,15 @@ report a "successful" code.
 ### srt_getrejectreason
 
 ```
-enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock);
+int srt_getrejectreason(SRTSOCKET sock);
 ```
-
-This function shall be called after a connecting function (such as `srt_connect`)
-has returned an error, which's code was `SRT_ECONNREJ`. It allows to get a more
-detailed rejection reason. This function returns a numeric code, which can be
-translated into a message by `srt_rejectreason_str`. The following codes are
-currently reported:
+This function provides a more detailed reason for the failed connection attempt. 
+It shall be called after a connecting function (such as `srt_connect`)
+has returned an error, the code for which is `SRT_ECONNREJ`. If `SRTO_RCVSYN`
+has been set on the socket used for the connection, the function should also be
+called when the `SRT_EPOLL_ERR` event is set for this socket. It returns a
+numeric code, which can be translated into a message by `srt_rejectreason_str`.
+The following codes are currently reported:
 
 #### SRT_REJ_UNKNOWN
 
@@ -1305,6 +1556,23 @@ connection parties.
 The `SRTO_PACKETFILTER` option has been set differently on both connection
 parties.
 
+#### SRT_REJ_GROUP
+
+The group type or some group settings are incompatible for both connection
+parties.
+
+#### SRT_REJ_TIMEOUT
+
+The connection wasn't rejected, but it timed out. This code is always set on
+connection timeout, but this is the only way to get this state in non-blocking
+mode (see `SRTO_RCVSYN`).
+
+There may also be server and user rejection codes,
+as defined by the `SRT_REJC_INTERNAL`, `SRT_REJC_PREDEFINED` and `SRT_REJC_USERDEFINED`
+constants. Note that the number space from the value of `SRT_REJC_PREDEFINED`
+and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
+adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
+the application.
 
 ### srt_rejectreason_str
 
@@ -1313,13 +1581,326 @@ const char* srt_rejectreason_str(enum SRT_REJECT_REASON id);
 ```
 
 Returns a constant string for the reason of the connection rejected,
-as per given code id. Alternatively you can use the `srt_rejectreason_msg`
-array. This function additionally handles the case for unknown id by
-reporting `SRT_REJ_UNKNOWN` in such case.
+as per given code ID. It provides a system-defined message for
+values below `SRT_REJ_E_SIZE`. For other values below
+`SRT_REJC_PREDEFINED` it returns the string for `SRT_REJ_UNKNOWN`.
+For values since `SRT_REJC_PREDEFINED` on, returns
+"Application-defined rejection reason".
+
+The actual messages assigned to the internal rejection codes, that is,
+less than `SRT_REJ_E_SIZE`, can be also obtained from `srt_rejectreason_msg`
+array.
+
+### srt_setrejectreason
+
+```
+int srt_setrejectreason(SRTSOCKET sock, int value);
+```
+
+Sets the rejection code on the socket. This call is only useful in the
+listener callback. The code from `value` set this way will be set as a
+rejection reason for the socket. After the callback rejects
+the connection, the code will be passed back to the caller peer with the
+handshake response.
+
+Note that allowed values for this function begin with `SRT_REJC_PREDEFINED`
+(that is, you cannot set a system rejection code).
+For example, your application can inform the calling side that the resource
+specified under the `r` key in the StreamID string (see `SRTO_STREAMID`)
+is not availble - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
+
+- Returns:
+  * 0 in case of success.
+  * -1 in case of error.
+
+- Errors:
+
+  * `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid socket
+  * `SRT_EINVPARAM`: `value` is less than `SRT_REJC_PREDEFINED`
+
+### Error codes
+
+All functions that return the status via `int` value return -1 (designated as 
+`SRT_ERROR`) always when the call has failed (in case of resource creation
+functions an appropriate symbol is defined, like `SRT_INVALID_SOCK` for
+`SRTSOCKET`). When this happens, the error code can be obtained from the
+`srt_getlasterror` function. The values for the error are collected in an
+`SRT_ERRNO` enum:
+
+#### `SRT_EUNKNOWN`
+
+Internal error when setting the right error code.
+
+#### `SRT_SUCCESS`
+
+The value set when the last error was cleared and no error has occurred since then.
+
+#### `SRT_ECONNSETUP`
+
+General setup error resulting from internal system state.
+
+#### `SRT_ENOSERVER`
+
+Connection timed out while attempting to connect to the remote address. Note
+that when this happens, `srt_getrejectreason` also reports the timeout reason.
+
+#### `SRT_ECONNREJ`
+
+Connection has been rejected. Additional reject reason can be obtained through
+`srt_getrejectreason` (see above).
+
+#### `SRT_ESOCKFAIL`
+
+An error occurred when trying to call a system function on an internally used
+UDP socket. Note that the detailed system error is available in the extra variable
+passed by pointer to `srt_getlasterror`.
+
+#### `SRT_ESECFAIL`
+
+A possible tampering with the handshake packets was detected, or encryption
+request wasn't properly fulfilled.
+
+#### `SRT_ESCLOSED`
+
+A socket that was vital for an operation called in blocking mode
+has been closed during the operation. Please note that this situation is
+handled differently than the system calls for `connect` and `accept`
+functions for TCP, which simply block indefinitely (or until the standard
+timeout) when the key socket was closed during an operation. When this 
+error is reported, it usually means that the socket passed as the first 
+parameter to `srt_connect*` or `srt_accept` is no longer usable.
 
 
-Performance tracking
---------------------
+#### `SRT_ECONNFAIL`
+
+General connection failure of unknown details.
+
+#### `SRT_ECONNLOST`
+
+The socket was properly connected, but the connection has been broken.
+This specialzation is reported from the transmission functions.
+
+#### `SRT_ENOCONN`
+
+The socket is not connected. This can be reported also when the
+connection was broken for a function that checks some characteristic
+socket data.
+
+#### `SRT_ERESOURCE`
+
+System or standard library error reported unexpectedly for unknown purpose.
+Usually it means some internal error.
+
+#### `SRT_ETHREAD`
+
+System was unable to spawn a new thread when requried.
+
+#### `SRT_ENOBUF`
+
+System was unable to allocate memory for buffers.
+
+#### `SRT_ESYSOBJ`
+
+System was unable to allocate system specific objects (such as
+sockets, mutexes or condition variables).
+
+#### `SRT_EFILE`
+
+General filesystem error (for functions operating with file transmission).
+
+#### `SRT_EINVRDOFF`
+
+Failure when trying to read from a given position in the file (file could
+be modified while it was read from).
+
+#### `SRT_ERDPERM`
+
+Read permission was denied when trying to read from file.
+
+#### `SRT_EINVWROFF`
+
+Failed to set position in the written file.
+
+#### `SRT_EWRPERM`
+
+Write permission was denied when trying to write to a file.
+
+#### `SRT_EINVOP`
+
+Invalid operation performed for the current state of a socket. This mainly
+concerns performing `srt_bind*` operations on a socket that
+is already bound.  Once a socket has been been bound, it cannot be bound
+again.
+
+#### `SRT_EBOUNDSOCK`
+
+The socket is currently bound and the required operation cannot be
+performed in this state. Usually it's about an option that can only
+be set on the socket before binding (`srt_bind*`). Note that a socket
+that is currently connected is also considered bound.
+
+#### `SRT_ECONNSOCK`
+
+The socket is currently connected and therefore performing the required
+operation is not possible. Usually concerns setting an option that must
+be set before connecting (although it is allowed to be altered after
+binding), or when trying to start a connecting operation (`srt_connect*`)
+while the socket isn't in a state that allows it (only `SRTS_INIT` or
+`SRTS_OPENED` are allowed).
+
+#### `SRT_EINVPARAM`
+
+This error is reported in a variety of situations when call parameters
+for API functions have some requirements defined and these were not
+satisfied. This error should be reported after an initial check of the
+parameters of the call before even performing any operation. This error
+can be easily avoided if you set the values correctly.
+
+#### `SRT_EINVSOCK`
+
+The API function required an ID of an entity (socket or group) and
+it was invalid. Note that some API functions work only with socket or
+only with group, so they would also return this error if inappropriate
+type of entity was passed, even if it was valid.
+
+#### `SRT_EUNBOUNDSOCK`
+
+The operation to be performed on a socket requires that it first be
+explicitly bound (using `srt_bind*` functions). Currently it applies when
+calling `srt_listen`, which cannot work with an implicitly bound socket.
+
+#### `SRT_ENOLISTEN`
+
+The socket passed for the operation is required to be in the listen
+state (`srt_listen` must be called first).
+
+#### `SRT_ERDVNOSERV`
+
+The required operation cannot be performed when the socket is set to
+rendezvous mode (`SRTO_RENDEZVOUS` set to true). Usually applies when
+trying to call `srt_listen` on such a socket.
+
+#### `SRT_ERDVUNBOUND`
+
+An attempt was made to connect to a socket set to rendezvous mode 
+(`SRTO_RENDEZVOUS` set to true) that was not first bound. A
+rendezvous connection requires setting up two addresses and ports
+on both sides of the connection, then setting the local one with `srt_bind`
+and using the remote one with `srt_connect` (or you can simply
+use `srt_rendezvous`). Calling `srt_connect*` on an unbound socket
+(in `SRTS_INIT` state) that is to be bound implicitly is only allowed
+for regular caller sockets (not rendezvous).
+
+#### `SRT_EINVALMSGAPI`
+
+The function was used incorrectly in the message API. This can happen if:
+
+* The parameters specific for the message API in `SRT_MSGCTRL` type parameter
+were incorrectly specified
+
+* The extra parameter check performed by the congestion controller has
+failed
+
+* The socket is a member of a self-managing group, therefore you should
+perform the operation on the group, not on this socket
+
+
+#### `SRT_EINVALBUFFERAPI`
+
+The function was used incorrectly in the stream (buffer) API, that is,
+either the stream-only functions were used with set message API
+(`srt_sendfile`/`srt_recvfile`) or TSBPD mode was used with buffer API
+(`SRTO_TSBPDMODE` set to true) or the congestion controller has failed
+to check call parameters.
+
+#### `SRT_EDUPLISTEN`
+
+The port tried to be bound for listening is already busy. Note that binding
+to the same port is allowed in general (when `SRTO_REUSEADDR` is true on
+every socket that bound it), but only one such socket can be a listener.
+
+#### `SRT_ELARGEMSG`
+
+Size exceeded. This is reported in the following situations:
+
+* Trying to receive a message, but the read-ready message is larger than
+the buffer passed to the receiving function
+
+* Trying to send a message, but the size of this message exceeds the
+size of the preset sender buffer, so it cannot be stored in the sender buffer.
+
+* With getting group data, the array to be filled is too small.
+
+
+#### `SRT_EINVPOLLID`
+
+The epoll ID passed to an epoll function is invalid
+
+#### `SRT_EPOLLEMPTY`
+
+The epoll container currently has no subscribed sockets. This is reported by an
+epoll waiting function that would in this case block forever. This problem
+might be reported both in a situation where you have created a new epoll
+container and didn't subscribe any sockets to it, or you did, but these
+sockets have been closed (including when closed in a separate thread while the
+waiting function was blocking). Note that this situation can be prevented
+by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
+you use multiple threads and start waiting without subscribed sockets, so that
+you can subscribe them later from another thread.
+
+#### `SRT_EASYNCFAIL`
+
+General asynchronous failure (not in use currently).
+
+
+#### `SRT_EASYNCSND`
+
+Sending operation is not ready to perform. This error is reported
+when trying to perform a sending operation on a socket that is not
+ready for sending, but `SRTO_SNDSYN` was set to false (when true,
+the function would block the call otherwise).
+
+#### `SRT_EASYNCRCV`
+
+Receiving operation is not ready to perform. This error is reported
+when trying to perform a receiving operation or accept a new socket from the
+listener socket, when the socket is not ready for that operation, but
+`SRTO_RCVSYN` was set to false (when true, the function would block
+the call otherwise).
+
+#### `SRT_ETIMEOUT`
+
+The operation timed out. This can happen if you have a timeout
+set by an option (`SRTO_RCVTIMEO` or `SRTO_SNDTIMEO`), or passed
+as an extra argument (`srt_epoll_wait` or `srt_accept_bond`) and
+the function call was blocking, but the required timeout time has passed.
+
+#### `SRT_ECONGEST`
+
+NOTE: This error is used only in an experimental version that requires
+setting the `SRT_ENABLE_ECN` macro at compile time. Otherwise the
+situation described below results in the usual successful report.
+
+This error should be reported by the sending function when, with
+`SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` set to true, some packets were dropped at
+the sender side (see the description of `SRTO_TLPKTDROP` for details). This
+doesn't concern the data that were passed for sending by the sending function
+(these data are placed at the back of the sender buffer, while the dropped
+packets are at the front). In other words, the operation done by the sending
+function is successful, but the application might want to slow down the sending
+rate to avoid congestion.
+
+#### `SRT_EPEERERR`
+
+This error is reported in a situation when the receiver peer is
+writing to a file that the agent is sending. When the peer encounters
+an error when writing the received data to a file, it sends the
+`UMSG_PEERERROR` message back to the sender, and the sender reports
+this error from the API sending function.
+
+
+
+## Performance tracking
 
 General note concerning sequence numbers used in SRT: they are 32-bit "circular
 numbers" with the most significant bit not included. For example 0x7FFFFFFF
@@ -1353,8 +1934,7 @@ Reports the current statistics
 `SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
 of the fields please refer to the document [statistics.md](statistics.md).
 
-Asynchronous operations (epoll)
--------------------------------
+## Asynchronous operations (epoll)
 
 The epoll system is currently the only method for using multiple sockets in one
 thread with having the blocking operation moved to epoll waiting so that it can
@@ -1680,8 +2260,7 @@ Deletes the epoll container.
 
   * `SRT_EINVPOLLID`: `eid` parameter doesn't refer to a valid epoll container
 
-Logging control
----------------
+## Logging control
 
 SRT has a widely used system of logs, as this is usually the only way to determine
 how the internals are working, without changing the rules by the act of tracing.
@@ -1714,7 +2293,7 @@ The constants for this value are those from `<sys/syslog.h>`
 
 ### srt_addlogfa, srt_dellogfa, srt_resetlogfa
 
-```
+```c++
 void srt_addlogfa(int fa);
 void srt_dellogfa(int fa);
 void srt_resetlogfa(const int* fara, size_t fara_size);
@@ -1733,7 +2312,8 @@ if strictly required for the development), or some duplicated information
 (so you may want to turn this FA on, while turning off the others).
 
 ### srt_setloghandler
-```
+
+```c++
 void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 typedef void SRT_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 ```
@@ -1742,7 +2322,8 @@ By default logs are printed to standard error stream. This function replaces
 the sending to a stream with a handler function that will receive them.
 
 ### srt_setlogflags
-```
+
+```c++
 void srt_setlogflags(int flags);
 ```
 
@@ -1755,9 +2336,95 @@ will provide this information on its own.
 
 The following flags are available, as collected in `logging_api.h` public header:
 
-* `SRT_LOGF_DISABLE_TIME`: Do not provide the time in the header
-* `SRT_LOGF_DISABLE_THREADNAME`: Do not provide the thread name in the header
-* `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
-* `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
+- `SRT_LOGF_DISABLE_TIME`: Do not provide the time in the header
+- `SRT_LOGF_DISABLE_THREADNAME`: Do not provide the thread name in the header
+- `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
+- `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
+
+## Time Access
+
+The following set of functions is intended to retrieve timestamps from the clock used by SRT.
+The sender can pass the timestamp in `MSGCTRL::srctime` of the `srt_sendmsg2(..)`
+function together with the packet being submitted to SRT.
+If the `srctime` value is not provided (the default value of 0 is set), SRT will use internal
+clock and assign the packet submission time as the packet timestamp.
+If the sender wants to explicitly assign a timestamp
+to a certain packet. this timestamp MUST be taken from SRT Time Access functions.
+The time value provided MUST equal or exceed the connection start time (`srt_connection_time(..)`)
+of the SRT socket passed to `srt_sendmsg2(..)`.
+
+The current time value as of the SRT internal clock can be retrieved using the `srt_time_now()` function.
+
+There are two known cases where you might want to use `srctime`:
+
+1. SRT passthrough (for stream gateways).
+You may wish to simply retrieve packets from an SRT source and pass them transparently
+to an SRT output (possibly re-encrypting). In that case, every packet you read
+should preserve the original value of `srctime` as obtained from `srt_recvmsg2`,
+and the original `srctime` for each packet should be then passed to `srt_sendmsg2`.
+This mechanism could be used to avoid jitter resulting from varying differences between
+the time of receiving and sending the same packet.
+
+2. Stable timing source.
+In the case of a live streaming procedure, when spreading packets evenly into the stream,
+you might want to predefine times for every single packet to keep time intervals perfectly equal.
+Or, if you believe that your input signal delivers packets at the exact times that should be
+assigned to them, you might want to preserve these times at the SRT receiving side
+to avoid jitter that may result from varying time differences between the packet arrival
+and the moment when sending it over SRT. In such cases you might do the following:
+
+    - At the packet arrival time, grab the current time at that moment using `srt_time_now()`.
+
+    - When you want a precalculated packet time, use a private relative time counter
+    set at the moment when the connection was made. From the moment when your first packet
+    is ready, start precalculating packet times relative to the connection start time obtained
+    from `srt_connection_time()`. Although you still have to synchronize sending times with these
+    predefined times, by explicitly specifying the source time you avoid the jitter
+    resulting from a lost accuracy due to waiting time and unfortunate thread scheduling.
+
+Note that  `srctime` uses an internally defined clock
+that is intended to be monotonic (the definition depends on the build flags,
+see below). Because of that **the application should not define this time basing
+on values obtained from the system functions for getting the current system time**
+(such as `time`, `ftime` or `gettimeofday`). To avoid problems and
+misunderstanding you should rely exclusively on time values provided by
+`srt_time_now()` and `srt_connection_time()` functions.
+
+The clock used by SRT internal clock, is determined by the following build flags:
+- `ENABLE_MONOTONIC` makes use of `CLOCK_MONOTONIC` with `clock_gettime` function.
+- `ENABLE_STDXXX_SYNC` makes use of `std::chrono::steady_clock`.
+
+The default is currently to use the system clock as internal SRT clock,
+although it's highly recommended to use one of the above monotonic clocks,
+as system clock is vulnerable to time modifications during transmission.
+
+### srt_time_now
+
+```c++
+int64_t srt_time_now();
+```
+
+Get time in microseconds elapsed since epoch using SRT internal clock (steady or monotonic clock).
+
+- Returns:
+  - Current time in microseconds elapsed since epoch of SRT internal clock.
+
+### srt_connection_time
+
+```c++
+int64_t srt_connection_time(SRTSOCKET sock);
+```
+
+Get connection time in microseconds elapsed since epoch using SRT internal clock (steady or monotonic clock).
+The connection time represents the time when SRT socket was open to establish a connection.
+Milliseconds elapsed since connection start time can be determined using [**Performance tracking**](#Performance-tracking)
+functions and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics.md)).
+
+- Returns:
+  - Connection time in microseconds elapsed since epoch of SRT internal clock.
+  - -1 in case of error
+
+- Errors:
+  - `SRT_EINVSOCK`: Socket `sock` is not an ID of a valid SRT socket
 
 [RETURN TO TOP OF PAGE](#SRT-API-Functions)

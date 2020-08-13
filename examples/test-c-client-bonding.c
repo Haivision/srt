@@ -74,7 +74,7 @@ int main(int argc, char** argv)
 
     nmemb /= 2;
 
-    SRT_SOCKGROUPDATA* grpdata = calloc(nmemb, sizeof (SRT_SOCKGROUPDATA));
+    SRT_SOCKGROUPCONFIG* grpconfig = calloc(nmemb, sizeof (SRT_SOCKGROUPCONFIG));
 
     printf("srt group\n");
     ss = srt_create_group(gtype);
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
             return 1;
         }
 
-        grpdata[i] = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
+        grpconfig[i] = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
     }
 
     printf("srt connect (group)\n");
@@ -105,7 +105,7 @@ int main(int argc, char** argv)
     // Note: this function unblocks at the moment when at least one connection
     // from the array is established (no matter which one); the others will
     // continue in background.
-    st = srt_connect_group(ss, grpdata, nmemb);
+    st = srt_connect_group(ss, grpconfig, nmemb);
     if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
@@ -122,6 +122,8 @@ int main(int argc, char** argv)
     // SRT_EPOLL_UPDATE signal.
     printf("sleeping 1s to make it probable all links are established\n");
     sleep(1);
+
+    SRT_SOCKGROUPDATA* grpdata = calloc(nmemb, sizeof (SRT_SOCKGROUPDATA));
 
     for (i = 0; i < 100; i++)
     {
@@ -151,8 +153,8 @@ int main(int argc, char** argv)
             for (i = 0; i < mc.grpdata_size; ++i)
             {
                 printf( "[%zd] result=%d state=%s ", i, mc.grpdata[i].result,
-                        mc.grpdata[i].status <= SRTS_CONNECTING ? "pending" :
-                        mc.grpdata[i].status == SRTS_CONNECTED ? "connected" : "broken");
+                        mc.grpdata[i].sockstate <= SRTS_CONNECTING ? "pending" :
+                        mc.grpdata[i].sockstate == SRTS_CONNECTED ? "connected" : "broken");
             }
             printf("\n");
         }
@@ -170,6 +172,7 @@ int main(int argc, char** argv)
     }
 
     free(grpdata);
+    free(grpconfig);
 
     printf("srt cleanup\n");
     srt_cleanup();

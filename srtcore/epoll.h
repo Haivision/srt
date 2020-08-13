@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_EPOLL_H__
-#define __UDT_EPOLL_H__
+#ifndef INC_SRT_EPOLL_H
+#define INC_SRT_EPOLL_H
 
 
 #include <map>
@@ -369,14 +369,6 @@ public: // for CUDTUnited API
    /// @return 0 
    int clear_usocks(int eid);
 
-   /// add a UDT socket to an EPoll.
-   /// @param [in] eid EPoll ID.
-   /// @param [in] u UDT Socket ID.
-   /// @param [in] events events to watch.
-   /// @return 0 if success, otherwise an error number.
-
-   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL) { return update_usock(eid, u, events); }
-
    /// add a system socket to an EPoll.
    /// @param [in] eid EPoll ID.
    /// @param [in] s system Socket ID.
@@ -384,13 +376,6 @@ public: // for CUDTUnited API
    /// @return 0 if success, otherwise an error number.
 
    int add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
-
-   /// remove a UDT socket event from an EPoll; socket will be removed if no events to watch.
-   /// @param [in] eid EPoll ID.
-   /// @param [in] u UDT socket ID.
-   /// @return 0 if success, otherwise an error number.
-
-   int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null);}
 
    /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
    /// @param [in] eid EPoll ID.

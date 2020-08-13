@@ -25,27 +25,17 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& out)
+bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
 {
-    vector<string> parts;
-    Split(s, ',', back_inserter(parts));
+    if (!SrtParseConfig(s, (w_config)))
+        return false;
 
-    out.type = parts[0];
-    PacketFilter::Factory* fac = PacketFilter::find(out.type);
+    PacketFilter::Factory* fac = PacketFilter::find(w_config.type);
     if (!fac)
         return false;
 
-    for (vector<string>::iterator i = parts.begin()+1; i != parts.end(); ++i)
-    {
-        vector<string> keyval;
-        Split(*i, ':', back_inserter(keyval));
-        if (keyval.size() != 2)
-            return false;
-        out.parameters[keyval[0]] = keyval[1];
-    }
-
     // Extract characteristic data
-    out.extra_size = fac->ExtraSize();
+    w_config.extra_size = fac->ExtraSize();
 
     return true;
 }
@@ -76,7 +66,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     else
     {
         // Packet not to be passthru, update stats
-        CGuard lg(m_parent->m_StatsLock);
+        ScopedLock lg(m_parent->m_StatsLock);
         ++m_parent->m_stats.rcvFilterExtra;
         ++m_parent->m_stats.rcvFilterExtraTotal;
     }
@@ -90,7 +80,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         int dist = CSeqNo::seqoff(i->first, i->second) + 1;
         if (dist > 0)
         {
-            CGuard lg(m_parent->m_StatsLock);
+            ScopedLock lg(m_parent->m_StatsLock);
             m_parent->m_stats.rcvFilterLoss += dist;
             m_parent->m_stats.rcvFilterLossTotal += dist;
         }
@@ -109,7 +99,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         size_t nsupply = m_provided.size();
         InsertRebuilt(w_incoming, m_unitq);
 
-        CGuard lg(m_parent->m_StatsLock);
+        ScopedLock lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvFilterSupply += nsupply;
         m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
     }
@@ -156,7 +146,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
     uint32_t* hdr = w_packet.getHeader();
-    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH__SIZE * sizeof(*hdr));
+    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
     w_packet.m_pcData = m_sndctlpkt.buffer;

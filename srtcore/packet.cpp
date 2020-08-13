@@ -175,7 +175,7 @@ using namespace srt_logging;
 
 // Set up the aliases in the constructure
 CPacket::CPacket():
-__pad(),
+m_extra_pad(),
 m_data_owned(false),
 m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO])),
 m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO])),
@@ -282,7 +282,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -295,7 +295,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
    case UMSG_CGWARNING: //0100 - Congestion Warning
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
   
       break;
 
@@ -307,7 +307,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       }
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -320,7 +320,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
    case UMSG_SHUTDOWN: //0101 - Shutdown
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -339,7 +339,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 
       // control info field should be none
       // but "writev" does not allow this
-      m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+      m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
 
       break;
 
@@ -355,7 +355,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
       }
       else
       {
-         m_PacketVector[PV_DATA].set((void *)&__pad, 4);
+         m_PacketVector[PV_DATA].set((void *)&m_extra_pad, 4);
       }
 
       break;
@@ -475,60 +475,6 @@ void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
     int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_ENCKEYSPEC::mask;
     m_nHeader[SRT_PH_MSGNO] = clr_msgno | EncryptionKeyBits(spec);
 }
-
-/*
-   Leaving old code for historical reasons. This is moved to CSRTCC.
-EncryptionStatus CPacket::encrypt(HaiCrypt_Handle hcrypto)
-{
-    if ( !hcrypto )
-    {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::encrypt!");
-        return ENCS_FAILED;
-    }
-
-   int rc = HaiCrypt_Tx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
-   if ( rc < 0 )
-   {
-       // -1: encryption failure
-       // 0: key not received yet
-       return ENCS_FAILED;
-   } else if (rc > 0) {
-       m_PacketVector[PV_DATA].iov_len = rc;
-   }
-   return ENCS_CLEAR;
-}
-
-EncryptionStatus CPacket::decrypt(HaiCrypt_Handle hcrypto)
-{
-   if (getMsgCryptoFlags() == EK_NOENC)
-   {
-       //HLOGC(mglog.Debug, log << "CPacket::decrypt: packet not encrypted");
-       return ENCS_CLEAR; // not encrypted, no need do decrypt, no flags to be modified
-   }
-
-   if (!hcrypto)
-   {
-        LOGC(mglog.Error, log << "IPE: NULL crypto passed to CPacket::decrypt!");
-        return ENCS_FAILED; // "invalid argument" (leave encryption flags untouched)
-   }
-
-   int rc = HaiCrypt_Rx_Data(hcrypto, (uint8_t *)m_nHeader.raw(), (uint8_t *)m_pcData, m_PacketVector[PV_DATA].iov_len);
-   if ( rc <= 0 )
-   {
-       // -1: decryption failure
-       // 0: key not received yet
-       return ENCS_FAILED;
-   }
-   // Otherwise: rc == decrypted text length.
-   m_PacketVector[PV_DATA].iov_len = rc; // In case clr txt size is different from cipher txt
-
-   // Decryption succeeded. Update flags.
-   m_nHeader[SRT_PH_MSGNO] &= ~MSGNO_ENCKEYSPEC::mask; // sets EK_NOENC to ENCKEYSPEC bits.
-
-   return ENCS_CLEAR;
-}
-
-*/
 
 uint32_t CPacket::getMsgTimeStamp() const
 {

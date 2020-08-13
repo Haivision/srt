@@ -73,10 +73,8 @@ using namespace srt_logging;
 
 CChannel::CChannel():
 m_iSocket(),
-#ifdef SRT_ENABLE_IPOPTS
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
-#endif
 m_iSndBufSize(65536),
 m_iRcvBufSize(65536),
 m_iIpV6Only(-1)
@@ -90,9 +88,9 @@ CChannel::~CChannel()
 void CChannel::createSocket(int family)
 {
 #ifdef _WIN32
-    const int invalid = INVALID_SOCKET;
+    // use INVALID_SOCKET, as provided
 #else
-    const int invalid = -1;
+    static const int INVALID_SOCKET = -1;
 #endif
     // construct an socket
 #if defined(O_CLOEXEC)
@@ -105,11 +103,20 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 #endif
 
-    if (m_iSocket == invalid)
+    if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
-        ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
+    {
+        int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
+        if (res == -1)
+        {
+            int err = errno;
+            char msg[160];
+            LOGC(mglog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
+                    << ": " << SysStrError(err, msg, 159));
+        }
+    }
 
 }
 
@@ -194,7 +201,6 @@ void CChannel::setUDPSockOpt()
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
-#ifdef SRT_ENABLE_IPOPTS
       if (-1 != m_iIpTTL)
       {
           if (m_BindAddr.family() == AF_INET)
@@ -257,7 +263,6 @@ void CChannel::setUDPSockOpt()
               }
           }
       }
-#endif
 
 
 #ifdef UNIX
@@ -324,7 +329,6 @@ void CChannel::setIpV6Only(int ipV6Only)
    m_iIpV6Only = ipV6Only;
 }
 
-#ifdef SRT_ENABLE_IPOPTS
 int CChannel::getIpTTL() const
 {
    socklen_t size = sizeof(m_iIpTTL);
@@ -377,7 +381,6 @@ void CChannel::setIpToS(int tos)
    m_iIpToS = tos;
 }
 
-#endif
 
 int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
@@ -405,7 +408,7 @@ int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) 
 void CChannel::getSockAddr(sockaddr_any& w_addr) const
 {
     // The getsockname function requires only to have enough target
-    // space to copy the socket name, it doesn't have to be corelated
+    // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
     socklen_t namelen = w_addr.storage_size();
@@ -704,7 +707,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     //   w_packet.m_nHeader[i] = ntohl(w_packet.m_nHeader[i]);
     {
         uint32_t* p = w_packet.m_nHeader;
-        for (size_t i = 0; i < SRT_PH__SIZE; ++ i)
+        for (size_t i = 0; i < SRT_PH_E_SIZE; ++ i)
         {
             *p = ntohl(*p);
             ++ p;

@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRT_UTILITIES_H
-#define INC__SRT_UTILITIES_H
+#ifndef INC_SRT_UTILITIES_H
+#define INC_SRT_UTILITIES_H
 
 // ATTRIBUTES:
 //
@@ -103,6 +103,7 @@ written by
 #include <algorithm>
 #include <bitset>
 #include <map>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <iomanip>
@@ -587,14 +588,14 @@ public:
 
     // All constructor declarations must be repeated.
     // "Constructor delegation" is also only C++11 feature.
-    explicit UniquePtr(element_type* __p = 0) throw() : Base(__p) {}
-    UniquePtr(UniquePtr& __a) throw() : Base(__a) { }
-    template<typename _Tp1>
-    UniquePtr(UniquePtr<_Tp1>& __a) throw() : Base(__a) {}
+    explicit UniquePtr(element_type* p = 0) throw() : Base(p) {}
+    UniquePtr(UniquePtr& a) throw() : Base(a) { }
+    template<typename Type1>
+    UniquePtr(UniquePtr<Type1>& a) throw() : Base(a) {}
 
-    UniquePtr& operator=(UniquePtr& __a) throw() { return Base::operator=(__a); }
-    template<typename _Tp1>
-    UniquePtr& operator=(UniquePtr<_Tp1>& __a) throw() { return Base::operator=(__a); }
+    UniquePtr& operator=(UniquePtr& a) throw() { return Base::operator=(a); }
+    template<typename Type1>
+    UniquePtr& operator=(UniquePtr<Type1>& a) throw() { return Base::operator=(a); }
 
     // Good, now we need to add some parts of the API of unique_ptr.
 
@@ -676,7 +677,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 }
 
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
-void FilterIf(InputIterator bg, InputIterator nd,
+inline void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
 {
     for (InputIterator i = bg; i != nd; ++i)
@@ -686,6 +687,16 @@ void FilterIf(InputIterator bg, InputIterator nd,
             continue;
         *out++ = result.first;
     }
+}
+
+template <class Value, class ArgValue>
+inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
+{
+    typename std::vector<Value>::iterator i = std::find(v.begin(), v.end(), val);
+    if (i != v.end())
+        return;
+
+    v.push_back(val);
 }
 
 template <class Signature>
@@ -985,6 +996,12 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
     return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
 }
 
+template <size_t DEPRLEN, typename ValueType>
+inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_val_weight)
+{
+    return (old_value * (DEPRLEN - new_val_weight) + new_value * new_val_weight) / DEPRLEN;
+}
+
 // Property accessor definitions
 //
 // "Property" is a special method that accesses given field.
@@ -1021,8 +1038,8 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
-#define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
-#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& name(type arg) { field = arg; return *this; }
+#define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& set_##name(type arg) { field = arg; return *this; }
 #define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)

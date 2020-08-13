@@ -26,7 +26,7 @@ using namespace srt::sync;
 
 TEST(SyncDuration, BasicChecks)
 {
-    const steady_clock::duration d;
+    const steady_clock::duration d = steady_clock::duration();
 
     EXPECT_EQ(d.count(), 0);
     EXPECT_TRUE(d == d);  // operator==
@@ -63,7 +63,7 @@ TEST(SyncDuration, DurationFrom)
 
 TEST(SyncDuration, RelOperators)
 {
-    const steady_clock::duration a;
+    const steady_clock::duration a = steady_clock::duration();
 
     EXPECT_EQ(a.count(), 0);
     EXPECT_TRUE(a == a);  // operator==
@@ -190,6 +190,7 @@ TEST(SyncTimePoint, RelOperators)
     EXPECT_FALSE(a < b);
 }
 
+#ifndef ENABLE_STDCXX_SYNC
 TEST(SyncTimePoint, OperatorMinus)
 {
     const int64_t                  delta = 1024;
@@ -254,6 +255,7 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
     r -= steady_clock::duration(-delta);
     EXPECT_EQ(r, a);
 }
+#endif
 
 /*****************************************************************************/
 /*
@@ -269,19 +271,30 @@ TEST(SyncEvent, WaitFor)
     for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
         const steady_clock::duration   timeout = microseconds_from(tout_us);
-        const steady_clock::time_point start = steady_clock::now();
         UniqueLock lock(mutex);
-        EXPECT_FALSE(cond.wait_for(lock, timeout));
+        const steady_clock::time_point start = steady_clock::now();
+        const bool on_timeout = !cond.wait_for(lock, timeout);
         const steady_clock::time_point stop = steady_clock::now();
+#if defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
+        // This check somehow fails on AppVeyor Windows VM with VS 2015 and pthreads.
+        // - SyncEvent::wait_for( 50us) took 6us
+        // - SyncEvent::wait_for(100us) took 4us
+        if (on_timeout) {
+            EXPECT_GE(count_microseconds(stop - start), tout_us);
+        }
+#endif
+
         if (tout_us < 1000)
         {
-            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took " << count_microseconds(stop - start)
-                << "us" << endl;
+            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took "
+                << count_microseconds(stop - start) << "us"
+                << (on_timeout ? "" : " (SPURIOUS)") << endl;
         }
         else
         {
             cerr << "SyncEvent::wait_for(" << count_milliseconds(timeout) << " ms) took "
-                << count_microseconds(stop - start) / 1000.0 << " ms" << endl;
+                << count_microseconds(stop - start) / 1000.0 << " ms"
+                << (on_timeout ? "" : " (SPURIOUS)") << endl;
         }
     }
 
@@ -349,8 +362,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
     cond.notify_one();
     // Now only one waiting thread should become ready
-    const future_status status1 = wait_async1_res.wait_for(chrono::milliseconds(100));
-    const future_status status2 = wait_async2_res.wait_for(chrono::milliseconds(100));
+    const future_status status1 = wait_async1_res.wait_for(chrono::microseconds(10));
+    const future_status status2 = wait_async2_res.wait_for(chrono::microseconds(10));
 
     const bool isready1 = (status1 == future_status::ready);
     EXPECT_EQ(status1, isready1 ? future_status::ready : future_status::timeout);
@@ -359,7 +372,11 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // Expect one thread to be woken up by condition
     EXPECT_TRUE(isready1 ? wait_async1_res.get() : wait_async2_res.get());
     // Expect timeout on another thread
+#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
+    // This check tends to fail on Windows VM in GitHub Actions
+    // due to some spurious wake up.
     EXPECT_FALSE(isready1 ? wait_async2_res.get() : wait_async1_res.get());
+#endif
 
     cond.destroy();
 }
@@ -420,7 +437,7 @@ TEST(SyncEvent, WaitForNotifyAll)
  * FormatTime
  */
 /*****************************************************************************/
-#if !defined(__GNUC__) || (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9))
+#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 9))
 //#if !defined(__GNUC__) || (__GNUC__ > 4)
 //#if !defined(__GNUC__) || (__GNUC__ >= 5)
 // g++ before 4.9 (?) does not support regex and crashes on execution.
@@ -451,13 +468,13 @@ TEST(Sync, FormatTime)
         cerr << desc << time << " (" << diff << " us)" << endl;
     };
 
-    const steady_clock::time_point a = steady_clock::now();
-    const string                   time1 = FormatTime(a);
-    const string                   time2 = FormatTime(a);
-    const string                   time3 = FormatTime(a + milliseconds_from(500));
-    const string                   time4 = FormatTime(a + seconds_from(1));
-    const string                   time5 = FormatTime(a + seconds_from(5));
-    const string                   time6 = FormatTime(a + milliseconds_from(-4350));
+    const auto   a = steady_clock::now();
+    const string time1 = FormatTime(a);
+    const string time2 = FormatTime(a);
+    const string time3 = FormatTime(a + milliseconds_from(500));
+    const string time4 = FormatTime(a + seconds_from(1));
+    const string time5 = FormatTime(a + seconds_from(5));
+    const string time6 = FormatTime(a + milliseconds_from(-4350));
     cerr << "Current time formated:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
     cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;

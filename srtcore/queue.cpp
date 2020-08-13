@@ -164,7 +164,7 @@ int CUnitQueue::increase()
     char *   tempb = NULL;
 
     // all queues have the same size
-    int size = m_pQEntry->m_iSize;
+    const int size = m_pQEntry->m_iSize;
 
     try
     {
@@ -178,6 +178,9 @@ int CUnitQueue::increase()
         delete[] tempu;
         delete[] tempb;
 
+        LOGC(mglog.Error,
+            log << "CUnitQueue:increase: failed to allocate " << size << " new units."
+                << " Current size=" << m_iSize);
         return -1;
     }
 
@@ -213,24 +216,21 @@ CUnit *CUnitQueue::getNextAvailUnit()
     if (m_iCount >= m_iSize)
         return NULL;
 
-    CQEntry *entrance = m_pCurrQueue;
-
+    int units_checked = 0;
     do
     {
-        for (CUnit *sentinel = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize - 1; m_pAvailUnit != sentinel;
-             ++m_pAvailUnit)
-            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
-                return m_pAvailUnit;
-
-        if (m_pCurrQueue->m_pUnit->m_iFlag == CUnit::FREE)
+        const CUnit *end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
+        for (; m_pAvailUnit != end; ++m_pAvailUnit, ++units_checked)
         {
-            m_pAvailUnit = m_pCurrQueue->m_pUnit;
-            return m_pAvailUnit;
+            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
+            {
+                return m_pAvailUnit;
+            }
         }
 
         m_pCurrQueue = m_pCurrQueue->m_pNext;
         m_pAvailUnit = m_pCurrQueue->m_pUnit;
-    } while (m_pCurrQueue != entrance);
+    } while (units_checked < m_iSize);
 
     increase();
 
@@ -272,7 +272,7 @@ CSndUList::~CSndUList()
 
 void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     CSNode* n = u->m_pSNode;
 
@@ -298,7 +298,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
 
 int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (-1 == m_iLastEntry)
         return -1;
@@ -339,14 +339,14 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 
 void CSndUList::remove(const CUDT *u)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     remove_(u);
 }
 
 steady_clock::time_point CSndUList::getNextProcTime()
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (-1 == m_iLastEntry)
         return steady_clock::time_point();
@@ -463,8 +463,7 @@ void CSndUList::remove_(const CUDT* u)
 
 //
 CSndQueue::CSndQueue()
-    : m_WorkerThread()
-    , m_pSndUList(NULL)
+    : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
     , m_WindowCond()
@@ -518,11 +517,9 @@ void CSndQueue::init(CChannel *c, CTimer *t)
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
 }
 
-#ifdef SRT_ENABLE_IPOPTS
 int CSndQueue::getIpTTL() const { return m_pChannel ? m_pChannel->getIpTTL() : -1; }
 
 int CSndQueue::getIpToS() const { return m_pChannel ? m_pChannel->getIpToS() : -1; }
-#endif
 
 void *CSndQueue::worker(void *param)
 {
@@ -550,7 +547,7 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            CGuard windlock (self->m_WindowLock);
+            UniqueLock windlock (self->m_WindowLock);
             CSync windsync  (self->m_WindowCond, windlock);
 
             // wait here if there is no sockets with data to be sent
@@ -817,7 +814,7 @@ CRendezvousQueue::~CRendezvousQueue()
 void CRendezvousQueue::insert(
     const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const steady_clock::time_point& ttl)
 {
-    CGuard vg(m_RIDVectorLock);
+    ScopedLock vg(m_RIDVectorLock);
 
     CRL r;
     r.m_iID        = id;
@@ -851,7 +848,7 @@ void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
 {
-    CGuard     vg(m_RIDVectorLock);
+    ScopedLock     vg(m_RIDVectorLock);
 
     // TODO: optimize search
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
@@ -881,7 +878,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
 
 void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket &response)
 {
-    CGuard vg(m_RIDVectorLock);
+    ScopedLock vg(m_RIDVectorLock);
 
     if (m_lRendezvousID.empty())
         return;
@@ -957,6 +954,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 << "). removing from queue");
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
+            i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
@@ -1055,10 +1053,11 @@ CRcvQueue::CRcvQueue()
 CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
-    if (!pthread_equal(m_WorkerThread, pthread_t()))
+
+    if (m_WorkerThread.joinable())
     {
         HLOGC(mglog.Debug, log << "RcvQueue: EXIT");
-        pthread_join(m_WorkerThread, NULL);
+        m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
 
@@ -1101,13 +1100,13 @@ void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *c
 
 #if ENABLE_LOGGING
     ++m_counter;
-    std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
-    ThreadName tn(thrname.c_str());
+    const std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+#else
+    const std::string thrname = "SRT:RcvQ:w";
 #endif
 
-    if (0 != pthread_create(&m_WorkerThread, NULL, CRcvQueue::worker, this))
+    if (!StartThread(m_WorkerThread, CRcvQueue::worker, this, thrname.c_str()))
     {
-        m_WorkerThread = pthread_t();
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
@@ -1305,10 +1304,10 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    SRT_REJECT_REASON listener_ret  = SRT_REJ_UNKNOWN;
+    int listener_ret  = SRT_REJ_UNKNOWN;
     bool              have_listener = false;
     {
-        CGuard cg(m_LSLock);
+        ScopedLock cg(m_LSLock);
         if (m_pListener)
         {
             LOGC(mglog.Note,
@@ -1529,7 +1528,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (pthread_equal(pthread_self(), m_WorkerThread))
+    if (this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(mglog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
@@ -1537,12 +1536,12 @@ void CRcvQueue::stopWorker()
 
     HLOGC(mglog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
-    pthread_join(m_WorkerThread, NULL);
+    m_WorkerThread.join();
 }
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 {
-    CGuard bufferlock (m_BufferLock);
+    UniqueLock bufferlock (m_BufferLock);
     CSync buffercond    (m_BufferCond, bufferlock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
@@ -1594,7 +1593,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
 int CRcvQueue::setListener(CUDT *u)
 {
-    CGuard lslock(m_LSLock);
+    ScopedLock lslock(m_LSLock);
 
     if (NULL != m_pListener)
         return -1;
@@ -1605,7 +1604,7 @@ int CRcvQueue::setListener(CUDT *u)
 
 void CRcvQueue::removeListener(const CUDT *u)
 {
-    CGuard lslock(m_LSLock);
+    ScopedLock lslock(m_LSLock);
 
     if (u == m_pListener)
         m_pListener = NULL;
@@ -1623,7 +1622,7 @@ void CRcvQueue::removeConnector(const SRTSOCKET &id, bool should_lock)
     HLOGC(mglog.Debug, log << "removeConnector: removing @" << id);
     m_pRendezvousQueue->remove(id, should_lock);
 
-    CGuard bufferlock(m_BufferLock);
+    ScopedLock bufferlock(m_BufferLock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
@@ -1643,7 +1642,7 @@ void CRcvQueue::removeConnector(const SRTSOCKET &id, bool should_lock)
 void CRcvQueue::setNewEntry(CUDT *u)
 {
     HLOGC(mglog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
-    CGuard listguard(m_IDLock);
+    ScopedLock listguard(m_IDLock);
     m_vNewEntry.push_back(u);
 }
 
@@ -1651,7 +1650,7 @@ bool CRcvQueue::ifNewEntry() { return !(m_vNewEntry.empty()); }
 
 CUDT *CRcvQueue::getNewEntry()
 {
-    CGuard listguard(m_IDLock);
+    ScopedLock listguard(m_IDLock);
 
     if (m_vNewEntry.empty())
         return NULL;
@@ -1664,7 +1663,7 @@ CUDT *CRcvQueue::getNewEntry()
 
 void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
 {
-    CGuard bufferlock (m_BufferLock);
+    UniqueLock bufferlock (m_BufferLock);
     CSync passcond    (m_BufferCond, bufferlock);
 
     map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);

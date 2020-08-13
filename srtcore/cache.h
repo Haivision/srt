@@ -38,8 +38,8 @@ written by
    Yunhong Gu, last updated 01/27/2011
 *****************************************************************************/
 
-#ifndef __UDT_CACHE_H__
-#define __UDT_CACHE_H__
+#ifndef INC_SRT_CACHE_H
+#define INC_SRT_CACHE_H
 
 #include <list>
 #include <vector>
@@ -83,6 +83,7 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
+      // Exception: -> CUDTUnited ctor
       srt::sync::setupMutex(m_Lock, "Cache");
    }
 
@@ -98,7 +99,7 @@ public:
 
    int lookup(T* data)
    {
-      srt::sync::CGuard cacheguard(m_Lock);
+      srt::sync::ScopedLock cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)
@@ -126,7 +127,7 @@ public:
 
    int update(T* data)
    {
-      srt::sync::CGuard cacheguard(m_Lock);
+      srt::sync::ScopedLock cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)

@@ -64,7 +64,7 @@
 #include <chrono>
 #include <thread>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -283,10 +283,31 @@ namespace srt_logging
 
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
+    static string gtypes[] = {
+        "undefined", // SRT_GTYPE_UNDEFINED
+        "broadcast",
+        "backup",
+        "balancing",
+        "multicast"
+    };
+
     int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
-    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << VerbNoEOL;
+    if (type != 0)
+    {
+        SRT_GROUP_TYPE gt;
+        size = sizeof gt;
+        if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
+        {
+            if (gt < Size(gtypes))
+                Verb() << " type=" << gtypes[gt] << VerbNoEOL;
+            else
+                Verb() << " type=" << int(gt) << VerbNoEOL;
+        }
+    }
+    Verb() << " connection";
 
     return 0;
 }
@@ -338,6 +359,22 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
     srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
     return 0;
+}
+
+struct RejectData
+{
+    int code;
+    string streaminfo;
+} g_reject_data;
+
+extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    RejectData* data = (RejectData*)op;
+
+    srt_setrejectreason(acpsock, data->code);
+    srt::setstreamid(acpsock, data->streaminfo);
+
+    return -1;
 }
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
@@ -405,7 +442,9 @@ int main( int argc, char** argv )
         o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -561,7 +600,8 @@ int main( int argc, char** argv )
     {
         transmit_chunk_size = chunk;
     }
-    
+
+    transmit_use_sourcetime = OptionPresent(params, o_stime);
     size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
     transmit_bw_report = Option<OutNumber>(params, "0", o_report);
     bool crashonx = OptionPresent(params, o_crash);
@@ -574,15 +614,26 @@ int main( int argc, char** argv )
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
 
-    string hook = Option<OutString>(params, "", "hook");
+    string hook = Option<OutString>(params, "", o_hook);
     if (hook != "")
     {
-        if (hook == "user-password")
+        vector<string> hargs;
+        Split(hook, ':', back_inserter(hargs));
+
+        if (hargs[0] == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
             transmit_accept_hook_op = nullptr;
         }
-        else if (hook == "groupcheck")
+        else if (hargs[0] == "reject")
+        {
+            hargs.resize(3); // make sure 3 elements exist, may be empty
+            g_reject_data.code = stoi(hargs[1]);
+            g_reject_data.streaminfo = hargs[2];
+            transmit_accept_hook_op = (void*)&g_reject_data;
+            transmit_accept_hook_fn = &SrtRejectByCodeHook;
+        }
+        else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
@@ -638,7 +689,7 @@ int main( int argc, char** argv )
     }
 
 
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -660,7 +711,7 @@ int main( int argc, char** argv )
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
@@ -742,8 +793,22 @@ int main( int argc, char** argv )
     alarm(0);
     end_time = time(0);
 
+    if (!src || !tar)
+    {
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
+
+        cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
+        return 2;
+    }
+
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
+
+    if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
+    {
+        Verb() << "WARNING: -st option is effective only if the target type is SRT";
+    }
 
     Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
@@ -771,12 +836,17 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << "[." << VerbNoEOL;
                 alarm(timeout);
             }
+            else
+            {
+                alarm(0);
+            }
             Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;
@@ -784,6 +854,7 @@ int main( int argc, char** argv )
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << ".] " << VerbNoEOL;
                 alarm(0);
             }
 
@@ -901,4 +972,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-

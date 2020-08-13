@@ -28,6 +28,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <common.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -305,17 +306,12 @@ bool DoUpload(UriParser& ut, string path, string filename,
     {
         if (!tar.get())
         {
-            int sockopt = SRTT_FILE;
-
-            tar = Target::Create(ut.uri());
+            tar = Target::Create(ut.makeUri());
             if (!tar.get())
             {
                 cerr << "Unsupported target type: " << ut.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(tar->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
@@ -344,7 +340,6 @@ bool DoUpload(UriParser& ut, string path, string filename,
         assert(efdlen == 1);
 
         SRT_SOCKSTATUS status = srt_getsockstate(s);
-        Verb() << "Event with status " << status << "\n";
 
         switch (status)
         {
@@ -399,7 +394,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             size_t shift = 0;
             while (n > 0)
             {
-                int st = tar->Write(buf.data() + shift, n, out_stats);
+                int st = tar->Write(buf.data() + shift, n, 0, out_stats);
                 Verb() << "Upload: " << n << " --> " << st
                     << (!shift ? string() : "+" + Sprint(shift));
                 if (st == SRT_ERROR)
@@ -492,17 +487,12 @@ bool DoDownload(UriParser& us, string directory, string filename,
     {
         if (!src.get())
         {
-            int sockopt = SRTT_FILE;
-
-            src = Source::Create(us.uri());
+            src = Source::Create(us.makeUri());
             if (!src.get())
             {
                 cerr << "Unsupported source type: " << us.uri() << endl;
                 goto exit;
             }
-
-            srt_setsockflag(src->GetSRTSocket(), SRTO_TRANSTYPE,
-                &sockopt, sizeof sockopt);
 
             int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
@@ -584,7 +574,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
         if (connected)
         {
-            vector<char> buf(cfg.chunk_size);
+            MediaPacket packet(cfg.chunk_size);
 
             if (!ofile.is_open())
             {
@@ -601,7 +591,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                 cerr << "Writing output to [" << directory << "]" << endl;
             }
 
-            int n = src->Read(cfg.chunk_size, buf, out_stats);
+            int n = src->Read(cfg.chunk_size, packet, out_stats);
             if (n == SRT_ERROR)
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
@@ -617,7 +607,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
             // Write to file any amount of data received
             Verb() << "Download: --> " << n;
-            ofile.write(buf.data(), n);
+            ofile.write(packet.payload.data(), n);
             if (!ofile.good())
             {
                 cerr << "Error writing file" << endl;
@@ -672,6 +662,9 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri,
     string path = fileuri.path(), directory, filename;
     ExtractPath(path, (directory), (filename));
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
+
+    // Add some extra parameters.
+    srt_source_uri["transtype"] = "file";
 
     return DoDownload(srt_source_uri, directory, filename, cfg, out_stats);
 }

@@ -19,6 +19,8 @@
 #include <vector>
 #include <utility>
 
+class CPacket;
+
 enum SrtPktHeaderFields
 {
     SRT_PH_SEQNO = 0,     //< sequence number
@@ -27,7 +29,7 @@ enum SrtPktHeaderFields
     SRT_PH_ID = 3,        //< socket ID
 
     // Must be the last value - this is size of all, not a field id
-    SRT_PH__SIZE
+    SRT_PH_E_SIZE
 };
 
 
@@ -38,11 +40,15 @@ enum SRT_ARQLevel
     SRT_ARQ_ALWAYS, //< always send LOSSREPORT immediately after detecting a loss
 };
 
-
-struct SrtFilterConfig
+struct SrtConfig
 {
     std::string type;
-    std::map<std::string, std::string> parameters;
+    typedef std::map<std::string, std::string> par_t;
+    par_t parameters;
+};
+
+struct SrtFilterConfig: SrtConfig
+{
     size_t extra_size; // needed for filter option check against payload size
 };
 
@@ -56,7 +62,7 @@ struct SrtFilterInitializer
 
 struct SrtPacket
 {
-    uint32_t hdr[SRT_PH__SIZE];
+    uint32_t hdr[SRT_PH_E_SIZE];
     char buffer[SRT_LIVE_MAX_PLSIZE];
     size_t length;
 

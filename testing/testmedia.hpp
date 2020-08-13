@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__COMMON_TRANSMITMEDIA_HPP
-#define INC__COMMON_TRANSMITMEDIA_HPP
+#ifndef INC_SRT_COMMON_TRANSMITMEDIA_HPP
+#define INC_SRT_COMMON_TRANSMITMEDIA_HPP
 
 #include <string>
 #include <map>
@@ -18,6 +18,7 @@
 
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
+#include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
@@ -52,10 +53,12 @@ protected:
     {
         string host;
         int port;
-        int priority = 0;
+        int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
+        sockaddr_any source;
+        SRT_SOCKOPT_CONFIG* options = nullptr;
 
-        Connection(string h, int p): host(h), port(p) {}
+        Connection(string h, int p): host(h), port(p), source(AF_INET) {}
     };
 
     int srt_epoll = -1;
@@ -69,6 +72,7 @@ protected:
     map<string, string> m_options; // All other options, as provided in the URI
     vector<Connection> m_group_nodes;
     string m_group_type;
+    string m_group_config;
     vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;
@@ -110,7 +114,7 @@ public:
 
 protected:
 
-    void Error(string src, SRT_REJECT_REASON reason = SRT_REJ_UNKNOWN);
+    void Error(string src, int reason = SRT_REJ_UNKNOWN, int force_result = 0);
     void Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);
@@ -121,7 +125,7 @@ protected:
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(string host, int port);
-    void SetupRendezvous(string adapter, int port);
+    void SetupRendezvous(string adapter, string host, int port);
 
     void OpenServer(string host, int port, int backlog = 1)
     {
@@ -136,7 +140,7 @@ protected:
     void OpenRendezvous(string adapter, string host, int port)
     {
         PrepareClient();
-        SetupRendezvous(adapter, port);
+        SetupRendezvous(adapter, host, port);
         ConnectClient(host, port);
     }
 
@@ -155,7 +159,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    bytevector Read(size_t chunk) override;
+    MediaPacket Read(size_t chunk) override;
     bytevector GroupRead(size_t chunk);
     bool GroupCheckPacketAhead(bytevector& output);
 
@@ -185,7 +189,7 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    void Write(const bytevector& data) override;
+    void Write(const MediaPacket& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
     void Close() override { return SrtCommon::Close(); }

@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__VERBOSE_HPP
-#define INC__VERBOSE_HPP
+#ifndef INC_SRT_VERBOSE_HPP
+#define INC_SRT_VERBOSE_HPP
 
 #include <iostream>
 #if SRT_ENABLE_VERBOSE_LOCK
@@ -59,7 +59,6 @@ public:
 
 class ErrLog: public Log
 {
-    bool noeol;
 public:
 
     template <class V>

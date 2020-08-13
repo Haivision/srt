@@ -156,7 +156,6 @@ instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
-
 ## Medium: SRT
 
 Most important about SRT is that it can be either input or output and in
@@ -193,11 +192,13 @@ resolved to 0.0.0.0, which usually should mean connecting to the local host
 
 * For listener, it defines the IP address of the local device on which the
 socket should listen, e.g.:
+
 ```
 srt://10.10.10.100:5001?mode=listener
 ```
 
 An alternative method to specify this IP address is the `adapter` parameter:
+
 ```
 srt://:5001?adapter=10.10.10.100
 ```
@@ -218,6 +219,53 @@ specified in the URI:
     -   The *port* part specifies **both local and remote port**. Note that the local port is this way both listening port and outgoing port.
     -   The **adapter** parameter can be used to specify the adapter.
     -   The **port** parameter can be used to specify the local port to bind to.
+
+**IMPORTANT** information about IPv6.
+
+This application can also use an address specified as IPv6 with
+the following restrictions:
+
+1. The IPv6 address in the URI is specified in square brackets: e.g.
+`srt://[::1]:5000`.
+
+2. In listener mode, if you leave the host empty, the socket is bound to
+`INADDR_ANY` for IPv4 only. If you want to make it listen on IPv6, you need to
+specify the host as `::`.
+NOTE: Don't use square brackets syntax in the adapter specification, 
+as in this case only the host is expected.
+
+3. If you want to listen for connections from both IPv4 and IPv6, mind the
+`ipv6only` option. The default value for this option is system default (see
+system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
+enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
+connections in the same listener.
+
+4. In rendezvous mode you may only interconnect both parties using IPv4, 
+or both using IPv6. Unlike listener mode, if you want to leave the socket
+default-bound (you don't specify `adapter`), the socket will be bound with the
+same IP version as the target address. If you do specify `adapter`,
+then both this address and the target address must be of the same family.
+
+Examples:
+
+* `srt://:5000` defines listener mode with IPv4.
+
+* `srt://[::]:5000` defines caller mode (!) with IPv6.
+
+* `srt://[::]:5000?mode=listener` defines listener mode with IPv6. If the
+* default value for `IPV6_V6ONLY` system socket option is 0, it will accept
+* also IPv4 connections.
+
+* `srt://192.168.0.5:5000?mode=rendezvous` will make a rendezvous connection
+* with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
+* port 5000.
+
+* `srt://[::1]:5000?mode=rendezvous&port=4000` will make a rendezvous
+* connection with local address `inaddr6_any` (IPv6) and port 4000 to a
+* destination with port 5000.
+
+* `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
+* (different IP versions for binding and target address)
 
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
 
@@ -252,7 +300,6 @@ Note also that **blocking** option has no practical use for users.
 Normally the non-blocking mode is used only when you have an event-driven application that needs a common
 signal bar for multiple event sources, or you prefer fibers to threads, when working with multiple SRT sockets in one application. The *srt-live-transmit* application isn't defined this way. This makes that the practical result of non-blocking mode here is that it uses polling on exactly one socket with infinite timeout. Every reading and writing operation will then return always without blocking, but when they report the "again" situation the application will stall on `srt_epoll_wait()` call. This option then exists for the testing purposes, as well as educational, to serve as an example of how your application should use the non-blocking mode.
 
-
 # Command-Line Options
 
 The following options are available in the application. Note that some may affect specifically only selected type of medium.
@@ -266,6 +313,8 @@ shell (using **"** **"** quotes or backslash).
     - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
     - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
+- **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.
+- **-buffering** - Enable source buffering up to the specified number of packets. Default: 10. Minimum: 1 (no buffering).
 - **-chunk, -c** - use given size of the buffer. The default size is 1456 bytes, which is the maximum payload size for a single SRT packet.
 - **-verbose, -v** - Display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**.
 - **-statsout** - SRT statistics output: filename. Without this option specified, the statistics will be printed to the standard output.
@@ -287,9 +336,50 @@ When leaving the LAN for testing, please keep an eye on statistics and make sure
 
 If you perform tests on the public Internet, consider checking your firewall rules. The **SRT listener** must be reachable on the chosen UDP port. Same applies to routers using NAT. Please set a port forwarding rule with protocol UDP to the local IP address of the **SRT listener**.
 
-The initiation of an SRT connection (handshake) is decoupled from the stream direction. The 
-sender of a stream can be an **SRT listener** or an **SRT caller**, as long as the receiving end 
-uses the opposite connection mode. Typically you use the **SRT listener** on the receiving end, 
-since it is easier to configure in terms of firewall/router setup. It also makes sense to leave the 
-Sender in listener mode when trying to connect from various end points with possibly 
+The initiation of an SRT connection (handshake) is decoupled from the stream direction. The
+sender of a stream can be an **SRT listener** or an **SRT caller**, as long as the receiving end
+uses the opposite connection mode. Typically you use the **SRT listener** on the receiving end,
+since it is easier to configure in terms of firewall/router setup. It also makes sense to leave the
+Sender in listener mode when trying to connect from various end points with possibly
 unknown IP addresses.
+
+## UDP Performance
+
+Performance issues concerning reading from UDP medium were reported
+in [#933](https://github.com/Haivision/srt/issues/933) and
+[#762](https://github.com/Haivision/srt/issues/762).
+
+The dedicated research showed that at high and bursty data rates (~60 Mbps)
+the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
+of reading from a socket. It results in losing data when the input bitrate is very high (above 20 Mbps).
+
+PR [#1152](https://github.com/Haivision/srt/pull/1152) (v1.5.0 and above) adds the possibility
+of setting the buffer size of the UDP socket in `srt-live-transmit`.
+Having a bigger buffer of UDP socket to store incoming data, `srt-live-transmit` handles higher bitrates.
+
+The following steps have to be performed to use the bigger UDP buffer size.
+
+### Increase the system-default max rcv buffer size
+
+```bash
+$ cat /proc/sys/net/core/rmem_max
+212992
+$ sudo sysctl -w net.core.rmem_max=26214400
+net.core.rmem_max = 26214400
+$ cat /proc/sys/net/core/rmem_max
+26214400
+```
+
+### Specify the size of the UDP socket buffer via the URI
+
+Example URI:
+
+```bash
+"udp://:4200?rcvbuf=67108864"
+```
+
+Example full URI:
+
+```bash
+./srt-live-transmit "udp://:4200?rcvbuf=67108864" srt://192.168.0.10:4200 -v
+```
