@@ -111,7 +111,7 @@ The format of the commit message is `[<tag>] <Message>`, where possible commits 
 
 * `[apps]`- commit mainly changes sample applications or application utilities, including testing and example applications.
 * `[core]` - commit changes the core SRT library code.
-* `[tests]` - commit changes or adds unit tests.
+* `[test]` - commit changes or adds unit tests.
 * `[docs]` - commit changes or adds documentation.
 
 [git-setup]: https://help.github.com/articles/set-up-git
