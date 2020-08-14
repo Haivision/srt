@@ -3603,8 +3603,8 @@ void CUDTGroup::debugGroup()
     {
         HLOGC(mglog.Debug, log << " ... id { agent=@" << gi->id
                 << " peer=@" << gi->ps->m_PeerID << " } address { agent="
-                << SockaddrToString(gi->agent)
-                << " peer=" << SockaddrToString(gi->peer) << "} "
+                << gi->agent.str()
+                << " peer=" << gi->peer.str() << "} "
                 << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
     }
 }
