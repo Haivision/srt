@@ -23,7 +23,7 @@ Install the following dependencies on your machine:
 
 * [CMake](http://cmake.org): v2.8.12 or higher is recommended.
 
-* [OpenSSL](http://www.openssl.org): v1.1.0 or higher.
+* [OpenSSL](http://www.openssl.org): v1.1.0 or higher. Alternatively Nettle and mbedTLS can be used. 
 
 ### Forking SRT on Github
 
@@ -64,7 +64,7 @@ cmake .. -DENABLE_UNITTESTS=ON
 cmake --build ./
 ```
 
-**Note.** If you're using Windows, please refer to [Windows Build Instructions](./build-win..md).
+**Note.** If you're using Windows, please refer to [Windows Build Instructions](./build-win.md).
 
 **Note.** Please see the following document for the build options: [BuildOptions.md](./BuildOptions.md). To see the full list of make options run `cmake .. -LAH` from the `_build` folder. 
 
@@ -73,7 +73,7 @@ The build output is in the `_build` directory. The following applications can be
 * `srt-live-transmit` — A sample application to transmit live stream from source medium (UDP/SRT/`stdin`)
 to the target medium (UDP/SRT/`stdout`). See [srt-live-transmit.ms](./srt-live-transmit.md) for more info.
 * `srt-file-transmit` — A sample application to transmit file with SRT.
-* `srt-tunnel` — A sample application to set up an SRT tunnel for TCP of UDP traffic.
+* `srt-tunnel` — A sample application to set up an SRT tunnel for TCP traffic.
 * `tests-srt` - unit testing application.
 
 ## Project Structure
