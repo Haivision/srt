@@ -77,7 +77,9 @@ public:
        , m_SocketID(0)
        , m_ListenSocket(0)
        , m_PeerID(0)
+#if ENABLE_EXPERIMENTAL_BONDING
        , m_IncludedGroup()
+#endif
        , m_iISN(0)
        , m_pUDT(NULL)
        , m_pQueuedSockets(NULL)
@@ -110,8 +112,10 @@ public:
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
+#if ENABLE_EXPERIMENTAL_BONDING
    CUDTGroup::gli_t m_IncludedIter;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
    CUDTGroup* m_IncludedGroup;               //< Group this socket is a member of, or NULL if it isn't
+#endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
@@ -226,7 +230,9 @@ public:
    int connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
+#if ENABLE_EXPERIMENTAL_BONDING
    int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets [], int arraysize);
+#endif
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -247,6 +253,7 @@ public:
    int32_t epoll_set(const int eid, int32_t flags);
    int epoll_release(const int eid);
 
+#if ENABLE_EXPERIMENTAL_BONDING
    CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
        srt::sync::ScopedLock cg (m_GlobControlLock);
@@ -303,6 +310,7 @@ public:
        }
        return NULL;
    }
+#endif
 
    CEPoll& epoll_ref() { return m_EPoll; }
 
@@ -323,10 +331,13 @@ private:
 
 private:
    typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t;       // stores all the socket structures
-   typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
-
    sockets_t m_Sockets;
+
+#if ENABLE_EXPERIMENTAL_BONDING
+   typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
    groups_t m_Groups;
+#endif
+
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
@@ -343,7 +354,9 @@ private:
 
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+#if ENABLE_EXPERIMENTAL_BONDING
    CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+#endif
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
