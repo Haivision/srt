@@ -946,7 +946,7 @@ void SrtCommon::OpenGroupClient()
         SRTSOCKET insock = m_group_nodes[i].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << targets[i].peeraddr.str() << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
             continue;
         }
 
@@ -980,7 +980,7 @@ void SrtCommon::OpenGroupClient()
     {
         // id, status, result, peeraddr
         Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
-            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str());
+            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
     }
 
     /*

@@ -249,6 +249,9 @@ const SocketOption srt_options [] {
 #if ENABLE_EXPERIMENTAL_BONDING
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
 #endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+    { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
+#endif
 #if ENABLE_EXPERIMENTAL_BONDING
     { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
 #endif

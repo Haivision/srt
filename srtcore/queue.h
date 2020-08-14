@@ -392,6 +392,10 @@ public:
 
    int getIpToS() const;
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+   bool getBind(char* dst, size_t len) const;
+#endif
+
    int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
    int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
 
@@ -541,6 +545,9 @@ struct CMultiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
    int m_iIpTTL;
    int m_iIpToS;
+#ifdef SRT_ENABLE_BINDTODEVICE
+   std::string m_BindToDevice;
+#endif
    int m_iMSS;          // Maximum Segment Size
    int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
    int m_iIpV6Only;     // IPV6_V6ONLY option
