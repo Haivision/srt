@@ -1191,12 +1191,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (optlen < IFNAMSIZ)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        if (m_bOpened)
-            if (m_pSndQueue->getBind(((char*)optval), optlen))
-            {
-                optlen = strlen((char*)optval);
-                break;
-            }
+        if (m_bOpened && m_pSndQueue->getBind(((char*)optval), optlen))
+        {
+            optlen = strlen((char*)optval);
+            break;
+        }
 
         // Fallback: return from internal data
         strcpy(((char*)optval), m_BindToDevice.c_str());
