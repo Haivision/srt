@@ -249,7 +249,7 @@ public:
 
    CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
-       srt::sync::CGuard cg (m_GlobControlLock);
+       srt::sync::ScopedLock cg (m_GlobControlLock);
        // This only ensures that the element exists.
        // If the element was newly added, it will be NULL.
        CUDTGroup*& g = m_Groups[id];
@@ -270,7 +270,7 @@ public:
    {
        using srt_logging::mglog;
 
-       srt::sync::CGuard cg (m_GlobControlLock);
+       srt::sync::ScopedLock cg (m_GlobControlLock);
 
        CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
        if (pg)
@@ -293,7 +293,7 @@ public:
 
    CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
    {
-       srt::sync::CGuard cg (m_GlobControlLock);
+       srt::sync::ScopedLock cg (m_GlobControlLock);
 
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)

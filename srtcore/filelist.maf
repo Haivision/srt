@@ -22,9 +22,8 @@ window.cpp
 srt_compat.c
 sync.cpp
 
-# Add when created
-# SOURCES - !ENABLE_STDCXX_SYNC
-# sync_posix.cpp
+SOURCES - !ENABLE_STDCXX_SYNC
+sync_posix.cpp
 
 SOURCES - ENABLE_STDCXX_SYNC
 sync_cxx11.cpp

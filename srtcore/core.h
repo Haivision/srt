@@ -128,7 +128,7 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 11;
+static const size_t SRT_SOCKOPT_NPOST = 12;
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
@@ -389,7 +389,7 @@ public:
 
     gli_t find(SRTSOCKET id)
     {
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f == m_Group.end())
         {
@@ -408,7 +408,7 @@ public:
     bool remove(SRTSOCKET id)
     {
         bool s = false;
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
         {
@@ -426,8 +426,11 @@ public:
             // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                m_iLastSchedSeqNo = SRT_SEQNO_NONE;
-                setInitialRxSequence(SRT_SEQNO_NONE);
+                // When the group is empty, there's no danger that this
+                // number will collide with any ISN provided by a socket.
+                // Also since now every socket will derive this ISN.
+                m_iLastSchedSeqNo = generateISN();
+                resetInitialRxSequence();
             }
             s = true;
         }
@@ -446,7 +449,7 @@ public:
 
     bool empty()
     {
-        srt::sync::CGuard g (m_GroupLock);
+        srt::sync::ScopedLock g (m_GroupLock);
         return m_Group.empty();
     }
 
@@ -457,6 +460,7 @@ public:
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    static int32_t generateISN();
 
 private:
     // For Backup, sending all previous packet
@@ -465,10 +469,10 @@ private:
     // Support functions for sendBackup and sendBroadcast
     bool send_CheckIdle(const gli_t d, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
-    void sendBackup_CheckRunningStability(const gli_t d, const time_point currtime, size_t& w_nunstable);
+    bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
     bool sendBackup_CheckSendStatus(const gli_t d, const time_point& currtime, const int stat, const int erc, const int32_t lastseq,
             const int32_t pktseq, CUDT& w_u, int32_t& w_curseq, std::vector<gli_t>& w_parallel,
-            int& w_final_stat, std::set<int>& w_sendable_pri, size_t& w_nsuccessful, size_t& w_nunstable);
+            int& w_final_stat, std::set<int>& w_sendable_pri, size_t& w_nsuccessful, bool& w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
     void sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers, const char *buf, const int len,
             bool& w_none_succeeded, SRT_MSGCTRL& w_mc, int32_t& w_curseq, int32_t& w_final_stat,
@@ -477,7 +481,7 @@ private:
             const std::string& activate_reason);
     void send_CheckPendingSockets(const std::vector<gli_t>& pending, std::vector<gli_t>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<gli_t>& w_wipeme);
-    void sendBackup_CheckParallelLinks(const size_t nunstable, std::vector<gli_t>& w_parallel,
+    void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable, std::vector<gli_t>& w_parallel,
             int& w_final_stat, bool& w_none_succeeded, SRT_MSGCTRL& w_mc, CUDTException& w_cx);
 
 public:
@@ -835,7 +839,7 @@ public:
 #endif
     }
 
-    void setInitialRxSequence(int32_t)
+    void resetInitialRxSequence()
     {
         // The app-reader doesn't care about the real sequence number.
         // The first provided one will be taken as a good deal; even if
@@ -1108,9 +1112,17 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        srt::sync::CGuard cg(m_ConnectionLock);
+        srt::sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
+    }
+
+    static int32_t generateISN()
+    {
+        using namespace srt::sync;
+        // Random Initial Sequence Number (normal mode)
+        srand(count_microseconds(steady_clock::now().time_since_epoch()));
+        return (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
     }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
@@ -1211,8 +1223,8 @@ private:
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
     SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
-    SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
-    SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
@@ -1236,7 +1248,7 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
-    void acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
@@ -1406,6 +1418,7 @@ private: // Identification
     bool m_bRendezvous;                          // Rendezvous connection mode
 
     duration m_tdConnTimeOut;    // connect timeout in milliseconds
+    bool m_bDriftTracer;
     int m_iSndTimeOut;                           // sending timeout in milliseconds
     int m_iRcvTimeOut;                           // receiving timeout in milliseconds
     bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
@@ -1440,6 +1453,7 @@ private: // Identification
     std::string m_sStreamName;
     int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
     uint32_t m_uOPT_StabilityTimeout;
+    int m_iOPT_RetransmitAlgo;
 
     int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds

@@ -83,6 +83,7 @@ public:
    m_iCurrSize(0)
    {
       m_vHashPtr.resize(m_iHashSize);
+      // Exception: -> CUDTUnited ctor
       srt::sync::setupMutex(m_Lock, "Cache");
    }
 
@@ -98,7 +99,7 @@ public:
 
    int lookup(T* data)
    {
-      srt::sync::CGuard cacheguard(m_Lock);
+      srt::sync::ScopedLock cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)
@@ -126,7 +127,7 @@ public:
 
    int update(T* data)
    {
-      srt::sync::CGuard cacheguard(m_Lock);
+      srt::sync::ScopedLock cacheguard(m_Lock);
 
       int key = data->getKey();
       if (key < 0)

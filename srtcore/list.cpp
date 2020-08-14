@@ -109,7 +109,7 @@ void CSndLossList::traceState() const
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (m_iLength == 0)
     {
@@ -121,6 +121,25 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     const int origlen = m_iLength;
     const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
     int       loc     = (m_iHead + offset + m_iSize) % m_iSize;
+
+    if (loc < 0)
+    {
+        const int offset_seqno2 = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno2);
+        const int loc_seqno2    = (m_iHead + offset_seqno2 + m_iSize) % m_iSize;
+
+        if (loc_seqno2 < 0)
+        {
+            // The size of the CSndLossList should be at least the size of the flow window.
+            // It means that all the packets sender has sent should fit within m_iSize.
+            // If the new loss does not fit, there is some error.
+            LOGC(mglog.Error, log << "IPE: New loss record is too old. Ignoring. "
+                << "First loss seqno " << m_caSeq[m_iHead].seqstart
+                << ", insert seqno " << seqno1 << ":" << seqno2);
+            return 0;
+        }
+
+        loc = loc_seqno2;
+    }
 
     if (offset < 0)
     {
@@ -153,6 +172,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
             {
                 // No overlap
+                // TODO: Here we should actually insert right after i, not at loc.
                 insertAfter(loc, i, seqno1, seqno2);
             }
             else
@@ -184,7 +204,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
 void CSndLossList::removeUpTo(int32_t seqno)
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (0 == m_iLength)
         return;
@@ -296,14 +316,14 @@ void CSndLossList::removeUpTo(int32_t seqno)
 
 int CSndLossList::getLossLength() const
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     return m_iLength;
 }
 
 int32_t CSndLossList::popLostSeq()
 {
-    CGuard listguard(m_ListLock);
+    ScopedLock listguard(m_ListLock);
 
     if (0 == m_iLength)
     {
@@ -347,6 +367,7 @@ int32_t CSndLossList::popLostSeq()
 
 void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)
 {
+    SRT_ASSERT(pos >= 0);
     m_caSeq[pos].seqstart = seqno1;
     SRT_ASSERT(m_caSeq[pos].seqend == SRT_SEQNO_NONE);
     if (seqno2 != seqno1)

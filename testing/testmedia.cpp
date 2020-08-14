@@ -456,20 +456,6 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
         Error("srt_listen");
     }
 
-    Verb() << " accept... " << VerbNoEOL;
-    ::transmit_throw_on_interrupt = true;
-
-    if (!m_blocking_mode)
-    {
-        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
-
-        int len = 2;
-        SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
-            Error("srt_epoll_wait(srt_conn_epoll)");
-
-        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
-    }
 }
 
 void SrtCommon::StealFrom(SrtCommon& src)
@@ -491,6 +477,19 @@ void SrtCommon::AcceptNewClient()
 {
     sockaddr_any scl;
 
+    ::transmit_throw_on_interrupt = true;
+
+    if (!m_blocking_mode)
+    {
+        Verb() << "[ASYNC] (conn=" << srt_conn_epoll << ")";
+
+        int len = 2;
+        SRTSOCKET ready[2];
+        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+            Error("srt_epoll_wait(srt_conn_epoll)");
+
+        Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
+    }
     Verb() << " accept..." << VerbNoEOL;
 
     m_sock = srt_accept(m_bindsock, (scl.get()), (&scl.len));
@@ -1125,15 +1124,27 @@ void SrtCommon::Error(string src, int reason, int force_result)
     throw TransmissionError("error: " + src + ": " + message);
 }
 
-void SrtCommon::SetupRendezvous(string adapter, int port)
+void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 {
+    sockaddr_any target = CreateAddr(host, port);
+    if (target.family() == AF_UNSPEC)
+    {
+        Error("Unable to resolve target host: " + host);
+    }
+
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     const int outport = m_outgoing_port ? m_outgoing_port : port;
 
-    auto localsa = CreateAddr(adapter, outport);
-    Verb() << "Binding a server on " << adapter << ":" << outport << " ...";
+    // Prefer the same IPv as target host
+    auto localsa = CreateAddr(adapter, outport, target.family());
+    string showhost = adapter;
+    if (showhost == "")
+        showhost = "ANY";
+    if (target.family() == AF_INET6)
+        showhost = "[" + showhost + "]";
+    Verb() << "Binding rendezvous: " << showhost << ":" << outport << " ...";
     int stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {
@@ -2550,7 +2561,6 @@ public:
                 Error(SysError(), "setsockopt/IP_MULTICAST_IF: " + adapter);
             }
         }
-
     }
 
     void Write(const MediaPacket& data) override

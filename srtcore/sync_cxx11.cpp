@@ -14,8 +14,6 @@
 #include "srt_compat.h"
 #include "common.h"
 
-#ifdef ENABLE_STDCXX_SYNC
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // SyncCond (based on stl chrono C++11)
@@ -76,4 +74,3 @@ CUDTException& srt::sync::GetThreadLocalError()
     return s_thErr;
 }
 
-#endif // ENABLE_STDCXX_SYNC

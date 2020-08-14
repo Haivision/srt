@@ -217,6 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_VERSION = 34,        // Local SRT Version
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
+   SRTO_DRIFTTRACER = 37,    // Enable or disable drift tracer
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
@@ -238,7 +239,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-   SRTO_PACKETFILTER = 60    // Add and configure a packet filter
+   SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
+   SRTO_RETRANSMITALGO = 61  // An option to select packet retransmission algorithm
 } SRT_SOCKOPT;
 
 
@@ -434,12 +436,14 @@ enum CodeMinor
     MN_REJECTED        =  2,
     MN_NORES           =  3,
     MN_SECURITY        =  4,
+    MN_CLOSED          =  5,
     // MJ_CONNECTION
     MN_CONNLOST        =  1,
     MN_NOCONN          =  2,
     // MJ_SYSTEMRES
     MN_THREAD          =  1,
     MN_MEMORY          =  2,
+    MN_OBJECT          =  3,
     // MJ_FILESYSTEM
     MN_SEEKGFAIL       =  1,
     MN_READFAIL        =  2,
@@ -483,6 +487,7 @@ typedef enum SRT_ERRNO
     SRT_ECONNREJ        = MN(SETUP, REJECTED),
     SRT_ESOCKFAIL       = MN(SETUP, NORES),
     SRT_ESECFAIL        = MN(SETUP, SECURITY),
+    SRT_ESCLOSED        = MN(SETUP, CLOSED),
 
     SRT_ECONNFAIL       = MJ(CONNECTION),
     SRT_ECONNLOST       = MN(CONNECTION, CONNLOST),
@@ -491,6 +496,7 @@ typedef enum SRT_ERRNO
     SRT_ERESOURCE       = MJ(SYSTEMRES),
     SRT_ETHREAD         = MN(SYSTEMRES, THREAD),
     SRT_ENOBUF          = MN(SYSTEMRES, MEMORY),
+    SRT_ESYSOBJ         = MN(SYSTEMRES, OBJECT),
 
     SRT_EFILE           = MJ(FILESYSTEM),
     SRT_EINVRDOFF       = MN(FILESYSTEM, SEEKGFAIL),
