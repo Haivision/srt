@@ -215,7 +215,7 @@ void CUDT::construct()
     // Initilize mutex and condition variables
     initSynch();
 
-    // FIXME: Unblock, when the callback is implemented
+    // XXX: Unblock, when the callback is implemented
     // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
 }
 
