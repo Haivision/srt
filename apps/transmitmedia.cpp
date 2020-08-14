@@ -807,7 +807,7 @@ protected:
 
         if (attr.count("multicast"))
         {
-            // FIXME: Provide support for IPv6 multicast
+            // XXX: Here provide support for IPv6 multicast #1479
             if (sadr.family() != AF_INET)
             {
                 throw std::runtime_error("UdpCommon: Multicast on IPv6 is not yet supported");
