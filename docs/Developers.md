@@ -79,7 +79,7 @@ The build output is in the `_build` directory. The following applications can be
 * `srt-live-transmit` — A sample application to transmit a live stream from source medium (UDP/SRT/`stdin`)
 to the target medium (UDP/SRT/`stdout`). See [srt-live-transmit.md](./srt-live-transmit.md) for more info.
 * `srt-file-transmit` — A sample application to transmit files with SRT.
-* `srt-tunnel` — A sample application to set up an SRT tunnel for TCP traffic.
+* `srt-tunnel` — A sample application to set up an SRT tunnel for TCP traffic. See [srt-tunnel.md](./srt-tunnel.md) for more info.
 * `tests-srt` - unit testing application.
 
 ## Project Structure
