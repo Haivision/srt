@@ -578,6 +578,11 @@ add_definitions(
 	-DSRT_VERSION="${SRT_VERSION}"
 )
 
+if (LINUX)
+# This is an option supported only on Linux
+	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
+endif()
+
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
 include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})

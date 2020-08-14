@@ -52,6 +52,11 @@ modified by
 
 #include "platform_sys.h"
 
+// Linux specific
+#ifdef SRT_ENABLE_BINDTODEVICE
+#include <linux/if.h>
+#endif
+
 #include <cmath>
 #include <sstream>
 #include <algorithm>
@@ -569,6 +574,28 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
         m_iIpToS = cast_optval<int>(optval, optlen);
+        break;
+
+    case SRTO_BINDTODEVICE:
+#ifdef SRT_ENABLE_BINDTODEVICE
+        {
+            string val;
+            if (optlen == -1)
+                val = (const char *)optval;
+            else
+                val.assign((const char *)optval, optlen);
+            if (val.size() >= IFNAMSIZ)
+            {
+                LOGC(mglog.Error, log << "SRTO_BINDTODEVICE: device name too long (max: IFNAMSIZ=" << IFNAMSIZ << ")");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            m_BindToDevice = val;
+        }
+#else
+        LOGC(mglog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
         break;
 
     case SRTO_INPUTBW:
@@ -1159,6 +1186,26 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
+    case SRTO_BINDTODEVICE:
+#ifdef SRT_ENABLE_BINDTODEVICE
+        if (optlen < IFNAMSIZ)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        if (m_bOpened && m_pSndQueue->getBind(((char*)optval), optlen))
+        {
+            optlen = strlen((char*)optval);
+            break;
+        }
+
+        // Fallback: return from internal data
+        strcpy(((char*)optval), m_BindToDevice.c_str());
+        optlen = m_BindToDevice.size();
+#else
+        LOGC(mglog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
+        break;
+
     case SRTO_SENDER:
         *(int32_t *)optval = m_bDataSender;
         optlen             = sizeof(int32_t);
@@ -1330,6 +1377,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
 
     switch (optname)
     {
+    case SRTO_BINDTODEVICE:
     case SRTO_CONNTIMEO:
     case SRTO_DRIFTTRACER:
         //SRTO_FC - not allowed to be different among group members

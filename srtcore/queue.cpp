@@ -521,6 +521,10 @@ int CSndQueue::getIpTTL() const { return m_pChannel ? m_pChannel->getIpTTL() : -
 
 int CSndQueue::getIpToS() const { return m_pChannel ? m_pChannel->getIpToS() : -1; }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+bool CSndQueue::getBind(char* dst, size_t len) const { return m_pChannel ? m_pChannel->getBind(dst, len) : false; }
+#endif
+
 void *CSndQueue::worker(void *param)
 {
     CSndQueue *self = (CSndQueue *)param;

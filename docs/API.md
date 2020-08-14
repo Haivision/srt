@@ -608,6 +608,24 @@ from the group.
 
 This option list is sorted alphabetically.
 
+| OptName               | Since | Binding | Type     | Units  | Default  | Range  | Dir |Entity|
+| --------------------- | ----- | ------- | -------- | ------ | -------- | ------ |-----|------|
+| `SRTO_BINDTODEVICE`   | 1.5.0 | pre     | `string` |        |          |        | RW  | GSD+ |
+
+- Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
+This effectively limits the packets received by this socket to only those
+that are targeted to that device. The device is specified by name passed as
+string. The setting becomes effective after binding the socket (including
+default-binding when connecting).
+
+- NOTE: This option is only available on Linux and available there by default.
+On all other platforms setting this option will always fail.
+
+- NOTE: With the default system configuration, this option is only available
+for a process that runs as root. Otherwise the function that applies the setting
+(`srt_bind`, `srt_connect` etc.) will fail.
+
+---
 
 | OptName            | Since | Binding |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
