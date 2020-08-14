@@ -3652,8 +3652,8 @@ void CUDTGroup::debugGroup()
     {
         HLOGC(mglog.Debug, log << " ... id { agent=@" << gi->id
                 << " peer=@" << gi->ps->m_PeerID << " } address { agent="
-                << SockaddrToString(gi->agent)
-                << " peer=" << SockaddrToString(gi->peer) << "} "
+                << gi->agent.str()
+                << " peer=" << gi->peer.str() << "} "
                 << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
     }
 }
@@ -4015,7 +4015,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     ScopedLock cg (m_ConnectionLock);
 
-    HLOGC(mglog.Debug, log << CONID() << "startConnect: -> " << SockaddrToString(serv_addr)
+    HLOGC(mglog.Debug, log << CONID() << "startConnect: -> " << serv_addr.str()
             << (m_bSynRecving ? " (SYNCHRONOUS)" : " (ASYNCHRONOUS)") << "...");
 
     if (!m_bOpened)
@@ -5272,7 +5272,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         }
     }
 
-    LOGC(mglog.Note, log << CONID() << "Connection established to: " << SockaddrToString(m_PeerAddr));
+    LOGC(mglog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
 
     return CONN_ACCEPT;
 }

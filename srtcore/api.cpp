@@ -601,7 +601,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        // the SRT Handshake message would fail.
        HLOGF(mglog.Debug,
                "newConnection: incoming %s, mapping socket %d",
-               SockaddrToString(peer).c_str(), ns->m_SocketID);
+               peer.str().c_str(), ns->m_SocketID);
        {
            ScopedLock cg(m_GlobControlLock);
            m_Sockets[ns->m_SocketID] = ns;
@@ -1250,7 +1250,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         SRTSOCKET& sid_rloc = targets[tii].id;
         int& erc_rloc = targets[tii].errorcode;
         erc_rloc = SRT_SUCCESS; // preinitialized
-        HLOGC(mglog.Debug, log << "groupConnect: taking on " << SockaddrToString(targets[tii].peeraddr));
+        HLOGC(mglog.Debug, log << "groupConnect: taking on " << sockaddr_any(targets[tii].peeraddr).str());
 
         CUDTSocket* ns = 0;
 
