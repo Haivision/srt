@@ -1177,7 +1177,7 @@ int CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* ta
 
         // When connecting to exactly one target, only this very target
         // can be returned as a socket, so rewritten back array can be ignored.
-        return groupConnect(g, gd, 1);
+        return singleMemberConnect(g, gd);
     }
 
     CUDTSocket* s = locateSocket(u);
@@ -1207,7 +1207,7 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
         // it's generated anew for the very first socket, and then
         // derived by all sockets in the group.
         SRT_SOCKGROUPCONFIG gd[1] = { srt_prepare_endpoint(NULL, name, namelen) };
-        return groupConnect(g, gd, 1);
+        return singleMemberConnect(g, gd);
     }
 
     CUDTSocket* s = locateSocket(u);
@@ -1215,6 +1215,25 @@ int CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, in
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
     return connectIn(s, target_addr, forced_isn);
+}
+
+int CUDTUnited::singleMemberConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* gd)
+{
+    int gstat = groupConnect(pg, gd, 1);
+    if (gstat == -1)
+    {
+        // We have only one element here, so refer to it.
+        // Sanity check
+        if (gd->errorcode == SRT_SUCCESS)
+            gd->errorcode = SRT_EINVPARAM;
+
+        CodeMajor mj = CodeMajor(gd->errorcode / 1000);
+        CodeMinor mn = CodeMinor(gd->errorcode % 1000);
+
+        return CUDT::APIError(mj, mn);
+    }
+
+    return gstat;
 }
 
 int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int arraysize)
@@ -1331,6 +1350,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         {
             ScopedLock cs(m_GlobControlLock);
             SRTSOCKET id = ns->m_SocketID;
+            targets[tii].id = CUDT::INVALID_SOCK;
             delete ns;
             m_Sockets.erase(id);
 
@@ -1403,6 +1423,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             // to avoid locking more than one mutex at a time.
             ns->removeFromGroup();
             erc_rloc = e.getErrorCode();
+            targets[tii].errorcode = e.getErrorCode();
+            targets[tii].id = CUDT::INVALID_SOCK;
 
             ScopedLock cl (m_GlobControlLock);
             m_Sockets.erase(ns->m_SocketID);
@@ -1414,13 +1436,15 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         {
             LOGC(mglog.Fatal, log << "groupConnect: IPE: UNKNOWN EXCEPTION from connectIn");
             ns->removeFromGroup();
+            targets[tii].errorcode = SRT_ESYSOBJ;
+            targets[tii].id = CUDT::INVALID_SOCK;
             ScopedLock cl (m_GlobControlLock);
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
 
             // Do not use original exception, it may crash off a C API.
-            throw CUDTException(MJ_SYSTEMRES, MN_NONE);
+            throw CUDTException(MJ_SYSTEMRES, MN_OBJECT);
         }
 
         SRT_SOCKSTATUS st;
