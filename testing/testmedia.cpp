@@ -1101,7 +1101,7 @@ void SrtCommon::Error(string src, int reason, int force_result)
         cerr << "\nERROR (app): " << src << endl;
         throw std::runtime_error(src);
     }
-    string message = srt_getlasterror_str();
+    string message = srt_strerror(result, errnov);
     if (result == SRT_ECONNREJ)
     {
         if ( Verbose::on )
