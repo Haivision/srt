@@ -835,6 +835,27 @@ int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* h
     return 0;
 }
 
+int CUDT::installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    return s_UDTUnited.installConnectHook(lsn, hook, opaq);
+}
+
+int CUDTUnited::installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    try
+    {
+        CUDTSocket* s = locateSocket(lsn, ERH_THROW);
+        s->m_pUDT->installConnectHook(hook, opaq);
+    }
+    catch (CUDTException& e)
+    {
+        SetThreadLocalError(e);
+        return SRT_ERROR;
+    }
+
+    return 0;
+}
+
 SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure

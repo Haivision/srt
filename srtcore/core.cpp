@@ -10982,6 +10982,8 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
         CGlobEvent::triggerEvent();
+        if (m_cbConnectHook)
+            CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_ENOSERVER);
 
         return true;
     }
