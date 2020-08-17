@@ -58,8 +58,8 @@ modified by
 #include <csignal>
 
 #include "channel.h"
+#include "core.h" // srt_logging:mglog
 #include "packet.h"
-#include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
 #include "netinet_any.h"
 #include "utilities.h"
@@ -71,8 +71,72 @@ modified by
 using namespace std;
 using namespace srt_logging;
 
+#ifdef _WIN32
+    // use INVALID_SOCKET, as provided
+#else
+    static const int INVALID_SOCKET = -1;
+#endif
+
+#ifndef _WIN32
+#if defined(_AIX) || \
+    defined(__APPLE__) || \
+    defined(__DragonFly__) || \
+    defined(__FreeBSD__) || \
+    defined(__FreeBSD_kernel__) || \
+    defined(__linux__) || \
+    defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+#define set_cloexec set_cloexec_ioctl
+#else
+#define set_cloexec set_cloexec_fcntl
+#endif
+#if !defined(__CYGWIN__) && !defined(__MSYS__) && !defined(__HAIKU__)
+static int set_cloexec_ioctl(int fd, int set) {
+    int r;
+
+    do
+        r = ioctl(fd, set ? FIOCLEX : FIONCLEX);
+    while (r == -1 && errno == EINTR);
+
+    if (r)
+        return errno;
+
+    return 0;
+}
+#endif
+static int set_cloexec_fcntl(int fd, int set) {
+    int flags;
+    int r;
+
+    do
+        r = fcntl(fd, F_GETFD);
+    while (r == -1 && errno == EINTR);
+
+    if (r == -1)
+        return errno;
+
+    /* Bail out now if already set/clear. */
+    if (!!(r & FD_CLOEXEC) == !!set)
+        return 0;
+
+    if (set)
+        flags = r | FD_CLOEXEC;
+    else
+        flags = r & ~FD_CLOEXEC;
+
+    do
+        r = fcntl(fd, F_SETFD, flags);
+    while (r == -1 && errno == EINTR);
+
+    if (r)
+        return errno;
+
+    return 0;
+}
+#endif
+
 CChannel::CChannel():
-m_iSocket(),
+m_iSocket(INVALID_SOCKET),
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
 m_iSndBufSize(65536),
@@ -87,26 +151,30 @@ CChannel::~CChannel()
 
 void CChannel::createSocket(int family)
 {
-#ifdef _WIN32
-    // use INVALID_SOCKET, as provided
-#else
-    static const int INVALID_SOCKET = -1;
-#endif
-
+    bool cloexec_flag = false;
     // construct an socket
-#if defined(O_CLOEXEC)
-    m_iSocket = ::socket(family, SOCK_DGRAM | O_CLOEXEC, IPPROTO_UDP);
+#if defined(SOCK_CLOEXEC)
+    m_iSocket = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
     if (m_iSocket == INVALID_SOCKET)
     {
         m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+        cloexec_flag = true;
     }
 #else
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    cloexec_flag = true;
 #endif
 
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
+#ifndef _WIN32
+    if (cloexec_flag) {
+        if (0 != set_cloexec(m_iSocket, 1)) {
+            throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+        }
+    }
+#endif
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
         int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));
@@ -130,7 +198,7 @@ void CChannel::open(const sockaddr_any& addr)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
     m_BindAddr = addr;
-    LOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(m_BindAddr));
+    LOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -172,7 +240,7 @@ void CChannel::open(int family)
 
     ::freeaddrinfo(res);
 
-    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(m_BindAddr));
+    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -265,6 +333,24 @@ void CChannel::setUDPSockOpt()
           }
       }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+      if (m_BindAddr.family() != AF_INET)
+      {
+          LOGC(mglog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
+          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+      }
+
+      if (!m_BindToDevice.empty())
+      {
+          if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, m_BindToDevice.c_str(), m_BindToDevice.size()))
+          {
+              char buf[255];
+              const char* err = SysStrError(NET_ERROR, buf, 255);
+              LOGC(mglog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
+              throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+      }
+#endif
 
 #ifdef UNIX
    // Set non-blocking I/O
@@ -332,6 +418,9 @@ void CChannel::setIpV6Only(int ipV6Only)
 
 int CChannel::getIpTTL() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpTTL);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -352,6 +441,9 @@ int CChannel::getIpTTL() const
 
 int CChannel::getIpToS() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpToS);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -382,6 +474,29 @@ void CChannel::setIpToS(int tos)
    m_iIpToS = tos;
 }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+void CChannel::setBind(const string& name)
+{
+    m_BindToDevice = name;
+}
+
+bool CChannel::getBind(char* dst, size_t len)
+{
+    if (m_iSocket == INVALID_SOCKET)
+        return false; // No socket to get data from
+
+    // Try to obtain it directly from the function. If not possible,
+    // then return from internal data.
+    socklen_t length = len;
+    int res = ::getsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, dst, &length);
+    if (res == -1)
+        return false; // Happens on Linux v < 3.8
+
+    // For any case
+    dst[length] = 0;
+    return true;
+}
+#endif
 
 int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
@@ -427,7 +542,7 @@ void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
-    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << addr.str()
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
         << " pkt.ts=" << packet.m_iTimeStamp

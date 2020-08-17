@@ -521,6 +521,10 @@ int CSndQueue::getIpTTL() const { return m_pChannel ? m_pChannel->getIpTTL() : -
 
 int CSndQueue::getIpToS() const { return m_pChannel ? m_pChannel->getIpToS() : -1; }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+bool CSndQueue::getBind(char* dst, size_t len) const { return m_pChannel ? m_pChannel->getBind(dst, len) : false; }
+#endif
+
 void *CSndQueue::worker(void *param)
 {
     CSndQueue *self = (CSndQueue *)param;
@@ -823,7 +827,7 @@ void CRendezvousQueue::insert(
     r.m_tsTTL = ttl;
 
     m_lRendezvousID.push_back(r);
-    HLOGC(mglog.Debug, log << "RID: adding socket @" << id << " for address: " << SockaddrToString(addr)
+    HLOGC(mglog.Debug, log << "RID: adding socket @" << id << " for address: " << addr.str()
             << " expires: " << FormatTime(ttl)
             << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
@@ -857,7 +861,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
         {
             HLOGC(mglog.Debug, log << "RID: found id @" << i->m_iID << " while looking for "
                     << (w_id ? "THIS ID FROM " : "A NEW CONNECTION FROM ")
-                    << SockaddrToString(i->m_PeerAddr));
+                    << i->m_PeerAddr.str());
             w_id = i->m_iID;
             return i->m_pUDT;
         }
@@ -869,7 +873,7 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
        spec << "A NEW CONNECTION REQUEST";
    else
        spec << " AGENT @" << w_id;
-   HLOGC(mglog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << SockaddrToString(addr)
+   HLOGC(mglog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << addr.str()
            << " while looking for " << spec.str() << " (" << m_lRendezvousID.size() << " connectors total)");
 #endif
 
@@ -1288,8 +1292,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
     if (rst == RST_OK)
     {
         w_id = w_unit->m_Packet.m_iID;
-        HLOGC(mglog.Debug, log << "INCOMING PACKET: FROM=" << SockaddrToString(w_addr)
-                << " BOUND=" << SockaddrToString(m_pChannel->bindAddressAny())
+        HLOGC(mglog.Debug, log << "INCOMING PACKET: FROM=" << w_addr.str()
+                << " BOUND=" << m_pChannel->bindAddressAny().str()
                 << " " << w_unit->m_Packet.Info());
     }
     return rst;
@@ -1298,7 +1302,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
 EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
 {
     HLOGC(mglog.Debug,
-          log << "Got sockID=0 from " << SockaddrToString(addr)
+          log << "Got sockID=0 from " << addr.str()
               << " - trying to resolve it as a connection request...");
     // Introduced protection because it may potentially happen
     // that another thread could have closed the socket at
@@ -1311,7 +1315,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         if (m_pListener)
         {
             LOGC(mglog.Note,
-                 log << "PASSING request from: " << SockaddrToString(addr) << " to agent:" << m_pListener->socketID());
+                 log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
@@ -1331,7 +1335,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     if (have_listener) // That is, the above block with m_pListener->processConnectRequest was executed
     {
         LOGC(mglog.Note,
-             log << CONID() << "Listener managed the connection request from: " << SockaddrToString(addr)
+             log << CONID() << "Listener managed the connection request from: " << addr.str()
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
@@ -1356,8 +1360,8 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     if (addr != u->m_PeerAddr)
     {
         HLOGC(mglog.Debug,
-              log << CONID() << "Packet for SID=" << id << " asoc with " << SockaddrToString(u->m_PeerAddr)
-                  << " received from " << SockaddrToString(addr) << " (CONSIDERED ATTACK ATTEMPT)");
+              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str()
+                  << " received from " << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
         // This came not from the address that is the peer associated
         // with the socket. Ignore it.
         return CONN_AGAIN;
@@ -1416,13 +1420,13 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
         if (id == 0)
         {
             HLOGC(mglog.Debug,
-                  log << CONID() << "AsyncOrRND: no sockets expect connection from " << SockaddrToString(addr)
+                  log << CONID() << "AsyncOrRND: no sockets expect connection from " << addr.str()
                       << " - POSSIBLE ATTACK, ignore packet");
         }
         else
         {
             HLOGC(mglog.Debug,
-                  log << CONID() << "AsyncOrRND: no sockets expect socket " << id << " from " << SockaddrToString(addr)
+                  log << CONID() << "AsyncOrRND: no sockets expect socket " << id << " from " << addr.str()
                       << " - POSSIBLE ATTACK, ignore packet");
         }
         return CONN_AGAIN; // This means that the packet should be ignored.
@@ -1613,7 +1617,7 @@ void CRcvQueue::removeListener(const CUDT *u)
 void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const steady_clock::time_point& ttl)
 {
     HLOGC(mglog.Debug,
-          log << "registerConnector: adding @" << id << " addr=" << SockaddrToString(addr) << " TTL=" << FormatTime(ttl));
+          log << "registerConnector: adding @" << id << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
     m_pRendezvousQueue->insert(id, u, addr, ttl);
 }
 
@@ -1680,5 +1684,20 @@ void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
             return;
 
         i->second.push(pkt);
+    }
+}
+
+
+void CMultiplexer::destroy()
+{
+    // Reverse order of the assigned 
+    delete m_pRcvQueue;
+    delete m_pSndQueue;
+    delete m_pTimer;
+
+    if (m_pChannel)
+    {
+        m_pChannel->close();
+        delete m_pChannel;
     }
 }

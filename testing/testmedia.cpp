@@ -541,14 +541,14 @@ void SrtCommon::AcceptNewClient()
         string peer = "<?PEER?>";
         if (-1 != srt_getpeername(m_sock, (peeraddr.get()), (&peeraddr.len)))
         {
-            peer = SockaddrToString(peeraddr);
+            peer = peeraddr.str();
         }
 
         sockaddr_any agentaddr(AF_INET6);
         string agent = "<?AGENT?>";
         if (-1 != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
         {
-            agent = SockaddrToString(agentaddr);
+            agent = agentaddr.str();
         }
 
         Verb() << " connected [" << agent << "] <-- " << peer;
@@ -937,7 +937,7 @@ void SrtCommon::OpenGroupClient()
         SRTSOCKET insock = m_group_nodes[i].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << SockaddrToString(targets[i].peeraddr) << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
             continue;
         }
 
@@ -971,7 +971,7 @@ void SrtCommon::OpenGroupClient()
     {
         // id, status, result, peeraddr
         Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
     }
 
     /*
@@ -1229,7 +1229,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
         // id, status, result, peeraddr
         Verb() << "\n\tG@" << id << " <" << SockStatusStr(status) << "/" << MemberStatusStr(mstatus) << "> (=" << result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr)) << VerbNoEOL;
+            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str() << VerbNoEOL;
 
         if (status >= SRTS_BROKEN)
         {
@@ -1394,7 +1394,7 @@ RETRY_READING:
             if (d.status != SRTS_CONNECTED)
                 // id, status, result, peeraddr
                 Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
-                    << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+                    << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
         }
     }
 
@@ -2507,7 +2507,7 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, sadr.get(), sadr.size());
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
@@ -2516,16 +2516,17 @@ public:
     MediaPacket Read(size_t chunk) override
     {
         bytevector data(chunk);
-        sockaddr_in sa;
-        socklen_t si = sizeof(sockaddr_in);
+        sockaddr_any sa(sadr.family());
+        socklen_t si = sa.size();
         int64_t srctime = 0;
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &si);
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
             Error(SysError(), "UDP Read/recvfrom");
+        sa.len = si;
 
         if (stat < 1)
         {

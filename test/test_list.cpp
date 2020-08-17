@@ -449,7 +449,7 @@ TEST_F(CSndLossListTest, InsertHeadOverlap02)
     CheckEmptyArray();
 }
 
-TEST_F(CSndLossListTest, DISABLED_InsertHeadNegativeOffset01)
+TEST_F(CSndLossListTest, InsertHeadNegativeOffset01)
 {
     EXPECT_EQ(m_lossList->insert(10000000, 10000000), 1);
     EXPECT_EQ(m_lossList->insert(10000001, 10000001), 1);
@@ -468,19 +468,84 @@ TEST_F(CSndLossListTest, DISABLED_InsertHeadNegativeOffset01)
     CheckEmptyArray();
 }
 
+// Check the part of the loss report the can fit into the list
+// goes into the list.
+TEST_F(CSndLossListTest, InsertHeadNegativeOffset02)
+{
+    const int32_t head_seqno = 10000000;
+    EXPECT_EQ(m_lossList->insert(head_seqno,     head_seqno), 1);
+    EXPECT_EQ(m_lossList->insert(head_seqno + 1, head_seqno + 1), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+
+    // The offset of the sequence number being added does not fit
+    // into the size of the loss list, it must be ignored.
+    // Normally this situation should not happen.
+
+    const int32_t outofbound_seqno = head_seqno - CSndLossListTest::SIZE;
+    EXPECT_EQ(m_lossList->insert(outofbound_seqno - 1, outofbound_seqno + 1), 3);
+    EXPECT_EQ(m_lossList->getLossLength(), 5);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno - 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 4);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno);
+    EXPECT_EQ(m_lossList->getLossLength(), 3);
+    EXPECT_EQ(m_lossList->popLostSeq(), outofbound_seqno + 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 2);
+    EXPECT_EQ(m_lossList->popLostSeq(), 10000000);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+    EXPECT_EQ(m_lossList->popLostSeq(), 10000001);
+
+    CheckEmptyArray();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////
-TEST_F(CSndLossListTest, DISABLED_InsertFullList)
+TEST_F(CSndLossListTest, InsertFullListCoalesce)
 {
     for (int i = 1; i <= CSndLossListTest::SIZE; i++)
-        m_lossList->insert(i, i);
+        EXPECT_EQ(m_lossList->insert(i, i), 1);
     EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
-    m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1);
-    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
-    for (int i = 1; i <= CSndLossListTest::SIZE; i++)
+    // Inserting additional element: 1 item more than list size.
+    // But given all elements coalesce into one entry, list size should still increase.
+    EXPECT_EQ(m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
+    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
     {
         EXPECT_EQ(m_lossList->popLostSeq(), i);
-        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE - i);
+        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1 - i);
+    }
+    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->getLossLength(), 0);
+
+    CheckEmptyArray();
+}
+
+TEST_F(CSndLossListTest, DISABLED_InsertFullListNoCoalesce)
+{
+    // We will insert each element with a gap of one elements.
+    // This should lead to having space for only [i; SIZE] sequence numbers.
+    for (int i = 1; i <= CSndLossListTest::SIZE / 2; i++)
+        EXPECT_EQ(m_lossList->insert(2 * i, 2 * i), 1);
+
+    // At this point the list has every second element empty
+    // [0]:taken, [1]: empty, [2]: taken, [3]: empty, ...
+    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE / 2);
+
+    // Inserting additional element: 1 item more than list size.
+    // There should be one free place for it at list[SIZE-1]
+    // right after previously inserted element.
+    const int seqno1 = CSndLossListTest::SIZE + 2;
+    EXPECT_EQ(m_lossList->insert(seqno1, seqno1), 1);
+
+    // Inserting one more element into a full list.
+    // There should be no place for it.
+    const int seqno2 = CSndLossListTest::SIZE + 4;
+    EXPECT_EQ(m_lossList->insert(seqno2, seqno2), 0);
+
+    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
+    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
+    {
+        EXPECT_EQ(m_lossList->popLostSeq(), 2 * i);
+        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE  - i);
     }
     EXPECT_EQ(m_lossList->popLostSeq(), -1);
     EXPECT_EQ(m_lossList->getLossLength(), 0);

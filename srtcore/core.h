@@ -1248,7 +1248,7 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
 
-    void acceptAndRespond(const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
@@ -1425,6 +1425,9 @@ private: // Identification
     int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
     int m_iIpTTL;
     int m_iIpToS;
+#ifdef SRT_ENABLE_BINDTODEVICE
+    std::string m_BindToDevice;
+#endif
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
     // created later and takes values from these.

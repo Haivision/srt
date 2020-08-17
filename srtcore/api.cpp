@@ -601,7 +601,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        // the SRT Handshake message would fail.
        HLOGF(mglog.Debug,
                "newConnection: incoming %s, mapping socket %d",
-               SockaddrToString(peer).c_str(), ns->m_SocketID);
+               peer.str().c_str(), ns->m_SocketID);
        {
            ScopedLock cg(m_GlobControlLock);
            m_Sockets[ns->m_SocketID] = ns;
@@ -620,7 +620,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                goto ERR_ROLLBACK;
            }
        }
-       ns->m_pUDT->acceptAndRespond(peer, hspkt, (w_hs));
+       ns->m_pUDT->acceptAndRespond(ls->m_SelfAddr, peer, hspkt, (w_hs));
    }
    catch (...)
    {
@@ -1250,7 +1250,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         SRTSOCKET& sid_rloc = targets[tii].id;
         int& erc_rloc = targets[tii].errorcode;
         erc_rloc = SRT_SUCCESS; // preinitialized
-        HLOGC(mglog.Debug, log << "groupConnect: taking on " << SockaddrToString(targets[tii].peeraddr));
+        HLOGC(mglog.Debug, log << "groupConnect: taking on " << sockaddr_any(targets[tii].peeraddr).str());
 
         CUDTSocket* ns = 0;
 
@@ -2499,11 +2499,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
       // being currently done in the queues, if any.
       mx.m_pSndQueue->setClosing();
       mx.m_pRcvQueue->setClosing();
-      delete mx.m_pSndQueue;
-      delete mx.m_pRcvQueue;
-      mx.m_pChannel->close();
-      delete mx.m_pTimer;
-      delete mx.m_pChannel;
+      mx.destroy();
       m_mMultiplexer.erase(m);
    }
 }
@@ -2532,6 +2528,9 @@ void CUDTUnited::updateMux(
                   && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
                   &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
                   && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
+#ifdef SRT_ENABLE_BINDTODEVICE
+                  && (i->second.m_BindToDevice == s->m_pUDT->m_BindToDevice)
+#endif
                   && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
                   &&  i->second.m_bReusable)
           {
@@ -2557,21 +2556,27 @@ void CUDTUnited::updateMux(
    m.m_iIPversion = addr.family();
    m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
    m.m_iIpToS = s->m_pUDT->m_iIpToS;
+#ifdef SRT_ENABLE_BINDTODEVICE
+   m.m_BindToDevice = s->m_pUDT->m_BindToDevice;
+#endif
    m.m_iRefCount = 1;
    m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
    m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
-   m.m_pChannel = new CChannel();
-   m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
-   m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-   m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
-   m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
-   if (s->m_pUDT->m_iIpV6Only != -1)
-      m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
-
    try
    {
+       m.m_pChannel = new CChannel();
+       m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
+       m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
+#ifdef SRT_ENABLE_BINDTODEVICE
+       m.m_pChannel->setBind(m.m_BindToDevice);
+#endif
+       m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
+       m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
+       if (s->m_pUDT->m_iIpV6Only != -1)
+           m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
+
        if (udpsock)
        {
            // In this case, addr contains the address
@@ -2617,15 +2622,13 @@ void CUDTUnited::updateMux(
    }
    catch (CUDTException& e)
    {
-      m.m_pChannel->close();
-      delete m.m_pChannel;
-      throw;
+       m.destroy();
+       throw;
    }
    catch (...)
    {
-      m.m_pChannel->close();
-      delete m.m_pChannel;
-      throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+       m.destroy();
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
    HLOGF(mglog.Debug, 
