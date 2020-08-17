@@ -168,7 +168,9 @@ void CChannel::createSocket(int family)
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
-#ifndef _WIN32
+#ifdef _WIN32
+    // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
+#else
     if (cloexec_flag) {
         if (0 != set_cloexec(m_iSocket, 1)) {
             throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
