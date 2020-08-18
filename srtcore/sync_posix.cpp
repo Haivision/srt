@@ -363,9 +363,13 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
         LOGC(mglog.Error, log << "IPE: Assigning to a thread that is not terminated!");
 
 #ifndef DEBUG
+#ifndef ANDROID
         // In case of production build the hanging thread should be terminated
         // to avoid hang ups and align with C++11 implementation.
+        // There is no pthread_cancel on Android. See #1476. This error should not normally
+        // happen, but if it happen, then detaching the thread.
         pthread_cancel(m_thread);
+#endif // ANDROID
 #else
         join();
 #endif
