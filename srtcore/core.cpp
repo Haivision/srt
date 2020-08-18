@@ -12175,6 +12175,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // This simply requires the payload to be sent through every socket in the group
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
+        // Check the socket state prematurely in order not to uselessly
+        // send over a socket that is broken.
+        CUDT* pu = 0;
+        if (d->ps)
+            pu = &d->ps->core();
+
+        if (!pu || pu->m_bBroken)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBroadcast: socket @" << d->id << " detected +Broken - transit to BROKEN");
+            d->sndstate = SRT_GST_BROKEN;
+            d->rcvstate = SRT_GST_BROKEN;
+        }
+
         // Check socket sndstate before sending
         if (d->sndstate == SRT_GST_BROKEN)
         {
@@ -14518,6 +14531,19 @@ int CUDTGroup::sendBackup(const char *buf, int len, SRT_MSGCTRL& w_mc)
     // First, check status of every link - no matter if idle or active.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
+        // Check the socket state prematurely in order not to uselessly
+        // send over a socket that is broken.
+        CUDT* pu = 0;
+        if (d->ps)
+            pu = &d->ps->core();
+
+        if (!pu || pu->m_bBroken)
+        {
+            HLOGC(dlog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
+            d->sndstate = SRT_GST_BROKEN;
+            d->rcvstate = SRT_GST_BROKEN;
+        }
+
         // Check socket sndstate before sending
         if (d->sndstate == SRT_GST_BROKEN)
         {
