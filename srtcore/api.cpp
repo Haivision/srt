@@ -2168,24 +2168,6 @@ int CUDTUnited::epoll_add_ssock(
    return m_EPoll.add_ssock(eid, s, events);
 }
 
-int CUDTUnited::epoll_update_usock(
-   const int eid, const SRTSOCKET u, const int* events)
-{
-   CUDTSocket* s = locateSocket(u);
-   int ret = -1;
-   if (s)
-   {
-      ret = m_EPoll.update_usock(eid, u, events);
-      s->m_pUDT->addEPoll(eid);
-   }
-   else
-   {
-      throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
-   }
-
-   return ret;
-}
-
 int CUDTUnited::epoll_update_ssock(
    const int eid, const SYSSOCKET s, const int* events)
 {
@@ -3595,7 +3577,7 @@ int CUDT::epoll_update_usock(
 {
    try
    {
-      return s_UDTUnited.epoll_update_usock(eid, u, events);
+      return s_UDTUnited.epoll_add_usock(eid, u, events);
    }
    catch (const CUDTException& e)
    {
