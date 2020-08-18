@@ -604,6 +604,11 @@ private:
     bool m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket* m_listener; // A "group" can only have one listener.
+    CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
+    void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
+    {
+        m_cbConnectHook.set(opaq, hook);
+    }
 
 public:
 

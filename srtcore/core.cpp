@@ -10983,7 +10983,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
 
         CGlobEvent::triggerEvent();
         if (m_cbConnectHook)
-            CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_ENOSERVER);
+            CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_ENOSERVER, m_PeerAddr.get());
 
         return true;
     }

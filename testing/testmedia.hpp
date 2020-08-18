@@ -49,6 +49,9 @@ class SrtCommon
 
 protected:
 
+//    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error);
+    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer);
+
     struct Connection
     {
         string host;
@@ -56,7 +59,10 @@ protected:
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
         sockaddr_any source;
+        sockaddr_any target;
         SRT_SOCKOPT_CONFIG* options = nullptr;
+        int error = SRT_SUCCESS;
+        int reason = SRT_REJ_UNKNOWN;
 
         Connection(string h, int p): host(h), port(p), source(AF_INET) {}
     };

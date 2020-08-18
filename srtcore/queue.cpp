@@ -958,8 +958,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 << "). removing from queue");
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
+            bool is_timeout = false;
             if (!is_zero(i->m_tsTTL))
             {
+                is_timeout = true;
                 // Timer expired, set TIMEOUT forcefully
                 i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
             }
@@ -971,7 +973,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
             if (i->m_pUDT->m_cbConnectHook)
-                CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID, SRT_ENOSERVER);
+            {
+                CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID,
+                        is_timeout ? SRT_ENOSERVER : SRT_ECONNREJ, i->m_PeerAddr.get());
+            }
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
              * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
