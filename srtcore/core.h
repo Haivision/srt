@@ -73,21 +73,6 @@ modified by
 
 #include <haicrypt.h>
 
-namespace srt_logging
-{
-
-extern Logger
-    glog,
-//    blog,
-    mglog,
-    dlog,
-    tslog,
-    rxlog,
-    cclog;
-
-}
-
-
 // XXX Utility function - to be moved to utilities.h?
 template <class T>
 inline T CountIIR(T base, T newval, double factor)

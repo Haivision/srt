@@ -32,6 +32,7 @@
 #include "packet.h"
 #include "congctl.h"
 #include "logging.h"
+#include "loggers.h"
 
 using namespace std;
 using namespace srt::sync;

@@ -58,6 +58,7 @@ modified by
 #include "packet.h"
 #include "core.h" // provides some constants
 #include "logging.h"
+#include "loggers.h"
 
 using namespace std;
 using namespace srt_logging;
