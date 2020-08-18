@@ -86,7 +86,7 @@ struct ToLowerFormat
         if (in == '_')
             return '-';
 
-        throw std::invalid_argument("Wrong FA name - please check logger_defs.inc.cpp file");
+        throw std::invalid_argument("Wrong FA name - please check the definition in scripts/generate-logging-defs.tcl file");
     }
 };
 
