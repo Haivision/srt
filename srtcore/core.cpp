@@ -63,6 +63,7 @@ modified by
 #include "logging.h"
 #include "crypto.h"
 #include "logging_api.h" // Required due to containing extern srt_logger_config
+#include "logger_defs.h"
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
@@ -74,51 +75,6 @@ modified by
 
 using namespace std;
 using namespace srt::sync;
-
-namespace srt_logging
-{
-
-struct AllFaOn
-{
-    LogConfig::fa_bitset_t allfa;
-
-    AllFaOn()
-    {
-#define LOGGER(upname, loname, logval) allfa.set(SRT_LOGFA_##upname, true)
-
-// HAICRYPT log is among the hidden ones, this will be defined explicitly.
-#define LOGGER_H(upname, loname, logval) 
-#include "logging_defs.inc.cpp"
-
-#undef LOGGER
-#undef LOGGER_H
-
-#if ENABLE_HAICRYPT_LOGGING
-        allfa.set(SRT_LOGFA_HAICRYPT, true);
-#endif
-    }
-} logger_fa_all;
-
-} // namespace srt_logging
-
-// We need it outside the namespace to preserve the global name.
-// It's a part of "hidden API" (used by applications)
-SRT_API srt_logging::LogConfig srt_logger_config(srt_logging::logger_fa_all.allfa);
-
-namespace srt_logging
-{
-#define LOGGER(UPNAME, loname, numeric) \
-    Logger loname##log(SRT_LOGFA_##UPNAME, srt_logger_config, "SRT." #loname)
-
-// Ignore hidden
-#define LOGGER_H(UPNAME, loname, numeric)
-
-#include "logging_defs.inc.cpp"
-
-#undef LOGGER
-#undef LOGGER_H
-} // namespace srt_logging
-
 using namespace srt_logging;
 
 CUDTUnited CUDT::s_UDTUnited;

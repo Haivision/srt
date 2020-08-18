@@ -75,41 +75,30 @@ srt_logging::LogLevel::type SrtParseLogLevel(string level)
     return LogLevel::type(i->second);
 }
 
-struct LogFANames
+struct ToLowerFormat
 {
-    map<string, int> namemap;
-
-    struct ToLowerFormat
+    char operator()(char in)
     {
-        char operator()(char in)
-        {
-            if (islower(in))
-                return in;
-            if (isupper(in))
-                return tolower(in);
-            if (in == '_')
-                return '-';
+        if (islower(in))
+            return in;
+        if (isupper(in))
+            return tolower(in);
+        if (in == '_')
+            return '-';
 
-            throw std::invalid_argument("Wrong FA name - please check logger_defs.inc.cpp file");
-        }
-    };
-
-    void Install(string upname, int value)
-    {
-        string id;
-        transform(upname.begin(), upname.end(), back_inserter(id), ToLowerFormat());
-        namemap[id] = value;
+        throw std::invalid_argument("Wrong FA name - please check logger_defs.inc.cpp file");
     }
+};
 
-    LogFANames()
-    {
-#define LOGGER(upname, loname, numeric) Install(#upname, SRT_LOGFA_##upname)
-#define LOGGER_H LOGGER
-#include "../srtcore/logging_defs.inc.cpp"
-#undef LOGGER
-#undef LOGGER_H
-    }
-} srt_transmit_logfa_names;
+void LogFANames::Install(string upname, int value)
+{
+    string id;
+    transform(upname.begin(), upname.end(), back_inserter(id), ToLowerFormat());
+    namemap[id] = value;
+}
+
+// See logsupport_appdefs.cpp for log FA definitions
+LogFANames srt_transmit_logfa_names;
 
 const map<string, int> SrtLogFAList()
 {

@@ -569,15 +569,7 @@ enum SRT_REJECT_REASON
 
 // Logging API - specialization for SRT.
 
-// Define logging functional areas for log selection.
-// Use values greater than 0. Value 0 is reserved for LOGFA_GENERAL,
-// which is considered always enabled.
-
-// Logger Functional Areas
-// Note that 0 is "general".
-
-// Made by #define so that it's available also for C API.
-// NOTE:
+// WARNING: This part is generated.
 // Use ../scripts/generate-logging-defs.tcl to regenerate.
 
 #define SRT_LOGFA_GENERAL    0 // glog
@@ -586,8 +578,9 @@ enum SRT_REJECT_REASON
 #define SRT_LOGFA_DATA       3 // dlog
 #define SRT_LOGFA_TSBPD      4 // tslog
 #define SRT_LOGFA_REXMIT     5 // rxlog
-#define SRT_LOGFA_HAICRYPT   6 // hclog
+
 #define SRT_LOGFA_CONGEST    7 // cclog
+#define SRT_LOGFA_HAICRYPT   6 // hclog
 
 
 // To make a typical int32_t size, although still use std::bitset.

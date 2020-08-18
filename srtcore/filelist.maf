@@ -12,6 +12,8 @@ epoll.cpp
 fec.cpp
 handshake.cpp
 list.cpp
+logger_default.cpp
+logger_defs.cpp
 md5.cpp
 packet.cpp
 packetfilter.cpp
