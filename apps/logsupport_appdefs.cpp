@@ -1,5 +1,3 @@
-
-
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
@@ -25,7 +23,6 @@ written by
 
 LogFANames::LogFANames()
 {
-    
     Install("GENERAL", SRT_LOGFA_GENERAL);
 
     Install("CONTROL", SRT_LOGFA_CONTROL);
@@ -35,7 +32,4 @@ LogFANames::LogFANames()
 
     Install("CONGEST", SRT_LOGFA_CONGEST);
     Install("HAICRYPT", SRT_LOGFA_HAICRYPT);
-
 }
-
-

@@ -1,5 +1,3 @@
-
-
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
@@ -29,7 +27,6 @@ namespace srt_logging
 {
     AllFaOn::AllFaOn()
     {
-        
         allfa.set(SRT_LOGFA_GENERAL, true);
 
         allfa.set(SRT_LOGFA_CONTROL, true);
@@ -38,9 +35,5 @@ namespace srt_logging
         allfa.set(SRT_LOGFA_REXMIT, true);
 
         allfa.set(SRT_LOGFA_CONGEST, true);
-
     }
 } // namespace srt_logging
-
-
-

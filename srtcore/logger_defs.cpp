@@ -1,5 +1,3 @@
-
-
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
@@ -32,7 +30,6 @@ SRT_API srt_logging::LogConfig srt_logger_config(srt_logging::logger_fa_all.allf
 
 namespace srt_logging
 {
-    
     Logger glog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.g");
 
     Logger mglog(SRT_LOGFA_CONTROL, srt_logger_config, "SRT.mg");
@@ -41,7 +38,4 @@ namespace srt_logging
     Logger rxlog(SRT_LOGFA_REXMIT, srt_logger_config, "SRT.rx");
 
     Logger cclog(SRT_LOGFA_CONGEST, srt_logger_config, "SRT.cc");
-
 } // namespace srt_logging
-
-

@@ -275,14 +275,19 @@ proc generate_file {od target} {
 
 	if { [dict exists $::special $target] } {
 		set code [subst [dict get $::special $target]]
+
+		# The code should contain "append entries" !
 		eval $code
 	}
+
+	set entries [string trim $entries]
 
     if {$format_model == ""} {
         set format_model $entries
     }
 
-	puts $od [subst -nocommands -nobackslashes $format_model]
+	# For any case, cut external spaces
+	puts $od [string trim [subst -nocommands -nobackslashes $format_model]]
 }
 
 set entryfiles $argv

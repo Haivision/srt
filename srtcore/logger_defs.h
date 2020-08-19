@@ -1,5 +1,3 @@
-
-
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
@@ -35,7 +33,6 @@ namespace srt_logging
         AllFaOn();
     };
 
-    
     extern Logger glog;
 
     extern Logger mglog;
@@ -45,9 +42,6 @@ namespace srt_logging
 
     extern Logger cclog;
 
-
 } // namespace srt_logging
 
 #endif
-
-
