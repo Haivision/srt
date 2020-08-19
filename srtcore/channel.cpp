@@ -259,14 +259,14 @@ void CChannel::setUDPSockOpt()
       }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-      if (m_BindAddr.family() != AF_INET)
-      {
-          LOGC(mglog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
-          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-      }
-
       if (!m_BindToDevice.empty())
       {
+          if (m_BindAddr.family() != AF_INET)
+          {
+              LOGC(mglog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
           if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, m_BindToDevice.c_str(), m_BindToDevice.size()))
           {
               char buf[255];

@@ -818,24 +818,17 @@ void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, cons
 
     if (error == SRT_SUCCESS)
     {
-        Verb() << " [@" << sock << " SUCCESSFUL]";
         return; // nothing to do for a successful socket
     }
 
-    sockaddr_any peersa = peer, agent;
-    srt_getsockname(sock, agent.get(), &agent.len);
-
-    Verb() << " [@" << sock << " agent=" << agent.str() << " peer=" << peersa.str() << " checking: " << VerbNoEOL;
+    sockaddr_any peersa = peer;
 
     for (auto& n: that->m_group_nodes)
     {
-        Verb() << n.target.str() << "? " << VerbNoEOL;
         if (n.target == peersa)
         {
             n.error = error;
             n.reason = srt_getrejectreason(sock);
-
-            Verb() << " error=" << error << " reason=" << n.reason << "]";
             return;
         }
     }
