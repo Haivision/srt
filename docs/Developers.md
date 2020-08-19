@@ -5,11 +5,11 @@
   * [Forking SRT on GitHub](#forking-srt-on-github)
   * [Building SRT](#building-srt)
 * [Project Structure](#project-structure)
-* [Coding Rules](#rules)
-* [Generated files](#generated-files)
+* [Coding Rules](#coding-rules)
 * [Submitting an Issue](#submitting-an-issue)
 * [Submitting a Pull Request](#submitting-a-pull-request)
   * [Commit Message Format](#commit-message-format)
+* [Generated files](#generated-files)
 
 ## Development Setup
 
@@ -97,9 +97,41 @@ The SRT installation has the following folders:
 * *test - unit tests for the library.
 * *testing - the folder contains applications used during development: `srt-test-live`, `srt-test-file`, etc. Use `-DENABLE_TESTING=ON` to include in the build.
 
-## Rules
+## Coding Rules
 
 TBD.
+
+## Submitting an Issue
+
+If you found an issue or have a question, please submit a (GitHub Issue)[github-issues].
+Note that questions can also be asked in the SRT Alliance slack channel:
+[start the conversation](https://slackin-srtalliance.azurewebsites.net/) in the `#general` or `#development` channel on [Slack](https://srtalliance.slack.com).
+
+## Submitting a Pull Request
+
+Create a pull request from your fork following the [GitHub Guide][github-guide-prs].
+
+### Commit Message Format
+
+We use a certain format for commit messages to automate the preparation of release notes.
+
+Each commit must start with one of the following tags, identifying the main scope of the commit.
+If your PR contains several distinguishable changes, it is recommended to split them into several commits,
+using the described commit message format.
+
+Please note that it is preferred to merge PRs by rebasing onto the master branch.
+If a PR contains several commits, they should be in the defined format.
+If your PR has several commits, and you need to update or change them, please use `git rebase` to save
+the commits structure. An alternative merging strategy is squash-merging, when all commits of the PR
+are squashed into a single one. In this case you can update your PR by making additional commits
+and merging with master. All those secondary commits will be squashed into a single one after merging to master.
+
+The format of the commit message is `[<tag>] <Message>`, where possible commits tags are:
+
+* `[apps]`- commit mainly changes sample applications or application utilities, including testing and example applications.
+* `[core]` - commit changes the core SRT library code.
+* `[test]` - commit changes or adds unit tests.
+* `[docs]` - commit changes or adds documentation.
 
 ## Generated files
 
@@ -181,37 +213,6 @@ script does its best to make sure that no option is missing, but some of them
 could be provided by some foreign dependent script (like `build-gmock`) and
 therefore they are mistakenly added to the list.
 
-## Submitting an Issue
-
-If you found an issue or have a question, please submit a (GitHub Issue)[github-issues].
-Note that questions can also be asked in the SRT Alliance slack channel:
-[start the conversation](https://slackin-srtalliance.azurewebsites.net/) in the `#general` or `#development` channel on [Slack](https://srtalliance.slack.com).
-
-## Submitting a Pull Request
-
-Create a pull request from your fork following the [GitHub Guide][github-guide-prs].
-
-### Commit Message Format
-
-We use a certain format for commit messages to automate the preparation of release notes.
-
-Each commit must start with one of the following tags, identifying the main scope of the commit.
-If your PR contains several distinguishable changes, it is recommended to split them into several commits,
-using the described commit message format.
-
-Please note that it is preferred to merge PRs by rebasing onto the master branch.
-If a PR contains several commits, they should be in the defined format.
-If your PR has several commits, and you need to update or change them, please use `git rebase` to save
-the commits structure. An alternative merging strategy is squash-merging, when all commits of the PR
-are squashed into a single one. In this case you can update your PR by making additional commits
-and merging with master. All those secondary commits will be squashed into a single one after merging to master.
-
-The format of the commit message is `[<tag>] <Message>`, where possible commits tags are:
-
-* `[apps]`- commit mainly changes sample applications or application utilities, including testing and example applications.
-* `[core]` - commit changes the core SRT library code.
-* `[test]` - commit changes or adds unit tests.
-* `[docs]` - commit changes or adds documentation.
 
 [git-setup]: https://help.github.com/articles/set-up-git
 [github-issues]: https://github.com/Haivision/srt/issues
