@@ -217,6 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_VERSION = 34,        // Local SRT Version
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
+   SRTO_DRIFTTRACER = 37,    // Enable or disable drift tracer
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
@@ -237,9 +238,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
-   // (some space left)
+   SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
-   SRTO_RETRANSMISSION_ALGORITHM = 61 // An option to select packet retransmission algorithm
+   SRTO_RETRANSMITALGO = 61  // An option to select packet retransmission algorithm
 } SRT_SOCKOPT;
 
 

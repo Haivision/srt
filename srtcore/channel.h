@@ -159,6 +159,11 @@ public:
 
    int getIpToS() const;
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+   void setBind(const std::string& name);
+   bool getBind(char* dst, size_t len);
+#endif
+
    int ioctlQuery(int type) const;
    int sockoptQuery(int level, int option) const;
 
@@ -173,6 +178,9 @@ private:
    UDPSOCKET m_iSocket;                 // socket descriptor
    int m_iIpTTL;
    int m_iIpToS;
+#ifdef SRT_ENABLE_BINDTODEVICE
+   std::string m_BindToDevice;
+#endif
    int m_iSndBufSize;                   // UDP sending buffer size
    int m_iRcvBufSize;                   // UDP receiving buffer size
    int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)

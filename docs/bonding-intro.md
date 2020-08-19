@@ -227,12 +227,12 @@ return the proper size in `grpdata_size`.
 The application should be interested here in two types of information:
 
 * the size of the filled array
-* the `status` field in every element
+* the `sockstate` field in every element
 
-From the `status` field you can track every member connection as to whether its
+From the `sockstate` field you can track every member connection as to whether its
 state is still `SRTS_CONNECTED`. If a connection is detected as broken after
 the call to a transmission function (`srt_sendmsg2/srt_recvmsg2`) then the
-connection will appear in these data only once, and with `status`
+connection will appear in these data only once, and with `sockstate`
 equal to `SRTS_BROKEN`. It will not appear anymore in later calls, and it won't 
 appear at all if you check the data through `srt_group_data`.
 
@@ -246,7 +246,7 @@ mc.grpdata_size = 3;
 ...
 srt_sendmsg2(conngrp, packetdata.data(), packetdata.size(), &mc);
 for (int i = 0; i < 3; ++i)
-    if (mc.grpdata[i].status == SRTS_BROKEN)
+    if (mc.grpdata[i].sockstate == SRTS_BROKEN)
         ReestablishConnection(mc.grpdata[i].id);
 ```
 
@@ -255,7 +255,7 @@ item in the application's link table, at which point a decision is made. If
 the connection is to be revived, this function should call `srt_connect` on it.
 
 There might be only an attempt to establish the link, in which case
-you'll get first the `SRTS_CONNECTING` status here, and then a failed socket
+you'll get first the `SRTS_CONNECTING` state here, and then a failed socket
 will simply disappear. Therefore the function should also check how many
 items were returned in this array, match them with existing connections,
 and filter out connections that are unexpectedly not established.

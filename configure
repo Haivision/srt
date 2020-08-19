@@ -102,7 +102,7 @@ foreach {o desc} $options {
 }
 
 
-if { $argv == "--help" } {
+if { $argv == "--help" || $argv == "-h" } {
 	puts stderr "Usage: ./configure \[options\]"
 	puts stderr "OPTIONS:"
 	foreach o [lsort [array names opt]] {

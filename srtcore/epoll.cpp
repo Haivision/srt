@@ -85,6 +85,7 @@ using namespace srt_logging;
 CEPoll::CEPoll():
 m_iIDSeed(0)
 {
+   // Exception -> CUDTUnited ctor.
    setupMutex(m_EPollLock, "EPoll");
 }
 
@@ -782,7 +783,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
 
                 // Logging into 'singles' because it notifies as to whether
                 // the edge-triggered event has been cleared
-                HLOGC(dlog.Debug, log << "EID " << d.m_iID << " rdy=" << total << ": "
+                HLOGC(dlog.Debug, log << "E" << d.m_iID << " rdy=" << total << ": "
                         << singles.str()
                         << " TRACKED: " << d.DisplayEpollWatch());
                 return total;
@@ -847,7 +848,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(dlog.Note, log << "epoll/update: EID " << *i << " was deleted in the meantime");
+            HLOGC(dlog.Note, log << "epoll/update: E" << *i << " was deleted in the meantime");
             // EID invalid, though still present in the socket's subscriber list
             // (dangling in the socket). Postpone to fix the subscruption and continue.
             lost.push_back(*i);
@@ -861,7 +862,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         if (!pwait)
         {
             // As this is mapped in the socket's data, it should be impossible.
-            LOGC(dlog.Error, log << "epoll/update: IPE: update struck EID "
+            LOGC(dlog.Error, log << "epoll/update: IPE: update struck E"
                     << (*i) << " which is NOT SUBSCRIBED to @" << uid);
             continue;
         }
@@ -877,7 +878,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         int changes = pwait->state ^ newstate; // oldState XOR newState
         if (!changes)
         {
-            HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+            HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                     << tracking << " NOT updated: no changes");
             continue; // no changes!
         }
@@ -887,7 +888,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         changes &= pwait->watch;
         if (!changes)
         {
-            HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+            HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                     << tracking << " NOT updated: not subscribed");
             continue; // no change watching
         }
@@ -899,7 +900,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         // - if !enable, it will clear event flags, possibly remove notice if resulted in 0
         ed.updateEventNotice(*pwait, uid, events, enable);
 
-        HLOGC(dlog.Debug, log << debug.str() << ": EID " << (*i)
+        HLOGC(dlog.Debug, log << debug.str() << ": E" << (*i)
                 << " TRACKING: " << ed.DisplayEpollWatch());
     }
 

@@ -227,6 +227,7 @@ public:
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
    int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets [], int arraysize);
+   int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
    void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
@@ -241,7 +242,6 @@ public:
    template <class EntityType>
    int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-   int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
    int32_t epoll_set(const int eid, int32_t flags);
@@ -377,31 +377,5 @@ private:
    CUDTUnited(const CUDTUnited&);
    CUDTUnited& operator=(const CUDTUnited&);
 };
-
-// Debug support
-inline std::string SockaddrToString(const sockaddr_any& sadr)
-{
-    if (sadr.family() != AF_INET && sadr.family() != AF_INET6)
-        return "unknown:0";
-
-    std::ostringstream output;
-    char hostbuf[1024];
-    int flags;
-
-#if ENABLE_GETNAMEINFO
-    flags = NI_NAMEREQD;
-#else
-    flags = NI_NUMERICHOST | NI_NUMERICSERV;
-#endif
-
-    if (!getnameinfo(sadr.get(), sadr.size(), hostbuf, 1024, NULL, 0, flags))
-    {
-        output << hostbuf;
-    }
-
-    output << ":" << sadr.hport();
-    return output.str();
-}
-
 
 #endif

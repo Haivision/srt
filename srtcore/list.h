@@ -66,22 +66,18 @@ public:
     /// @param [in] seqno1 sequence number starts.
     /// @param [in] seqno2 sequence number ends.
     /// @return number of packets that are not in the list previously.
-
     int insert(int32_t seqno1, int32_t seqno2);
 
     /// Remove the given sequence number and all numbers that precede it.
     /// @param [in] seqno sequence number.
-
     void removeUpTo(int32_t seqno);
 
     /// Read the loss length.∏
     /// @return The length of the list.
-
     int getLossLength() const;
 
     /// Read the first (smallest) loss seq. no. in the list and remove it.
     /// @return The seq. no. or -1 if the list is empty.
-
     int32_t popLostSeq();
 
     void traceState() const;
@@ -90,7 +86,7 @@ private:
     struct Seq
     {
         int32_t seqstart; // sequence number starts
-        int32_t seqend;   // seqnence number ends
+        int32_t seqend;   // sequence number ends
         int     inext;    // index of the next node in the list
     } * m_caSeq;
 
@@ -116,7 +112,7 @@ private:
 
     /// Update existing element with the new range (increase only)
     /// @param pos     position of the element being updated
-    /// @param seqno1  first seqnuence number in range
+    /// @param seqno1  first sequence number in range
     /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
     bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
 
