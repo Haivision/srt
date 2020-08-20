@@ -70,22 +70,9 @@ modified by
 #include "congctl.h"
 #include "packetfilter.h"
 #include "utilities.h"
+#include "logger_defs.h"
 
 #include <haicrypt.h>
-
-namespace srt_logging
-{
-
-extern Logger
-    glog,
-//    blog,
-    mglog,
-    dlog,
-    tslog,
-    rxlog,
-    cclog;
-
-}
 
 
 // XXX Utility function - to be moved to utilities.h?
