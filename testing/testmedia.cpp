@@ -2517,16 +2517,14 @@ public:
     {
         bytevector data(chunk);
         sockaddr_any sa(sadr.family());
-        socklen_t si = sa.size();
         int64_t srctime = 0;
-        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
             Error(SysError(), "UDP Read/recvfrom");
-        sa.len = si;
 
         if (stat < 1)
         {
