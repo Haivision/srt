@@ -547,6 +547,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmrsp",
         "EXT:sid",
         "EXT:congctl",
+        "EXT:filter",
         "EXT:group"
     };
 
