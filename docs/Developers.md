@@ -135,10 +135,9 @@ The format of the commit message is `[<tag>] <Message>`, where possible commits 
 
 ## Generated files
 
-Please note before modifying any files that some of them are generated, which is
-mentioned after the file header, or at some part that needs to be replaced by a
-generated code, if the related changes are added. The following parts as for now
-require attention:
+Please note *before modifying any files* that some of them are generated. This is
+indicated after the file header, or in any section of a file that needs to be replaced by 
+generated code if related changes are added. The following sections require attention:
 
 ### 1. Logging functional areas
 
