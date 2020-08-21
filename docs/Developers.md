@@ -146,15 +146,13 @@ turn on selectively only some smaller areas so that the logging doesn't overflow
 the performance and change the behavior when testing, in case when heavy debug
 logging is turned on.
 
-To add a new functional area name to be used in the logs, you need to modify the
-`generate-logging-defs.tcl` script. The list of loggers is contained in the
-`loggers` list. Lines doesn't matter there, the list must simply contain a
-multiple of 3 elements, which is the number of fields, as shown in the `model`
-list. The following `hidden_loggers` list contains some additional definitions
-that not always need to be added to particular generated files (as alternative
-declarations for them have been provided different way).
+To add a name designating a new functional area to be used in the logs, modify the
+`generate-logging-defs.tcl` script. A list of loggers is contained in the
+`loggers` list at the top of the TCL file. You can insert an addition anywhere in this list, as long as it has these three unique elements: a long name, a short name, and an ID (e.g.` GENERAL   g  0`). The TCL file contains a`hidden_loggers` list with additional definitions
+that do not always need to be added to particular generated files. Alternative
+declarations for items in this list are provided in a different way.
 
-What you need to do, if you happen to add or rename one of the logger definitions is:
+To add or rename one of the logger definitions:
 
 * Modify appropriately the `loggers` list
 * Run the script to generate the files
