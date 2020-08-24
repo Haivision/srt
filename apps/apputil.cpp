@@ -440,18 +440,20 @@ public:
 
             const auto   systime_now = system_clock::now();
             const time_t time_now    = system_clock::to_time_t(systime_now);
-            std::tm*     tm_now      = std::localtime(&time_now);
-            if (!tm_now)
-            {
-                cerr << "SrtStatsCsv: Failed to get current time for stats.";
-                return;
-            }
 
-            output << std::put_time(tm_now, "%d.%m.%Y %T.") << std::setfill('0') << std::setw(6);
+            // Ignore the error from localtime, as zeroed tm_now is acceptable.
+            tm tm_now = {};
+#ifdef _WIN32
+	        localtime_s(&time_now, &tm_now);
+#else
+            localtime_r(&time_now, &tm_now);
+#endif
+
+            output << std::put_time(&tm_now, "%d.%m.%Y %T.") << std::setfill('0') << std::setw(6);
             const auto    since_epoch = systime_now.time_since_epoch();
             const seconds s           = duration_cast<seconds>(since_epoch);
             output << duration_cast<microseconds>(since_epoch - s).count();
-            output << std::put_time(tm_now, " %z");
+            output << std::put_time(&tm_now, " %z");
             output << ",";
         };
 
