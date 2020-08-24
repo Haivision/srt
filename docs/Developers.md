@@ -141,25 +141,23 @@ generated code if related changes are added. The following sections require atte
 
 ### 1. Logging functional areas
 
-The logging system has functional areas (FA) that allow a developer to
-selectively turn on only specific types of logs. The logging instruction in
-the SRT code looks typically like this:
+In addition to levels (Debug, Note, Warn, Error, Fatal) the logging system has
+functional areas (FA) that allow a developer to selectively turn on only
+specific types of logs. For example, in this logging instruction:
 
 ```
 LOGC(cclog.Note, log << "This is a note");
 ```
 
-where:
 * `LOGC` is the macro, which allows for file and line information pass-through
 * `cclog` is the logger variable named after the FA, here "cc" means Congestion Control
 * `Note` is the log level
 * The expression after the comma is the log text composition expression
 
-The FA system allows a developer to allow or disallow all logs assigned to
-particular functional area to be printed. This  allows the developer to
-turn on selectively only some smaller areas so that the logging doesn't overflow
-the performance and change the behavior when testing, in case when heavy debug
-logging is turned on.
+The FA system allows a developer to enable or disable printing all logs assigned
+to particular functional area. This allows the developer to selectively turn on
+only specific areas. This is useful during testing to help minimize the impact
+of logging on performance or behavior.
 
 To add a name designating a new functional area to be used in the logs, modify the
 `generate-logging-defs.tcl` script. A list of loggers is contained in the
