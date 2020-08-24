@@ -552,7 +552,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_BindToDevice = val;
         }
 #else
-        LOGC(mglog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
+        LOGC(cmlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
         break;
@@ -1160,7 +1160,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         strcpy(((char*)optval), m_BindToDevice.c_str());
         optlen = m_BindToDevice.size();
 #else
-        LOGC(mglog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
+        LOGC(smlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
         break;
