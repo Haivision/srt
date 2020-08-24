@@ -141,28 +141,46 @@ generated code if related changes are added. The following sections require atte
 
 ### 1. Logging functional areas
 
-The fine-grained functional areas in the logging system allows the developer to
+The logging system has functional areas (FA) that allow a developer to
+selectively turn on only specific types of logs. The logging instruction in
+the SRT code looks typically like this:
+
+```
+LOGC(cclog.Note, log << "This is a note");
+```
+
+where:
+* `LOGC` is the macro, which allows for file and line information pass-through
+* `cclog` is the logger variable named after the FA, here "cc" means Congestion Control
+* `Note` is the log level
+* The expression after the comma is the log text composition expression
+
+The FA system allows a developer to allow or disallow all logs assigned to
+particular functional area to be printed. This  allows the developer to
 turn on selectively only some smaller areas so that the logging doesn't overflow
 the performance and change the behavior when testing, in case when heavy debug
 logging is turned on.
 
 To add a name designating a new functional area to be used in the logs, modify the
 `generate-logging-defs.tcl` script. A list of loggers is contained in the
-`loggers` list at the top of the TCL file. You can insert an addition anywhere in this list, as long as it has these three unique elements: a long name, a short name, and an ID (e.g.` GENERAL   g  0`). The TCL file contains a`hidden_loggers` list with additional definitions
-that do not always need to be added to particular generated files. Alternative
-declarations for items in this list are provided in a different way.
+`loggers` list at the top of the TCL file. You can insert an addition anywhere
+in this list, as long as it has these three unique elements: a long name, a
+short name, and an ID (e.g.` GENERAL   g  0`). The TCL file contains
+a`hidden_loggers` list with additional definitions that do not always need to
+be added to particular generated files. Alternative declarations for items in
+this list are provided in a different way.
 
 To add or rename one of the logger definitions:
 
 * Modify appropriately the `loggers` list
 * Run the script to generate the files
    * Note that you need to press Enter to confirm overwrite
-* Note that `srt.inc.h` file generates only a part that you have to place in srt.h
-   * Find any `SRT_LOGFA_` symbol to find the place where it should be pasted
 
 Note that the script can have arguments, which is the list of files that have to
 be generated (must be identical with the keys used in `generation` dictionary).
-By default it regenerates all required files.
+By default it regenerates all required files. Note also that `srt.h` is exceptionally
+a file that is being only modified, that is, the current contents of the file is
+preserved, and only the part replaced.
 
 The script contains also all definitions for file generation in the following variables:
 
@@ -182,8 +200,8 @@ to be generated. Every entry is an array containing 3 elements:
 * entry format for `hidden_loggers` (optional)
 
 The 'format model' uses two variables: `globalheader`, which is the obligatory
-header for all source files, and `entries` in a place where the list of FA entries
-is expected to be placed.
+header for all source files, and `entries` in a place where the list of functional
+area (FA) entries is expected to be placed.
 
 The entry formats should utilize the variable names as defined in the `model` variable
 in the beginning, as it sees fit.
@@ -199,7 +217,7 @@ Currently generated files are:
 
 If you modify the `CMakeLists.txt` file and add some build options to it, remember to
 generate this list of options and update appropriately the `configure-data.tcl` file.
-This file requires to be run in the build directory and passed the `CMakeCache.txt`
+This file should be run in the build directory and passed the `CMakeCache.txt`
 file as argument. The list of options will be printed on the standard output, and
 it should be the content of the `cmake_options` variable defined in `configure-data.tcl`
 file.
@@ -210,6 +228,11 @@ script does its best to make sure that no option is missing, but some of them
 could be provided by some foreign dependent script (like `build-gmock`) and
 therefore they are mistakenly added to the list.
 
+Note that this does not mean that the contents should be blindly pasted into
+the options list. Apply only the new options that you have added. The script
+does its best to make sure that no option is missing. Note that some options
+might be provided by an external dependent script (like `build-gmock`) and
+therefore mistakenly added to the list.
 
 [git-setup]: https://help.github.com/articles/set-up-git
 [github-issues]: https://github.com/Haivision/srt/issues
