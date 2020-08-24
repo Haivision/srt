@@ -27,20 +27,43 @@ set model {
 # Use values greater than 0. Value 0 is reserved for LOGFA_GENERAL,
 # which is considered always enabled.
 set loggers {
-	GENERAL   g  0
-	CONTROL   mg 2
-	DATA       d 3
-	TSBPD     ts 4
-	REXMIT    rx 5
-	CONGEST   cc 7
+	GENERAL    gg  0
+	SOCKMGMT   sm  1
+	CONN       ca  2
+	XTIMER     xt  3
+	TSBPD      ts  4
+	RSRC       rs  5
+	CONGEST    cc  7
+	PFILTER    pf  8
+	API_CTRL   ac  11
+	QUE_CTRL   qc  13
+	EPOLL_UPD  ei  16
+
+	API_RECV   ar  21
+	BUF_RECV   br  22
+	QUE_RECV   qr  23
+	CHN_RECV   kr  24
+	GRP_RECV   gr  25
+
+	API_SEND   as  31
+	BUF_SEND   bs  32
+	QUE_SEND   qs  33
+	CHN_SEND   ks  34
+	GRP_SEND   gs  35
+
+	INTERNAL   ip  41
+	QUE_MGMT   qm  43
+	CHN_MGMT   cm  44
+	GRP_MGMT   gm  45
+	EPOLL_API  ea  46
 }
 
 set hidden_loggers {
 	# Haicrypt logging - usually off.
 	HAICRYPT hc 6
-
-	# APPLOG=10 - defined in apps, this is only a stub to lock the value
-	# APPLOG  ap 10
+ 
+    # defined in apps, this is only a stub to lock the value
+	APPLOG   ap 10
 }
 
 set globalheader {

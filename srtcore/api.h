@@ -268,7 +268,7 @@ public:
 
    void deleteGroup(CUDTGroup* g)
    {
-       using srt_logging::mglog;
+       using srt_logging::gmlog;
 
        srt::sync::ScopedLock cg (m_GlobControlLock);
 
@@ -280,13 +280,13 @@ public:
            m_Groups.erase(g->m_GroupID);
            if (g != pg) // sanity check -- only report
            {
-               LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
+               LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
            }
            delete pg; // still delete it
            return;
        }
 
-       LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+       LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
        delete g; // still delete it.
        // Do not remove anything from the map - it's not found, anyway
    }

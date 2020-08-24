@@ -571,22 +571,69 @@ enum SRT_REJECT_REASON
 // Logging API - specialization for SRT.
 
 // WARNING: This part is generated.
+
+// Logger Functional Areas
+// Note that 0 is "general".
+
+// XXX This part should better be generated
+// from logging_defs.inc.cpp, but this would require
+// that either whole srt.h is partially generated, or
+// this should be kept in a separate file.
+
+// Values 0* - general, unqualified
+// Values 1* - control
+// Values 2* - receiving
+// Values 3* - sending
+// Values 4* - management
+
+
+// Made by #define so that it's available also for C API.
+// NOTE:
 // Use ../scripts/generate-logging-defs.tcl to regenerate.
 
-#define SRT_LOGFA_GENERAL    0 // glog
 
-#define SRT_LOGFA_CONTROL    2 // mglog
-#define SRT_LOGFA_DATA       3 // dlog
+#define SRT_LOGFA_GENERAL    0 // gglog
+#define SRT_LOGFA_SOCKMGMT   1 // smlog
+#define SRT_LOGFA_CONN       2 // calog
+#define SRT_LOGFA_XTIMER     3 // xtlog
 #define SRT_LOGFA_TSBPD      4 // tslog
-#define SRT_LOGFA_REXMIT     5 // rxlog
+#define SRT_LOGFA_RSRC       5 // rslog
 
 #define SRT_LOGFA_CONGEST    7 // cclog
+#define SRT_LOGFA_PFILTER    8 // pflog
+
+#define SRT_LOGFA_API_CTRL   11 // aclog
+
+#define SRT_LOGFA_QUE_CTRL   13 // qclog
+
+#define SRT_LOGFA_EPOLL_UPD  16 // eilog
+
+#define SRT_LOGFA_API_RECV   21 // arlog
+#define SRT_LOGFA_BUF_RECV   22 // brlog
+#define SRT_LOGFA_QUE_RECV   23 // qrlog
+#define SRT_LOGFA_CHN_RECV   24 // krlog
+#define SRT_LOGFA_GRP_RECV   25 // grlog
+
+#define SRT_LOGFA_API_SEND   31 // aslog
+#define SRT_LOGFA_BUF_SEND   32 // bslog
+#define SRT_LOGFA_QUE_SEND   33 // qslog
+#define SRT_LOGFA_CHN_SEND   34 // kslog
+#define SRT_LOGFA_GRP_SEND   35 // gslog
+
+#define SRT_LOGFA_INTERNAL   41 // iplog
+
+#define SRT_LOGFA_QUE_MGMT   43 // qmlog
+#define SRT_LOGFA_CHN_MGMT   44 // cmlog
+#define SRT_LOGFA_GRP_MGMT   45 // gmlog
+#define SRT_LOGFA_EPOLL_API  46 // ealog
+
+// Hidden
 #define SRT_LOGFA_HAICRYPT   6 // hclog
+#define SRT_LOGFA_APPLOG     10 // aplog
 
-
-// To make a typical int32_t size, although still use std::bitset.
+// To make a typical int64_t size, although still use std::bitset.
 // C API will carry it over.
-#define SRT_LOGFA_LASTNONE 31
+#define SRT_LOGFA_LASTNONE 63
 
 enum SRT_KM_STATE
 {
