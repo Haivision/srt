@@ -18,6 +18,7 @@
 
 #include "apputil.hpp"
 #include "netinet_any.h"
+#include "srt_compat.h"
 
 using namespace std;
 
@@ -441,14 +442,8 @@ public:
             const auto   systime_now = system_clock::now();
             const time_t time_now    = system_clock::to_time_t(systime_now);
 
-            // Ignore the error from localtime, as zeroed tm_now is acceptable.
-            tm tm_now = {};
-#ifdef _WIN32
-	        localtime_s(&time_now, &tm_now);
-#else
-            localtime_r(&time_now, &tm_now);
-#endif
-
+            // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
+            const tm tm_now = SysLocalTime(time_now);
             output << std::put_time(&tm_now, "%d.%m.%Y %T.") << std::setfill('0') << std::setw(6);
             const auto    since_epoch = systime_now.time_since_epoch();
             const seconds s           = duration_cast<seconds>(since_epoch);
