@@ -220,12 +220,6 @@ file as argument. The list of options will be printed on the standard output, an
 it should be the content of the `cmake_options` variable defined in `configure-data.tcl`
 file.
 
-Note that it doesn't mean that the contents should be blindly pasted into the
-options list, just apply only these new options that you have added - this
-script does its best to make sure that no option is missing, but some of them
-could be provided by some foreign dependent script (like `build-gmock`) and
-therefore they are mistakenly added to the list.
-
 Note that this does not mean that the contents should be blindly pasted into
 the options list. Apply only the new options that you have added. The script
 does its best to make sure that no option is missing. Note that some options
