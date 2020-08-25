@@ -275,14 +275,18 @@ TEST(SyncEvent, WaitFor)
         const steady_clock::time_point start = steady_clock::now();
         const bool on_timeout = !cond.wait_for(lock, timeout);
         const steady_clock::time_point stop = steady_clock::now();
+        const steady_clock::duration waittime = stop - start;
 #if defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
         // This check somehow fails on AppVeyor Windows VM with VS 2015 and pthreads.
         // - SyncEvent::wait_for( 50us) took 6us
         // - SyncEvent::wait_for(100us) took 4us
         if (on_timeout) {
-            EXPECT_GE(count_microseconds(stop - start), tout_us);
+            EXPECT_GE(waittime, timeout);
         }
 #endif
+        if (on_timeout) {
+            EXPECT_LE(waittime, 10*timeout);
+        }
 
         if (tout_us < 1000)
         {
@@ -348,35 +352,73 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 {
     Mutex mutex;
     Condition cond;
+    vector<int> notified_clients;
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
+    auto wait_async = [&notified_clients](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
         UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+        if (cond->wait_for(lock, timeout))
+        {
+            notified_clients.push_back(id);
+            return true;
+        }
+        return false;
     };
-    auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
-    auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
-    EXPECT_EQ(wait_async1_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    EXPECT_EQ(wait_async2_res.wait_for(chrono::milliseconds(100)), future_status::timeout);
-    cond.notify_one();
-    // Now only one waiting thread should become ready
-    const future_status status1 = wait_async1_res.wait_for(chrono::microseconds(10));
-    const future_status status2 = wait_async2_res.wait_for(chrono::microseconds(10));
+    using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
-    const bool isready1 = (status1 == future_status::ready);
-    EXPECT_EQ(status1, isready1 ? future_status::ready : future_status::timeout);
-    EXPECT_EQ(status2, isready1 ? future_status::timeout : future_status::ready);
+    future_t future_result[2] = {
+        async(launch::async, wait_async, &cond, &mutex, timeout, 0),
+        async(launch::async, wait_async, &cond, &mutex, timeout, 1)
+    };
 
-    // Expect one thread to be woken up by condition
-    EXPECT_TRUE(isready1 ? wait_async1_res.get() : wait_async2_res.get());
-    // Expect timeout on another thread
-#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
-    // This check tends to fail on Windows VM in GitHub Actions
-    // due to some spurious wake up.
-    EXPECT_FALSE(isready1 ? wait_async2_res.get() : wait_async1_res.get());
-#endif
+    for (auto& wr: future_result)
+    {
+        ASSERT_EQ(wr.wait_for(chrono::milliseconds(100)), future_status::timeout);
+    }
+
+    {
+        ScopedLock lk(mutex);
+        cond.notify_one();
+    }
+
+    using wait_t = decltype(future_t().wait_for(0us));
+
+    wait_t wait_state[2] = {
+        future_result[0].wait_for(chrono::microseconds(10)),
+        future_result[1].wait_for(chrono::microseconds(10))
+    };
+
+    // Now exactly one waiting thread should become ready
+    // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
+    ASSERT_EQ(notified_clients.size(), 1);
+
+    int ready = notified_clients[0];
+    int not_ready = (ready + 1) % 2;
+
+    bool future_val [2] = {
+        future_result[0].get(),
+        future_result[1].get()
+    };
+
+    // Informational text
+    cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
+        << " STATUS " << int(wait_state[ready]) << " RESULT " << future_val[ready] << endl;
+
+    cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
+        << " STATUS " << int(wait_state[not_ready]) << " RESULT " << future_val[not_ready] << endl;
+
+    // The one that got the signal, should exit ready.
+    // The one that didn't get the signal, should exit timeout.
+    EXPECT_EQ(wait_state[ready], future_status::ready);
+    EXPECT_EQ(wait_state[not_ready], future_status::timeout);
+
+    // Same, expect these future to return the value
+    EXPECT_TRUE(future_val[ready]);
+//#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
+    EXPECT_FALSE(future_val[not_ready]);
+//#endif
 
     cond.destroy();
 }
