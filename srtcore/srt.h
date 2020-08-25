@@ -583,7 +583,6 @@ enum SRT_REJECT_REASON
 #define SRT_LOGFA_CONGEST    7 // cclog
 #define SRT_LOGFA_HAICRYPT   6 // hclog
 
-
 // To make a typical int32_t size, although still use std::bitset.
 // C API will carry it over.
 #define SRT_LOGFA_LASTNONE 31
