@@ -369,8 +369,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
     future_t future_result[2] = {
-        async(launch::async, wait_async, &cond, &mutex, timeout, 0),
-        async(launch::async, wait_async, &cond, &mutex, timeout, 1)
+        move(async(launch::async, wait_async, &cond, &mutex, timeout, 0)),
+        move(async(launch::async, wait_async, &cond, &mutex, timeout, 1))
     };
 
     for (auto& wr: future_result)
@@ -386,8 +386,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     wait_t wait_state[2] = {
-        future_result[0].wait_for(chrono::microseconds(10)),
-        future_result[1].wait_for(chrono::microseconds(10))
+        move(future_result[0].wait_for(chrono::microseconds(10))),
+        move(future_result[1].wait_for(chrono::microseconds(10)))
     };
 
     // Now exactly one waiting thread should become ready
@@ -419,14 +419,14 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
+//#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
     EXPECT_EQ(wait_state[ready], future_status::ready);
+//#endif
     EXPECT_EQ(wait_state[not_ready], future_status::timeout);
 
     // Same, expect these future to return the value
     EXPECT_TRUE(future_val[ready]);
-//#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
     EXPECT_FALSE(future_val[not_ready]);
-//#endif
 
     cond.destroy();
 }
