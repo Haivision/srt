@@ -255,6 +255,10 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         s->m_tsOriginTime = time;
         s->m_tsRexmitTime = time_point();
         s->m_iTTL = w_ttl;
+        // Rewrite the actual sending time back into w_srctime
+        // so that the calling facilities can reuse it
+        if (!w_srctime)
+            w_srctime = count_microseconds(s->m_tsOriginTime.time_since_epoch());
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
@@ -400,9 +404,7 @@ steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& bloc
 {
     if (block.m_llSourceTime_us)
     {
-        const steady_clock::duration since_epoch = block.m_tsOriginTime.time_since_epoch();
-        const steady_clock::duration delta       = microseconds_from(block.m_llSourceTime_us) - since_epoch;
-        return block.m_tsOriginTime + delta;
+        return steady_clock::time_point() + microseconds_from(block.m_llSourceTime_us);
     }
 
     return block.m_tsOriginTime;

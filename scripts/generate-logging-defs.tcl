@@ -98,10 +98,74 @@ set special {
 	}
 }
 
+proc GenerateModelForSrtH {} {
+
+	# `path` will be set to the git top path
+	global path
+
+	set fd [open [file join $path srtcore/srt.h] r]
+
+	set contents ""
+
+	set state read
+	set pass looking
+
+	while { [gets $fd line] != -1 } {
+		if { $state == "read" } {
+
+			if { $pass != "passed" } {
+				set re [regexp {^\#define SRT_LOGFA_} $line]
+				if {$re} {
+					set state skip
+					set pass found
+					continue
+				}
+
+			}
+
+			append contents "$line\n"
+			continue
+		}
+
+		if {$state == "skip"} {
+			if { [string trim $line] == "" } {
+				# Empty line, continue skipping
+				continue
+			}
+
+			if {[regexp {^\#define SRT_LOGFA_} $line]} {
+				# Still SRT_LOGFA definitions
+				continue
+			}
+
+			# End of generated section. Switch back to pass-thru.
+
+			# First fill the gap
+			append contents "\$entries\n\n"
+
+			append contents "$line\n"
+			set state read
+			set pass passed
+		}
+	}
+
+	close $fd
+
+	# Sanity check
+	if {$pass != "passed"} {
+		error "Invalid contents of `srt.h` file, can't find '#define SRT_LOGFA_' phrase"
+	}
+
+	return $contents
+}
+
 # COMMENTS NOT ALLOWED HERE! Only as C++ comments inside C++ model code.
+# Note: The syntax %<command> is a high-level command execution. This declares
+# a command that must be executed to GENERATE the model. Then, [subst] is executed
+# on the results.
 set generation {
-	srt.inc.h {
-		{}
+	srtcore/srt.h {
+		{%GenerateModelForSrtH}
 		{#define [format "%-20s %d" SRT_LOGFA_${longname} $id] // ${shortname}log}
 		{#define [format "%-20s %d" SRT_LOGFA_${longname} $id] // ${shortname}log}
 	}
@@ -235,6 +299,11 @@ proc generate_file {od target} {
 
     set ptabprefix ""
 
+	if {[string index $format_model 0] == "%"} {
+		set command [string range $format_model 1 end]
+		set format_model [eval $command]
+	}
+
 	if {$format_model != ""} {
 		set beginindex 0
 		while { [string index $format_model $beginindex] == "\n" } {
@@ -336,15 +405,16 @@ foreach f $entryfiles {
 		set filepath [file join $path $f] 
 	}
 
+    puts stderr "Generating '$filepath'"
+	set od [open $filepath.tmp w]
+	generate_file $od $f
+	close $od
 	if { [file exists $filepath] } {
 		puts "WARNING: will overwrite exiting '$f'. Hit ENTER to confirm, or Control-C to stop"
 		gets stdin
 	}
 
-    puts stderr "Generating '$filepath'"
-	set od [open $filepath w]
-	generate_file $od $f
-	close $od
+	file rename -force $filepath.tmp $filepath
 }
 
 puts stderr Done.
