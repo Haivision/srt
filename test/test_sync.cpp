@@ -383,7 +383,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         cond.notify_one();
     }
 
-    using wait_t = decltype(future_t().wait_for(0us));
+    using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     wait_t wait_state[2] = {
         future_result[0].wait_for(chrono::microseconds(10)),
@@ -402,12 +402,20 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         future_result[1].get()
     };
 
+    const string disp_state [2] = { "no-signal", "signal" };
+
+    string disp_future[16];
+    disp_future[int(future_status::timeout)] = "timeout";
+    disp_future[int(future_status::ready)] = "ready";
+
     // Informational text
     cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
-        << " STATUS " << int(wait_state[ready]) << " RESULT " << future_val[ready] << endl;
+        << " STATUS " << disp_future[int(wait_state[ready])]
+        << " RESULT " << disp_state[0+future_val[ready]] << endl;
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
-        << " STATUS " << int(wait_state[not_ready]) << " RESULT " << future_val[not_ready] << endl;
+        << " STATUS " << disp_future[int(wait_state[not_ready])]
+        << " RESULT " << disp_state[0+future_val[not_ready]] << endl;
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
