@@ -285,7 +285,10 @@ TEST(SyncEvent, WaitFor)
         }
 #endif
         if (on_timeout) {
-            EXPECT_LE(waittime, 10*timeout);
+            // Give it 100 times the timeout, as this is
+            // considered more than "crazy long", whereas we only
+            // want to check if it has waited a finite amount of time.
+            EXPECT_LE(waittime, 100 * timeout);
         }
 
         if (tout_us < 1000)
@@ -389,6 +392,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         move(future_result[0].wait_for(chrono::microseconds(10))),
         move(future_result[1].wait_for(chrono::microseconds(10)))
     };
+
+    cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
+        << " clients:";
+    for (auto& nof: notified_clients)
+        cerr << " " << nof;
+    cerr << endl;
 
     // Now exactly one waiting thread should become ready
     // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
