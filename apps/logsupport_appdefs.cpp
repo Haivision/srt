@@ -45,6 +45,7 @@ LogFANames::LogFANames()
     Install("CHN_MGMT", SRT_LOGFA_CHN_MGMT);
     Install("GRP_MGMT", SRT_LOGFA_GRP_MGMT);
     Install("EPOLL_API", SRT_LOGFA_EPOLL_API);
+
     Install("HAICRYPT", SRT_LOGFA_HAICRYPT);
     Install("APPLOG", SRT_LOGFA_APPLOG);
 }

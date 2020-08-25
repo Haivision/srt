@@ -158,10 +158,6 @@ proc GenerateModelForSrtH {} {
 		error "Invalid contents of `srt.h` file, can't find '#define SRT_LOGFA_' phrase"
 	}
 
-	set od [open srt.h.in w]
-	puts $od $contents
-	close $od
-
 	return $contents
 }
 
