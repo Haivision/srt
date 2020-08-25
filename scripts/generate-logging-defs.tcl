@@ -19,6 +19,7 @@ set model {
 	longname
 	shortname
 	id
+	description
 }
 
 # Logger definitions.
@@ -27,43 +28,43 @@ set model {
 # Use values greater than 0. Value 0 is reserved for LOGFA_GENERAL,
 # which is considered always enabled.
 set loggers {
-	GENERAL    gg  0
-	SOCKMGMT   sm  1
-	CONN       ca  2
-	XTIMER     xt  3
-	TSBPD      ts  4
-	RSRC       rs  5
-	CONGEST    cc  7
-	PFILTER    pf  8
-	API_CTRL   ac  11
-	QUE_CTRL   qc  13
-	EPOLL_UPD  ei  16
+	GENERAL    gg  0  "General uncategorized log, for serious issues only"
+	SOCKMGMT   sm  1  "Socket create/open/close/configure activities"
+	CONN       ca  2  "Connection establishment and handshake"
+	XTIMER     xt  3  "The checkTimer and around activities"
+	TSBPD      ts  4  "The TsBPD thread"
+	RSRC       rs  5  "System resource allocation and management"
+	CONGEST    cc  7  "Congestion control module"
+	PFILTER    pf  8  "Packet filter module"
+	API_CTRL   ac  11 "API part for socket and library managmenet"
+	QUE_CTRL   qc  13 "Queue control activities"
+	EPOLL_UPD  ei  16 "EPoll, internal update activities"
 
-	API_RECV   ar  21
-	BUF_RECV   br  22
-	QUE_RECV   qr  23
-	CHN_RECV   kr  24
-	GRP_RECV   gr  25
+	API_RECV   ar  21 "API part for receiving"
+	BUF_RECV   br  22 "Buffer, receiving side"
+	QUE_RECV   qr  23 "Queue, receiving side"
+	CHN_RECV   kr  24 "CChannel, receiving side"
+	GRP_RECV   gr  25 "Group, receiving side"
 
-	API_SEND   as  31
-	BUF_SEND   bs  32
-	QUE_SEND   qs  33
-	CHN_SEND   ks  34
-	GRP_SEND   gs  35
+	API_SEND   as  31 "API part for sending"
+	BUF_SEND   bs  32 "Buffer, sending side"
+	QUE_SEND   qs  33 "Queue, sending side"
+	CHN_SEND   ks  34 "CChannel, sending side"
+	GRP_SEND   gs  35 "Group, sending side"
 
-	INTERNAL   ip  41
-	QUE_MGMT   qm  43
-	CHN_MGMT   cm  44
-	GRP_MGMT   gm  45
-	EPOLL_API  ea  46
+	INTERNAL   ip  41 "Internal activities not connected directly to a socket"
+	QUE_MGMT   qm  43 "Queue, management part"
+	CHN_MGMT   cm  44 "CChannel, management part"
+	GRP_MGMT   gm  45 "Group, management part"
+	EPOLL_API  ea  46 "EPoll, API part"
 }
 
 set hidden_loggers {
 	# Haicrypt logging - usually off.
-	HAICRYPT hc 6
+	HAICRYPT hc 6  "Haicrypt module area"
  
     # defined in apps, this is only a stub to lock the value
-	APPLOG   ap 10
+	APPLOG   ap 10 "Applications"
 }
 
 set globalheader {
@@ -114,11 +115,11 @@ proc GenerateModelForSrtH {} {
 		if { $state == "read" } {
 
 			if { $pass != "passed" } {
-				set re [regexp {^\#define SRT_LOGFA_} $line]
+
+				set re [regexp {SRT_LOGFA BEGIN GENERATED SECTION} $line]
 				if {$re} {
 					set state skip
 					set pass found
-					continue
 				}
 
 			}
@@ -133,7 +134,8 @@ proc GenerateModelForSrtH {} {
 				continue
 			}
 
-			if {[regexp {^\#define SRT_LOGFA_} $line]} {
+			set re [regexp {SRT_LOGFA END GENERATED SECTION} $line]
+			if {!$re} {
 				# Still SRT_LOGFA definitions
 				continue
 			}
@@ -141,7 +143,7 @@ proc GenerateModelForSrtH {} {
 			# End of generated section. Switch back to pass-thru.
 
 			# First fill the gap
-			append contents "\$entries\n\n"
+			append contents "\n\$entries\n\n"
 
 			append contents "$line\n"
 			set state read
@@ -156,18 +158,34 @@ proc GenerateModelForSrtH {} {
 		error "Invalid contents of `srt.h` file, can't find '#define SRT_LOGFA_' phrase"
 	}
 
+	set od [open srt.h.in w]
+	puts $od $contents
+	close $od
+
 	return $contents
 }
 
 # COMMENTS NOT ALLOWED HERE! Only as C++ comments inside C++ model code.
-# Note: The syntax %<command> is a high-level command execution. This declares
-# a command that must be executed to GENERATE the model. Then, [subst] is executed
+# (NOTE: Tcl syntax highlighter will likely falsely highlight # as comment here)
+#
+# Model:  TARGET-NAME { format-model logger-pattern hidden-logger-pattern }
+#
+# Special syntax:
+#
+# %<command> : a high-level command execution. This declares a command that
+# must be executed to GENERATE the model. Then, [subst] is executed
 # on the results.
+#
+# = : when placed as the hidden-logger-pattern, it's equal to logger-pattern.
+#
 set generation {
 	srtcore/srt.h {
+
 		{%GenerateModelForSrtH}
-		{#define [format "%-20s %d" SRT_LOGFA_${longname} $id] // ${shortname}log}
-		{#define [format "%-20s %d" SRT_LOGFA_${longname} $id] // ${shortname}log}
+
+		{#define [format "%-20s %-3d" SRT_LOGFA_${longname} $id] // ${shortname}log: $description}
+
+		=
 	}
 
     srtcore/logger_default.cpp {
@@ -355,15 +373,22 @@ proc generate_file {od target} {
 				append entries "\n"
 			}
 
-			append entries ${ptabprefix}[subst -nobackslashes $pattern]\n
+			append entries "${ptabprefix}[subst -nobackslashes $pattern]\n"
 			set prevval $id
 		}
 	}
 
 	if {$hpattern != ""} {
- 		set hpattern [string trim $hpattern]
+		if {$hpattern == "="} {
+			set hpattern $pattern
+		} else {
+ 			set hpattern [string trim $hpattern]
+		}
+
+		# Extra line to separate from the normal entries
+		append entries "\n"
 		foreach [list {*}$::model] [no_comments $::hidden_loggers] {
-			append entries ${ptabprefix}[subst -nobackslashes $hpattern]\n
+			append entries "${ptabprefix}[subst -nobackslashes $hpattern]\n"
 		}
 	}
 
@@ -383,6 +408,18 @@ proc generate_file {od target} {
 	# For any case, cut external spaces
 	puts $od [string trim [subst -nocommands -nobackslashes $format_model]]
 }
+
+proc debug_vars {list} {
+	set output ""
+	foreach name $list {
+		upvar $name _${name}
+		lappend output "${name}=[set _${name}]"
+	}
+
+	return $output
+}
+
+# MAIN
 
 set entryfiles $argv
 
