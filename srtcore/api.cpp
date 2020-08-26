@@ -288,7 +288,7 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   HLOGC(iplog.Debug, log << "GarbageCollector: thread EXIT");
+   HLOGC(inlog.Debug, log << "GarbageCollector: thread EXIT");
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
@@ -485,11 +485,11 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    CUDTSocket* ls = locateSocket(listen);
    if (!ls)
    {
-       LOGC(calog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
+       LOGC(cnlog.Error, log << "IPE: newConnection by listener socket id=" << listen << " which DOES NOT EXIST.");
        return -1;
    }
 
-   HLOGC(calog.Debug, log << "newConnection: creating new socket after listener @"
+   HLOGC(cnlog.Debug, log << "newConnection: creating new socket after listener @"
          << listen << " contacted with backlog=" << ls->m_uiBackLog);
 
    // if this connection has already been processed
@@ -509,7 +509,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       {
          // connection already exist, this is a repeated connection request
          // respond with existing HS information
-         HLOGC(calog.Debug, log
+         HLOGC(cnlog.Debug, log
                << "newConnection: located a WORKING peer @"
                << w_hs.m_iID << " - ADAPTING.");
 
@@ -526,7 +526,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    else
    {
-       HLOGC(calog.Debug, log << "newConnection: NOT located any peer @"
+       HLOGC(cnlog.Debug, log << "newConnection: NOT located any peer @"
                << w_hs.m_iID << " - resuming with initial connection.");
    }
 
@@ -534,7 +534,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    if (ls->m_pQueuedSockets->size() >= ls->m_uiBackLog)
    {
        w_error = SRT_REJ_BACKLOG;
-       LOGC(calog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+       LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
        return -1;
    }
 
@@ -549,7 +549,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
       w_error = SRT_REJ_RESOURCE;
       delete ns;
-      LOGC(calog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
+      LOGC(cnlog.Error, log << "IPE: newConnection: unexpected exception (probably std::bad_alloc)");
       return -1;
    }
 
@@ -561,7 +561,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    catch (const CUDTException& e)
    {
-       LOGF(calog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
+       LOGF(cnlog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
        // generateSocketID throws exception, which can be naturally handled
        // when the call is derived from the API call, but here it's called
        // internally in response to receiving a handshake. It must be handled
@@ -575,7 +575,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    ns->m_PeerID = w_hs.m_iID;
    ns->m_iISN = w_hs.m_iISN;
 
-   HLOGC(calog.Debug, log << "newConnection: DATA: lsnid=" << listen
+   HLOGC(cnlog.Debug, log << "newConnection: DATA: lsnid=" << listen
             << " id=" << ns->m_pUDT->m_SocketID
             << " peerid=" << ns->m_pUDT->m_PeerID
             << " ISN=" << ns->m_iISN);
@@ -599,7 +599,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
        // this call causes sending the SRT Handshake through this socket.
        // Without this mapping the socket cannot be found and therefore
        // the SRT Handshake message would fail.
-       HLOGF(calog.Debug,
+       HLOGF(cnlog.Debug,
                "newConnection: incoming %s, mapping socket %d",
                peer.str().c_str(), ns->m_SocketID);
        {
@@ -645,14 +645,14 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    enterCS(m_GlobControlLock);
    try
    {
-       HLOGF(calog.Debug,
+       HLOGF(cnlog.Debug,
                "newConnection: mapping peer %d to that socket (%d)\n",
                ns->m_PeerID, ns->m_SocketID);
        m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
    }
    catch (...)
    {
-      LOGC(calog.Error, log << "newConnection: error when mapping peer!");
+      LOGC(cnlog.Error, log << "newConnection: error when mapping peer!");
       error = 2;
    }
    leaveCS(m_GlobControlLock);
@@ -673,7 +673,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       {
          if (gi->laststatus == SRTS_CONNECTED)
          {
-            HLOGC(calog.Debug, log << "Found another connected socket in the group: $"
+            HLOGC(cnlog.Debug, log << "Found another connected socket in the group: $"
                   << gi->id << " - socket will be NOT given up for accepting");
             should_submit_to_accept = false;
             break;
@@ -684,7 +684,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // operation can include the socket in the group operation.
       gi = ns->m_IncludedIter;
 
-      HLOGC(calog.Debug, log << "newConnection(GROUP): Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
+      HLOGC(cnlog.Debug, log << "newConnection(GROUP): Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id()
             << " - will " << (should_submit_to_accept? "" : "NOT ") << "report in accept");
       gi->sndstate = SRT_GST_IDLE;
       gi->rcvstate = SRT_GST_IDLE;
@@ -692,7 +692,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
       if (!g->m_bConnected)
       {
-         HLOGC(calog.Debug, log << "newConnection(GROUP): First socket connected, SETTING GROUP CONNECTED");
+         HLOGC(cnlog.Debug, log << "newConnection(GROUP): First socket connected, SETTING GROUP CONNECTED");
          g->m_bConnected = true;
       }
 
@@ -732,7 +732,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    else
    {
-      HLOGC(calog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " is not in a group");
+      HLOGC(cnlog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " is not in a group");
    }
 
    if (should_submit_to_accept)
@@ -744,12 +744,12 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       }
       catch (...)
       {
-         LOGC(calog.Error, log << "newConnection: error when queuing socket!");
+         LOGC(cnlog.Error, log << "newConnection: error when queuing socket!");
          error = 3;
       }
       leaveCS(ls->m_AcceptLock);
 
-      HLOGC(calog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
+      HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
       // acknowledge users waiting for new connections on the listening socket
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_ACCEPT, true);
 
@@ -766,7 +766,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    }
    else
    {
-      HLOGC(calog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
+      HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
             << " NOT submitted to acceptance, another socket in the group is already connected");
       {
          ScopedLock cg (ls->m_AcceptLock);
@@ -790,7 +790,7 @@ ERR_ROLLBACK:
            "IPE when mapping a socket",
            "IPE when inserting a socket"
        };
-       LOGC(calog.Warn, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: "
+       LOGC(cnlog.Warn, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: "
                << why[error] << " - " << RequestTypeStr(URQFailure(w_error)));
 #endif
       SRTSOCKET id = ns->m_SocketID;
@@ -1021,7 +1021,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    // no "accept" in rendezvous connection setup
    if (ls->m_pUDT->m_bRendezvous)
    {
-       LOGC(calog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
+       LOGC(cnlog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
        // This problem should never happen because `srt_listen` function should have
        // checked this situation before and not set listen state in result.
        // Inform the user about the invalid state in the universal way.
@@ -1680,7 +1680,7 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
        // status = SRTS_OPENED, so family should be known already.
        if (target_addr.family() != s->m_SelfAddr.family())
        {
-           LOGP(calog.Error, "srt_connect: socket is bound to a different family than target address");
+           LOGP(cnlog.Error, "srt_connect: socket is bound to a different family than target address");
            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
        }
    }
@@ -2725,12 +2725,12 @@ void* CUDTUnited::garbageCollect(void* p)
        INCREMENT_THREAD_ITERATIONS();
        self->checkBrokenSockets();
 
-       HLOGC(iplog.Debug, log << "GC: sleep 1 s");
+       HLOGC(inlog.Debug, log << "GC: sleep 1 s");
        self->m_GCStopCond.wait_for(gclock, seconds_from(1));
    }
 
    // remove all sockets and multiplexers
-   HLOGC(iplog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquring control lock...");
+   HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquring control lock...");
    enterCS(self->m_GlobControlLock);
    for (sockets_t::iterator i = self->m_Sockets.begin();
       i != self->m_Sockets.end(); ++ i)
@@ -2762,7 +2762,7 @@ void* CUDTUnited::garbageCollect(void* p)
    }
    leaveCS(self->m_GlobControlLock);
 
-   HLOGC(iplog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+   HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
    while (true)
    {
       self->checkBrokenSockets();

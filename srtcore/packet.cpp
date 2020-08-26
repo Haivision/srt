@@ -169,7 +169,7 @@ modified by
 
 namespace srt_logging
 {
-    extern Logger iplog;
+    extern Logger inlog;
 }
 using namespace srt_logging;
 
@@ -258,7 +258,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
     setControl(pkttype);
-    HLOGC(iplog.Debug, log << "pack: type=" << MessageTypeStr(pkttype)
+    HLOGC(inlog.Debug, log << "pack: type=" << MessageTypeStr(pkttype)
             << " ARG=" << (lparam ? Sprint(*lparam) : std::string("NULL"))
             << " [ " << (rparam ? Sprint(*(int32_t*)rparam) : std::string()) << " ]");
 

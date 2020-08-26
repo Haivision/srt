@@ -23,7 +23,7 @@ namespace srt_logging
 
     extern Logger gglog;
     extern Logger smlog;
-    extern Logger calog;
+    extern Logger cnlog;
     extern Logger xtlog;
     extern Logger tslog;
     extern Logger rslog;
@@ -49,10 +49,10 @@ namespace srt_logging
     extern Logger kslog;
     extern Logger gslog;
 
-    extern Logger iplog;
+    extern Logger inlog;
 
     extern Logger qmlog;
-    extern Logger cmlog;
+    extern Logger kmlog;
     extern Logger gmlog;
     extern Logger ealog;
 

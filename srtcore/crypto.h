@@ -34,7 +34,7 @@ std::string KmStateStr(SRT_KM_STATE state);
 
 namespace srt_logging
 {
-extern Logger calog;
+extern Logger cnlog;
 }
 
 #endif
@@ -159,18 +159,18 @@ public:
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
 #if ENABLE_LOGGING
-        using srt_logging::calog;
+        using srt_logging::cnlog;
 #endif
 
         m_SndKmLastTime = srt::sync::steady_clock::now();
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;
-            HLOGC(calog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+            HLOGC(cnlog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
         }
         else
         {
-            HLOGC(calog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
+            HLOGC(cnlog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
         }
     }
 

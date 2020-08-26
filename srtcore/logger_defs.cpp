@@ -20,7 +20,7 @@ namespace srt_logging
 {
     Logger gglog(SRT_LOGFA_GENERAL, srt_logger_config, "SRT.gg");
     Logger smlog(SRT_LOGFA_SOCKMGMT, srt_logger_config, "SRT.sm");
-    Logger calog(SRT_LOGFA_CONN, srt_logger_config, "SRT.ca");
+    Logger cnlog(SRT_LOGFA_CONN, srt_logger_config, "SRT.cn");
     Logger xtlog(SRT_LOGFA_XTIMER, srt_logger_config, "SRT.xt");
     Logger tslog(SRT_LOGFA_TSBPD, srt_logger_config, "SRT.ts");
     Logger rslog(SRT_LOGFA_RSRC, srt_logger_config, "SRT.rs");
@@ -46,10 +46,10 @@ namespace srt_logging
     Logger kslog(SRT_LOGFA_CHN_SEND, srt_logger_config, "SRT.ks");
     Logger gslog(SRT_LOGFA_GRP_SEND, srt_logger_config, "SRT.gs");
 
-    Logger iplog(SRT_LOGFA_INTERNAL, srt_logger_config, "SRT.ip");
+    Logger inlog(SRT_LOGFA_INTERNAL, srt_logger_config, "SRT.in");
 
     Logger qmlog(SRT_LOGFA_QUE_MGMT, srt_logger_config, "SRT.qm");
-    Logger cmlog(SRT_LOGFA_CHN_MGMT, srt_logger_config, "SRT.cm");
+    Logger kmlog(SRT_LOGFA_CHN_MGMT, srt_logger_config, "SRT.km");
     Logger gmlog(SRT_LOGFA_GRP_MGMT, srt_logger_config, "SRT.gm");
     Logger ealog(SRT_LOGFA_EPOLL_API, srt_logger_config, "SRT.ea");
 } // namespace srt_logging

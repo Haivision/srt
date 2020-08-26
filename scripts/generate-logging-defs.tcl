@@ -30,7 +30,7 @@ set model {
 set loggers {
 	GENERAL    gg  0  "General uncategorized log, for serious issues only"
 	SOCKMGMT   sm  1  "Socket create/open/close/configure activities"
-	CONN       ca  2  "Connection establishment and handshake"
+	CONN       cn  2  "Connection establishment and handshake"
 	XTIMER     xt  3  "The checkTimer and around activities"
 	TSBPD      ts  4  "The TsBPD thread"
 	RSRC       rs  5  "System resource allocation and management"
@@ -52,9 +52,9 @@ set loggers {
 	CHN_SEND   ks  34 "CChannel, sending side"
 	GRP_SEND   gs  35 "Group, sending side"
 
-	INTERNAL   ip  41 "Internal activities not connected directly to a socket"
+	INTERNAL   in  41 "Internal activities not connected directly to a socket"
 	QUE_MGMT   qm  43 "Queue, management part"
-	CHN_MGMT   cm  44 "CChannel, management part"
+	CHN_MGMT   km  44 "CChannel, management part"
 	GRP_MGMT   gm  45 "Group, management part"
 	EPOLL_API  ea  46 "EPoll, API part"
 }

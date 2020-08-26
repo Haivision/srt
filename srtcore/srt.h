@@ -589,7 +589,7 @@ enum SRT_REJECT_REASON
 
 #define SRT_LOGFA_GENERAL    0   // gglog: General uncategorized log, for serious issues only
 #define SRT_LOGFA_SOCKMGMT   1   // smlog: Socket create/open/close/configure activities
-#define SRT_LOGFA_CONN       2   // calog: Connection establishment and handshake
+#define SRT_LOGFA_CONN       2   // cnlog: Connection establishment and handshake
 #define SRT_LOGFA_XTIMER     3   // xtlog: The checkTimer and around activities
 #define SRT_LOGFA_TSBPD      4   // tslog: The TsBPD thread
 #define SRT_LOGFA_RSRC       5   // rslog: System resource allocation and management
@@ -615,10 +615,10 @@ enum SRT_REJECT_REASON
 #define SRT_LOGFA_CHN_SEND   34  // kslog: CChannel, sending side
 #define SRT_LOGFA_GRP_SEND   35  // gslog: Group, sending side
 
-#define SRT_LOGFA_INTERNAL   41  // iplog: Internal activities not connected directly to a socket
+#define SRT_LOGFA_INTERNAL   41  // inlog: Internal activities not connected directly to a socket
 
 #define SRT_LOGFA_QUE_MGMT   43  // qmlog: Queue, management part
-#define SRT_LOGFA_CHN_MGMT   44  // cmlog: CChannel, management part
+#define SRT_LOGFA_CHN_MGMT   44  // kmlog: CChannel, management part
 #define SRT_LOGFA_GRP_MGMT   45  // gmlog: Group, management part
 #define SRT_LOGFA_EPOLL_API  46  // ealog: EPoll, API part
 

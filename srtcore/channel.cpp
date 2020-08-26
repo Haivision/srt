@@ -58,7 +58,7 @@ modified by
 #include <csignal>
 
 #include "channel.h"
-#include "core.h" // srt_logging:cmlog
+#include "core.h" // srt_logging:kmlog
 #include "packet.h"
 #include "logging.h"
 #include "netinet_any.h"
@@ -107,7 +107,7 @@ void CChannel::createSocket(int family)
         {
             int err = errno;
             char msg[160];
-            LOGC(cmlog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
+            LOGC(kmlog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
                     << ": " << SysStrError(err, msg, 159));
         }
     }
@@ -123,7 +123,7 @@ void CChannel::open(const sockaddr_any& addr)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
     m_BindAddr = addr;
-    LOGC(cmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
+    LOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -165,7 +165,7 @@ void CChannel::open(int family)
 
     ::freeaddrinfo(res);
 
-    HLOGC(cmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
+    HLOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -263,7 +263,7 @@ void CChannel::setUDPSockOpt()
       {
           if (m_BindAddr.family() != AF_INET)
           {
-              LOGC(cmlog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
+              LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
               throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
           }
 
@@ -271,7 +271,7 @@ void CChannel::setUDPSockOpt()
           {
               char buf[255];
               const char* err = SysStrError(NET_ERROR, buf, 255);
-              LOGC(cmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
+              LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
       }
@@ -358,7 +358,7 @@ int CChannel::getIpTTL() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       LOGC(cmlog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
+       LOGC(kmlog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpTTL;
@@ -383,7 +383,7 @@ int CChannel::getIpToS() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       LOGC(cmlog.Error, log << "IPE: CChannel::getIpToS called with unset family");
+       LOGC(kmlog.Error, log << "IPE: CChannel::getIpToS called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpToS;
