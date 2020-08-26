@@ -6,8 +6,8 @@
 int client_pollid = SRT_ERROR;
 SRTSOCKET m_client_sock = SRT_ERROR;
 
-void clientSocket() {
-
+void clientSocket()
+{
     ThreadName::set("clientSocket");
 
     int yes = 1;
@@ -63,7 +63,8 @@ void clientSocket() {
 }
 
 
-TEST(Muxer, ipv4_only) {
+TEST(Muxer, ipv4_only)
+{
    	ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -175,7 +176,8 @@ TEST(Muxer, ipv4_only) {
     srt_cleanup();
 }
 
-TEST(Muxer, ipv4_with_ipv6) {
+TEST(Muxer, ipv4_with_ipv6)
+{
    	ASSERT_EQ(srt_startup(), 0);
 
     //srt_setloglevel(LOG_DEBUG);
