@@ -364,9 +364,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         if (cond->wait_for(lock, timeout))
         {
             notified_clients.push_back(id);
-            return true;
+            return 42;
         }
-        return false;
+        return 0;
     };
 
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
@@ -406,12 +406,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     int ready = notified_clients[0];
     int not_ready = (ready + 1) % 2;
 
-    bool future_val [2] = {
+    int future_val [2] = {
         future_result[0].get(),
         future_result[1].get()
     };
 
-    const string disp_state [2] = { "no-signal", "signal" };
+    //const string disp_state [2] = { "no-signal", "signal" };
 
     string disp_future[16];
     disp_future[int(future_status::timeout)] = "timeout";
@@ -420,11 +420,13 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // Informational text
     cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
         << " STATUS " << disp_future[int(wait_state[ready])]
-        << " RESULT " << disp_state[0+future_val[ready]] << endl;
+        //<< " RESULT " << disp_state[0+future_val[ready]] << endl;
+        << " RESULT " << future_val[ready] << endl;
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
         << " STATUS " << disp_future[int(wait_state[not_ready])]
-        << " RESULT " << disp_state[0+future_val[not_ready]] << endl;
+        //<< " RESULT " << disp_state[0+future_val[not_ready]] << endl;
+        << " RESULT " << future_val[not_ready] << endl;
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
@@ -434,8 +436,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     EXPECT_EQ(wait_state[not_ready], future_status::timeout);
 
     // Same, expect these future to return the value
-    EXPECT_TRUE(future_val[ready]);
-    EXPECT_FALSE(future_val[not_ready]);
+    EXPECT_EQ(future_val[ready], 42);
+    EXPECT_EQ(future_val[not_ready], 0);
 
     cond.destroy();
 }
