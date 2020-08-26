@@ -3,6 +3,7 @@ SOURCES
 test_buffer.cpp
 test_connection_timeout.cpp
 test_many_connections.cpp
+test_muxer.cpp
 test_cryspr.cpp
 test_enforced_encryption.cpp
 test_epoll.cpp
