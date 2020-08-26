@@ -39,7 +39,7 @@ protected:
     // It should be as much as possible, but how many sockets can
     // be withstood, depends on the platform. Currently used CI test
     // servers seem not to withstand more than 240.
-    static const size_t NSOCK = 200;
+    static const size_t NSOCK = 100;
 
 protected:
     // SetUp() is run immediately before a test starts.
