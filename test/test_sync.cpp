@@ -406,12 +406,23 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     int ready = notified_clients[0];
     int not_ready = (ready + 1) % 2;
 
-    int future_val [2] = {
-        future_result[0].get(),
-        future_result[1].get()
-    };
+    int future_val[2];
 
-    //const string disp_state [2] = { "no-signal", "signal" };
+    // The READY client must have a valid value.
+    ASSERT_TRUE(future_result[ready].valid());
+    future_val[ready] = future_result[ready].get();
+
+    // The NOT READY client MIGHT have a valid value, in which case we take expected 0,
+    // or maybe not, in which case we set -1 value. Either of both must be the
+    // result for the test to be valid.
+    if (future_result[not_ready].valid())
+    {
+        future_val[not_ready] = future_result[not_ready].get();
+    }
+    else
+    {
+        future_val[not_ready] = -1;
+    }
 
     string disp_future[16];
     disp_future[int(future_status::timeout)] = "timeout";
@@ -430,14 +441,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
-//#if !defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
     EXPECT_EQ(wait_state[ready], future_status::ready);
-//#endif
     EXPECT_EQ(wait_state[not_ready], future_status::timeout);
 
     // Same, expect these future to return the value
     EXPECT_EQ(future_val[ready], 42);
-    EXPECT_EQ(future_val[not_ready], 0);
+    EXPECT_LE(future_val[not_ready], 0);
 
     cond.destroy();
 }
