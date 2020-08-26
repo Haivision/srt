@@ -372,8 +372,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
     future_t future_result[2] = {
-        move(async(launch::async, wait_async, &cond, &mutex, timeout, 0)),
-        move(async(launch::async, wait_async, &cond, &mutex, timeout, 1))
+        async(launch::async, wait_async, &cond, &mutex, timeout, 0),
+        async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
 
     for (auto& wr: future_result)
@@ -389,8 +389,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(10))),
-        move(future_result[1].wait_for(chrono::microseconds(10)))
+        move(future_result[0].wait_for(chrono::microseconds(100))),
+        move(future_result[1].wait_for(chrono::microseconds(100)))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
