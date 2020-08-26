@@ -180,7 +180,7 @@ TEST(Muxer, ipv4_with_ipv6)
 {
    	ASSERT_EQ(srt_startup(), 0);
 
-    //srt_setloglevel(LOG_DEBUG);
+    srt_setloglevel(LOG_DEBUG);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
