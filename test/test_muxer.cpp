@@ -1,15 +1,12 @@
 #include "gtest/gtest.h"
 #include <thread>
 #include "srt.h"
-#include "threadname.h"
 
 int client_pollid = SRT_ERROR;
 SRTSOCKET m_client_sock = SRT_ERROR;
 
 void clientSocket()
 {
-    ThreadName::set("clientSocket");
-
     int yes = 1;
     int no = 0;
 
