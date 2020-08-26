@@ -212,10 +212,17 @@ TEST(Muxer, ipv4_with_ipv6)
     SRTSOCKET s = srt_create_socket();
     ASSERT_NE(s, SRT_ERROR);
 
-    sockaddr_in6 sender_addr6{};
+    sockaddr_in6 sender_addr6;
+    memset(&sender_addr6, 0, sizeof sender_addr6);
     sender_addr6.sin6_family = AF_INET6;
     sender_addr6.sin6_port   = htons(9999);
     ASSERT_EQ(inet_pton(AF_INET6, "::1", &sender_addr6.sin6_addr), 1);
+
+    // Set the IPv6only flag for the socket that should beind to the same port
+    // as another socket binding to IPv4 address, otherwise the binding may fail,
+    // depending on the current value of IPV6_V6ONLY option.
+    ASSERT_EQ(srt_setsockflag(s, SRTO_IPV6ONLY, &yes, sizeof yes), 0);
+
     ASSERT_NE(srt_bind(s, (sockaddr*)&sender_addr6, sizeof(sender_addr6)), SRT_ERROR);
 
     std::thread client(&clientSocket);
@@ -240,7 +247,7 @@ TEST(Muxer, ipv4_with_ipv6)
             ASSERT_EQ(read[0], m_bindsock); // read event is for bind socket
     }
 
-    sockaddr_in scl;
+    sockaddr_storage scl;
     int sclen = sizeof scl;
 
     SRTSOCKET m_sock = srt_accept(m_bindsock, (sockaddr*)&scl, &sclen);
