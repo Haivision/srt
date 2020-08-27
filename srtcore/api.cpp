@@ -1244,6 +1244,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
     bool block_new_opened = !g.m_bOpened && g.m_bSynRecving;
+    bool was_empty = g.empty();
     SRTSOCKET retval = -1;
 
     int eid = -1;
@@ -1363,7 +1364,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             isn = -1;
         }
 
-
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->m_pUDT->m_OPT_GroupConnect = 1;
 
@@ -1439,9 +1439,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         {
             ScopedLock grd (g.m_GroupLock);
 
-            if (isn == 0)
+            if (was_empty)
             {
-                g.syncWithSocket(ns->core());
+                g.syncWithSocket(ns->core(), HSD_INITIATOR);
             }
 
             HLOGC(aclog.Debug, log << "groupConnect: @" << sid << " connection successful, setting group OPEN (was "
@@ -1488,7 +1488,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     if (retval == -1)
     {
         HLOGC(aclog.Debug, log << "groupConnect: none succeeded as background-spawn, exit with error");
-        block_new_opened = false;
+        block_new_opened = false; // Avoid executing further while loop
     }
 
     vector<SRTSOCKET> broken;

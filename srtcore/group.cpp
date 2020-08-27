@@ -133,6 +133,8 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     return true;
 }
 
+// NOTE: This function is now for DEBUG PURPOSES ONLY.
+// Except for presenting the extracted data in the logs, there's no use of it now.
 bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock::time_point& w_st)
 {
     // Find at least one connection, which is running. Note that this function is called
@@ -862,11 +864,18 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
     return SRTS_BROKEN;
 }
 
-void CUDTGroup::syncWithSocket(const CUDT& core)
+void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
 {
     // [[using locked(m_GroupLock)]];
 
-    set_currentSchedSequence(core.ISN());
+    if (side == HSD_RESPONDER)
+    {
+        // On the listener side you should synchronize ISN with the incoming
+        // socket, which is done immediately after creating the socket and
+        // adding it to the group. On the caller side the ISN is defined in
+        // the group directly, before any member socket is created.
+        set_currentSchedSequence(core.ISN());
+    }
 
     // XXX
     // Might need further investigation as to whether this isn't

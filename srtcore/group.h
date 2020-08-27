@@ -299,7 +299,7 @@ public:
     /// @param ack The past-the-last-received ACK sequence number
     void readyPackets(CUDT* core, int32_t ack);
 
-    void syncWithSocket(const CUDT& core);
+    void syncWithSocket(const CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  configure(const char* str);
 

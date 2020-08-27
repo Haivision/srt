@@ -1862,8 +1862,10 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     if (m_parent->m_IncludedGroup->synconmsgno())
         flags |= SRT_GFLAG_SYNCONMSG;
 
+#if ENABLE_HEAVY_LOGGING
+
     SRTSOCKET master_peerid;
-    IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
+    steady_clock::duration master_tdiff;
     steady_clock::time_point master_st;
 
     // "Master" is the first found running connection. Will be false, if
@@ -1883,7 +1885,8 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         HLOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
                 << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
     }
-    // (this function will not fill the variables with anything, if no master is found)
+
+#endif
 
     // See CUDT::interpretGroup()
 
@@ -3441,7 +3444,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         return false;
     }
 
-    // This is called when the group ID has come in in the handshake.
+    // This is called when the group type has come in the handshake is invalid.
     if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
@@ -3515,8 +3518,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // different peers).
         else if (pg->peerid() != grpid)
         {
-            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid << " but the current socket's group $" << pg->id()
-                << " has already a peer $" << peer);
+            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
+                    << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
+            m_RejectReason = SRT_REJ_GROUP;
+            return false;
         }
         else
         {
@@ -3620,7 +3625,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     if (was_empty)
     {
         ScopedLock glock (*gp->exp_groupLock());
-        gp->syncWithSocket(s->core());
+        gp->syncWithSocket(s->core(), HSD_RESPONDER);
     }
 
     // Setting non-blocking reading for group socket.
