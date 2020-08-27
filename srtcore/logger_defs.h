@@ -21,14 +21,40 @@ namespace srt_logging
         AllFaOn();
     };
 
-    extern Logger glog;
-
-    extern Logger mglog;
-    extern Logger dlog;
+    extern Logger gglog;
+    extern Logger smlog;
+    extern Logger cnlog;
+    extern Logger xtlog;
     extern Logger tslog;
-    extern Logger rxlog;
+    extern Logger rslog;
 
     extern Logger cclog;
+    extern Logger pflog;
+
+    extern Logger aclog;
+
+    extern Logger qclog;
+
+    extern Logger eilog;
+
+    extern Logger arlog;
+    extern Logger brlog;
+    extern Logger qrlog;
+    extern Logger krlog;
+    extern Logger grlog;
+
+    extern Logger aslog;
+    extern Logger bslog;
+    extern Logger qslog;
+    extern Logger kslog;
+    extern Logger gslog;
+
+    extern Logger inlog;
+
+    extern Logger qmlog;
+    extern Logger kmlog;
+    extern Logger gmlog;
+    extern Logger ealog;
 
 } // namespace srt_logging
 
