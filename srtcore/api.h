@@ -65,6 +65,7 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
+#include "group.h"
 
 
 class CUDT;

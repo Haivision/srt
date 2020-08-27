@@ -10,6 +10,7 @@ core.cpp
 crypto.cpp
 epoll.cpp
 fec.cpp
+group.cpp
 handshake.cpp
 list.cpp
 logger_default.cpp
@@ -51,6 +52,7 @@ common.h
 core.h
 crypto.h
 epoll.h
+group.h
 handshake.h
 list.h
 logging.h
