@@ -3564,24 +3564,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     return true;
 }
 
-#if ENABLE_HEAVY_LOGGING
-void CUDTGroup::debugGroup()
-{
-    ScopedLock gg (m_GroupLock);
-
-    HLOGC(gmlog.Debug, log << "GROUP MEMBER STATUS - $" << id());
-
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-    {
-        HLOGC(gmlog.Debug, log << " ... id { agent=@" << gi->id
-                << " peer=@" << gi->ps->m_PeerID << " } address { agent="
-                << gi->agent.str()
-                << " peer=" << gi->peer.str() << "} "
-                << " state {snd=" << StateStr(gi->sndstate) << " rcv=" << StateStr(gi->rcvstate) << "}");
-    }
-}
-#endif
-
 // NOTE: This function is called only in one place and it's done
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
@@ -5029,25 +5011,6 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
 
     return CONN_ACCEPT;
-}
-
-void CUDTGroup::setFreshConnected(CUDTSocket* sock)
-{
-    ScopedLock glock (m_GroupLock);
-
-    HLOGC(cnlog.Debug, log << "group: Socket @" << sock->m_SocketID << " fresh connected, setting IDLE");
-
-    gli_t gi = sock->m_IncludedIter;
-    gi->sndstate = SRT_GST_IDLE;
-    gi->rcvstate = SRT_GST_IDLE;
-    gi->laststatus = SRTS_CONNECTED;
-
-    if (!m_bConnected)
-    {
-        // Switch to connected state and give appropriate signal
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
-        m_bConnected = true;
-    }
 }
 
 void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t typefield)
@@ -9901,62 +9864,6 @@ int CUDT::processData(CUnit* in_unit)
     return 0;
 }
 
-void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
-{
-    // Currently only Backup groups use connected idle links.
-    if (m_type != SRT_GTYPE_BACKUP)
-        return;
-
-    HLOGC(grlog.Debug, log << "updateLatestRcv: BACKUP group, updating from active link @"
-            << current->id << " with %" << current->ps->m_pUDT->m_iRcvLastSkipAck);
-
-    CUDT* source = current->ps->m_pUDT;
-    vector<CUDT*> targets;
-
-    UniqueLock lg (m_GroupLock);
-
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-    {
-        // Skip the socket that has reported packet reception
-        if (gi == current)
-        {
-            HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
-            continue;
-        }
-
-        // Don't update the state if the link is:
-        // - PENDING - because it's not in the connected state, wait for it.
-        // - RUNNING - because in this case it should have its own line of sequences
-        // - BROKEN - because it doesn't make sense anymore, about to be removed
-        if (gi->rcvstate != SRT_GST_IDLE)
-        {
-            HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq on @" << gi->id << " - link state:"
-                    << srt_log_grp_state[gi->rcvstate]);
-            continue;
-        }
-
-        // Sanity check
-        if (!gi->ps->m_pUDT->m_bConnected)
-        {
-            HLOGC(grlog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
-            continue;
-        }
-
-        targets.push_back(gi->ps->m_pUDT);
-    }
-
-    lg.unlock();
-
-    // Do this on the unlocked group because this
-    // operation will need receiver lock, so it might
-    // risk a deadlock.
-
-    for (size_t i = 0; i < targets.size(); ++i)
-    {
-        targets[i]->updateIdleLinkFrom(source);
-    }
-}
-
 void CUDT::updateIdleLinkFrom(CUDT* source)
 {
     ScopedLock lg (m_RecvLock);
@@ -10924,74 +10831,6 @@ void CUDT::removeEPollID(const int eid)
     enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
-}
-
-void CUDTGroup::addEPoll(int eid)
-{
-   enterCS(m_pGlobal->m_EPoll.m_EPollLock);
-   m_sPollID.insert(eid);
-   leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
-
-   bool any_read = false;
-   bool any_write = false;
-   bool any_broken = false;
-   bool any_pending = false;
-
-   {
-       // Check all member sockets
-       ScopedLock gl (m_GroupLock);
-
-       // We only need to know if there is any socket that is
-       // ready to get a payload and ready to receive from.
-
-       for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
-       {
-           if (i->sndstate == SRT_GST_IDLE || i->sndstate == SRT_GST_RUNNING)
-           {
-               any_write |= i->ps->writeReady();
-           }
-
-           if (i->rcvstate == SRT_GST_IDLE || i->rcvstate == SRT_GST_RUNNING)
-           {
-               any_read |= i->ps->readReady();
-           }
-
-           if (i->ps->broken())
-               any_broken |= true;
-           else
-               any_pending |= true;
-       }
-   }
-
-   // This is stupid, but we don't have any other interface to epoll
-   // internals. Actually we don't have to check if id() is in m_sPollID
-   // because we know it is, as we just added it. But it's not performance
-   // critical, sockets are not being often added during transmission.
-   if (any_read)
-       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
-
-   if (any_write)
-       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
-
-   // Set broken if none is non-broken (pending, read-ready or write-ready)
-   if (any_broken && !any_pending)
-       m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
-}
-
-void CUDTGroup::removeEPollEvents(const int eid)
-{
-   // clear IO events notifications;
-   // since this happens after the epoll ID has been removed, they cannot be set again
-   set<int> remove;
-   remove.insert(eid);
-   m_pGlobal->m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
-}
-
-void CUDTGroup::removeEPollID(const int eid)
-{
-   enterCS(m_pGlobal->m_EPoll.m_EPollLock);
-   m_sPollID.erase(eid);
-   leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
 }
 
 void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
