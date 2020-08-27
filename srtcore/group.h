@@ -16,25 +16,9 @@ Written by
 #ifndef INC_SRT_GROUP_H
 #define INC_SRT_GROUP_H
 
-// #include <deque>
-// #include <sstream>
-
 #include "srt.h"
 #include "common.h"
-// #include "list.h"
-// #include "buffer.h"
-// #include "window.h"
 #include "packet.h"
-// #include "channel.h"
-// #include "cache.h"
-// #include "queue.h"
-// #include "handshake.h"
-// #include "congctl.h"
-// #include "packetfilter.h"
-// #include "utilities.h"
-// #include "logger_defs.h"
-
-// #include <haicrypt.h>
 
 #if ENABLE_HEAVY_LOGGING
     const char* const srt_log_grp_state [] = {
