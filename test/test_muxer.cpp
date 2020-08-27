@@ -173,7 +173,7 @@ TEST(Muxer, ipv4_only)
     srt_cleanup();
 }
 
-TEST(Muxer, ipv4_with_ipv6)
+TEST(Muxer, DISABLED_ipv4_with_ipv6)
 {
    	ASSERT_EQ(srt_startup(), 0);
 
