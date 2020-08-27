@@ -268,40 +268,41 @@ TEST(SyncEvent, WaitFor)
     Condition  cond;
     cond.init();
 
-    for (int tout_us : {50, 100, 500, 1000, 101000, 1001000})
+    for (int timeout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
-        const steady_clock::duration   timeout = microseconds_from(tout_us);
+        const steady_clock::duration   timeout = microseconds_from(timeout_us);
         UniqueLock lock(mutex);
         const steady_clock::time_point start = steady_clock::now();
         const bool on_timeout = !cond.wait_for(lock, timeout);
         const steady_clock::time_point stop = steady_clock::now();
         const steady_clock::duration waittime = stop - start;
+        const int64_t waittime_us = count_microseconds(waittime);
 #if defined(ENABLE_STDCXX_SYNC) || !defined(_WIN32)
         // This check somehow fails on AppVeyor Windows VM with VS 2015 and pthreads.
         // - SyncEvent::wait_for( 50us) took 6us
         // - SyncEvent::wait_for(100us) took 4us
         if (on_timeout) {
-            EXPECT_GE(waittime, timeout);
+            EXPECT_GE(waittime_us, timeout_us);
         }
 #endif
         if (on_timeout) {
             // Give it 100 times the timeout, as this is
             // considered more than "crazy long", whereas we only
             // want to check if it has waited a finite amount of time.
-            EXPECT_LE(waittime, 100 * timeout);
+            EXPECT_LE(waittime_us, 100 * timeout_us);
         }
 
-        if (tout_us < 1000)
+        string spurious = on_timeout ? " (SPURIOUS)" : "";
+
+        if (timeout_us < 1000)
         {
-            cerr << "SyncEvent::wait_for(" << count_microseconds(timeout) << "us) took "
-                << count_microseconds(stop - start) << "us"
-                << (on_timeout ? "" : " (SPURIOUS)") << endl;
+            cerr << "SyncEvent::wait_for(" << timeout_us << "us) took "
+                << waittime_us << "us" << spurious << endl;
         }
         else
         {
             cerr << "SyncEvent::wait_for(" << count_milliseconds(timeout) << " ms) took "
-                << count_microseconds(stop - start) / 1000.0 << " ms"
-                << (on_timeout ? "" : " (SPURIOUS)") << endl;
+                << (waittime_us / 1000.0) << " ms" << spurious << endl;
         }
     }
 
