@@ -359,11 +359,14 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [&notified_clients](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
+    volatile bool resource_ready = true;
+
+    auto wait_async = [&notified_clients, &resource_ready](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
         UniqueLock lock(*mutex);
-        if (cond->wait_for(lock, timeout))
+        if (cond->wait_for(lock, timeout) && resource_ready)
         {
             notified_clients.push_back(id);
+            resource_ready = false;
             return 42;
         }
         return 0;
@@ -448,9 +451,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // TURNED OFF for Windows, as there happens to be a
     // "spurious" signal causing this condition to fail,
     // even though it is declared valid and timed out.
-#if !defined(_WIN32)
     EXPECT_EQ(future_val[ready], 42);
-#endif
 
     EXPECT_LE(future_val[not_ready], 0);
 
