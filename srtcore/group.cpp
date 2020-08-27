@@ -1,3 +1,5 @@
+#include <iterator>
+
 #include "api.h"
 #include "group.h"
 
