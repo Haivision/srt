@@ -1862,30 +1862,32 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     if (m_parent->m_IncludedGroup->synconmsgno())
         flags |= SRT_GFLAG_SYNCONMSG;
 
+    // NOTE: this code remains as is for historical reasons.
+    // The initial implementation stated that the peer id be
+    // extracted so that it can be reported and possibly the
+    // start time somehow encoded and written into the group
+    // extension, but it was later seen not necessary. Therefore
+    // this code remains, but now it's informational only.
 #if ENABLE_HEAVY_LOGGING
-
     SRTSOCKET master_peerid;
-    steady_clock::duration master_tdiff;
     steady_clock::time_point master_st;
 
     // "Master" is the first found running connection. Will be false, if
     // there's no other connection yet. When any connection is found, specify this
     // as a determined master connection, and extract its id.
-    if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
+    if ( !m_parent->m_IncludedGroup->debugMasterData(m_SocketID, (master_peerid), (master_st)) )
     {
         master_peerid = -1;
-        IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
-        HLOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
+        LOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
     }
     else
     {
         // The returned master_st is the master's start time. Calculate the
         // differene time.
-        IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
-        HLOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
+        steady_clock::duration master_tdiff = m_stats.tsStartTime - master_st;
+        LOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
                 << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
     }
-
 #endif
 
     // See CUDT::interpretGroup()

@@ -135,7 +135,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
 
 // NOTE: This function is now for DEBUG PURPOSES ONLY.
 // Except for presenting the extracted data in the logs, there's no use of it now.
-bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock::time_point& w_st)
+bool CUDTGroup::debugMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock::time_point& w_st)
 {
     // Find at least one connection, which is running. Note that this function is called
     // from within a handshake process, so the socket that undergoes this process is at best

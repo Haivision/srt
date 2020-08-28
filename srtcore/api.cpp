@@ -1244,7 +1244,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
     bool block_new_opened = !g.m_bOpened && g.m_bSynRecving;
-    bool was_empty = g.empty();
+    const bool was_empty = g.empty();
     SRTSOCKET retval = -1;
 
     int eid = -1;
