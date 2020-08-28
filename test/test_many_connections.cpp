@@ -101,7 +101,8 @@ protected:
             int acp = srt_accept(m_server_sock, addr.get(), &len);
             if (acp == -1)
             {
-                cerr << "[T] Accept error: " << srt_getlasterror_str();
+                cerr << "[T] Accept error at " << m_accepted.size()
+                    << "/" << NSOCK << ": " << srt_getlasterror_str() << endl;
                 break;
             }
             //cerr << "[T] Got new acp @" << acp << endl;
@@ -110,10 +111,14 @@ protected:
 
         m_accept_exit = true;
 
+        cerr << "[T] Closing those accepted ones\n";
+
         for (auto s: m_accepted)
         {
             srt_close(s);
         }
+
+        cerr << "[T] End Accept Loop\n";
     }
 
 protected:
