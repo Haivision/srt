@@ -1062,7 +1062,7 @@ otherwise the connection is rejected by default (see also `SRTO_ENFORCEDENCRYPTI
 
 | OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre     | `int32_t`  | bytes   | *        | *      | W   | GSD    |
+| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre     | `int32_t`  | bytes   | *        | 0..    | W   | GSD    |
 
 - Sets the maximum declared size of a single call to sending function in Live
 mode. When set to 0, there's no limit for a single sending call.
