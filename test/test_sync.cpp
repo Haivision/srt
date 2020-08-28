@@ -289,10 +289,10 @@ TEST(SyncEvent, WaitFor)
             // Give it 100 times the timeout, as this is
             // considered more than "crazy long", whereas we only
             // want to check if it has waited a finite amount of time.
-            EXPECT_LE(waittime_us, 100 * timeout_us);
+            EXPECT_LE(waittime_us, 10 * 1001000); // biggest wait value
         }
 
-        string spurious = on_timeout ? " (SPURIOUS)" : "";
+        string spurious = on_timeout ? "" : " (SPURIOUS)";
 
         if (timeout_us < 1000)
         {
