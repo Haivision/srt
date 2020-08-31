@@ -359,18 +359,20 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     vector<int> notified_clients;
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
+    const int VAL_SIGNAL = 42;
+    const int VAL_NO_SIGNAL = 0;
 
     volatile bool resource_ready = true;
 
-    auto wait_async = [&notified_clients, &resource_ready](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
+    auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
         UniqueLock lock(*mutex);
         if (cond->wait_for(lock, timeout) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
-            return 42;
+            return VAL_SIGNAL;
         }
-        return 0;
+        return VAL_NO_SIGNAL;
     };
 
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
@@ -425,7 +427,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     }
     else
     {
-        future_val[not_ready] = -1;
+        future_val[not_ready] = VAL_NO_SIGNAL-1; // to match LE comparison
     }
 
     string disp_future[16];
@@ -452,9 +454,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // TURNED OFF for Windows, as there happens to be a
     // "spurious" signal causing this condition to fail,
     // even though it is declared valid and timed out.
-    EXPECT_EQ(future_val[ready], 42);
+    EXPECT_EQ(future_val[ready], VAL_SIGNAL);
 
-    EXPECT_LE(future_val[not_ready], 0);
+    EXPECT_LE(future_val[not_ready], VAL_NO_SIGNAL);
 
     cond.destroy();
 }
