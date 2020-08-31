@@ -139,7 +139,7 @@ Please note *before modifying any files* that some of them are generated. This i
 indicated after the file header, or in any section of a file that needs to be replaced by 
 generated code if related changes are added. The following sections require attention:
 
-### 1. Logging functional areas
+### Logging functional areas
 
 In addition to levels (Debug, Note, Warn, Error, Fatal) the logging system has
 functional areas (FA) that allow a developer to selectively turn on only
@@ -211,7 +211,7 @@ Currently generated files are:
 * `apps/logsupport_appdefs.cpp`: Provides string-to-symbol bindings for the applications
 
 
-### 2. Build options
+### Build options
 
 If you modify the `CMakeLists.txt` file and add some build options to it, remember to
 generate this list of options and update appropriately the `configure-data.tcl` file.
