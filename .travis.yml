@@ -76,7 +76,6 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        # Travis CI does not support IPv6 loopback socket. Disabling the test.
         ctest --extra-verbose --gtest_filter="-TestMuxer.IPv4_and_IPv6";
       fi
     - if (( "$RUN_SONARCUBE" )); then source ./scripts/collect-gcov.sh; fi
