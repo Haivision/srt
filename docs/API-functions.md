@@ -1559,7 +1559,9 @@ parties.
 #### SRT_REJ_GROUP
 
 The group type or some group settings are incompatible for both connection
-parties.
+parties. This includes the possibility that the currently performed connection
+within the bonding group connection does not designate the same endpoint as
+those already established connections.
 
 #### SRT_REJ_TIMEOUT
 
