@@ -263,7 +263,7 @@ public:
 
     SRT_SOCKSTATUS getStatus();
 
-    bool debugMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, time_point& w_st);
+    void debugMasterData(SRTSOCKET slave);
 
     bool isGroupReceiver()
     {

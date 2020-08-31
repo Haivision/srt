@@ -1869,25 +1869,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // extension, but it was later seen not necessary. Therefore
     // this code remains, but now it's informational only.
 #if ENABLE_HEAVY_LOGGING
-    SRTSOCKET master_peerid;
-    steady_clock::time_point master_st;
-
-    // "Master" is the first found running connection. Will be false, if
-    // there's no other connection yet. When any connection is found, specify this
-    // as a determined master connection, and extract its id.
-    if ( !m_parent->m_IncludedGroup->debugMasterData(m_SocketID, (master_peerid), (master_st)) )
-    {
-        master_peerid = -1;
-        LOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
-    }
-    else
-    {
-        // The returned master_st is the master's start time. Calculate the
-        // differene time.
-        steady_clock::duration master_tdiff = m_stats.tsStartTime - master_st;
-        LOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
-                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
-    }
+    m_parent->m_IncludedGroup->debugMasterData(m_SocketID);
 #endif
 
     // See CUDT::interpretGroup()
