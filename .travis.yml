@@ -76,7 +76,7 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        ctest --extra-verbose --gtest_filter="-TestMuxer.IPv4_and_IPv6";
+        ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6";
       fi
     - if (( "$RUN_SONARCUBE" )); then source ./scripts/collect-gcov.sh; fi
     - if (( "$RUN_SONARCUBE" )); then sonar-scanner -D"sonar.cfamily.gcov.reportPath=."; fi
