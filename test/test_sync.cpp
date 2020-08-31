@@ -407,8 +407,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
     ASSERT_EQ(notified_clients.size(), 1);
 
-    int ready = notified_clients[0];
-    int not_ready = (ready + 1) % 2;
+    const int ready = notified_clients[0];
+    const int not_ready = (ready + 1) % 2;
 
     int future_val[2];
 
