@@ -876,7 +876,7 @@ void SrtCommon::OpenGroupClient()
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
-    if ( !m_blocking_mode )
+    if (!m_blocking_mode)
     {
         // Note: here the GROUP is added to the poller.
         srt_conn_epoll = AddPoller(m_sock, SRT_EPOLL_CONNECT | SRT_EPOLL_ERR);
@@ -918,6 +918,7 @@ void SrtCommon::OpenGroupClient()
         gd.config = c.options;
         targets.push_back(gd);
     }
+
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
 
@@ -1005,10 +1006,7 @@ void SrtCommon::OpenGroupClient()
             << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
     }
 
-    /*
-
-       XXX Temporarily disabled, until the nonblocking mode
-       is added to groups.
+    //*
 
     // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
     if ( !m_blocking_mode )
@@ -1035,7 +1033,7 @@ void SrtCommon::OpenGroupClient()
             Error("srt_epoll_wait");
         }
     }
-    */
+    // */
 
     if (!any_node)
     {
