@@ -562,6 +562,32 @@ void SrtCommon::AcceptNewClient()
         Error("ConfigurePost");
 }
 
+static string PrintEpollEvent(int events, int et_events)
+{
+    static pair<int, const char*> const namemap [] = {
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
+    };
+
+    ostringstream os;
+    int N = Size(namemap);
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (events & namemap[i].first)
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+        }
+    }
+
+    return os.str();
+}
+
 void SrtCommon::Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir)
 {
     m_direction = dir;
@@ -658,6 +684,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
 
         if (m_mode == "caller")
             dir = (dir | SRT_EPOLL_UPDATE);
+        Verb() << "NON-BLOCKING MODE - SUB FOR " << PrintEpollEvent(dir, 0);
 
         srt_epoll = AddPoller(m_sock, dir);
     }
@@ -2019,7 +2046,10 @@ Epoll_again:
                         }
 
                         if (!any_read_ready)
+                        {
+                            Verb() << " ... [NOT READ READY - AGAIN]";
                             goto Epoll_again;
+                        }
 
                         continue;
                     }
@@ -2107,10 +2137,36 @@ void SrtTarget::Write(const MediaPacket& data)
     // If not, wait indefinitely.
     if (!m_blocking_mode)
     {
-        int ready[2];
+Epoll_again:
         int len = 2;
-        if (srt_epoll_wait(srt_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == SRT_ERROR)
-            Error("srt_epoll_wait");
+        SRT_EPOLL_EVENT sready[2];
+        len = srt_epoll_uwait(srt_epoll, sready, len, -1);
+        if (len != -1)
+        {
+            bool any_write_ready = false;
+            for (int i = 0; i < len; ++i)
+            {
+                if (sready[i].events & SRT_EPOLL_UPDATE)
+                {
+                    Verb() << "... [BROKEN CONNECTION reported on @" << sready[i].fd << "]";
+                }
+
+                if (sready[i].events & SRT_EPOLL_OUT)
+                    any_write_ready = true;
+            }
+
+            if (!any_write_ready)
+            {
+                Verb() << " ... [NOT WRITE READY - AGAIN]";
+                goto Epoll_again;
+            }
+
+            // Pass on, write ready.
+        }
+        else
+        {
+            Error("srt_epoll_uwait");
+        }
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
