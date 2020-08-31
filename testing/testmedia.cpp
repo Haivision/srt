@@ -655,6 +655,10 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
     {
         // Don't add new epoll if already created as a part
         // of group management: if (srt_epoll == -1)...
+
+        if (m_mode == "caller")
+            dir = (dir | SRT_EPOLL_UPDATE);
+
         srt_epoll = AddPoller(m_sock, dir);
     }
 }
@@ -1991,13 +1995,32 @@ MediaPacket SrtSource::Read(size_t chunk)
                 // EAGAIN for SRT READING
                 if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                 {
+Epoll_again:
                     Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
                     // Poll on this descriptor until reading is available, indefinitely.
                     int len = 2;
-                    SRTSOCKET sready[2];
-                    if (srt_epoll_wait(srt_epoll, sready, &len, 0, 0, -1, 0, 0, 0, 0) != -1)
+                    SRT_EPOLL_EVENT sready[2];
+                    len = srt_epoll_uwait(srt_epoll, sready, len, -1);
+                    if (len != -1)
                     {
                         Verb() << "... epoll reported ready " << len << " sockets";
+                        // If the event was SRT_EPOLL_UPDATE, report it, and still wait.
+
+                        bool any_read_ready = false;
+                        for (int i = 0; i < len; ++i)
+                        {
+                            if (sready[i].events & SRT_EPOLL_UPDATE)
+                            {
+                                Verb() << "... [BROKEN CONNECTION reported on @" << sready[i].fd << "]";
+                            }
+
+                            if (sready[i].events & SRT_EPOLL_IN)
+                                any_read_ready = true;
+                        }
+
+                        if (!any_read_ready)
+                            goto Epoll_again;
+
                         continue;
                     }
                     // If was -1, then passthru.

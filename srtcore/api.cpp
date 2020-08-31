@@ -129,7 +129,7 @@ void CUDTSocket::makeShutdown()
     if (m_IncludedGroup)
     {
         HLOGC(smlog.Debug, log << "@" << m_SocketID << " IS MEMBER OF $" << m_IncludedGroup->id() << " - REMOVING FROM GROUP");
-        removeFromGroup();
+        removeFromGroup(true);
     }
 
     HLOGC(smlog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
@@ -1404,7 +1404,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             // We know it does belong to a group.
             // Remove it first because this involves a mutex, and we want
             // to avoid locking more than one mutex at a time.
-            ns->removeFromGroup();
+            ns->removeFromGroup(false);
             erc_rloc = e.getErrorCode();
             targets[tii].errorcode = e.getErrorCode();
             targets[tii].id = CUDT::INVALID_SOCK;
@@ -1418,7 +1418,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         catch (...)
         {
             LOGC(aclog.Fatal, log << "groupConnect: IPE: UNKNOWN EXCEPTION from connectIn");
-            ns->removeFromGroup();
+            ns->removeFromGroup(false);
             targets[tii].errorcode = SRT_ESYSOBJ;
             targets[tii].id = CUDT::INVALID_SOCK;
             ScopedLock cl (m_GlobControlLock);
@@ -2923,13 +2923,23 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     ScopedLock grd (s->m_ControlLock);
-    s->removeFromGroup();
+    s->removeFromGroup(false);
     return 0;
 }
 
-void CUDTSocket::removeFromGroup()
+void CUDTSocket::removeFromGroup(bool broken)
 {
     m_IncludedGroup->remove(m_SocketID);
+    if (broken)
+    {
+        // Activate the SRT_EPOLL_UPDATE event on the group
+        // if it was because of a socket that was earlier connected
+        // and became broken. This is not to be sent in case when
+        // it is a failure during connection, or the socket was
+        // explicitly removed from the group.
+        m_IncludedGroup->activateUpdateEvent();
+    }
+
     m_IncludedIter = CUDTGroup::gli_NULL();
     m_IncludedGroup = NULL;
 }
