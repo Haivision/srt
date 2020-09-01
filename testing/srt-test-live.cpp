@@ -560,7 +560,6 @@ int main( int argc, char** argv )
             cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
             cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
             cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
-            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
             cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
             cerr << "List of functional areas:\n";
 
