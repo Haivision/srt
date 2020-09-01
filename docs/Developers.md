@@ -5,10 +5,11 @@
   * [Forking SRT on GitHub](#forking-srt-on-github)
   * [Building SRT](#building-srt)
 * [Project Structure](#project-structure)
-* [Coding Rules](#rules)
+* [Coding Rules](#coding-rules)
 * [Submitting an Issue](#submitting-an-issue)
 * [Submitting a Pull Request](#submitting-a-pull-request)
   * [Commit Message Format](#commit-message-format)
+* [Generated files](#generated-files)
 
 ## Development Setup
 
@@ -96,6 +97,10 @@ The SRT installation has the following folders:
 * *test - unit tests for the library.
 * *testing - the folder contains applications used during development: `srt-test-live`, `srt-test-file`, etc. Use `-DENABLE_TESTING=ON` to include in the build.
 
+## Coding Rules
+
+TBD.
+
 ## Submitting an Issue
 
 If you found an issue or have a question, please submit a (GitHub Issue)[github-issues].
@@ -127,6 +132,99 @@ The format of the commit message is `[<tag>] <Message>`, where possible commits 
 * `[core]` - commit changes the core SRT library code.
 * `[test]` - commit changes or adds unit tests.
 * `[docs]` - commit changes or adds documentation.
+
+## Generated files
+
+Please note *before modifying any files* that some of them are generated. This is
+indicated after the file header, or in any section of a file that needs to be replaced by 
+generated code if related changes are added. The following sections require attention:
+
+### Logging functional areas
+
+In addition to levels (Debug, Note, Warn, Error, Fatal) the logging system has
+functional areas (FA) that allow a developer to selectively turn on only
+specific types of logs. For example, in this logging instruction:
+
+```
+LOGC(cclog.Note, log << "This is a note");
+```
+
+* `LOGC` is the macro, which allows for file and line information pass-through
+* `cclog` is the logger variable named after the FA, here "cc" means Congestion Control
+* `Note` is the log level
+* The expression after the comma is the log text composition expression
+
+The FA system allows a developer to enable or disable printing all logs assigned
+to particular functional area. This allows the developer to selectively turn on
+only specific areas. This is useful during testing to help minimize the impact
+of logging on performance or behavior.
+
+To add a name designating a new functional area to be used in the logs, modify the
+`generate-logging-defs.tcl` script. A list of loggers is contained in the
+`loggers` list at the top of the TCL file. You can insert an addition anywhere
+in this list, as long as it has these three unique elements: a long name, a
+short name, and an ID (e.g.` GENERAL   g  0`). The TCL file contains
+a`hidden_loggers` list with additional definitions that do not always need to
+be added to particular generated files. Alternative declarations for items in
+this list are provided in a different way.
+
+To add or rename one of the logger definitions:
+
+* Modify appropriately the `loggers` list
+* Run the script to generate the files
+   * Note that you need to press Enter to confirm overwrite
+
+Note that the script can have arguments, which is the list of files that have to
+be generated (must be identical with the keys used in `generation` dictionary).
+By default it regenerates all required files. Note also that `srt.h` is exceptionally
+a file that is being only modified, that is, the current contents of the file is
+preserved, and only the part replaced.
+
+The script contains also all definitions for file generation in the following variables:
+
+* `special`: contains a code that should be executed for particular target
+* `generation`: the definition of the file contents to be generated
+
+Both these are dictionaries, whose keys are "targets". Target names are
+names of the generated files. If the name is an explicit path (contains
+at least one path separator), it's the relative path towards the repository
+top directory, otherwise the file will be generated in the current directory.
+
+The `generation` dictionary should contain complete definition of all files
+to be generated. Every entry is an array containing 3 elements:
+
+* format model (can be empty, if the generated file consists only of the list of entries)
+* entry format for `loggers`
+* entry format for `hidden_loggers` (optional)
+
+The 'format model' uses two variables: `globalheader`, which is the obligatory
+header for all source files, and `entries` in a place where the list of functional
+area (FA) entries is expected to be placed.
+
+The entry formats should utilize the variable names as defined in the `model` variable
+in the beginning, as it sees fit.
+
+Currently generated files are:
+
+* `srtcore/logger_default.cpp`: contains setting of all FA as enabled
+* `srtcore/logger_defs.h` and `srtcore/logger_defs.cpp`: declares/defiones logger objects
+* `apps/logsupport_appdefs.cpp`: Provides string-to-symbol bindings for the applications
+
+
+### Build options
+
+If you modify the `CMakeLists.txt` file and add some build options to it, remember to
+generate this list of options and update appropriately the `configure-data.tcl` file.
+This file should be run in the build directory and passed the `CMakeCache.txt`
+file as argument. The list of options will be printed on the standard output, and
+it should be the content of the `cmake_options` variable defined in `configure-data.tcl`
+file.
+
+Note that this does not mean that the contents should be blindly pasted into
+the options list. Apply only the new options that you have added. The script
+does its best to make sure that no option is missing. Note that some options
+might be provided by an external dependent script (like `build-gmock`) and
+therefore mistakenly added to the list.
 
 [git-setup]: https://help.github.com/articles/set-up-git
 [github-issues]: https://github.com/Haivision/srt/issues
