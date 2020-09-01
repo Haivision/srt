@@ -39,7 +39,7 @@ protected:
     // It should be as much as possible, but how many sockets can
     // be withstood, depends on the platform. Currently used CI test
     // servers seem not to withstand more than 240.
-    static const size_t NSOCK = 200;
+    static const size_t NSOCK = 60;
 
 protected:
     // SetUp() is run immediately before a test starts.
@@ -101,7 +101,8 @@ protected:
             int acp = srt_accept(m_server_sock, addr.get(), &len);
             if (acp == -1)
             {
-                cerr << "[T] Accept error: " << srt_getlasterror_str();
+                cerr << "[T] Accept error at " << m_accepted.size()
+                    << "/" << NSOCK << ": " << srt_getlasterror_str() << endl;
                 break;
             }
             //cerr << "[T] Got new acp @" << acp << endl;
@@ -110,10 +111,14 @@ protected:
 
         m_accept_exit = true;
 
+        cerr << "[T] Closing those accepted ones\n";
+
         for (auto s: m_accepted)
         {
             srt_close(s);
         }
+
+        cerr << "[T] End Accept Loop\n";
     }
 
 protected:
