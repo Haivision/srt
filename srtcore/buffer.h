@@ -120,19 +120,20 @@ public:
 public:
 
       /// Insert a user buffer into the sending list.
-      /// For Message control data the following data are used:
+      /// For @a w_mctrl the following fields are used:
       /// INPUT:
-      /// - msgttl: timeout for scheduling the messsage for sending
+      /// - msgttl: timeout for retransmitting the message, if lost
       /// - inorder: request to deliver the message in order of sending
       /// - srctime: local time as a base for packet's timestamp (0 if unused)
-      /// - pktseq: sequence number to be stamped on the packet (0 if unused)
+      /// - pktseq: sequence number to be stamped on the packet (-1 if unused)
+      /// - msgno: message number to be stamped on the packet (-1 if unused)
       /// OUTPUT:
-      /// - srctime: local time that was used to stamp the packet
+      /// - srctime: local time stamped on the packet (same as input, if input wasn't 0)
       /// - pktseq: sequence number to be stamped on the next packet
       /// - msgno: message number stamped on the packet
       /// @param [in] data pointer to the user data block.
       /// @param [in] len size of the block.
-      /// @param [inout] r_mctrl Message control data
+      /// @param [inout] w_mctrl Message control data
    void addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl);
 
       /// Read a block of data from file and insert it into the sending list.

@@ -65,6 +65,7 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
+#include "group.h"
 
 
 class CUDT;
@@ -125,6 +126,17 @@ public:
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
 
+   // XXX A refactoring might be needed here.
+
+   // There are no reasons found why the socket can't contain a list iterator to a
+   // multiplexer INSTEAD of m_iMuxID. There's no danger in this solution because
+   // the multiplexer is never deleted until there's at least one socket using it.
+   //
+   // The multiplexer may even physically be contained in the CUDTUnited object,
+   // just track the multiple users of it (the listener and the accepted sockets).
+   // When deleting, you simply "unsubscribe" yourself from the multiplexer, which
+   // will unref it and remove the list element by the iterator kept by the
+   // socket.
    int m_iMuxID;                             //< multiplexer ID
 
    srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
@@ -269,7 +281,7 @@ public:
 
    void deleteGroup(CUDTGroup* g)
    {
-       using srt_logging::mglog;
+       using srt_logging::gmlog;
 
        srt::sync::ScopedLock cg (m_GlobControlLock);
 
@@ -281,13 +293,13 @@ public:
            m_Groups.erase(g->m_GroupID);
            if (g != pg) // sanity check -- only report
            {
-               LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
+               LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
            }
            delete pg; // still delete it
            return;
        }
 
-       LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+       LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
        delete g; // still delete it.
        // Do not remove anything from the map - it's not found, anyway
    }
@@ -346,7 +358,7 @@ private:
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
    CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
-   void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+   bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer

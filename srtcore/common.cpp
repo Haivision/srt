@@ -65,6 +65,7 @@ modified by
 #include "common.h"
 #include "netinet_any.h"
 #include "logging.h"
+#include "packet.h"
 #include "threadname.h"
 
 #include <srt_compat.h> // SysStrError
@@ -547,6 +548,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
         "EXT:kmrsp",
         "EXT:sid",
         "EXT:congctl",
+        "EXT:filter",
         "EXT:group"
     };
 
@@ -650,6 +652,12 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
     }
 
     return true;
+}
+
+uint64_t PacketMetric::fullBytes()
+{
+    static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    return bytes + pkts * PKT_HDR_SIZE;
 }
 
 

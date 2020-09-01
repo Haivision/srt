@@ -58,6 +58,29 @@ struct sockaddr_any
     // back here from the value of `syslen_t`.
     len_t len;
 
+    struct SysLenWrapper
+    {
+        syslen_t syslen;
+        len_t& backwriter;
+        syslen_t* operator&() { return &syslen; }
+
+        SysLenWrapper(len_t& source): syslen(source), backwriter(source)
+        {
+        }
+
+        ~SysLenWrapper()
+        {
+            backwriter = syslen;
+        }
+    };
+
+    // Usage:
+    //    ::accept(lsn_sock, sa.get(), &sa.syslen());
+    SysLenWrapper syslen()
+    {
+        return SysLenWrapper(len);
+    }
+
     static size_t storage_size()
     {
         typedef union
