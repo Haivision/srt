@@ -251,6 +251,25 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             {
                 if (hostport == "")
                     continue;
+
+                // The attribute string, as it was embedded in another URI,
+                // must have had replaced the & character with another ?, so
+                // now all ? character, except the first one, must be now
+                // restored so that UriParser interprets them correctly.
+
+                size_t atq = hostport.find('?');
+                if (atq != string::npos)
+                {
+                    while (atq+1 < hostport.size())
+                    {
+                        size_t next = hostport.find('?', atq+1);
+                        if (next == string::npos)
+                            break;
+                        hostport[next] = '&';
+                        atq = next;
+                    }
+                }
+
                 UriParser check(hostport, UriParser::EXPECT_HOST);
                 if (check.host() == "" || check.port() == "")
                 {
@@ -270,8 +289,8 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
                 if (check.parameters().count("source"))
                 {
-                    UriParser hostport(check.queryValue("source"), UriParser::EXPECT_HOST);
-                    cc.source = CreateAddr(hostport.host(), hostport.portno());
+                    UriParser sourcehp(check.queryValue("source"), UriParser::EXPECT_HOST);
+                    cc.source = CreateAddr(sourcehp.host(), sourcehp.portno());
                 }
 
                 // Check if there's a key with 'srto.' prefix.
@@ -905,11 +924,25 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << i << "] " << c.host << ":" << c.port
-            << "?weight=" << c.weight
-            << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << VerbNoEOL;
+        vector<string> extras;
+        if (c.weight)
+            extras.push_back(Sprint("weight=", c.weight));
+
+        if (!c.source.empty())
+            extras.push_back("source=" + c.source.str());
+
+        if (!extras.empty())
+        {
+            Verb() << "?" << extras[0] << VerbNoEOL;
+            for (size_t i = 1; i < extras.size(); ++i)
+                Verb() << "&" << extras[i] << VerbNoEOL;
+        }
+
+        Verb() << " ... " << VerbNoEOL;
         ++i;
-        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, sa.get(), namelen);
+        const sockaddr* source = c.source.empty() ? nullptr : c.source.get();
+        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(source, sa.get(), namelen);
         gd.weight = c.weight;
         gd.config = c.options;
         targets.push_back(gd);

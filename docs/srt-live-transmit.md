@@ -292,6 +292,7 @@ All other parameters are SRT socket options. The following have the following va
 | -------------------- | ---------------- | ------------------------- | ----------- |
 | `congestion`         | {`live`, `file`} | `SRTO_CONGESTION`         | Type of congestion control. |
 | `conntimeo`          | `ms`             | `SRTO_CONNTIMEO`          | Connection timeout. |
+| `drifttracer`        | `bool`           | `SRTO_DRIFTTRACER`        | Enable drift tracer. |
 | `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
 | `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |
 | `groupconnect`       | {`0`, `1`}       | `SRTO_GROUPCONNECT`       | Accept group connections. |
