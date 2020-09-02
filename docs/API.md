@@ -7,8 +7,8 @@ There are a few optional C++ API functions stored there, as there is no real C++
 for SRT. These functions may be useful in certain situations.
 
 There are some example applications so that you can see how the API is being used, 
-including `srt-live-transmit`, `srt-file-transmit` and `srt-multiplex`. All SRT 
-related material is contained in `transmitmedia.*` files in the `common` directory 
+including `srt-live-transmit` and `srt-file-transmit`. All SRT related material is contained 
+in `transmitmedia.*` files in the `apps` directory 
 which is used by all applications. See `SrtSource::Read` and `SrtTarget::Write` 
 as examples of how data are read and written in SRT.
 
@@ -226,7 +226,8 @@ future use and should be 0):
     * `msgno`: [OUT] message number assigned to the currently sent message
 
 * `srt_recvmsg2`
-    * `msgttl`: inorder; unused
+    * `msgttl`:  unused
+    * `inorder`: unused
     * `srctime`: [OUT] timestamp set for this dataset when sending
     * `pktseq`: [OUT] packet sequence number (first packet from the message, if it spans multiple UDP packets)
     * `msgno`: [OUT] message number assigned to the currently received message
@@ -285,7 +286,7 @@ Transmission types available in SRT
 -----------------------------------
 
 Mode settings determine how the sender and receiver functions work. The main 
-[socket options](#https://github.com/Haivision/srt/blob/master/docs/API-SocketOptions.md) 
+[socket options](APISocketOptions.md) 
 that control it are:
 
 * `SRTO_TRANSTYPE`. Sets several parameters in accordance with the selected
