@@ -788,6 +788,7 @@ typedef struct SRT_SocketGroupData_
     SRT_SOCKSTATUS sockstate;
     SRT_MEMBERSTATUS memberstate;
     int result;
+    int token;
 } SRT_SOCKGROUPDATA;
 
 typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
@@ -800,6 +801,7 @@ typedef struct SRT_GroupMemberConfig_
     int weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
+    int token;
 } SRT_SOCKGROUPCONFIG;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -823,7 +825,7 @@ SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
-typedef void srt_connect_callback_fn  (void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr);
+typedef void srt_connect_callback_fn  (void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);

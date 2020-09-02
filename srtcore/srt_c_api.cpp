@@ -92,6 +92,7 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
     SRT_SOCKGROUPCONFIG data;
     data.errorcode = SRT_SUCCESS;
     data.id = -1;
+    data.token = -1;
     data.weight = 0;
     data.config = NULL;
     if (src)

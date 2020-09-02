@@ -1375,7 +1375,21 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // Add socket to the group.
         // Do it after setting all stored options, as some of them may
         // influence some group data.
-        CUDTGroup::gli_t f = g.add(g.prepareData(ns));
+
+        CUDTGroup::SocketData data = g.prepareData(ns);
+        if (targets[tii].token != -1)
+        {
+            // Reuse the token, if specified by the caller
+            data.token = targets[tii].token;
+        }
+        else
+        {
+            // Otherwise generate and write back the token
+            data.token = CUDTGroup::genToken();
+            targets[tii].token = data.token;
+        }
+
+        CUDTGroup::gli_t f = g.add(data);
         ns->m_IncludedIter = f;
         ns->m_IncludedGroup = &g;
         f->weight = targets[tii].weight;

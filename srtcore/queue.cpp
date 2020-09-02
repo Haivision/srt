@@ -972,9 +972,14 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
             if (i->m_pUDT->m_cbConnectHook)
             {
+                int token = -1;
+                if (i->m_pUDT->m_parent->m_IncludedGroup)
+                {
+                    token = i->m_pUDT->m_parent->m_IncludedIter->token;
+                }
                 CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID,
                         i->m_pUDT->m_RejectReason == SRT_REJ_TIMEOUT ? SRT_ENOSERVER : SRT_ECONNREJ,
-                            i->m_PeerAddr.get());
+                            i->m_PeerAddr.get(), token);
             }
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.

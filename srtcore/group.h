@@ -54,10 +54,14 @@ public:
 
     static const char* StateStr(GroupState);
 
+    static int32_t s_tokenGen;
+    static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
+
     struct SocketData
     {
         SRTSOCKET      id;
         CUDTSocket*    ps;
+        int            token;
         SRT_SOCKSTATUS laststatus;
         GroupState     sndstate;
         GroupState     rcvstate;

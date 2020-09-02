@@ -50,7 +50,7 @@ class SrtCommon
 protected:
 
 //    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error);
-    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer);
+    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer, int token);
 
     struct Connection
     {
@@ -63,8 +63,13 @@ protected:
         SRT_SOCKOPT_CONFIG* options = nullptr;
         int error = SRT_SUCCESS;
         int reason = SRT_REJ_UNKNOWN;
+        int token = -1;
 
         Connection(string h, int p): host(h), port(p), source(AF_INET) {}
+        ~Connection()
+        {
+            srt_delete_config(options);
+        }
     };
 
     int srt_epoll = -1;

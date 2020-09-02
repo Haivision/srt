@@ -10,6 +10,8 @@ using namespace srt_logging;
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
 
+int32_t CUDTGroup::s_tokenGen = 0;
+
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
                                   steady_clock::time_point& w_tb,
@@ -237,6 +239,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
     SocketData sd = {
         s->m_SocketID,
         s,
+        -1,
         SRTS_INIT,
         SRT_GST_BROKEN,
         SRT_GST_BROKEN,

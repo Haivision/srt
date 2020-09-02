@@ -246,6 +246,8 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, 'nodes' must specify comma-separated host:port specs.");
             }
 
+            int token = 1;
+
             // Check if correctly specified
             for (string& hostport: nodes)
             {
@@ -340,6 +342,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                     cc.options = config;
                 }
 
+                cc.token = token++;
                 m_group_nodes.push_back(cc);
             }
 
@@ -831,7 +834,7 @@ void SrtCommon::PrepareClient()
 
 }
 
-void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer)
+void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     SrtCommon* that = (SrtCommon*)srtcommon;
 
@@ -840,19 +843,35 @@ void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, cons
         return; // nothing to do for a successful socket
     }
 
+    /* Example: identify by target address
     sockaddr_any peersa = peer;
+    sockaddr_any agentsa;
+    bool haveso = (srt_getsockname(sock, agentsa.get(), &agentsa.len) != -1);
+    */
 
     for (auto& n: that->m_group_nodes)
     {
-        if (n.target == peersa)
+        if (n.token != -1 && n.token == token)
         {
             n.error = error;
             n.reason = srt_getrejectreason(sock);
             return;
         }
+
+        /*
+
+        bool isso = haveso && !n.source.empty();
+        if (n.target == peersa && (!isso || n.source.equal_address(agentsa)))
+        {
+            Verb() << " (by target)" << VerbNoEOL;
+            n.error = error;
+            n.reason = srt_getrejectreason(sock);
+            return;
+        }
+        */
     }
 
-    Verb() << " IPE: NOT FOUND???]";
+    Verb() << " IPE: LINK NOT FOUND???]";
 }
 
 void SrtCommon::OpenGroupClient()
@@ -924,7 +943,7 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << VerbNoEOL;
+        Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
         vector<string> extras;
         if (c.weight)
             extras.push_back(Sprint("weight=", c.weight));
@@ -939,20 +958,17 @@ void SrtCommon::OpenGroupClient()
                 Verb() << "&" << extras[i] << VerbNoEOL;
         }
 
-        Verb() << " ... " << VerbNoEOL;
+        Verb() << " ..." << VerbNoEOL;
         ++i;
         const sockaddr* source = c.source.empty() ? nullptr : c.source.get();
         SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(source, sa.get(), namelen);
         gd.weight = c.weight;
         gd.config = c.options;
+
         targets.push_back(gd);
     }
 
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
-
-    // Delete config objects before prospective exception
-    for (auto& gd: targets)
-        srt_delete_config(gd.config);
 
     if (fisock == SRT_ERROR)
     {
@@ -1122,7 +1138,7 @@ struct TransmitErrorReason
 
 static std::map<SRTSOCKET, TransmitErrorReason> transmit_error_storage;
 
-static void TransmitConnectCallback(void*, SRTSOCKET socket, int errorcode, const sockaddr* /*peer*/)
+static void TransmitConnectCallback(void*, SRTSOCKET socket, int errorcode, const sockaddr* /*peer*/, int /*token*/)
 {
     int reason = srt_getrejectreason(socket);
     transmit_error_storage[socket] = TransmitErrorReason { errorcode, reason };
@@ -1375,8 +1391,15 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 
         n.error = SRT_SUCCESS;
         n.reason = SRT_REJ_UNKNOWN;
-        int insock = srt_connect(m_sock, sa.get(), sa.size());
-        if (insock == SRT_ERROR)
+
+        const sockaddr* source = n.source.empty() ? nullptr : n.source.get();
+        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(source, sa.get(), sa.size());
+        gd.weight = n.weight;
+        gd.config = n.options;
+        gd.token = n.token;
+
+        int fisock = srt_connect_group(m_sock, &gd, 1);
+        if (fisock == SRT_ERROR)
         {
             // Whatever. Skip the node.
             Verb() << "FAILED: ";
@@ -1384,7 +1407,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         else
         {
             // Have socket, store it into the group socket array.
-            n.socket = insock;
+            n.socket = gd.id;
         }
     }
 }
