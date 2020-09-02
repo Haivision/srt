@@ -644,7 +644,8 @@ different size). Every message may also have extra parameters:
 
   - **TTL** defines how much time (in ms) the message should wait in the sending 
   buffer for the opportunity to be picked up by the sender thread and sent over 
-  the network; otherwise it is dropped.
+  the network; otherwise it is dropped. Note that this TTL only applies to packets that 
+  have been lost and should be retransmitted.
 
   - **INORDER**, when true, means the messages must be read by the receiver in 
   exactly the same order in which they were sent. In the situation where a message 
