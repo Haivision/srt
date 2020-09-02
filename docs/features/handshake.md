@@ -697,7 +697,26 @@ connection will not be made until new, unique cookies are generated (after a
 delay of up to one minute). In the case of an application "connecting to itself", 
 the cookies will always be identical, and so the connection will never be made.
 
-When one party's cookie value is greater than its peer's, it wins the cookie 
+```c++
+// Here m_ConnReq.m_iCookie is a local cookie value sent in connection request to the peer.
+// m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
+const int64_t contest = int64_t(m_ConnReq.m_iCookie) - int64_t(m_ConnRes.m_iCookie);
+
+if ((contest & 0xFFFFFFFF) == 0)
+{
+    return HSD_DRAW;
+}
+
+if (contest & 0x80000000)
+{
+    return HSD_RESPONDER;
+}
+
+return HSD_INITIATOR;
+```
+
+When one party's cookie value is greater than its peer's (based on 32-bit subtraction of both
+with potential overflow), it wins the cookie 
 contest and becomes Initiator (the other party becomes the Responder).
 
 At this point there are two "handshake flows" possible (at least theoretically):
