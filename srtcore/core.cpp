@@ -1862,28 +1862,15 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     if (m_parent->m_IncludedGroup->synconmsgno())
         flags |= SRT_GFLAG_SYNCONMSG;
 
-    SRTSOCKET master_peerid;
-    IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
-    steady_clock::time_point master_st;
-
-    // "Master" is the first found running connection. Will be false, if
-    // there's no other connection yet. When any connection is found, specify this
-    // as a determined master connection, and extract its id.
-    if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
-    {
-        master_peerid = -1;
-        IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
-        HLOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
-    }
-    else
-    {
-        // The returned master_st is the master's start time. Calculate the
-        // differene time.
-        IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
-        HLOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
-                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
-    }
-    // (this function will not fill the variables with anything, if no master is found)
+    // NOTE: this code remains as is for historical reasons.
+    // The initial implementation stated that the peer id be
+    // extracted so that it can be reported and possibly the
+    // start time somehow encoded and written into the group
+    // extension, but it was later seen not necessary. Therefore
+    // this code remains, but now it's informational only.
+#if ENABLE_HEAVY_LOGGING
+    m_parent->m_IncludedGroup->debugMasterData(m_SocketID);
+#endif
 
     // See CUDT::interpretGroup()
 
@@ -3441,7 +3428,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         return false;
     }
 
-    // This is called when the group ID has come in in the handshake.
+    // This is called when the group type has come in the handshake is invalid.
     if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
@@ -3515,8 +3502,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // different peers).
         else if (pg->peerid() != grpid)
         {
-            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid << " but the current socket's group $" << pg->id()
-                << " has already a peer $" << peer);
+            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
+                    << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
+            m_RejectReason = SRT_REJ_GROUP;
+            return false;
         }
         else
         {
@@ -3620,7 +3609,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     if (was_empty)
     {
         ScopedLock glock (*gp->exp_groupLock());
-        gp->syncWithSocket(s->core());
+        gp->syncWithSocket(s->core(), HSD_RESPONDER);
     }
 
     // Setting non-blocking reading for group socket.
