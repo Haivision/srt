@@ -463,7 +463,7 @@ smooth signal sending). Large values will also contribute to higher packet
 bursts sent at the moment when an idle link is activated.
 
 - Smaller values of this option respect low latency requirements very
-well, may cause overreaction on even slightly stretched response times. This is
+well, but may cause overreaction on even slightly stretched response times. This is
 unwanted, as a link switch should ideally happen only when the currently active
 link is really broken, as every link switch costs extra overhead (it counts
 for 100% for a time of one ACK interval).
@@ -1505,7 +1505,6 @@ For example, version 1.4.2 is encoded as `0x010402`.
 
 
 [Return to list](#list-of-options)
-
 
 
 
