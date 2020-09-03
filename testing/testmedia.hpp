@@ -59,6 +59,10 @@ protected:
         SRT_SOCKOPT_CONFIG* options = nullptr;
 
         Connection(string h, int p): host(h), port(p), source(AF_INET) {}
+        ~Connection()
+        {
+            srt_delete_config(options);
+        }
     };
 
     int srt_epoll = -1;

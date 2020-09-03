@@ -278,6 +278,7 @@ public:
     void              removeEPollID(const int eid);
     void              updateReadState(SRTSOCKET sock, int32_t sequence);
     void              updateWriteState();
+    int               updateFailedLink(SRTSOCKET sock);
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,

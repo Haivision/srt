@@ -970,6 +970,13 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
+            if (i->m_pUDT->m_parent->m_IncludedGroup)
+            {
+                // Bound to one call because this requires locking
+                i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
+            }
+            CGlobEvent::triggerEvent();
+
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
              * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
