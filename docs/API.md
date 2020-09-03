@@ -465,19 +465,58 @@ This makes possible a total of three data transmission methods:
 
 The following terms are used in the description of transmission types:
 
-**HANGUP / RESUME**: When a function "HANGS UP" this means that it returns an 
-error from the `MJ_AGAIN`  category (see `SRT_EASYNC*`, `SRT_ETIMEOUT` and 
-`SRT_ECONGEST` symbols from the `SRT_ERRNO` enumeration type), if it's in 
-non-blocking mode. 
+**HANGUP / RESUME**: These terms have different meanings depending on the blocking
+state. They describe how a particular function behaves when performing an operation 
+requires a specific readiness condition to be satisfied.
 
-  - In blocking mode it will block until the condition that caused the HANGUP no 
-  longer applies, which by definition means the function RESUMES. 
+In blocking mode HANGUP means that the function blocks until a condition is 
+satisfied. RESUME means that the condition is satisfied and the function performs 
+the required operation.
 
-  - In nonblocking mode, a function RESUMES when the call to it has done something 
-  and returned the non-error status. 
+In non-blocking mode the only difference is that HANGUP, instead of blocking, makes 
+the function exit immediately with an appropriate error code (such as SRT_EASYNC*,
+SRT_ETIMEOUT or SRT_ECONGEST) explaining why the function is not ready to perform 
+the operation. Refer to the error descriptions in [API-funtions.md](API-funtions.md) 
+for details.
 
-  - Blocking mode in SRT is separate for sending and receiving, and is set by 
-  the `SRTO_SNDSYN` and `SRTO_RCVSYN` options respectively.
+The following types of operations are involved:
+
+1. Reading data: `srt_recv`, `srt_recvmsg`, `srt_recvmsg2`, `srt_recvfile`.
+
+The function HANGS UP if there are no available data to read, and RESUMES when 
+readable data become available (`SRT_EPOLL_IN` flag set in epoll). Use `SRTO_RCVSYN` 
+to control blocking mode here.
+
+2. Writing data: `srt_send`, `srt_sendmsg`, `srt_sendmsg2`, `srt_sendfile`.
+
+The function HANGS UP if the sender buffer becomes full and unable to store
+any additional data, and RESUMES if the data scheduled for sending have been
+removed from the sender buffer (after being sent and acknowledged) and there
+is enough free space in the sender buffer to store data (`SRT_EPOLL_OUT` flag
+set in epoll). Use `SRTO_SNDSYN` to control blocking mode here.
+
+3. Accepting an incoming connection: `srt_accept`
+
+The function HANGS UP if there are no new connections reporting in, and
+RESUMES when a new connection has been processed and a new socket or group
+has been created to handle it. Note that this function requires the listener
+socket to get the connection (the flag `SRTO_RCVSYN` set on
+the listener socket controls the blocking mode for this operation). Note also
+that the blocking mode for a similar `srt_accept_bond` function is controlled
+exclusively by its timeout parameter because it can work with multiple listener
+sockets, potentially with different settings.
+
+4. Connecting: `srt_connect` and its derivatives
+
+The function HANGS UP in the beginning, and RESUMES when the socket used for
+connecting is either ready to perform transmission operations or has failed to
+connect. It behaves a little differently in non-blocking mode -- the function 
+should be called only once, and it simply returns a success result as a "HANGUP". 
+Calling it again with the same socket would be an error. Calling it with a group 
+would start a completely new connection. It is only possible to determine whether 
+an operation has finished ("has RESUMED") from epoll flags. The socket, when 
+successfully connected, would have `SRT_EPOLL_OUT` set, that is, becomes ready 
+to send data, and `SRT_EPOLL_ERR` when it failed to connect.
 
 **BLIND / FAST / LATE REXMIT**: BLIND REXMIT is a situation where packets that 
 were sent are still not acknowledged, either in the expected time frame, or when 
