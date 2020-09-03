@@ -920,16 +920,21 @@ void SrtCommon::OpenGroupClient()
         gd.config = c.options;
         targets.push_back(gd);
     }
-
+    Verb() << "Waiting for group connection... " << VerbNoEOL;
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
-
-    // Delete config objects before prospective exception
-    for (auto& gd: targets)
-        srt_delete_config(gd.config);
 
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");
+    }
+
+    if (m_blocking_mode)
+    {
+        Verb() << "SUCCESSFUL";
+    }
+    else
+    {
+        Verb() << "INITIATED [ASYNC]";
     }
 
     // Configuration change applied on a group should
@@ -974,19 +979,51 @@ void SrtCommon::OpenGroupClient()
             continue;
         }
 
-        /*
-        if (!m_blocking_mode)
-        {
-            // EXPERIMENTAL version. Add all sockets to epoll
-            // in the direction used for this medium.
-            int modes = m_direction;
-            srt_epoll_add_usock(srt_epoll, insock, &modes);
-            Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
-        }
-        */
-
         // Have socket, store it into the group socket array.
         any_node = true;
+    }
+
+    if (!any_node)
+        Error("All connections failed");
+
+    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
+    if (!m_blocking_mode)
+    {
+        Verb() << "[ASYNC] " << VerbNoEOL;
+
+        // SPIN-WAITING version. Don't use it unless you know what you're doing.
+        // SpinWaitAsync();
+
+        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
+        int len1 = 2, len2 = 2;
+        SRTSOCKET ready_conn[2], ready_err[2];
+        if (srt_epoll_wait(srt_conn_epoll,
+                    ready_err, &len2,
+                    ready_conn, &len1,
+                    -1, // Wait infinitely
+                    NULL, NULL,
+                    NULL, NULL) != -1)
+        {
+            // We are waiting for one entity to be ready so it's either
+            // in one or the other
+            if (find(ready_err, ready_err+len2, m_sock) != ready_err+len2)
+            {
+                Verb() << "[EPOLL: " << len2 << " entities FAILED]";
+                Error("All group connections failed", SRT_REJ_UNKNOWN, SRT_ENOCONN);
+            }
+            else if (find(ready_conn, ready_conn+len1, m_sock) != ready_conn+len1)
+            {
+                Verb() << "[EPOLL: " << len1 << " entities] " << VerbNoEOL;
+            }
+            else
+            {
+                Error("Group: SPURIOUS epoll readiness");
+            }
+        }
+        else
+        {
+            Error("srt_epoll_wait");
+        }
     }
 
     stat = ConfigurePost(m_sock);
@@ -1005,43 +1042,6 @@ void SrtCommon::OpenGroupClient()
         // id, status, result, peeraddr
         Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
             << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
-    }
-
-    /*
-
-       XXX Temporarily disabled, until the nonblocking mode
-       is added to groups.
-
-    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
-    if ( !m_blocking_mode )
-    {
-        Verb() << "[ASYNC] " << VerbNoEOL;
-
-        // SPIN-WAITING version. Don't use it unless you know what you're doing.
-        // SpinWaitAsync();
-
-        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll,
-                    NULL, NULL,
-                    ready, &len,
-                    -1, // Wait infinitely
-                    NULL, NULL,
-                    NULL, NULL) != -1 )
-        {
-            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
-        }
-        else
-        {
-            Error("srt_epoll_wait");
-        }
-    }
-    */
-
-    if (!any_node)
-    {
-        Error("REDUNDANCY: all redundant connections failed");
     }
 
     // Prepare group data for monitoring the group status.
