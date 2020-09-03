@@ -135,13 +135,20 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     return true;
 }
 
-bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock::time_point& w_st)
+// NOTE: This function is now for DEBUG PURPOSES ONLY.
+// Except for presenting the extracted data in the logs, there's no use of it now.
+void CUDTGroup::debugMasterData(SRTSOCKET slave)
 {
     // Find at least one connection, which is running. Note that this function is called
     // from within a handshake process, so the socket that undergoes this process is at best
     // currently in SRT_GST_PENDING state and it's going to be in SRT_GST_IDLE state at the
     // time when the connection process is done, until the first reading/writing happens.
     ScopedLock cg(m_GroupLock);
+
+    SRTSOCKET mpeer;
+    steady_clock::time_point start_time;
+
+    bool found = false;
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
@@ -150,39 +157,54 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock:
             // Found it. Get the socket's peer's ID and this socket's
             // Start Time. Once it's delivered, this can be used to calculate
             // the Master-to-Slave start time difference.
-            w_mpeer = gi->ps->m_PeerID;
-            w_st    = gi->ps->core().socketStartTime();
+            mpeer = gi->ps->m_PeerID;
+            start_time    = gi->ps->core().socketStartTime();
             HLOGC(gmlog.Debug,
-                  log << "getMasterData: found RUNNING master @" << gi->id << " - reporting master's peer $" << w_mpeer
-                      << " starting at " << FormatTime(w_st));
-            return true;
+                  log << "getMasterData: found RUNNING master @" << gi->id << " - reporting master's peer $" << mpeer
+                      << " starting at " << FormatTime(start_time));
+            found = true;
+            break;
         }
     }
 
-    // If no running one found, then take the first socket in any other
-    // state than broken, except the slave. This is for a case when a user
-    // has prepared one link already, but hasn't sent anything through it yet.
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    if (!found)
     {
-        if (gi->sndstate == SRT_GST_BROKEN)
-            continue;
+        // If no running one found, then take the first socket in any other
+        // state than broken, except the slave. This is for a case when a user
+        // has prepared one link already, but hasn't sent anything through it yet.
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            if (gi->sndstate == SRT_GST_BROKEN)
+                continue;
 
-        if (gi->id == slave)
-            continue;
+            if (gi->id == slave)
+                continue;
 
-        // Found it. Get the socket's peer's ID and this socket's
-        // Start Time. Once it's delivered, this can be used to calculate
-        // the Master-to-Slave start time difference.
-        w_mpeer = gi->ps->core().m_PeerID;
-        w_st    = gi->ps->core().socketStartTime();
-        HLOGC(gmlog.Debug,
-              log << "getMasterData: found IDLE/PENDING master @" << gi->id << " - reporting master's peer $" << w_mpeer
-                  << " starting at " << FormatTime(w_st));
-        return true;
+            // Found it. Get the socket's peer's ID and this socket's
+            // Start Time. Once it's delivered, this can be used to calculate
+            // the Master-to-Slave start time difference.
+            mpeer = gi->ps->core().m_PeerID;
+            start_time    = gi->ps->core().socketStartTime();
+            HLOGC(gmlog.Debug,
+                    log << "getMasterData: found IDLE/PENDING master @" << gi->id << " - reporting master's peer $" << mpeer
+                    << " starting at " << FormatTime(start_time));
+            found = true;
+            break;
+        }
     }
 
-    HLOGC(gmlog.Debug, log << "getMasterData: no link found suitable as master for @" << slave);
-    return false;
+    if (!found)
+    {
+        LOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << id());
+    }
+    else
+    {
+        // The returned master_st is the master's start time. Calculate the
+        // differene time.
+        steady_clock::duration master_tdiff = m_tsStartTime - start_time;
+        LOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << mpeer
+                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+    }
 }
 
 // GROUP
@@ -865,11 +887,18 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
     return SRTS_BROKEN;
 }
 
-void CUDTGroup::syncWithSocket(const CUDT& core)
+void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
 {
     // [[using locked(m_GroupLock)]];
 
-    set_currentSchedSequence(core.ISN());
+    if (side == HSD_RESPONDER)
+    {
+        // On the listener side you should synchronize ISN with the incoming
+        // socket, which is done immediately after creating the socket and
+        // adding it to the group. On the caller side the ISN is defined in
+        // the group directly, before any member socket is created.
+        set_currentSchedSequence(core.ISN());
+    }
 
     // XXX
     // Might need further investigation as to whether this isn't

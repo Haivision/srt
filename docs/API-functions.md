@@ -1558,8 +1558,12 @@ parties.
 
 #### SRT_REJ_GROUP
 
-The group type or some group settings are incompatible for both connection
-parties.
+The group type or some group settings are incompatible for both connection parties. 
+While every connection within a bonding group may have different target addresses, 
+they should all designate the same endpoint and the same SRT application. If this 
+condition isn't satisfied, then the peer will respond with a different peer group 
+ID for the connection that is trying to contact a machine/application that is 
+completely different from the existing connections in the bonding group.
 
 #### SRT_REJ_TIMEOUT
 
