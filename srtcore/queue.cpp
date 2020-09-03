@@ -970,13 +970,16 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
+            int token = -1;
+            if (i->m_pUDT->m_parent->m_IncludedGroup)
+            {
+                // Bound to one call because this requires locking
+                token = i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
+            }
+            CGlobEvent::triggerEvent();
+
             if (i->m_pUDT->m_cbConnectHook)
             {
-                int token = -1;
-                if (i->m_pUDT->m_parent->m_IncludedGroup)
-                {
-                    token = i->m_pUDT->m_parent->m_IncludedIter->token;
-                }
                 CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID,
                         i->m_pUDT->m_RejectReason == SRT_REJ_TIMEOUT ? SRT_ENOSERVER : SRT_ECONNREJ,
                             i->m_PeerAddr.get(), token);

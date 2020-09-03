@@ -10631,15 +10631,15 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
 
         // app can call any UDT API to learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-
+        int token = -1;
+        if (m_parent->m_IncludedGroup)
+        {
+            // Bound to one call because this requires locking
+            token = m_parent->m_IncludedGroup->updateFailedLink(m_SocketID);
+        }
         CGlobEvent::triggerEvent();
         if (m_cbConnectHook)
         {
-            int token = -1;
-            if (m_parent->m_IncludedGroup)
-            {
-                token = m_parent->m_IncludedIter->token;
-            }
             CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_ENOSERVER, m_PeerAddr.get(), token);
         }
 
