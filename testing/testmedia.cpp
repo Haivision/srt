@@ -343,7 +343,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 cc.token = token++;
-                m_group_nodes.push_back(cc);
+                m_group_nodes.push_back(move(cc));
             }
 
             par.erase("type");

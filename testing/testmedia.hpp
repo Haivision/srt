@@ -52,7 +52,7 @@ protected:
 //    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error);
     friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer, int token);
 
-    struct Connection
+    struct ConnectionBase
     {
         string host;
         int port;
@@ -60,12 +60,26 @@ protected:
         SRTSOCKET socket = SRT_INVALID_SOCK;
         sockaddr_any source;
         sockaddr_any target;
+        int token = -1;
+
+        ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
+    };
+
+    struct Connection: ConnectionBase
+    {
         SRT_SOCKOPT_CONFIG* options = nullptr;
         int error = SRT_SUCCESS;
         int reason = SRT_REJ_UNKNOWN;
-        int token = -1;
 
-        Connection(string h, int p): host(h), port(p), source(AF_INET) {}
+        Connection(string h, int p): ConnectionBase(h, p) {}
+        Connection(Connection&& old): ConnectionBase(old)
+        {
+            if (old.options)
+            {
+                options = old.options;
+                old.options = nullptr;
+            }
+        }
         ~Connection()
         {
             srt_delete_config(options);
