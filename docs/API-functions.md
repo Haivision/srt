@@ -425,7 +425,7 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* ho
 ```
 
 This call installs a callback hook, which will be executed on a socket that is
-automatically created to handle the incoming connection on the listeneing
+automatically created to handle the incoming connection on the listening
 socket (and is about to be returned by `srt_accept`), but before the connection
 has been accepted.
 

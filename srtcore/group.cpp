@@ -4101,7 +4101,7 @@ int32_t CUDTGroup::generateISN()
     return CUDT::generateISN();
 }
 
-void CUDTGroup::setFreshConnected(CUDTSocket* sock)
+void CUDTGroup::setFreshConnected(CUDTSocket* sock, int& w_token)
 {
     ScopedLock glock(m_GroupLock);
 
@@ -4118,6 +4118,7 @@ void CUDTGroup::setFreshConnected(CUDTSocket* sock)
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
     }
+    w_token = gi->token;
 }
 
 void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)

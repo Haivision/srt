@@ -4986,6 +4986,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
+    int token = -1;
     {
         ScopedLock cl (s_UDTUnited.m_GlobControlLock);
         CUDTGroup* g = m_parent->m_IncludedGroup;
@@ -4993,8 +4994,14 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         {
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group.
-            g->setFreshConnected(m_parent);
+            g->setFreshConnected(m_parent, (token));
         }
+    }
+
+    CGlobEvent::triggerEvent();
+    if (m_cbConnectHook)
+    {
+        CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_SUCCESS, m_PeerAddr.get(), token);
     }
 
     LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
@@ -10463,7 +10470,10 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             // a new connection has been created, enable epoll for write
            HLOGC(cnlog.Debug, log << "processConnectRequest: @" << m_SocketID
                    << " connected, setting epoll to connect:");
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
+
+           // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
+           // executed for the accepted socket.
+           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         }
     }
     LOGC(cnlog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));

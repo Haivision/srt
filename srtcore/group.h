@@ -203,7 +203,7 @@ public:
         return m_Group.empty();
     }
 
-    void setFreshConnected(CUDTSocket* sock);
+    void setFreshConnected(CUDTSocket* sock, int& w_token);
 
     static gli_t gli_NULL() { return GroupContainer::null(); }
 
