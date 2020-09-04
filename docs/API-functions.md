@@ -685,6 +685,7 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     struct sockaddr_storage peeraddr;
     SRT_SOCKSTATUS sockstate;
+	int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
 
@@ -696,6 +697,7 @@ where:
 * `id`: member socket ID
 * `peeraddr`: address to which `id` should be connected
 * `sockstate`: current connection status (see [`srt_getsockstate`](#srt_getsockstate))
+* `weight`: current weight value set on the link
 * `memberstate`: current state of the member (see below)
 * `result`: result of the operation (if this operation recently updated this structure)
 
