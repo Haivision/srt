@@ -340,7 +340,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                     cc.options = config;
                 }
 
-                m_group_nodes.push_back(cc);
+                m_group_nodes.push_back(move(cc));
             }
 
             par.erase("type");
