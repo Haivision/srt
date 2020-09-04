@@ -49,7 +49,6 @@ class SrtCommon
 
 protected:
 
-//    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error);
     friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer, int token);
 
     struct ConnectionBase

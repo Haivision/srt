@@ -1631,6 +1631,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         memcpy((&pdata[i].peeraddr), &d->peer, d->peer.size());
 
         pdata[i].sockstate = d->laststatus;
+        pdata[i].token = d->token;
 
         // In the internal structure the member state
         // is one per direction. From the user perspective
