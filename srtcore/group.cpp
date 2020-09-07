@@ -1653,6 +1653,8 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
             pdata[i].result      = 0;
             pdata[i].memberstate = d->sndstate;
         }
+
+        pdata[i].weight = d->weight;
     }
 
     return m_Group.size();
