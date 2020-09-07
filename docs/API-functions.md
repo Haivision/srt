@@ -685,7 +685,7 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     struct sockaddr_storage peeraddr;
     SRT_SOCKSTATUS sockstate;
-	int weight;
+    int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
 
