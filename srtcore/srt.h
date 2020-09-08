@@ -786,6 +786,7 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
     SRT_SOCKSTATUS sockstate;
+    int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
     int token;

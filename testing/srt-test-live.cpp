@@ -432,7 +432,7 @@ int main( int argc, char** argv )
         o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
         o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
+        o_verbose   ((optargs), "[channel=0|1|./file] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
@@ -505,11 +505,17 @@ int main( int argc, char** argv )
     // can be displayed also when they report something about option parsing.
     string verbose_val = Option<OutString>(params, "no", o_verbose);
 
+    unique_ptr<ofstream> pout_verb;
+
     int verbch = 1; // default cerr
     if (verbose_val != "no")
     {
         Verbose::on = true;
-        try
+        if (verbose_val == "")
+            verbch = 1;
+        else if (verbose_val.substr(0, 2) == "./")
+            verbch = 3;
+        else try
         {
             verbch = stoi(verbose_val);
         }
@@ -517,18 +523,29 @@ int main( int argc, char** argv )
         {
             verbch = 1;
         }
-        if (verbch != 1)
+
+        if (verbch == 1)
         {
-            if (verbch != 2)
+            Verbose::cverb = &std::cout;
+        }
+        else if (verbch == 2)
+        {
+            Verbose::cverb = &std::cerr;
+        }
+        else if (verbch == 3)
+        {
+            pout_verb.reset(new ofstream(verbose_val.substr(2), ios::out | ios::trunc));
+            if (!pout_verb->good())
             {
-                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                cerr << "-v: error opening verbose output file: " << verbose_val << endl;
                 return 1;
             }
-            Verbose::cverb = &std::cerr;
+            Verbose::cverb = pout_verb.get();
         }
         else
         {
-            Verbose::cverb = &std::cout;
+            cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+            return 1;
         }
     }
 
