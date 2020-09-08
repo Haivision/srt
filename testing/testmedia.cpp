@@ -251,6 +251,25 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             {
                 if (hostport == "")
                     continue;
+
+                // The attribute string, as it was embedded in another URI,
+                // must have had replaced the & character with another ?, so
+                // now all ? character, except the first one, must be now
+                // restored so that UriParser interprets them correctly.
+
+                size_t atq = hostport.find('?');
+                if (atq != string::npos)
+                {
+                    while (atq+1 < hostport.size())
+                    {
+                        size_t next = hostport.find('?', atq+1);
+                        if (next == string::npos)
+                            break;
+                        hostport[next] = '&';
+                        atq = next;
+                    }
+                }
+
                 UriParser check(hostport, UriParser::EXPECT_HOST);
                 if (check.host() == "" || check.port() == "")
                 {
@@ -270,8 +289,8 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
                 if (check.parameters().count("source"))
                 {
-                    UriParser hostport(check.queryValue("source"), UriParser::EXPECT_HOST);
-                    cc.source = CreateAddr(hostport.host(), hostport.portno());
+                    UriParser sourcehp(check.queryValue("source"), UriParser::EXPECT_HOST);
+                    cc.source = CreateAddr(sourcehp.host(), sourcehp.portno());
                 }
 
                 // Check if there's a key with 'srto.' prefix.
@@ -321,7 +340,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                     cc.options = config;
                 }
 
-                m_group_nodes.push_back(cc);
+                m_group_nodes.push_back(move(cc));
             }
 
             par.erase("type");
@@ -541,14 +560,14 @@ void SrtCommon::AcceptNewClient()
         string peer = "<?PEER?>";
         if (-1 != srt_getpeername(m_sock, (peeraddr.get()), (&peeraddr.len)))
         {
-            peer = SockaddrToString(peeraddr);
+            peer = peeraddr.str();
         }
 
         sockaddr_any agentaddr(AF_INET6);
         string agent = "<?AGENT?>";
         if (-1 != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
         {
-            agent = SockaddrToString(agentaddr);
+            agent = agentaddr.str();
         }
 
         Verb() << " connected [" << agent << "] <-- " << peer;
@@ -878,25 +897,44 @@ void SrtCommon::OpenGroupClient()
     for (Connection& c: m_group_nodes)
     {
         auto sa = CreateAddr(c.host, c.port);
-        Verb() << "\t[" << i << "] " << c.host << ":" << c.port
-            << "?weight=" << c.weight
-            << " ... " << VerbNoEOL;
+        Verb() << "\t[" << i << "] " << c.host << ":" << c.port << VerbNoEOL;
+        vector<string> extras;
+        if (c.weight)
+            extras.push_back(Sprint("weight=", c.weight));
+
+        if (!c.source.empty())
+            extras.push_back("source=" + c.source.str());
+
+        if (!extras.empty())
+        {
+            Verb() << "?" << extras[0] << VerbNoEOL;
+            for (size_t i = 1; i < extras.size(); ++i)
+                Verb() << "&" << extras[i] << VerbNoEOL;
+        }
+
+        Verb() << " ... " << VerbNoEOL;
         ++i;
-        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, sa.get(), namelen);
+        const sockaddr* source = c.source.empty() ? nullptr : c.source.get();
+        SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(source, sa.get(), namelen);
         gd.weight = c.weight;
         gd.config = c.options;
         targets.push_back(gd);
     }
-
+    Verb() << "Waiting for group connection... " << VerbNoEOL;
     int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
-
-    // Delete config objects before prospective exception
-    for (auto& gd: targets)
-        srt_delete_config(gd.config);
 
     if (fisock == SRT_ERROR)
     {
         Error("srt_connect_group");
+    }
+
+    if (m_blocking_mode)
+    {
+        Verb() << "SUCCESSFUL";
+    }
+    else
+    {
+        Verb() << "INITIATED [ASYNC]";
     }
 
     // Configuration change applied on a group should
@@ -937,23 +975,55 @@ void SrtCommon::OpenGroupClient()
         SRTSOCKET insock = m_group_nodes[i].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << SockaddrToString(targets[i].peeraddr) << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
             continue;
         }
 
-        /*
-        if (!m_blocking_mode)
-        {
-            // EXPERIMENTAL version. Add all sockets to epoll
-            // in the direction used for this medium.
-            int modes = m_direction;
-            srt_epoll_add_usock(srt_epoll, insock, &modes);
-            Verb() << "Added @" << insock << " to epoll (" << srt_epoll << ") in modes: " << modes;
-        }
-        */
-
         // Have socket, store it into the group socket array.
         any_node = true;
+    }
+
+    if (!any_node)
+        Error("All connections failed");
+
+    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
+    if (!m_blocking_mode)
+    {
+        Verb() << "[ASYNC] " << VerbNoEOL;
+
+        // SPIN-WAITING version. Don't use it unless you know what you're doing.
+        // SpinWaitAsync();
+
+        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
+        int len1 = 2, len2 = 2;
+        SRTSOCKET ready_conn[2], ready_err[2];
+        if (srt_epoll_wait(srt_conn_epoll,
+                    ready_err, &len2,
+                    ready_conn, &len1,
+                    -1, // Wait infinitely
+                    NULL, NULL,
+                    NULL, NULL) != -1)
+        {
+            // We are waiting for one entity to be ready so it's either
+            // in one or the other
+            if (find(ready_err, ready_err+len2, m_sock) != ready_err+len2)
+            {
+                Verb() << "[EPOLL: " << len2 << " entities FAILED]";
+                Error("All group connections failed", SRT_REJ_UNKNOWN, SRT_ENOCONN);
+            }
+            else if (find(ready_conn, ready_conn+len1, m_sock) != ready_conn+len1)
+            {
+                Verb() << "[EPOLL: " << len1 << " entities] " << VerbNoEOL;
+            }
+            else
+            {
+                Error("Group: SPURIOUS epoll readiness");
+            }
+        }
+        else
+        {
+            Error("srt_epoll_wait");
+        }
     }
 
     stat = ConfigurePost(m_sock);
@@ -971,44 +1041,7 @@ void SrtCommon::OpenGroupClient()
     {
         // id, status, result, peeraddr
         Verb() << "@" << d.id << " <" << SockStatusStr(d.sockstate) << "> (=" << d.result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
-    }
-
-    /*
-
-       XXX Temporarily disabled, until the nonblocking mode
-       is added to groups.
-
-    // Wait for REAL connected state if nonblocking mode, for AT LEAST one node.
-    if ( !m_blocking_mode )
-    {
-        Verb() << "[ASYNC] " << VerbNoEOL;
-
-        // SPIN-WAITING version. Don't use it unless you know what you're doing.
-        // SpinWaitAsync();
-
-        // Socket readiness for connection is checked by polling on WRITE allowed sockets.
-        int len = 2;
-        SRTSOCKET ready[2];
-        if ( srt_epoll_wait(srt_conn_epoll,
-                    NULL, NULL,
-                    ready, &len,
-                    -1, // Wait infinitely
-                    NULL, NULL,
-                    NULL, NULL) != -1 )
-        {
-            Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
-        }
-        else
-        {
-            Error("srt_epoll_wait");
-        }
-    }
-    */
-
-    if (!any_node)
-    {
-        Error("REDUNDANCY: all redundant connections failed");
+            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
     }
 
     // Prepare group data for monitoring the group status.
@@ -1101,7 +1134,7 @@ void SrtCommon::Error(string src, int reason, int force_result)
         cerr << "\nERROR (app): " << src << endl;
         throw std::runtime_error(src);
     }
-    string message = srt_getlasterror_str();
+    string message = srt_strerror(result, errnov);
     if (result == SRT_ECONNREJ)
     {
         if ( Verbose::on )
@@ -1229,7 +1262,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
         // id, status, result, peeraddr
         Verb() << "\n\tG@" << id << " <" << SockStatusStr(status) << "/" << MemberStatusStr(mstatus) << "> (=" << result << ") PEER:"
-            << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr)) << VerbNoEOL;
+            << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str() << VerbNoEOL;
 
         if (status >= SRTS_BROKEN)
         {
@@ -1394,7 +1427,7 @@ RETRY_READING:
             if (d.status != SRTS_CONNECTED)
                 // id, status, result, peeraddr
                 Verb() << "@" << d.id << " <" << SockStatusStr(d.status) << "> (=" << d.result << ") PEER:"
-                    << SockaddrToString(sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr));
+                    << sockaddr_any((sockaddr*)&d.peeraddr, sizeof d.peeraddr).str();
         }
     }
 
@@ -2507,7 +2540,7 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, (sockaddr*)&sadr, sizeof sadr);
+        int stat = ::bind(m_sock, sadr.get(), sadr.size());
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
@@ -2516,10 +2549,9 @@ public:
     MediaPacket Read(size_t chunk) override
     {
         bytevector data(chunk);
-        sockaddr_in sa;
-        socklen_t si = sizeof(sockaddr_in);
+        sockaddr_any sa(sadr.family());
         int64_t srctime = 0;
-        int stat = recvfrom(m_sock, data.data(), chunk, 0, (sockaddr*)&sa, &si);
+        int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();

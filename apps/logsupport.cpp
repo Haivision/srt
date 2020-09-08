@@ -15,6 +15,7 @@
 #include <cctype>
 #include "logsupport.hpp"
 #include "../srtcore/srt.h"
+#include "../srtcore/utilities.h"
 
 using namespace std;
 
@@ -74,6 +75,36 @@ srt_logging::LogLevel::type SrtParseLogLevel(string level)
     return LogLevel::type(i->second);
 }
 
+struct ToLowerFormat
+{
+    char operator()(char in)
+    {
+        if (islower(in))
+            return in;
+        if (isupper(in))
+            return tolower(in);
+        if (in == '_')
+            return '-';
+
+        throw std::invalid_argument("Wrong FA name - please check the definition in scripts/generate-logging-defs.tcl file");
+    }
+};
+
+void LogFANames::Install(string upname, int value)
+{
+    string id;
+    transform(upname.begin(), upname.end(), back_inserter(id), ToLowerFormat());
+    namemap[id] = value;
+}
+
+// See logsupport_appdefs.cpp for log FA definitions
+LogFANames srt_transmit_logfa_names;
+
+const map<string, int> SrtLogFAList()
+{
+    return srt_transmit_logfa_names.namemap;
+}
+
 set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 {
     using namespace srt_logging;
@@ -84,18 +115,17 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
     if ( fa == "" )
         return fas;
 
-    static string names [] = { "general", "bstats", "control", "data", "tsbpd", "rexmit", "haicrypt", "cc" };
-    size_t names_s = sizeof (names)/sizeof (names[0]);
+    auto& names = srt_transmit_logfa_names.namemap;
 
     if ( fa == "all" )
     {
-        // Skip "general", it's always on
-        fas.insert(SRT_LOGFA_BSTATS);
-        fas.insert(SRT_LOGFA_CONTROL);
-        fas.insert(SRT_LOGFA_DATA);
-        fas.insert(SRT_LOGFA_TSBPD);
-        fas.insert(SRT_LOGFA_REXMIT);
-        fas.insert(SRT_LOGFA_CONGEST);
+        for (auto entry: names)
+        {
+            // Skip "general", it's always on
+            if (entry.first == "general")
+                continue;
+            fas.insert(entry.second);
+        }
         return fas;
     }
 
@@ -124,8 +154,8 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
     for (size_t i = 0; i < xfas.size(); ++i)
     {
         fa = xfas[i];
-        string* names_p = find(names, names + names_s, fa);
-        if ( names_p == names + names_s )
+        int* pfa = map_getp(names, fa);
+        if (!pfa)
         {
             if (punknown)
                 punknown->insert(fa); // If requested, add it back silently
@@ -134,10 +164,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
             continue;
         }
 
-        size_t nfa = names_p - names;
-
-        if ( nfa != 0 )
-            fas.insert(nfa);
+        fas.insert(*pfa);
     }
 
     return fas;

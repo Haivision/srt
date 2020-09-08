@@ -99,7 +99,7 @@ protected:
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
     {
-        string addr = SockaddrToString(sockaddr_any(sa.get(), sizeof sa));
+        string addr = sockaddr_any(sa.get(), sizeof sa).str();
         DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
@@ -675,13 +675,11 @@ unique_ptr<Medium> SrtMedium::Accept()
 unique_ptr<Medium> TcpMedium::Accept()
 {
     sockaddr_any sa;
-    socklen_t salen = sizeof sa;
-    int s = ::accept(m_socket, (sa.get()), (&salen));
+    int s = ::accept(m_socket, (sa.get()), (&sa.syslen()));
     if (s == -1)
     {
         Error(errno, "accept");
     }
-    sa.len = salen;
 
     // Configure 1s timeout
     timeval timeout_1s { 1, 0 };
