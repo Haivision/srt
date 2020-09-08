@@ -203,12 +203,13 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                    | 1.1.2 | pre     | `int32_t` | msec    | 3000       | 0..      | W   | GSD+  |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                | 1.5.0 | post    | `bool`    |         | true       |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)  | 1.3.2 | pre     | `bool`    |         | true       |          | W   | GSD   |
+| [`SRTO_ESTINPUTBW`](#SRTO_ESTINPUTBW)                  | 1.5.x | n/a     | `int64_t` | bytes/s | n/a        | 0..      | R   | GS    |
 | [`SRTO_EVENT`](#SRTO_EVENT)                            |       |         | `int32_t` | flags   |            |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                  |       | pre     | `int32_t` | pkts    | 25600      | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)              | 1.5.0 | pre     | `int32_t` |         | 0          | 0...1    | W   | S     |
 | [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          |       | pre     | `int32_t` | ms      | 40         | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    |       | pre     | `int32_t` | enum    |            |          | R   | S     |
-| [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | B/s     | 0          | 0..      | W   | GSD   |
+| [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | bytes/s | 0          | 0..      | W   | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre     | `int32_t` |         | (system)   | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                            | 1.0.5 | pre     | `int32_t` | hops    | (system)   | 1..255   | RW  | GSD   |
 | [`SRTO_IPV6ONLY`](#SRTO_IPV6ONLY)                      | 1.4.0 | pre     | `int32_t` |         | (system)   | -1..1    | RW  | GSD   |
@@ -219,12 +220,13 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                        | 1.0.2 | pre     | `int32_t` | ms      | 120 *      | 0..      | RW  | GSD   |
 | [`SRTO_LINGER`](#SRTO_LINGER)                          |       | pre     | `linger`  | s       | on, 180    | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre     | `int32_t` | packets | 0          | 0..      | RW  | GSD+  |
-| [`SRTO_MAXBW`](#SRTO_MAXBW)                            | 1.0.5 | pre     | `int64_t` | B/s     | -1         | -1..     | RW  | GSD   |
+| [`SRTO_MAXBW`](#SRTO_MAXBW)                            | 1.0.5 | pre     | `int64_t` | bytes/s | -1         | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre     | `bool`    |         | true       |          | W   | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre     | `int32_t` | version | 0          | *        | W   | GSD   |
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre     | `int32_t` | bytes   | 1500       | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre     | `bool`    |         |  *         |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post    | `int32_t` | %       | 25         | 5..100   | W   | GSD   |
+| [`SRTO_PACINGMODE`](#SRTO_PACINGMODE)                  | 1.5.x | post    | `int`     |         |            | enum     | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre     | `string`  |         | ""         | [512]    | W   | GSD   |
 | [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                  | 0.0.0 | pre     | `string`  |         | ""         | [10..79] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre     | `int32_t` | bytes   | *          | *        | W   | GSD   |
@@ -378,6 +380,26 @@ on the caller side.
 
 
 
+
+#### SRTO_ESTINPUTBW
+
+| OptName           | Since | Binding | Type      | Units   | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | ------- | --------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_ESTINPUTBW` | 1.5.x | n/a     | `int64_t` | bytes/s | n/a      | 0..    | R   | GS     |
+
+Get the current estimation of the SRT sender's input rate measured
+by the internal input rate sampler (ESTINPUTBW).
+
+A non-zero value is returned only if ESTINPUTBW is active, hence socket is connected, and
+- [SRTO_OUTPACEMODE](#SRTO_OUTPACEMODE) is set to `SRT_OPC_ESTINPUTBW` or `SRT_OPC_HYBRIDBW`, or
+- [SRTO_OUTPACEMODE](#SRTO_OUTPACEMODE) is unset and [SRTO_INPUTBW](#SRTO_INPUTBW) is set to 0.
+
+
+[Return to list](#list-of-options)
+
+
+
+
 #### SRTO_EVENT
 
 | OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
@@ -390,6 +412,7 @@ on the caller side.
 
 
 [Return to list](#list-of-options)
+
 
 
 
@@ -500,18 +523,18 @@ context than inside the listener callback handler, the value is undefined.
 
 #### SRTO_INPUTBW
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t`  | B/s    | 0        | 0..    | W   | GSD    |
+| OptName          | Since | Binding | Type       | Units   | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t`  | bytes/s | 0        | 0..    | W   | GSD    |
 
-- This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
+This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
 controls the maximum bandwidth together with `SRTO_OHEADBW` option according
-to the formula: `MAXBW = INPUTBW * (100 + OHEADBW) / 100`. When this option
+to the formula: `MAXBW = INPUTBW * (1 + OHEADBW / 100)`. When this option
 is set to 0 (automatic) then the real INPUTBW value will be estimated from
-the rate of the input (cases when the application calls the `srt_send*`
-function) during transmission. 
+the rate of the SRT input (cases when the application calls the `srt_send*`
+function) during transmission (see get-only option [SRTO_ESTINPUTBW](#SRTO_ESTINPUTBW)).
 
-- *Recommended: set this option to the anticipated bitrate of your live stream
+*Recommended: set this option to the anticipated bitrate of your live stream
 and keep the default 25% value for `SRTO_OHEADBW`*.
 
 
@@ -720,16 +743,20 @@ By default this value is set to 0, which means that this mechanism is off.
 
 | OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MAXBW`         | 1.0.5 | pre     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
+| `SRTO_MAXBW`         | 1.0.5 | pre     | `int64_t`  | bytes/s | -1       | -1..   | RW  | GSD    |
 
-- Maximum send bandwidth.
+Maximum allowed bandwidth which limits the bandwidth usage by SRT and is used
+by live congestion control (LiveCC) module to calculate the minimum
+inter-sending time of consecutive packets. See section (TODO: insert link to the new RFC draft once published) for details.
+
+Possible values:
 - `-1`: infinite (the limit in Live Mode is 1 Gbps)
-- ` 0`: relative to input rate (see [`SRTO_INPUTBW`](#SRTO_INPUTBW)) 
-- `>0`: absolute limit in B/s
+- ` 0`: relative to input rate (see [`SRTO_INPUTBW`](#SRTO_INPUTBW))
+- `>0`: absolute limit in bytes/s
 
-- *NOTE: This option has a default value of -1, regardless of the mode. 
+*NOTE: This option has a default value of -1, regardless of the mode. 
 For live streams it is typically recommended to set the value 0 here and rely
-on `SRTO_INPUTBW` and `SRTO_OHEADBW` options. However, if you want to do so,
+on [SRTO_INPUTBW](#SRTO_INPUTBW) and [SRTO_OHEADBW](#SRTO_OHEADBW) options. However, if you want to do so,
 you should make sure that your stream has a fairly constant bitrate, or that
 changes are not abrupt, as high bitrate changes may work against the
 measurement. SRT cannot ensure that this is always the case for a live stream,
@@ -841,28 +868,69 @@ missing packet still wasn't recovered, or wasn't conditionally dropped (see
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_OHEADBW`       | 1.0.5 | post    | `int32_t`  | %       | 25       | 5..100 | W   | GSD    |
 
-- Recovery bandwidth overhead above input rate (see `[`SRTO_INPUTBW`](#SRTO_INPUTBW)`), 
-in percentage of the input rate. It is effective only if `SRTO_MAXBW` is set to 0.
+Recovery bandwidth overhead above input rate (see [SRTO_INPUTBW](#SRTO_INPUTBW)),
+in percentage of the input rate. It is effective only if [SRTO_MAXBW](#SRTO_INPUTBW) is set to 0.
 
-- *Sender: user configurable, default: 25%.* 
+*Sender: user configurable, default: 25%.* 
 
-- Recommendations:
+Recommendations:
+- Overhead is intended to give you extra bandwidth for the case when a packet 
+has taken part of the bandwidth, but then was lost and has to be retransmitted. 
+Therefore the effective maximum bandwidth should be appropriately higher than 
+your stream's bitrate so that there's some room for retransmission, but still 
+limited so that the retransmitted packets don't cause the bandwidth usage to 
+skyrocket when larger groups of packets are lost.
 
-	- *Overhead is intended to give you extra bandwidth for the case when a packet 
-	has taken part of the bandwidth, but then was lost and has to be retransmitted. 
-	Therefore the effective maximum bandwidth should be appropriately higher than 
-	your stream's bitrate so that there's some room for retransmission, but still 
-	limited so that the retransmitted packets don't cause the bandwidth usage to 
-	skyrocket when larger groups of packets are lost*
+- Don't configure it too low and avoid 0 in the case when you have the 
+`SRTO_INPUTBW` option set to 0 (automatic). Otherwise your stream will choke 
+and break quickly at any rise in packet loss.
 
-	- *Don't configure it too low and avoid 0 in the case when you have the 
-	`SRTO_INPUTBW` option set to 0 (automatic). Otherwise your stream will choke 
-	and break quickly at any rise in packet loss.*
-
-- ***To do: set-only; get should be supported.***
+***TODO: set-only; get should be supported.***
 
 
 [Return to list](#list-of-options)
+
+
+
+#### SRTO_PACINGMODE
+
+| OptName               | Since | Binding | Type   | Units  | Default  | Range   | Dir | Entity |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------- | --- | ------ |
+| `SRTO_PACINGMODE `    | 1.5.x | post    | `int`  |        |          | enum    | RW  | GSD    |
+
+Pacing control mode. This option is only applicable for live transmission mode.
+
+`SRTO_PACINGMODE` option defines the way of configuring the maximum allowed bandwidth `MAXBW`
+which limits the bandwidth usage by SRT and is used by live congestion control
+(LiveCC) module to calculate the minimum inter-sending time of consecutive packets.
+
+A combination of pacing control and live congestion control (LiveCC) modules controls SRT
+packets pacing based on the input rate and an overhead for packets retransmission
+in order to avoid congestion during fluctuations of the source bitrate.
+
+The following table shows the summary of pacing control modes, options need to be
+set (✓) or ignored (-) appropriately and formula for MAXBW calculation for a
+particular mode:
+
+| Mode / Option            | SRTO_MAXBW | SRTO_INPUTBW | SRT_OHEADBW | Formula for `MAXBW` Calculation                              |
+| ------------------------ | ---------- | ------------ | ----------- | ------------------------------------------------------------ |
+| `SRT_PACING_DEFMAXBW`    | -1         | -            | -           | `MAXBW` is set to the default value of 1Gbps                 |
+| `SRT_PACING_MAXBW`       | ✓          | -            | -           | `MAXBW` is set explicitly, in bytes per second               |
+| `SRT_PACING_INPUTBW`     | 0          | ✓            | ✓           | `MAXBW = INPUTBW * (1 + OHEADBW /100)`                       |
+| `SRT_PACING_ESTINPUTBW`  | 0          | 0            | ✓           | `MAXBW = ESTINPUTBW * (1 + OHEADBW /100)`                    |
+| `SRT_PACING_HYBRIDBW`    | 0          | ✓            | ✓           | `MAX_BW = max(INPUTBW, ESTINPUT_BW) * (1 + OHEADBW /100)`    |
+
+where `ESTINPUTBW` corresponds to the estimated (by SRT) SRT sender's input rate.
+
+See section (TODO: insert link to the new RFC draft once published) for the detailed description of pacing control modes.
+
+It's important to note that options [SRTO_MAXBW](#SRTO_MAXBW), [SRTO_INPUTBW](#SRTO_INPUTBW) and [SRT_OHEADBW](#SRT_OHEADBW) should be set first, right before setting the `SRTO_PACINGMODE` option. The order is important. In case the combination of `SRTO_MAXBW`, `SRTO_INPUTBW` and `SRTO_OHEADBW` options is configured wrong for a particular pacing control mode, SRT will throw an error (TODO: discuss what kind of error and put this information here).
+
+By default, `SRTO_PACINGMODE` is set to `SRT_PACING_UNSET` mode which preserves the previous behavior of SRT (API/ABI backward compatibility). In this case, the combination of `SRTO_MAXBW`, `SRTO_INPUTBW` and `SRTO_OHEADBW` options should be used to activate one of the pacing control modes as specified in the table above. Please note that all the modes except `SRT_PACING_HYBRIDBW` can be defined by this combination. The latter requires setting `SRTO_PACINGMODE` to `SRT_PACING_HYBRIDBW`explicitly.
+
+
+[Return to list](#list-of-options)
+
 
 
 
@@ -1080,7 +1148,7 @@ The value set here will be effectively aligned to the multiple of payload size.
 | OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
 | `SRTO_RCVKMSTATE` | 1.2.0 |         | `int32_t`  | enum    |            |        | R   | S      |
- 
+
 - KM state on the agent side when it's a receiver.
 
 - Values defined in enum [`SRT_KM_STATE`](#2-srt_km_state).
