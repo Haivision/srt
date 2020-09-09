@@ -637,23 +637,23 @@ int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* 
 This call installs a callback hook, which will be executed on a given `clr`
 socket just after the pending connection situation in the background has been
 resolved (that is, when the connection succeeded or failed). Note that this
-function is not guaranteed to be called if the `clr` socket is set blocking
+function is not guaranteed to be called if the `clr` socket is set to blocking
 mode (`SRTO_RCVSYN` option set to true). It is guaranteed to be called when
 a socket is in non-blocking mode, or when you use a group.
 
-This function is mainly intended to be used with group connection. Note that
-even if you use group connection in blocking mode, after the group is considered
-connected, the member connections still continue in background. Also when
-some connections are still pending and some others have failed, the blocking
+This function is mainly intended to be used with group connections. Note that
+even if you use a group connection in blocking mode, after the group is considered
+connected the member connections still continue in background. Also, when
+some connections are still pending and others have failed, the blocking
 call for `srt_connect_group` will not exit until at least one of them succeeds
-or all fail - in such a case those failures also happen only on the background,
-while the connecting function blocks until all connections are resolved. Also,
-when all links fail, you will only get the general error code for the group.
+or all fail - in such a case those failures also happen only in the background,
+while the connecting function blocks until all connections are resolved. 
+When all links fail, you will only get a general error code for the group.
 This mechanism allows you to get individual errors for particular member
 connections.
 
 You can also use this mechanism as an alternative method for a single-socket
-connections in non-blocking mode to trigger an action when the connection
+connection in non-blocking mode to trigger an action when the connection
 process is finished.
 
 * `clr`: Socket that will be used for connecting and for which the hook is installed
@@ -669,7 +669,7 @@ process is finished.
 
    * `SRT_EINVPARAM` reported when `hook_fn` is a null pointer
 
-The callback function has the signature as per this type definition:
+The callback function signature has the following type definition:
 
 ```
 typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
@@ -732,11 +732,11 @@ parameter's meaning is dependent on the group type:
 The `config` parameter is used to provide options to be set separately
 on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
 
-The `token` value is inteded to allow the application to easier identify
-particular connection. If you don't use it and leave the default -1 there,
-the library will set unique value for next connections (it's a 32-bit unsigned
-number that will overflow by itself and the -1 value will be skipped).
-The application can as well set a unique value by itself and keep the same
+The `token` value is intended to allow the application to more easily identify
+a particular connection. If you don't use it and leave the default value of -1,
+the library will set a unique value for the next connection (a 32-bit unsigned
+number that will overflow by itself; the default value will be skipped).
+The application can also set a unique value by itself and keep the same
 value for the same connection.
 
 
@@ -985,16 +985,16 @@ it then blocks until at least one connection reports success or if all of them
 fail. Connections that continue in the background after this function exits can
 be then checked status by [`srt_group_data`](#srt_group_data).
 
-As member socket connections are running in the background, for getting known
-that particular connection has succeeded or failed it is recommended
+As member socket connections are running in the background, for determining 
+if a particular connection has succeeded or failed it is recommended
 to use [`srt_connect_callback`](#srt_connect_callback). In this case the
 `token` callback function parameter will be the same as the `token` value used
-for particular item in the `name` connection table.
+for the particular item in the `name` connection table.
 
-The `token` value doesn't have any limitations except that -1 value is
+The `token` value doesn't have any limitations except that the -1 value is
 a "trap representation", that is, when set on input it will make the internals
-define a unique value for it. Your application can as well set unique values
-there by itself and in this case the token value will be preserved.
+define a unique value for the `token`. Your application can also set unique values,
+in which case the `token` value will be preserved.
 
 
 ### srt_prepare_endpoint
