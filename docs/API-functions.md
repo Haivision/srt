@@ -707,7 +707,7 @@ typedef struct SRT_GroupMemberConfig_
     int weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
-	int token;
+    int token;
 } SRT_SOCKGROUPCONFIG;
 ```
 
@@ -753,7 +753,7 @@ typedef struct SRT_SocketGroupData_
     int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
-	int token;
+    int token;
 } SRT_SOCKGROUPDATA;
 ```
 
@@ -2263,8 +2263,8 @@ The `SRT_EPOLL_EVENT` structure:
 ```
 typedef struct SRT_EPOLL_EVENT_
 {
-	SRTSOCKET fd;
-	int       events;
+    SRTSOCKET fd;
+    int       events;
 } SRT_EPOLL_EVENT;
 ```
 
