@@ -1248,8 +1248,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             {
                 InvertedLock ug(m_GroupLock);
+
+                THREAD_PAUSED();
                 m_pGlobal->m_EPoll.swait(
                     *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                THREAD_RESUMED();
             }
 
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
@@ -1439,7 +1442,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: blocking on any of blocked sockets to allow sending");
 
             // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
+            THREAD_PAUSED();
             blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+            THREAD_RESUMED();
 
             // NOTE EXCEPTIONS:
             // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
@@ -2043,7 +2048,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // means to block indefinitely, also in swait().
         // In non-blocking mode use 0, which means to always return immediately.
         int timeout = m_bSynRecving ? m_iRcvTimeOut : 0;
+        THREAD_PAUSED();
         int nready  = m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
+        THREAD_RESUMED();
 
         HLOGC(grlog.Debug, log << "group/recv: RDY: " << DisplayEpollResults(sready));
 
@@ -3240,7 +3247,9 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         InvertedLock ug(m_GroupLock);
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
+        THREAD_PAUSED();
         brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+        THREAD_RESUMED();
 
         // Check if there's anything in the "error" section.
         // This must be cleared here before the lock on group is set again.
