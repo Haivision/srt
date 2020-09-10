@@ -208,7 +208,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)              | 1.5.0 | pre     | `int32_t` |         | 0          | 0...1    | W   | S     |
 | [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          |       | pre     | `int32_t` | ms      | 40         | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    |       | pre     | `int32_t` | enum    |            |          | R   | S     |
-| [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | B/s     | 0          | 0..      | W   | GSD   |
+| [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | B/s     | 0          | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre     | `int32_t` |         | (system)   | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                            | 1.0.5 | pre     | `int32_t` | hops    | (system)   | 1..255   | RW  | GSD   |
 | [`SRTO_IPV6ONLY`](#SRTO_IPV6ONLY)                      | 1.4.0 | pre     | `int32_t` |         | (system)   | -1..1    | RW  | GSD   |
@@ -224,7 +224,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre     | `int32_t` | version | 0          | *        | W   | GSD   |
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre     | `int32_t` | bytes   | 1500       | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre     | `bool`    |         |  *         |          | RW  | GSD+  |
-| [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post    | `int32_t` | %       | 25         | 5..100   | W   | GSD   |
+| [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post    | `int32_t` | %       | 25         | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre     | `string`  |         | ""         | [512]    | W   | GSD   |
 | [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                  | 0.0.0 | pre     | `string`  |         | ""         | [10..79] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre     | `int32_t` | bytes   | *          | *        | W   | GSD   |
@@ -502,7 +502,7 @@ context than inside the listener callback handler, the value is undefined.
 
 | OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t`  | B/s    | 0        | 0..    | W   | GSD    |
+| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
 
 - This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
 controls the maximum bandwidth together with `SRTO_OHEADBW` option according
@@ -839,7 +839,7 @@ missing packet still wasn't recovered, or wasn't conditionally dropped (see
 
 | OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_OHEADBW`       | 1.0.5 | post    | `int32_t`  | %       | 25       | 5..100 | W   | GSD    |
+| `SRTO_OHEADBW`       | 1.0.5 | post    | `int32_t`  | %       | 25       | 5..100 | RW  | GSD    |
 
 - Recovery bandwidth overhead above input rate (see `[`SRTO_INPUTBW`](#SRTO_INPUTBW)`), 
 in percentage of the input rate. It is effective only if `SRTO_MAXBW` is set to 0.
