@@ -555,6 +555,7 @@ void *CSndQueue::worker(void *param)
             CSync windsync  (self->m_WindowCond, windlock);
 
             // wait here if there is no sockets with data to be sent
+            THREAD_PAUSED();
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
             {
                 windsync.wait();
@@ -563,6 +564,7 @@ void *CSndQueue::worker(void *param)
                 self->m_WorkerStats.lCondWait++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
             }
+            THREAD_RESUMED();
 
             continue;
         }
@@ -1569,7 +1571,9 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
     if (i == m_mBuffer.end())
     {
+        THREAD_PAUSED();
         buffercond.wait_for(seconds_from(1));
+        THREAD_RESUMED();
 
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())
