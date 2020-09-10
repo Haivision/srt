@@ -239,7 +239,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_RCVSYN`](#SRTO_RCVSYN)                          |       | post    | `bool`    |         | true       |          | RW  | GSI   |
 | [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO)                      |       | post    | `int32_t` | ms      | -1         | -1, 0..  | RW  | GSI   |
 | [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS)                  |       | pre     | `bool`    |         | false      |          | RW  | S     |
-| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.5.0 | pre     | `int`     |         | 0          | [0, 1]   | W   | GSD   |
+| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.5.0 | pre     | `int32_t` |         | 0          | [0, 1]   | W   | GSD   |
 | [`SRTO_REUSEADDR`](#SRTO_REUSEADDR)                    |       | pre     | `bool`    |         | true       |          | RW  | GSD   |
 | [`SRTO_SENDER`](#SRTO_SENDER)                          | 1.0.4 | pre     | `bool`    |         | false      |          | W   | S     |
 | [`SRTO_SNDBUF`](#SRTO_SNDBUF)                          |       | pre     | `int32_t` | bytes   | 8192 bufs  | *        | RW  | GSD+  |
@@ -1192,9 +1192,9 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 #### SRTO_RETRANSMITALGO
 
-| OptName               | Since | Binding | Type   | Units  | Default | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ------ | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMITALGO` | 1.5.0 | pre     | `int`  |        | 0       | [0, 1] | W   | GSD    |
+| OptName               | Since | Binding | Type      | Units  | Default | Range  | Dir | Entity |
+| --------------------- | ----- | ------- | --------- | ------ | ------- | ------ | --- | ------ |
+| `SRTO_RETRANSMITALGO` | 1.5.0 | pre     | `int32_t` |        | 0       | [0, 1] | W   | GSD    |
 
 - Retransmission algorithm to use (SENDER option):
    - 0 - Default (retransmit on every loss report).
