@@ -138,6 +138,53 @@ enum SeqPairItems
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
 };
 
+template <class METRIC_TYPE>
+struct AverageMetricUsage: public MetricUsage<METRIC_TYPE>
+{
+    using MetricUsage<METRIC_TYPE>::Clear;
+    using MetricUsage<METRIC_TYPE>::Init;
+    using MetricUsage<METRIC_TYPE>::local;
+    using MetricUsage<METRIC_TYPE>::total;
+
+    void Update(METRIC_TYPE value)
+    {
+        if (MetricOp<METRIC_TYPE>::is_zero(local))
+            local = value;
+        else
+        {
+            local = (local + value)/2;
+        }
+
+        if (MetricOp<METRIC_TYPE>::is_zero(total))
+            total = value;
+        else
+        {
+            total = (total + value)/2;
+        }
+    }
+};
+
+
+template <class METRIC_TYPE>
+struct MaxMetricUsage: public MetricUsage<METRIC_TYPE>
+{
+    using MetricUsage<METRIC_TYPE>::Clear;
+    using MetricUsage<METRIC_TYPE>::Init;
+    using MetricUsage<METRIC_TYPE>::local;
+    using MetricUsage<METRIC_TYPE>::total;
+
+    void Update(METRIC_TYPE value)
+    {
+        if (value > local)
+            local = value;
+
+        if (value > total)
+            total = value;
+    }
+};
+
+
+
 struct SRT_SocketOptionObject
 {
     struct SingleOption
@@ -1110,7 +1157,27 @@ private: // Trace
 
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;         // timers to record the sending Duration
+
+        AverageMetricUsage<duration> tdAverageResponseTime;
+        MaxMetricUsage<duration> tdMaxResponseTime;
     } m_stats;
+
+    /// This function records the passed current time as the last response time.
+    /// Before doing it, however, it checks if there exist any previous such time
+    /// and updates statistics accordingly.
+    void calculateResponseTime(const time_point& now)
+    {
+        if (!is_zero(m_tsLastRspTime))
+        {
+            duration td = now - m_tsLastRspTime;
+            enterCS(m_StatsLock);
+            m_stats.tdAverageResponseTime.Update(td);
+            m_stats.tdMaxResponseTime.Update(td);
+            leaveCS(m_StatsLock);
+        }
+
+        m_tsLastRspTime = now;
+    }
 
 public:
     static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking

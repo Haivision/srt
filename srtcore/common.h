@@ -1471,6 +1471,11 @@ struct MetricOp
     {
         m = 0;
     }
+
+    static bool is_zero(const METRIC_TYPE& m)
+    {
+        return m == 0;
+    }
 };
 
 template <>
@@ -1480,6 +1485,21 @@ struct MetricOp<PacketMetric>
     {
         p.pkts = 0;
         p.bytes = 0;
+    }
+};
+
+template <>
+struct MetricOp<srt::sync::steady_clock::duration>
+{
+    typedef srt::sync::steady_clock::duration duration;
+    static bool is_zero(const duration& m)
+    {
+        return m == duration::zero();
+    }
+
+    static void Clear(duration& m)
+    {
+        m = duration::zero();
     }
 };
 
