@@ -770,6 +770,7 @@ private: // Identification
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
+                                                 // 0: use internally estimated input bandwidth
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
