@@ -228,7 +228,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
-    m_llInputBW                 = 0;    // Application provided input bandwidth (internal input rate sampling == 0)
+    m_llInputBW                 = 0;    // Application provided input bandwidth (0: internal input rate sampling)
     m_iOverheadBW               = 25;   // Percent above input stream rate (applies if m_llMaxBW == 0)
     m_OPT_PktFilterConfigString = "";
 
@@ -531,9 +531,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_OHEADBW:
-        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval) > 100))
+        if ((cast_optval<int32_t>(optval, optlen) < 5) || (cast_optval<int32_t>(optval) > 100))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = cast_optval<int>(optval);
+        m_iOverheadBW = cast_optval<int32_t>(optval);
 
         // Changed overhead BW, so spread the change
         // (only if connected; if not, then the value
@@ -1048,6 +1048,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_MAXBW:
         *(int64_t *)optval = m_llMaxBW;
         optlen             = sizeof(int64_t);
+        break;
+
+    case SRTO_INPUTBW:
+       *(int64_t*)optval = m_llInputBW;
+       optlen             = sizeof(int64_t);
+       break;
+
+    case SRTO_OHEADBW:
+        *(int32_t *)optval = m_iOverheadBW;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_STATE:
