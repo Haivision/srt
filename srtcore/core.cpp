@@ -1060,6 +1060,17 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
+    case SRTO_ESTINPUTBW:
+        *(int64_t*)optval = 0LL;
+        if (m_pSndBuffer && m_pSndBuffer->getInRatePeriod() != 0)
+        {
+            // return sampled internally measured input bw
+            const int rate = m_pSndBuffer->getInputRate();
+            *(int64_t*)optval = rate;
+        }
+        optlen = sizeof(int64_t);
+        break;
+
     case SRTO_STATE:
         *(int32_t *)optval = s_UDTUnited.getStatus(m_SocketID);
         optlen             = sizeof(int32_t);
