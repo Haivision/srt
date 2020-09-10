@@ -4,7 +4,6 @@ import pandas as pd
 def define_area(msg):
     areas = [
         'core',
-        'API',
         'build',
         'tests',
         'apps',
@@ -21,7 +20,6 @@ def define_area(msg):
 def delete_prefix(msg):
     prefixes = [
         '[core] ',
-        '[API] ',
         '[build] ',
         '[tests] ',
         '[apps] ',
