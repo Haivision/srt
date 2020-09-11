@@ -133,13 +133,20 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
     return true;
 }
 
-bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock::time_point& w_st)
+// NOTE: This function is now for DEBUG PURPOSES ONLY.
+// Except for presenting the extracted data in the logs, there's no use of it now.
+void CUDTGroup::debugMasterData(SRTSOCKET slave)
 {
     // Find at least one connection, which is running. Note that this function is called
     // from within a handshake process, so the socket that undergoes this process is at best
     // currently in SRT_GST_PENDING state and it's going to be in SRT_GST_IDLE state at the
     // time when the connection process is done, until the first reading/writing happens.
     ScopedLock cg(m_GroupLock);
+
+    SRTSOCKET mpeer;
+    steady_clock::time_point start_time;
+
+    bool found = false;
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
@@ -148,39 +155,54 @@ bool CUDTGroup::getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, steady_clock:
             // Found it. Get the socket's peer's ID and this socket's
             // Start Time. Once it's delivered, this can be used to calculate
             // the Master-to-Slave start time difference.
-            w_mpeer = gi->ps->m_PeerID;
-            w_st    = gi->ps->core().socketStartTime();
+            mpeer = gi->ps->m_PeerID;
+            start_time    = gi->ps->core().socketStartTime();
             HLOGC(gmlog.Debug,
-                  log << "getMasterData: found RUNNING master @" << gi->id << " - reporting master's peer $" << w_mpeer
-                      << " starting at " << FormatTime(w_st));
-            return true;
+                  log << "getMasterData: found RUNNING master @" << gi->id << " - reporting master's peer $" << mpeer
+                      << " starting at " << FormatTime(start_time));
+            found = true;
+            break;
         }
     }
 
-    // If no running one found, then take the first socket in any other
-    // state than broken, except the slave. This is for a case when a user
-    // has prepared one link already, but hasn't sent anything through it yet.
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    if (!found)
     {
-        if (gi->sndstate == SRT_GST_BROKEN)
-            continue;
+        // If no running one found, then take the first socket in any other
+        // state than broken, except the slave. This is for a case when a user
+        // has prepared one link already, but hasn't sent anything through it yet.
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            if (gi->sndstate == SRT_GST_BROKEN)
+                continue;
 
-        if (gi->id == slave)
-            continue;
+            if (gi->id == slave)
+                continue;
 
-        // Found it. Get the socket's peer's ID and this socket's
-        // Start Time. Once it's delivered, this can be used to calculate
-        // the Master-to-Slave start time difference.
-        w_mpeer = gi->ps->core().m_PeerID;
-        w_st    = gi->ps->core().socketStartTime();
-        HLOGC(gmlog.Debug,
-              log << "getMasterData: found IDLE/PENDING master @" << gi->id << " - reporting master's peer $" << w_mpeer
-                  << " starting at " << FormatTime(w_st));
-        return true;
+            // Found it. Get the socket's peer's ID and this socket's
+            // Start Time. Once it's delivered, this can be used to calculate
+            // the Master-to-Slave start time difference.
+            mpeer = gi->ps->core().m_PeerID;
+            start_time    = gi->ps->core().socketStartTime();
+            HLOGC(gmlog.Debug,
+                    log << "getMasterData: found IDLE/PENDING master @" << gi->id << " - reporting master's peer $" << mpeer
+                    << " starting at " << FormatTime(start_time));
+            found = true;
+            break;
+        }
     }
 
-    HLOGC(gmlog.Debug, log << "getMasterData: no link found suitable as master for @" << slave);
-    return false;
+    if (!found)
+    {
+        LOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << id());
+    }
+    else
+    {
+        // The returned master_st is the master's start time. Calculate the
+        // differene time.
+        steady_clock::duration master_tdiff = m_tsStartTime - start_time;
+        LOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << mpeer
+                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
+    }
 }
 
 // GROUP
@@ -862,11 +884,18 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
     return SRTS_BROKEN;
 }
 
-void CUDTGroup::syncWithSocket(const CUDT& core)
+void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
 {
     // [[using locked(m_GroupLock)]];
 
-    set_currentSchedSequence(core.ISN());
+    if (side == HSD_RESPONDER)
+    {
+        // On the listener side you should synchronize ISN with the incoming
+        // socket, which is done immediately after creating the socket and
+        // adding it to the group. On the caller side the ISN is defined in
+        // the group directly, before any member socket is created.
+        set_currentSchedSequence(core.ISN());
+    }
 
     // XXX
     // Might need further investigation as to whether this isn't
@@ -1219,8 +1248,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             {
                 InvertedLock ug(m_GroupLock);
+
+                THREAD_PAUSED();
                 m_pGlobal->m_EPoll.swait(
                     *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                THREAD_RESUMED();
             }
 
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
@@ -1410,7 +1442,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: blocking on any of blocked sockets to allow sending");
 
             // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
+            THREAD_PAUSED();
             blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+            THREAD_RESUMED();
 
             // NOTE EXCEPTIONS:
             // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
@@ -1624,6 +1658,8 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
             pdata[i].result      = 0;
             pdata[i].memberstate = d->sndstate;
         }
+
+        pdata[i].weight = d->weight;
     }
 
     return m_Group.size();
@@ -2014,7 +2050,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // means to block indefinitely, also in swait().
         // In non-blocking mode use 0, which means to always return immediately.
         int timeout = m_bSynRecving ? m_iRcvTimeOut : 0;
+        THREAD_PAUSED();
         int nready  = m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
+        THREAD_RESUMED();
 
         HLOGC(grlog.Debug, log << "group/recv: RDY: " << DisplayEpollResults(sready));
 
@@ -3132,6 +3170,18 @@ void CUDTGroup::send_CloseBrokenSockets(vector<gli_t>& w_wipeme)
     w_wipeme.clear();
 }
 
+struct FByOldestActive
+{
+    typedef CUDTGroup::gli_t gli_t;
+    bool operator()(gli_t a, gli_t b)
+    {
+        CUDT& x = a->ps->core();
+        CUDT& y = b->ps->core();
+
+        return x.m_tsTmpActiveTime < y.m_tsTmpActiveTime;
+    }
+};
+
 void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
                                               vector<gli_t>&       w_parallel,
                                               int&                 w_final_stat,
@@ -3159,7 +3209,7 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         if (std::find(unstable.begin(), unstable.end(), *p) != unstable.end())
         {
             LOGC(gslog.Debug,
-                 log << "grp/sendBackup: IPE: parallel links enclose unstable link @" << (*p)->ps->m_SocketID);
+                    log << "grp/sendBackup: IPE: parallel links enclose unstable link @" << (*p)->ps->m_SocketID);
         }
     }
 #endif
@@ -3202,54 +3252,56 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         size_t nlinks = m_Group.size();
         size_t ndead  = 0;
 
-    RetryWaitBlocked:
-    {
-        // Some sockets could have been closed in the meantime.
-        if (m_SndEpolld->watch_empty())
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-        InvertedLock ug(m_GroupLock);
-        HLOGC(gslog.Debug,
-              log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
-        brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
-
-        // Check if there's anything in the "error" section.
-        // This must be cleared here before the lock on group is set again.
-        // (This loop will not fire neither once if no failed sockets found).
-        for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+RetryWaitBlocked:
         {
-            if (i->second & SRT_EPOLL_ERR)
-                continue; // broken already
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-            if ((i->second & SRT_EPOLL_IN) == 0)
-                continue; // not ready for reading
+            InvertedLock ug(m_GroupLock);
+            HLOGC(gslog.Debug,
+                    log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
+        THREAD_PAUSED();
+            brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+        THREAD_RESUMED();
 
-            // Check if this socket is in aheads
-            // If so, don't read from it, wait until the ahead is flushed.
-            SRTSOCKET   id = i->first;
-            CUDTSocket* s  = m_pGlobal->locateSocket(id);
-            if (s)
+            // Check if there's anything in the "error" section.
+            // This must be cleared here before the lock on group is set again.
+            // (This loop will not fire neither once if no failed sockets found).
+            for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
             {
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: swait/ex on @" << (id)
-                          << " while waiting for any writable socket - CLOSING");
-                CUDT::s_UDTUnited.close(s);
-            }
-            else
-            {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
-            }
+                if (i->second & SRT_EPOLL_ERR)
+                    continue; // broken already
 
-            ++ndead;
+                if ((i->second & SRT_EPOLL_IN) == 0)
+                    continue; // not ready for reading
+
+                // Check if this socket is in aheads
+                // If so, don't read from it, wait until the ahead is flushed.
+                SRTSOCKET   id = i->first;
+                CUDTSocket* s  = m_pGlobal->locateSocket(id);
+                if (s)
+                {
+                    HLOGC(gslog.Debug,
+                            log << "grp/sendBackup: swait/ex on @" << (id)
+                            << " while waiting for any writable socket - CLOSING");
+                    CUDT::s_UDTUnited.close(s);
+                }
+                else
+                {
+                    HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
+                }
+
+                ++ndead;
+            }
+            HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
         }
-        HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
-    }
 
         if (brdy == -1 || ndead >= nlinks)
         {
             LOGC(gslog.Error,
-                 log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
-                     << " - looxlike all links broken");
+                    log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
+                    << " - looxlike all links broken");
             m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
             m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
             // You can safely throw here - nothing to fill in when all sockets down.
@@ -3284,7 +3336,7 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
             if (d->sndstate == SRT_GST_RUNNING)
             {
                 HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
+                        log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
                 continue;
             }
 
@@ -3342,6 +3394,34 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         steady_clock::time_point currtime = steady_clock::now();
 
         vector<gli_t>::iterator b = w_parallel.begin();
+
+        // Additional criterion: if you have multiple links with the same weight,
+        // check if you have at least one with m_tsTmpActiveTime == 0. If not,
+        // sort them additionally by this time.
+
+        vector<gli_t>::iterator b1 = b, e = ++b1;
+
+        // Both e and b1 stand on b+1 position.
+        // We have a guarantee that b+1 still points to a valid element.
+        while (e != w_parallel.end())
+        {
+            if ((*e)->weight != (*b)->weight)
+                break;
+            ++e;
+        }
+
+        if (b1 != e)
+        {
+            // More than 1 link with the same weight. Sorting them according
+            // to a different criterion will not change the previous sorting order
+            // because the elements in this range are equal according to the previous
+            // criterion.
+            // Here find the link with least time. The "trap" zero time matches this
+            // requirement, occasionally.
+            sort(b, e, FByOldestActive());
+        }
+
+        // After finding the link to leave active, leave it behind.
         HLOGC(gslog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
         ++b;
         for (; b != w_parallel.end(); ++b)
@@ -3350,17 +3430,17 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
             if (d->sndstate != SRT_GST_RUNNING)
             {
                 LOGC(gslog.Error,
-                     log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
+                        log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
                 continue;
             }
             CUDT&                  ce = d->ps->core();
             steady_clock::duration td(0);
             if (!is_zero(ce.m_tsTmpActiveTime) &&
-                count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
+                    count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {
                 HLOGC(gslog.Debug,
-                      log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                          << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                        log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
+                        << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
                 continue;
             }
 
@@ -4216,6 +4296,43 @@ void CUDTGroup::removeEPollID(const int eid)
     enterCS(m_pGlobal->m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
+}
+
+int CUDTGroup::updateFailedLink(SRTSOCKET sock)
+{
+    ScopedLock lg(m_GroupLock);
+
+    // Check all members if they are in the pending
+    // or connected state.
+
+    int nhealthy = 0;
+
+    for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
+    {
+        if (i->id == sock)
+        {
+            // This socket.
+            i->sndstate = SRT_GST_BROKEN;
+            i->rcvstate = SRT_GST_BROKEN;
+            continue;
+        }
+
+        if (i->sndstate < SRT_GST_BROKEN)
+            nhealthy++;
+    }
+
+    if (!nhealthy)
+    {
+        // No healthy links, set ERR on epoll.
+        HLOGC(gmlog.Debug, log << "group/updateFailedLink: All sockets broken");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+    }
+    else
+    {
+        HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
+    }
+
+    return 0;
 }
 
 #if ENABLE_HEAVY_LOGGING

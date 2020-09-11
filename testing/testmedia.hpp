@@ -49,16 +49,35 @@ class SrtCommon
 
 protected:
 
-    struct Connection
+    struct ConnectionBase
     {
         string host;
         int port;
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
         sockaddr_any source;
+        sockaddr_any target;
+
+        ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
+    };
+
+    struct Connection: ConnectionBase
+    {
         SRT_SOCKOPT_CONFIG* options = nullptr;
 
-        Connection(string h, int p): host(h), port(p), source(AF_INET) {}
+        Connection(string h, int p): ConnectionBase(h, p) {}
+        Connection(Connection&& old): ConnectionBase(old)
+        {
+            if (old.options)
+            {
+                options = old.options;
+                old.options = nullptr;
+            }
+        }
+        ~Connection()
+        {
+            srt_delete_config(options);
+        }
     };
 
     int srt_epoll = -1;

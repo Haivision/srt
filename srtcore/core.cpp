@@ -228,7 +228,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
-    m_llInputBW                 = 0;    // Application provided input bandwidth (internal input rate sampling == 0)
+    m_llInputBW                 = 0;    // Application provided input bandwidth (0: internal input rate sampling)
     m_iOverheadBW               = 25;   // Percent above input stream rate (applies if m_llMaxBW == 0)
     m_OPT_PktFilterConfigString = "";
 
@@ -531,9 +531,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_OHEADBW:
-        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval) > 100))
+        if ((cast_optval<int32_t>(optval, optlen) < 5) || (cast_optval<int32_t>(optval) > 100))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = cast_optval<int>(optval);
+        m_iOverheadBW = cast_optval<int32_t>(optval);
 
         // Changed overhead BW, so spread the change
         // (only if connected; if not, then the value
@@ -1048,6 +1048,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_MAXBW:
         *(int64_t *)optval = m_llMaxBW;
         optlen             = sizeof(int64_t);
+        break;
+
+    case SRTO_INPUTBW:
+       *(int64_t*)optval = m_llInputBW;
+       optlen             = sizeof(int64_t);
+       break;
+
+    case SRTO_OHEADBW:
+        *(int32_t *)optval = m_iOverheadBW;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_STATE:
@@ -1862,28 +1872,15 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     if (m_parent->m_IncludedGroup->synconmsgno())
         flags |= SRT_GFLAG_SYNCONMSG;
 
-    SRTSOCKET master_peerid;
-    IF_HEAVY_LOGGING(steady_clock::duration master_tdiff);
-    steady_clock::time_point master_st;
-
-    // "Master" is the first found running connection. Will be false, if
-    // there's no other connection yet. When any connection is found, specify this
-    // as a determined master connection, and extract its id.
-    if ( !m_parent->m_IncludedGroup->getMasterData(m_SocketID, (master_peerid), (master_st)) )
-    {
-        master_peerid = -1;
-        IF_HEAVY_LOGGING(master_tdiff = steady_clock::duration());
-        HLOGC(cnlog.Debug, log << CONID() << "NO GROUP MASTER LINK found for group: $" << m_parent->m_IncludedGroup->id());
-    }
-    else
-    {
-        // The returned master_st is the master's start time. Calculate the
-        // differene time.
-        IF_HEAVY_LOGGING(master_tdiff = m_stats.tsStartTime - master_st);
-        HLOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << master_peerid
-                << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
-    }
-    // (this function will not fill the variables with anything, if no master is found)
+    // NOTE: this code remains as is for historical reasons.
+    // The initial implementation stated that the peer id be
+    // extracted so that it can be reported and possibly the
+    // start time somehow encoded and written into the group
+    // extension, but it was later seen not necessary. Therefore
+    // this code remains, but now it's informational only.
+#if ENABLE_HEAVY_LOGGING
+    m_parent->m_IncludedGroup->debugMasterData(m_SocketID);
+#endif
 
     // See CUDT::interpretGroup()
 
@@ -3441,7 +3438,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         return false;
     }
 
-    // This is called when the group ID has come in in the handshake.
+    // This is called when the group type has come in the handshake is invalid.
     if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
@@ -3515,8 +3512,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // different peers).
         else if (pg->peerid() != grpid)
         {
-            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid << " but the current socket's group $" << pg->id()
-                << " has already a peer $" << peer);
+            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
+                    << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
+            m_RejectReason = SRT_REJ_GROUP;
+            return false;
         }
         else
         {
@@ -3620,7 +3619,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     if (was_empty)
     {
         ScopedLock glock (*gp->exp_groupLock());
-        gp->syncWithSocket(s->core());
+        gp->syncWithSocket(s->core(), HSD_RESPONDER);
     }
 
     // Setting non-blocking reading for group socket.
@@ -5556,7 +5555,9 @@ void *CUDT::tsbpd(void *param)
             HLOGC(tslog.Debug,
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
+            THREAD_PAUSED();
             tsbpd_cc.wait_for(timediff);
+            THREAD_RESUMED();
         }
         else
         {
@@ -5573,7 +5574,9 @@ void *CUDT::tsbpd(void *param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdAckWakeup = true;
+            THREAD_PAUSED();
             tsbpd_cc.wait();
+            THREAD_RESUMED();
         }
 
         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
@@ -6248,20 +6251,24 @@ int CUDT::receiveBuffer(char *data, int len)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_iRcvTimeOut < 0)
             {
+                THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     // Do not block forever, check connection status each 1 sec.
                     rcond.wait_for(seconds_from(1));
                 }
+                THREAD_RESUMED();
             }
             else
             {
                 const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iRcvTimeOut);
+                THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
                         break; // timeout
                 }
+                THREAD_RESUMED();
             }
         }
     }
@@ -6521,12 +6528,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             else
             {
                 const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iSndTimeOut);
-
+                THREAD_PAUSED();
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
                     if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
                 }
+                THREAD_RESUMED();
             }
         }
 
@@ -6877,6 +6885,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 tscond.signal_locked(recvguard);
             }
 
+            THREAD_PAUSED();
             do
             {
                 // `wait_for(recv_timeout)` wouldn't be correct here. Waiting should be
@@ -6901,6 +6910,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                     HLOGP(tslog.Debug, "receiveMessage: DATA COND: KICKED.");
                 }
             } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+            THREAD_RESUMED();
 
             HLOGC(tslog.Debug,
                   log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
@@ -7044,8 +7054,10 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         {
             UniqueLock lock(m_SendBlockLock);
 
+            THREAD_PAUSED();
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
                 m_SendBlockCond.wait(lock);
+            THREAD_RESUMED();
         }
 
         if (m_bBroken || m_bClosing)
@@ -7176,8 +7188,10 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             UniqueLock gl   (m_RecvDataLock);
             CSync rcond (m_RecvDataCond,  gl);
 
+            THREAD_PAUSED();
             while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 rcond.wait();
+            THREAD_RESUMED();
         }
 
         if (!m_bConnected)
@@ -10642,7 +10656,11 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
 
         // app can call any UDT API to learn the connection_broken error
         s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-
+        if (m_parent->m_IncludedGroup)
+        {
+            // Bound to one call because this requires locking
+            m_parent->m_IncludedGroup->updateFailedLink(m_SocketID);
+        }
         CGlobEvent::triggerEvent();
 
         return true;

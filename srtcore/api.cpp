@@ -1244,6 +1244,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
     bool block_new_opened = !g.m_bOpened && g.m_bSynRecving;
+    const bool was_empty = g.empty();
     SRTSOCKET retval = -1;
 
     int eid = -1;
@@ -1363,7 +1364,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             isn = -1;
         }
 
-
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->m_pUDT->m_OPT_GroupConnect = 1;
 
@@ -1439,9 +1439,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         {
             ScopedLock grd (g.m_GroupLock);
 
-            if (isn == 0)
+            if (was_empty)
             {
-                g.syncWithSocket(ns->core());
+                g.syncWithSocket(ns->core(), HSD_INITIATOR);
             }
 
             HLOGC(aclog.Debug, log << "groupConnect: @" << sid << " connection successful, setting group OPEN (was "
@@ -1488,7 +1488,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     if (retval == -1)
     {
         HLOGC(aclog.Debug, log << "groupConnect: none succeeded as background-spawn, exit with error");
-        block_new_opened = false;
+        block_new_opened = false; // Avoid executing further while loop
     }
 
     vector<SRTSOCKET> broken;
@@ -2645,71 +2645,92 @@ void CUDTUnited::updateMux(
       "creating new multiplexer for port %i\n", m.m_iPort);
 }
 
-// XXX This functionality needs strong refactoring.
-//
 // This function is going to find a multiplexer for the port contained
-// in the 'ls' listening socket, by searching through the multiplexer
-// container.
-//
-// Somehow, however, it's not even predicted a situation that the multiplexer
-// for that port doesn't exist - that is, this function WILL find the
-// multiplexer. How can it be so certain? It's because the listener has
-// already created the multiplexer during the call to bind(), so if it
-// didn't, this function wouldn't even have a chance to be called.
-//
-// Why can't then the multiplexer be recorded in the 'ls' listening socket data
-// to be accessed immediately, especially when one listener can't bind to more
-// than one multiplexer at a time (well, even if it could, there's still no
-// reason why this should be extracted by "querying")?
-//
-// Maybe because the multiplexer container is a map, not a list.
-// Why is this then a map? Because it's addressed by MuxID. Why do we need
-// mux id? Because we don't have a list... ?
-// 
-// But what's the multiplexer ID? It's a socket ID for which it was originally
-// created.
-//
-// Is this then shared? Yes, only between the listener socket and the accepted
-// sockets, or in case of "bound" connecting sockets (by binding you can
-// enforce the port number, which can be the same for multiple SRT sockets).
-// Not shared in case of unbound connecting socket or rendezvous socket.
-//
-// Ok, in which situation do we need dispatching by mux id? Only when the
-// socket is being deleted. How does the deleting procedure know the muxer id?
-// Because it is recorded here at the time when it's found, as... the socket ID
-// of the actual listener socket being actually the first socket to create the
-// multiplexer, so the multiplexer gets its id.
-//
-// Still, no reasons found why the socket can't contain a list iterator to a
-// multiplexer INSTEAD of m_iMuxID. There's no danger in this solution because
-// the multiplexer is never deleted until there's at least one socket using it.
-//
-// The multiplexer may even physically be contained in the CUDTUnited object,
-// just track the multiple users of it (the listener and the accepted sockets).
-// When deleting, you simply "unsubscribe" yourself from the multiplexer, which
-// will unref it and remove the list element by the iterator kept by the
-// socket.
-void CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
+// in the 'ls' listening socket. The multiplexer must exist when the listener
+// exists, otherwise the dispatching procedure wouldn't even call this
+// function. By historical reasons there's also a fallback for a case when the
+// multiplexer wasn't found by id, the search by port number continues.
+bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
    ScopedLock cg(m_GlobControlLock);
    const int port = ls->m_SelfAddr.hport();
 
-   // find the listener's address
-   for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
-      i != m_mMultiplexer.end(); ++ i)
+   HLOGC(smlog.Debug, log << "updateListenerMux: finding muxer of listener socket @"
+           << ls->m_SocketID << " muxid=" << ls->m_iMuxID
+           << " bound=" << ls->m_SelfAddr.str()
+           << " FOR @" << s->m_SocketID << " addr="
+           << s->m_SelfAddr.str() << "_->_" << s->m_PeerAddr.str());
+
+   // First thing that should be certain here is that there should exist
+   // a muxer with the ID written in the listener socket's mux ID.
+
+   CMultiplexer* mux = map_getp(m_mMultiplexer, ls->m_iMuxID);
+
+   // NOTE:
+   // THIS BELOW CODE is only for a highly unlikely, and probably buggy,
+   // situation when the Multiplexer wasn't found by ID recorded in the listener.
+   CMultiplexer* fallback = NULL;
+   if (!mux)
    {
-      if (i->second.m_iPort == port)
-      {
-         HLOGF(smlog.Debug, 
-            "updateMux: reusing multiplexer for port %i\n", port);
-         // reuse the existing multiplexer
-         ++ i->second.m_iRefCount;
-         s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
-         s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-         s->m_iMuxID = i->second.m_iID;
-         return;
-      }
+       LOGC(smlog.Error, log << "updateListenerMux: IPE? listener muxer not found by ID, trying by port");
+
+       // To be used as first found with different IP version
+
+       // find the listener's address
+       for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
+               i != m_mMultiplexer.end(); ++ i)
+       {
+           CMultiplexer& m = i->second;
+
+#if ENABLE_HEAVY_LOGGING
+           ostringstream that_muxer;
+           that_muxer << "id=" << m.m_iID
+               << " port=" << m.m_iPort
+               << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
+#endif
+
+           if (m.m_iPort == port)
+           {
+               HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
+               if (m.m_iIPversion == s->m_PeerAddr.family())
+               {
+                   mux = &m; // best match
+                   break;
+               }
+               else
+               {
+                   fallback = &m;
+               }
+           }
+           else
+           {
+               HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer.str());
+           }
+       }
+
+       if (!mux && fallback)
+       {
+           // It is allowed to reuse this multiplexer, but the socket must allow both IPv4 and IPv6
+           if (fallback->m_iIpV6Only == 0)
+           {
+               HLOGC(smlog.Warn, log << "updateListenerMux: reusing multiplexer from different family");
+               mux = fallback;
+           }
+       }
    }
+
+   // Checking again because the above procedure could have set it
+   if (mux)
+   {
+       // reuse the existing multiplexer
+       ++ mux->m_iRefCount;
+       s->m_pUDT->m_pSndQueue = mux->m_pSndQueue;
+       s->m_pUDT->m_pRcvQueue = mux->m_pRcvQueue;
+       s->m_iMuxID = mux->m_iID;
+       return true;
+   }
+
+   return false;
 }
 
 void* CUDTUnited::garbageCollect(void* p)

@@ -555,6 +555,7 @@ void *CSndQueue::worker(void *param)
             CSync windsync  (self->m_WindowCond, windlock);
 
             // wait here if there is no sockets with data to be sent
+            THREAD_PAUSED();
             if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
             {
                 windsync.wait();
@@ -563,6 +564,7 @@ void *CSndQueue::worker(void *param)
                 self->m_WorkerStats.lCondWait++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
             }
+            THREAD_RESUMED();
 
             continue;
         }
@@ -970,6 +972,13 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
+            if (i->m_pUDT->m_parent->m_IncludedGroup)
+            {
+                // Bound to one call because this requires locking
+                i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
+            }
+            CGlobEvent::triggerEvent();
+
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
              * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
@@ -1562,7 +1571,9 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
     if (i == m_mBuffer.end())
     {
+        THREAD_PAUSED();
         buffercond.wait_for(seconds_from(1));
+        THREAD_RESUMED();
 
         i = m_mBuffer.find(id);
         if (i == m_mBuffer.end())

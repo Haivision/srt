@@ -263,7 +263,7 @@ public:
 
     SRT_SOCKSTATUS getStatus();
 
-    bool getMasterData(SRTSOCKET slave, SRTSOCKET& w_mpeer, time_point& w_st);
+    void debugMasterData(SRTSOCKET slave);
 
     bool isGroupReceiver()
     {
@@ -278,6 +278,7 @@ public:
     void              removeEPollID(const int eid);
     void              updateReadState(SRTSOCKET sock, int32_t sequence);
     void              updateWriteState();
+    int               updateFailedLink(SRTSOCKET sock);
     void              activateUpdateEvent();
 
     /// Update the in-group array of packet providers per sequence number.
@@ -300,7 +301,7 @@ public:
     /// @param ack The past-the-last-received ACK sequence number
     void readyPackets(CUDT* core, int32_t ack);
 
-    void syncWithSocket(const CUDT& core);
+    void syncWithSocket(const CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  configure(const char* str);
 
