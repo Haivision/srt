@@ -479,7 +479,7 @@ private:
     const int s_yes = 1;
     const int s_no  = 0;
 
-    const bool          m_is_tracing = true;
+    const bool          m_is_tracing = false;
     static const char*  m_km_state[];
     static const char* const* m_socket_state;
 };
@@ -699,4 +699,3 @@ CREATE_TEST_CASES(CASE_D_3, Enforced_Off_Off_Pwd_Set_None)
 CREATE_TEST_CASES(CASE_D_4, Enforced_Off_Off_Pwd_None_Set)
 #endif
 CREATE_TEST_CASES(CASE_D_5, Enforced_Off_Off_Pwd_None_None)
-
