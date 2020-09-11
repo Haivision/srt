@@ -232,6 +232,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
+    m_PacingMode                = SRT_PACING_UNSET; // API/ABI backward compatible mode
     m_llInputBW                 = 0;    // Application provided input bandwidth (0: internal input rate sampling)
     m_iOverheadBW               = 25;   // Percent above input stream rate (applies if m_llMaxBW == 0)
     m_OPT_PktFilterConfigString = "";
@@ -275,6 +276,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_llMaxBW     = ancestor.m_llMaxBW;
     m_iIpTTL = ancestor.m_iIpTTL;
     m_iIpToS = ancestor.m_iIpToS;
+    m_PacingMode            = ancestor.m_PacingMode;
     m_llInputBW             = ancestor.m_llInputBW;
     m_iOverheadBW           = ancestor.m_iOverheadBW;
     m_bDataSender           = ancestor.m_bDataSender;
@@ -344,7 +346,8 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_SNDDROPDELAY,
     SRTO_CONNTIMEO,
     SRTO_DRIFTTRACER,
-    SRTO_LOSSMAXTTL
+    SRTO_LOSSMAXTTL,
+    SRTO_PACINGMODE
 };
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -527,6 +530,51 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
+        break;
+
+    case SRTO_PACINGMODE:
+        {
+            const SRT_PACING_CONFIG cfg = cast_optval<SRT_PACING_CONFIG>(optval, optlen);
+            const SRT_PACINGMODE mode = cfg.mode;
+
+            switch (mode)
+            {
+            case SRT_PACING_MAXBW_DEFAULT:
+                m_llMaxBW = BW_INFINITE;
+                break;
+            case SRT_PACING_MAXBW_SET:
+                if (cfg.bw <= 0)
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                m_llMaxBW = cfg.bw;
+                break;
+            case SRT_PACING_INBW_SET:
+            case SRT_PACING_INBW_MINESTIMATE:
+                if (cfg.bw <= 0 || cfg.bw_overhead < 5 || cfg.bw_overhead > 100)
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+                m_llMaxBW = 0LL;
+                m_llInputBW = cfg.bw;
+                m_iOverheadBW = cfg.bw_overhead;
+                break;
+            case SRT_PACING_INBW_ESTIMATE:
+                if (cfg.bw_overhead < 5 || cfg.bw_overhead > 100)
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+                m_llMaxBW = 0LL;
+                m_llInputBW = 0LL;
+                m_iOverheadBW = cfg.bw_overhead;
+                break;
+            case SRT_PACING_UNSET:
+                break;
+            default:
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                break;
+            }
+
+            m_PacingMode = mode;
+            if (m_bConnected)
+                updateCC(TEV_INIT, EventVariant(TEV_INIT_PACINGMODE));
+        }
         break;
 
     case SRTO_INPUTBW:
@@ -1055,7 +1103,43 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen          = sizeof(bool);
         break;
 
-    case SRTO_MAXBW:
+    case SRTO_PACINGMODE:
+        if (optlen < (int)(sizeof(SRT_PACING_CONFIG)))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        {
+            SRT_PACING_CONFIG* cfg = (SRT_PACING_CONFIG*) optval;
+            const SRT_PACINGMODE pacing_mode = DeducePacingMode();
+
+            switch (pacing_mode)
+            {
+            case SRT_PACING_MAXBW_DEFAULT:
+                cfg->mode = pacing_mode;
+                cfg->bw = BW_INFINITE;
+                cfg->bw_overhead = -1;
+                break;
+            case SRT_PACING_MAXBW_SET:
+                cfg->mode = pacing_mode;
+                cfg->bw = m_llMaxBW;
+                cfg->bw_overhead = -1;
+                break;
+            case SRT_PACING_INBW_SET:
+            case SRT_PACING_INBW_MINESTIMATE:
+            case SRT_PACING_INBW_ESTIMATE:
+                cfg->mode = pacing_mode;
+                cfg->bw = m_llInputBW;
+                cfg->bw_overhead = m_iOverheadBW;
+                break;
+
+            // Those can't happen
+            case SRT_PACING_UNSET:
+            default:
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+        }
+        break;
+
+   case SRTO_MAXBW:
         *(int64_t *)optval = m_llMaxBW;
         optlen             = sizeof(int64_t);
         break;
@@ -7652,6 +7736,29 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
+SRT_PACINGMODE CUDT::DeducePacingMode() const
+{
+    // TODO: Pacing mode only makes sense in live mode
+
+    if (m_PacingMode != SRT_PACING_UNSET)
+        return m_PacingMode;
+
+    if (m_llMaxBW <= -1 || m_llMaxBW == BW_INFINITE)
+    {
+        return SRT_PACING_MAXBW_DEFAULT;
+    }
+    else if (m_llMaxBW > 0)
+    {
+        return SRT_PACING_MAXBW_SET;
+    }
+
+    // m_llMaxBW == 0
+    if (m_llInputBW > 0)
+        return SRT_PACING_INBW_SET;
+
+    return SRT_PACING_INBW_ESTIMATE;
+}
+
 bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
@@ -7673,49 +7780,43 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
     if (evt == TEV_INIT)
     {
-        // only_input uses:
-        // 0: in the beginning and when SRTO_MAXBW was changed
-        // 1: SRTO_INPUTBW was changed
-        // 2: SRTO_OHEADBW was changed
-        EInitEvent only_input = arg.get<EventVariant::INIT>();
-        // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
+        const EInitEvent event_source = arg.get<EventVariant::INIT>();
 
-        if (only_input && m_llMaxBW)
+        // TODO: the following condition is no longer valid.
+        //
+        // TEV_INIT_RESET initialization event can come from one of the two places:
+        // - a socket is created;
+        // - SRTO_MAXBW was updated while connected.
+        if (m_PacingMode == SRT_PACING_UNSET && event_source != TEV_INIT_RESET && m_llMaxBW)
         {
             HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
             // Don't change
         }
-        else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
+        else // either m_llMaxBW == 0 or event_source == TEV_INIT_RESET
         {
-            // Use the values:
-            // - if SRTO_MAXBW is >0, use it.
-            // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
-            // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
-            // Bytes/s
-            int bw = m_llMaxBW != 0 ? m_llMaxBW :                       // When used SRTO_MAXBW
-                         m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
-                             0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
+            const SRT_PACINGMODE pacing_mode = DeducePacingMode();
+            SRT_ASSERT(pacing_mode != SRT_PACING_UNSET);
 
-            // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
+            // Note: m_llMaxBW can be -1
+            const int bw = (pacing_mode == SRT_PACING_MAXBW_SET || pacing_mode == SRT_PACING_MAXBW_DEFAULT)
+                ? m_llMaxBW
+                : withOverhead(m_llInputBW); // will be 0 if m_llInputBW is 0
+
             m_CongCtl->updateBandwidth(m_llMaxBW, bw);
 
-            if (only_input == TEV_INIT_OHEADBW)
+            // Update of the input overhead does not change the need for input rate estimation.
+            if (event_source != TEV_INIT_OHEADBW)
             {
-                // On updated SRTO_OHEADBW don't change input rate.
-                // This only influences the call to withOverhead().
-            }
-            else
-            {
-                // No need to calculate input reate if the bandwidth is set
-                const bool disable_in_rate_calc = (bw != 0);
+                const bool disable_in_rate_calc = (pacing_mode != SRT_PACING_INBW_ESTIMATE && pacing_mode != SRT_PACING_INBW_MINESTIMATE);
                 m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
             }
-
+            
+            // TODO: Improve log message (unchanged is no longer valid?)
             HLOGC(rslog.Debug,
                   log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
-                      << (only_input == TEV_INIT_RESET
+                      << (event_source == TEV_INIT_RESET
                               ? " (UNCHANGED)"
-                              : only_input == TEV_INIT_OHEADBW ? " (only Overhead)" : " (updated sampling rate)"));
+                              : event_source == TEV_INIT_OHEADBW ? " (only Overhead)" : " (updated sampling rate)"));
         }
     }
 
@@ -7723,21 +7824,26 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
     // moved there due to that it needs access to CSndBuffer.
     if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER)
     {
-        // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
-        // This requests internal input rate sampling.
-        if (m_llMaxBW == 0 && m_llInputBW == 0)
+        // Check if internal input rate sampling needs to be done.
+        const SRT_PACINGMODE pacing_mode = DeducePacingMode();
+        SRT_ASSERT(pacing_mode != SRT_PACING_UNSET);
+
+        if (pacing_mode == SRT_PACING_INBW_ESTIMATE || pacing_mode == SRT_PACING_INBW_MINESTIMATE)
         {
             // Get auto-calculated input rate, Bytes per second
             const int64_t inputbw = m_pSndBuffer->getInputRate();
 
             /*
              * On blocked transmitter (tx full) and until connection closes,
-             * auto input rate falls to 0 but there may be still lot of packet to retransmit
+             * auto (measured) input rate falls to 0 but there may be still lot of packet to retransmit
              * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
-            if (inputbw != 0)
+            const int64_t min_inputbw = pacing_mode == SRT_PACING_INBW_MINESTIMATE
+                ? m_llInputBW
+                : 0;
+            if (inputbw > min_inputbw)
                 m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); // Bytes/sec
         }
     }
