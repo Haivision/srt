@@ -946,14 +946,21 @@ private: // Receiving related data
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
+    CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
 
     // FORWARDER
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
         m_cbAcceptHook.set(opaq, hook);
+    }
+
+    void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
+    {
+        m_cbConnectHook.set(opaq, hook);
     }
 
 

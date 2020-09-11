@@ -20,6 +20,7 @@
   * [srt_connect_bind](#srt_connect_bind)
   * [srt_connect_debug](#srt_connect_debug)
   * [srt_rendezvous](#srt_rendezvous)
+  * [srt_connect_callback](#srt_connect_callback)
 - [**Socket group management**](#Socket-group-management)
   * [SRT_GROUP_TYPE](#SRT_GROUP_TYPE)
   * [SRT_SOCKGROUPCONFIG](#SRT_SOCKGROUPCONFIG)
@@ -425,7 +426,7 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* ho
 ```
 
 This call installs a callback hook, which will be executed on a socket that is
-automatically created to handle the incoming connection on the listeneing
+automatically created to handle the incoming connection on the listening
 socket (and is about to be returned by `srt_accept`), but before the connection
 has been accepted.
 
@@ -628,6 +629,60 @@ IMPORTANT: It's not allowed to perform a rendezvous connection to two
 different families (that is, both `local_name` and `remote_name` must be `AF_INET` or
 `AF_INET6`).
 
+### srt_connect_callback
+```
+int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
+```
+
+This call installs a callback hook, which will be executed on a given `clr`
+socket just after the pending connection situation in the background has been
+resolved (that is, when the connection succeeded or failed). Note that this
+function is not guaranteed to be called if the `clr` socket is set to blocking
+mode (`SRTO_RCVSYN` option set to true). It is guaranteed to be called when
+a socket is in non-blocking mode, or when you use a group.
+
+This function is mainly intended to be used with group connections. Note that
+even if you use a group connection in blocking mode, after the group is considered
+connected the member connections still continue in background. Also, when
+some connections are still pending and others have failed, the blocking
+call for `srt_connect_group` will not exit until at least one of them succeeds
+or all fail - in such a case those failures also happen only in the background,
+while the connecting function blocks until all connections are resolved. 
+When all links fail, you will only get a general error code for the group.
+This mechanism allows you to get individual errors for particular member
+connections.
+
+You can also use this mechanism as an alternative method for a single-socket
+connection in non-blocking mode to trigger an action when the connection
+process is finished.
+
+* `clr`: Socket that will be used for connecting and for which the hook is installed
+* `hook_fn`: The callback hook function pointer
+* `hook_opaque`: The pointer value that will be passed to the callback function
+
+- Returns:
+
+   * 0, if successful
+   * -1, on error
+
+- Errors:
+
+   * `SRT_EINVPARAM` reported when `hook_fn` is a null pointer
+
+The callback function signature has the following type definition:
+
+```
+typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
+```
+where:
+
+* `opaq`: The pointer passed as `hook_opaque` when registering
+* `ns`: The socket for which the connection process was resolved
+* `errorcode`: The error code, same as for `srt_connect` for blocking mode
+* `peeraddr`: The target address passed to `srt_connect` call
+* `token`: The token value, if it was used for group connection, otherwise -1
+
+
 ## Socket group management
 
 ### SRT_GROUP_TYPE
@@ -652,6 +707,7 @@ typedef struct SRT_GroupMemberConfig_
     int weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
+    int token;
 } SRT_SOCKGROUPCONFIG;
 ```
 
@@ -663,6 +719,7 @@ where:
 * `weight`: the weight parameter for the link (group-type dependent)
 * `config`: the configuration object, if used (see [`srt_create_config()`](#srt_create_config))
 * `errorcode`: status of the connecting operation
+* `token`: An integer value unique for every connection, or -1 if unused
 
 The `srt_perpare_endpoint` sets these fields to default values. After that
 you can change the value of `weight` and `config` fields. The `weight`
@@ -674,6 +731,14 @@ parameter's meaning is dependent on the group type:
 
 The `config` parameter is used to provide options to be set separately
 on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
+
+The `token` value is intended to allow the application to more easily identify
+a particular connection. If you don't use it and leave the default value of -1,
+the library will set a unique value for the next connection (a 32-bit unsigned
+number that will overflow by itself; the default value will be skipped).
+The application can also set a unique value by itself and keep the same
+value for the same connection.
+
 
 ### SRT_SOCKGROUPDATA
 
@@ -688,7 +753,7 @@ typedef struct SRT_SocketGroupData_
     int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
-
+    int token;
 } SRT_SOCKGROUPDATA;
 ```
 
@@ -700,6 +765,7 @@ where:
 * `weight`: current weight value set on the link
 * `memberstate`: current state of the member (see below)
 * `result`: result of the operation (if this operation recently updated this structure)
+* `token`: A token value set for that connection (see [`SRT_SOCKGROUPCONFIG`](#srt_sockgroupconfig))
 
 ### SRT_MEMBERSTATUS
 
@@ -866,6 +932,7 @@ Input:
 * `weight`: weight value to be set on the link
 * `config`: socket options to be set on the socket before connecting
 * `errorcode`: unused, should be `SRT_SUCCESS` (default)
+* `token`: An integer value unique for every connection, or -1 if unused
 
 Output:
 
@@ -875,6 +942,7 @@ Output:
 * `weight`: unchanged
 * `config`: unchanged (the object should be manually deleted upon return)
 * `errorcode`: status of connection for that link (`SRT_SUCCESS` if succeeded)
+* `token`: same as in input, or a newly created token value if input was -1
 
 The procedure of connecting for every connection definition specified
 in the `name` array is performed the following way:
@@ -916,6 +984,18 @@ attempt is going to fail later. If this function is called in the blocking mode,
 it then blocks until at least one connection reports success or if all of them
 fail. Connections that continue in the background after this function exits can
 be then checked status by [`srt_group_data`](#srt_group_data).
+
+As member socket connections are running in the background, for determining 
+if a particular connection has succeeded or failed it is recommended
+to use [`srt_connect_callback`](#srt_connect_callback). In this case the
+`token` callback function parameter will be the same as the `token` value used
+for the particular item in the `name` connection table.
+
+The `token` value doesn't have any limitations except that the -1 value is
+a "trap representation", that is, when set on input it will make the internals
+define a unique value for the `token`. Your application can also set unique values,
+in which case the `token` value will be preserved.
+
 
 ### srt_prepare_endpoint
 
@@ -2183,8 +2263,8 @@ The `SRT_EPOLL_EVENT` structure:
 ```
 typedef struct SRT_EPOLL_EVENT_
 {
-	SRTSOCKET fd;
-	int       events;
+    SRTSOCKET fd;
+    int       events;
 } SRT_EPOLL_EVENT;
 ```
 

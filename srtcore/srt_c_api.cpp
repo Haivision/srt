@@ -92,6 +92,7 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
     SRT_SOCKGROUPCONFIG data;
     data.errorcode = SRT_SUCCESS;
     data.id = -1;
+    data.token = -1;
     data.weight = 0;
     data.config = NULL;
     if (src)
@@ -380,6 +381,14 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
+}
+
+int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+
+    return CUDT::installConnectHook(lsn, hook, opaq);
 }
 
 uint32_t srt_getversion()

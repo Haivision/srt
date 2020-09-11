@@ -835,6 +835,34 @@ int CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* h
     return 0;
 }
 
+int CUDT::installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    return s_UDTUnited.installConnectHook(lsn, hook, opaq);
+}
+
+int CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_fn* hook, void* opaq)
+{
+    try
+    {
+        if (u & SRTGROUP_MASK)
+        {
+            CUDTGroup* g = locateGroup(u, ERH_THROW);
+            g->installConnectHook(hook, opaq);
+            return 0;
+        }
+
+        CUDTSocket* s = locateSocket(u, ERH_THROW);
+        s->m_pUDT->installConnectHook(hook, opaq);
+    }
+    catch (CUDTException& e)
+    {
+        SetThreadLocalError(e);
+        return SRT_ERROR;
+    }
+
+    return 0;
+}
+
 SRT_SOCKSTATUS CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure
@@ -1278,6 +1306,12 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // It must be MANUALLY removed from this list in case we need it deleted.
         SRTSOCKET sid = newSocket(&ns);
 
+        if (pg->m_cbConnectHook)
+        {
+            // Derive the connect hook, if set on the socket
+            ns->m_pUDT->m_cbConnectHook = pg->m_cbConnectHook;
+        }
+
         SRT_SocketOptionObject* config = targets[tii].config;
 
         // XXX Support non-blocking mode:
@@ -1342,7 +1376,21 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // Add socket to the group.
         // Do it after setting all stored options, as some of them may
         // influence some group data.
-        CUDTGroup::gli_t f = g.add(g.prepareData(ns));
+
+        CUDTGroup::SocketData data = g.prepareData(ns);
+        if (targets[tii].token != -1)
+        {
+            // Reuse the token, if specified by the caller
+            data.token = targets[tii].token;
+        }
+        else
+        {
+            // Otherwise generate and write back the token
+            data.token = CUDTGroup::genToken();
+            targets[tii].token = data.token;
+        }
+
+        CUDTGroup::gli_t f = g.add(data);
         ns->m_IncludedIter = f;
         ns->m_IncludedGroup = &g;
         f->weight = targets[tii].weight;
@@ -1702,6 +1750,10 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
        // InvertedGuard unlocks in the constructor, then locks in the
        // destructor, no matter if an exception has fired.
        InvertedLock l_unlocker (s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0);
+
+       // record peer address
+       s->m_PeerAddr = target_addr;
+
        s->m_pUDT->startConnect(target_addr, forced_isn);
    }
    catch (CUDTException& e) // Interceptor, just to change the state.
@@ -1709,9 +1761,6 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
       s->m_Status = SRTS_OPENED;
       throw e;
    }
-
-   // record peer address
-   s->m_PeerAddr = target_addr;
 
    // ScopedLock destructor will delete cg and unlock s->m_ControlLock
 

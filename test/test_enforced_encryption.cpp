@@ -377,6 +377,15 @@ public:
                 std::cout << "ACCEPT: NOT done\n";
             }
 
+            if (accepted_socket == SRT_INVALID_SOCK)
+            {
+                std::cerr << "[T] ACCEPT ERROR: " << srt_getlasterror_str() << std::endl;
+            }
+            else
+            {
+                std::cerr << "[T] ACCEPT SUCCEEDED: @" << accepted_socket << "\n";
+            }
+
             EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
