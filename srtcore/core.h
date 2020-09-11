@@ -1167,6 +1167,8 @@ private: // Trace
     /// and updates statistics accordingly.
     void calculateResponseTime(const time_point& now)
     {
+        using namespace srt::sync;
+
         if (!is_zero(m_tsLastRspTime))
         {
             duration td = now - m_tsLastRspTime;
