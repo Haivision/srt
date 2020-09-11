@@ -115,7 +115,7 @@ public:
         return os.str();
     }
 
-    Medium(UriParser u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
+    Medium(const UriParser& u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
     Medium(): m_counter(s_counter++) {}
 
     virtual const char* type() = 0;
@@ -169,6 +169,7 @@ public:
 
     virtual ~Medium()
     {
+        Close();
     }
 
 protected:
@@ -460,7 +461,6 @@ protected:
 
     virtual ~SrtMedium() override
     {
-        Close();
     }
 };
 
@@ -552,7 +552,6 @@ protected:
 
     virtual ~TcpMedium()
     {
-        Close();
     }
 };
 

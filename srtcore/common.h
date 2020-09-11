@@ -508,11 +508,14 @@ struct EventSlot
     // "Stealing" copy constructor, following the auto_ptr method.
     // This isn't very nice, but no other way to do it in C++03
     // without rvalue-reference and move.
-    EventSlot(const EventSlot& victim)
+    void moveFrom(const EventSlot& victim)
     {
         slot = victim.slot; // Should MOVE.
         victim.slot = 0;
     }
+
+    EventSlot(const EventSlot& victim) { moveFrom(victim); }
+    EventSlot& operator=(const EventSlot& victim) { moveFrom(victim); return *this; }
 
     EventSlot(void* op, EventSlotBase::dispatcher_t* disp)
     {
