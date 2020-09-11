@@ -228,7 +228,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iIpV6Only             = -1;
     // Runtime
     m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
-    m_llInputBW                 = 0;    // Application provided input bandwidth (internal input rate sampling == 0)
+    m_llInputBW                 = 0;    // Application provided input bandwidth (0: internal input rate sampling)
     m_iOverheadBW               = 25;   // Percent above input stream rate (applies if m_llMaxBW == 0)
     m_OPT_PktFilterConfigString = "";
 
@@ -531,9 +531,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_OHEADBW:
-        if ((cast_optval<int>(optval, optlen) < 5) || (cast_optval<int>(optval) > 100))
+        if ((cast_optval<int32_t>(optval, optlen) < 5) || (cast_optval<int32_t>(optval) > 100))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = cast_optval<int>(optval);
+        m_iOverheadBW = cast_optval<int32_t>(optval);
 
         // Changed overhead BW, so spread the change
         // (only if connected; if not, then the value
@@ -1048,6 +1048,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_MAXBW:
         *(int64_t *)optval = m_llMaxBW;
         optlen             = sizeof(int64_t);
+        break;
+
+    case SRTO_INPUTBW:
+       *(int64_t*)optval = m_llInputBW;
+       optlen             = sizeof(int64_t);
+       break;
+
+    case SRTO_OHEADBW:
+        *(int32_t *)optval = m_iOverheadBW;
+        optlen = sizeof(int32_t);
         break;
 
     case SRTO_STATE:
@@ -5552,7 +5562,9 @@ void *CUDT::tsbpd(void *param)
             HLOGC(tslog.Debug,
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
+            THREAD_PAUSED();
             tsbpd_cc.wait_for(timediff);
+            THREAD_RESUMED();
         }
         else
         {
@@ -5569,7 +5581,9 @@ void *CUDT::tsbpd(void *param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdAckWakeup = true;
+            THREAD_PAUSED();
             tsbpd_cc.wait();
+            THREAD_RESUMED();
         }
 
         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
@@ -6244,20 +6258,24 @@ int CUDT::receiveBuffer(char *data, int len)
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_iRcvTimeOut < 0)
             {
+                THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     // Do not block forever, check connection status each 1 sec.
                     rcond.wait_for(seconds_from(1));
                 }
+                THREAD_RESUMED();
             }
             else
             {
                 const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iRcvTimeOut);
+                THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
                         break; // timeout
                 }
+                THREAD_RESUMED();
             }
         }
     }
@@ -6517,12 +6535,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             else
             {
                 const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iSndTimeOut);
-
+                THREAD_PAUSED();
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
                     if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
                 }
+                THREAD_RESUMED();
             }
         }
 
@@ -6873,6 +6892,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 tscond.signal_locked(recvguard);
             }
 
+            THREAD_PAUSED();
             do
             {
                 // `wait_for(recv_timeout)` wouldn't be correct here. Waiting should be
@@ -6897,6 +6917,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                     HLOGP(tslog.Debug, "receiveMessage: DATA COND: KICKED.");
                 }
             } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+            THREAD_RESUMED();
 
             HLOGC(tslog.Debug,
                   log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
@@ -7040,8 +7061,10 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         {
             UniqueLock lock(m_SendBlockLock);
 
+            THREAD_PAUSED();
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
                 m_SendBlockCond.wait(lock);
+            THREAD_RESUMED();
         }
 
         if (m_bBroken || m_bClosing)
@@ -7172,8 +7195,10 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             UniqueLock gl   (m_RecvDataLock);
             CSync rcond (m_RecvDataCond,  gl);
 
+            THREAD_PAUSED();
             while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 rcond.wait();
+            THREAD_RESUMED();
         }
 
         if (!m_bConnected)

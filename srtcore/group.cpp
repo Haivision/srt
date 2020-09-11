@@ -1251,8 +1251,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             {
                 InvertedLock ug(m_GroupLock);
+
+                THREAD_PAUSED();
                 m_pGlobal->m_EPoll.swait(
                     *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                THREAD_RESUMED();
             }
 
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
@@ -1442,7 +1445,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: blocking on any of blocked sockets to allow sending");
 
             // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
+            THREAD_PAUSED();
             blst = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+            THREAD_RESUMED();
 
             // NOTE EXCEPTIONS:
             // - EEMPTY: won't happen, we have explicitly added sockets to EID here.
@@ -2049,7 +2054,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // means to block indefinitely, also in swait().
         // In non-blocking mode use 0, which means to always return immediately.
         int timeout = m_bSynRecving ? m_iRcvTimeOut : 0;
+        THREAD_PAUSED();
         int nready  = m_pGlobal->m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
+        THREAD_RESUMED();
 
         HLOGC(grlog.Debug, log << "group/recv: RDY: " << DisplayEpollResults(sready));
 
@@ -3167,6 +3174,18 @@ void CUDTGroup::send_CloseBrokenSockets(vector<gli_t>& w_wipeme)
     w_wipeme.clear();
 }
 
+struct FByOldestActive
+{
+    typedef CUDTGroup::gli_t gli_t;
+    bool operator()(gli_t a, gli_t b)
+    {
+        CUDT& x = a->ps->core();
+        CUDT& y = b->ps->core();
+
+        return x.m_tsTmpActiveTime < y.m_tsTmpActiveTime;
+    }
+};
+
 void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
                                               vector<gli_t>&       w_parallel,
                                               int&                 w_final_stat,
@@ -3194,7 +3213,7 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         if (std::find(unstable.begin(), unstable.end(), *p) != unstable.end())
         {
             LOGC(gslog.Debug,
-                 log << "grp/sendBackup: IPE: parallel links enclose unstable link @" << (*p)->ps->m_SocketID);
+                    log << "grp/sendBackup: IPE: parallel links enclose unstable link @" << (*p)->ps->m_SocketID);
         }
     }
 #endif
@@ -3237,54 +3256,56 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         size_t nlinks = m_Group.size();
         size_t ndead  = 0;
 
-    RetryWaitBlocked:
-    {
-        // Some sockets could have been closed in the meantime.
-        if (m_SndEpolld->watch_empty())
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-        InvertedLock ug(m_GroupLock);
-        HLOGC(gslog.Debug,
-              log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
-        brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
-
-        // Check if there's anything in the "error" section.
-        // This must be cleared here before the lock on group is set again.
-        // (This loop will not fire neither once if no failed sockets found).
-        for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+RetryWaitBlocked:
         {
-            if (i->second & SRT_EPOLL_ERR)
-                continue; // broken already
+            // Some sockets could have been closed in the meantime.
+            if (m_SndEpolld->watch_empty())
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-            if ((i->second & SRT_EPOLL_IN) == 0)
-                continue; // not ready for reading
+            InvertedLock ug(m_GroupLock);
+            HLOGC(gslog.Debug,
+                    log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
+        THREAD_PAUSED();
+            brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, sready, m_iSndTimeOut);
+        THREAD_RESUMED();
 
-            // Check if this socket is in aheads
-            // If so, don't read from it, wait until the ahead is flushed.
-            SRTSOCKET   id = i->first;
-            CUDTSocket* s  = m_pGlobal->locateSocket(id);
-            if (s)
+            // Check if there's anything in the "error" section.
+            // This must be cleared here before the lock on group is set again.
+            // (This loop will not fire neither once if no failed sockets found).
+            for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
             {
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: swait/ex on @" << (id)
-                          << " while waiting for any writable socket - CLOSING");
-                CUDT::s_UDTUnited.close(s);
-            }
-            else
-            {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
-            }
+                if (i->second & SRT_EPOLL_ERR)
+                    continue; // broken already
 
-            ++ndead;
+                if ((i->second & SRT_EPOLL_IN) == 0)
+                    continue; // not ready for reading
+
+                // Check if this socket is in aheads
+                // If so, don't read from it, wait until the ahead is flushed.
+                SRTSOCKET   id = i->first;
+                CUDTSocket* s  = m_pGlobal->locateSocket(id);
+                if (s)
+                {
+                    HLOGC(gslog.Debug,
+                            log << "grp/sendBackup: swait/ex on @" << (id)
+                            << " while waiting for any writable socket - CLOSING");
+                    CUDT::s_UDTUnited.close(s);
+                }
+                else
+                {
+                    HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
+                }
+
+                ++ndead;
+            }
+            HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
         }
-        HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
-    }
 
         if (brdy == -1 || ndead >= nlinks)
         {
             LOGC(gslog.Error,
-                 log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
-                     << " - looxlike all links broken");
+                    log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
+                    << " - looxlike all links broken");
             m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
             m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
             // You can safely throw here - nothing to fill in when all sockets down.
@@ -3319,7 +3340,7 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
             if (d->sndstate == SRT_GST_RUNNING)
             {
                 HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
+                        log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
                 continue;
             }
 
@@ -3377,6 +3398,34 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         steady_clock::time_point currtime = steady_clock::now();
 
         vector<gli_t>::iterator b = w_parallel.begin();
+
+        // Additional criterion: if you have multiple links with the same weight,
+        // check if you have at least one with m_tsTmpActiveTime == 0. If not,
+        // sort them additionally by this time.
+
+        vector<gli_t>::iterator b1 = b, e = ++b1;
+
+        // Both e and b1 stand on b+1 position.
+        // We have a guarantee that b+1 still points to a valid element.
+        while (e != w_parallel.end())
+        {
+            if ((*e)->weight != (*b)->weight)
+                break;
+            ++e;
+        }
+
+        if (b1 != e)
+        {
+            // More than 1 link with the same weight. Sorting them according
+            // to a different criterion will not change the previous sorting order
+            // because the elements in this range are equal according to the previous
+            // criterion.
+            // Here find the link with least time. The "trap" zero time matches this
+            // requirement, occasionally.
+            sort(b, e, FByOldestActive());
+        }
+
+        // After finding the link to leave active, leave it behind.
         HLOGC(gslog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
         ++b;
         for (; b != w_parallel.end(); ++b)
@@ -3385,17 +3434,17 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
             if (d->sndstate != SRT_GST_RUNNING)
             {
                 LOGC(gslog.Error,
-                     log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
+                        log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
                 continue;
             }
             CUDT&                  ce = d->ps->core();
             steady_clock::duration td(0);
             if (!is_zero(ce.m_tsTmpActiveTime) &&
-                count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
+                    count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
             {
                 HLOGC(gslog.Debug,
-                      log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                          << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                        log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
+                        << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
                 continue;
             }
 
