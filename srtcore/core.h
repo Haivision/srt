@@ -770,6 +770,7 @@ private: // Identification
     int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
     bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
+                                                 // 0: use internally estimated input bandwidth
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
@@ -945,14 +946,21 @@ private: // Receiving related data
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
+    CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
 
     // FORWARDER
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
         m_cbAcceptHook.set(opaq, hook);
+    }
+
+    void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
+    {
+        m_cbConnectHook.set(opaq, hook);
     }
 
 

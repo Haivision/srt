@@ -10,6 +10,8 @@ using namespace srt_logging;
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
 
+int32_t CUDTGroup::s_tokenGen = 0;
+
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
                                   steady_clock::time_point& w_tb,
@@ -259,6 +261,7 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
     SocketData sd = {
         s->m_SocketID,
         s,
+        -1,
         SRTS_INIT,
         SRT_GST_BROKEN,
         SRT_GST_BROKEN,
@@ -1633,6 +1636,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         memcpy((&pdata[i].peeraddr), &d->peer, d->peer.size());
 
         pdata[i].sockstate = d->laststatus;
+        pdata[i].token = d->token;
 
         // In the internal structure the member state
         // is one per direction. From the user perspective
@@ -4148,7 +4152,7 @@ int32_t CUDTGroup::generateISN()
     return CUDT::generateISN();
 }
 
-void CUDTGroup::setFreshConnected(CUDTSocket* sock)
+void CUDTGroup::setFreshConnected(CUDTSocket* sock, int& w_token)
 {
     ScopedLock glock(m_GroupLock);
 
@@ -4165,6 +4169,7 @@ void CUDTGroup::setFreshConnected(CUDTSocket* sock)
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
     }
+    w_token = gi->token;
 }
 
 void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
@@ -4296,6 +4301,7 @@ void CUDTGroup::removeEPollID(const int eid)
 int CUDTGroup::updateFailedLink(SRTSOCKET sock)
 {
     ScopedLock lg(m_GroupLock);
+    int token = -1;
 
     // Check all members if they are in the pending
     // or connected state.
@@ -4307,6 +4313,8 @@ int CUDTGroup::updateFailedLink(SRTSOCKET sock)
         if (i->id == sock)
         {
             // This socket.
+            token = i->token;
+
             i->sndstate = SRT_GST_BROKEN;
             i->rcvstate = SRT_GST_BROKEN;
             continue;
@@ -4327,7 +4335,7 @@ int CUDTGroup::updateFailedLink(SRTSOCKET sock)
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
     }
 
-    return 0;
+    return token;
 }
 
 #if ENABLE_HEAVY_LOGGING

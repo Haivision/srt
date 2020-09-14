@@ -218,6 +218,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
    SRTO_DRIFTTRACER = 37,    // Enable or disable drift tracer
+   SRTO_ESTINPUTBW = 38,     // Internally estimated input rate
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
@@ -789,6 +790,7 @@ typedef struct SRT_SocketGroupData_
     int weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
+    int token;
 } SRT_SOCKGROUPDATA;
 
 typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
@@ -801,6 +803,7 @@ typedef struct SRT_GroupMemberConfig_
     int weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
+    int token;
 } SRT_SOCKGROUPCONFIG;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -825,6 +828,8 @@ SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* add
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
+typedef void srt_connect_callback_fn  (void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
+SRT_API       int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,

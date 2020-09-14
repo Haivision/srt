@@ -54,10 +54,14 @@ public:
 
     static const char* StateStr(GroupState);
 
+    static int32_t s_tokenGen;
+    static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
+
     struct SocketData
     {
         SRTSOCKET      id;
         CUDTSocket*    ps;
+        int            token;
         SRT_SOCKSTATUS laststatus;
         GroupState     sndstate;
         GroupState     rcvstate;
@@ -199,7 +203,7 @@ public:
         return m_Group.empty();
     }
 
-    void setFreshConnected(CUDTSocket* sock);
+    void setFreshConnected(CUDTSocket* sock, int& w_token);
 
     static gli_t gli_NULL() { return GroupContainer::null(); }
 
@@ -368,6 +372,11 @@ private:
     bool           m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
+    CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
+    void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
+    {
+        m_cbConnectHook.set(opaq, hook);
+    }
 
 public:
     struct BufferedMessageStorage
