@@ -122,10 +122,19 @@ public:
     virtual bool IsOpen() = 0;
     virtual void CloseInternal() = 0;
 
-    void Close()
+    void CloseState()
     {
         m_open = false;
         m_broken = true;
+    }
+
+    // External API for this class that allows to close
+    // the entity on request. The CloseInternal should
+    // redirect to a type-specific function, the same that
+    // should be also called in destructor.
+    void Close()
+    {
+        CloseState();
         CloseInternal();
     }
     virtual bool End() = 0;
@@ -169,7 +178,7 @@ public:
 
     virtual ~Medium()
     {
-        Close();
+        CloseState();
     }
 
 protected:
@@ -426,7 +435,7 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void CloseInternal() override
+    void CloseSrt()
     {
         Verb() << "Closing SRT socket for " << uri();
         lock_guard<mutex> lk(access);
@@ -435,6 +444,11 @@ public:
         srt_close(m_socket);
         m_socket = SRT_ERROR;
     }
+
+    // Forwarded in order to separate the implementation from
+    // the virtual function so that virtual function is not
+    // being called in destructor.
+    virtual void CloseInternal() override { return CloseSrt(); }
 
     virtual const char* type() override { return "srt"; }
     virtual int ReadInternal(char* output, int size) override;
@@ -461,6 +475,8 @@ protected:
 
     virtual ~SrtMedium() override
     {
+        CloseState();
+        CloseSrt();
     }
 };
 
@@ -509,7 +525,7 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void CloseInternal() override
+    void CloseTcp()
     {
         Verb() << "Closing TCP socket for " << uri();
         lock_guard<mutex> lk(access);
@@ -518,6 +534,7 @@ public:
         tcp_close(m_socket);
         m_socket = -1;
     }
+    virtual void CloseInternal() { return CloseTcp(); }
 
     virtual const char* type() override { return "tcp"; }
     virtual int ReadInternal(char* output, int size) override;
@@ -552,6 +569,8 @@ protected:
 
     virtual ~TcpMedium()
     {
+        CloseState();
+        CloseTcp();
     }
 };
 
