@@ -726,7 +726,7 @@ you can change the value of `weight` and `config` fields. The `weight`
 parameter's meaning is dependent on the group type:
 
 * BROADCAST: not used
-* BACKUP: positive value of link priority, 0 is the highest
+* BACKUP: positive value of link priority (the greater, the more preferred)
 * BALANCING: relative expected load on this link for fixed algorithm
 
 The `config` parameter is used to provide options to be set separately
@@ -750,7 +750,7 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     struct sockaddr_storage peeraddr;
     SRT_SOCKSTATUS sockstate;
-    int weight;
+    uint16_t weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
     int token;
