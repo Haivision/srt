@@ -283,6 +283,7 @@ public:
     void              updateReadState(SRTSOCKET sock, int32_t sequence);
     void              updateWriteState();
     int               updateFailedLink(SRTSOCKET sock);
+    void              activateUpdateEvent();
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,

@@ -165,7 +165,7 @@ public:
    /// operation, but continues to be responsive in the connection in order
    /// to finish sending the data that were scheduled for sending so far.
    void makeShutdown();
-   void removeFromGroup();
+   void removeFromGroup(bool broken);
 
    // Instrumentally used by select() and also required for non-blocking
    // mode check in groups

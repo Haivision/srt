@@ -4230,6 +4230,11 @@ void CUDTGroup::updateLatestRcv(CUDTGroup::gli_t current)
     }
 }
 
+void CUDTGroup::activateUpdateEvent()
+{
+    m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_UPDATE, true);
+}
+
 void CUDTGroup::addEPoll(int eid)
 {
     enterCS(m_pGlobal->m_EPoll.m_EPollLock);
