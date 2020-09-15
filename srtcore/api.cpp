@@ -1118,28 +1118,28 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
 
+   CUDTSocket* s = locateSocket(u);
+   if (s == NULL)
+      throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+
+   // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
+   // and the already accepted socket has successfully joined
+   // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
+   if (ls->m_pUDT->m_OPT_GroupConnect == 1 && s->m_IncludedGroup)
+   {
+       u = s->m_IncludedGroup->m_GroupID;
+       s->core().m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
+   }
+   else
+   {
+       // Set properly the SRTO_GROUPCONNECT flag
+       s->core().m_OPT_GroupConnect = 0;
+   }
+
+   ScopedLock cg(s->m_ControlLock);
+   
    if (pw_addr != NULL && pw_addrlen != NULL)
    {
-      CUDTSocket* s = locateSocket(u);
-      if (s == NULL)
-         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
-
-      // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
-      // and the already accepted socket has successfully joined
-      // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
-      if (ls->m_pUDT->m_OPT_GroupConnect == 1 && s->m_IncludedGroup)
-      {
-          u = s->m_IncludedGroup->m_GroupID;
-          s->core().m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
-      }
-      else
-      {
-          // Set properly the SRTO_GROUPCONNECT flag
-          s->core().m_OPT_GroupConnect = 0;
-      }
-
-      ScopedLock cg(s->m_ControlLock);
-
       // Check if the length of the buffer to fill the name in
       // was large enough.
       const int len = s->m_PeerAddr.size();
