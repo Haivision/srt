@@ -316,6 +316,43 @@ enum SrtStatsPrintFormat
 
 SrtStatsPrintFormat ParsePrintFormat(std::string pf);
 
+enum SrtStatCat
+{
+    SSC_GEN, //< General
+    SSC_WINDOW, // flow/congestion window
+    SSC_LINK, //< Link data
+    SSC_SEND, //< Sending
+    SSC_RECV //< Receiving
+};
+
+struct SrtStatData
+{
+    SrtStatCat category;
+    std::string name;
+    std::string longname;
+
+    SrtStatData(SrtStatCat cat, std::string n, std::string l): category(cat), name(n), longname(l) {}
+
+    virtual void PrintValue(std::ostream& str, const CBytePerfMon& mon) = 0;
+};
+
+template <class TYPE>
+struct SrtStatDataType: public SrtStatData
+{
+    typedef TYPE CBytePerfMon::*pfield_t;
+    pfield_t pfield;
+
+    SrtStatDataType(SrtStatCat cat, const std::string& name, const std::string& longname, pfield_t field)
+        : SrtStatData (cat, name, longname), pfield(field)
+    {
+    }
+
+    void PrintValue(std::ostream& str, const CBytePerfMon& mon) override
+    {
+        str << mon.*pfield;
+    }
+};
+
 class SrtStatsWriter
 {
 public:
@@ -323,6 +360,8 @@ public:
     virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
     virtual ~SrtStatsWriter() { };
 };
+
+extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;
 
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
 
