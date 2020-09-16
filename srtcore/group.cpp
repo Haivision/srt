@@ -1573,18 +1573,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (w_mc.grpdata)
         {
             // Enough space to fill
-            w_mc.grpdata[i].id          = d->id;
-            w_mc.grpdata[i].sockstate   = d->laststatus;
-            w_mc.grpdata[i].memberstate = d->sndstate;
-
-            if (d->sndstate == SRT_GST_RUNNING)
-                w_mc.grpdata[i].result = rstat; // The same result for all sockets, if running
-            else if (d->sndstate == SRT_GST_IDLE)
-                w_mc.grpdata[i].result = 0;
-            else
-                w_mc.grpdata[i].result = -1;
-
-            memcpy((&w_mc.grpdata[i].peeraddr), &d->peer, d->peer.size());
+            copyGroupData(*d, (w_mc.grpdata[i]));
         }
 
         // We perform this loop anyway because we still need to check if any
@@ -1632,41 +1621,47 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
     size_t i = 0;
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d, ++i)
     {
-        pdata[i].id = d->id;
-        memcpy((&pdata[i].peeraddr), &d->peer, d->peer.size());
-
-        pdata[i].sockstate = d->laststatus;
-        pdata[i].token = d->token;
-
-        // In the internal structure the member state
-        // is one per direction. From the user perspective
-        // however it is used either in one direction only,
-        // in which case the one direction that is active
-        // matters, or in both directions, in which case
-        // it will be always either both active or both idle.
-
-        if (d->sndstate == SRT_GST_RUNNING || d->rcvstate == SRT_GST_RUNNING)
-        {
-            pdata[i].result      = 0;
-            pdata[i].memberstate = SRT_GST_RUNNING;
-        }
-        // Stats can differ per direction only
-        // when at least in one direction it's ACTIVE.
-        else if (d->sndstate == SRT_GST_BROKEN)
-        {
-            pdata[i].result      = -1;
-            pdata[i].memberstate = SRT_GST_BROKEN;
-        }
-        else
-        {
-            pdata[i].result      = 0;
-            pdata[i].memberstate = d->sndstate;
-        }
-
-        pdata[i].weight = d->weight;
+        copyGroupData(*d, (pdata[i]));
     }
 
     return m_Group.size();
+}
+
+void CUDTGroup::copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target)
+{
+    w_target.id = source.id;
+    memcpy((&w_target.peeraddr), &source.peer, source.peer.size());
+
+    w_target.sockstate = source.laststatus;
+    w_target.token = source.token;
+
+    // In the internal structure the member state
+    // is one per direction. From the user perspective
+    // however it is used either in one direction only,
+    // in which case the one direction that is active
+    // matters, or in both directions, in which case
+    // it will be always either both active or both idle.
+
+    if (source.sndstate == SRT_GST_RUNNING || source.rcvstate == SRT_GST_RUNNING)
+    {
+        w_target.result      = 0;
+        w_target.memberstate = SRT_GST_RUNNING;
+    }
+    // Stats can differ per direction only
+    // when at least in one direction it's ACTIVE.
+    else if (source.sndstate == SRT_GST_BROKEN || source.rcvstate == SRT_GST_BROKEN)
+    {
+        w_target.result      = -1;
+        w_target.memberstate = SRT_GST_BROKEN;
+    }
+    else
+    {
+        // IDLE or PENDING
+        w_target.result      = 0;
+        w_target.memberstate = source.sndstate;
+    }
+
+    w_target.weight = source.weight;
 }
 
 void CUDTGroup::getGroupCount(size_t& w_size, bool& w_still_alive)
@@ -3847,18 +3842,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (w_mc.grpdata)
         {
             // Enough space to fill
-            w_mc.grpdata[i].id          = d->id;
-            w_mc.grpdata[i].sockstate   = d->laststatus;
-            w_mc.grpdata[i].memberstate = d->sndstate;
-
-            if (d->sndstate == SRT_GST_RUNNING)
-                w_mc.grpdata[i].result = d->sndresult;
-            else if (d->sndstate == SRT_GST_IDLE)
-                w_mc.grpdata[i].result = 0;
-            else
-                w_mc.grpdata[i].result = -1;
-
-            memcpy((&w_mc.grpdata[i].peeraddr), &d->peer, d->peer.size());
+            copyGroupData(*d, (w_mc.grpdata[i]));
         }
 
         // We perform this loop anyway because we still need to check if any
