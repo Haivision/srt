@@ -3842,18 +3842,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (w_mc.grpdata)
         {
             // Enough space to fill
-            w_mc.grpdata[i].id          = d->id;
-            w_mc.grpdata[i].sockstate   = d->laststatus;
-            w_mc.grpdata[i].memberstate = d->sndstate;
-
-            if (d->sndstate == SRT_GST_RUNNING)
-                w_mc.grpdata[i].result = d->sndresult;
-            else if (d->sndstate == SRT_GST_IDLE)
-                w_mc.grpdata[i].result = 0;
-            else
-                w_mc.grpdata[i].result = -1;
-
-            memcpy((&w_mc.grpdata[i].peeraddr), &d->peer, d->peer.size());
+            copyGroupData(*d, (w_mc.grpdata[i]));
         }
 
         // We perform this loop anyway because we still need to check if any
