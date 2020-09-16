@@ -2602,6 +2602,16 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate    = double(perf->byteRecv) * 8.0 / interval;
 
+    perf->countBreak = m_stats.countBreak.local;
+    perf->countActivate = m_stats.countActivate.local;
+    perf->countEager = m_stats.countEager.local;
+    perf->countSilence = m_stats.countSilence.local;
+
+    perf->countBreakTotal = m_stats.countBreak.total;
+    perf->countActivateTotal = m_stats.countActivate.total;
+    perf->countEagerTotal = m_stats.countEager.total;
+    perf->countSilenceTotal = m_stats.countSilence.total;
+
     if (clear)
     {
         m_stats.reset();
@@ -2667,6 +2677,8 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
             // reception side ASAP.
             int32_t arg = 1;
             w_d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE, &arg);
+
+            m_stats.countSilence.Update(1);
         }
     }
 }
@@ -2774,6 +2786,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
 
         u.m_tsUnstableSince = steady_clock::time_point();
         is_unstable         = false;
+        m_stats.countEager.Update(1);
     }
 
 #if ENABLE_HEAVY_LOGGING
@@ -3023,6 +3036,7 @@ void CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&          idler
                 LOGC(gslog.Warn,
                      log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
                          << " LINK ACTIVATED (pri: " << d->weight << ").");
+                m_stats.countActivate.Update(1);
             }
             // Note: this will override the sequence number
             // for all next iterations in this loop.
@@ -3165,6 +3179,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<gli_t>& w_wipeme)
             // NOTE: This does inside: ps->removeFromGroup().
             // After this call, 'd' is no longer valid and *i is singular.
             CUDT::s_UDTUnited.close(ps);
+            m_stats.countBreak.Update(1);
         }
     }
 
@@ -3290,6 +3305,7 @@ RetryWaitBlocked:
                             log << "grp/sendBackup: swait/ex on @" << (id)
                             << " while waiting for any writable socket - CLOSING");
                     CUDT::s_UDTUnited.close(s);
+                    m_stats.countBreak.Update(1);
                 }
                 else
                 {
@@ -3452,6 +3468,7 @@ RetryWaitBlocked:
             d->sndstate = SRT_GST_IDLE;
             HLOGC(gslog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
             ce.m_tsTmpActiveTime = steady_clock::time_point();
+            m_stats.countSilence.Update(1);
         }
     }
 }

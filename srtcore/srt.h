@@ -328,6 +328,11 @@ struct CBytePerfMon
    uint64_t byteSndDropTotal;           // number of too-late-to-send dropped bytes
    uint64_t byteRcvDropTotal;           // number of too-late-to play missing bytes (estimate based on average packet size)
    uint64_t byteRcvUndecryptTotal;      // number of undecrypted bytes
+
+   uint32_t countBreakTotal;
+   uint32_t countActivateTotal;
+   uint32_t countEagerTotal;
+   uint32_t countSilenceTotal;
    //<
 
    // local measurements
@@ -358,6 +363,11 @@ struct CBytePerfMon
    uint64_t byteSndDrop;                // number of too-late-to-send dropped bytes
    uint64_t byteRcvDrop;                // number of too-late-to play missing bytes (estimate based on average packet size)
    uint64_t byteRcvUndecrypt;           // number of undecrypted bytes
+
+   uint32_t countBreak;                 // increased with every broken link in the group
+   uint32_t countActivate;              // increased with every activated link in the group
+   uint32_t countEager;                 // increased with every case when unstable link became stable again
+   uint32_t countSilence;               // increased with every case of switching a link back to idle
    //<
 
    // instant measurements
