@@ -722,12 +722,14 @@ where:
 * `token`: An integer value unique for every connection, or -1 if unused
 
 The `srt_perpare_endpoint` sets these fields to default values. After that
-you can change the value of `weight` and `config` fields. The `weight`
-parameter's meaning is dependent on the group type:
+you can change the value of `weight` and `config` and `token` fields. The
+`weight` parameter's meaning is dependent on the group type:
 
 * BROADCAST: not used
 * BACKUP: positive value of link priority (the greater, the more preferred)
 * BALANCING: relative expected load on this link for fixed algorithm
+
+In any case, the allowed value ranges for `weight` is between 0 and 32767.
 
 The `config` parameter is used to provide options to be set separately
 on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
