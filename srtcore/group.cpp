@@ -2779,14 +2779,16 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
 
     if (!is_unstable)
     {
+        bool restored = !is_zero(u.m_tsUnstableSince);
         // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link STABLE: @" << d->id
-                  << (!is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED"));
+                  << (restored? " - RESTORED" : " - CONTINUED"));
 
         u.m_tsUnstableSince = steady_clock::time_point();
         is_unstable         = false;
-        m_stats.countEager.Update(1);
+        if (restored)
+            m_stats.countEager.Update(1);
     }
 
 #if ENABLE_HEAVY_LOGGING
