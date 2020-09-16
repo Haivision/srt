@@ -674,13 +674,26 @@ int main( int argc, char** argv )
         }
     }
 
-    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    string pfextra;
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf), (pfextra));
     if (statspf == SRTSTATS_PROFMAT_INVALID)
     {
         cerr << "Invalid stats print format\n";
         return 1;
     }
     transmit_stats_writer = SrtStatsWriterFactory(statspf);
+    if (pfextra != "")
+    {
+        vector<string> options;
+        Split(pfextra, ',', back_inserter(options));
+        for (auto& i: options)
+        {
+            vector<string> klv;
+            Split(i, '=', back_inserter(klv));
+            klv.resize(2);
+            transmit_stats_writer->Option(klv[0], klv[1]);
+        }
+    }
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);

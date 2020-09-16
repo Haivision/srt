@@ -427,29 +427,49 @@ public:
         std::ostringstream output;
         static const string qt = R"(")";
 
+        string pretty_cr, pretty_tab;
+        if (Option("pretty"))
+        {
+            pretty_cr = "\n";
+            pretty_tab = "\t";
+        }
+
         SrtStatCat cat = SSC_GEN;
 
         // Do general manually
-        output << keyspec(srt_json_cat_names[cat]) << "{";
+        output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr;
 
         // SID is displayed manually
-        output << keyspec("sid") << sid << ",";
+        output << pretty_tab << keyspec("sid") << sid;
 
         // Now continue with fields as specified in the table
         for (auto& i: g_SrtStatsTable)
         {
             if (i->category == cat)
+            {
                 output << ","; // next item in same cat
+                output << pretty_cr;
+                output << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
             else
             {
                 if (cat != SSC_GEN)
                 {
                     // DO NOT close if general category, just
                     // enter the depth.
-                    output << "},";
+                    output << pretty_cr << pretty_tab << "}";
                 }
                 cat = i->category;
-                output << keyspec(srt_json_cat_names[cat]) << "{";
+                output << ",";
+                output << pretty_cr;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+
+                output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
             }
 
             // Print the current field
@@ -459,8 +479,14 @@ public:
             output << qt;
         }
 
+        // Close the previous subcategory
+        if (cat != SSC_GEN)
+        {
+            output << pretty_cr << pretty_tab << "}" << pretty_cr;
+        }
+
         // Close the general category entity
-        output << "}" << endl;
+        output << "}," << pretty_cr << endl;
 
         return output.str();
     }
@@ -600,8 +626,15 @@ shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat
     return nullptr;
 }
 
-SrtStatsPrintFormat ParsePrintFormat(string pf)
+SrtStatsPrintFormat ParsePrintFormat(string pf, string& w_extras)
 {
+    size_t havecomma = pf.find(',');
+    if (havecomma != string::npos)
+    {
+        w_extras = pf.substr(havecomma+1);
+        pf = pf.substr(0, havecomma);
+    }
+
     if (pf == "default")
         return SRTSTATS_PROFMAT_2COLS;
 
