@@ -2683,7 +2683,7 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     }
 }
 
-bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point currtime)
+bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point currtime, bool& w_restored)
 {
     CUDT& u = d->ps->core();
     // This link might be unstable, check its responsiveness status
@@ -2777,6 +2777,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
         }
     }
 
+    w_restored = false;
     if (!is_unstable)
     {
         bool restored = !is_zero(u.m_tsUnstableSince);
@@ -2787,8 +2788,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
 
         u.m_tsUnstableSince = steady_clock::time_point();
         is_unstable         = false;
-        if (restored)
-            m_stats.countEager.Update(1);
+        w_restored = restored;
     }
 
 #if ENABLE_HEAVY_LOGGING
@@ -3516,6 +3516,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     sendable.reserve(m_Group.size());
 
+    int nrestored = 0;
+    bool have_regular = false;
     // First, check status of every link - no matter if idle or active.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
@@ -3562,9 +3564,20 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (d->sndstate == SRT_GST_RUNNING)
         {
-            if (!sendBackup_CheckRunningStability(d, (currtime)))
+            bool restored;
+            if (!sendBackup_CheckRunningStability(d, (currtime), (restored)))
             {
                 insert_uniq((unstable), d);
+            }
+
+            if (restored)
+            {
+                ++nrestored;
+            }
+            else
+            {
+                // Regular stable
+                have_regular = true;
             }
             // Unstable links should still be used for sending.
             sendable.push_back(d);
@@ -3576,6 +3589,17 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
         pending.push_back(d);
+    }
+
+    // RESTORED STABILITY:
+    // If you simultaneously have any "regular" running links (stable)
+    // beside this stable-restored link, it's identified as a case of
+    // "too eagerly" activated link. Count 1 for every link which's
+    // stability was restored, as this is considered to be identical with
+    // the number of notified events of activating a backup link.
+    if (nrestored && have_regular)
+    {
+        m_stats.countEager.Update(nrestored);
     }
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
