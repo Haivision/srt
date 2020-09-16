@@ -315,6 +315,8 @@ public:
                        const SRT_MSGCTRL& in     //< MSGCTRL read from the data-providing socket
     );
 
+    void copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target);
+
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
 #else
