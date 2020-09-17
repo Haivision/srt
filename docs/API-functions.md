@@ -2098,20 +2098,27 @@ Possible epoll flags are the following:
    * `SRT_EPOLL_IN`: report readiness for reading or incoming connection on a listener socket
    * `SRT_EPOLL_OUT`: report readiness for writing or a successful connection
    * `SRT_EPOLL_ERR`: report errors on the socket
-   * `SRT_EPOLL_UPDATE`: group-listening socket gets a new connection established
+   * `SRT_EPOLL_UPDATE`: an important event has happened that requires attention
    * `SRT_EPOLL_ET`: the event will be edge-triggered
 
 All flags except `SRT_EPOLL_ET` are event type flags (important for functions
 that expect only event types and not other flags).
 
-The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by
-default **level-triggered**. With `SRT_EPOLL_ET` flag they become
-**edge-triggered**. The `SRT_EPOLL_UPDATE` flag is always edge-triggered
-and it designates a special event that happens only for a listening
-socket that has the `SRTO_GROUPCONNECT` flag set to allow group connections.
-This event is intended for internal use only, and is triggered for group
-connections when a new link has been established for a group that is
-already connected (that is, has at least one connection established).
+The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by default
+**level-triggered**. With `SRT_EPOLL_ET` flag they become **edge-triggered**.
+
+The `SRT_EPOLL_UPDATE` flag is always edge-triggered. It designates a
+special event that happens on a group, or on a listener socket that has the
+`SRTO_GROUPCONNECT` flag set to allow group connections. This flag
+is triggered in the following situations:
+
+* for group connections, when a new link has been established for a group that is already 
+connected (that is, has at least one connection established), `SRT_EPOLL_UPDATE` is 
+reported for the listener socket accepting the connection. This is intended for internal 
+use only. An initial connection results in reporting the group connection on that listener. 
+But when the group is already connected, `SRT_EPOLL_UPDATE`  is reported instead.
+
+* when one of group member connection has been broken
 
 Note that at this time the edge-triggered mode is supported only for SRT
 sockets, not for system sockets.
