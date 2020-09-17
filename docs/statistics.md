@@ -70,6 +70,10 @@ See sections [Accumulated Statistics](#accumulated-statistics), [Interval-Based 
 | [byteSndDropTotal](#byteSndDropTotal)               | accumulated       | bytes               | ✓                    | -                      | uint64_t  |
 | [byteRcvDropTotal](#byteRcvDropTotal)               | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRcvUndecryptTotal](#byteRcvUndecryptTotal)     | accumulated       | bytes               | -                    | ✓                      | uint64_t  |
+| [countBreakTotal](#countBreakTotal)                 | accumulated       | cases               | ✓                    | -                      | uint32_t  |
+| [countActivateTotal](#countActivateTotal)           | accumulated       | cases               | ✓                    | -                      | uint32_t  |
+| [countEagerTotal](#countEagerTotal)                 | accumulated       | cases               | ✓                    | -                      | uint32_t  |
+| [countSilenceTotal](#countSilenceTotal)             | accumulated       | cases               | ✓                    | -                      | uint32_t  |
 | [pktSent](#pktSent)                                 | interval-based    | packets             | ✓                    | -                      | int64_t   |
 | [pktRecv](#pktRecv)                                 | interval-based    | packets             | -                    | ✓                      | int64_t   |
 | [pktSentUnique](#pktSentUnique)                     | interval-based    | packets             | ✓                    | -                      | int64_t   |
@@ -103,6 +107,10 @@ See sections [Accumulated Statistics](#accumulated-statistics), [Interval-Based 
 | [byteSndDrop](#byteSndDrop)                         | interval-based    | bytes               | ✓                    | -                      | uint64_t  |
 | [byteRcvDrop](#byteRcvDrop)                         | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
 | [byteRcvUndecrypt](#byteRcvUndecrypt)               | interval-based    | bytes               | -                    | ✓                      | uint64_t  |
+| [countBreak](#countBreak)                           | interval-based    | cases               | ✓                    | -                      | uint32_t  |
+| [countActivate](#countActivate)                     | interval-based    | cases               | ✓                    | -                      | uint32_t  |
+| [countEager](#countEager)                           | interval-based    | cases               | ✓                    | -                      | uint32_t  |
+| [countSilence](#countSilence)                       | interval-based    | cases               | ✓                    | -                      | uint32_t  |
 | [usPktSndPeriod](#usPktSndPeriod)                   | instantaneous     | us (microseconds)   | ✓                    | -                      | double    |
 | [pktFlowWindow](#pktFlowWindow)                     | instantaneous     | packets             | ✓                    | -                      | int32_t   |
 | [pktCongestionWindow](#pktCongestionWindow)         | instantaneous     | packets             | ✓                    | -                      | int32_t   |
@@ -308,6 +316,23 @@ Same as [pktRcvDropTotal](#pktRcvDropTotal), but expressed in bytes, including p
 
 Same as [pktRcvUndecryptTotal](#pktRcvUndecryptTotal), but expressed in bytes, including payload and all the headers (20 bytes IPv4 + 8 bytes UDP + 16 bytes SRT). Available for receiver.
 
+#### countBreakTotal
+
+Same as [countBreak](#countBreak), total stats.
+
+#### countActivateTotal
+
+Same as [countActivate](#countActivate), total stats.
+
+#### countEagerTotal
+
+Same as [countEager](#countEager), total stats.
+
+#### countSilenceTotal
+
+Same as [countSilence](#countSilence), total stats.
+
+
 
 ### Interval-Based Statistics
 
@@ -462,6 +487,23 @@ Same as [byteRcvDropTotal](#byteRcvDropTotal), but for a specified interval.
 #### byteRcvUndecrypt
 
 Same as [byteRcvUndecryptTotal](#byteRcvUndecryptTotal), but for a specified interval.
+
+#### countBreak
+
+Number of cases when a link within the group was broken. Counted only on for a group sender.
+
+#### countActivate
+
+Number of cases when a link within the group was activated due to that another active link became unstable. This can normally happen only in Backup-type groups.
+
+#### countEager
+
+Number of cases when a group member link was detected unstable, which led to activation of another link, but then returned to stability. Precisely, it counts cases when a link has return to stable state, while another link was also in running state. It doesn't count the "return to stability" case when it was the only running link because in this case its unstable state didn't lead to activation of another link. These phenomena can only happen in the Backup-type groups.
+
+#### countSilence
+
+Number of cases when a group member link transited from running to idle. This can only happen in Backup-type group as a consequence of detecting multiple long-time activated running stable links.
+
 
 
 ### Instantaneous Statistics
