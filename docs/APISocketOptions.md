@@ -898,35 +898,46 @@ and break quickly at any rise in packet loss.
 | --------------------- | ----- | ------- | ------ | ------ | -------- | ------- | --- | ------ |
 | `SRTO_PACINGMODE `    | 1.5.x | post    | `int`  |        |          | enum    | RW  | GSD    |
 
-Pacing control mode. This option is only applicable for live transmission mode.
+- Pacing control mode. This option is only applicable for live transmission mode.
 
-`SRTO_PACINGMODE` option defines the way of configuring the maximum allowed bandwidth `MAXBW`
-which limits the bandwidth usage by SRT and is used by live congestion control
-(LiveCC) module to calculate the minimum inter-sending time of consecutive packets.
+- `SRTO_PACINGMODE` option defines the way of configuring the maximum allowed bandwidth `MAXBW`
+  which limits the bandwidth usage by SRT and is used by live congestion control
+  (LiveCC) module to calculate the minimum inter-sending time of consecutive packets.
 
-A combination of pacing control and live congestion control (LiveCC) modules controls SRT
-packets pacing based on the input rate and an overhead for packets retransmission
-in order to avoid congestion during fluctuations of the source bitrate.
+  A combination of pacing control and live congestion control (LiveCC) modules controls SRT
+  packets pacing based on the input rate and an overhead for packets retransmission
+  in order to avoid congestion during fluctuations of the source bitrate.
 
-The following table shows the summary of pacing control modes, options need to be
-set (✓) or ignored (-) appropriately and formula for MAXBW calculation for a
-particular mode:
+  The following table shows the summary of pacing control modes, options need to be
+  set (✓) or ignored (-) appropriately and formula for `MAXBW` calculation for a
+  particular mode:
 
-| Mode / Option            | SRTO_MAXBW | SRTO_INPUTBW | SRT_OHEADBW | Formula for `MAXBW` Calculation                              |
-| ------------------------ | ---------- | ------------ | ----------- | ------------------------------------------------------------ |
-| `SRT_PACING_DEFMAXBW`    | -1         | -            | -           | `MAXBW` is set to the default value of 1Gbps                 |
-| `SRT_PACING_MAXBW`       | ✓          | -            | -           | `MAXBW` is set explicitly, in bytes per second               |
-| `SRT_PACING_INPUTBW`     | 0          | ✓            | ✓           | `MAXBW = INPUTBW * (1 + OHEADBW /100)`                       |
-| `SRT_PACING_ESTINPUTBW`  | 0          | 0            | ✓           | `MAXBW = ESTINPUTBW * (1 + OHEADBW /100)`                    |
-| `SRT_PACING_HYBRIDBW`    | 0          | ✓            | ✓           | `MAX_BW = max(INPUTBW, ESTINPUT_BW) * (1 + OHEADBW /100)`    |
+  | Mode / Option                  | SRTO_MAXBW | SRTO_INPUTBW | SRTO_OHEADBW | Formula for `MAXBW` Calculation                                   |
+  | ------------------------------ | ---------- | ------------ | ------------ | ----------------------------------------------------------------- |
+  | `SRT_PACING_MAXBWDEFAULT`      | -1         | -            | -            | `MAXBW` is set to the default value of 1Gbps                      |
+  | `SRT_PACING_MAXBWSET`          | ✓          | -            | -            | `MAXBW` is set explicitly, in bytes per second, can't be -1 or 0  |
+  | `SRT_PACING_INPUTBWSET`        | 0          | ✓            | ✓            | `MAXBW = INPUTBW * (1 + OHEADBW /100)`                            |
+  | `SRT_PACING_INPUTBWESTIMATED`  | 0          | 0            | ✓            | `MAXBW = EST_INPUTBW * (1 + OHEADBW /100)`                        |
+  | `SRT_PACING_INPUTBWADJUSTED`   | 0          | ✓            | ✓            | `MAXBW = max(INPUTBW, EST_INPUTBW) * (1 + OHEADBW /100)`          |
 
-where `ESTINPUTBW` corresponds to the estimated (by SRT) SRT sender's input rate.
+  where `INPUTBW` corresponds to the input rate set via [SRTO_INPUTBW](#SRTO_INPUTBW) option;
+  `OHEADBW` corresponds to the overhead defined via [SRT_OHEADBW](#SRT_OHEADBW) option;
+  `EST_INPUTBW` corresponds to the estimated (by SRT) SRT sender's input rate.
 
-See section (TODO: insert link to the new RFC draft once published) for the detailed description of pacing control modes.
+  See section (TODO: insert link to the new RFC draft once published) for the detailed description of pacing control modes.
 
-It's important to note that options [SRTO_MAXBW](#SRTO_MAXBW), [SRTO_INPUTBW](#SRTO_INPUTBW) and [SRT_OHEADBW](#SRT_OHEADBW) should be set first, right before setting the `SRTO_PACINGMODE` option. The order is important. In case the combination of `SRTO_MAXBW`, `SRTO_INPUTBW` and `SRTO_OHEADBW` options is configured wrong for a particular pacing control mode, SRT will throw an error (TODO: discuss what kind of error and put this information here).
+- It's important to note that options [SRTO_MAXBW](#SRTO_MAXBW), [SRTO_INPUTBW](#SRTO_INPUTBW)
+  and [SRT_OHEADBW](#SRT_OHEADBW) should be set first, right before setting the `SRTO_PACINGMODE`
+  option. The order is important. In case the combination of `SRTO_MAXBW`, `SRTO_INPUTBW` and
+  `SRTO_OHEADBW` options is configured wrong for a particular pacing control mode, SRT will
+  throw an error (TODO: discuss what kind of error and put this information here).
 
-By default, `SRTO_PACINGMODE` is set to `SRT_PACING_UNSET` mode which preserves the previous behavior of SRT (API/ABI backward compatibility). In this case, the combination of `SRTO_MAXBW`, `SRTO_INPUTBW` and `SRTO_OHEADBW` options should be used to activate one of the pacing control modes as specified in the table above. Please note that all the modes except `SRT_PACING_HYBRIDBW` can be defined by this combination. The latter requires setting `SRTO_PACINGMODE` to `SRT_PACING_HYBRIDBW`explicitly.
+- By default, `SRTO_PACINGMODE` is set to `SRT_PACING_UNSET` mode which preserves the
+  previous behavior of SRT (API/ABI backward compatibility). In this case, the combination
+  of `SRTO_MAXBW`, `SRTO_INPUTBW` and `SRTO_OHEADBW` options should be used to activate one
+  of the pacing control modes as specified in the table above. Please note that all the modes
+  except `SRT_PACING_INPUTBWADJUSTED` can be defined by this combination. The latter requires
+  setting `SRTO_PACINGMODE` to `SRT_PACING_INPUTBWADJUSTED`explicitly.
 
 
 [Return to list](#list-of-options)
