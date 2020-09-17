@@ -2104,17 +2104,17 @@ that expect only event types and not other flags).
 
 The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by default
 **level-triggered**. With `SRT_EPOLL_ET` flag they become **edge-triggered**.
-The `SRT_EPOLL_UPDATE` flag is always edge-triggered and it designates a
-special event that happens on a listener socket that has the
-`SRTO_GROUPCONNECT` flag set to allow group connections, or on a group. This
+
+The `SRT_EPOLL_UPDATE` flag is always edge-triggered. It designates a
+special event that happens on a group, or on a listener socket that has the
+`SRTO_GROUPCONNECT` flag set to allow group connections. This flag
 is triggered in the following situations:
 
-* for group connections, when a new link has been established for a group that
-is already connected (that is, has at least one connection established), reported
-for the listener socket that was accepting the connection. This is intended for
-internal use only. It can be understood as such that a reporting connection for
-the first time results in reporting the group connection on that listener, but
-when the group is already connected, this event is reported instead.
+* for group connections, when a new link has been established for a group that is already 
+connected (that is, has at least one connection established), `SRT_EPOLL_UPDATE` is 
+reported for the listener socket accepting the connection. This is intended for internal 
+use only. An initial connection results in reporting the group connection on that listener. 
+But when the group is already connected, `SRT_EPOLL_UPDATE`  is reported instead.
 
 * when one of group member connection has been broken
 
