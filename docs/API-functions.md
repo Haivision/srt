@@ -2137,9 +2137,9 @@ edge-triggered mode for all events passed together with it. However, if you
 want to have some events reported as edge-triggered and others as
 level-triggered, you can do two separate subscriptions for the same socket.
 
-**IMPORTANT**: The `srt_epoll_wait` function has no possibility to report
-`SRT_EPOLL_UPDATE` event. If you need an ability to get any possible flag,
-you need to use `srt_epoll_uwait`. Note that this function doesn't work with
+**IMPORTANT**: The `srt_epoll_wait` function does not report
+`SRT_EPOLL_UPDATE` events. If you need the ability to get any possible flag,
+you must use `srt_epoll_uwait`. Note that this function doesn't work with
 system file descriptors.
 
 - Returns:
@@ -2200,7 +2200,7 @@ parameter.  If timeout is 0, it exits immediately after checking. If timeout is
 * `lwfds` and `lwnum`:A pointer and length of an array to write system sockets that are read-ready
 * `lwfds` and `lwnum`:A pointer and length of an array to write system sockets that are write-ready
 
-Note that the flags are reported:
+Note that the following flags are reported:
 
 * `SRT_EPOLL_IN` as read-ready (also a listener socket ready to accept)
 * `SRT_EPOLL_OUT` as write-ready (also a connected socket)
