@@ -74,7 +74,7 @@ public:
         bool           ready_error;
 
         // Configuration
-        int weight;
+        uint16_t weight;
     };
 
     struct ConfigItem
@@ -230,7 +230,7 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    std::set<int>&      w_sendable_pri,
+                                    std::set<uint16_t>& w_sendable_pri,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);

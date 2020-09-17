@@ -2605,13 +2605,19 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 
 // For sorting group members by priority
 
-struct FByWeight //: public std::binary_predicate<CUDTGroup::gli_t, CUDTGroup::gli_t>
+struct FPriorityOrder
 {
-    typedef CUDTGroup::gli_t gli_t;
-    bool                     operator()(gli_t a, gli_t b)
+    // returned true = "elements are in the right order"
+    static bool check(uint16_t preceding, uint16_t succeeding)
     {
-        // this should be operator <
-        return a->weight < b->weight;
+        return preceding > succeeding;
+    }
+
+    typedef CUDTGroup::gli_t gli_t;
+
+    bool operator()(gli_t preceding, gli_t succeeding)
+    {
+        return check(preceding->weight, succeeding->weight);
     }
 };
 
@@ -2798,7 +2804,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
                                            int32_t&                                 w_curseq,
                                            vector<gli_t>&                           w_parallel,
                                            int&                                     w_final_stat,
-                                           set<int>&                                w_sendable_pri,
+                                           set<uint16_t>&                           w_sendable_pri,
                                            size_t&                                  w_nsuccessful,
                                            bool&                                    w_is_nunstable)
 {
@@ -3389,7 +3395,7 @@ RetryWaitBlocked:
     // the one with highest priority.
     if (w_parallel.size() > 1)
     {
-        sort(w_parallel.begin(), w_parallel.end(), FByWeight());
+        sort(w_parallel.begin(), w_parallel.end(), FPriorityOrder());
         steady_clock::time_point currtime = steady_clock::now();
 
         vector<gli_t>::iterator b = w_parallel.begin();
@@ -3555,7 +3561,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
-    sort(idlers.begin(), idlers.end(), FByWeight());
+    sort(idlers.begin(), idlers.end(), FPriorityOrder());
 
     vector<Sendstate> sendstates;
 
@@ -3594,7 +3600,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Collect priorities from sendable links, added only after sending is successful.
     // This will be used to check if any of the idlers have higher priority
     // and therefore need to be activated.
-    set<int> sendable_pri;
+    set<uint16_t> sendable_pri;
 
     // We believe that we need to send the payload over every sendable link anyway.
     for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
@@ -3745,7 +3751,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // (those are collected in 'sendable_pri'). Check if there are any (if
         // no sendable, a new link needs to be activated anyway), and if the
         // priority has a lower number.
-        if (sendable_pri.empty() || (!idlers.empty() && idlers[0]->weight < *sendable_pri.begin()))
+        if (sendable_pri.empty() || (!idlers.empty() && FPriorityOrder::check(idlers[0]->weight, *sendable_pri.begin())))
         {
             need_activate = true;
 #if ENABLE_HEAVY_LOGGING
@@ -3766,7 +3772,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 // Only now we are granted that both sendable_pri and idlers are nonempty
                 LOGC(gslog.Debug,
-                     log << "grp/sendBackup: found link pri " << idlers[0]->weight << " < " << (*sendable_pri.begin())
+                     log << "grp/sendBackup: found link pri " << idlers[0]->weight << " PREF OVER " << (*sendable_pri.begin())
                          << " (highest from sendable) - will activate an idle link");
                 activate_reason = "found higher pri link";
             }
@@ -3776,7 +3782,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             HLOGC(gslog.Debug,
                   log << "grp/sendBackup: sendable_pri (" << sendable_pri.size() << "): " << Printable(sendable_pri)
-                      << " first idle pri: " << (idlers.size() > 0 ? idlers[0]->weight : -1)
+                      << " first idle pri: " << (idlers.size() > 0 ? int(idlers[0]->weight) : -1)
                       << " - will NOT activate an idle link");
         }
     }

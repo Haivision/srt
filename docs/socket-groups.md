@@ -90,7 +90,7 @@ sending for a short time. This state should last at most as long as it takes
 for SRT to determie the link broken - either by getting the link broken by
 itself, or by closing the link when it's remaining unstable too long time.
 
-This mode allows also to set link priorities - the lower, the more preferred.
+This mode allows also to set link priorities - the greater, the more preferred.
 This priority decides mainly, which link is "best" and which is selected to
 take over transmission over a broken link before others, as well as which
 links should remain active should multiple links be stable at a time.
@@ -702,18 +702,18 @@ from a device that streams to this machine to port 5555):
 
 At the caller side you can also use some group-member specific options.
 Currently there exists only one option dedicated for the Backup group
-type, which is priority parameter with a `pri` key. In the simplified
+type, which is priority parameter with a `weight` key. In the simplified
 syntax it should be attached to the member parameter:
 
 ```
-./srt-test-live srt://*?type=backup alpha:5000?pri=1 beta:5000?pri=0 -g udp://239.255.133.10:5999
+./srt-test-live srt://*?type=backup alpha:5000?weight=0 beta:5000?weight=1 -g udp://239.255.133.10:5999
 ```
 
 Priorities in the Backup group type define which links should be preferred
 over the others when deciding to silence links in a situation of multiple
 stable links. Also at the moment when the group is connected, the link with
-highest priority is preferred for activation, and if another link is connected
-with higher priority it also takes over.
+highest priority is preferred for activation (greatest weight value), and if
+another link is connected with higher priority it also takes over.
 
 Here the `beta` host has higher priority than `alpha`, so when both
 links are established, it should use the host `beta` to send the data,

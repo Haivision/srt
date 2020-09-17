@@ -1263,6 +1263,12 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             LOGC(aclog.Error, log << "srt_connect/group: family differs on source and target address");
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
         }
+
+        if (targets[tii].weight > CUDT::MAX_WEIGHT)
+        {
+            LOGC(aclog.Error, log << "srt_connect/group: weight value must be between 0 and " << (+CUDT::MAX_WEIGHT));
+            throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
     }
 
 
