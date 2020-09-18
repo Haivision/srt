@@ -849,6 +849,10 @@ TEST(Bonding, BackupPrioritySelection)
     EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
+    this_thread::sleep_for(seconds(1));
+
+    cout << "Closing receiver thread [A]\n";
+
     acthr.join();
 
     srt_cleanup();
