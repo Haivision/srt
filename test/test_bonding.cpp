@@ -159,7 +159,10 @@ TEST(Bonding, ConnectNonBlocking)
             int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
             ASSERT_EQ(uwait_res, 1);
             ASSERT_EQ(ev[0].fd, g_listen_socket);
-            ASSERT_EQ(ev[0].events, SRT_EPOLL_IN);
+
+            // Check if the IN event is set, even if it's not the only event
+            ASSERT_EQ(ev[0].events & SRT_EPOLL_IN, SRT_EPOLL_IN);
+            bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
 
             sockaddr_any adr;
             int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
@@ -167,12 +170,19 @@ TEST(Bonding, ConnectNonBlocking)
             // Expected: group reporting
             EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
-            cout << "[A] Waiting for update\n";
-            // Now another waiting is required and expected the update event
-            uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
-            ASSERT_EQ(uwait_res, 1);
-            ASSERT_EQ(ev[0].fd, g_listen_socket);
-            ASSERT_EQ(ev[0].events, SRT_EPOLL_UPDATE);
+            if (have_also_update)
+            {
+                cout << "[A] NOT waiting for update - already reported previously\n";
+            }
+            else
+            {
+                cout << "[A] Waiting for update\n";
+                // Now another waiting is required and expected the update event
+                uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                ASSERT_EQ(uwait_res, 1);
+                ASSERT_EQ(ev[0].fd, g_listen_socket);
+                ASSERT_EQ(ev[0].events, SRT_EPOLL_UPDATE);
+            }
 
             cout << "[A] Waitig for close (up to 5s)\n";
             // Wait up to 5s for an error
