@@ -16,6 +16,17 @@
 #include "srt.h"
 #include "netinet_any.h"
 
+// General idea:
+// This should try to connect to two nonexistent links,
+// the connecting function (working in blocking mode)
+// should exit with error, after the group has been closed
+// in a separate thread.
+//
+// Steps:
+// 1. Create group
+// 2. Use a nonexistent endpoints 192.168.1.237:4200 and *:4201
+// 3. Close the group in a thread
+// 4. Wait for error
 TEST(Bonding, ConnectBlind)
 {
     struct sockaddr_in sa;
@@ -57,17 +68,11 @@ TEST(Bonding, ConnectBlind)
 }
 
 SRTSOCKET g_listen_socket = -1;
-
-void listening_thread()
-{
-
-
-    //this_thread::sleep_for(seconds(7));
-}
-
 int g_nconnected = 0;
 int g_nfailed = 0;
 
+// This ConnectCallback is mainly informative, but it also collects the
+// number of succeeded and failed links.
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     std::cout << "Connect callback. Socket: " << sock
@@ -80,6 +85,26 @@ void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/
         ++g_nfailed;
 }
 
+// TEST IDEA:
+// This uses srt_connect_group in non-blocking mode. The listener
+// is also created to respond to the connection. Expected is to
+// continue the connecting in background and report a success,
+// and report the epoll IN on listener for the first connection,
+// and UPDATE For the second one.
+//
+// TEST STEPS:
+// 1. Create a listener socket and a group.
+// 2. Set the group and the listener socket non-blocking mode
+// 3. Start the accepting thread
+//    - wait for IN event ready on the listener socket
+//    - accept a connection
+//    - wait for UPDATE event ready on the listener socket
+//    - wait for any event up to 5s (possibly ERR)
+//    - close the listener socket
+// 4. Prepare two connections and start connecting
+// 5. Wait for the OUT readiness event on the group
+// 6. Close the group.
+// 7. Join the thread
 TEST(Bonding, ConnectNonBlocking)
 {
     using namespace std;
@@ -185,7 +210,26 @@ TEST(Bonding, ConnectNonBlocking)
     srt_cleanup();
 }
 
-
+// TEST IDEA:
+// In this test there is created a working listener socket to
+// accept the connection, and we use a Backup-type group with
+// two links, but different weights. We connect them both and
+// make sure that both are ready for use. Then we send a packet
+// over the group and see, which link got activated and which
+// remained idle. Expected is to have the link with higher
+// priority (greater weight) to be activated.
+//
+// TEST STEPS:
+// 1. Create a listener socket and a group.
+// 3. Start the accepting thread
+//    - accept a connection
+//    - read one packet from the accepted entity
+//    - close the listener socket
+// 4. Prepare two connections (one with weight=1) and connect the group
+// 5. Wait for having all links connected
+// 6. Send one packet and check which link was activated
+// 6. Close the group.
+// 7. Join the thread
 TEST(Bonding, BackupPriorityBegin)
 {
     using namespace std;
@@ -208,10 +252,6 @@ TEST(Bonding, BackupPriorityBegin)
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     ASSERT_NE(srt_listen(g_listen_socket, 5), -1);
 
-    int lsn_eid = srt_epoll_create();
-    int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
-    srt_epoll_add_usock(lsn_eid, g_listen_socket, &lsn_events);
-
     // Caller part
 
     const int ss = srt_create_group(SRT_GTYPE_BACKUP);
@@ -224,7 +264,7 @@ TEST(Bonding, BackupPriorityBegin)
     sa.sin_port = htons(4200);
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
-    auto acthr = std::thread([&lsn_eid]() {
+    auto acthr = std::thread([]() {
             sockaddr_any adr;
             cout << "[A] Accepting a connection...\n";
             int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
@@ -331,5 +371,472 @@ TEST(Bonding, BackupPriorityBegin)
     srt_cleanup();
 }
 
+
+// TEST IDEA:
+// In this test there is created a working listener socket to
+// accept the connection, and we use a Backup-type group with
+// two links, but different weights. We connect the first link
+// with less weight and send one packet to make sure this only
+// link was activated. Then we connect a second link with weight=1.
+// Then we send the packet again and see if the new link was
+// immediately activated. The first link should be silenced after
+// time, but there's no possibility to check this in such a
+// simple test.
+//
+// TEST STEPS:
+// 1. Create a listener socket and a group.
+// 3. Start the accepting thread
+//    - accept a connection
+//    - read one packet from the accepted entity
+//    - read the second packet from the accepted entity
+//    - close the listener socket
+// 4. Prepare one connection with weight=0 and connect the group
+// 5. Send a packet to enforce activation of one link
+// 6. Prepare another connection with weight=1 and connect the group
+// 7. Send a packet
+// 8. Check member status - both links should be running.
+// 9. Close the group.
+// 10. Join the thread
+TEST(Bonding, BackupPriorityTakeover)
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    g_nconnected = 0;
+    g_nfailed = 0;
+
+    srt_startup();
+
+    g_listen_socket = srt_create_socket();
+    sockaddr_in bind_sa;
+    memset(&bind_sa, 0, sizeof bind_sa);
+    bind_sa.sin_family = AF_INET;
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
+    bind_sa.sin_port = htons(4200);
+
+    ASSERT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    const int yes = 1;
+    srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    ASSERT_NE(srt_listen(g_listen_socket, 5), -1);
+
+    // Caller part
+
+    const int ss = srt_create_group(SRT_GTYPE_BACKUP);
+    ASSERT_NE(ss, SRT_ERROR);
+
+    srt_connect_callback(ss, &ConnectCallback, this);
+
+    sockaddr_in sa;
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(4200);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    auto acthr = std::thread([]() {
+            sockaddr_any adr;
+            cout << "[A] Accepting a connection...\n";
+            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+
+            // Expected: group reporting
+            EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
+
+            SRT_SOCKGROUPDATA gdata[2];
+            SRT_MSGCTRL mc = srt_msgctrl_default;
+            mc.grpdata = gdata;
+            mc.grpdata_size = 2;
+            long long data[1320/8];
+
+            cout << "[A] Receiving 1...\n";
+            int ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+            ASSERT_EQ(ds, 8);
+
+            cout << "[A] Receiving 2...\n";
+            ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+            ASSERT_EQ(ds, 8);
+
+            // To make it possible that the state is checked before it is closed.
+            this_thread::sleep_for(seconds(1));
+
+            cout << "[A] Closing\n";
+            srt_close(accept_id);
+            cout << "[A] thread finished\n";
+    });
+
+    cout << "Connecting first link weight=0:\n";
+
+    SRT_SOCKGROUPCONFIG cc[2];
+    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0].token = 0;
+
+    int result = srt_connect_group(ss, cc, 1);
+    ASSERT_EQ(result, 0);
+
+    // As we have one link, after `srt_connect_group` returns, we have
+    // this link now connected. Send one data portion.
+
+    SRT_SOCKGROUPDATA gdata[2];
+
+    long long data = 0x1234123412341234;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+
+    cout << "Sending (1)\n";
+    // This call should retrieve the group information
+    // AFTER the transition has happened
+    int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, sizeof data);
+    ASSERT_EQ(mc.grpdata_size, 1);
+    EXPECT_EQ(gdata[0].memberstate, SRT_GST_RUNNING);
+
+    cout << "Connecting second link weight=1:\n";
+    // Now prepare the second connection
+    cc[0].token = 1;
+    cc[0].weight = 1; // higher than the default 0
+    result = srt_connect_group(ss, cc, 1);
+    ASSERT_EQ(result, 0);
+
+    // Make sure both links are connected
+    size_t psize = 2;
+    size_t nwait = 10;
+    cout << "Waiting for getting 2 links:\n";
+    while (--nwait)
+    {
+        srt_group_data(ss, gdata, &psize);
+        if (psize == 2)
+        {
+            int l1, l2;
+            l1 = gdata[0].memberstate;
+            l2 = gdata[1].memberstate;
+
+            if (l1 > SRT_GST_PENDING && l2 > SRT_GST_PENDING)
+            {
+                cout << "Both up: [0]=" << l1 << " [1]=" << l2 << "\n";
+                break;
+            }
+            else
+            {
+                cout << "Still link states [0]=" << l1 << " [1]=" << l2 << "\n";
+            }
+        }
+        else
+        {
+            cout << "Still " << psize << endl;
+        }
+        this_thread::sleep_for(milliseconds(500));
+    }
+    ASSERT_NE(nwait, 0);
+
+    // Now send one packet (again)
+    mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+
+    cout << "Sending (2)\n";
+    // This call should retrieve the group information
+    // AFTER the transition has happened
+    sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, sizeof data);
+
+    // So, let's check which link is in RUNNING state
+    // TOKEN value is the index in cc array, and we should
+    // also have the weight value there.
+
+    SRT_SOCKGROUPDATA* mane, * backup;
+    if (gdata[0].weight == 0)
+    {
+        backup = &gdata[0];
+        mane = &gdata[1];
+    }
+    else
+    {
+        mane = &gdata[0];
+        backup = &gdata[1];
+    }
+
+    cout << "MAIN:[" << mane->token << "] weight=" << mane->weight << endl;
+    cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
+
+    // Ok, now both links should be running (this state lasts
+    // for the "temporary activation" period.
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
+    EXPECT_EQ(backup->memberstate, SRT_GST_RUNNING);
+
+    acthr.join();
+
+    srt_cleanup();
+}
+
+
+// TEST IDEA:
+// In this test there is created a working listener socket to
+// accept the connection, and we use a Backup-type group with
+// two links, but different weights. We connect then two links
+// both with weight=1. Then we send a packet to make sure that
+// exactly one of them got activated. Then we connect another
+// link with weight=0. Then we send a packet again, which should
+// not change the link usage. Then we check which link was
+// active so far, and we close the socket for that link to make
+// it broken, then we wait for having only two links connected.
+// Then a packet is sent to activate a link. We expect the link
+// with higher weight is activated.
+//
+// TEST STEPS:
+// 1. Create a listener socket and a group.
+// 3. Start the accepting thread
+//    - accept a connection
+//    - read one packet from the accepted entity
+//    - read the second packet from the accepted entity
+//    - read the third packet from the accepted entity
+//    - close the listener socket
+// 4. Prepare two connections with weight=1 and connect the group
+// 5. Send a packet to enforce activation of one link
+// 6. Prepare another connection with weight=0 and connect the group
+// 7. Wait for having all 3 links connected.
+// 8. Send a packet
+// 9. Find which link is currently active and close it
+// 10. Wait for having only two links.
+// 11. Send a packet.
+// 12. Find one link active and one idle
+// 13. Check if the link with weight=1 is active and the one with weight=0 is idle.
+// 14. Close the group.
+// 15. Join the thread
+TEST(Bonding, BackupPrioritySelection)
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    g_nconnected = 0;
+    g_nfailed = 0;
+
+    srt_startup();
+
+    g_listen_socket = srt_create_socket();
+    sockaddr_in bind_sa;
+    memset(&bind_sa, 0, sizeof bind_sa);
+    bind_sa.sin_family = AF_INET;
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
+    bind_sa.sin_port = htons(4200);
+
+    ASSERT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    const int yes = 1;
+    srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    ASSERT_NE(srt_listen(g_listen_socket, 5), -1);
+
+    // Caller part
+    const int ss = srt_create_group(SRT_GTYPE_BACKUP);
+    ASSERT_NE(ss, SRT_ERROR);
+
+    srt_connect_callback(ss, &ConnectCallback, this);
+
+    sockaddr_in sa;
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(4200);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    auto acthr = std::thread([]() {
+            sockaddr_any adr;
+            cout << "[A] Accepting a connection...\n";
+            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+
+            // Expected: group reporting
+            EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
+
+            SRT_SOCKGROUPDATA gdata[2];
+            SRT_MSGCTRL mc = srt_msgctrl_default;
+            mc.grpdata = gdata;
+            mc.grpdata_size = 2;
+            long long data[1320/8];
+
+            cout << "[A] Receiving 1...\n";
+            int ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+            ASSERT_EQ(ds, 8);
+
+            cout << "[A] Receiving 2...\n";
+            ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+            ASSERT_EQ(ds, 8);
+
+            cout << "[A] Receiving 3...\n";
+            ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+            ASSERT_EQ(ds, 8);
+
+            // To make it possible that the state is checked before it is closed.
+            this_thread::sleep_for(seconds(1));
+
+            cout << "[A] Closing\n";
+            srt_close(accept_id);
+            cout << "[A] thread finished\n";
+    });
+
+    cout << "Connecting first 2 links weight=1:\n";
+
+    SRT_SOCKGROUPCONFIG cc[2];
+    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0].token = 0;
+    cc[0].weight = 1;
+    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[1].token = 1;
+    cc[1].weight = 1;
+
+    int result = srt_connect_group(ss, cc, 2);
+    ASSERT_EQ(result, 0);
+
+    // As we have one link, after `srt_connect_group` returns, we have
+    // this link now connected. Send one data portion.
+
+    SRT_SOCKGROUPDATA gdata[3];
+
+    long long data = 0x1234123412341234;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 3;
+
+    // We can send now. We know that we have at least one
+    // link connected and it already has the same priority
+    // as the other.
+
+    cout << "Sending (1)\n";
+    // This call should retrieve the group information
+    // AFTER the transition has happened
+    int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, sizeof data);
+    ASSERT_EQ(mc.grpdata_size, 2);
+    EXPECT_EQ(gdata[0].memberstate, SRT_GST_RUNNING);
+
+    cout << "Connecting third link weight=0:\n";
+    // Now prepare the second connection
+    cc[0].token = 2;
+    cc[0].weight = 0; // higher than the default 0
+    result = srt_connect_group(ss, cc, 1);
+    ASSERT_EQ(result, 0);
+
+    // Make sure all 3 links are connected
+    size_t psize = 3;
+    size_t nwait = 10;
+    set<SRT_MEMBERSTATUS> states;
+
+    cout << "Waiting for getting 3 links:\n";
+    while (--nwait)
+    {
+        srt_group_data(ss, gdata, &psize);
+        if (psize == 3)
+        {
+            states.clear();
+            for (int i = 0; i < 3; ++i)
+                states.insert(gdata[i].memberstate);
+
+            if (states.count(SRT_GST_PENDING))
+            {
+                cout << "Still not all links...\n";
+            }
+            else
+            {
+                cout << "All links up\n";
+                break;
+            }
+        }
+        else
+        {
+            cout << "Still " << psize << endl;
+        }
+        this_thread::sleep_for(milliseconds(500));
+    }
+    ASSERT_NE(nwait, 0);
+
+    // Now send one packet (again)
+    mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+
+    cout << "Sending (2)\n";
+    // This call should retrieve the group information
+    // AFTER the transition has happened
+    sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, sizeof data);
+    ASSERT_EQ(mc.grpdata_size, 3);
+
+    // So, let's check which link is in RUNNING state
+    // TOKEN value is the index in cc array, and we should
+    // also have the weight value there.
+
+    SRT_SOCKGROUPDATA* mane = nullptr;
+
+    for (size_t i = 0; i < mc.grpdata_size; ++i)
+    {
+        if (gdata[i].memberstate == SRT_GST_RUNNING)
+        {
+            mane = &gdata[i];
+            break;
+        }
+    }
+
+    ASSERT_NE(mane, nullptr);
+    ASSERT_EQ(mane->weight, 1);
+
+    cout << "Found activated link: [" << mane->token << "] - closing...\n";
+
+    ASSERT_NE(srt_close(mane->id), -1);
+
+    // Now expect to have only 2 links, wait for it if needed.
+    psize = 2;
+    nwait = 10;
+
+    cout << "Waiting for ONLY 2 links:\n";
+    while (--nwait)
+    {
+        srt_group_data(ss, gdata, &psize);
+        if (psize == 2)
+        {
+            break;
+        }
+        else
+        {
+            cout << "Still " << psize << endl;
+        }
+        this_thread::sleep_for(milliseconds(500));
+    }
+    ASSERT_NE(nwait, 0);
+
+    // Now send one packet (again)
+    mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+
+    cout << "Sending (3)\n";
+    // This call should retrieve the group information
+    // AFTER the transition has happened
+    sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, sizeof data);
+
+    mane = nullptr;
+    SRT_SOCKGROUPDATA* backup = nullptr;
+    for (size_t i = 0; i < mc.grpdata_size; ++i)
+    {
+        if (gdata[i].memberstate == SRT_GST_RUNNING)
+        {
+            mane = &gdata[i];
+        }
+        else
+        {
+            backup = &gdata[i];
+        }
+    }
+
+    ASSERT_NE(mane, nullptr);
+    ASSERT_NE(backup, nullptr);
+    ASSERT_EQ(mane->weight, 1);
+    ASSERT_EQ(backup->weight, 0);
+
+    cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
+    cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
+
+    // Ok, now both links should be running (this state lasts
+    // for the "temporary activation" period.
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+
+    acthr.join();
+
+    srt_cleanup();
+}
 
 
