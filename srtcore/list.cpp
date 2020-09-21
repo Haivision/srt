@@ -59,10 +59,12 @@ modified by
 // Use "inline namespace" in C++11
 namespace srt_logging
 {
-extern Logger dlog, mglog;
+extern Logger qrlog;
+extern Logger qslog;
 }
 
-using srt_logging::mglog;
+using srt_logging::qrlog;
+using srt_logging::qslog;
 
 using namespace srt::sync;
 
@@ -132,7 +134,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             // The size of the CSndLossList should be at least the size of the flow window.
             // It means that all the packets sender has sent should fit within m_iSize.
             // If the new loss does not fit, there is some error.
-            LOGC(mglog.Error, log << "IPE: New loss record is too old. Ignoring. "
+            LOGC(qslog.Error, log << "IPE: New loss record is too old. Ignoring. "
                 << "First loss seqno " << m_caSeq[m_iHead].seqstart
                 << ", insert seqno " << seqno1 << ":" << seqno2);
             return 0;
@@ -504,7 +506,7 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
     int offset = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
     if (offset < 0)
     {
-        LOGC(mglog.Error,
+        LOGC(qrlog.Error,
              log << "RCV-LOSS/insert: IPE: new LOSS %(" << seqno1 << "-" << seqno2 << ") PREDATES HEAD %"
                  << m_caSeq[m_iHead].seqstart << " -- REJECTING");
         return;

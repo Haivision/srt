@@ -1161,11 +1161,13 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
+if (ENABLE_EXPERIMENTAL_BONDING)
 	srt_add_example(test-c-client-bonding.c)
 	srt_make_application(test-c-client-bonding)
 
 	srt_add_example(test-c-server-bonding.c)
 	srt_make_application(test-c-server-bonding)
+endif()
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})

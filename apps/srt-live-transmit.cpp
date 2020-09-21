@@ -206,7 +206,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_logfile,      OptionScheme::ARG_ONE },
         { o_quiet,        OptionScheme::ARG_NONE },
         { o_verbose,      OptionScheme::ARG_NONE },
-        { o_help,         OptionScheme::ARG_NONE },
+        { o_help,         OptionScheme::ARG_VAR },
         { o_version,      OptionScheme::ARG_NONE }
     };
 
@@ -229,6 +229,44 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_help)
     {
+        string helpspec = Option<OutString>(params, o_help);
+
+        if (helpspec == "logging")
+        {
+            cerr << "Logging options:\n";
+            cerr << "    -ll <LEVEL>   - specify minimum log level\n";
+            cerr << "    -lfa <area...> - specify functional areas\n";
+            cerr << "Where:\n\n";
+            cerr << "    <LEVEL>: fatal error note warning debug\n\n";
+            cerr << "This turns on logs that are at the given log name and all on the left.\n";
+            cerr << "(Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in hierarchy.)\n\n";
+            cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
+            cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
+            cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
+            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
+            return 1;
+        }
+
         cout << "SRT sample application to transmit live streaming.\n";
         cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
         const uint32_t srtver = srt_getversion();
@@ -252,13 +290,13 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
         PrintOptionHelp(o_loglevel,  "<level=error>", "log level {fatal,error,info,note,warning}");
-        PrintOptionHelp(o_logfa,     "<fas=general,...>", "log functional area {all,general,bstats,control,data,tsbpd,rexmit}");
+        PrintOptionHelp(o_logfa,     "<fas>", "log functional area (see '-h logging' for more info)");
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
         cerr << "\n";
-        cerr << "\t-h,-help - show this help\n";
+        cerr << "\t-h,-help - show this help (use '-h logging' for logging system)\n";
         cerr << "\t-version - print SRT library version\n";
         cerr << "\n";
         cerr << "\t<input-uri>  - URI specifying a medium to read from\n";

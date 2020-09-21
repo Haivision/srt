@@ -65,6 +65,9 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
+#if ENABLE_EXPERIMENTAL_BONDING
+#include "group.h"
+#endif
 
 
 class CUDT;
@@ -129,6 +132,17 @@ public:
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
 
+   // XXX A refactoring might be needed here.
+
+   // There are no reasons found why the socket can't contain a list iterator to a
+   // multiplexer INSTEAD of m_iMuxID. There's no danger in this solution because
+   // the multiplexer is never deleted until there's at least one socket using it.
+   //
+   // The multiplexer may even physically be contained in the CUDTUnited object,
+   // just track the multiple users of it (the listener and the accepted sockets).
+   // When deleting, you simply "unsubscribe" yourself from the multiplexer, which
+   // will unref it and remove the list element by the iterator kept by the
+   // socket.
    int m_iMuxID;                             //< multiplexer ID
 
    srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
@@ -157,7 +171,7 @@ public:
    /// operation, but continues to be responsive in the connection in order
    /// to finish sending the data that were scheduled for sending so far.
    void makeShutdown();
-   void removeFromGroup();
+   void removeFromGroup(bool broken);
 
    // Instrumentally used by select() and also required for non-blocking
    // mode check in groups
@@ -213,6 +227,7 @@ public:
            CHandShake& w_hs, int& w_error);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+   int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 
       /// Check the status of the UDT socket.
       /// @param [in] u the UDT socket ID.
@@ -232,6 +247,7 @@ public:
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
 #if ENABLE_EXPERIMENTAL_BONDING
    int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets [], int arraysize);
+   int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
    int close(const SRTSOCKET u);
    int close(CUDTSocket* s);
@@ -247,7 +263,6 @@ public:
    template <class EntityType>
    int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-   int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
    int32_t epoll_set(const int eid, int32_t flags);
@@ -275,7 +290,7 @@ public:
 
    void deleteGroup(CUDTGroup* g)
    {
-       using srt_logging::mglog;
+       using srt_logging::gmlog;
 
        srt::sync::ScopedLock cg (m_GlobControlLock);
 
@@ -287,13 +302,13 @@ public:
            m_Groups.erase(g->m_GroupID);
            if (g != pg) // sanity check -- only report
            {
-               LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
+               LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
            }
            delete pg; // still delete it
            return;
        }
 
-       LOGC(mglog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
+       LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
        delete g; // still delete it.
        // Do not remove anything from the map - it's not found, anyway
    }
@@ -358,7 +373,7 @@ private:
    CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
 #endif
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
-   void updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+   bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer

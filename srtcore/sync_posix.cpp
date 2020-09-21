@@ -32,7 +32,7 @@
 
 namespace srt_logging
 {
-    extern Logger mglog;
+    extern Logger inlog;
 }
 using namespace srt_logging;
 
@@ -360,12 +360,16 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
         // If the thread has already terminated, then
         // pthread_join() returns immediately.
         // But we have to check it has terminated before replacing it.
-        LOGC(mglog.Error, log << "IPE: Assigning to a thread that is not terminated!");
+        LOGC(inlog.Error, log << "IPE: Assigning to a thread that is not terminated!");
 
 #ifndef DEBUG
+#ifndef ANDROID
         // In case of production build the hanging thread should be terminated
         // to avoid hang ups and align with C++11 implementation.
+        // There is no pthread_cancel on Android. See #1476. This error should not normally
+        // happen, but if it happen, then detaching the thread.
         pthread_cancel(m_thread);
+#endif // ANDROID
 #else
         join();
 #endif
@@ -396,12 +400,12 @@ void srt::sync::CThread::join()
     const int ret SRT_ATR_UNUSED = pthread_join(m_thread, &retval);
     if (ret != 0)
     {
-        LOGC(mglog.Error, log << "pthread_join failed with " << ret);
+        LOGC(inlog.Error, log << "pthread_join failed with " << ret);
     }
 #ifdef HEAVY_LOGGING
     else
     {
-        LOGC(mglog.Debug, log << "pthread_join SUCCEEDED");
+        LOGC(inlog.Debug, log << "pthread_join SUCCEEDED");
     }
 #endif
     // After joining, joinable should be false
@@ -414,7 +418,7 @@ void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
     const int st = pthread_create(&m_thread, NULL, start_routine, arg);
     if (st != 0)
     {
-        LOGC(mglog.Error, log << "pthread_create failed with " << st);
+        LOGC(inlog.Error, log << "pthread_create failed with " << st);
         throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
     }
 }

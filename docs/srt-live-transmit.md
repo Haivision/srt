@@ -1,12 +1,15 @@
-# Introduction into `srt-live-transmit`
+# srt-live-transmit
 
-The `srt-live-transmit` tool is a universal data transport tool, which's intention is to transport data between SRT and other medium.
+The `srt-live-transmit` tool is a universal data transport tool with a purpose to transport data between SRT and other medium.
 At the same time it is just a sample application to show some of the powerful features of SRT. We encourage you to use SRT library itself integrated into your products.
+
+## Introduction
 
 The `srt-live-transmit` can be both used as a universal SRT-to-something-else flipper, as well as a testing tool for SRT.
 
 The general usage is the following:
-```
+
+```shell
 srt-live-transmit <input-uri> <output-uri> [options]
 ```
 
@@ -21,7 +24,8 @@ Any medium can be used with any direction, although some of them may
 have special direction-dependent cases.
 
 Mind that the URI has a standard syntax:
-```
+
+```yaml
 scheme://HOST:PORT/PATH?PARAM1=VALUE1&PARAM2=VALUE2&...
 ```
 
@@ -39,15 +43,17 @@ options common for multiple media types.
 Note also that the **HOST** part is always tried to be resolved as a name,
 if its form is not directly the IPv4 address.
 
-## Example for Smoke Testing
+### Example for Smoke Testing
 
 First we need to start up the `srt-live-transmit` app, listening for unicast UDP TS input on port 1234 and making SRT available on port 4201. Note, these are randomly chosen ports. We also open the app in verbose mode for debugging:
-```
+
+```shell
 srt-live-transmit udp://:1234 srt://:4201 -v
 ```
 
 Now we need to generate a UDP stream. ffmpeg can be used to generate bars and tone as follows, doing a simple unicast push to our listening `srt-live-transmit` application:
-```
+
+```shell
 ffmpeg -f lavfi -re -i smptebars=duration=300:size=1280x720:rate=30 -f lavfi -re -i sine=frequency=1000:duration=60:sample_rate=44100 -pix_fmt yuv420p -c:v libx264 -b:v 1000k -g 30 -keyint_min 120 -profile:v baseline -preset veryfast -f mpegts "udp://127.0.0.1:1234?pkt_size=1316"
 ```
 
@@ -58,30 +64,30 @@ Now you can test in VLC (make sure you're using the latest version!) - just go t
 
 If you're having trouble, make sure this works, then add complexity one step at a time (multicast, push vs listen, etc.).
 
-
-# URI Syntaxis
+## URI Syntax
 
 Transmission mediums are specified as the standard URI format:
-```
+
+```yaml
 SCHEME://HOST:PORT?PARAM1=VALUE1&PARAM2=VALUE2&...
 ```
 
 The applications supports the following schemes:
 
-* `file` - for file or standard input and output
-* `udp` - UDP output (unicast and multicast)
-* `srt` - SRT connection
+- `file` - for file or standard input and output
+- `udp` - UDP output (unicast and multicast)
+- `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
 can be handled by other applications from this project.
 
-
-## Medium: FILE (including standard process pipes)
+### Medium: FILE (including standard process pipes)
 
 **NB!** File mode, except `file://con`, is not supported in the `srt-file-transmit` tool!
 
 The general syntax is: `file:///global/path/to/the/file`. No parameters in the URL are extracted. There's one (non-standard!) special case, though:
-```
+
+```yaml
 file://con
 ```
 
@@ -92,71 +98,72 @@ Be careful with options being specified together with having standard
 output as output URI - some of them are not allowed as the extra output
 controlled by options might interfere with the data output.
 
-
 ## Medium: UDP
 
 UDP can only be used in listening mode for input, and in calling mode
-for output. Multicast Streaming is also possible, whithout any special declaration. Just use an IP address from the multicast range. The specification and meaning of the fields in the URI depend on the mode.
+for output. Multicast Streaming is also possible, without any special declaration. Just use an IP address from the multicast range.
+The specification and meaning of the fields in the URI depend on the mode.
 
 The **PORT** part is always mandatory and it designates either the port number
 for the target host or the port number to be bound to read from.
 
 For sending to unicast:
-```
+
+```yaml
 udp://TARGET:PORT?parameters...
 ```
 
-* The **HOST** part (here: TARGET) is mandatory and designates the target host
+- The **HOST** part (here: TARGET) is mandatory and designates the target host
 
-* The **iptos** parameter designates the Type-Of-Service (TOS) field for
+- The **iptos** parameter designates the Type-Of-Service (TOS) field for
 outgoing packets via `IP_TOS` socket option.
 
-* The **ttl** parameter will set time-to-live value for outgoing packets via
+- The **ttl** parameter will set time-to-live value for outgoing packets via
 `IP_TTL` socket options.
 
 For receiving from unicast:
-```
+
+```yaml
 udp://LOCALADDR:PORT?parameters...
 ```
 
-* The **HOST** part (here: LOCALADDR) designates the local interface to bind.
+- The **HOST** part (here: LOCALADDR) designates the local interface to bind.
 It's optional (can be empty) and defaults to 0.0.0.0 (`INADDR_ANY`).
 
 For multicast the scheme is:
-```
+
+```yaml
 udp://GROUPADDR:PORT?parameters...
 ```
 
-* The **HOST** part (here: GROUPADDR) is mandatory always and designates the
+- The **HOST** part (here: GROUPADDR) is mandatory always and designates the
 target multicast group. The `@` character is handled in this case, but it's not
 necessary, as the IGMP addresses are recognized by their mask.
 
-
 For sending to a multicast group:
 
-* The **iptos** parameter designates the Type-Of-Service (TOS) field for
+- The **iptos** parameter designates the Type-Of-Service (TOS) field for
 outgoing packets via `IP_TOS` socket option.
 
-* The **ttl** parameter will set time-to-live value for outgoing packets via
+- The **ttl** parameter will set time-to-live value for outgoing packets via
 `IP_MULTICAST_TTL` socket options.
 
-* The **adapter** parameter can be used to specify the adapter to be set
+- The **adapter** parameter can be used to specify the adapter to be set
 through `IP_MULTICAST_IF` option to override the default device used for
 sending
 
-
 For receiving from a multicast group:
 
-* The **adapter** parameter can be used to specify the adapter through which
+- The **adapter** parameter can be used to specify the adapter through which
 the given multicast group can be reached (it's used to bind the socket)
 
-* The **source** parameter enforces the use of `IP_ADD_SOURCE_MEMBERSHIP`
+- The **source** parameter enforces the use of `IP_ADD_SOURCE_MEMBERSHIP`
 instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
-## Medium: SRT
+### Medium: SRT
 
 Most important about SRT is that it can be either input or output and in
 both these cases it can work in listener, caller and rendezvous mode. SRT
@@ -187,19 +194,19 @@ not specified, then it is "deduced" the following way:
 
 When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
 
-* For caller, it's always the destination host address. If this is empty, it is
+- For caller, it's always the destination host address. If this is empty, it is
 resolved to 0.0.0.0, which usually should mean connecting to the local host
 
-* For listener, it defines the IP address of the local device on which the
+- For listener, it defines the IP address of the local device on which the
 socket should listen, e.g.:
 
-```
+```yaml
 srt://10.10.10.100:5001?mode=listener
 ```
 
 An alternative method to specify this IP address is the `adapter` parameter:
 
-```
+```yaml
 srt://:5001?adapter=10.10.10.100
 ```
 
@@ -208,17 +215,17 @@ explicitly. Note also special cases of the **host** and **port** parts
 specified in the URI:
 
 - **CALLER**: the *host* and *port* parts are mandatory and specify the remote host and port to be contacted.
-    -   The **port** parameter can be used to enforce the local outgoing port (**not to be confused** with remote port!).
-    -   The **adapter** parameter is not used.
+  - The **port** parameter can be used to enforce the local outgoing port (**not to be confused** with remote port!).
+  - The **adapter** parameter is not used.
 - **LISTENER**: the *port* part is mandatory and it specifies the local listening port.
-    -   The **adapter** parameter can be used to specify the adapter.
-    -   The *host* part, if specified, can be also used to set the adapter - although in this case **mode=listener** must be set explicitly.
-    -   The **port** parameter is not used.
+  - The **adapter** parameter can be used to specify the adapter.
+  - The *host* part, if specified, can be also used to set the adapter - although in this case **mode=listener** must be set explicitly.
+  - The **port** parameter is not used.
 - **RENDEZVOUS**: the *host* and *port* parts are mandatory.
-    -   The *host* part specifies the remote host to contact.
-    -   The *port* part specifies **both local and remote port**. Note that the local port is this way both listening port and outgoing port.
-    -   The **adapter** parameter can be used to specify the adapter.
-    -   The **port** parameter can be used to specify the local port to bind to.
+  - The *host* part specifies the remote host to contact.
+  - The *port* part specifies **both local and remote port**. Note that the local port is this way both listening port and outgoing port.
+  - The **adapter** parameter can be used to specify the adapter.
+  - The **port** parameter can be used to specify the local port to bind to.
 
 **IMPORTANT** information about IPv6.
 
@@ -267,7 +274,7 @@ Examples:
 * `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
 * (different IP versions for binding and target address)
 
-Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by *srt-live-transmit*:
+Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by `srt-live-transmit`:
 
 - **mode**: enforce caller, listener or rendezvous mode
 - **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). This can be used only in **caller mode**.
@@ -275,16 +282,57 @@ Some parameters handled for SRT medium are specific, all others are socket optio
 - **timeout**: sets `SRTO_RCVTIMEO` for input medium or `SRTO_SNDTIMEO` for output medium
 - **adapter**: sets the adapter for listening in *listener* or *rendezvous* mode
 
-All other parameters are SRT socket options. Here are some most characteristic options:
+All other parameters are SRT socket options. The following have the following value types:
 
-- **latency**: Sets the maximum accepted transmission latency and should be >= 2.5 times the RTT (default: 120ms; when both parties set different values, the maximum of the two is used for both)
-- **passphrase**: Sets the password for the encrypted transmission.
-- **pbkeylen**:  Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
-- **tlpktdrop**: Whether to drop packets that are not delivered on time. Default is on.
-- **conntimeo**: Connection timeout (in ms). Caller default: 3000, rendezvous (x 10)
+- `bool`. Possible values: `yes`/`no`, `on`/`off`, `true`/`false`, `1`/`0`.
+- `bytes` positive integer [1; INT32_MAX].
+- `ms` - positive integer value of milliseconds.
 
-For the complete list of options, please refer to the SRT header file `srt.h` and search for `SRT_SOCKOPT` enum type. Please note that the set of available options may be version dependent. All options are available under the lowercase name of the option without the `SRTO_` prefix. For example, `SRTO_PASSPHRASE` can be set using
-a **passphrase** parameter. The mapping table `srt_options` can be found in `common/socketoptions.hpp` file.
+| URI param            | Values           | SRT Option                | Description |
+| -------------------- | ---------------- | ------------------------- | ----------- |
+| `congestion`         | {`live`, `file`} | `SRTO_CONGESTION`         | Type of congestion control. |
+| `conntimeo`          | `ms`             | `SRTO_CONNTIMEO`          | Connection timeout. |
+| `drifttracer`        | `bool`           | `SRTO_DRIFTTRACER`        | Enable drift tracer. |
+| `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
+| `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |
+| `groupconnect`       | {`0`, `1`}       | `SRTO_GROUPCONNECT`       | Accept group connections. |
+| `groupstabtimeo`     | `ms`             | `SRTO_GROUPSTABTIMEO`     | Group stability timeout. |
+| `inputbw`            | `bytes`          | `SRTO_INPUTBW`            | Input bandwidth. |
+| `iptos`              | 0..255           | `SRTO_IPTOS`              | IP socket type of service |
+| `ipttl`              | 1..255           | `SRTO_IPTTL`              | Defines IP socket "time to live" option. |
+| `ipv6only`           | -1..1            | `SRTO_IPV6ONLY`           | Allow only IPv6. |
+| `kmpreannounce`      | 0..              | `SRTO_KMPREANNOUNCE`      | Duration of Stream Encryption key switchover (in packets). |
+| `kmrefreshrate`      | 0..              | `SRTO_KMREFRESHRATE`      | Stream encryption key refresh rate (in packets). |
+| `latency`            | 0..              | `SRTO_LATENCY`            | Defines the maximum accepted transmission latency. |
+| `linger`             | 0..              | `SRTO_LINGER`             | Link linger value |
+| `lossmaxttl`         | 0..              | `SRTO_LOSSMAXTTL`         | Packet reorder tolerance. |
+| `maxbw`              | 0..              | `SRTO_MAXBW`              | Bandwidth limit in bytes |
+| `messageapi`         | `bool`           | `SRTO_MESSAGEAPI`         | Enable SRT message mode. |
+| `minversion`         | maj.min.rev      | `SRTO_MINVERSION`         | Minimum SRT library version of a peer. |
+| `mss`                | 76..             | `SRTO_MSS`                | MTU size |
+| `nakreport`          | `bool`           | `SRTO_NAKREPORT`          | Enables/disables periodic NAK reports |
+| `oheadbw`            | 5..100           | `SRTO_OHEADBW`            | limits bandwidth overhead, percents |
+| `packetfilter`       | `string`         | `SRTO_PACKETFILTER`       | Set up the packet filter. |
+| `passphrase`         | `string`         | `SRTO_PASSPHRASE`         | Password for the encrypted transmission. |
+| `payloadsize`        | 0..              | `SRTO_PAYLOADSIZE`        | Maximum payload size. |
+| `pbkeylen`           | {16, 24, 32}     | `SRTO_PBKEYLEN`           | Crypto key length in bytes. |
+| `peeridletimeo`      | `ms`             | `SRTO_PEERIDLETIMEO`      | Peer idle timeout. |
+| `peerlatency`        | `ms`             | `SRTO_PEERLATENCY`        | Minimum receiver latency to be requested by sender. |
+| `rcvbuf`             | `bytes`          | `SRTO_RCVBUF`             | Receiver buffer size |
+| `rcvlatency`         | `ms`             | `SRTO_RCVLATENCY`         | Receiver-side latency. |
+| `rexmitalgo`         | {`0`, `1`}       | `SRTO_RETRANSMITALGOR`    | Packet retransmission algorithm to use. |
+| `sndbuf`             | `bytes`          | `SRTO_SNDBUF`             | Sender buffer size. |
+| `snddropdelay`       | `ms`             | `SRTO_SNDDROPDELAY`       | Sender's delay before dropping packets. |
+| `streamid`           | `string`         | `SRTO_STREAMID`           | Stream ID (settable in caller mode only, visible on the listener peer). |
+| `tlpktdrop`          | `bool`           | `SRTO_TLPKTDROP`          | Drop too late packets. |
+| `transtype`          | {`live`, `file`} | `SRTO_TRANSTYPE`          | Transmission type |
+| `tsbpdmode`          | `bool`           | `SRTO_TSBPDMODE`          | Timestamp-based packet delivery mode. |
+
+The list of socket options can also be found in SRT header file `srt.h` (`SRT_SOCKOPT` enum type).
+Please note that the set of available options may be version dependent.
+All options are available under the lowercase name of the option without the `SRTO_` prefix.
+For example, `SRTO_PASSPHRASE` can be set using a **passphrase** parameter.
+The mapping table `srt_options` can be found in `common/socketoptions.hpp` file.
 
 Important thing about the options (which holds true also for options for
 TCP and UDP, even though it's not described anywhere explicitly) is
@@ -300,7 +348,7 @@ Note also that **blocking** option has no practical use for users.
 Normally the non-blocking mode is used only when you have an event-driven application that needs a common
 signal bar for multiple event sources, or you prefer fibers to threads, when working with multiple SRT sockets in one application. The *srt-live-transmit* application isn't defined this way. This makes that the practical result of non-blocking mode here is that it uses polling on exactly one socket with infinite timeout. Every reading and writing operation will then return always without blocking, but when they report the "again" situation the application will stall on `srt_epoll_wait()` call. This option then exists for the testing purposes, as well as educational, to serve as an example of how your application should use the non-blocking mode.
 
-# Command-Line Options
+## Command-Line Options
 
 The following options are available in the application. Note that some may affect specifically only selected type of medium.
 
@@ -310,8 +358,8 @@ but this space must be part of the parameter and not extracted by a
 shell (using **"** **"** quotes or backslash).
 
 - **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
-    - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
-    - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
+  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
+  - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
 - **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.
 - **-buffering** - Enable source buffering up to the specified number of packets. Default: 10. Minimum: 1 (no buffering).
@@ -326,7 +374,7 @@ shell (using **"** **"** quotes or backslash).
 - **-help, -h** - Show help.
 - **-version** - Show version info.
 
-# Testing Considerations
+## Testing Considerations
 
 Before starting any test with `srt-live-transmit` please make sure your video source works properly. For example: if you use VLC as a test player, send a UDP stream directly to it before routing it through `srt-live-transmit`.
 
@@ -343,7 +391,7 @@ since it is easier to configure in terms of firewall/router setup. It also makes
 Sender in listener mode when trying to connect from various end points with possibly
 unknown IP addresses.
 
-## UDP Performance
+### UDP Performance
 
 Performance issues concerning reading from UDP medium were reported
 in [#933](https://github.com/Haivision/srt/issues/933) and
