@@ -10939,8 +10939,6 @@ void CUDT::removeEPollID(const int eid)
     leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-#endif
 void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 {
     if (evt >= TEV_E_SIZE)
