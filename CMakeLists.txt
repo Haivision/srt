@@ -126,6 +126,7 @@ option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pt
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -424,6 +425,10 @@ elseif (ENABLE_STDCXX_SYNC)
 endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+
+if (ENABLE_SOCK_CLOEXEC)
+	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+endif()
 
 if (CMAKE_MAJOR_VERSION LESS 3)
 	set (FORCE_CXX_STANDARD_GNUONLY 1)
