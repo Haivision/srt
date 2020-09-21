@@ -88,13 +88,9 @@ using namespace srt_logging;
     defined(__linux__) || \
     defined(__OpenBSD__) || \
     defined(__NetBSD__)
-#define set_cloexec set_cloexec_ioctl
-#else
-#define set_cloexec set_cloexec_fcntl
-#endif
 
-#if !defined(__CYGWIN__) && !defined(__MSYS__) && !defined(__HAIKU__)
-static int set_cloexec_ioctl(int fd, int set) {
+// Set the CLOEXEC flag using ioctl() function
+static int set_cloexec(int fd, int set) {
     int r;
 
     do
@@ -106,9 +102,9 @@ static int set_cloexec_ioctl(int fd, int set) {
 
     return 0;
 }
-#endif
-
-static int set_cloexec_fcntl(int fd, int set) {
+#else
+// Set the CLOEXEC flag using fcntl() function
+static int set_cloexec(int fd, int set) {
     int flags;
     int r;
 
@@ -137,8 +133,9 @@ static int set_cloexec_fcntl(int fd, int set) {
 
     return 0;
 }
-#endif
-#endif //ENABLE_CLOEXEC
+#endif // if defined(_AIX) ...
+#endif // ifndef _WIN32
+#endif // if ENABLE_CLOEXEC
 
 CChannel::CChannel():
 m_iSocket(INVALID_SOCKET),
