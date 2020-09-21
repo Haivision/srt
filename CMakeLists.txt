@@ -772,6 +772,8 @@ MafReadDir(srtcore filelist.maf
 	PRIVATE_HEADERS HEADERS_srt_private
 )
 
+message(STATUS "SRT Sources: ${SOURCES_srt}")
+
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
