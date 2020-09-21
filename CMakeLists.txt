@@ -126,7 +126,7 @@ option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pt
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
-option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" OFF)
+option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
