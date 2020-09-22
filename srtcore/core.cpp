@@ -8806,13 +8806,18 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     // instance, through either HSREQ or HSRSP.
 #if ENABLE_HEAVY_LOGGING
     const char* hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
+#if ENABLE_EXPERIMENTAL_BONDING
+    const string grpspec =
+        m_parent->m_IncludedGroup
+            ? " group=$" + Sprint(m_parent->m_IncludedGroup->id())
+            : string();
+#else
+    const char* grpspec = "";
+#endif
+
     HLOGC(cnlog.Debug, log << "updateAfterSrtHandshake: version="
             << m_ConnRes.m_iVersion << " side=" << hs_side[m_SrtHsSide]
-#if ENABLE_EXPERIMENTAL_BONDING
-            << " group=$"
-            << (m_parent->m_IncludedGroup ? Sprint(m_parent->m_IncludedGroup->id()) : string("NONE"))
-#endif
-            );
+            << grpspec);
 #endif
 
     if (hsv > HS_VERSION_UDT4)
