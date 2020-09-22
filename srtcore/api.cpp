@@ -2272,7 +2272,7 @@ int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
            return epoll_remove_entity(eid, s->m_pUDT);
    }
 
-   LOGC(ealog.Error, log << "IPE: remove_usock: @" << u
+   LOGC(ealog.Error, log << "remove_usock: @" << u
            << " not found as either socket or group. Removing only from epoll system.");
    int no_events = 0;
    return m_EPoll.update_usock(eid, u, &no_events);
