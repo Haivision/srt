@@ -77,7 +77,9 @@ using namespace srt_logging;
     static const int INVALID_SOCKET = -1;
 #endif
 
+#if ENABLE_SOCK_CLOEXEC
 #ifndef _WIN32
+
 #if defined(_AIX) || \
     defined(__APPLE__) || \
     defined(__DragonFly__) || \
@@ -86,12 +88,9 @@ using namespace srt_logging;
     defined(__linux__) || \
     defined(__OpenBSD__) || \
     defined(__NetBSD__)
-#define set_cloexec set_cloexec_ioctl
-#else
-#define set_cloexec set_cloexec_fcntl
-#endif
-#if !defined(__CYGWIN__) && !defined(__MSYS__) && !defined(__HAIKU__)
-static int set_cloexec_ioctl(int fd, int set) {
+
+// Set the CLOEXEC flag using ioctl() function
+static int set_cloexec(int fd, int set) {
     int r;
 
     do
@@ -103,8 +102,9 @@ static int set_cloexec_ioctl(int fd, int set) {
 
     return 0;
 }
-#endif
-static int set_cloexec_fcntl(int fd, int set) {
+#else
+// Set the CLOEXEC flag using fcntl() function
+static int set_cloexec(int fd, int set) {
     int flags;
     int r;
 
@@ -133,7 +133,9 @@ static int set_cloexec_fcntl(int fd, int set) {
 
     return 0;
 }
-#endif
+#endif // if defined(_AIX) ...
+#endif // ifndef _WIN32
+#endif // if ENABLE_CLOEXEC
 
 CChannel::CChannel():
 m_iSocket(INVALID_SOCKET),
@@ -151,6 +153,7 @@ CChannel::~CChannel()
 
 void CChannel::createSocket(int family)
 {
+#if ENABLE_SOCK_CLOEXEC
     bool cloexec_flag = false;
     // construct an socket
 #if defined(SOCK_CLOEXEC)
@@ -164,10 +167,14 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
     cloexec_flag = true;
 #endif
+#else // ENABLE_SOCK_CLOEXEC
+    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+#endif // ENABLE_SOCK_CLOEXEC
 
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
+#if ENABLE_SOCK_CLOEXEC
 #ifdef _WIN32
     // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
 #else
@@ -177,6 +184,8 @@ void CChannel::createSocket(int family)
         }
     }
 #endif
+#endif // ENABLE_SOCK_CLOEXEC
+
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
         int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)(&m_iIpV6Only), sizeof(m_iIpV6Only));

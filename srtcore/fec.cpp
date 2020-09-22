@@ -973,6 +973,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     g.dismissed = true;
 }
 
+#if ENABLE_HEAVY_LOGGING
 static inline char CellMark(const std::deque<bool>& cells, int index)
 {
     if (index >= int(cells.size()))
@@ -981,7 +982,6 @@ static inline char CellMark(const std::deque<bool>& cells, int index)
     return cells[index] ? '#' : '.';
 }
 
-#if ENABLE_HEAVY_LOGGING
 static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size)
 {
     int i = 0;
