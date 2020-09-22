@@ -325,6 +325,7 @@ public: // internal API
     static const int SRT_TLPKTDROP_MINTHRESHOLD_MS = 1000;
     static const uint64_t COMM_KEEPALIVE_PERIOD_US = 1*1000*1000;
     static const int32_t COMM_SYN_INTERVAL_US = 10*1000;
+    static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80*1000;
     static const int COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS = 3000;
     static const uint16_t MAX_WEIGHT = 32767;
 
