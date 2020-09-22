@@ -77,7 +77,7 @@ using namespace srt_logging;
     static const int INVALID_SOCKET = -1;
 #endif
 
-#if ENABLE_CLOEXEC
+#if ENABLE_SOCK_CLOEXEC
 #ifndef _WIN32
 
 #if defined(_AIX) || \
@@ -153,7 +153,7 @@ CChannel::~CChannel()
 
 void CChannel::createSocket(int family)
 {
-#if ENABLE_CLOEXEC
+#if ENABLE_SOCK_CLOEXEC
     bool cloexec_flag = false;
     // construct an socket
 #if defined(SOCK_CLOEXEC)
@@ -167,14 +167,14 @@ void CChannel::createSocket(int family)
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
     cloexec_flag = true;
 #endif
-#else // ENABLE_CLOEXEC
+#else // ENABLE_SOCK_CLOEXEC
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-#endif // ENABLE_CLOEXEC
+#endif // ENABLE_SOCK_CLOEXEC
 
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
-#if ENABLE_CLOEXEC
+#if ENABLE_SOCK_CLOEXEC
 #ifdef _WIN32
     // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
 #else
@@ -184,7 +184,7 @@ void CChannel::createSocket(int family)
         }
     }
 #endif
-#endif // ENABLE_CLOEXEC
+#endif // ENABLE_SOCK_CLOEXEC
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
