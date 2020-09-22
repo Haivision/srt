@@ -132,7 +132,7 @@ Old and deprecated version of `srt_create_socket`. All arguments are ignored.
 
 **NOTE** changes with respect to UDT version:
 
-* In UDT (and SRT versions before 1.5.0) the `af` parameter was specifying the
+* In UDT (and SRT versions before 1.4.2) the `af` parameter was specifying the
 socket family (`AF_INET` or `AF_INET6`). This is now not required; this parameter
 is decided at the call of `srt_conenct` or `srt_bind`.
 

@@ -198,16 +198,16 @@ The following table lists SRT socket options in alphabetical order. Option detai
 
 | Option Name                                            | Since | Binding | Type      | Units   | Default    | Range    | Dir |Entity |
 | :----------------------------------------------------- | :---: | :-----: | :-------: | :-----: | :--------: | :------: |:---:|:-----:|
-| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)              | 1.5.0 | pre     | `string`  |         |            |          | RW  | GSD+  |
+| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)              | 1.4.2 | pre     | `string`  |         |            |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                  | 1.3.0 | pre     | `string`  |         | "live"     | *        | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                    | 1.1.2 | pre     | `int32_t` | msec    | 3000       | 0..      | W   | GSD+  |
-| [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                | 1.5.0 | post    | `bool`    |         | true       |          | RW  | GSD   |
+| [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                | 1.4.2 | post    | `bool`    |         | true       |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)  | 1.3.2 | pre     | `bool`    |         | true       |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                            |       |         | `int32_t` | flags   |            |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                  |       | pre     | `int32_t` | pkts    | 25600      | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)              | 1.5.0 | pre     | `int32_t` |         | 0          | 0...1    | W   | S     |
-| [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          |       | pre     | `int32_t` | ms      | 40         | 10-...   | W   | GSD+  |
-| [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    |       | pre     | `int32_t` | enum    |            |          | R   | S     |
+| [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          | 1.5.0 | pre     | `int32_t` | ms      | 40         | 10-...   | W   | GSD+  |
+| [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    | 1.5.0 | pre     | `int32_t` | enum    |            |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | B/s     | 0          | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre     | `int32_t` |         | (system)   | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                            | 1.0.5 | pre     | `int32_t` | hops    | (system)   | 1..255   | RW  | GSD   |
@@ -239,7 +239,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_RCVSYN`](#SRTO_RCVSYN)                          |       | post    | `bool`    |         | true       |          | RW  | GSI   |
 | [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO)                      |       | post    | `int32_t` | ms      | -1         | -1, 0..  | RW  | GSI   |
 | [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS)                  |       | pre     | `bool`    |         | false      |          | RW  | S     |
-| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.5.0 | pre     | `int32_t` |         | 0          | [0, 1]   | W   | GSD   |
+| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.4.2 | pre     | `int32_t` |         | 0          | [0, 1]   | W   | GSD   |
 | [`SRTO_REUSEADDR`](#SRTO_REUSEADDR)                    |       | pre     | `bool`    |         | true       |          | RW  | GSD   |
 | [`SRTO_SENDER`](#SRTO_SENDER)                          | 1.0.4 | pre     | `bool`    |         | false      |          | W   | S     |
 | [`SRTO_SNDBUF`](#SRTO_SNDBUF)                          |       | pre     | `int32_t` | bytes   | 8192 bufs  | *        | RW  | GSD+  |
@@ -266,7 +266,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 
 | OptName               | Since | Binding | Type     | Units  | Default  | Range  | Dir |Entity|
 | --------------------- | ----- | ------- | -------- | ------ | -------- | ------ |-----|------|
-| `SRTO_BINDTODEVICE`   | 1.5.0 | pre     | `string` |        |          |        | RW  | GSD+ |
+| `SRTO_BINDTODEVICE`   | 1.4.2 | pre     | `string` |        |          |        | RW  | GSD+ |
 
 - Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
 This effectively limits the packets received by this socket to only those
@@ -323,7 +323,7 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 | OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_DRIFTTRACER`| 1.5.0 | post    | `bool`    |        | true     |        | RW  | GSD    |
+| `SRTO_DRIFTTRACER`| 1.4.2 | post    | `bool`    |        | true     |        | RW  | GSD    |
 
 - Enables or disables time drift tracer (receiver).
 
@@ -438,7 +438,7 @@ function will return the group, not this socket ID.
 
 | OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
 | --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPSTABTIMEO` |       | pre     | `int32_t`  | ms     | 40       | 10-... | W   | GSD+   |
+| `SRTO_GROUPSTABTIMEO` | 1.5.0 | pre     | `int32_t`  | ms     | 40       | 10-... | W   | GSD+   |
 
 - This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability 
 timeout, which is the maximum interval between two consecutive packets retrieved from 
@@ -482,7 +482,7 @@ option, as the default value of it is way above any sensible value of
 
 | OptName              | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPTYPE`     |       | pre     | `int32_t`  | enum   |          |        | R   | S      |
+| `SRTO_GROUPTYPE`     | 1.5.0 | pre     | `int32_t`  | enum   |          |        | R   | S      |
 
 - This option is read-only and it is intended to be called inside the listener
 callback handler (see `srt_listen_callback`). Possible values are defined in
@@ -1194,7 +1194,7 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 | OptName               | Since | Binding | Type      | Units  | Default | Range  | Dir | Entity |
 | --------------------- | ----- | ------- | --------- | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMITALGO` | 1.5.0 | pre     | `int32_t` |        | 0       | [0, 1] | W   | GSD    |
+| `SRTO_RETRANSMITALGO` | 1.4.2 | pre     | `int32_t` |        | 0       | [0, 1] | W   | GSD    |
 
 - Retransmission algorithm to use (SENDER option):
    - 0 - Default (retransmit on every loss report).
