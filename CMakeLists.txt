@@ -106,6 +106,7 @@ endif()
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
+option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -611,6 +612,10 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+if (ENABLE_EXPERIMENTAL_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+endif()
+
 if (ENABLE_THREAD_CHECK)
 	add_definitions(
 		-DSRT_ENABLE_THREADCHECK=1
@@ -771,6 +776,8 @@ MafReadDir(srtcore filelist.maf
 	PROTECTED_HEADERS HEADERS_srt
 	PRIVATE_HEADERS HEADERS_srt_private
 )
+
+message(STATUS "SRT Sources: ${SOURCES_srt}")
 
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
@@ -1124,8 +1131,10 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		srt_add_testprogram(srt-test-mpbond)
-		srt_make_application(srt-test-mpbond)
+		if (ENABLE_EXPERIMENTAL_BONDING)
+			srt_add_testprogram(srt-test-mpbond)
+			srt_make_application(srt-test-mpbond)
+		endif()
 
 	else()
 		message(STATUS "DEVEL APPS (testing): DISABLED")
@@ -1159,11 +1168,13 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
+if (ENABLE_EXPERIMENTAL_BONDING)
 	srt_add_example(test-c-client-bonding.c)
 	srt_make_application(test-c-client-bonding)
 
 	srt_add_example(test-c-server-bonding.c)
 	srt_make_application(test-c-server-bonding)
+endif()
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})

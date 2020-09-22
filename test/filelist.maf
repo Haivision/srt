@@ -17,3 +17,8 @@ test_sync.cpp
 test_timer.cpp
 test_unitqueue.cpp
 test_utilities.cpp
+
+# Tests for bonding only - put here!
+
+SOURCES - ENABLE_EXPERIMENTAL_BONDING
+

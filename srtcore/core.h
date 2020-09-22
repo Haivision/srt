@@ -138,6 +138,8 @@ enum SeqPairItems
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
 };
 
+#if ENABLE_EXPERIMENTAL_BONDING
+
 struct SRT_SocketOptionObject
 {
     struct SingleOption
@@ -163,6 +165,9 @@ struct SRT_SocketOptionObject
 
     bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
 };
+
+class CUDTGroup;
+#endif
 
 template <typename T>
 inline T cast_optval(const void* optval)
@@ -203,7 +208,6 @@ inline bool cast_optval(const void* optval, int optlen)
 class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
-class CUDTGroup;
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -242,6 +246,7 @@ public: //API
     static int startup();
     static int cleanup();
     static SRTSOCKET socket();
+#if ENABLE_EXPERIMENTAL_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static int addSocketToGroup(SRTSOCKET socket, SRTSOCKET group);
     static int removeSocketFromGroup(SRTSOCKET socket);
@@ -249,6 +254,7 @@ public: //API
     static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
     static int configureGroup(SRTSOCKET groupid, const char* str);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
+#endif
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, UDPSOCKET udpsock);
     static int listen(SRTSOCKET u, int backlog);
@@ -256,7 +262,9 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
+#if ENABLE_EXPERIMENTAL_BONDING
     static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
+#endif
     static int close(SRTSOCKET u);
     static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
@@ -287,7 +295,9 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+#if ENABLE_EXPERIMENTAL_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+#endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
@@ -529,7 +539,9 @@ private:
             CPacket& w_reqpkt, CHandShake& w_hs);
 
     SRT_ATR_NODISCARD size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
+#if ENABLE_EXPERIMENTAL_BONDING
     SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
+#endif
     SRT_ATR_NODISCARD size_t fillHsExtKMREQ(uint32_t *pcmdspec, size_t ki);
     SRT_ATR_NODISCARD size_t fillHsExtKMRSP(uint32_t *pcmdspec, const uint32_t *kmdata, size_t kmdata_wordsize);
 
@@ -541,12 +553,14 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
+#if ENABLE_EXPERIMENTAL_BONDING
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
     SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
     void synchronizeWithGroup(CUDTGroup* grp);
+#endif
 
     void updateAfterSrtHandshake(int hsv);
 
@@ -640,9 +654,11 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
 
+#if ENABLE_EXPERIMENTAL_BONDING
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
+#endif
 
     /// read the performance data with bytes counters since bstats() 
     ///  
@@ -776,7 +792,9 @@ private: // Identification
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
+#if ENABLE_EXPERIMENTAL_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake
+#endif
 
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)

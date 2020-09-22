@@ -10,7 +10,6 @@ core.cpp
 crypto.cpp
 epoll.cpp
 fec.cpp
-group.cpp
 handshake.cpp
 list.cpp
 logger_default.cpp
@@ -24,6 +23,9 @@ srt_c_api.cpp
 window.cpp
 srt_compat.c
 sync.cpp
+
+SOURCES - ENABLE_EXPERIMENTAL_BONDING
+group.cpp
 
 SOURCES - !ENABLE_STDCXX_SYNC
 sync_posix.cpp
@@ -52,7 +54,6 @@ common.h
 core.h
 crypto.h
 epoll.h
-group.h
 handshake.h
 list.h
 logging.h
@@ -66,3 +67,6 @@ srt_compat.h
 threadname.h
 utilities.h
 window.h
+
+PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
+group.h
