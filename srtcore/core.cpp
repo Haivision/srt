@@ -218,7 +218,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_iOPT_SndDropDelay     = 0;
     m_bOPT_StrictEncryption = true;
     m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
-    m_uOPT_StabilityTimeout = 4*CUDT::COMM_SYN_INTERVAL_US;
+    m_uOPT_StabilityTimeout = CUDT::COMM_DEF_STABILITY_TIMEOUT_US;
     m_OPT_GroupConnect      = 0;
     m_HSGroupType           = SRT_GTYPE_UNDEFINED;
     m_iOPT_RetransmitAlgo       = 0;

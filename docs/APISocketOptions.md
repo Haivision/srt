@@ -206,7 +206,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_EVENT`](#SRTO_EVENT)                            |       |         | `int32_t` | flags   |            |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                  |       | pre     | `int32_t` | pkts    | 25600      | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)              | 1.5.0 | pre     | `int32_t` |         | 0          | 0...1    | W   | S     |
-| [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          |       | pre     | `int32_t` | ms      | 40         | 10-...   | W   | GSD+  |
+| [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          |       | pre     | `int32_t` | ms      | 80         | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    |       | pre     | `int32_t` | enum    |            |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post    | `int64_t` | B/s     | 0          | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre     | `int32_t` |         | (system)   | 0..255   | RW  | GSD   |
