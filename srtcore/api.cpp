@@ -2878,7 +2878,7 @@ void* CUDTUnited::garbageCollect(void* p)
       if (empty)
          break;
 
-      this_thread::sleep_for(milliseconds_from(1));
+      srt::sync::this_thread::sleep_for(milliseconds_from(1));
    }
 
    THREAD_EXIT();
