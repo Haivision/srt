@@ -234,7 +234,7 @@ private:
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
-    void sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
+    size_t sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
@@ -307,6 +307,7 @@ public:
 
     void syncWithSocket(const CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    int  getGroupDataIn(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
