@@ -8,17 +8,16 @@ on:
 
 jobs:
   build:
-
-    name: windows-cxx11
-    runs-on: windows-latest
+    name: macos-cxx11
+    runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v2
     - name: configure
       run: |
-        md _build && cd _build
+        mkdir _build && cd _build
         cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON
     - name: build
-      run: cd _build && cmake --build ./ --config Release
+      run: cd _build && cmake --build ./
     - name: test
-      run: cd _build && ctest --extra-verbose -C Release
+      run: cd _build && ctest --extra-verbose

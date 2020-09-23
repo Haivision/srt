@@ -12,6 +12,8 @@ epoll.cpp
 fec.cpp
 handshake.cpp
 list.cpp
+logger_default.cpp
+logger_defs.cpp
 md5.cpp
 packet.cpp
 packetfilter.cpp
@@ -22,9 +24,11 @@ window.cpp
 srt_compat.c
 sync.cpp
 
-# Add when created
-# SOURCES - !ENABLE_STDCXX_SYNC
-# sync_posix.cpp
+SOURCES - ENABLE_EXPERIMENTAL_BONDING
+group.cpp
+
+SOURCES - !ENABLE_STDCXX_SYNC
+sync_posix.cpp
 
 SOURCES - ENABLE_STDCXX_SYNC
 sync_cxx11.cpp
@@ -63,3 +67,6 @@ srt_compat.h
 threadname.h
 utilities.h
 window.h
+
+PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
+group.h

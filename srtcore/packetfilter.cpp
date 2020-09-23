@@ -60,13 +60,13 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
         unit->m_iFlag = CUnit::GOOD;
-        HLOGC(mglog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
+        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         w_incoming.push_back(unit);
     }
     else
     {
         // Packet not to be passthru, update stats
-        CGuard lg(m_parent->m_StatsLock);
+        ScopedLock lg(m_parent->m_StatsLock);
         ++m_parent->m_stats.rcvFilterExtra;
         ++m_parent->m_stats.rcvFilterExtraTotal;
     }
@@ -80,13 +80,13 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         int dist = CSeqNo::seqoff(i->first, i->second) + 1;
         if (dist > 0)
         {
-            CGuard lg(m_parent->m_StatsLock);
+            ScopedLock lg(m_parent->m_StatsLock);
             m_parent->m_stats.rcvFilterLoss += dist;
             m_parent->m_stats.rcvFilterLossTotal += dist;
         }
         else
         {
-            LOGC(mglog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
+            LOGC(pflog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
                     << i->first << " - %" << i->second);
         }
     }
@@ -94,12 +94,12 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     // Pack first recovered packets, if any.
     if (!m_provided.empty())
     {
-        HLOGC(mglog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
+        HLOGC(pflog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
 
         size_t nsupply = m_provided.size();
         InsertRebuilt(w_incoming, m_unitq);
 
-        CGuard lg(m_parent->m_StatsLock);
+        ScopedLock lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvFilterSupply += nsupply;
         m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
     }
@@ -179,7 +179,7 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         CUnit* u = uq->getNextAvailUnit();
         if (!u)
         {
-            LOGC(mglog.Error, log << "FILTER: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
+            LOGC(pflog.Error, log << "FILTER: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
             break;
         }
 
@@ -196,7 +196,7 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
         memcpy((packet.m_pcData), i->buffer, i->length);
         packet.setLength(i->length);
 
-        HLOGC(mglog.Debug, log << "FILTER: PROVIDING rebuilt packet %" << packet.getSeqNo());
+        HLOGC(pflog.Debug, log << "FILTER: PROVIDING rebuilt packet %" << packet.getSeqNo());
 
         incoming.push_back(u);
     }

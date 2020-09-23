@@ -58,8 +58,8 @@ modified by
 #include <csignal>
 
 #include "channel.h"
+#include "core.h" // srt_logging:kmlog
 #include "packet.h"
-#include "api.h" // SockaddrToString - possibly move it to somewhere else
 #include "logging.h"
 #include "netinet_any.h"
 #include "utilities.h"
@@ -71,8 +71,74 @@ modified by
 using namespace std;
 using namespace srt_logging;
 
+#ifdef _WIN32
+    // use INVALID_SOCKET, as provided
+#else
+    static const int INVALID_SOCKET = -1;
+#endif
+
+#if ENABLE_SOCK_CLOEXEC
+#ifndef _WIN32
+
+#if defined(_AIX) || \
+    defined(__APPLE__) || \
+    defined(__DragonFly__) || \
+    defined(__FreeBSD__) || \
+    defined(__FreeBSD_kernel__) || \
+    defined(__linux__) || \
+    defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+
+// Set the CLOEXEC flag using ioctl() function
+static int set_cloexec(int fd, int set) {
+    int r;
+
+    do
+        r = ioctl(fd, set ? FIOCLEX : FIONCLEX);
+    while (r == -1 && errno == EINTR);
+
+    if (r)
+        return errno;
+
+    return 0;
+}
+#else
+// Set the CLOEXEC flag using fcntl() function
+static int set_cloexec(int fd, int set) {
+    int flags;
+    int r;
+
+    do
+        r = fcntl(fd, F_GETFD);
+    while (r == -1 && errno == EINTR);
+
+    if (r == -1)
+        return errno;
+
+    /* Bail out now if already set/clear. */
+    if (!!(r & FD_CLOEXEC) == !!set)
+        return 0;
+
+    if (set)
+        flags = r | FD_CLOEXEC;
+    else
+        flags = r & ~FD_CLOEXEC;
+
+    do
+        r = fcntl(fd, F_SETFD, flags);
+    while (r == -1 && errno == EINTR);
+
+    if (r)
+        return errno;
+
+    return 0;
+}
+#endif // if defined(_AIX) ...
+#endif // ifndef _WIN32
+#endif // if ENABLE_CLOEXEC
+
 CChannel::CChannel():
-m_iSocket(),
+m_iSocket(INVALID_SOCKET),
 m_iIpTTL(-1),   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
 m_iIpToS(-1),   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
 m_iSndBufSize(65536),
@@ -87,17 +153,38 @@ CChannel::~CChannel()
 
 void CChannel::createSocket(int family)
 {
+#if ENABLE_SOCK_CLOEXEC
+    bool cloexec_flag = false;
     // construct an socket
-    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-
-#ifdef _WIN32
-    // use INVALID_SOCKET, as provided
+#if defined(SOCK_CLOEXEC)
+    m_iSocket = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+    if (m_iSocket == INVALID_SOCKET)
+    {
+        m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+        cloexec_flag = true;
+    }
 #else
-    static const int INVALID_SOCKET = -1;
+    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    cloexec_flag = true;
 #endif
+#else // ENABLE_SOCK_CLOEXEC
+    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+#endif // ENABLE_SOCK_CLOEXEC
 
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+
+#if ENABLE_SOCK_CLOEXEC
+#ifdef _WIN32
+    // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
+#else
+    if (cloexec_flag) {
+        if (0 != set_cloexec(m_iSocket, 1)) {
+            throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+        }
+    }
+#endif
+#endif // ENABLE_SOCK_CLOEXEC
 
     if ((m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
@@ -106,7 +193,7 @@ void CChannel::createSocket(int family)
         {
             int err = errno;
             char msg[160];
-            LOGC(mglog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
+            LOGC(kmlog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_iIpV6Only
                     << ": " << SysStrError(err, msg, 159));
         }
     }
@@ -122,7 +209,7 @@ void CChannel::open(const sockaddr_any& addr)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
     m_BindAddr = addr;
-    LOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(m_BindAddr));
+    LOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -164,7 +251,7 @@ void CChannel::open(int family)
 
     ::freeaddrinfo(res);
 
-    HLOGC(mglog.Debug, log << "CHANNEL: Bound to local address: " << SockaddrToString(m_BindAddr));
+    HLOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
@@ -257,6 +344,24 @@ void CChannel::setUDPSockOpt()
           }
       }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+      if (!m_BindToDevice.empty())
+      {
+          if (m_BindAddr.family() != AF_INET)
+          {
+              LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE can only be set with AF_INET connections");
+              throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+          }
+
+          if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, m_BindToDevice.c_str(), m_BindToDevice.size()))
+          {
+              char buf[255];
+              const char* err = SysStrError(NET_ERROR, buf, 255);
+              LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
+              throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+          }
+      }
+#endif
 
 #ifdef UNIX
    // Set non-blocking I/O
@@ -324,6 +429,9 @@ void CChannel::setIpV6Only(int ipV6Only)
 
 int CChannel::getIpTTL() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpTTL);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -336,7 +444,7 @@ int CChannel::getIpTTL() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       LOGC(mglog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
+       LOGC(kmlog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpTTL;
@@ -344,6 +452,9 @@ int CChannel::getIpTTL() const
 
 int CChannel::getIpToS() const
 {
+   if (m_iSocket == INVALID_SOCKET)
+       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
    socklen_t size = sizeof(m_iIpToS);
    if (m_BindAddr.family() == AF_INET)
    {
@@ -358,7 +469,7 @@ int CChannel::getIpToS() const
    else
    {
        // If family is unspecified, the socket probably doesn't exist.
-       LOGC(mglog.Error, log << "IPE: CChannel::getIpToS called with unset family");
+       LOGC(kmlog.Error, log << "IPE: CChannel::getIpToS called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
    return m_iIpToS;
@@ -374,6 +485,29 @@ void CChannel::setIpToS(int tos)
    m_iIpToS = tos;
 }
 
+#ifdef SRT_ENABLE_BINDTODEVICE
+void CChannel::setBind(const string& name)
+{
+    m_BindToDevice = name;
+}
+
+bool CChannel::getBind(char* dst, size_t len)
+{
+    if (m_iSocket == INVALID_SOCKET)
+        return false; // No socket to get data from
+
+    // Try to obtain it directly from the function. If not possible,
+    // then return from internal data.
+    socklen_t length = len;
+    int res = ::getsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, dst, &length);
+    if (res == -1)
+        return false; // Happens on Linux v < 3.8
+
+    // For any case
+    dst[length] = 0;
+    return true;
+}
+#endif
 
 int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
@@ -419,7 +553,7 @@ void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
-    HLOGC(mglog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << SockaddrToString(addr)
+    HLOGC(kslog.Debug, log << "CChannel::sendto: SENDING NOW DST=" << addr.str()
         << " target=@" << packet.m_iID
         << " size=" << packet.getLength()
         << " pkt.ts=" << packet.m_iTimeStamp
@@ -464,7 +598,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
         {
             // This is a counter of how many packets in a row shall be lost
             --flwcounter;
-            HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
+            HLOGC(kslog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (" << flwcounter << " more to drop)");
             return packet.getLength(); // fake successful sendinf
         }
 
@@ -476,7 +610,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
             if (dcounter > rnd)
             {
                 dcounter = 1;
-                HLOGC(mglog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
+                HLOGC(kslog.Debug, log << "CChannel: TEST: FAKE LOSS OF %" << packet.getSeqNo() << " (will drop " << fakeloss.config.first << " more)");
                 flwcounter = fakeloss.config.first;
                 return packet.getLength(); // fake successful sendinf
             }
@@ -582,7 +716,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         }
         else
         {
-            HLOGC(mglog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
@@ -642,7 +776,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         const int err = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            HLOGC(mglog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else
@@ -663,7 +797,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     if (size_t(recv_size) < CPacket::HDR_SIZE)
     {
         status = RST_AGAIN;
-        HLOGC(mglog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << recv_size << " bytes");
+        HLOGC(krlog.Debug, log << CONID() << "POSSIBLE ATTACK: received too short packet with " << recv_size << " bytes");
         goto Return_error;
     }
 
@@ -686,7 +820,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     // packet was received, so the packet will be then retransmitted.
     if ( msg_flags != 0 )
     {
-        HLOGC(mglog.Debug, log << CONID() << "NET ERROR: packet size=" << recv_size
+        HLOGC(krlog.Debug, log << CONID() << "NET ERROR: packet size=" << recv_size
             << " msg_flags=0x" << hex << msg_flags << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
         status = RST_AGAIN;
         goto Return_error;

@@ -281,6 +281,7 @@ namespace srt_logging
     extern Logger glog;
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -311,6 +312,7 @@ extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr
 
     return 0;
 }
+#endif
 
 extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
@@ -432,7 +434,7 @@ int main( int argc, char** argv )
         o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
         o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
+        o_verbose   ((optargs), "[channel=0|1|./file] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
@@ -443,8 +445,10 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
+#if ENABLE_EXPERIMENTAL_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
-        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "stime", "sourcetime"),
+#endif
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -455,13 +459,16 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
+#if ENABLE_EXPERIMENTAL_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+#endif
     vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
+#if ENABLE_EXPERIMENTAL_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -487,6 +494,7 @@ int main( int argc, char** argv )
             }
         }
         else
+#endif
         {
             if (args.size() < 2)
             {
@@ -505,11 +513,17 @@ int main( int argc, char** argv )
     // can be displayed also when they report something about option parsing.
     string verbose_val = Option<OutString>(params, "no", o_verbose);
 
+    unique_ptr<ofstream> pout_verb;
+
     int verbch = 1; // default cerr
     if (verbose_val != "no")
     {
         Verbose::on = true;
-        try
+        if (verbose_val == "")
+            verbch = 1;
+        else if (verbose_val.substr(0, 2) == "./")
+            verbch = 3;
+        else try
         {
             verbch = stoi(verbose_val);
         }
@@ -517,18 +531,29 @@ int main( int argc, char** argv )
         {
             verbch = 1;
         }
-        if (verbch != 1)
+
+        if (verbch == 1)
         {
-            if (verbch != 2)
+            Verbose::cverb = &std::cout;
+        }
+        else if (verbch == 2)
+        {
+            Verbose::cverb = &std::cerr;
+        }
+        else if (verbch == 3)
+        {
+            pout_verb.reset(new ofstream(verbose_val.substr(2), ios::out | ios::trunc));
+            if (!pout_verb->good())
             {
-                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                cerr << "-v: error opening verbose output file: " << verbose_val << endl;
                 return 1;
             }
-            Verbose::cverb = &std::cerr;
+            Verbose::cverb = pout_verb.get();
         }
         else
         {
-            Verbose::cverb = &std::cout;
+            cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+            return 1;
         }
     }
 
@@ -560,8 +585,25 @@ int main( int argc, char** argv )
             cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
             cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
             cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
-            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
             cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
             return 1;
         }
 
@@ -633,11 +675,13 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
+#if ENABLE_EXPERIMENTAL_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
+#endif
     }
 
     SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));

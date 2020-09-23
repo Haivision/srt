@@ -49,7 +49,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         m_arrangement_staircase = false;
     else if (shorter != "" && shorter != "stair")
     {
-        LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: value for 'layout' must be 'even' or 'staircase'");
+        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: value for 'layout' must be 'even' or 'staircase'");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -60,7 +60,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 
     if (colspec == "" || out_cols < 2)
     {
-        LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: at least 'cols' must be specified and > 1");
+        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: at least 'cols' must be specified and > 1");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -71,7 +71,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         out_rows = atoi(rowspec.c_str());
         if (out_rows >= -1 && out_rows < 1)
         {
-            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: 'rows' must be >=1 or negative < -1");
+            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'rows' must be >=1 or negative < -1");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
     }
@@ -106,7 +106,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 
         if (lv == -1)
         {
-            LOGC(mglog.Error, log << "FILTER/FEC: CONFIG: 'arq': value '" << level << "' unknown");
+            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'arq': value '" << level << "' unknown");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -163,7 +163,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     // Size: rows
     // Step: 1 (next packet in group is 1 past the previous one)
     // Slip: rows (first packet in the next group is distant to first packet in the previous group by 'rows')
-    HLOGC(mglog.Debug, log << "FEC: INIT: ISN { snd=" << snd_isn << " rcv=" << rcv_isn << " }; sender single row");
+    HLOGC(pflog.Debug, log << "FEC: INIT: ISN { snd=" << snd_isn << " rcv=" << rcv_isn << " }; sender single row");
     ConfigureGroup(snd.row, snd_isn, 1, sizeRow());
 
     // In the beginning we need just one reception group. New reception
@@ -171,7 +171,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     // The value of rcv.row[0].base will be used as an absolute base for calculating
     // the index of the group for a given received packet.
     rcv.rowq.resize(1);
-    HLOGP(mglog.Debug, "FEC: INIT: receiver first row");
+    HLOGP(pflog.Debug, "FEC: INIT: receiver first row");
     ConfigureGroup(rcv.rowq[0], rcv_isn, 1, sizeRow());
 
     if (sizeCol() > 1)
@@ -180,9 +180,9 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         // Step: rows (the next packet in the group is one row later)
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
 
-        HLOGP(mglog.Debug, "FEC: INIT: sender first N columns");
+        HLOGP(pflog.Debug, "FEC: INIT: sender first N columns");
         ConfigureColumns(snd.cols, snd_isn);
-        HLOGP(mglog.Debug, "FEC: INIT: receiver first N columns");
+        HLOGP(pflog.Debug, "FEC: INIT: receiver first N columns");
         ConfigureColumns(rcv.colq, rcv_isn);
     }
 
@@ -211,7 +211,7 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
 
     if (!m_arrangement_staircase)
     {
-        HLOGC(mglog.Debug, log << "ConfigureColumns: new "
+        HLOGC(pflog.Debug, log << "ConfigureColumns: new "
                 << numberCols() << " columns, START AT: " << zero);
         // With even arrangement, just use a plain loop.
         // Initialize straight way all groups in the size.
@@ -238,7 +238,7 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     // Start here. The 'isn' is still the absolute base sequence value.
     size_t offset = 0;
 
-    HLOGC(mglog.Debug, log << "ConfigureColumns: " << (which.size() - zero)
+    HLOGC(pflog.Debug, log << "ConfigureColumns: " << (which.size() - zero)
             << " columns, START AT: " << zero);
 
     for (size_t i = zero; i < which.size(); ++i)
@@ -246,19 +246,19 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         int32_t seq = CSeqNo::incseq(isn, offset);
         size_t col = i - zero;
 
-        HLOGC(mglog.Debug, log << "ConfigureColumns: [" << col << "]: -> ConfigureGroup...");
+        HLOGC(pflog.Debug, log << "ConfigureColumns: [" << col << "]: -> ConfigureGroup...");
         ConfigureGroup(which[i], seq, sizeRow(), sizeCol() * numberCols());
 
         if (col % numberRows() == numberRows() - 1)
         {
             offset = col + 1; // +1 because we want it for the next column
-            HLOGC(mglog.Debug, log << "ConfigureColumns: [" << (col+1) << "]... (resetting to row 0: +"
+            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "]... (resetting to row 0: +"
                     << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
         }
         else
         {
             offset += 1 + sizeRow();
-            HLOGC(mglog.Debug, log << "ConfigureColumns: [" << (col+1) << "] ... (continue +"
+            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "] ... (continue +"
                     << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
         }
     }
@@ -281,7 +281,7 @@ void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
     g.flag_clip = 0;
     g.timestamp_clip = 0;
 
-    HLOGC(mglog.Debug, log << "FEC: ConfigureGroup: base %" << seqno << " step=" << gstep << " drop=" << drop);
+    HLOGC(pflog.Debug, log << "FEC: ConfigureGroup: base %" << seqno << " step=" << gstep << " drop=" << drop);
 
     // Preallocate the buffer that will be used for storing it for
     // the needs of passing the data through the network.
@@ -294,7 +294,7 @@ void FECFilterBuiltin::ResetGroup(Group& g)
 {
     int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
 
-    HLOGC(mglog.Debug, log << "FEC: ResetGroup (step=" << g.step << "): base %" << g.base << " -> %" << new_seq_base);
+    HLOGC(pflog.Debug, log << "FEC: ResetGroup (step=" << g.step << "): base %" << g.base << " -> %" << new_seq_base);
 
     g.base = new_seq_base;
     g.collected = 0;
@@ -323,7 +323,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
     if (CheckGroupClose(snd.row, horiz_pos, sizeRow()))
     {
-        HLOGC(mglog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
+        HLOGC(pflog.Debug, log << "FEC:... HORIZ group closed, B=%" << snd.row.base);
     }
     ClipPacket(snd.row, packet);
     snd.row.collected++;
@@ -332,12 +332,12 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     if (sizeCol() < 2)
     {
         // The above logging instruction in case of no columns
-        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+        HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "]"
                 << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
                 << " !" << BufferStamp(packet.data(), packet.size()));
-        HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected);
+        HLOGC(pflog.Debug, log << "FEC collected: H: " << snd.row.collected);
         return;
     }
 
@@ -358,7 +358,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     // the future, and "this sequence" is in a group that is already closed.
     // In this case simply can't clip the packet in the column group.
 
-    HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
+    HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
             << " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
     if (vert_off >= 0 && sizeCol() > 1)
@@ -368,7 +368,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
         // SANITY: check if the rule applies on the group
         if (vert_off % sizeRow())
         {
-            LOGC(mglog.Fatal, log << "FEC:feedSource: IPE: VGroup #" << vert_gx << " base=%" << vert_base
+            LOGC(pflog.Fatal, log << "FEC:feedSource: IPE: VGroup #" << vert_gx << " base=%" << vert_base
                     << " WRONG with horiz base=%" << base << "coloff(" << vert_off
                     << ") % sizeRow(" << sizeRow() << ") = " << (vert_off % sizeRow()));
 
@@ -378,7 +378,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
         int vert_pos = vert_off / sizeRow();
 
-        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+        HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[col=" << vert_gx << "][" << vert_pos << "/" << sizeCol() << "] "
                 << " size=" << packet.size()
@@ -396,7 +396,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
 
         if (CheckGroupClose(snd.cols[vert_gx], vert_pos, sizeCol()))
         {
-            HLOGC(mglog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
+            HLOGC(pflog.Debug, log << "FEC:... VERT group closed, B=%" << snd.cols[vert_gx].base);
         }
         ClipPacket(snd.cols[vert_gx], packet);
         snd.cols[vert_gx].collected++;
@@ -404,14 +404,14 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     else
     {
 
-        HLOGC(mglog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
+        HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[col=" << vert_gx << "]<NO-COLUMN>"
                 << " size=" << packet.size()
                 << " TS=" << packet.getMsgTimeStamp()
                 << " !" << BufferStamp(packet.data(), packet.size()));
     }
-    HLOGC(mglog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
+    HLOGC(pflog.Debug, log << "FEC collected: H: " << snd.row.collected << " V[" << vert_gx << "]: " << snd.cols[vert_gx].collected);
 }
 
 bool FECFilterBuiltin::CheckGroupClose(Group& g, size_t pos, size_t size)
@@ -439,7 +439,7 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.data(), pkt.size());
 
-    HLOGC(mglog.Debug, log << "FEC DATA PKT CLIP: " << hex
+    HLOGC(pflog.Debug, log << "FEC DATA PKT CLIP: " << hex
             << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
             << " TS[he]=" << timestamp_hw
             << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
@@ -466,7 +466,7 @@ void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, *length_clip, *flag_clip, timestamp_hw, payload, payload_clip_len);
 
-    HLOGC(mglog.Debug, log << "FEC/CTL CLIP: " << hex
+    HLOGC(pflog.Debug, log << "FEC/CTL CLIP: " << hex
             << "FLAGS=" << unsigned(*flag_clip) << " LENGTH[ne]=" << (*length_clip)
             << " TS[he]=" << timestamp_hw
             << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
@@ -488,7 +488,7 @@ void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.buffer, pkt.length);
 
-    HLOGC(mglog.Debug, log << "FEC REBUILT DATA CLIP: " << hex
+    HLOGC(pflog.Debug, log << "FEC REBUILT DATA CLIP: " << hex
             << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
             << " TS[he]=" << timestamp_hw
             << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
@@ -551,7 +551,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     // means we don't use columns.
     if (m_number_rows <= 1)
     {
-        HLOGC(mglog.Debug, log << "FEC/CTL not checking VERT group - rows only config");
+        HLOGC(pflog.Debug, log << "FEC/CTL not checking VERT group - rows only config");
         // PASS ON to Horizontal group check
     }
     else
@@ -564,7 +564,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
         // however there was no previous group because this is the first packet.
         if (offset_to_row_base < 0)
         {
-            HLOGC(mglog.Debug, log << "FEC/CTL not checking VERT group [" << vert_gx << "] - negative offset_to_row_base %"
+            HLOGC(pflog.Debug, log << "FEC/CTL not checking VERT group [" << vert_gx << "] - negative offset_to_row_base %"
                     << snd.row.base << " -> %" << seq << " (" << offset_to_row_base
                     << ") (collected " << snd.cols[abs(vert_gx)].collected << "/" << sizeCol() << ")");
             // PASS ON to Horizontal group check
@@ -573,7 +573,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
         {
             if (snd.cols[vert_gx].collected >= m_number_rows)
             {
-                HLOGC(mglog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq
+                HLOGC(pflog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq
                         << " (base %" << snd.cols[vert_gx].base << ")");
                 // SHIP THE VERTICAL FEC packet.
                 PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
@@ -583,7 +583,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
                 return true;
             }
 
-            HLOGC(mglog.Debug, log << "FEC/CTL NOT ready for VERT group [" << vert_gx << "]: %" << seq
+            HLOGC(pflog.Debug, log << "FEC/CTL NOT ready for VERT group [" << vert_gx << "]: %" << seq
                     << " (base %" << snd.cols[vert_gx].base << ")"
                     << " - collected " << snd.cols[vert_gx].collected << "/" << m_number_rows);
         }
@@ -593,11 +593,11 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     {
         if (!m_cols_only)
         {
-            HLOGC(mglog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq << " (base %" << snd.row.base << ")");
+            HLOGC(pflog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq << " (base %" << snd.row.base << ")");
             // SHIP THE HORIZONTAL FEC packet.
             PackControl(snd.row, -1, rpkt, seq);
 
-            HLOGC(mglog.Debug, log << "...PACKET size=" << rpkt.length
+            HLOGC(pflog.Debug, log << "...PACKET size=" << rpkt.length
                     << " TS=" << rpkt.hdr[SRT_PH_TIMESTAMP]
                     << " !" << BufferStamp(rpkt.buffer, rpkt.length));
 
@@ -616,7 +616,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     }
     else
     {
-        HLOGC(mglog.Debug, log << "FEC/CTL NOT ready for HORIZ group: %" << seq
+        HLOGC(pflog.Debug, log << "FEC/CTL NOT ready for HORIZ group: %" << seq
                 << " (base %" << snd.row.base << ")"
                 << " - collected " << snd.row.collected << "/" << m_number_cols);
     }
@@ -640,7 +640,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
 #if ENABLE_DEBUG
     if (g.output_buffer.size() < total_size)
     {
-        LOGC(mglog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");
+        LOGC(pflog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");
         abort();
     }
 #endif
@@ -666,7 +666,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
     pkt.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
     pkt.hdr[SRT_PH_SEQNO] = seq;
 
-    HLOGC(mglog.Debug, log << "FEC: PackControl: hdr("
+    HLOGC(pflog.Debug, log << "FEC: PackControl: hdr("
             << (total_size - g.payload_clip.size()) << "): INDEX="
             << int(index) << " LENGTH[ne]=" << hex << g.length_clip
             << " FLAGS=" << int(g.flag_clip) << " TS=" << g.timestamp_clip
@@ -717,7 +717,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
             isfec.col = true;
         }
 
-        HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=0, FEC/CTL packet. INDEX=" << int(payload[0]));
+        HLOGC(pflog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=0, FEC/CTL packet. INDEX=" << int(payload[0]));
     }
     else
     {
@@ -731,7 +731,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 
         if (past || exists)
         {
-            HLOGC(mglog.Debug, log << "FEC: packet %" << rpkt.getSeqNo() << " "
+            HLOGC(pflog.Debug, log << "FEC: packet %" << rpkt.getSeqNo() << " "
                     << (past ? "in the PAST" : "already known") << ", IGNORING.");
 
             return true;
@@ -739,7 +739,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 
         want_packet = true;
 
-        HLOGC(mglog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
+        HLOGC(pflog.Debug, log << "FEC: RECEIVED %" << rpkt.getSeqNo() << " msgno=" << rpkt.getMsgSeq() << " DATA PACKET.");
         MarkCellReceived(rpkt.getSeqNo());
 
         // Remember this simply every time a packet comes in. In live mode usually
@@ -758,7 +758,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // Don't manage this packet for horizontal group,
         // if it was a vertical FEC/CTL packet.
         ok = HangHorizontal(rpkt, isfec.row, irrecover_row);
-        HLOGC(mglog.Debug, log << "FEC: HangHorizontal %" << rpkt.getSeqNo()
+        HLOGC(pflog.Debug, log << "FEC: HangHorizontal %" << rpkt.getSeqNo()
                 << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_row));
     }
@@ -766,14 +766,14 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (!ok)
     {
         // Just informative.
-        LOGC(mglog.Warn, log << "FEC/H: rebuilding/hanging FAILED.");
+        LOGC(pflog.Warn, log << "FEC/H: rebuilding/hanging FAILED.");
     }
 
     // Don't do HangVertical in case of row-only configuration
     if (!isfec.row && m_number_rows > 1) // == regular packet or FEC/COL
     {
         ok = HangVertical(rpkt, isfec.colx, irrecover_col);
-        HLOGC(mglog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
+        HLOGC(pflog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
                 << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << boolalpha << ok << " IRRECOVERABLE: " << Printable(irrecover_col));
     }
@@ -781,7 +781,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     if (!ok)
     {
         // Just informative.
-        LOGC(mglog.Warn, log << "FEC/V: rebuilding/hanging FAILED.");
+        LOGC(pflog.Warn, log << "FEC/V: rebuilding/hanging FAILED.");
     }
 
     // Pack the following packets as irrecoverable:
@@ -846,14 +846,14 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
             size_t rowdist = offset / sizeRow();
             int32_t newbase = CSeqNo::incseq(oldbase, rowdist * sizeRow());
 
-            LOGC(mglog.Warn, log << "FEC: LARGE DROP detected! Resetting row groups. Base: %" << oldbase
+            LOGC(pflog.Warn, log << "FEC: LARGE DROP detected! Resetting row groups. Base: %" << oldbase
                     << " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
 
             rcv.rowq.clear();
             rcv.cells.clear();
 
             rcv.rowq.resize(1);
-            HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first row");
+            HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first row");
             ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
         }
 
@@ -864,7 +864,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
     if (offset != CSeqNo::seqoff(rcv.colq[0].base, seqno))
     {
         reset_anyway = true;
-        HLOGC(mglog.Debug, log << "FEC: IPE: row.base %" << rcv.rowq[0].base << " != %" << rcv.colq[0].base << " - resetting");
+        HLOGC(pflog.Debug, log << "FEC: IPE: row.base %" << rcv.rowq[0].base << " != %" << rcv.colq[0].base << " - resetting");
     }
 
     // Number of column - regardless of series.
@@ -896,7 +896,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
         int32_t oldbase = rcv.colq[0].base;
         int32_t newbase = CSeqNo::incseq(oldbase, (colseries-1) * matrix);
 
-        LOGC(mglog.Warn, log << "FEC: LARGE DROP detected! Resetting all groups. Base: %" << oldbase
+        LOGC(pflog.Warn, log << "FEC: LARGE DROP detected! Resetting all groups. Base: %" << oldbase
                 << " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
 
         rcv.rowq.clear();
@@ -904,13 +904,13 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
         rcv.cells.clear();
 
         rcv.rowq.resize(1);
-        HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first row");
+        HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first row");
         ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
 
         // Size: cols
         // Step: rows (the next packet in the group is one row later)
         // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
-        HLOGP(mglog.Debug, "FEC: RE-INIT: receiver first N columns");
+        HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first N columns");
         ConfigureColumns(rcv.colq, newbase);
 
         rcv.cell_base = newbase;
@@ -928,7 +928,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     int offset = CSeqNo::seqoff(base, g.base);
     if (offset < 0)
     {
-        LOGC(mglog.Error, log << "FEC: IPE: row base %" << g.base << " is PAST to cell base %" << base);
+        LOGC(pflog.Error, log << "FEC: IPE: row base %" << g.base << " is PAST to cell base %" << base);
         return;
     }
 
@@ -936,7 +936,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     // Sanity check, if all cells are really filled.
     if (maxoff > rcv.cells.size())
     {
-        LOGC(mglog.Error, log << "FEC: IPE: Collecting loss from row %"
+        LOGC(pflog.Error, log << "FEC: IPE: Collecting loss from row %"
                 << g.base << "+" << m_number_cols << " while cells <= %"
                 << CSeqNo::seqoff(rcv.cell_base, rcv.cells.size()-1));
         return;
@@ -973,6 +973,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     g.dismissed = true;
 }
 
+#if ENABLE_HEAVY_LOGGING
 static inline char CellMark(const std::deque<bool>& cells, int index)
 {
     if (index >= int(cells.size()))
@@ -981,7 +982,6 @@ static inline char CellMark(const std::deque<bool>& cells, int index)
     return cells[index] ? '#' : '.';
 }
 
-#if ENABLE_HEAVY_LOGGING
 static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size)
 {
     int i = 0;
@@ -992,7 +992,7 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row
 
     if (i == int(cells.size()))
     {
-        LOGC(mglog.Debug, log << "FEC: ... cell[0-" << (cells.size()-1) << "]: ALL CELLS EXIST");
+        LOGC(pflog.Debug, log << "FEC: ... cell[0-" << (cells.size()-1) << "]: ALL CELLS EXIST");
         return;
     }
 
@@ -1009,7 +1009,7 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row
         {
             os << " " << CellMark(cells, i+y);
         }
-        LOGP(mglog.Debug, os.str());
+        LOGP(pflog.Debug, os.str());
     }
 }
 #else
@@ -1035,25 +1035,25 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         {
             ClipControlPacket(rowg, rpkt);
             rowg.fec = true;
-            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq << " base=%" << rowg.base);
+            HLOGC(pflog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq << " base=%" << rowg.base);
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FEC/H: FEC/CTL at %" << seq << " DUPLICATED, skipping.");
+            HLOGC(pflog.Debug, log << "FEC/H: FEC/CTL at %" << seq << " DUPLICATED, skipping.");
         }
     }
     else
     {
         ClipPacket(rowg, rpkt);
         rowg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/H: DATA packet clipped, %" << seq
+        HLOGC(pflog.Debug, log << "FEC/H: DATA packet clipped, %" << seq
                 << ", received " << rowg.collected << "/" << sizeRow()
                 << " base=%" << rowg.base);
     }
 
     if (rowg.fec && rowg.collected == m_number_cols - 1)
     {
-        HLOGC(mglog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING...");
+        HLOGC(pflog.Debug, log << "FEC/H: HAVE " << rowg.collected << " collected & FEC; REBUILDING...");
         // The group will provide the information for rebuilding.
         // The sequence of the lost packet can be checked in cells.
         // With the condition of 'collected == m_number_cols - 1', there
@@ -1068,7 +1068,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
             os << " " << rcv.rebuilt[i].hdr[SRT_PH_SEQNO];
         }
 
-        LOGC(mglog.Debug, log << "FEC: ... cached rebuilt packets (" << rcv.rebuilt.size() << "):" << os.str());
+        LOGC(pflog.Debug, log << "FEC: ... cached rebuilt packets (" << rcv.rebuilt.size() << "):" << os.str());
 #endif
     }
 
@@ -1134,7 +1134,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
             // If want_remove_cells, also remove these rows and corresponding cells.
 
             int nrowremove = 1 + past;
-            HLOGC(mglog.Debug, log << "Collecting irrecoverable packets from " << nrowremove << " ROWS per offset "
+            HLOGC(pflog.Debug, log << "Collecting irrecoverable packets from " << nrowremove << " ROWS per offset "
                     << CSeqNo::seqoff(rcv.rowq[1].base, seq) << " vs. " << m_number_cols << "/3");
 
             for (int i = 0; i <= past; ++i)
@@ -1147,7 +1147,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
                 size_t npktremove = sizeRow() * nrowremove;
                 size_t ersize = min(npktremove, rcv.cells.size());
 
-                HLOGC(mglog.Debug, log << "FEC/H: Dismissing rows n=" << nrowremove
+                HLOGC(pflog.Debug, log << "FEC/H: Dismissing rows n=" << nrowremove
                         << ", starting at %" << rcv.rowq[0].base
                         << " AND " << npktremove << " CELLS, base switch %"
                         << rcv.cell_base << " -> %" << rcv.rowq[past].base);
@@ -1165,7 +1165,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FEC: NOT collecting irrecover from rows: distance="
+            HLOGC(pflog.Debug, log << "FEC: NOT collecting irrecover from rows: distance="
                     << CSeqNo::seqoff(rcv.rowq[0].base, seq));
         }
 
@@ -1179,7 +1179,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
     int baseoff = CSeqNo::seqoff(rcv.cell_base, g.base);
     if (baseoff < 0)
     {
-        LOGC(mglog.Error, log << "FEC: IPE: negative cell offset, cell_base=%" << rcv.cell_base << " Group's base: %" << g.base << " - NOT ATTEMPTING TO REBUILD");
+        LOGC(pflog.Error, log << "FEC: IPE: negative cell offset, cell_base=%" << rcv.cell_base << " Group's base: %" << g.base << " - NOT ATTEMPTING TO REBUILD");
         return -1;
     }
 
@@ -1195,7 +1195,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
             offset = cix;
 #if ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
-            LOGC(mglog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
                     << " (+" << cix << "): MISSING");
 
 #else
@@ -1209,7 +1209,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
 #if ENABLE_HEAVY_LOGGING
         else
         {
-            LOGC(mglog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
                     << " (+" << cix << "): exists");
         }
 #endif
@@ -1217,7 +1217,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
 
     if (offset == -1)
     {
-        LOGC(mglog.Fatal, log << "FEC/H: IPE: rebuilding attempt, but no lost packet found");
+        LOGC(pflog.Fatal, log << "FEC/H: IPE: rebuilding attempt, but no lost packet found");
         return -1; // sanity, shouldn't happen
     }
 
@@ -1231,7 +1231,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
     int baseoff = CSeqNo::seqoff(rcv.cell_base, g.base);
     if (baseoff < 0)
     {
-        LOGC(mglog.Error, log << "FEC: IPE: negative cell offset, cell_base=%" << rcv.cell_base << " Group's base: %" << g.base << " - NOT ATTEMPTING TO REBUILD");
+        LOGC(pflog.Error, log << "FEC: IPE: negative cell offset, cell_base=%" << rcv.cell_base << " Group's base: %" << g.base << " - NOT ATTEMPTING TO REBUILD");
         return -1;
     }
 
@@ -1248,7 +1248,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
             offset = cix;
 #if ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
-            LOGC(mglog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
                     << " (+" << cix << "): MISSING");
 
 #else
@@ -1262,7 +1262,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
 #if ENABLE_HEAVY_LOGGING
         else
         {
-            LOGC(mglog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
                     << " (+" << cix << "): exists");
         }
 #endif
@@ -1270,7 +1270,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
 
     if (offset == -1)
     {
-        LOGC(mglog.Fatal, log << "FEC/V: IPE: rebuilding attempt, but no lost packet found");
+        LOGC(pflog.Fatal, log << "FEC/V: IPE: rebuilding attempt, but no lost packet found");
         return -1; // sanity, shouldn't happen
     }
 
@@ -1287,7 +1287,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     uint16_t length_hw = ntohs(g.length_clip);
     if (length_hw > payloadSize())
     {
-        LOGC(mglog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
+        LOGC(pflog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
         return;
     }
 
@@ -1328,7 +1328,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     // contains only trailing zeros for completion, which are skipped.
     copy(g.payload_clip.begin(), g.payload_clip.end(), p.buffer);
 
-    HLOGC(mglog.Debug, log << "FEC: REBUILT: %" << seqno
+    HLOGC(pflog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])
             << " flags=" << PacketMessageFlagStr(p.hdr[SRT_PH_MSGNO])
             << " TS=" << p.hdr[SRT_PH_TIMESTAMP] << " ID=" << dec << p.hdr[SRT_PH_ID]
@@ -1365,7 +1365,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(rowg, p);
         rowg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno
+        HLOGC(pflog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno
                 << ", received " << rowg.collected << "/" << m_number_cols
                 << " FOR base=%" << rowg.base);
 
@@ -1373,7 +1373,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // They are already known when the packets were collected.
         if (rowg.fec && rowg.collected == m_number_cols - 1)
         {
-            HLOGC(mglog.Debug, log << "FEC/H: with FEC-rebuilt HAVE " << rowg.collected << " collected & FEC; REBUILDING");
+            HLOGC(pflog.Debug, log << "FEC/H: with FEC-rebuilt HAVE " << rowg.collected << " collected & FEC; REBUILDING");
             // The group will provide the information for rebuilding.
             // The sequence of the lost packet can be checked in cells.
             // With the condition of 'collected == m_number_cols - 1', there
@@ -1402,7 +1402,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(colg, p);
         colg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno
+        HLOGC(pflog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno
                 << ", received " << colg.collected << "/" << m_number_rows
                 << " FOR base=%" << colg.base);
 
@@ -1410,7 +1410,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // They are already known when the packets were collected.
         if (colg.fec && colg.collected == m_number_rows - 1)
         {
-            HLOGC(mglog.Debug, log << "FEC/V: with FEC-rebuilt HAVE " << colg.collected << " collected & FEC; REBUILDING");
+            HLOGC(pflog.Debug, log << "FEC/V: with FEC-rebuilt HAVE " << colg.collected << " collected & FEC; REBUILDING");
             // The group will provide the information for rebuilding.
             // The sequence of the lost packet can be checked in cells.
             // With the condition of 'collected == m_number_rows - 1', there
@@ -1430,15 +1430,15 @@ int FECFilterBuiltin::ExtendRows(int rowx)
     // the container first.
 
 #if ENABLE_HEAVY_LOGGING
-    LOGC(mglog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
+    LOGC(pflog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
-        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+        LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
 #endif
 
     if (rowx > int(m_number_cols*3))
     {
-        LOGC(mglog.Warn, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
+        LOGC(pflog.Warn, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
 
         rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + m_number_cols);
         rowx -= m_number_cols;
@@ -1464,10 +1464,10 @@ int FECFilterBuiltin::ExtendRows(int rowx)
     }
 
 #if ENABLE_HEAVY_LOGGING
-    LOGC(mglog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
+    LOGC(pflog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
-        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
+        LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
 #endif
 
     return rowx;
@@ -1483,7 +1483,7 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq)
     // Discard the packet, if older than base.
     if (offset < 0)
     {
-        HLOGC(mglog.Debug, log << "FEC/H: Packet %" << seq << " is in the past, ignoring");
+        HLOGC(pflog.Debug, log << "FEC/H: Packet %" << seq << " is in the past, ignoring");
         return -1;
     }
 
@@ -1497,7 +1497,7 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq)
        so simply TRUST THIS SEQUENCE, no matter what. After the check it won't do any harm.
        if (rowx > numberRows()*2) // past twice the matrix
        {
-       LOGC(mglog.Error, log << "FEC/H: Packet %" << seq << " is in the far future, ignoring");
+       LOGC(pflog.Error, log << "FEC/H: Packet %" << seq << " is in the far future, ignoring");
        return -1;
        }
      */
@@ -1532,7 +1532,7 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq)
     }
     rcv.cells[cell_offset] = true;
 
-    HLOGC(mglog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cells base=%"
+    HLOGC(pflog.Debug, log << "FEC: MARK CELL RECEIVED: %" << seq << " - cells base=%"
             << rcv.cell_base << "[" << cell_offset << "]+" << rcv.cells.size()
             << (resized ? "(resized)":"") << " :");
 
@@ -1544,14 +1544,14 @@ bool FECFilterBuiltin::IsLost(int32_t seq) const
     int offset = CSeqNo::seqoff(rcv.cell_base, seq);
     if (offset < 0)
     {
-        LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq
+        LOGC(pflog.Error, log << "FEC: IsLost: IPE: %" << seq
                 << " is earlier than the cell base %" << rcv.cell_base);
         return true; // fake we have the packet - this is to collect losses only
     }
     if (offset >= int(rcv.cells.size()))
     {
         // XXX IPE!
-        LOGC(mglog.Error, log << "FEC: IsLost: IPE: %" << seq << " is past the cells %"
+        LOGC(pflog.Error, log << "FEC: IsLost: IPE: %" << seq << " is past the cells %"
                 << rcv.cell_base << " + " << rcv.cells.size());
         return true;
     }
@@ -1581,12 +1581,12 @@ bool FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, lo
         {
             ClipControlPacket(colg, rpkt);
             colg.fec = true;
-            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col)
+            HLOGC(pflog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col)
                     << " base=%" << colg.base);
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FEC/V: FEC/CTL at %" << seq << " COLUMN " << int(fec_col) << " DUPLICATED, skipping.");
+            HLOGC(pflog.Debug, log << "FEC/V: FEC/CTL at %" << seq << " COLUMN " << int(fec_col) << " DUPLICATED, skipping.");
         }
     }
     else
@@ -1594,14 +1594,14 @@ bool FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, lo
         // Data packet, clip it as data
         ClipPacket(colg, rpkt);
         colg.collected++;
-        HLOGC(mglog.Debug, log << "FEC/V: DATA packet clipped, %" << seq
+        HLOGC(pflog.Debug, log << "FEC/V: DATA packet clipped, %" << seq
                 << ", received " << colg.collected << "/" << sizeCol()
                 << " base=%" << colg.base);
     }
 
     if (colg.fec && colg.collected == m_number_rows - 1)
     {
-        HLOGC(mglog.Debug, log << "FEC/V: HAVE " << colg.collected << " collected & FEC; REBUILDING");
+        HLOGC(pflog.Debug, log << "FEC/V: HAVE " << colg.collected << " collected & FEC; REBUILDING");
         RcvRebuild(colg, RcvGetLossSeqVert(colg), Group::VERT);
     }
 
@@ -1611,10 +1611,10 @@ bool FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, lo
     RcvCheckDismissColumn(rpkt.getSeqNo(), colgx, irrecover);
 
 #if ENABLE_HEAVY_LOGGING
-    LOGC(mglog.Debug, log << "FEC: COL STATS ATM: n=" << rcv.colq.size());
+    LOGC(pflog.Debug, log << "FEC: COL STATS ATM: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
-        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+        LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
 #endif
 
     return true;
@@ -1641,7 +1641,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
     int colx SRT_ATR_UNUSED = colgx % numberCols();
 
-    HLOGC(mglog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
+    HLOGC(pflog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
             << " at INDEX=" << colgx << " col=" << colx
             << " series=" << series << " - looking up candidates...");
 
@@ -1652,7 +1652,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         RcvGroup& pg = rcv.colq[i];
         if (pg.dismissed)
         {
-            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
+            HLOGC(pflog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                     << pg.base << " ALREADY DISMISSED, skipping.");
             continue;
         }
@@ -1670,7 +1670,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
         if (last_seq_offset < 0)
         {
-            HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
+            HLOGC(pflog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                     << pg.base << " TOO EARLY (last=%"
                     << CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
                     << ")");
@@ -1681,7 +1681,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // still a chance that it hits the staircase top of the first
         // staircase and will dismiss it as well.
 
-        HLOGC(mglog.Debug, log << "FEC/V: ... [" << i << "] base=%"
+        HLOGC(pflog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                 << pg.base << " - PAST last=%"
                 << CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
                 << " - collecting losses.");
@@ -1693,12 +1693,12 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             if (!IsLost(lseq))
             {
                 loss.insert(lseq);
-                HLOGC(mglog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
+                HLOGC(pflog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
                         << " lost");
             }
             else
             {
-                HLOGC(mglog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
+                HLOGC(pflog.Debug, log << "FEC: ... cell +" << sof << " %" << lseq
                         << " EXISTS");
             }
         }
@@ -1731,18 +1731,18 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     // if (base0 +% mindist) <% seq
     if (this_off < mindist)
     {
-        HLOGC(mglog.Debug, log << "FEC/V: NOT dismissing any columns at %" << seq
+        HLOGC(pflog.Debug, log << "FEC/V: NOT dismissing any columns at %" << seq
                 << ", need to pass %" << CSeqNo::incseq(base0, mindist));
     }
     else if (rcv.colq.size() < numberCols())
     {
-        HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
+        HLOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size());
     }
     else if (rcv.rowq.size() < numberRows())
     {
-        HLOGC(mglog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
+        HLOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but row container size still " << rcv.rowq.size());
     }
@@ -1756,7 +1756,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         int32_t newbase_row = rcv.rowq[numberRows()].base;
         int matrix_size = numberCols() * numberRows();
 
-        HLOGC(mglog.Debug, log << "FEC/V: DISMISSING " << numberCols() << " COLS. Base %"
+        HLOGC(pflog.Debug, log << "FEC/V: DISMISSING " << numberCols() << " COLS. Base %"
                 << rcv.colq[0].base << " -> %" << newbase
                 << " AND " << numberRows() << " ROWS Base %"
                 << rcv.rowq[0].base << " -> %" << newbase_row
@@ -1765,17 +1765,17 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
 
 #if ENABLE_HEAVY_LOGGING
-        LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+        LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
         for (size_t i = 0; i < rcv.colq.size(); ++i)
-            LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+            LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
 #endif
 
         // Now erase accordingly one matrix of rows.
         // Sanity check
         if (newbase_row != newbase)
         {
-            LOGC(mglog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
+            LOGC(pflog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
                     << newbase << " row=%" << newbase_row << " - DELETING ALL ROWS");
 
             // Delete all rows and reinitialize them.
@@ -1794,7 +1794,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         int32_t newbase_cell = CSeqNo::incseq(rcv.cell_base, matrix_size);
         if (newbase != newbase_cell)
         {
-            LOGC(mglog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
+            LOGC(pflog.Fatal, log << "FEC/V: IPE: DISCREPANCY in base0 col=%"
                     << newbase << " row=%" << newbase_row << " - DELETING ALL ROWS");
 
             // Try to shift it gently first. Find the cell that matches the base.
@@ -1864,7 +1864,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     int32_t newrowbase = rcv.rowq[numberRows()].base;
     if (newbase != newrowbase)
     {
-    LOGC(mglog.Error, log << "FEC: IPE: ROW/COL base DISCREPANCY:  Looking up lineraly for the right row.");
+    LOGC(pflog.Error, log << "FEC: IPE: ROW/COL base DISCREPANCY:  Looking up lineraly for the right row.");
 
     // Fallback implementation in order not to break everything
     for (size_t r = 0; r < rcv.rowq.size(); ++r)
@@ -1895,11 +1895,11 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
         if (oldrowbase != rcv.cell_base)
         {
-            LOGC(mglog.Error, log << "FEC: CELL/ROW base discrepancy, calculating and resynchronizing");
+            LOGC(pflog.Error, log << "FEC: CELL/ROW base discrepancy, calculating and resynchronizing");
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FEC: will remove " << nrem << " cells, SHOULD BE = "
+            HLOGC(pflog.Debug, log << "FEC: will remove " << nrem << " cells, SHOULD BE = "
                     << (nrowrem * sizeRow()));
         }
 
@@ -1913,7 +1913,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                     loss.insert(lseq);
             }
 
-            HLOGC(mglog.Debug, log << "FEC: ERASING unused cells (" << nrem << "): %"
+            HLOGC(pflog.Debug, log << "FEC: ERASING unused cells (" << nrem << "): %"
                     << rcv.cell_base << " - %" << newbase
                     << ", losses collected: " << Printable(loss));
 
@@ -1924,12 +1924,12 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         }
         else
         {
-            HLOGC(mglog.Debug, log << "FEC: NOT ERASING cells, base %" << rcv.cell_base
+            HLOGC(pflog.Debug, log << "FEC: NOT ERASING cells, base %" << rcv.cell_base
                     << " vs row base %" << rcv.rowq[0].base);
         }
     }
 
-    HLOGC(mglog.Debug, log << "FEC/V: updated g=" << colgx << " -> " << newcolgx << " %"
+    HLOGC(pflog.Debug, log << "FEC/V: updated g=" << colgx << " -> " << newcolgx << " %"
             << rcv.colq[newcolgx].base << ", DISMISS up to g=" << numberCols()
             << " base=%" << lastbase
             << " ROW=%" << rcv.rowq[0].base << "+" << nrowrem);
@@ -1942,7 +1942,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 // Now all collected lost packets translate into the range list format
 TranslateLossRecords(loss, irrecover);
 
-HLOGC(mglog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
+HLOGC(pflog.Debug, log << "FEC: ... COLLECTED IRRECOVER: " << Printable(loss) << (any_dismiss ? " CELLS DISMISSED" : " nothing dismissed"));
 }
 
 void FECFilterBuiltin::TranslateLossRecords(const set<int32_t>& loss, loss_seqs_t& irrecover)
@@ -2050,13 +2050,13 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
     int offset = CSeqNo::seqoff(rcv.colq[0].base, seqno);
     if (offset < 0)
     {
-        HLOGC(mglog.Debug, log << "FEC/V: %" << seqno << " in the past of col ABSOLUTE base %" << rcv.colq[0].base);
+        HLOGC(pflog.Debug, log << "FEC/V: %" << seqno << " in the past of col ABSOLUTE base %" << rcv.colq[0].base);
         return -1;
     }
 
     if (offset > CSeqNo::m_iSeqNoTH/2)
     {
-        LOGC(mglog.Error, log << "FEC/V: IPE/ATTACK: pkt %" << seqno << " has CRAZY OFFSET towards the base %" << rcv.colq[0].base);
+        LOGC(pflog.Error, log << "FEC/V: IPE/ATTACK: pkt %" << seqno << " has CRAZY OFFSET towards the base %" << rcv.colq[0].base);
         return -1;
     }
 
@@ -2065,7 +2065,7 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
     int coloff = CSeqNo::seqoff(colbase, seqno);
     if (coloff < 0)
     {
-        HLOGC(mglog.Debug, log << "FEC/V: %" << seqno << " in the past of col #" << colx << " base %" << colbase);
+        HLOGC(pflog.Debug, log << "FEC/V: %" << seqno << " in the past of col #" << colx << " base %" << colbase);
         // This means that this sequence number predates the earliest
         // sequence number supported by the very first column.
         return -1;
@@ -2074,7 +2074,7 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
     int colseries = coloff / (m_number_cols * m_number_rows);
     size_t colgx = colx + (colseries * m_number_cols);
 
-    HLOGC(mglog.Debug, log << "FEC/V: Lookup group for %" << seqno << ": cg_base=%" << rcv.colq[0].base
+    HLOGC(pflog.Debug, log << "FEC/V: Lookup group for %" << seqno << ": cg_base=%" << rcv.colq[0].base
             << " column=" << colx << " with base %" << colbase << ": SERIES=" << colseries
             << " INDEX:" << colgx);
 
@@ -2083,7 +2083,7 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
     if (colgx > m_number_rows * m_number_cols * 2)
     {
         // That's too much
-        LOGC(mglog.Error, log << "FEC/V: IPE or ATTACK: offset " << colgx << " is too crazy, ABORTING lookup");
+        LOGC(pflog.Error, log << "FEC/V: IPE or ATTACK: offset " << colgx << " is too crazy, ABORTING lookup");
         return -1;
     }
 
@@ -2154,7 +2154,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
     {
         // This shouldn't happen because columns should be dismissed
         // once the last row of the first series is closed.
-        LOGC(mglog.Warn, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
+        LOGC(pflog.Warn, log << "FEC/V: OFFSET=" << colgx << " exceeds maximum col container size, SHRINKING container by " << sizeRow());
 
         // Delete one series of columns.
         int32_t oldbase SRT_ATR_UNUSED = rcv.colq[0].base;
@@ -2168,7 +2168,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // Sanity-check if the resulting row absolute base is equal to column
         if (rcv.rowq[0].base != newbase)
         {
-            LOGC(mglog.Error, log << "FEC/V: IPE: removal of " << numberRows()
+            LOGC(pflog.Error, log << "FEC/V: IPE: removal of " << numberRows()
                     << " rows ships no same seq: rowbase=%"
                     << rcv.rowq[0].base
                     << " colbase=%" << oldbase << " -> %" << newbase << " - RESETTING ROWS");
@@ -2196,10 +2196,10 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
     }
 
 #if ENABLE_HEAVY_LOGGING
-    LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+    LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
-        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+        LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
 #endif
 
     // First, obtain the "series" of columns, possibly fixed.
@@ -2231,7 +2231,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // base increased by one matrix size times series number.
         // THIS REMAINS TRUE NO MATTER IF WE USE STRAIGNT OR STAIRCASE ARRANGEMENT.
         int32_t sbase = CSeqNo::incseq(base, (numberCols()*numberRows()) * s);
-        HLOGC(mglog.Debug, log << "FEC/V: EXTENDING column groups series " << s
+        HLOGC(pflog.Debug, log << "FEC/V: EXTENDING column groups series " << s
                 << ", size " << rcv.colq.size() << " -> "
                 << (rcv.colq.size() + numberCols())
                 << ", base=%" << base << " -> %" << sbase);
@@ -2242,10 +2242,10 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
     }
 
 #if ENABLE_HEAVY_LOGGING
-    LOGC(mglog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
+    LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
-        LOGC(mglog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
+        LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.colq[i].DisplayStats());
 #endif
 
     return colgx;

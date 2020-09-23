@@ -35,6 +35,7 @@ int srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
@@ -69,6 +70,7 @@ int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* c
 
     return 0;
 }
+#endif
 
 // int srt_bind_multicast()
 
@@ -87,11 +89,13 @@ int srt_connect_bind(SRTSOCKET u,
     return CUDT::connect(u, source, target, target_len);
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
 {
     SRT_SOCKGROUPCONFIG data;
     data.errorcode = SRT_SUCCESS;
     data.id = -1;
+    data.token = -1;
     data.weight = 0;
     data.config = NULL;
     if (src)
@@ -111,6 +115,7 @@ int srt_connect_group(SRTSOCKET group,
 {
     return CUDT::connectLinks(group, name, arraysize);
 }
+#endif
 
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
@@ -380,6 +385,14 @@ int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installAcceptHook(lsn, hook, opaq);
+}
+
+int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+
+    return CUDT::installConnectHook(lsn, hook, opaq);
 }
 
 uint32_t srt_getversion()

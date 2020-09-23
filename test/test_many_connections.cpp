@@ -39,7 +39,7 @@ protected:
     // It should be as much as possible, but how many sockets can
     // be withstood, depends on the platform. Currently used CI test
     // servers seem not to withstand more than 240.
-    static const size_t NSOCK = 200;
+    static const size_t NSOCK = 60;
 
 protected:
     // SetUp() is run immediately before a test starts.
@@ -101,7 +101,8 @@ protected:
             int acp = srt_accept(m_server_sock, addr.get(), &len);
             if (acp == -1)
             {
-                cerr << "[T] Accept error: " << srt_getlasterror_str();
+                cerr << "[T] Accept error at " << m_accepted.size()
+                    << "/" << NSOCK << ": " << srt_getlasterror_str() << endl;
                 break;
             }
             //cerr << "[T] Got new acp @" << acp << endl;
@@ -110,10 +111,14 @@ protected:
 
         m_accept_exit = true;
 
+        cerr << "[T] Closing those accepted ones\n";
+
         for (auto s: m_accepted)
         {
             srt_close(s);
         }
+
+        cerr << "[T] End Accept Loop\n";
     }
 
 protected:
@@ -149,9 +154,8 @@ TEST_F(TestConnection, Multiple)
         int conntimeo = 60;
         srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
 
-        //cout << "Connecting #" << i << " to " << SockaddrToString(sockaddr_any(psa)) << "...\n";
-
-        //cerr << "Connecting to: " << SockaddrToString(sockaddr_any(psa)) << endl;
+        //cerr << "Connecting #" << i << " to " << sockaddr_any(psa).str() << "...\n";
+        //cerr << "Connecting to: " << sockaddr_any(psa).str() << endl;
         ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof lsa), SRT_ERROR);
 
         // Set now async sending so that sending isn't blocked

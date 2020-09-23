@@ -217,6 +217,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_VERSION = 34,        // Local SRT Version
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
+   SRTO_DRIFTTRACER = 37,    // Enable or disable drift tracer
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side
@@ -234,12 +235,14 @@ typedef enum SRT_SOCKOPT {
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
+#if ENABLE_EXPERIMENTAL_BONDING
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
-   // (some space left)
+#endif
+   SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
-   SRTO_RETRANSMISSION_ALGORITHM = 61 // An option to select packet retransmission algorithm
+   SRTO_RETRANSMITALGO = 61  // An option to select packet retransmission algorithm
 } SRT_SOCKOPT;
 
 
@@ -435,12 +438,14 @@ enum CodeMinor
     MN_REJECTED        =  2,
     MN_NORES           =  3,
     MN_SECURITY        =  4,
+    MN_CLOSED          =  5,
     // MJ_CONNECTION
     MN_CONNLOST        =  1,
     MN_NOCONN          =  2,
     // MJ_SYSTEMRES
     MN_THREAD          =  1,
     MN_MEMORY          =  2,
+    MN_OBJECT          =  3,
     // MJ_FILESYSTEM
     MN_SEEKGFAIL       =  1,
     MN_READFAIL        =  2,
@@ -484,6 +489,7 @@ typedef enum SRT_ERRNO
     SRT_ECONNREJ        = MN(SETUP, REJECTED),
     SRT_ESOCKFAIL       = MN(SETUP, NORES),
     SRT_ESECFAIL        = MN(SETUP, SECURITY),
+    SRT_ESCLOSED        = MN(SETUP, CLOSED),
 
     SRT_ECONNFAIL       = MJ(CONNECTION),
     SRT_ECONNLOST       = MN(CONNECTION, CONNLOST),
@@ -492,6 +498,7 @@ typedef enum SRT_ERRNO
     SRT_ERESOURCE       = MJ(SYSTEMRES),
     SRT_ETHREAD         = MN(SYSTEMRES, THREAD),
     SRT_ENOBUF          = MN(SYSTEMRES, MEMORY),
+    SRT_ESYSOBJ         = MN(SYSTEMRES, OBJECT),
 
     SRT_EFILE           = MJ(FILESYSTEM),
     SRT_EINVRDOFF       = MN(FILESYSTEM, SEEKGFAIL),
@@ -565,26 +572,66 @@ enum SRT_REJECT_REASON
 
 // Logging API - specialization for SRT.
 
-// Define logging functional areas for log selection.
-// Use values greater than 0. Value 0 is reserved for LOGFA_GENERAL,
-// which is considered always enabled.
+// WARNING: This part is generated.
 
 // Logger Functional Areas
 // Note that 0 is "general".
 
-// Made by #define so that it's available also for C API.
-#define SRT_LOGFA_GENERAL   0
-#define SRT_LOGFA_BSTATS    1
-#define SRT_LOGFA_CONTROL   2
-#define SRT_LOGFA_DATA      3
-#define SRT_LOGFA_TSBPD     4
-#define SRT_LOGFA_REXMIT    5
-#define SRT_LOGFA_HAICRYPT  6
-#define SRT_LOGFA_CONGEST   7
+// Values 0* - general, unqualified
+// Values 1* - control
+// Values 2* - receiving
+// Values 3* - sending
+// Values 4* - management
 
-// To make a typical int32_t size, although still use std::bitset.
+// Made by #define so that it's available also for C API.
+
+// Use ../scripts/generate-logging-defs.tcl to regenerate.
+
+// SRT_LOGFA BEGIN GENERATED SECTION {
+
+#define SRT_LOGFA_GENERAL    0   // gglog: General uncategorized log, for serious issues only
+#define SRT_LOGFA_SOCKMGMT   1   // smlog: Socket create/open/close/configure activities
+#define SRT_LOGFA_CONN       2   // cnlog: Connection establishment and handshake
+#define SRT_LOGFA_XTIMER     3   // xtlog: The checkTimer and around activities
+#define SRT_LOGFA_TSBPD      4   // tslog: The TsBPD thread
+#define SRT_LOGFA_RSRC       5   // rslog: System resource allocation and management
+
+#define SRT_LOGFA_CONGEST    7   // cclog: Congestion control module
+#define SRT_LOGFA_PFILTER    8   // pflog: Packet filter module
+
+#define SRT_LOGFA_API_CTRL   11  // aclog: API part for socket and library managmenet
+
+#define SRT_LOGFA_QUE_CTRL   13  // qclog: Queue control activities
+
+#define SRT_LOGFA_EPOLL_UPD  16  // eilog: EPoll, internal update activities
+
+#define SRT_LOGFA_API_RECV   21  // arlog: API part for receiving
+#define SRT_LOGFA_BUF_RECV   22  // brlog: Buffer, receiving side
+#define SRT_LOGFA_QUE_RECV   23  // qrlog: Queue, receiving side
+#define SRT_LOGFA_CHN_RECV   24  // krlog: CChannel, receiving side
+#define SRT_LOGFA_GRP_RECV   25  // grlog: Group, receiving side
+
+#define SRT_LOGFA_API_SEND   31  // aslog: API part for sending
+#define SRT_LOGFA_BUF_SEND   32  // bslog: Buffer, sending side
+#define SRT_LOGFA_QUE_SEND   33  // qslog: Queue, sending side
+#define SRT_LOGFA_CHN_SEND   34  // kslog: CChannel, sending side
+#define SRT_LOGFA_GRP_SEND   35  // gslog: Group, sending side
+
+#define SRT_LOGFA_INTERNAL   41  // inlog: Internal activities not connected directly to a socket
+
+#define SRT_LOGFA_QUE_MGMT   43  // qmlog: Queue, management part
+#define SRT_LOGFA_CHN_MGMT   44  // kmlog: CChannel, management part
+#define SRT_LOGFA_GRP_MGMT   45  // gmlog: Group, management part
+#define SRT_LOGFA_EPOLL_API  46  // ealog: EPoll, API part
+
+#define SRT_LOGFA_HAICRYPT   6   // hclog: Haicrypt module area
+#define SRT_LOGFA_APPLOG     10  // aplog: Applications
+
+// } SRT_LOGFA END GENERATED SECTION
+
+// To make a typical int64_t size, although still use std::bitset.
 // C API will carry it over.
-#define SRT_LOGFA_LASTNONE 31
+#define SRT_LOGFA_LASTNONE 63
 
 enum SRT_KM_STATE
 {
@@ -689,27 +736,10 @@ inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
 
 #endif
 
-
-
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const int SRT_ERROR = -1;
-
-typedef enum SRT_GROUP_TYPE
-{
-    SRT_GTYPE_UNDEFINED,
-    SRT_GTYPE_BROADCAST,
-    SRT_GTYPE_BACKUP,
-    SRT_GTYPE_BALANCING,
-    SRT_GTYPE_MULTICAST,
-    // ...
-    SRT_GTYPE_E_END
-} SRT_GROUP_TYPE;
-
-// Free-form flags for groups
-// Flags may be type-specific!
-static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
 
 // library initialization
 SRT_API       int srt_startup(void);
@@ -726,6 +756,26 @@ SRT_API       SRTSOCKET srt_create_socket(void);
 
 // Group management
 
+// Stubs when off
+
+typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
+
+#if ENABLE_EXPERIMENTAL_BONDING
+
+typedef enum SRT_GROUP_TYPE
+{
+    SRT_GTYPE_UNDEFINED,
+    SRT_GTYPE_BROADCAST,
+    SRT_GTYPE_BACKUP,
+    SRT_GTYPE_BALANCING,
+    SRT_GTYPE_MULTICAST,
+    // ...
+    SRT_GTYPE_E_END
+} SRT_GROUP_TYPE;
+
+// Free-form flags for groups
+// Flags may be type-specific!
+static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
 
 typedef enum SRT_MemberStatus
 {
@@ -735,15 +785,16 @@ typedef enum SRT_MemberStatus
     SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
 } SRT_MEMBERSTATUS;
 
-
-typedef struct SRT_SocketGroupData_
+struct SRT_SocketGroupData_
 {
     SRTSOCKET id;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
     SRT_SOCKSTATUS sockstate;
+    uint16_t weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
-} SRT_SOCKGROUPDATA;
+    int token;
+};
 
 typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
 
@@ -752,9 +803,10 @@ typedef struct SRT_GroupMemberConfig_
     SRTSOCKET id;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    int weight;
+    uint16_t weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
+    int token;
 } SRT_SOCKGROUPCONFIG;
 
 SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
@@ -768,6 +820,11 @@ SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
 SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
 
+SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
+SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
+
+#endif // ENABLE_EXPERIMENTAL_BONDING
+
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -779,16 +836,14 @@ SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* add
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
 SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
+typedef void srt_connect_callback_fn  (void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
+SRT_API       int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
 SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
 SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
                                     const struct sockaddr* target, int len);
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
-
-SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
-SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
-
 
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
