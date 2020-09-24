@@ -68,23 +68,29 @@ def main(git_log):
         f.write('\n<p>')
         f.write('\n')
 
-        f.write('\n### Core Functionality')
-        write_into_changelog(core, f)
+        if not core.empty:
+            f.write('\n### Core Functionality')
+            write_into_changelog(core, f)
 
-        f.write('\n### Unit Tests')
-        write_into_changelog(tests, f)
+        if not tests.empty:
+            f.write('\n### Unit Tests')
+            write_into_changelog(tests, f)
 
-        f.write('\n### Build Scripts (CMake, etc.)')
-        write_into_changelog(build, f)
+        if not build.empty:
+            f.write('\n### Build Scripts (CMake, etc.)')
+            write_into_changelog(build, f)
 
-        f.write('\n### Sample Applications')
-        write_into_changelog(apps, f)
+        if not apps.empty:
+            f.write('\n### Sample Applications')
+            write_into_changelog(apps, f)
 
-        f.write('\n### Documentation')
-        write_into_changelog(docs, f)
+        if not docs.empty:
+            f.write('\n### Documentation')
+            write_into_changelog(docs, f)
 
-        f.write('\n### Other')
-        write_into_changelog(other, f)
+        if not other.empty:
+            f.write('\n### Other')
+            write_into_changelog(other, f)
 
         f.write('\n</p>')
         f.write('\n</details>')
