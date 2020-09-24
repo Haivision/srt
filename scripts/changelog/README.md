@@ -1,4 +1,4 @@
-# Changelog generator
+# Changelog
 
 Script designed to create changelog out of `.csv` SRT git log. The output `changelog.md` is generated in the root folder.
 
