@@ -111,9 +111,11 @@ void OnINT_ForceExit(int)
         throw ForcedExit("Requested exception interrupt");
 }
 
+std::string g_interrupt_reason;
+
 void OnAlarm_Interrupt(int)
 {
-    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
+    cerr << "\n---------- INTERRUPT ON TIMEOUT: hang on " << g_interrupt_reason << "!\n";
     int_state = false; // JIC
     timer_state = true;
     throw AlarmExit("Watchdog bites hangup");
@@ -888,6 +890,7 @@ int main( int argc, char** argv )
                 alarm(0);
             }
             Verb() << " << ... " << VerbNoEOL;
+            g_interrupt_reason = "reading";
             const MediaPacket& data = src->Read(chunk);
             Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
             if ( data.payload.empty() && src->End() )
@@ -895,6 +898,7 @@ int main( int argc, char** argv )
                 Verb() << "EOS";
                 break;
             }
+            g_interrupt_reason = "writing";
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
