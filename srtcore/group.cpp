@@ -287,7 +287,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_listener()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
-    , m_uOPT_StabilityTimeout(4 * CUDT::COMM_SYN_INTERVAL_US)
+    , m_uOPT_StabilityTimeout(CUDT::COMM_DEF_STABILITY_TIMEOUT_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
