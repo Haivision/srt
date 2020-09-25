@@ -52,7 +52,7 @@ Used by `SRTO_TRANSTYPE` option:
 * `SRTT_LIVE`: Live mode.
 * `SRTT_FILE`: File mode.
 
-See [Transmission types](#transmission-types) below for details.
+See [Transmission types](./API.md#transmission-types) for details.
 
 
 ### 2. `SRT_KM_STATE`
