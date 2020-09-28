@@ -1149,9 +1149,11 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
+    // Data for backup-type group members:
     time_point m_tsTmpActiveTime;  // time since temporary activated, or 0 if not temporary activated
     time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
-    
+    time_point m_tsSilencedSince;  // time when the link was silenced (turned to IDLE), or 0 if it's ready for activation
+
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

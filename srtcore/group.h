@@ -217,7 +217,7 @@ private:
     int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
-    bool send_CheckIdle(const gli_t d, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
+    bool send_CheckIdle(const gli_t d, const time_point& currtime, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
     bool sendBackup_CheckSendStatus(const gli_t         d,
@@ -546,8 +546,9 @@ private:
     // is ready to deliver.
     srt::sync::Condition m_RcvDataCond;
     srt::sync::Mutex     m_RcvDataLock;
-    volatile int32_t     m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+    volatile int32_t     m_iLastSchedSeqNo; // represents the value to be enforced on a newly connected socket
     volatile int32_t     m_iLastSchedMsgNo;
+    volatile int32_t     m_iCurrentSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     // Statistics
 
     struct Stats
@@ -671,7 +672,8 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, bool, managed, m_selfManaged);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, lastSchedSequence, m_iLastSchedSeqNo);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iCurrentSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, synconmsgno, m_bSyncOnMsgNo);

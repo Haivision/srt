@@ -307,6 +307,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
+    , m_iCurrentSchedSeqNo(SRT_SEQNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
@@ -2626,7 +2627,7 @@ struct FPriorityOrder
     }
 };
 
-bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
+bool CUDTGroup::send_CheckIdle(const gli_t d, const time_point& currtime, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
 {
     SRT_SOCKSTATUS st = SRTS_NONEXIST;
     if (d->ps)
@@ -2647,6 +2648,39 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gl
         w_pending.push_back(d);
         return false;
     }
+
+    /*
+
+    // The "true IDLE" state - that is a link ready to takeover - is when
+    // it's not also in cooldown state after silencing.
+    if (!is_zero(d->ps->core().m_tsSilencedSince))
+    {
+        // This should be cleared at the moment when the KEEPALIVE
+        // is received (see CUDT::handleKeepalive), but it may happen
+        // that it's missing. If the time of keepalive + RTT + latency
+        // has passed and it's still in cooldown, clear the cooldown
+        // forcefully.
+
+        duration max_cooldown = microseconds_from(0
+                + CUDT::COMM_KEEPALIVE_PERIOD_US
+                + d->ps->core().latency_us()
+                + d->ps->core().RTT());
+
+        if (currtime - d->ps->core().m_tsSilencedSince > max_cooldown)
+        {
+            HLOGC(gslog.Debug, log << "group/snd: A link silenced "
+                    << FormatDuration(currtime - d->ps->core().m_tsSilencedSince)
+                    << " ago didn't yet get KEEPALIVE, FORCING OUT OF COOLDOWN");
+            d->ps->core().m_tsSilencedSince = time_point();
+            return true;
+        }
+
+        HLOGC(gslog.Debug, log << "group/snd: An idle link silenced "
+                    << FormatDuration(currtime - d->ps->core().m_tsSilencedSince)
+                    << " ago - too early for activation");
+        return false; // Still in silence cooldown period, DO NOT ACTIVATE!
+    }
+    // */
 
     return true;
 }
@@ -2813,7 +2847,12 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
                                            size_t&                                  w_nsuccessful,
                                            bool&                                    w_is_nunstable)
 {
-    bool none_succeeded = true;
+    // The result value means that the link has the next
+    // scheduled sequence number set correctly, or at least
+    // when it wasn't set, it has been post-fixed. False
+    // means that this operation has failed and the link
+    // must be immediately closed.
+    bool is_ontrack = true;
 
     if (stat != -1)
     {
@@ -2851,7 +2890,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
             // So, in order to set curr=1115, next=1116
             // this must set to 1115+1.
 
-            w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
+            is_ontrack = w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
         }
 
         // If this link is already found as unstable,
@@ -2875,7 +2914,6 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
         // State it as succeeded, though. We don't know if the link
         // is broken until we get the connection broken confirmation,
         // and the instability state may wear off next time.
-        none_succeeded = false;
         w_final_stat   = stat;
         ++w_nsuccessful;
         w_sendable_pri.insert(d->weight);
@@ -2886,7 +2924,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
         w_is_nunstable = true;
     }
 
-    return none_succeeded;
+    return is_ontrack;
 }
 
 void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_curseq, SRT_MSGCTRL& w_mc)
@@ -2988,6 +3026,7 @@ size_t CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&          idl
                     // It's because if this is successful, no other links
                     // will be tried.
                     w_curseq = w_mc.pktseq;
+                    m_iCurrentSchedSeqNo = w_curseq;
                     addMessageToBuffer(buf, len, (w_mc));
                 }
             }
@@ -3058,7 +3097,7 @@ size_t CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&          idl
         if (erc != SRT_EASYNCSND)
         {
             isblocked = false;
-            w_wipeme.push_back(d);
+            insert_uniq((w_wipeme), d);
         }
 
         // If we found a blocked link, leave it alone, however
@@ -3096,7 +3135,8 @@ void CUDTGroup::send_CheckPendingSockets(const vector<gli_t>& pending, vector<gl
         {
             // Sanity check - weird pending reported.
             LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pending.begin(), pending.end(), back_inserter(w_wipeme));
+            for (vector<gli_t>::const_iterator i = pending.begin(); i != pending.end(); ++i)
+                insert_uniq((w_wipeme), *i);
         }
         else
         {
@@ -3399,7 +3439,7 @@ RetryWaitBlocked:
             d->ps->core().m_tsTmpActiveTime   = currtime;
             d->sndstate                       = SRT_GST_RUNNING;
             w_none_succeeded                  = false;
-            HLOGC(gslog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
+            HLOGC(gslog.Debug, log << "grp/sendBackup: AFTER WAITING, ACTIVATED link @" << d->id);
 
             break;
         }
@@ -3554,7 +3594,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (d->sndstate == SRT_GST_IDLE)
         {
-            if (!send_CheckIdle(d, (wipeme), (pending)))
+            if (!send_CheckIdle(d, currtime, (wipeme), (pending)))
                 continue;
 
             HLOGC(gslog.Debug,
@@ -3622,7 +3662,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 #endif
 
-    int32_t curseq      = SRT_SEQNO_NONE;
+    // Will be set to NONE if this is the very first sending call
+    int32_t curseq      = m_iCurrentSchedSeqNo;
     size_t  nsuccessful = 0;
 
     // Collect priorities from sendable links, added only after sending is successful.
@@ -3638,6 +3679,19 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         CUDT&   u       = d->ps->core();
         int32_t lastseq = u.schedSeqNo();
+        if (curseq != SRT_SEQNO_NONE && curseq != lastseq)
+        {
+            LOGC(gslog.Error, log << "IPE: @" << d->id << " sched-seq=%" << lastseq
+                    << " while should have %" << curseq << " trying to fix...");
+            bool su = u.overrideSndSeqNo(curseq);
+            if (!su)
+            {
+                LOGC(gslog.Error, log << "IPE: @" << d->id << " denied sender seq override - EMERGENCY CLOSURE!");
+                d->sndstate = SRT_GST_BROKEN;
+                insert_uniq((wipeme), d);
+                continue;
+            }
+        }
         try
         {
             // This must be wrapped in try-catch because on error it throws an exception.
@@ -3657,7 +3711,10 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         bool is_unstable = false;
-        none_succeeded &= sendBackup_CheckSendStatus(d,
+        if (stat != -1)
+            none_succeeded = false;
+
+        bool is_ontrack = sendBackup_CheckSendStatus(d,
                                                      currtime,
                                                      stat,
                                                      erc,
@@ -3671,7 +3728,12 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                                      (nsuccessful),
                                                      (is_unstable));
 
-        if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
+        if (!is_ontrack)
+        {
+            LOGC(gslog.Error, log << "IPE: @" << d->id << " DENIED sending sequence override - EMERGENCY CLOSURE!");
+            insert_uniq((wipeme), d);
+        }
+        else if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
             insert_uniq((unstable), d);
 
         const Sendstate cstate = {d, stat, erc};
@@ -3851,6 +3913,15 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     send_CloseBrokenSockets((wipeme));
 
     sendBackup_CheckParallelLinks(unstable, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
+
+    // Set the sequence number to the next value, regardless if the normal
+    // roll of sending has happened or not. This is because it's not used
+    // in any other place than "regular sending" or "busy update" (done in CheckParallelLinks)
+    // 1. Activation of an idle link as initial activation always resets this value.
+    // 2. Activation of an idle link during transmission always starts with sending the
+    //    contents of the sender buffer and usually does sending sequence override.
+    // 3. Activation of an idle link after waiting for readiness, idem.
+    m_iCurrentSchedSeqNo = CSeqNo::incseq(m_iCurrentSchedSeqNo);
 
     if (none_succeeded)
     {
@@ -4043,6 +4114,11 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
     HLOGC(gslog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
+
+    // Set up the scheduling sequence, in case it was the first one.
+    if (m_iCurrentSchedSeqNo == SRT_SEQNO_NONE)
+        m_iCurrentSchedSeqNo = w_mc.pktseq;
+
     return stat;
 }
 
@@ -4113,6 +4189,13 @@ void CUDTGroup::handleKeepalive(gli_t gli)
             gli->sndstate = SRT_GST_IDLE;
             HLOGC(gslog.Debug,
                   log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
+        }
+
+        if (gli->sndstate == SRT_GST_IDLE && !is_zero(gli->ps->core().m_tsSilencedSince))
+        {
+            HLOGC(gslog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " silenced "
+                    << FormatDuration(gli->ps->core().m_tsSilencedSince - steady_clock::now()) << " ago");
+            gli->ps->core().m_tsSilencedSince = time_point();
         }
     }
 }
