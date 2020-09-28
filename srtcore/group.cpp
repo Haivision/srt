@@ -2627,7 +2627,7 @@ struct FPriorityOrder
     }
 };
 
-bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
+bool CUDTGroup::send_CheckIdle(const gli_t d, const time_point& currtime, vector<gli_t>& w_wipeme, vector<gli_t>& w_pending)
 {
     SRT_SOCKSTATUS st = SRTS_NONEXIST;
     if (d->ps)
@@ -2648,6 +2648,39 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<gli_t>& w_wipeme, vector<gl
         w_pending.push_back(d);
         return false;
     }
+
+    /*
+
+    // The "true IDLE" state - that is a link ready to takeover - is when
+    // it's not also in cooldown state after silencing.
+    if (!is_zero(d->ps->core().m_tsSilencedSince))
+    {
+        // This should be cleared at the moment when the KEEPALIVE
+        // is received (see CUDT::handleKeepalive), but it may happen
+        // that it's missing. If the time of keepalive + RTT + latency
+        // has passed and it's still in cooldown, clear the cooldown
+        // forcefully.
+
+        duration max_cooldown = microseconds_from(0
+                + CUDT::COMM_KEEPALIVE_PERIOD_US
+                + d->ps->core().latency_us()
+                + d->ps->core().RTT());
+
+        if (currtime - d->ps->core().m_tsSilencedSince > max_cooldown)
+        {
+            HLOGC(gslog.Debug, log << "group/snd: A link silenced "
+                    << FormatDuration(currtime - d->ps->core().m_tsSilencedSince)
+                    << " ago didn't yet get KEEPALIVE, FORCING OUT OF COOLDOWN");
+            d->ps->core().m_tsSilencedSince = time_point();
+            return true;
+        }
+
+        HLOGC(gslog.Debug, log << "group/snd: An idle link silenced "
+                    << FormatDuration(currtime - d->ps->core().m_tsSilencedSince)
+                    << " ago - too early for activation");
+        return false; // Still in silence cooldown period, DO NOT ACTIVATE!
+    }
+    // */
 
     return true;
 }
@@ -2814,6 +2847,11 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
                                            size_t&                                  w_nsuccessful,
                                            bool&                                    w_is_nunstable)
 {
+    // The result value means that the link has the next
+    // scheduled sequence number set correctly, or at least
+    // when it wasn't set, it has been post-fixed. False
+    // means that this operation has failed and the link
+    // must be immediately closed.
     bool is_ontrack = true;
 
     if (stat != -1)
@@ -3556,7 +3594,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (d->sndstate == SRT_GST_IDLE)
         {
-            if (!send_CheckIdle(d, (wipeme), (pending)))
+            if (!send_CheckIdle(d, currtime, (wipeme), (pending)))
                 continue;
 
             HLOGC(gslog.Debug,
@@ -4151,6 +4189,13 @@ void CUDTGroup::handleKeepalive(gli_t gli)
             gli->sndstate = SRT_GST_IDLE;
             HLOGC(gslog.Debug,
                   log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
+        }
+
+        if (gli->sndstate == SRT_GST_IDLE && !is_zero(gli->ps->core().m_tsSilencedSince))
+        {
+            HLOGC(gslog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " silenced "
+                    << FormatDuration(gli->ps->core().m_tsSilencedSince - steady_clock::now()) << " ago");
+            gli->ps->core().m_tsSilencedSince = time_point();
         }
     }
 }

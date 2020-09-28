@@ -217,7 +217,7 @@ private:
     int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
-    bool send_CheckIdle(const gli_t d, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
+    bool send_CheckIdle(const gli_t d, const time_point& currtime, std::vector<gli_t>& w_wipeme, std::vector<gli_t>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
     bool sendBackup_CheckSendStatus(const gli_t         d,
