@@ -308,6 +308,9 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     // but not the underlying congctl object. After
     // copy-constructed, the 'configure' must be called on it again.
     m_CongCtl = ancestor.m_CongCtl;
+
+    m_lSrtVersion = ancestor.m_lSrtVersion;
+    m_lMinimumPeerSrtVersion = ancestor.m_lMinimumPeerSrtVersion;
 }
 
 CUDT::~CUDT()
@@ -2583,7 +2586,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
 
     HLOGC(cnlog.Debug,
           log << "HSREQ/rcv: PEER Version: " << SrtVersionString(m_lPeerSrtVersion) << " Flags: " << m_lPeerSrtFlags
-              << "(" << SrtFlagString(m_lPeerSrtFlags) << ")");
+              << "(" << SrtFlagString(m_lPeerSrtFlags) << ") Min req version:" << SrtVersionString(m_lMinimumPeerSrtVersion));
 
     m_bPeerRexmitFlag = IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG);
     HLOGF(cnlog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND");
@@ -2772,6 +2775,16 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
           SrtVersionString(m_lPeerSrtVersion).c_str(),
           m_lPeerSrtFlags,
           SrtFlagString(m_lPeerSrtFlags).c_str());
+
+    // Basic version check
+    if (m_lPeerSrtVersion < m_lMinimumPeerSrtVersion)
+    {
+        m_RejectReason = SRT_REJ_VERSION;
+        LOGC(cnlog.Error,
+             log << "HSRSP/rcv: Peer version: " << SrtVersionString(m_lPeerSrtVersion)
+                 << " is too old for requested: " << SrtVersionString(m_lMinimumPeerSrtVersion) << " - REJECTING");
+        return SRT_CMD_REJECT;
+    }
 
     if (hsv == CUDT::HS_VERSION_UDT4)
     {
@@ -2968,8 +2981,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // (nothing to be responded for HSRSP, unless there was some kinda problem)
                 if (rescmd != SRT_CMD_NONE)
                 {
-                    // Just formally; the current code doesn't seem to return anything else.
-                    m_RejectReason = SRT_REJ_ROGUE;
+                    // Just formally; the current code doesn't seem to return anything else
+                    // (unless it's already set)
+                    if (m_RejectReason == SRT_REJ_UNKNOWN)
+                        m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
                          log << "interpretSrtHandshake: process HSRSP returned unexpected value " << rescmd);
                     return false;
