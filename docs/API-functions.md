@@ -158,7 +158,7 @@ Note that socket IDs always have the `SRTGROUP_MASK` bit clear.
 - Returns:
 
   * a valid socket ID on success
-  * `INVALID_SOCKET` (-1) on error
+  * `SRT_INVALID_SOCK` (`-1`) on error
 
 - Errors:
 
