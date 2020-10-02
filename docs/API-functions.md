@@ -1936,6 +1936,28 @@ by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
 you use multiple threads and start waiting without subscribed sockets, so that
 you can subscribe them later from another thread.
 
+#### `SRT_EBINDCONFLICT`
+
+You are attempting to bind to an address and port that is currently busy
+and can be neither created anew on that port and IP address, nor the existing
+binding can be reused. If you are attempting to bind to a port that is already
+bound, then there are two possibilities:
+
+1. If the existing binding to that port was made to a specified IP address
+(non-wildcard) and this address is different than your IP address, you are
+allowed to bind and this binding will coexist with this found one.
+
+2. If the existing binding to that port was made to a wildcard address
+(including a wildcard address for all both IPv4 and IPv6) or to a specified IP
+address that is identical with yours, then this binding can be reused,
+but only if the previous socket that has created this binding:
+
+* Has the same UDP-specific settings
+* Has set `SRTO_REUSEADDR` to true (default)
+
+Otherwise this is a conflict reported as this error.
+
+
 #### `SRT_EASYNCFAIL`
 
 General asynchronous failure (not in use currently).

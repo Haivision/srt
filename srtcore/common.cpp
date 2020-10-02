@@ -256,6 +256,12 @@ const string& CUDTException::getErrorString() const
 
         case MN_EEMPTY:
            m_strMsg += ": All sockets removed from epoll, waiting would deadlock";
+           break;
+
+        case MN_BUSYPORT:
+           m_strMsg += ": Another socket is bound to that port and is not reusable for requested settings";
+           break;
+
 
         default:
            break;
