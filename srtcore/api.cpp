@@ -2696,7 +2696,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOC
                 if (!addr.isany())
                 {
                     LOGC(smlog.Error, log << "bind: Address: " << addr.str()
-                            << " conflicts with wildcard binding: " << sa.str());
+                            << " conflicts with existing wildcard binding: " << sa.str());
                     throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
                 }
 
@@ -2705,7 +2705,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOC
                 if (m.m_iIpV6Only != -1 && m.m_iIpV6Only != s->m_pUDT->m_iIpV6Only)
                 {
                     LOGC(smlog.Error, log << "bind: Address: " << addr.str()
-                            << " conflicts with IPv6 wildcard binding: " << sa.str());
+                            << " conflicts with existing IPv6 wildcard binding: " << sa.str());
                     throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
                 }
 
@@ -2719,6 +2719,12 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOC
                 }
                 reuse_attempt = true;
                 HLOGC(smlog.Debug, log << "bind: wildcard address - multiplexer reusable");
+            }
+            else if (addr.isany() && addr.family() == sa.family())
+            {
+                LOGC(smlog.Error, log << "bind: Wildcard address: " << addr.str()
+                        << " conflicts with existting IP binding: " << sa.str());
+                throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
             }
             // If this is bound to a certain address, AND:
             else if (sa.equal_address(addr))
