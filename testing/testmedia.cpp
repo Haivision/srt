@@ -445,6 +445,22 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         par.erase("groupconfig");
     }
 
+    // Fix Minversion, if specified as string
+    if (par.count("minversion"))
+    {
+        string v = par["minversion"];
+        if (v.find('.') != string::npos)
+        {
+            int version = SrtParseVersion(v.c_str());
+            if (version == 0)
+            {
+                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+            }
+            par["minversion"] = Sprint(version);
+            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+        }
+    }
+
     // Assign the others here.
     m_options = par;
     m_options["mode"] = m_mode;
