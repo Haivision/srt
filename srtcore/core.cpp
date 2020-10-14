@@ -9338,6 +9338,8 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
 
 int CUDT::processData(CUnit* in_unit)
 {
+	ScopedLock scopedRecvDataLock(m_RecvDataLock);
+
     if (m_bClosing)
         return -1;
 
