@@ -673,10 +673,10 @@ for more details.
 to the same value specified.
 
 - Prior to SRT version 1.3.0 `SRTO_LATENCY` was the only option to set the latency.
-However it is effectively equivalent to setting `SRTO_PEERLATENCY`, when the side is 
-sender (see [`SRTO_SENDER`](#SRTO_SENDER)), and `SRTO_RCVLATENCY` when the side is receiver.
-SRT version 1.3.0 and higher support bidirectional transmission, so that each sides can be sender and receiver
-at the same time, and the `SRTO_SENDER` became redundant.
+However it is effectively equivalent to setting `SRTO_PEERLATENCY` on the sender 
+(see [`SRTO_SENDER`](#SRTO_SENDER)), and `SRTO_RCVLATENCY` on the receiver.
+SRT version 1.3.0 and higher support bidirectional transmission, so that each side can 
+be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 [Return to list](#list-of-options)
 
@@ -1020,7 +1020,7 @@ considered broken on timeout.
 - The latency value (as described in [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY)) provided by the sender 
 side as a minimum value for the receiver.
 
-- Reading the value of the option before on a non-connected socket reports the configured value.
+- Reading the value of the option on an unconnected socket reports the configured value.
 Reading the value on a connected socket reports the effective receiver buffering latency of the peer.
 
 - **The `SRTO_PEERLATENCY` option in versions prior to 1.3.0 is only available as**
@@ -1107,14 +1107,14 @@ This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabl
 - **Default value**: 120 ms (depicted as 0) in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
 - The latency value defines the **minimum** receiver buffering delay before delivering an SRT data packet
-from receiving SRT socket to a receiving application. The provided value is used on the connection establishment (handshake exchange) stage
-to fixate the end to end latency of the transmission. The effective end-to-end latency `L` will be fixed
-aa the network transmission time of the final handshake packet (~1/2 RTT) plus the **negotiated** latency value `Ln`.
+from a receiving SRT socket to a receiving application. The provided value is used in the connection establishment (handshake exchange) stage
+to fix the end-to-end latency of the transmission. The effective end-to-end latency `L` will be fixed
+as the network transmission time of the final handshake packet (~1/2 RTT) plus the **negotiated** latency value `Ln`.
 Data packets will stay in the receiver buffer for at least `L` microseconds since the timestamp of the
-packet independent of the actual network transmission times (RTT variations) of these packets.
+packet, independent of the actual network transmission times (RTT variations) of these packets.
 
 - The actual value of the receiver buffering delay `Ln` (the negotiated latency) used on a connection
-is determined by the negotiation on the connection establishment (handshake exchange) phase as the maximum of the
+is determined by the negotiation in the connection establishment (handshake exchange) phase as the maximum of the
 `SRTO_RCVLATENCY` value and the value of [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY) set by the peer.
 
 - Reading the `SRTO_RCVLATENCY` value on a socket after the connection is established provides the actual (negotiated)
@@ -1124,7 +1124,7 @@ latency value `Ln`.
 i.e. `L × Bitrate` bytes. Refer to [`SRTO_RCVBUF`](#SRTO_RCVBUF).
 
 - The sender's buffer must be large enough to store a packet up until it is either delivered (and acknowledged)
-or dropped by the sender due to too late to be delivered.
+or dropped by the sender due to it becoming too late to be delivered.
 In other words, `D × Bitrate` bytes, where `D` is the sender's drop delay value configured with [`SRTO_SNDDROPDELAY`](#SRTO_SNDDROPDELAY).
 
 - Buffering of data packets on the receiving side makes it possible to recover from packet losses using the ARQ
@@ -1518,6 +1518,5 @@ For example, version 1.4.2 is encoded as `0x010402`.
 
 
 [Return to list](#list-of-options)
-
 
 
