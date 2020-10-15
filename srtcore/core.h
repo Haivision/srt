@@ -488,7 +488,7 @@ public: // internal API
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
-    SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
+    //SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_NewDataReceivedCond);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
@@ -985,7 +985,7 @@ private: // Receiving related data
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
 
     srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
-    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
+    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready, use m_RecvLock to sync
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1017,11 +1017,15 @@ private: // synchronization: mutexes and conditions
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
     srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
-    srt::sync::Condition m_RecvDataCond;         // used to block "recv" when there is no data
-    srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
+    // The m_ReadyToReadEvent (or RcvDataReady event) is used internally to:
+    // - block the "CUDT::recv" and wait until there is a data available to be received by an upstream application;
+    // - signal that a new data is available to be read by an upstream application (e.g. TSBPD marked it ready to deliver).
+    srt::sync::CEvent m_ReadyToReadEvent;    // It is used to signal that new data 
 
-    srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
-    srt::sync::Mutex m_RecvLock;                 // used to synchronize "recv" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
+    srt::sync::Mutex m_SendLock;                 // used to synchronize "CUDT::send" call
+    srt::sync::Mutex m_RecvLock;                 // used to synchronize "CUDT::recv" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady()),
+                                                 // is also used to wait for m_RcvTsbPdCond
+
     srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
     srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
 

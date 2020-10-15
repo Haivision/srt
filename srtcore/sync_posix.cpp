@@ -261,6 +261,8 @@ namespace sync
 
 Condition::Condition()
 #ifdef _WIN32
+    // If CV is used in the global scope, it must be initialized with PTHREAD_COND_INITIALIZER
+    // to avoid failures on Windows with with pthread wrapper library. See PR 1149.
     : m_cv(PTHREAD_COND_INITIALIZER)
 #endif
 {}
@@ -278,7 +280,7 @@ void Condition::init()
 #endif
     const int res = pthread_cond_init(&m_cv, attr);
     if (res != 0)
-        throw std::runtime_error("pthread_cond_init monotonic failed");
+        throw std::runtime_error("pthread_cond_init failed");
 }
 
 void Condition::destroy()

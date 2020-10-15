@@ -301,7 +301,7 @@ public:
     /// @return     true if the lock was acquired successfully, otherwise false
     bool try_lock();
 
-    // TODO: To be removed with introduction of the CEvent.
+    // TODO: [SYNC] To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
 
 private:
@@ -594,6 +594,10 @@ public:
     void notify_one();
 
     void notify_all();
+
+    void lock_notify_one();
+
+    void lock_notify_all();
 
 private:
     Mutex      m_lock;

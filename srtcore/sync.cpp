@@ -137,6 +137,18 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
+void srt::sync::CEvent::lock_notify_one()
+{
+    ScopedLock lock(m_lock);
+    return m_cond.notify_one();
+}
+
+void srt::sync::CEvent::lock_notify_all()
+{
+    ScopedLock lock(m_lock);
+    return m_cond.notify_all();
+}
+
 bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);

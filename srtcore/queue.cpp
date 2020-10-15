@@ -300,6 +300,8 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 {
     ScopedLock listguard(m_ListLock);
 
+	return -1;
+
     if (-1 == m_iLastEntry)
         return -1;
 

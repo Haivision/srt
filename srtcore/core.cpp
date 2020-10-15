@@ -5482,7 +5482,6 @@ void *CUDT::tsbpd(void *param)
     THREAD_STATE_INIT("SRT:TsbPd");
 
     UniqueLock recv_lock  (self->m_RecvLock);
-    CSync recvdata_cc (self->m_RecvDataCond, recv_lock);
     CSync tsbpd_cc    (self->m_RcvTsbPdCond, recv_lock);
 
     self->m_bTsbPdAckWakeup = true;
@@ -5583,7 +5582,8 @@ void *CUDT::tsbpd(void *param)
              */
             if (self->m_bSynRecving)
             {
-                recvdata_cc.signal_locked(recv_lock);
+                // TODO: [SYNC] Lock before signalling?
+                self->m_ReadyToReadEvent.notify_one();
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -6298,7 +6298,6 @@ int CUDT::receiveBuffer(char *data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    CSync rcond  (m_RecvDataCond, recvguard);
     CSync tscond (m_RcvTsbPdCond, recvguard);
     if (!m_pRcvBuffer->isRcvDataReady())
     {
@@ -6315,7 +6314,7 @@ int CUDT::receiveBuffer(char *data, int len)
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
                     // Do not block forever, check connection status each 1 sec.
-                    rcond.wait_for(seconds_from(1));
+                    m_ReadyToReadEvent.lock_wait_for(seconds_from(1));
                 }
                 THREAD_RESUMED();
             }
@@ -6325,7 +6324,7 @@ int CUDT::receiveBuffer(char *data, int len)
                 THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
-                    if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
+                    if (!m_ReadyToReadEvent.lock_wait_until(exptime)) // "!" means "signal is not received"
                         break; // timeout
                 }
                 THREAD_RESUMED();
@@ -6826,7 +6825,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: CONNECTION BROKEN - reading from recv buffer just for formality");
         enterCS(m_RcvBufferLock);
-        int res       = m_pRcvBuffer->readMsg(data, len);
+        const int res = m_pRcvBuffer->readMsg(data, len);
         leaveCS(m_RcvBufferLock);
         w_mctrl.srctime = 0;
 
@@ -6924,8 +6923,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     // Do not block forever, check connection status each 1 sec.
     const steady_clock::duration recv_timeout = m_iRcvTimeOut < 0 ? seconds_from(1) : milliseconds_from(m_iRcvTimeOut);
 
-    CSync recv_cond (m_RecvDataCond, recvguard);
-
     do
     {
         steady_clock::time_point tstime SRT_ATR_UNUSED;
@@ -6941,7 +6938,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 // would be "spurious". If a new packet comes ahead of the packet which's time is returned
                 // in tstime (as TSBPD sleeps up to then), the procedure that receives it is responsible
                 // of kicking TSBPD.
-                // bool spurious = (tstime != 0);
 
                 HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd" << (is_zero(tstime) ? " (SPURIOUS!)" : ""));
                 tscond.signal_locked(recvguard);
@@ -6958,9 +6954,9 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
 
                 HLOGC(tslog.Debug,
                       log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime) << " lock=" << (&m_RecvLock)
-                          << " cond=" << (&m_RecvDataCond));
+                          << " cond=" << (&m_NewDataReceivedCond));
 
-                if (!recv_cond.wait_until(exptime))
+                if (!m_ReadyToReadEvent.lock_wait_until(exptime))
                 {
                     if (m_iRcvTimeOut >= 0) // otherwise it's "no timeout set"
                         timeout = true;
@@ -7246,15 +7242,18 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_FILESYSTEM, MN_WRITEFAIL);
         }
 
-        {
-            UniqueLock gl   (m_RecvDataLock);
-            CSync rcond (m_RecvDataCond,  gl);
 
-            THREAD_PAUSED();
-            while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
-                rcond.wait();
-            THREAD_RESUMED();
-        }
+        // TODO: [SYNC] Lock m_ReadyToReadEvent before checking isRcvDataReady
+        // Add CUDT::CheckRcvDataReady() as a callback to m_ReadyToReadEvent
+        // as the Predicate
+
+        THREAD_PAUSED();
+        while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+            // Do not block forever, check connection status every 1 sec.
+            // Thus we don't need to protect the state of isRcvDataReady
+            m_ReadyToReadEvent.lock_wait_for(seconds_from(1));
+        THREAD_RESUMED();
+
 
         if (!m_bConnected)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -7597,8 +7596,6 @@ void CUDT::initSynch()
 {
     setupMutex(m_SendBlockLock, "SendBlock");
     setupCond(m_SendBlockCond, "SendBlock");
-    setupMutex(m_RecvDataLock, "RecvData");
-    setupCond(m_RecvDataCond, "RecvData");
     setupMutex(m_SendLock, "Send");
     setupMutex(m_RecvLock, "Recv");
     setupMutex(m_RcvLossLock, "RcvLoss");
@@ -7613,8 +7610,6 @@ void CUDT::destroySynch()
 {
     releaseMutex(m_SendBlockLock);
     releaseCond(m_SendBlockCond);
-    releaseMutex(m_RecvDataLock);
-    releaseCond(m_RecvDataCond);
     releaseMutex(m_SendLock);
     releaseMutex(m_RecvLock);
     releaseMutex(m_RcvLossLock);
@@ -7633,15 +7628,17 @@ void CUDT::releaseSynch()
     enterCS(m_SendLock);
     leaveCS(m_SendLock);
 
-    CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
+    m_ReadyToReadEvent.lock_notify_one();
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
-    enterCS(m_RecvDataLock);
+    // TODO: [SYNC] Protect TBBPD Thread join
+    //enterCS(m_NewDataReceivedLock);
+    // ASSERT(m_bClosing)
     if (m_RcvTsbPdThread.joinable())
     {
         m_RcvTsbPdThread.join();
     }
-    leaveCS(m_RecvDataLock);
+    //leaveCS(m_NewDataReceivedLock);
 
     enterCS(m_RecvLock);
     leaveCS(m_RecvLock);
@@ -7789,9 +7786,9 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
             leaveCS(m_RcvBufferLock);
             IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
-            // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
+            // If TSBPD is enabled, then INSTEAD OF signaling m_NewDataReceivedCond,
             // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
-            // will signal m_RecvDataCond when there's time to play for particular
+            // will signal m_NewDataReceivedCond when there's time to play for particular
             // data packet.
             HLOGC(xtlog.Debug, log << "ACK: clip %" << oldack << "-%" << ack
                     << ", REVOKED " << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
@@ -7809,7 +7806,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
                 if (m_bSynRecving)
                 {
                     // signal a waiting "recv" call if there is any data available
-                    CSync::lock_signal(m_RecvDataCond, m_RecvDataLock);
+                    m_ReadyToReadEvent.lock_notify_one();
                 }
                 // acknowledge any waiting epolls to read
                 s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
