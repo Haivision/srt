@@ -514,6 +514,34 @@ TEST(SyncEvent, WaitForNotifyAll)
 
 /*****************************************************************************/
 /*
+ * CThread
+ */
+ /*****************************************************************************/
+void* dummythread(void* param)
+{
+    *(bool*)(param) = true;
+    return nullptr;
+}
+
+TEST(SyncThread, Joinable)
+{
+    CThread foo;
+    volatile bool thread_finished = false;
+
+    StartThread(foo, dummythread, (void*)&thread_finished, "DumyThread");
+
+    EXPECT_TRUE(foo.joinable());
+    while (!thread_finished)
+    {
+        std::this_thread::sleep_for(chrono::milliseconds(50));
+    }
+    EXPECT_TRUE(foo.joinable());
+    foo.join();
+    EXPECT_FALSE(foo.joinable());
+}
+
+/*****************************************************************************/
+/*
  * FormatTime
  */
 /*****************************************************************************/
