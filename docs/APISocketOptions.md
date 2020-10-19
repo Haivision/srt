@@ -21,25 +21,27 @@ Types used in socket options
 
 Possible types of socket options are:
 
-* `int32_t` - This type can usually be treated as an `int` equivalent since it 
+- `int32_t` - This type can usually be treated as an `int` equivalent since it 
 does not change size on 64-bit systems. For clarity, options use this fixed size 
 integer. In some cases the value is expressed using an enumeration type (see below).
 
-* `int64_t` - Some options need the parameter specified as 64-bit integer
+- `int64_t` - Some options need the parameter specified as 64-bit integer
 
-* `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
+- `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
 for C++). When *setting* an option, passing the value through an `int` type is
 also properly recognized. When *getting* an option, however, you should use the
 `bool` type, although you can risk passing a variable of `int` type initialized
 with 0 and then checking if the resulting value is equal to 0 (just don't compare
 the result with 1).
 
-* `string` - When *setting* an option, pass the character array pointer as value
+- `string` - When *setting* an option, pass the character array pointer as value
 and the string length as length. When *getting*, pass an array of sufficient size
 (as specified in the size variable). Every option with this type that can be
 read should specify the maximum length of that array.
 
-* `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
+- `B/s` - bytes per second.
+
+- `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
 
 Enumeration types used in options
@@ -673,9 +675,9 @@ for more details.
 to the same value specified.
 
 - Prior to SRT version 1.3.0 `SRTO_LATENCY` was the only option to set the latency.
-However it is effectively equivalent to setting `SRTO_PEERLATENCY` on the sender 
-(see [`SRTO_SENDER`](#SRTO_SENDER)), and `SRTO_RCVLATENCY` on the receiver.
-SRT version 1.3.0 and higher support bidirectional transmission, so that each side can 
+However it is effectively equivalent to setting `SRTO_PEERLATENCY` in the sending direction
+(see [`SRTO_SENDER`](#SRTO_SENDER)), and `SRTO_RCVLATENCY` in the receiving direction.
+SRT version 1.3.0 and higher support bidirectional transmission, so that each side can
 be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 [Return to list](#list-of-options)
@@ -1101,7 +1103,7 @@ The value set here will be effectively aligned to the multiple of payload size.
 | ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
 | `SRTO_RCVLATENCY` | 1.3.0 | pre     | `int32_t`  | ms      | *          | 0..    | RW  | GSD    |
 
-- The latency value in the receiving direction of the current SRT connection.
+- The latency value in the receiving direction of the socket.
 This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
 
 - **Default value**: 120 ms (depicted as 0) in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
