@@ -620,6 +620,7 @@ public:
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
    /// This function measures a length of the range from seq1 to seq2,
+   /// including endpoints (seqlen(a, a) = 1; seqlen(a, a + 1) = 2),
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test

@@ -41,6 +41,12 @@ TEST(CSeqNo, seqoff)
     EXPECT_EQ(CSeqNo::seqoff(0x7FFFFFFF, 1),    2);
 }
 
+TEST(CSeqNo, seqlen)
+{
+    EXPECT_EQ(CSeqNo::seqlen(125, 125), 1);
+    EXPECT_EQ(CSeqNo::seqlen(125, 126), 2);
+}
+
 
 TEST(CSeqNo, incseq)
 {

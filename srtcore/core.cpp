@@ -6416,10 +6416,8 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             m_stats.sndBytesDropTotal += dbytes;
             leaveCS(m_StatsLock);
 
-#if ENABLE_HEAVY_LOGGING
-            int32_t realack = m_iSndLastDataAck;
-#endif
-            int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
+            IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
+            const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
 
             m_iSndLastAck     = fakeack;
             m_iSndLastDataAck = fakeack;
@@ -7377,6 +7375,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
+    // TODO: [MAX] Previously was:
+    // CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+    // Ok after changes.
     perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
     perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
@@ -9004,8 +9005,11 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 
         // check congestion/flow window limit
         const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        // TODO: [MAX] Previously was:
+        // CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
+        // To recover, we need to add 1. But instead we can just change '>=' to '>'.
         const int flightspan = getFlightSpan();
-        if (cwnd >= flightspan)
+        if (cwnd > flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
             // send buffer. This should be somehow avoided, the crypto flags should be set
@@ -10824,15 +10828,21 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // Otherwise it might still be sent regulary.
     bool retransmit = false;
     const int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
+
+    // TODO: [MAX] Replace the condition with
+    // if (getFlightSpan() > 0 && (!is_laterexmit || m_pSndLossList->getLossLength() == 0))
+    // Do we need two retransmission modes? The only thing that matters is if the peers sends NAK periodically.
+
     // IF:
-    // - LATEREXMIT
+    // - LATEREXMIT (File Mode)
     // - flight window == 0
     // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
+    // OR IF:
+    // - FASTREXMIT (Live Mode)
+    // - flight window > 0
     if ((is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
-    // OR:
-            // - FASTREXMIT
-            // - flight window > 0
-         || (is_fastrexmit && getFlightSpan() != 0))
+        // TODO: [MAX] Previously was CSeqNo::seqoff(m_iSndLastAck, unsent_seqno) > 0
+         || (is_fastrexmit && getFlightSpan() > 0))
     {
         retransmit = true;
     }
