@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "common.h"
+#include "core.h"
 
 
 const int32_t CSeqNo::m_iSeqNoTH;
@@ -47,6 +48,20 @@ TEST(CSeqNo, seqlen)
     EXPECT_EQ(CSeqNo::seqlen(125, 126), 2);
 }
 
+TEST(CUDT, getFlightSpan)
+{
+    const int test_values[3][3] = {
+        // lastack  curseq  span
+        {      125,    124,   0 },
+        {      125,    125,   1 },
+        {      125,    130,   5 }
+    };
+
+    for (auto val : test_values)
+    {
+        EXPECT_EQ(CUDT::getFlightSpan(val[0], val[1]), val[2]) << "Span(" << val[0] << ", " << val[1] << ")";
+    }
+}
 
 TEST(CSeqNo, incseq)
 {

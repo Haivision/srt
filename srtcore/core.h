@@ -395,31 +395,39 @@ public: // internal API
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
+    /// @param lastack is the sequence number of the first unacknowledged packet.
+    /// @param curseq is the sequence number of the latest original packet sent
+    ///
+    /// @note When there are no packets in flight, lastack = incseq(curseq).
+    ///
     /// @returns The number of packets in flight belonging to the interval [0; ...)
-    int32_t getFlightSpan() const
+    static int32_t getFlightSpan(int32_t lastack, int32_t curseq)
     {
-        // m_iSndCurrSeqNo is the sequence number of the latest original packet sent.
-        // m_iSndLastAck is the sequence number of the first unacknowledged packet.
-        // When there are no packets in flight, m_iSndLastAck = incseq(m_iSndCurrSeqNo).
-
         // Packets sent:
         // | 1 | 2 | 3 | 4 | 5 |
         //   ^               ^
         //   |               |
-        // m_iSndLastAck     |
-        //               m_iSndCurrSeqNo
+        // lastack           |
+        //                curseq
         //
-        // In Flight: [m_iSndLastAck; m_iSndCurrSeqNo]
+        // In Flight: [lastack; curseq]
         //
-        // Normally m_iSndLastAck should be PAST the m_iSndCurrSeqNo,
+        // Normally 'lastack' should be PAST the 'curseq',
         // however in a case when the sending stopped and all packets were
-        // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
-        // Therefore we increase m_iSndCurrSeqNo by 1 forward and then
+        // ACKed, the 'lastack' is one sequence ahead of 'curseq'.
+        // Therefore we increase 'curseq' by 1 forward and then
         // get the distance towards the last ACK. This way this value may
         // be only positive as seqlen() includes endpoints.
         // Finally, we subtract 1 to exclude the increment added earlier.
 
-        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo)) - 1;
+        return CSeqNo::seqlen(lastack, CSeqNo::incseq(curseq)) - 1;
+    }
+
+    /// Returns the number of packets in flight (sent, but not yet acknowledged).
+    /// @returns The number of packets in flight belonging to the interval [0; ...)
+    int32_t getFlightSpan() const
+    {
+        return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
     }
 
     int minSndSize(int len = 0) const
