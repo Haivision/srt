@@ -39,8 +39,6 @@ and the string length as length. When *getting*, pass an array of sufficient siz
 (as specified in the size variable). Every option with this type that can be
 read should specify the maximum length of that array.
 
-- `B/s` - bytes per second.
-
 - `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
 
@@ -156,6 +154,7 @@ when the type is integer:
 
     - `enum`: the possible values are defined in an enumeration type
     - `flags`: the integer value is a collection of bit flags
+    - `B/s` - bytes per second.
 
 5. **Default**: The exact default value, if it can be easily specified. A more complicated
 default state of a particular option will be explained in the [description](#option-descriptions) 
