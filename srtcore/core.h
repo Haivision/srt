@@ -138,7 +138,6 @@ enum SeqPairItems
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
 };
 
-#if ENABLE_EXPERIMENTAL_BONDING
 
 template <class METRIC_TYPE>
 struct AverageMetricUsage: public MetricUsage<METRIC_TYPE>
@@ -185,7 +184,7 @@ struct MaxMetricUsage: public MetricUsage<METRIC_TYPE>
     }
 };
 
-
+#if ENABLE_EXPERIMENTAL_BONDING
 
 struct SRT_SocketOptionObject
 {
