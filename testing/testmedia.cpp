@@ -41,7 +41,9 @@
 using namespace std;
 
 using srt_logging::SockStatusStr;
+#if ENABLE_EXPERIMENTAL_BONDING
 using srt_logging::MemberStatusStr;
+#endif
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -216,6 +218,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
         path = path.substr(2);
 
+#if ENABLE_EXPERIMENTAL_BONDING
         if (path == "group")
         {
             // Group specified, check type.
@@ -355,6 +358,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             // possible in future.
             par["mode"] = "caller";
         }
+#endif
     }
 
     string adapter;
@@ -441,6 +445,22 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         par.erase("groupconfig");
     }
 
+    // Fix Minversion, if specified as string
+    if (par.count("minversion"))
+    {
+        string v = par["minversion"];
+        if (v.find('.') != string::npos)
+        {
+            int version = SrtParseVersion(v.c_str());
+            if (version == 0)
+            {
+                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+            }
+            par["minversion"] = Sprint(version);
+            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+        }
+    }
+
     // Assign the others here.
     m_options = par;
     m_options["mode"] = m_mode;
@@ -522,6 +542,7 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
@@ -558,6 +579,7 @@ void SrtCommon::AcceptNewClient()
         Verb() << " connected(group epoll " << srt_epoll <<").";
     }
     else
+#endif
     {
         sockaddr_any peeraddr(AF_INET6);
         string peer = "<?PEER?>";
@@ -635,10 +657,12 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             {
                 OpenClient(host, port);
             }
+#if ENABLE_EXPERIMENTAL_BONDING
             else
             {
                 OpenGroupClient(); // Source data are in the fields already.
             }
+#endif
         }
         else if (m_mode == "listener")
             OpenServer(m_adapter, port, backlog);
@@ -865,6 +889,7 @@ void SrtCommon::PrepareClient()
 
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     SrtCommon* that = (SrtCommon*)srtcommon;
@@ -1140,6 +1165,7 @@ void SrtCommon::OpenGroupClient()
     // Prepare group data for monitoring the group status.
     m_group_data.resize(m_group_nodes.size());
 }
+#endif
 
 /*
    This may be used sometimes for testing, but it's nonportable.
@@ -1359,6 +1385,7 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
     if (!grpdata)
@@ -1451,6 +1478,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
     }
 }
+#endif
 
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
@@ -2139,7 +2167,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
-    bool have_group = !m_group_nodes.empty();
+    bool have_group ATR_UNUSED = !m_group_nodes.empty();
 
     bytevector data(chunk);
     // EXPERIMENTAL
@@ -2162,11 +2190,13 @@ MediaPacket SrtSource::Read(size_t chunk)
 
     do
     {
+#if ENABLE_EXPERIMENTAL_BONDING
         if (have_group || m_listener_group)
         {
             mctrl.grpdata = m_group_data.data();
             mctrl.grpdata_size = m_group_data.size();
         }
+#endif
 
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
@@ -2236,6 +2266,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
@@ -2247,13 +2278,14 @@ Epoll_again:
         }
     }
     else
+#endif
     {
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
             PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
         }
     }
-    #endif
+#endif
 
     ++counter;
 
@@ -2326,12 +2358,14 @@ Epoll_again:
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
+#if ENABLE_EXPERIMENTAL_BONDING
     bool have_group = !m_group_nodes.empty();
     if (have_group || m_listener_group)
     {
         mctrl.grpdata = m_group_data.data();
         mctrl.grpdata_size = m_group_data.size();
     }
+#endif
 
     if (transmit_use_sourcetime)
     {
@@ -2351,6 +2385,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (have_group)
     {
         // For listener group this is not necessary. The group information
@@ -2364,6 +2399,7 @@ Epoll_again:
         }
     }
     else
+#endif
     {
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {

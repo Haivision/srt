@@ -973,11 +973,13 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
             int token = -1;
+#if ENABLE_EXPERIMENTAL_BONDING
             if (i->m_pUDT->m_parent->m_IncludedGroup)
             {
                 // Bound to one call because this requires locking
                 token = i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
             }
+#endif
             CGlobEvent::triggerEvent();
 
             if (i->m_pUDT->m_cbConnectHook)
@@ -1558,7 +1560,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (this_thread::get_id() == m_WorkerThread.get_id())
+    if (srt::sync::this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(rslog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.

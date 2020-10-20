@@ -132,7 +132,7 @@ Old and deprecated version of `srt_create_socket`. All arguments are ignored.
 
 **NOTE** changes with respect to UDT version:
 
-* In UDT (and SRT versions before 1.5.0) the `af` parameter was specifying the
+* In UDT (and SRT versions before 1.4.2) the `af` parameter was specifying the
 socket family (`AF_INET` or `AF_INET6`). This is now not required; this parameter
 is decided at the call of `srt_conenct` or `srt_bind`.
 
@@ -158,7 +158,7 @@ Note that socket IDs always have the `SRTGROUP_MASK` bit clear.
 - Returns:
 
   * a valid socket ID on success
-  * `INVALID_SOCKET` (-1) on error
+  * `SRT_INVALID_SOCK` (`-1`) on error
 
 - Errors:
 
@@ -722,12 +722,14 @@ where:
 * `token`: An integer value unique for every connection, or -1 if unused
 
 The `srt_perpare_endpoint` sets these fields to default values. After that
-you can change the value of `weight` and `config` fields. The `weight`
-parameter's meaning is dependent on the group type:
+you can change the value of `weight` and `config` and `token` fields. The
+`weight` parameter's meaning is dependent on the group type:
 
 * BROADCAST: not used
-* BACKUP: positive value of link priority, 0 is the highest
+* BACKUP: positive value of link priority (the greater, the more preferred)
 * BALANCING: relative expected load on this link for fixed algorithm
+
+In any case, the allowed value ranges for `weight` is between 0 and 32767.
 
 The `config` parameter is used to provide options to be set separately
 on a socket for a particular connection  (see [`srt_create_config()`](#srt_create_config)).
@@ -750,7 +752,7 @@ typedef struct SRT_SocketGroupData_
     SRTSOCKET id;
     struct sockaddr_storage peeraddr;
     SRT_SOCKSTATUS sockstate;
-    int weight;
+    uint16_t weight;
     SRT_MEMBERSTATUS memberstate;
     int result;
     int token;
@@ -2096,20 +2098,27 @@ Possible epoll flags are the following:
    * `SRT_EPOLL_IN`: report readiness for reading or incoming connection on a listener socket
    * `SRT_EPOLL_OUT`: report readiness for writing or a successful connection
    * `SRT_EPOLL_ERR`: report errors on the socket
-   * `SRT_EPOLL_UPDATE`: group-listening socket gets a new connection established
+   * `SRT_EPOLL_UPDATE`: an important event has happened that requires attention
    * `SRT_EPOLL_ET`: the event will be edge-triggered
 
 All flags except `SRT_EPOLL_ET` are event type flags (important for functions
 that expect only event types and not other flags).
 
-The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by
-default **level-triggered**. With `SRT_EPOLL_ET` flag they become
-**edge-triggered**. The `SRT_EPOLL_UPDATE` flag is always edge-triggered
-and it designates a special event that happens only for a listening
-socket that has the `SRTO_GROUPCONNECT` flag set to allow group connections.
-This event is intended for internal use only, and is triggered for group
-connections when a new link has been established for a group that is
-already connected (that is, has at least one connection established).
+The `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR` events are by default
+**level-triggered**. With `SRT_EPOLL_ET` flag they become **edge-triggered**.
+
+The `SRT_EPOLL_UPDATE` flag is always edge-triggered. It designates a
+special event that happens on a group, or on a listener socket that has the
+`SRTO_GROUPCONNECT` flag set to allow group connections. This flag
+is triggered in the following situations:
+
+* for group connections, when a new link has been established for a group that is already 
+connected (that is, has at least one connection established), `SRT_EPOLL_UPDATE` is 
+reported for the listener socket accepting the connection. This is intended for internal 
+use only. An initial connection results in reporting the group connection on that listener. 
+But when the group is already connected, `SRT_EPOLL_UPDATE`  is reported instead.
+
+* when one of group member connection has been broken
 
 Note that at this time the edge-triggered mode is supported only for SRT
 sockets, not for system sockets.
@@ -2128,6 +2137,10 @@ edge-triggered mode for all events passed together with it. However, if you
 want to have some events reported as edge-triggered and others as
 level-triggered, you can do two separate subscriptions for the same socket.
 
+**IMPORTANT**: The `srt_epoll_wait` function does not report
+`SRT_EPOLL_UPDATE` events. If you need the ability to get any possible flag,
+you must use `srt_epoll_uwait`. Note that this function doesn't work with
+system file descriptors.
 
 - Returns:
 
@@ -2187,7 +2200,14 @@ parameter.  If timeout is 0, it exits immediately after checking. If timeout is
 * `lwfds` and `lwnum`:A pointer and length of an array to write system sockets that are read-ready
 * `lwfds` and `lwnum`:A pointer and length of an array to write system sockets that are write-ready
 
-Note that there is no space here to report sockets for which it's already known
+Note that the following flags are reported:
+
+* `SRT_EPOLL_IN` as read-ready (also a listener socket ready to accept)
+* `SRT_EPOLL_OUT` as write-ready (also a connected socket)
+* `SRT_EPOLL_ERR` as both read-ready and write-ready
+* `SRT_EPOLL_UPDATE` is not reported
+
+There is no space here to report sockets for which it's already known
 that the operation will end up with error (athough such a state is known
 internally). If an error occurred on a socket then that socket is reported in
 both read-ready and write-ready arrays, regardless of what event types it was

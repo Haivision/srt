@@ -600,6 +600,14 @@ int main(int argc, char** argv)
                     if (s == SRT_INVALID_SOCK)
                         continue;
 
+                    // Remove duplicated sockets
+                    for (size_t j = i + 1; j < sizeof(srtrwfds) / sizeof(SRTSOCKET); j++)
+                    {
+                        const SRTSOCKET next_s = srtrwfds[j];
+                        if (next_s == s)
+                            srtrwfds[j] = SRT_INVALID_SOCK;
+                    }
+
                     bool issource = false;
                     if (src && src->GetSRTSocket() == s)
                     {

@@ -111,9 +111,11 @@ void OnINT_ForceExit(int)
         throw ForcedExit("Requested exception interrupt");
 }
 
+std::string g_interrupt_reason;
+
 void OnAlarm_Interrupt(int)
 {
-    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
+    cerr << "\n---------- INTERRUPT ON TIMEOUT: hang on " << g_interrupt_reason << "!\n";
     int_state = false; // JIC
     timer_state = true;
     throw AlarmExit("Watchdog bites hangup");
@@ -281,6 +283,7 @@ namespace srt_logging
     extern Logger glog;
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -311,6 +314,7 @@ extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr
 
     return 0;
 }
+#endif
 
 extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
@@ -443,7 +447,9 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
+#if ENABLE_EXPERIMENTAL_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+#endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
@@ -455,13 +461,16 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
+#if ENABLE_EXPERIMENTAL_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+#endif
     vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
+#if ENABLE_EXPERIMENTAL_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -487,6 +496,7 @@ int main( int argc, char** argv )
             }
         }
         else
+#endif
         {
             if (args.size() < 2)
             {
@@ -667,11 +677,13 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
+#if ENABLE_EXPERIMENTAL_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
+#endif
     }
 
     string pfextra;
@@ -891,6 +903,7 @@ int main( int argc, char** argv )
                 alarm(0);
             }
             Verb() << " << ... " << VerbNoEOL;
+            g_interrupt_reason = "reading";
             const MediaPacket& data = src->Read(chunk);
             Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
             if ( data.payload.empty() && src->End() )
@@ -898,6 +911,7 @@ int main( int argc, char** argv )
                 Verb() << "EOS";
                 break;
             }
+            g_interrupt_reason = "writing";
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {

@@ -320,7 +320,7 @@ All other parameters are SRT socket options. The following have the following va
 | `peerlatency`        | `ms`             | `SRTO_PEERLATENCY`        | Minimum receiver latency to be requested by sender. |
 | `rcvbuf`             | `bytes`          | `SRTO_RCVBUF`             | Receiver buffer size |
 | `rcvlatency`         | `ms`             | `SRTO_RCVLATENCY`         | Receiver-side latency. |
-| `rexmitalgo`         | {`0`, `1`}       | `SRTO_RETRANSMITALGOR`    | Packet retransmission algorithm to use. |
+| `retransmitalgo`     | {`0`, `1`}       | `SRTO_RETRANSMITALGO`    | Packet retransmission algorithm to use. |
 | `sndbuf`             | `bytes`          | `SRTO_SNDBUF`             | Sender buffer size. |
 | `snddropdelay`       | `ms`             | `SRTO_SNDDROPDELAY`       | Sender's delay before dropping packets. |
 | `streamid`           | `string`         | `SRTO_STREAMID`           | Stream ID (settable in caller mode only, visible on the listener peer). |

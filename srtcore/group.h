@@ -74,7 +74,7 @@ public:
         bool           ready_error;
 
         // Configuration
-        int weight;
+        uint16_t weight;
     };
 
     struct ConfigItem
@@ -230,11 +230,11 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    std::set<int>&      w_sendable_pri,
+                                    std::set<uint16_t>& w_sendable_pri,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
-    void sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
+    size_t sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
@@ -307,6 +307,7 @@ public:
 
     void syncWithSocket(const CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    int  getGroupDataIn(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
@@ -314,6 +315,8 @@ public:
     void fillGroupData(SRT_MSGCTRL&       w_out, //< MSGCTRL to be written
                        const SRT_MSGCTRL& in     //< MSGCTRL read from the data-providing socket
     );
+
+    void copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target);
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
