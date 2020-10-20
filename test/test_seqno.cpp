@@ -54,7 +54,7 @@ TEST(CUDT, getFlightSpan)
         // lastack  curseq  span
         {      125,    124,   0 },
         {      125,    125,   1 },
-        {      125,    130,   5 }
+        {      125,    130,   6 }
     };
 
     for (auto val : test_values)
