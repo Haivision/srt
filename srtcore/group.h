@@ -431,9 +431,9 @@ public:
     {
         static BufferedMessageStorage storage;
 
-        SRT_MSGCTRL mc;
-        char*       data;
-        size_t      size;
+        SRT_MSGCTRL   mc;
+        mutable char* data;
+        size_t        size;
 
         BufferedMessage()
             : data()
@@ -455,16 +455,22 @@ public:
             memcpy(data, buf, s);
         }
 
-        BufferedMessage(const BufferedMessage& foreign SRT_ATR_UNUSED)
-            : data()
-            , size()
+        BufferedMessage(const BufferedMessage& foreign)
+            : mc(foreign.mc)
+            , data(foreign.data)
+            , size(foreign.size)
         {
-            // This is only to copy empty container.
-            // Any other use should not be done.
-            //#if ENABLE_DEBUG
-            //            if (foreign.data)
-            //                abort();
-            //#endif
+            foreign.data = 0;
+        }
+
+        BufferedMessage& operator=(const BufferedMessage& foreign)
+        {
+            data = foreign.data;
+            size = foreign.size;
+            mc = foreign.mc;
+
+            foreign.data = 0;
+            return *this;
         }
 
     private:

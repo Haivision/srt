@@ -246,12 +246,14 @@ public:
    double m_dCWnd;		// congestion window size, congestion control
 
 public:
-   virtual ~CInfoBlock() {}
-   virtual CInfoBlock& operator=(const CInfoBlock& obj);
-   virtual bool operator==(const CInfoBlock& obj);
-   virtual CInfoBlock* clone();
-   virtual int getKey();
-   virtual void release() {}
+   CInfoBlock() {} // NOTE: leaves uninitialized
+   CInfoBlock& copyFrom(const CInfoBlock& obj);
+   CInfoBlock(const CInfoBlock& src) { copyFrom(src); }
+   CInfoBlock& operator=(const CInfoBlock& src) { return copyFrom(src); }
+   bool operator==(const CInfoBlock& obj);
+   CInfoBlock* clone();
+   int getKey();
+   void release() {}
 
 public:
 

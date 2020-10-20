@@ -47,7 +47,7 @@ written by
 
 using namespace std;
 
-CInfoBlock& CInfoBlock::operator=(const CInfoBlock& obj)
+CInfoBlock& CInfoBlock::copyFrom(const CInfoBlock& obj)
 {
    std::copy(obj.m_piIP, obj.m_piIP + 4, m_piIP);
    m_iIPversion = obj.m_iIPversion;
