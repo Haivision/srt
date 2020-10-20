@@ -13,7 +13,7 @@
 
 ## Development Setup
 
-This document describes how to set up your development environment to build and test SRT,
+This section describes how to set up your development environment to build and test SRT,
 and explains the basic mechanics of using `git` and `cmake`.
 
 ### Installing Dependencies
@@ -128,9 +128,10 @@ and merging with master. All those secondary commits will be squashed into a sin
 
 The format of the commit message is `[<tag>] <Message>`, where possible commits tags are:
 
-* `[apps]`- commit mainly changes sample applications or application utilities, including testing and example applications.
-* `[core]` - commit changes the core SRT library code.
-* `[test]` - commit changes or adds unit tests.
+* `[core]` - commit changes the core SRT library code,
+* `[tests]` - commit changes or adds unit tests,
+* `[build]` - commit is related tp build system,
+* `[apps]`- commit mainly changes sample applications or application utilities, including testing and example applications,
 * `[docs]` - commit changes or adds documentation.
 
 ## Generated files
@@ -209,7 +210,6 @@ Currently generated files are:
 * `srtcore/logger_default.cpp`: contains setting of all FA as enabled
 * `srtcore/logger_defs.h` and `srtcore/logger_defs.cpp`: declares/defiones logger objects
 * `apps/logsupport_appdefs.cpp`: Provides string-to-symbol bindings for the applications
-
 
 ### Build options
 

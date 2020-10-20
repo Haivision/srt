@@ -54,10 +54,14 @@ public:
 
     static const char* StateStr(GroupState);
 
+    static int32_t s_tokenGen;
+    static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
+
     struct SocketData
     {
         SRTSOCKET      id;
         CUDTSocket*    ps;
+        int            token;
         SRT_SOCKSTATUS laststatus;
         GroupState     sndstate;
         GroupState     rcvstate;
@@ -70,7 +74,7 @@ public:
         bool           ready_error;
 
         // Configuration
-        int weight;
+        uint16_t weight;
     };
 
     struct ConfigItem
@@ -199,7 +203,7 @@ public:
         return m_Group.empty();
     }
 
-    void setFreshConnected(CUDTSocket* sock);
+    void setFreshConnected(CUDTSocket* sock, int& w_token);
 
     static gli_t gli_NULL() { return GroupContainer::null(); }
 
@@ -226,11 +230,11 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    std::set<int>&      w_sendable_pri,
+                                    std::set<uint16_t>& w_sendable_pri,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
-    void sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
+    size_t sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
@@ -279,6 +283,7 @@ public:
     void              updateReadState(SRTSOCKET sock, int32_t sequence);
     void              updateWriteState();
     int               updateFailedLink(SRTSOCKET sock);
+    void              activateUpdateEvent();
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,
@@ -302,6 +307,7 @@ public:
 
     void syncWithSocket(const CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    int  getGroupDataIn(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
@@ -309,6 +315,8 @@ public:
     void fillGroupData(SRT_MSGCTRL&       w_out, //< MSGCTRL to be written
                        const SRT_MSGCTRL& in     //< MSGCTRL read from the data-providing socket
     );
+
+    void copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target);
 
 #if ENABLE_HEAVY_LOGGING
     void debugGroup();
@@ -368,6 +376,11 @@ private:
     bool           m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
+    CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
+    void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
+    {
+        m_cbConnectHook.set(opaq, hook);
+    }
 
 public:
     struct BufferedMessageStorage

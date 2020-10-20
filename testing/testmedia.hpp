@@ -49,6 +49,8 @@ class SrtCommon
 
 protected:
 
+    friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer, int token);
+
     struct ConnectionBase
     {
         string host;
@@ -57,26 +59,35 @@ protected:
         SRTSOCKET socket = SRT_INVALID_SOCK;
         sockaddr_any source;
         sockaddr_any target;
+        int token = -1;
 
         ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
     };
 
     struct Connection: ConnectionBase
     {
+#if ENABLE_EXPERIMENTAL_BONDING
         SRT_SOCKOPT_CONFIG* options = nullptr;
+#endif
+        int error = SRT_SUCCESS;
+        int reason = SRT_REJ_UNKNOWN;
 
         Connection(string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
+#if ENABLE_EXPERIMENTAL_BONDING
             if (old.options)
             {
                 options = old.options;
                 old.options = nullptr;
             }
+#endif
         }
         ~Connection()
         {
+#if ENABLE_EXPERIMENTAL_BONDING
             srt_delete_config(options);
+#endif
         }
     };
 
@@ -92,6 +103,7 @@ protected:
     vector<Connection> m_group_nodes;
     string m_group_type;
     string m_group_config;
+#if ENABLE_EXPERIMENTAL_BONDING
     vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;
@@ -103,6 +115,7 @@ protected:
     };
     map<SRTSOCKET, ReadPos> m_group_positions;
     SRTSOCKET m_group_active; // The link from which the last packet was delivered
+#endif
 #endif
 
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
@@ -140,7 +153,9 @@ protected:
     virtual int ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(string host, int port);
+#if ENABLE_EXPERIMENTAL_BONDING
     void OpenGroupClient();
+#endif
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(string host, int port);

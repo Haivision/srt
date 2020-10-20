@@ -11,7 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 # XXX This can be potentially done in future, but there still exist
 # some dependent project using cmake 2.8 - this can't be done this way.
 #cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.4.1")
+#project(SRT VERSION "1.4.2")
 project(SRT C CXX)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
@@ -43,7 +43,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.4.1)
+set (SRT_VERSION 1.4.2)
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -106,6 +106,7 @@ endif()
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
+option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -126,6 +127,7 @@ option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pt
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -425,6 +427,10 @@ endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
+if (ENABLE_SOCK_CLOEXEC)
+	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+endif()
+
 if (CMAKE_MAJOR_VERSION LESS 3)
 	set (FORCE_CXX_STANDARD_GNUONLY 1)
 endif()
@@ -606,6 +612,10 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+if (ENABLE_EXPERIMENTAL_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+endif()
+
 if (ENABLE_THREAD_CHECK)
 	add_definitions(
 		-DSRT_ENABLE_THREADCHECK=1
@@ -766,6 +776,8 @@ MafReadDir(srtcore filelist.maf
 	PROTECTED_HEADERS HEADERS_srt
 	PRIVATE_HEADERS HEADERS_srt_private
 )
+
+message(STATUS "SRT Sources: ${SOURCES_srt}")
 
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
@@ -1119,8 +1131,10 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		srt_add_testprogram(srt-test-mpbond)
-		srt_make_application(srt-test-mpbond)
+		if (ENABLE_EXPERIMENTAL_BONDING)
+			srt_add_testprogram(srt-test-mpbond)
+			srt_make_application(srt-test-mpbond)
+		endif()
 
 	else()
 		message(STATUS "DEVEL APPS (testing): DISABLED")
@@ -1154,11 +1168,13 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
+if (ENABLE_EXPERIMENTAL_BONDING)
 	srt_add_example(test-c-client-bonding.c)
 	srt_make_application(test-c-client-bonding)
 
 	srt_add_example(test-c-server-bonding.c)
 	srt_make_application(test-c-server-bonding)
+endif()
 
 	srt_add_example(testcapi-connect.c)
 	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})

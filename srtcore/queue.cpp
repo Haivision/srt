@@ -972,13 +972,22 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
             }
             CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
+            int token = -1;
+#if ENABLE_EXPERIMENTAL_BONDING
             if (i->m_pUDT->m_parent->m_IncludedGroup)
             {
                 // Bound to one call because this requires locking
-                i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
+                token = i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
             }
+#endif
             CGlobEvent::triggerEvent();
 
+            if (i->m_pUDT->m_cbConnectHook)
+            {
+                CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID,
+                        i->m_pUDT->m_RejectReason == SRT_REJ_TIMEOUT ? SRT_ENOSERVER : SRT_ECONNREJ,
+                            i->m_PeerAddr.get(), token);
+            }
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
              * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
@@ -1551,7 +1560,7 @@ void CRcvQueue::stopWorker()
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (this_thread::get_id() == m_WorkerThread.get_id())
+    if (srt::sync::this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(rslog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
