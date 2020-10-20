@@ -1486,6 +1486,8 @@ void CUDT::clearData()
         m_stats.traceRcvBytesUndecrypt   = 0;
 
         m_stats.sndDuration = m_stats.m_sndDurationTotal = 0;
+        m_stats.tdAverageResponseTime.Init();
+        m_stats.tdMaxResponseTime.Init();
     }
 
     // Resetting these data because this happens when agent isn't connected.
@@ -7448,6 +7450,11 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->msRcvBuf   = 0;
     }
 
+    perf->msAvgResponseTimeTotal = count_milliseconds(m_stats.tdAverageResponseTime.total);
+    perf->msMaxResponseTimeTotal = count_milliseconds(m_stats.tdMaxResponseTime.total);
+    perf->msAvgResponseTime = count_milliseconds(m_stats.tdAverageResponseTime.local);
+    perf->msMaxResponseTime = count_milliseconds(m_stats.tdMaxResponseTime.local);
+
     if (clear)
     {
         m_stats.traceSndDrop           = 0;
@@ -7474,6 +7481,8 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.rcvFilterLoss   = 0;
 
         m_stats.tsLastSampleTime = currtime;
+        m_stats.tdAverageResponseTime.Clear();
+        m_stats.tdMaxResponseTime.Clear();
     }
 }
 
@@ -8439,7 +8448,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime = currtime;
+    calculateResponseTime(currtime);
     bool using_rexmit_flag = m_bPeerRexmitFlag;
 
     HLOGC(inlog.Debug,
@@ -9347,7 +9356,7 @@ int CUDT::processData(CUnit* in_unit)
     // m_pRcvBuffer->addLocalTsbPdDriftSample(packet.getMsgTimeStamp());
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
-    m_tsLastRspTime = steady_clock::now();
+    calculateResponseTime(steady_clock::now());
 
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
