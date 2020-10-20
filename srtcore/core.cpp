@@ -1309,6 +1309,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = m_OPT_PktFilterConfigString.size();
         break;
 
+    case SRTO_RETRANSMITALGO:
+        *(int32_t *)optval = m_iOPT_RetransmitAlgo;
+        optlen         = sizeof(int32_t);
+        break;
+
     default:
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
     }
