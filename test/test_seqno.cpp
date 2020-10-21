@@ -52,7 +52,7 @@ TEST(CUDT, getFlightSpan)
 {
     const int test_values[3][3] = {
         // lastack  curseq  span
-        {      125,    124,   0 },
+        {      125,    124,   0 }, // all sent packets are acknowledged
         {      125,    125,   1 },
         {      125,    130,   6 }
     };
