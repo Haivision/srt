@@ -3042,18 +3042,18 @@ void CUDTSocket::removeFromGroup(bool broken)
     }
 
     // Another facility could have deleted it in the meantime.
-    if (pg)
+    if (!pg)
+        return;
+
+    pg->remove(m_SocketID);
+    if (broken)
     {
-        pg->remove(m_SocketID);
-        if (broken)
-        {
-            // Activate the SRT_EPOLL_UPDATE event on the group
-            // if it was because of a socket that was earlier connected
-            // and became broken. This is not to be sent in case when
-            // it is a failure during connection, or the socket was
-            // explicitly removed from the group.
-            pg->activateUpdateEvent();
-        }
+        // Activate the SRT_EPOLL_UPDATE event on the group
+        // if it was because of a socket that was earlier connected
+        // and became broken. This is not to be sent in case when
+        // it is a failure during connection, or the socket was
+        // explicitly removed from the group.
+        pg->activateUpdateEvent();
     }
 }
 
