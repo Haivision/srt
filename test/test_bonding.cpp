@@ -617,6 +617,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     g_nconnected = 0;
     g_nfailed = 0;
+    volatile bool recvd = false;
 
     srt_startup();
 
@@ -643,7 +644,7 @@ TEST(Bonding, BackupPrioritySelection)
     sa.sin_port = htons(4200);
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
-    auto acthr = std::thread([]() {
+    auto acthr = std::thread([&recvd]() {
             sockaddr_any adr;
             cout << "[A] Accepting a connection...\n";
             int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
@@ -664,6 +665,7 @@ TEST(Bonding, BackupPrioritySelection)
             cout << "[A] Receiving 2...\n";
             ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
             ASSERT_EQ(ds, 8);
+            recvd = true;
 
             cout << "[A] Receiving 3...\n";
             ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
@@ -786,6 +788,13 @@ TEST(Bonding, BackupPrioritySelection)
 
     ASSERT_NE(mane, nullptr);
     ASSERT_EQ(mane->weight, 1);
+
+    // Spin-wait for making sure the reception succeeded before
+    // closing. This shouldn't be a problem in general, but
+    int ntry = 100;
+    while (!recvd && --ntry)
+        this_thread::sleep_for(milliseconds(200));
+    ASSERT_NE(ntry, 0);
 
     cout << "Found activated link: [" << mane->token << "] - closing...\n";
 
