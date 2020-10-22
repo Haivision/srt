@@ -3027,14 +3027,25 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
     if (!s->m_IncludedGroup)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-    ScopedLock grd (s->m_ControlLock);
     s->removeFromGroup(false);
     return 0;
 }
 
 void CUDTSocket::removeFromGroup(bool broken)
 {
-    m_IncludedGroup->remove(m_SocketID);
+    CUDTGroup* pg = 0;
+    {
+        ScopedLock grd (m_ControlLock);
+        pg = m_IncludedGroup;
+        m_IncludedIter = CUDTGroup::gli_NULL();
+        m_IncludedGroup = NULL;
+    }
+
+    // Another facility could have deleted it in the meantime.
+    if (!pg)
+        return;
+
+    pg->remove(m_SocketID);
     if (broken)
     {
         // Activate the SRT_EPOLL_UPDATE event on the group
@@ -3042,11 +3053,8 @@ void CUDTSocket::removeFromGroup(bool broken)
         // and became broken. This is not to be sent in case when
         // it is a failure during connection, or the socket was
         // explicitly removed from the group.
-        m_IncludedGroup->activateUpdateEvent();
+        pg->activateUpdateEvent();
     }
-
-    m_IncludedIter = CUDTGroup::gli_NULL();
-    m_IncludedGroup = NULL;
 }
 
 SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)

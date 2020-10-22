@@ -6421,10 +6421,8 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             m_stats.sndBytesDropTotal += dbytes;
             leaveCS(m_StatsLock);
 
-#if ENABLE_HEAVY_LOGGING
-            int32_t realack = m_iSndLastDataAck;
-#endif
-            int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
+            IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
+            const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
 
             m_iSndLastAck     = fakeack;
             m_iSndLastDataAck = fakeack;
@@ -7370,15 +7368,10 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
     perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
     perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
-    //<
 
     double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
-
-    //>mod
     perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
-    //<
-
     perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
@@ -7390,7 +7383,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
 
-    const uint32_t availbw = (uint64_t)(m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth);
+    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth;
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
@@ -9007,10 +9000,10 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     {
         // If no loss, and no packetfilter control packet, pack a new packet.
 
-        // check congestion/flow window limit
+        // Check the congestion/flow window limit
         const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
         const int flightspan = getFlightSpan();
-        if (cwnd >= flightspan)
+        if (cwnd > flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
             // send buffer. This should be somehow avoided, the crypto flags should be set
@@ -10820,30 +10813,18 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT;
     const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT;
 
-    // If the receiver will send periodic NAK reports, then FASTREXMIT is inactive.
-    // MIND that probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
+    // If the receiver will send periodic NAK reports, then FASTREXMIT (live) is inactive.
+    // TODO: Probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
     if (is_fastrexmit && m_bPeerNakReport)
         return;
 
-    // We need to retransmit only when the data in the sender's buffer was already sent.
-    // Otherwise it might still be sent regulary.
-    bool retransmit = false;
-    const int32_t unsent_seqno = CSeqNo::incseq(m_iSndCurrSeqNo);
-    // IF:
-    // - LATEREXMIT
-    // - flight window == 0
-    // - the sender loss list is empty (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track)
-    if ((is_laterexmit && unsent_seqno != m_iSndLastAck && m_pSndLossList->getLossLength() == 0)
-    // OR:
-            // - FASTREXMIT
-            // - flight window > 0
-         || (is_fastrexmit && getFlightSpan() != 0))
-    {
-        retransmit = true;
-    }
-
-
-    if (retransmit)
+    // Schedule for retransmission IF:
+    // - there are packets in flight (getFlightSpan() > 0);
+    // - in case of LATEREXMIT (File Mode): the sender loss list is empty
+    //   (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track).
+    // - in case of FASTREXMIT (Live Mode): there is the latency constraint, therefore
+    //   schedule unacknowledged packets for retransmission regardless of the loss list emptiness.
+    if (getFlightSpan() > 0 && (!is_laterexmit || m_pSndLossList->getLossLength() == 0))
     {
         // Sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
         ScopedLock acklock(m_RecvAckLock); // Protect packet retransmission
