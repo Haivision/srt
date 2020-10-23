@@ -1216,7 +1216,7 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
      bandwidth consumption.
 
 - This option is effective only on the sending side. It influences the decision
-as to whether a particular reported lost packets should be retransmitted at a
+as to whether a particular reported lost packet should be retransmitted at a
 certain time or not.
 
 - The reduced retransmission algorithm (`SRTO_RETRANSMITALGO=1`) is only operational when receiver sends
@@ -1521,5 +1521,4 @@ For example, version 1.4.2 is encoded as `0x010402`.
 
 
 [Return to list](#list-of-options)
-
 
