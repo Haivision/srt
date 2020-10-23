@@ -835,6 +835,73 @@ void SetThreadLocalError(const CUDTException& e);
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CSharedResource class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class CSharedResource
+{
+public:
+    CSharedResource()
+        : m_iResourceTaken(0)
+    {
+    }
+
+    inline void release() {
+        ScopedLock lock(m_lock);
+        //SRT_ASSERT(m_iResourceTaken > 0);
+        --m_iResourceTaken;
+        m_cond.notify_one();
+    }
+
+    inline void acquire() {
+        UniqueLock lock(m_lock);
+
+        // Allow reacquiring the resource from the same thread
+        if (m_iResourceTaken > 0 && this_thread::get_id() == m_thid)
+        {
+            ++m_iResourceTaken;
+            return;
+        }
+
+        while (m_iResourceTaken != 0)
+        {
+            m_cond.wait(lock);
+        }
+
+        //SRT_ASSERT(m_iResourceTaken == 0);
+        ++m_iResourceTaken;
+        m_thid = this_thread::get_id();
+    }
+
+private:
+    Mutex       m_lock;
+    Condition   m_cond;
+    int         m_iResourceTaken;
+    CThread::id m_thid;
+};
+
+
+class CScopedResourceLock
+{
+public:
+    CScopedResourceLock(CSharedResource& resource)
+        : m_rsrc(resource)
+    {
+        m_rsrc.acquire();
+    }
+
+    ~CScopedResourceLock()
+    {
+        m_rsrc.release();
+    }
+
+private:
+    CSharedResource& m_rsrc;
+};
+
 } // namespace sync
 } // namespace srt
 

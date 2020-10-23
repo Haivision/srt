@@ -7631,6 +7631,9 @@ void CUDT::releaseSynch()
     m_ReadyToReadEvent.lock_notify_one();
     CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
 
+    SRT_ASSERT(m_bClosing);
+    CScopedResourceLock lockPrcRsrc(semIsProcessing());
+
     // TODO: [SYNC] Protect TBBPD Thread join
     //enterCS(m_NewDataReceivedLock);
     // ASSERT(m_bClosing)

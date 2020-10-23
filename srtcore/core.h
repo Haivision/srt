@@ -490,6 +490,7 @@ public: // internal API
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_bSynRecving);
     //SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_NewDataReceivedCond);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
+    SRTU_PROPERTY_RR(srt::sync::CSharedResource&, semIsProcessing, m_semIsProcessing);
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
@@ -837,7 +838,7 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
-    volatile bool m_bListening;                  // If the UDT entit is listening to connection
+    volatile bool m_bListening;                  // If the UDT entity is listening to connection
     volatile bool m_bConnecting;                 // The short phase when connect() is called but not yet completed
     volatile bool m_bConnected;                  // Whether the connection is on or off
     volatile bool m_bClosing;                    // If the UDT entity is closing
@@ -847,6 +848,8 @@ private:
     volatile int m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
     int m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
+    
+    srt::sync::CSharedResource m_semIsProcessing;// If the UDP entity is currently processing an incomming packet
 
     int m_iEXPCount;                             // Expiration counter
     int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
