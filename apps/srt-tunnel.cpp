@@ -448,20 +448,20 @@ public:
     // Forwarded in order to separate the implementation from
     // the virtual function so that virtual function is not
     // being called in destructor.
-    virtual void CloseInternal() override { return CloseSrt(); }
+    void CloseInternal() override { return CloseSrt(); }
 
-    virtual const char* type() override { return "srt"; }
-    virtual int ReadInternal(char* output, int size) override;
-    virtual bool IsErrorAgain() override;
+    const char* type() override { return "srt"; }
+    int ReadInternal(char* output, int size) override;
+    bool IsErrorAgain() override;
 
-    virtual void Write(bytevector& portion) override;
-    virtual void CreateListener() override;
-    virtual void CreateCaller() override;
-    virtual unique_ptr<Medium> Accept() override;
-    virtual void Connect() override;
+    void Write(bytevector& portion) override;
+    void CreateListener() override;
+    void CreateCaller() override;
+    unique_ptr<Medium> Accept() override;
+    void Connect() override;
 
 protected:
-    virtual void Init() override;
+    void Init() override;
 
     void ConfigurePre();
     void ConfigurePost(SRTSOCKET socket);
@@ -473,7 +473,7 @@ protected:
         throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
     }
 
-    virtual ~SrtMedium() override
+    ~SrtMedium() override
     {
         CloseState();
         CloseSrt();
@@ -534,16 +534,16 @@ public:
         tcp_close(m_socket);
         m_socket = -1;
     }
-    virtual void CloseInternal() { return CloseTcp(); }
+    void CloseInternal() override { return CloseTcp(); }
 
-    virtual const char* type() override { return "tcp"; }
-    virtual int ReadInternal(char* output, int size) override;
-    virtual bool IsErrorAgain() override;
-    virtual void Write(bytevector& portion) override;
-    virtual void CreateListener() override;
-    virtual void CreateCaller() override;
-    virtual unique_ptr<Medium> Accept() override;
-    virtual void Connect() override;
+    const char* type() override { return "tcp"; }
+    int ReadInternal(char* output, int size) override;
+    bool IsErrorAgain() override;
+    void Write(bytevector& portion) override;
+    void CreateListener() override;
+    void CreateCaller() override;
+    unique_ptr<Medium> Accept() override;
+    void Connect() override;
 
 protected:
 
