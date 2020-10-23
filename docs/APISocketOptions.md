@@ -240,7 +240,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_RCVSYN`](#SRTO_RCVSYN)                          |       | post    | `bool`    |         | true          |          | RW  | GSI   |
 | [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO)                      |       | post    | `int32_t` | ms      | -1            | -1, 0..  | RW  | GSI   |
 | [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS)                  |       | pre     | `bool`    |         | false         |          | RW  | S     |
-| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.4.2 | pre     | `int32_t` |         | 0             | [0, 1]   | W   | GSD   |
+| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.4.2 | pre     | `int32_t` |         | 0             | [0, 1]   | RW  | GSD   |
 | [`SRTO_REUSEADDR`](#SRTO_REUSEADDR)                    |       | pre     | `bool`    |         | true          |          | RW  | GSD   |
 | [`SRTO_SENDER`](#SRTO_SENDER)                          | 1.0.4 | pre     | `bool`    |         | false         |          | W   | S     |
 | [`SRTO_SNDBUF`](#SRTO_SNDBUF)                          |       | pre     | `int32_t` | bytes   | 8192 payloads | *        | RW  | GSD+  |
@@ -1208,20 +1208,22 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 | OptName               | Since | Binding | Type      | Units  | Default | Range  | Dir | Entity |
 | --------------------- | ----- | ------- | --------- | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMITALGO` | 1.4.2 | pre     | `int32_t` |        | 0       | [0, 1] | W   | GSD    |
+| `SRTO_RETRANSMITALGO` | 1.4.2 | pre     | `int32_t` |        | 0       | [0, 1] | RW  | GSD    |
 
 - Retransmission algorithm to use (SENDER option):
-   - 0 - Default (retransmit on every loss report).
-   - 1 - Reduced retransmissions (not more often than once per RTT); reduced 
+  - 0 - Default (retransmit on every loss report).
+  - 1 - Reduced retransmissions (not more often than once per RTT); reduced
      bandwidth consumption.
 
-- This option is effective only on the sending side. It influences the decision 
-as to whether particular reported lost packets should be retransmitted at a 
+- This option is effective only on the sending side. It influences the decision
+as to whether a particular reported lost packet should be retransmitted at a
 certain time or not.
+
+- The reduced retransmission algorithm (`SRTO_RETRANSMITALGO=1`) is only operational when receiver sends
+  Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
 
 [Return to list](#list-of-options)
-
 
 
 #### SRTO_REUSEADDR
@@ -1519,5 +1521,4 @@ For example, version 1.4.2 is encoded as `0x010402`.
 
 
 [Return to list](#list-of-options)
-
 
