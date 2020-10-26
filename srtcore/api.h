@@ -151,7 +151,7 @@ public:
 
    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
-       return (id << 30) + isn;
+       return (int64_t(id) << 30) + isn;
    }
    int64_t getPeerSpec()
    {
