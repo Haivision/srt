@@ -152,7 +152,8 @@ void CUDT::construct()
     m_bBroken             = false;
     m_bPeerHealth         = true;
     m_RejectReason        = SRT_REJ_UNKNOWN;
-    m_tsLastReqTime         = steady_clock::time_point();
+    m_tsLastReqTime       = steady_clock::time_point();
+    m_SrtHsSide           = HSD_DRAW;
 
     m_lSrtVersion            = SRT_DEF_VERSION;
     m_lPeerSrtVersion        = 0; // not defined until connected.
