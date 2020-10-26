@@ -9336,6 +9336,9 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
 
 int CUDT::processData(CUnit* in_unit)
 {
+    // Before the state is checked mark this CUDT instance as "in process of receiving"
+    CScopedResourceLock processingLock(semIsProcessing());
+    
     if (m_bClosing)
         return -1;
 

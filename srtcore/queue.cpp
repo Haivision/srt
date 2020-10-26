@@ -1397,9 +1397,6 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
         return CONN_AGAIN;
     }
 
-    // Before the state is checked mark this CUDT instance as "in process of receiving"
-    CScopedResourceLock processingLock(u->semIsProcessing());
-
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
         u->m_RejectReason = SRT_REJ_CLOSE;
