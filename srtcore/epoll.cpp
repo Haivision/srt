@@ -604,10 +604,11 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             HLOGC(ealog.Debug, log << "CEPoll::wait: REPORTED " << total << "/" << total_noticed
                     << debug_sockets.str());
 
-            if (lrfds || lwfds)
+            if ((lrfds || lwfds) && !ed.m_sLocals.empty())
             {
 #ifdef LINUX
                 const int max_events = ed.m_sLocals.size();
+                SRT_ASSERT(max_event > 0);
                 epoll_event ev[max_events];
                 int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
 
@@ -630,6 +631,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 #elif defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
                 struct timespec tmout = {0, 0};
                 const int max_events = ed.m_sLocals.size();
+                SRT_ASSERT(max_event > 0);
                 struct kevent ke[max_events];
 
                 int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
