@@ -1231,6 +1231,8 @@ typedef struct SRT_MsgCtrl_
    int64_t srctime;      // source time (microseconds since SRT internal clock epoch)
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata; // pointer to group data array
+   size_t grpdata_size;  // size of the group array
 } SRT_MSGCTRL;
 ```
 
@@ -1276,6 +1278,15 @@ UDP packet, only the sequence of the first one is reported. Note that in
 - `msgno`: Message number that can be sent by both sender and receiver,
 although it is required that this value remain monotonic in subsequent send calls. 
 Normally message numbers start with 1 and increase with every message sent.
+
+- 'grpdata' and 'grpdata_size': Pointer and size of the group array. For single
+socket connections these values should remain NULL and 0 respectively. When you
+call `srt_sendmsg2` or `srt_recvmsg2` function for a group, you should pass an
+array here so that you can retrieve the status of particular member sockets.
+If you pass an array that is too small, your `grpdata_size` field will be rewritten with
+the current number of members, but without filling in the array. For details,
+see (Bonding introduction)[bonding-intro.md] and (Socket Groups)[socket-groups.md]
+documents.
 
 **Helpers for `SRT_MSGCTRL`:**
 
