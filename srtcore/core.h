@@ -987,6 +987,7 @@ private: // Receiving related data
     srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
     srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready. Use together with m_RecvLock.
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
+    srt::sync::Mutex m_RcvTsbPdStartupLock;      // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
@@ -1018,7 +1019,6 @@ private: // synchronization: mutexes and conditions
     srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
     srt::sync::Condition m_RecvDataCond;         // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
-    srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
     srt::sync::Mutex m_RecvLock;                 // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
