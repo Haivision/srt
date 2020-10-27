@@ -1280,10 +1280,10 @@ although it is required that this value remain monotonic in subsequent send call
 Normally message numbers start with 1 and increase with every message sent.
 
 - 'grpdata' and 'grpdata_size': Pointer and size of the group array. For single
-socket connections these value should remain NULL and 0 respectively. When you
+socket connections these values should remain NULL and 0 respectively. When you
 call `srt_sendmsg2` or `srt_recvmsg2` function for a group, you should pass an
 array here so that you can retrieve the status of particular member sockets.
-If you pass a too small array, your `grpdata_size` field will be rewritten with
+If you pass an array that is too small, your `grpdata_size` field will be rewritten with
 the current number of members, but without filling in the array. For details,
 see (Bonding introduction)[bonding-intro.md] and (Socket Groups)[socket-groups.md]
 documents.
