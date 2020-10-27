@@ -1048,6 +1048,15 @@ private: // Common connection Congestion Control setup
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
 
+    /// Forms and sends ACK packet
+    /// @note Assumes @ctrlpkt already has a timestamp.
+    ///
+    /// @param ctrlpkt  A control packet structure to fill. It must have a timestemp already set.
+    /// @param size     Sends lite ACK if size is SEND_LITE_ACK, Full ACK otherwise
+    ///
+    /// @returns the nmber of packets sent.
+    int  sendCtrlAck(CPacket& ctrlpkt, int size);
+
     void processCtrl(const CPacket& ctrlpkt);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
     void processCtrlAck(const CPacket& ctrlpkt, const time_point &currtime);
