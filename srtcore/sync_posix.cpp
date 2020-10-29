@@ -234,6 +234,12 @@ srt::sync::UniqueLock::~UniqueLock()
     unlock();
 }
 
+void srt::sync::UniqueLock::lock()
+{
+    if (m_iLocked == -1)
+        m_iLocked = m_Mutex.lock();
+}
+
 void srt::sync::UniqueLock::unlock()
 {
     if (m_iLocked == 0)

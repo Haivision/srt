@@ -329,6 +329,7 @@ public:
     ~UniqueLock();
 
 public:
+    void lock();
     void unlock();
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 

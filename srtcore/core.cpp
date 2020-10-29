@@ -7917,13 +7917,13 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     // There are new received packets to acknowledge, update related information.
     /* tsbpd thread may also call ackData when skipping packet so protect code */
-    enterCS(m_RcvBufferLock);
+    UniqueLock bufflock(m_RcvBufferLock);
 
     // IF ack %> m_iRcvLastAck
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         const int32_t first_seq ATR_UNUSED = ackDataUpTo(ack);
-        leaveCS(m_RcvBufferLock);
+        bufflock.unlock();
         IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
         // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
@@ -7962,7 +7962,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #endif
             CGlobEvent::triggerEvent();
         }
-        enterCS(m_RcvBufferLock);
+        bufflock.lock();
     }
     else if (ack == m_iRcvLastAck)
     {
@@ -7971,7 +7971,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             (microseconds_from(m_iRTT + 4 * m_iRTTVar)))
         {
             HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): ACK %" << ack << " just sent - too early to repeat");
-            leaveCS(m_RcvBufferLock);
             return nbsent;
         }
     }
@@ -7980,7 +7979,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
         LOGC(xtlog.Error, log << "sendCtrl(UMSG_ACK): IPE: curr %" << ack
             << " <% last %" << m_iRcvLastAck);
-        leaveCS(m_RcvBufferLock);
         return nbsent;
     }
 
@@ -8055,7 +8053,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): " << CONID() << "ACK %" << m_iRcvLastAck
             << " <=%  ACKACK %" << m_iRcvLastAckAck << " - NOT SENDING ACK");
     }
-    leaveCS(m_RcvBufferLock);
 
     return nbsent;
 }
