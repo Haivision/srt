@@ -259,6 +259,38 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
 
 /*****************************************************************************/
 /*
+ * UniqueLock tests
+ */
+/*****************************************************************************/
+TEST(SyncUniqueLock, LockUnlock)
+{
+    Mutex mtx;
+    UniqueLock lock(mtx);
+    EXPECT_FALSE(mtx.try_lock());
+    
+    lock.unlock();
+    EXPECT_TRUE(mtx.try_lock());
+    
+    mtx.unlock();
+    lock.lock();
+    EXPECT_FALSE(mtx.try_lock());
+}
+
+TEST(SyncUniqueLock, Scope)
+{
+    Mutex mtx;
+
+    {
+        UniqueLock lock(mtx);
+        EXPECT_FALSE(mtx.try_lock());
+    }
+    
+    EXPECT_TRUE(mtx.try_lock());
+    mtx.unlock();
+}
+
+/*****************************************************************************/
+/*
  * SyncEvent tests
  */
 /*****************************************************************************/
