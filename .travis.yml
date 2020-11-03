@@ -23,11 +23,11 @@ matrix:
         - os: linux
           env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS=-DENABLE_CODE_COVERAGE=ON
+          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
           - RUN_SONARCUBE=1
         - env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON'
+          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
         - os: linux
           env: BUILD_TYPE=Release
         - os: osx

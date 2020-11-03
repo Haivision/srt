@@ -17,7 +17,7 @@ jobs:
     - name: configure
       run: |
         md _build && cd _build
-        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON
     - name: build
       run: cd _build && cmake --build ./ --config Release
     - name: test
