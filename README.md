@@ -8,7 +8,9 @@
 [![Build Status Windows][appveyor-badge]][appveyor]
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
-[![Debian Badge][debian-badge]][debian-package]
+[![Debian Badge][debian-badge]][debian-package]  
+[![LGTM Code Quality][lgtm-quality-badge]][lgtm-project]
+[![LGTM Alerts][lgtm-alerts-badge]][lgtm-project]
 
 # Introduction
 
@@ -125,6 +127,10 @@ Follow the [Windows build instructions](docs/build-win.md).
 [travis-badge]: https://img.shields.io/travis/Haivision/srt/master.svg?label=Linux/macOS
 [travis]: https://travis-ci.org/Haivision/srt
 [license-badge]: https://img.shields.io/badge/License-MPLv2.0-blue
+
+[lgtm-alerts-badge]: https://img.shields.io/lgtm/alerts/github/Haivision/srt
+[lgtm-quality-badge]: https://img.shields.io/lgtm/grade/cpp/github/Haivision/srt
+[lgtm-project]: https://lgtm.com/projects/g/Haivision/srt/
 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
