@@ -11,6 +11,7 @@
 [![Debian Badge][debian-badge]][debian-package]  
 [![LGTM Code Quality][lgtm-quality-badge]][lgtm-project]
 [![LGTM Alerts][lgtm-alerts-badge]][lgtm-project]
+[![codecov][codecov-badge]][codecov-project]
 
 # Introduction
 
@@ -131,6 +132,9 @@ Follow the [Windows build instructions](docs/build-win.md).
 [lgtm-alerts-badge]: https://img.shields.io/lgtm/alerts/github/Haivision/srt
 [lgtm-quality-badge]: https://img.shields.io/lgtm/grade/cpp/github/Haivision/srt
 [lgtm-project]: https://lgtm.com/projects/g/Haivision/srt/
+
+[codecov-project]: https://codecov.io/gh/haivision/srt
+[codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg
 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
