@@ -615,9 +615,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
            m_Sockets[ns->m_SocketID] = ns;
        }
 
-       // bind to the same addr of listening socket
-       ns->m_pUDT->open();
-       updateListenerMux(ns, ls);
        if (ls->m_pUDT->m_cbAcceptHook)
        {
            if (!ls->m_pUDT->runAcceptHook(ns->m_pUDT, peer.get(), w_hs, hspkt))
@@ -628,6 +625,11 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                goto ERR_ROLLBACK;
            }
        }
+
+       // bind to the same addr of listening socket
+       ns->m_pUDT->open();
+       updateListenerMux(ns, ls);
+
        ns->m_pUDT->acceptAndRespond(ls->m_SelfAddr, peer, hspkt, (w_hs));
    }
    catch (...)
