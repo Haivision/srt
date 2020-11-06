@@ -25,6 +25,7 @@ matrix:
           - BUILD_TYPE=Debug
           - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
           - RUN_SONARCUBE=1
+          - RUN_CODECOV=1
         - env:
           - BUILD_TYPE=Debug
           - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
@@ -78,5 +79,10 @@ script:
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6";
       fi
-    - if (( "$RUN_SONARCUBE" )); then source ./scripts/collect-gcov.sh; fi
-    - if (( "$RUN_SONARCUBE" )); then sonar-scanner -D"sonar.cfamily.gcov.reportPath=."; fi
+    - source ./scripts/collect-gcov.sh
+    - if (( "$RUN_SONARCUBE" )); then
+        sonar-scanner -D"sonar.cfamily.gcov.reportPath=.";
+      fi
+    - if (( "$RUN_CODECOV" )); then
+        bash <(curl -s https://codecov.io/bash);
+      fi
