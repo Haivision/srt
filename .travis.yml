@@ -79,4 +79,7 @@ script:
         ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6";
       fi
     - if (( "$RUN_SONARCUBE" )); then source ./scripts/collect-gcov.sh; fi
-    - if (( "$RUN_SONARCUBE" )); then sonar-scanner -D"sonar.cfamily.gcov.reportPath=."; fi
+    - if (( "$RUN_SONARCUBE" )); then
+        sonar-scanner -D"sonar.cfamily.gcov.reportPath=.";
+        bash <(curl -s https://codecov.io/bash);
+      fi
