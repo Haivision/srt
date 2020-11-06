@@ -7,12 +7,8 @@ to the system `setsockopt/getsockopt` functions.
 in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
 
 1. [Types used in socket options](#types-used-in-socket-options)
-   - [List of options](#list-of-options)
-   - [Option Descriptions](#option-descriptions)
-2. [Enumeration types used in options](#enumeration-types-used-in-options)
-   - [`SRT_TRANSTYPE`](#1-srt_transtype)
-   - [`SRT_KM_STATE`](#2-srt_km_state)
-3. [Getting and setting options](#getting-and-setting-options)
+2. [Getting and setting options](#getting-and-setting-options)
+3. [List of options](#list-of-options)
 
 ## Types used in socket options
 
