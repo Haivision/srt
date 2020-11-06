@@ -405,7 +405,6 @@ private:
     }
 
 public:
-
     void apiAcquire() { ++m_iBusy; }
     void apiRelease() { --m_iBusy; }
 
