@@ -4332,10 +4332,9 @@ void CUDTGroup::removeEPollID(const int eid)
     leaveCS(m_pGlobal->m_EPoll.m_EPollLock);
 }
 
-int CUDTGroup::updateFailedLink(SRTSOCKET sock)
+void CUDTGroup::updateFailedLink()
 {
     ScopedLock lg(m_GroupLock);
-    int token = -1;
 
     // Check all members if they are in the pending
     // or connected state.
@@ -4344,16 +4343,6 @@ int CUDTGroup::updateFailedLink(SRTSOCKET sock)
 
     for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
     {
-        if (i->id == sock)
-        {
-            // This socket.
-            token = i->token;
-
-            i->sndstate = SRT_GST_BROKEN;
-            i->rcvstate = SRT_GST_BROKEN;
-            continue;
-        }
-
         if (i->sndstate < SRT_GST_BROKEN)
             nhealthy++;
     }
@@ -4368,8 +4357,6 @@ int CUDTGroup::updateFailedLink(SRTSOCKET sock)
     {
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
     }
-
-    return token;
 }
 
 #if ENABLE_HEAVY_LOGGING

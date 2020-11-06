@@ -8652,13 +8652,9 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         m_bBroken        = true;
         m_iBrokenCounter = 60;
 
-        // Signal the sender and recver if they are waiting for data.
-        releaseSynch();
-        // Unblock any call so they learn the connection_broken error
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
-
-        CGlobEvent::triggerEvent();
-
+        // This does the same as it would happen on connection timeout,
+        // just we know about this state prematurely thanks to this message.
+        updateBrokenConnection(SRT_ECONNLOST);
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
@@ -10751,23 +10747,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // update snd U list to remove this socket
         m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
-        releaseSynch();
-
-        // app can call any UDT API to learn the connection_broken error
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-        int token = -1;
-#if ENABLE_EXPERIMENTAL_BONDING
-        if (m_parent->m_IncludedGroup)
-        {
-            // Bound to one call because this requires locking
-            token = m_parent->m_IncludedGroup->updateFailedLink(m_SocketID);
-        }
-#endif
-        CGlobEvent::triggerEvent();
-        if (m_cbConnectHook)
-        {
-            CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_ENOSERVER, m_PeerAddr.get(), token);
-        }
+        updateBrokenConnection(SRT_ECONNLOST);
 
         return true;
     }
@@ -10907,6 +10887,70 @@ void CUDT::checkTimers()
 #endif
         HLOGP(xtlog.Debug, "KEEPALIVE");
     }
+}
+
+void CUDT::updateBrokenConnection(int errorcode)
+{
+    releaseSynch();
+
+    int token = -1;
+    bool pending_broken = false;
+
+#if ENABLE_EXPERIMENTAL_BONDING
+    {
+        ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
+        if (m_parent->m_IncludedGroup)
+        {
+            token = m_parent->m_IncludedIter->token;
+            if (m_parent->m_IncludedIter->sndstate == SRT_GST_PENDING)
+            {
+                HLOGC(gmlog.Debug, log << "updateBrokenConnection: a pending link was broken - will be removed");
+                pending_broken = true;
+            }
+            else
+            {
+                HLOGC(gmlog.Debug, log << "updateBrokenConnection: state=" << CUDTGroup::StateStr(m_parent->m_IncludedIter->sndstate) << " a used link was broken - not closing automatically");
+            }
+
+            m_parent->m_IncludedIter->sndstate = SRT_GST_BROKEN;
+            m_parent->m_IncludedIter->rcvstate = SRT_GST_BROKEN;
+        }
+    }
+#endif
+
+    // app can call any UDT API to learn the connection_broken error
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    CGlobEvent::triggerEvent();
+    if (m_cbConnectHook)
+    {
+        CALLBACK_CALL(m_cbConnectHook, m_SocketID, errorcode, m_PeerAddr.get(), token);
+    }
+
+#if ENABLE_EXPERIMENTAL_BONDING
+    {
+        // Lock GlobControlLock in order to make sure that
+        // the state if the socket having the group and the
+        // existence of the group will not be changed during
+        // the operation. The attempt of group deletion will
+        // have to wait until this operation completes.
+        ScopedLock lock(s_UDTUnited.m_GlobControlLock);
+        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        if (pg)
+        {
+            // Bound to one call because this requires locking
+            pg->updateFailedLink();
+        }
+    }
+
+    // Sockets that never succeeded to connect must be deleted
+    // explicitly, otherwise they will never be deleted.
+    if (pending_broken)
+    {
+        s_UDTUnited.close(m_parent);
+    }
+
+#endif
+
 }
 
 void CUDT::addEPoll(const int eid)

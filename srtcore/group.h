@@ -282,7 +282,7 @@ public:
     void              removeEPollID(const int eid);
     void              updateReadState(SRTSOCKET sock, int32_t sequence);
     void              updateWriteState();
-    int               updateFailedLink(SRTSOCKET sock);
+    void              updateFailedLink();
     void              activateUpdateEvent();
 
     /// Update the in-group array of packet providers per sequence number.

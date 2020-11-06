@@ -960,34 +960,24 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 << "). removing from queue");
             // connection timer expired, acknowledge app via epoll
             i->m_pUDT->m_bConnecting = false;
-            if (!is_zero(i->m_tsTTL))
+            int ccerror = SRT_ECONNREJ;
+            if (i->m_pUDT->m_RejectReason == SRT_REJ_UNKNOWN)
             {
-                // Timer expired, set TIMEOUT forcefully
-                i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
+                if (!is_zero(i->m_tsTTL))
+                {
+                    // Timer expired, set TIMEOUT forcefully
+                    i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
+                    ccerror = SRT_ENOSERVER;
+                }
+                else
+                {
+                    // In case of unknown reason, rejection should at least
+                    // suggest error on the peer
+                    i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
+                }
             }
-            else if (i->m_pUDT->m_RejectReason == SRT_REJ_UNKNOWN)
-            {
-                // In case of unknown reason, rejection should at least
-                // suggest error on the peer
-                i->m_pUDT->m_RejectReason = SRT_REJ_PEER;
-            }
-            CUDT::s_UDTUnited.m_EPoll.update_events(i->m_iID, i->m_pUDT->m_sPollID, SRT_EPOLL_ERR, true);
-            int token = -1;
-#if ENABLE_EXPERIMENTAL_BONDING
-            if (i->m_pUDT->m_parent->m_IncludedGroup)
-            {
-                // Bound to one call because this requires locking
-                token = i->m_pUDT->m_parent->m_IncludedGroup->updateFailedLink(i->m_iID);
-            }
-#endif
-            CGlobEvent::triggerEvent();
 
-            if (i->m_pUDT->m_cbConnectHook)
-            {
-                CALLBACK_CALL(i->m_pUDT->m_cbConnectHook, i->m_iID,
-                        i->m_pUDT->m_RejectReason == SRT_REJ_TIMEOUT ? SRT_ENOSERVER : SRT_ECONNREJ,
-                            i->m_PeerAddr.get(), token);
-            }
+            i->m_pUDT->updateBrokenConnection(ccerror);
             /*
              * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
              * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
