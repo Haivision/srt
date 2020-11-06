@@ -10948,9 +10948,7 @@ void CUDT::updateBrokenConnection(int errorcode)
     {
         s_UDTUnited.close(m_parent);
     }
-
 #endif
-
 }
 
 void CUDT::addEPoll(const int eid)
