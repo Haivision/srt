@@ -764,7 +764,7 @@ SCTP protocol.
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_MINVERSION`    | 1.3.0 | pre     | `int32_t`  | version | 0        | *      | W   | GSD    |
 
-- The minimum SRT version that is required from the peer. A connection to a
+The minimum SRT version that is required from the peer. A connection to a
 peer that does not satisfy the minimum version requirement will be rejected.
 See [`SRTO_VERSION`](#SRTO_VERSION) for the version format.
 
