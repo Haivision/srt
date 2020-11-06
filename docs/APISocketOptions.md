@@ -6,9 +6,11 @@ to the system `setsockopt/getsockopt` functions.
 **NOTE**: This document replaces the socket option description originally
 in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
 
-1. [Types used in socket options](#types-used-in-socket-options)
-2. [Getting and setting options](#getting-and-setting-options)
-3. [List of options](#list-of-options)
+**Sections:**
+
+- [Types used in socket options](#types-used-in-socket-options)
+- [Getting and setting options](#getting-and-setting-options)
+- [List of options](#list-of-options)
 
 ## Types used in socket options
 
