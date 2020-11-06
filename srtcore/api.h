@@ -69,6 +69,82 @@ modified by
 #include "group.h"
 #endif
 
+// IMPORTANT INFORMATION ABOUT LOCKING.
+//
+// The overall structure of the object database, involving sockets and groups
+// is as follows:
+//
+// CUDTUnited (singleton) {
+//      CONTAINER<CUDTSocket> m_Sockets;
+//      CONTAINER<CUDTSocket> m_ClosedSockets;
+//      CONTAINER<CUDTGroup> m_Groups;
+//      CONTAINER<CUDTGroup> m_ClosedGroups;
+// }
+//
+// CUDTGroup {
+//      type SocketData { CUDTSocket* ps; SRTSOCKET id; int state; ... }
+//      CONTAINER<SocketData> m_Group;
+// }
+//
+// Dead sockets (either closed manually or broken after connection) are
+// moved first from m_Sockets to m_ClosedSockets. The GC thread will take
+// care to delete them physically after making sure all inside facilities
+// do not contain any remaining data of interest.
+//
+// Groups may only be manually closed, however a closed group is moved
+// to m_ClosedGroups. The GC thread will take care to delete them, as long
+// as their usage counter is 0. Every call to an API function (as well as
+// TSBPD thread) increases the usage counter in the beginning and decreases
+// upon exit. A group may be closed in one thread and still being used in
+// another. The group will persist up to the time when the current API function
+// using it exits and decreases the usage counter back to 0.
+//
+// Containers and contents guarded by mutex:
+//
+// CUDTUnited::m_GlobControlLock - guards all containers in CUDTUnited.
+//
+// CUDTSocket::m_ControlLock - guards internal operation performed on particular socket, with its existence assumed
+// (this is because a socket will always exist until it's deleted while being in m_ClosedSockets, and when
+// the socket is in m_ClosedSockets it will not be deleted until it's free from any operation, while the socket
+// is assumed nonexistent for any newly called API function even if it exists physically, but is moved to m_ClosedSockets).
+//
+// CUDTGroup::m_GroupLock - guards the m_Group container inside a group that collects member sockets.
+//
+// There are unfortunately many situations when multiple locks have to be applied at a time. This
+// is then the hierarchy of the mutexes that must be preserved everywhere in the code.
+//
+// As mutexes cannot be really ordered unanimously, below are two trees, with also
+// some possible branches inside. The mutex marked with (T) is terminal, that is, no
+// other locks shall be allowed in the section where this mutex is locked.
+//
+// Note that the list isn't exactly complete, but it should contain all
+// mutexes for which the locking order must be preserved.
+//
+//  - CUDTSocket::m_ControlLock
+//
+//      - CRendezvousQueue::m_RIDVectorLock 
+//
+//  - CUDTUnited::m_GlobControlLock
+//
+//  - CUDTGroup::m_GroupLock
+// 
+//     - CUDT::m_RecvAckLock  || CEPoll::m_EPollLock(T)
+//
+// ----------------
+//  - CUDTUnited::m_GlobControlLock
+//
+//         - CUDTGroup::m_GroupLock  || CSndUList::m_ListLock(T)
+//
+//      - CUDT::m_ConnectionLock
+//
+//  - CUDT::m_SendLock
+//
+//     - CUDT::m_RecvLock
+
+//        - CUDT::m_RecvBufferLock
+//
+//  - CUDT::m_RecvAckLock || CUDT::m_SendBlockLock
+//
 
 class CUDT;
 
@@ -166,6 +242,7 @@ public:
    /// the socket should be no longer visible in the
    /// connection, including for sending remaining data).
    void makeClosed();
+   void makeMemberClosed();
 
    /// This makes the socket no longer capable of performing any transmission
    /// operation, but continues to be responsive in the connection in order
@@ -258,10 +335,13 @@ public:
    int epoll_create();
    int epoll_clear_usocks(int eid);
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+   int epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
    template <class EntityType>
    int epoll_remove_entity(const int eid, EntityType* ent);
+   int epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
+   int epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
@@ -269,9 +349,9 @@ public:
    int epoll_release(const int eid);
 
 #if ENABLE_EXPERIMENTAL_BONDING
+   // [[using locked(m_GlobControlLock)]]
    CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
    {
-       srt::sync::ScopedLock cg (m_GlobControlLock);
        // This only ensures that the element exists.
        // If the element was newly added, it will be NULL.
        CUDTGroup*& g = m_Groups[id];
@@ -293,30 +373,16 @@ public:
        using srt_logging::gmlog;
 
        srt::sync::ScopedLock cg (m_GlobControlLock);
+       SRT_ASSERT(g->groupEmpty());
 
-       CUDTGroup* pg = map_get(m_Groups, g->m_GroupID, NULL);
-       if (pg)
-       {
-           // Everything ok, group was found, delete it, and its
-           // associated entry.
-           m_Groups.erase(g->m_GroupID);
-           if (g != pg) // sanity check -- only report
-           {
-               LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " had DIFFERENT OBJECT mapped!");
-           }
-           delete pg; // still delete it
-           return;
-       }
-
-       LOGC(gmlog.Error, log << "IPE: the group id=" << g->m_GroupID << " not found in the map!");
-       delete g; // still delete it.
-       // Do not remove anything from the map - it's not found, anyway
+       // After that the group is no longer findable by GroupKeeper
+       m_Groups.erase(g->m_GroupID);
+       m_ClosedGroups[g->m_GroupID] = g;
    }
 
-   CUDTGroup* findPeerGroup(SRTSOCKET peergroup)
+   // [[using locked(m_GlobControlLock)]]
+   CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
    {
-       srt::sync::ScopedLock cg (m_GlobControlLock);
-
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)
        {
@@ -365,12 +431,52 @@ private:
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
-   friend struct FLookupSocketWithEvent;
+   friend struct FLookupSocketWithEvent_LOCKED;
 
    CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+   // This function does the same as locateSocket, except that:
+   // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
+   // - only return NULL if not found
+   CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
    CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup* locateGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+   CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+   CUDTGroup* acquireSocketsGroup(CUDTSocket* s);
+
+   struct GroupKeeper
+   {
+       CUDTGroup* group;
+
+       // This is intended for API functions to lock the group's existence
+       // for the lifetime of their call.
+       GroupKeeper(CUDTUnited& glob, SRTSOCKET id, ErrorHandling erh)
+       {
+           group = glob.locateAcquireGroup(id, erh);
+       }
+
+       // This is intended for TSBPD thread that should lock the group's
+       // existence until it exits.
+       GroupKeeper(CUDTUnited& glob, CUDTSocket* s)
+       {
+           group = glob.acquireSocketsGroup(s);
+       }
+
+       ~GroupKeeper()
+       {
+           if (group)
+           {
+               // We have a guarantee that if `group` was set
+               // as non-NULL here, it is also acquired and will not
+               // be deleted until this busy flag is set back to false.
+               srt::sync::ScopedLock cgroup (*group->exp_groupLock());
+               group->apiRelease();
+               // Only now that the group lock is lifted, can the
+               // group be now deleted and this pointer potentially dangling
+           }
+       }
+   };
+
 #endif
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
@@ -395,6 +501,9 @@ private:
    static void* garbageCollect(void*);
 
    sockets_t m_ClosedSockets;   // temporarily store closed sockets
+#if ENABLE_EXPERIMENTAL_BONDING
+   groups_t m_ClosedGroups;
+#endif
 
    void checkBrokenSockets();
    void removeSocket(const SRTSOCKET u);

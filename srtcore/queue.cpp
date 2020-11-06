@@ -529,7 +529,11 @@ void *CSndQueue::worker(void *param)
 {
     CSndQueue *self = (CSndQueue *)param;
 
+#if ENABLE_LOGGING
+    THREAD_STATE_INIT(("SRT:SndQ:w" + Sprint(m_counter)).c_str());
+#else
     THREAD_STATE_INIT("SRT:SndQ:worker");
+#endif
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
     CTimer::rdtsc(self->m_ullDbgTime);
@@ -1139,7 +1143,11 @@ void *CRcvQueue::worker(void *param)
     sockaddr_any sa(self->m_UnitQueue.getIPversion());
     int32_t      id = 0;
 
+#if ENABLE_LOGGING
+    THREAD_STATE_INIT(("SRT:RcvQ:w" + Sprint(m_counter)).c_str());
+#else
     THREAD_STATE_INIT("SRT:RcvQ:worker");
+#endif
 
     CUnit *        unit = 0;
     EConnectStatus cst  = CONN_AGAIN;
