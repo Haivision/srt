@@ -1,11 +1,10 @@
-SRT Socket Options
-==================
+# SRT Socket Options
 
 There is a general method of setting options on a socket in the SRT C API, similar
 to the system `setsockopt/getsockopt` functions.
 
-**NOTE**: This document replaces the socket option description originally 
-in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md) 
+**NOTE**: This document replaces the socket option description originally
+in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
 
 1. [Types used in socket options](#types-used-in-socket-options)
    - [List of options](#list-of-options)
@@ -15,9 +14,7 @@ in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
    - [`SRT_KM_STATE`](#2-srt_km_state)
 3. [Getting and setting options](#getting-and-setting-options)
 
-
-Types used in socket options
-----------------------------
+## Types used in socket options
 
 Possible types of socket options are:
 
@@ -41,21 +38,18 @@ read should specify the maximum length of that array.
 
 - `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
+### Enumeration types used in options
 
-Enumeration types used in options
----------------------------------
-
-### 1. `SRT_TRANSTYPE`
+#### `SRT_TRANSTYPE`
 
 Used by `SRTO_TRANSTYPE` option:
 
-* `SRTT_LIVE`: Live mode.
-* `SRTT_FILE`: File mode.
+- `SRTT_LIVE`: Live mode.
+- `SRTT_FILE`: File mode.
 
 See [Transmission types](./API.md#transmission-types) for details.
 
-
-### 2. `SRT_KM_STATE`
+#### `SRT_KM_STATE`
 
 The defined encryption state as performed by the Key Material Exchange, used
 by `SRTO_RCVKMSTATE`, `SRTO_SNDKMSTATE` and `SRTO_KMSTATE` options:
@@ -93,9 +87,9 @@ one party has set a password, in which case the KM state is as follows:
 | Party with no password:  | `SRT_KM_S_NOSECRET`  | `SRT_KM_S_UNSECURED` |
 | Party with password:     | `SRT_KM_S_UNSECURED` | `SRT_KM_S_NOSECRET`  |
 
+---
 
-Getting and setting options
----------------------------
+## Getting and setting options
 
 Legacy version:
 
@@ -122,6 +116,7 @@ derived (there are a few deleted, including some deprecated already in UDT).
 Many new SRT options have been added. All options are available exclusively
 with the `SRTO_` prefix. Old names are provided as alias names in the `udt.h`
 legacy/C++ API file. Note the translation rules:
+
 * `UDT_` prefix from UDT options was changed to the prefix `SRTO_`
 * `UDP_` prefix from UDT options was changed to the prefix `SRTO_UDP_`
 * `SRT_` prefix in older SRT versions was changed to `SRTO_`
@@ -157,7 +152,7 @@ when the type is integer:
     - `B/s` - bytes per second.
 
 5. **Default**: The exact default value, if it can be easily specified. A more complicated
-default state of a particular option will be explained in the [description](#option-descriptions) 
+default state of a particular option will be explained in the [description](#option-descriptions)
 (when marked by asterisk). For non-settable options this field is empty.
 
 6. **Range**: If a value of an integer type has a limited range, or only a certain value
@@ -175,7 +170,7 @@ restrictions on the value apply, as explained in the [description](#option-descr
 
 7. **Dir**: Option direction: W if can be set, R if can be retrieved, RW if both.
 
-6. **Entity**: This describes whether the option can be set on the socket or the group.
+8. **Entity**: This describes whether the option can be set on the socket or the group.
 The G and S options may appear together, in which case both possibilities apply.
 The D and I options, mutually exclusive, appear always with G. 
 The + marker can only coexist with GS. Possible specifications are:
@@ -192,6 +187,8 @@ The + marker can only coexist with GS. Possible specifications are:
       socket through a configuration object in `SRT_SOCKGROUPCONFIG` prepared by
       `srt_create_config`. Note that this setting may override the setting derived
       from the group.
+
+---
 
 ## List of options
 
@@ -258,8 +255,6 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_UDP_SNDBUF`](#SRTO_UDP_SNDBUF)                  |       | pre     | `int32_t` | bytes   | 65536         | *        | RW  | GSD+  |
 | [`SRTO_VERSION`](#SRTO_VERSION)                        | 1.1.0 |         | `int32_t` |         |               |          | R   | S     |
 
-
-
 ### Option Descriptions
 
 #### SRTO_BINDTODEVICE
@@ -282,9 +277,9 @@ On all other platforms setting this option will always fail.
 for a process that runs as root. Otherwise the function that applies the setting
 (`srt_bind`, `srt_connect` etc.) will fail.
 
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_CONGESTION
 
@@ -306,9 +301,9 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_CONNTIMEO
-
 
 | OptName            | Since | Binding |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -318,9 +313,9 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
 will be 10 times the value set with `SRTO_CONNTIMEO`.
 
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_DRIFTTRACER
 
@@ -330,10 +325,9 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 - Enables or disables time drift tracer (receiver).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_ENFORCEDENCRYPTION
 
@@ -376,10 +370,9 @@ seconds). It is therefore strongly recommended that you only set this flag to
 FALSE on the listener when you are able to ensure that it is also set to FALSE
 on the caller side.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_EVENT
 
@@ -391,10 +384,9 @@ on the caller side.
 - Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of 
 `SRT_EPOLL_IN`, `SRT_EPOLL_OUT` and `SRT_EPOLL_ERR`).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_FC
 
@@ -405,10 +397,9 @@ on the caller side.
 - Flight Flag Size (maximum number of bytes that can be sent without 
 being acknowledged)
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_GROUPCONNECT
 
@@ -432,10 +423,9 @@ only the first connection within the group will result in reporting from
 `srt_accept` (further connections are handled in the background), and this
 function will return the group, not this socket ID.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_GROUPSTABTIMEO
 
@@ -476,10 +466,9 @@ for 100% for a time of one ACK interval).
 option, as the default value of it is way above any sensible value of
 `SRTO_GROUPSTABTIMEO`.
 
-
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_GROUPTYPE
 
@@ -496,10 +485,9 @@ If the incoming connection is not going to make a group-member connection, then
 the value returned is `SRT_GTYPE_UNDEFINED`. If this option is read in any other
 context than inside the listener callback handler, the value is undefined.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_INPUTBW
 
@@ -517,10 +505,9 @@ function) during transmission.
 - *Recommended: set this option to the anticipated bitrate of your live stream
 and keep the default 25% value for `SRTO_OHEADBW`*.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_IPTOS
 
@@ -536,10 +523,9 @@ and the actual value for connected sockets.
 
 - *Sender: user configurable, default: 0xB8*
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_IPTTL
 
@@ -555,10 +541,9 @@ and the actual value for connected sockets.
 
 - *Sender: user configurable, default: 64*
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_IPV6ONLY
 
@@ -571,9 +556,9 @@ IPv6 address accepts also IPv4 clients (their addresses will be formatted as
 IPv4-mapped IPv6 addresses). By default (-1) this option is not set and the
 platform default value is used.
 
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_ISN
 
@@ -588,10 +573,9 @@ platform default value is used.
 control, possibly with multiple SRT sockets at a time. It is not intended to be
 used in any regular development.*
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_KMPREANNOUNCE
 
@@ -619,10 +603,9 @@ The allowed range for this value is between 1 and half of the current value of
 window (i.e. the number of packets that have already left the sender but have
 not yet arrived at the receiver).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_KMREFRESHRATE
 
@@ -640,10 +623,9 @@ at the receiver before the first packet encrypted with the new SEK is received.
 The old key remains active after switchover in order to decrypt packets that
 might still be in flight, or packets that have to be retransmitted.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_KMSTATE
 
@@ -659,10 +641,9 @@ than 1.3.0, but then with the default value of `SRTO_ENFORCEDENCRYPTION` the
 value returned by both options is always the same. See [`SRT_KM_STATE`](#2-srt_km_state)
 for more details.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_LATENCY
 
@@ -681,6 +662,7 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_LINGER
 
@@ -692,10 +674,9 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 - *SRT recommended value: off (0)*.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_LOSSMAXTTL
 
@@ -714,11 +695,9 @@ the *Reorder Tolerance* is set to the value of the interval between latest seque
 and this packet's sequence, but not more than the value set by `SRTO_LOSSMAXTTL`.
 By default this value is set to 0, which means that this mechanism is off.
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_MAXBW
 
@@ -739,9 +718,9 @@ changes are not abrupt, as high bitrate changes may work against the
 measurement. SRT cannot ensure that this is always the case for a live stream,
 therefore the default -1 remains even in live mode.*
 
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_MESSAGEAPI
 
@@ -778,10 +757,9 @@ option):
 transmission similar to TCP, whereas the Message API functions like the 
 SCTP protocol.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_MINVERSION
 
@@ -793,10 +771,9 @@ SCTP protocol.
 peer that does not satisfy the minimum version requirement will be rejected.
 See [`SRTO_VERSION`](#SRTO_VERSION) for the version format.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_MSS
 
@@ -815,10 +792,9 @@ dedicated network settings. MSS is not to be confused with the size of the UDP
 payload or SRT payload - this size is the size of the IP packet, including the 
 UDP and SRT headers* 
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_NAKREPORT
 
@@ -833,10 +809,9 @@ missing packet still wasn't recovered, or wasn't conditionally dropped (see
 
 - The default is true for Live mode, and false for File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_OHEADBW
 
@@ -864,10 +839,9 @@ in percentage of the input rate. It is effective only if `SRTO_MAXBW` is set to 
 
 - ***To do: set-only; get should be supported.***
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PACKETFILTER
 
@@ -887,10 +861,9 @@ the options specified are in conflict, the connection will be rejected.
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PASSPHRASE
 
@@ -914,10 +887,9 @@ parties are equivalent, and in order to have a working encrypted connection, the
 have to simply set the same passphrase. Otherwise the connection is rejected by 
 default (see also [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PAYLOADSIZE
 
@@ -934,11 +906,9 @@ which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
 
 - For File mode: Default value is 0 and it's recommended not to be changed.
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PBKEYLEN
 
@@ -949,8 +919,8 @@ which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
 - Sender encryption key length.
 
 - Possible values:
-  -  0 =`PBKEYLEN` (default value)
-  - 16 = AES-128 (effective value) 
+  - 0 =`PBKEYLEN` (default value)
+  - 16 = AES-128 (effective value)
   - 24 = AES-192
   - 32 = AES-256
 
@@ -991,11 +961,9 @@ which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
     party is the Listener in a Caller-Listener arrangement. In Rendezvous it's a 
     matter of luck which party becomes the Responder.
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PEERIDLETIMEO
 
@@ -1007,10 +975,9 @@ which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
 since the last such packet reception. If this time is passed, the connection is 
 considered broken on timeout.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_PEERLATENCY
 
@@ -1031,6 +998,7 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_PEERVERSION
 
@@ -1042,10 +1010,9 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 handshake not yet performed (HSv4 only), or if peer is not SRT. 
 See [`SRTO_VERSION`](#SRTO_VERSION) for the version format. 
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RCVBUF
 
@@ -1063,10 +1030,9 @@ The value set here will be effectively aligned to the multiple of payload size.
 - Maximum value: `SRTO_FC` number of buffers (receiver buffer must not be greater 
   than the Flight Flag size).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RCVDATA
 
@@ -1076,10 +1042,9 @@ The value set here will be effectively aligned to the multiple of payload size.
 
 - Size of the available data in the receive buffer.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RCVKMSTATE
 
@@ -1091,10 +1056,9 @@ The value set here will be effectively aligned to the multiple of payload size.
 
 - Values defined in enum [`SRT_KM_STATE`](#2-srt_km_state).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RCVLATENCY
 
@@ -1136,6 +1100,8 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 [Return to list](#list-of-options)
 
+---
+
 #### SRTO_RCVSYN
 
 | OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
@@ -1169,11 +1135,9 @@ effectively different.
 specific receiving operation being done on that group (i.e. it is not
 derived from the socket of which the group is a member).
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RCVTIMEO
 
@@ -1185,10 +1149,9 @@ derived from the socket of which the group is a member).
 [`SRTO_RCVSYN`](#SRTO_RCVSYN) for details), such that when this time is exceeded, 
 it will behave as if in "non-blocking mode". The -1 value means no time limit.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RENDEZVOUS
 
@@ -1199,10 +1162,9 @@ it will behave as if in "non-blocking mode". The -1 value means no time limit.
 - Use Rendezvous connection mode (both sides must set this and both must use the
 procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one another.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_RETRANSMITALGO
 
@@ -1222,9 +1184,9 @@ certain time or not.
 - The reduced retransmission algorithm (`SRTO_RETRANSMITALGO=1`) is only operational when receiver sends
   Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
-
 [Return to list](#list-of-options)
 
+---
 
 #### SRTO_REUSEADDR
 
@@ -1249,10 +1211,9 @@ fail instead of adding the socket to the shared group of that socket that
 already has bound this address - but it will not disallow another socket to reuse 
 its address.* 
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SENDER
 
@@ -1266,10 +1227,9 @@ less than 1.3.0 (and hence *HSv4* handshake), in which case if not set properly,
 the TSBPD mode (see [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)) or encryption will not 
 work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDBUF
 
@@ -1279,10 +1239,9 @@ work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 
 - Sender Buffer Size. See [`SRTO_RCVBUF`](#SRTO_RCVBUF) for more information.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDDATA
 
@@ -1292,10 +1251,9 @@ work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 
 - Size of the unacknowledged data in send buffer.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDDROPDELAY
 
@@ -1320,11 +1278,9 @@ The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds.
 
 - Default: 0 in Live mode, -1 in File mode.
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDKMSTATE
 
@@ -1336,10 +1292,9 @@ The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds.
 
 - Values defined in enum [`SRT_KM_STATE`](#2-srt_km_state).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDSYN
 
@@ -1363,10 +1318,9 @@ enters a connected state.
 - On a listener socket it will be derived by the accepted socket or group,
 but will have no effect on the listener socket itself.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_SNDTIMEO
 
@@ -1378,10 +1332,9 @@ but will have no effect on the listener socket itself.
 `SRTO_SNDSYN` for details), so when this time is exceeded, it will behave as
 if in "non-blocking mode". The -1 value means no time limit.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_STATE
 
@@ -1391,11 +1344,9 @@ if in "non-blocking mode". The -1 value means no time limit.
 
 - Returns the current socket state, same as `srt_getsockstate`.
 
-
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_STREAMID
 
@@ -1418,10 +1369,9 @@ override the value from the other side resulting in an arbitrary winner. Also
 in this connection both peers are known to one another and both have equivalent 
 roles in the connection.
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_TLPKTDROP
 
@@ -1438,10 +1388,9 @@ enabled in sender if receiver supports it.
 
 - Default: true in Live mode, false in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE))
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_TRANSTYPE
 
@@ -1455,10 +1404,9 @@ particular transmission type.
 
 - Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_TSBPDMODE
 
@@ -1474,10 +1422,9 @@ the application.
 
 - Default: true in Live mode, false in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
-
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_UDP_RCVBUF
 
@@ -1485,13 +1432,12 @@ the application.
 | ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
 | `SRTO_UDP_RCVBUF` |       | pre     | `int32_t`  | bytes   | 8192 bufs | *      | RW  | GSD+   |
 
-- UDP Socket Receive Buffer Size. Configured in bytes, maintained in packets 
+- UDP Socket Receive Buffer Size. Configured in bytes, maintained in packets
 based on MSS value. Receive buffer must not be greater than FC size.
-
 
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_UDP_SNDBUF
 
@@ -1499,13 +1445,12 @@ based on MSS value. Receive buffer must not be greater than FC size.
 | ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
 | `SRTO_UDP_SNDBUF` |       | pre     | `int32_t`  | bytes   | 65536     | *      | RW  | GSD+   |
 
-- UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based 
+- UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based
 on `SRTO_MSS` value.
-
 
 [Return to list](#list-of-options)
 
-
+---
 
 #### SRTO_VERSION
 
@@ -1519,6 +1464,6 @@ on `SRTO_MSS` value.
 - The version format in hex is `0x00XXYYZZ` for x.y.z in human readable form.
 For example, version 1.4.2 is encoded as `0x010402`.
 
-
 [Return to list](#list-of-options)
 
+---
