@@ -24,6 +24,8 @@ extern unsigned transmit_stats_report;
 extern size_t transmit_chunk_size;
 extern bool transmit_printformat_json;
 extern bool transmit_use_sourcetime;
+extern int transmit_retry_connect;
+extern bool transmit_retry_always;
 
 struct MediaPacket
 {

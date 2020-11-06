@@ -40,6 +40,7 @@
 #define signal_alarm(fn) signal(SIGALRM, fn)
 #endif
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
 
 volatile bool mpbond_int_state = false;
 void OnINT_SetIntState(int)

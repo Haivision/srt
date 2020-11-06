@@ -661,12 +661,11 @@ uint64_t PacketMetric::fullBytes()
 }
 
 
-// Some logging imps
-#if ENABLE_LOGGING
-
 namespace srt_logging
 {
 
+// Value display utilities
+// (also useful for applications)
 
 std::string SockStatusStr(SRT_SOCKSTATUS s)
 {
@@ -721,6 +720,10 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
     return names.names[int(s)];
 }
 #endif
+
+// Logging system implementation
+
+#if ENABLE_LOGGING
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
@@ -834,7 +837,7 @@ std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 
     return pretty_function.substr(pos+2);
 }
+#endif
 
 } // (end namespace srt_logging)
 
-#endif
