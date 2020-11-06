@@ -221,7 +221,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post    | `int32_t` | %       | 25            | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre     | `string`  |         | ""            | [512]    | W   | GSD   |
 | [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                  | 0.0.0 | pre     | `string`  |         | ""            | [10..79] | W   | GSD   |
-| [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre     | `int32_t` | bytes   | *             | *        | W   | GSD   |
+| [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre     | `int32_t` | bytes   | \*            | \*       | W   | GSD   |
 | [`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN)                      | 0.0.0 | pre     | `int32_t` | bytes   | 0             | *        | RW  | GSD   |
 | [`SRTO_PEERIDLETIMEO`](#SRTO_PEERIDLETIMEO)            | 1.3.3 | pre     | `int32_t` | ms      | 5000          | 0..      | RW  | GSD+  |
 | [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY)                | 1.3.0 | pre     | `int32_t` | ms      | 0             | 0..      | RW  | GSD   |
@@ -816,7 +816,7 @@ The default is true for Live mode, and false for File mode (see [`SRTO_TRANSTYPE
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_OHEADBW`       | 1.0.5 | post    | `int32_t`  | %       | 25       | 5..100 | RW  | GSD    |
 
-Recovery bandwidth overhead above input rate (see `[`SRTO_INPUTBW`](#SRTO_INPUTBW)`),
+Recovery bandwidth overhead above input rate (see [`SRTO_INPUTBW`](#SRTO_INPUTBW)),
 in percentage of the input rate. It is effective only if `SRTO_MAXBW` is set to 0.
 
 *Sender*: user configurable, default: 25%.
