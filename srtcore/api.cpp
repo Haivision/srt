@@ -2339,10 +2339,12 @@ int CUDTUnited::epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* s)
     return epoll_remove_entity(eid, s->m_pUDT);
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 int CUDTUnited::epoll_remove_group_INTERNAL(const int eid, CUDTGroup* g)
 {
     return epoll_remove_entity(eid, g);
 }
+#endif
 
 int CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 {

@@ -341,7 +341,9 @@ public:
    template <class EntityType>
    int epoll_remove_entity(const int eid, EntityType* ent);
    int epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
+#if ENABLE_EXPERIMENTAL_BONDING
    int epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
+#endif
    int epoll_remove_ssock(const int eid, const SYSSOCKET s);
    int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
