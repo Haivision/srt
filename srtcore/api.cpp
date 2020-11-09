@@ -3169,12 +3169,12 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
     {
         // XXX This is internal error. Report it, but continue
         LOGC(aclog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-        s->m_IncludedGroup = g;
         s->m_IncludedIter = f;
+        s->m_IncludedGroup = g;
         return 0;
     }
-    s->m_IncludedGroup = g;
     s->m_IncludedIter = g->add(g->prepareData(s));
+    s->m_IncludedGroup = g;
 
     return 0;
 }
