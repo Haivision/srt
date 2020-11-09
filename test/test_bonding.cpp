@@ -87,7 +87,7 @@ void ConnectCallback(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* 
         << ", token: " << token << '\n';
 }
 
-TEST(Bonding, DISABLED_NonBlockingGroupConnect)
+TEST(Bonding, NonBlockingGroupConnect)
 {
     srt_startup();
     
