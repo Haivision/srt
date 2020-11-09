@@ -401,8 +401,12 @@ int main(int argc, char** argv)
     // Set SRT log levels and functional areas
     //
     srt_setloglevel(cfg.loglevel);
-    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-        srt_addlogfa(*i);
+    if (!cfg.logfas.empty())
+    {
+        srt_resetlogfa(nullptr, 0);
+        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+            srt_addlogfa(*i);
+    }
 
     //
     // SRT log handler
