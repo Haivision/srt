@@ -1837,6 +1837,8 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
     w_out.grpdata = grpdata;
 }
 
+// [[using locked(CUDT::s_UDTUnited.m_GlobControLock)]]
+// [[using locked(m_GroupLock)]]
 struct FLookupSocketWithEvent_LOCKED
 {
     CUDTUnited* glob;
@@ -3329,7 +3331,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
                 continue;
 
             HLOGC(gslog.Debug,
-                  log << "grp/sendBroadcast: BROKEN SOCKET @" << (*p) << " - CLOSING AND REMOVING.");
+                  log << "grp/send...: BROKEN SOCKET @" << (*p) << " - CLOSING AND REMOVING.");
 
             s->makeClosed(); // <-- will use GroupLock to delete the socket from the group container
         }

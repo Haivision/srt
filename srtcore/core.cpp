@@ -6118,7 +6118,7 @@ void CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
 
     if (m_iSndHsRetryCnt <= 0)
     {
-        //HLOGC(cnlog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        HLOGC(cnlog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
         return;
     }
 
@@ -8053,36 +8053,36 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         bufflock.unlock();
 
 #if ENABLE_EXPERIMENTAL_BONDING
-            // This actually should be done immediately after the ACK pointers were
-            // updated in this socket, but it can't be done inside this function due
-            // to being run under a lock.
+        // This actually should be done immediately after the ACK pointers were
+        // updated in this socket, but it can't be done inside this function due
+        // to being run under a lock.
 
-            // At this moment no locks are applied. The only lock used so far
-            // was m_RcvBufferLock, but this was lifed above. At this moment
-            // it is safe to apply any locks here. This function is affined
-            // to CRcvQueue::worker thread, so it is free to apply locks as
-            // required in the defined order. At present we only need the lock
-            // on m_GlobControlLock to prevent the group from being deleted
-            // in the meantime
+        // At this moment no locks are applied. The only lock used so far
+        // was m_RcvBufferLock, but this was lifed above. At this moment
+        // it is safe to apply any locks here. This function is affined
+        // to CRcvQueue::worker thread, so it is free to apply locks as
+        // required in the defined order. At present we only need the lock
+        // on m_GlobControlLock to prevent the group from being deleted
+        // in the meantime
+        if (m_parent->m_IncludedGroup)
+        {
+            // Check is first done before locking to avoid unnecessary
+            // mutex locking. The condition for this field is that it
+            // can be either never set, already reset, or ever set
+            // and possibly dangling. The re-check after lock eliminates
+            // the dangling case.
+            ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+
+            // Note that updateLatestRcv will lock m_IncludedGroup->m_GroupLock,
+            // but this is an intended order.
             if (m_parent->m_IncludedGroup)
             {
-                // Check is first done before locking to avoid unnecessary
-                // mutex locking. The condition for this field is that it
-                // can be either never set, already reset, or ever set
-                // and possibly dangling. The re-check after lock eliminates
-                // the dangling case.
-                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-
-                // Note that updateLatestRcv will lock m_IncludedGroup->m_GroupLock,
-                // but this is an intended order.
-                if (m_parent->m_IncludedGroup)
-                {
-                    // A group may need to update the parallelly used idle links,
-                    // should it have any. Pass the current socket position in order
-                    // to skip it from the group loop.
-                    m_parent->m_IncludedGroup->updateLatestRcv(m_parent);
-                }
+                // A group may need to update the parallelly used idle links,
+                // should it have any. Pass the current socket position in order
+                // to skip it from the group loop.
+                m_parent->m_IncludedGroup->updateLatestRcv(m_parent);
             }
+        }
 #endif
         IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
@@ -8114,16 +8114,16 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #if ENABLE_EXPERIMENTAL_BONDING
             if (m_parent->m_IncludedGroup)
             {
-                    // See above explanation for double-checking
-                    ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+                // See above explanation for double-checking
+                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
 
-                    if (m_parent->m_IncludedGroup)
-                    {
-                        // The current "APP reader" needs to simply decide as to whether
-                        // the next CUDTGroup::recv() call should return with no blocking or not.
-                        // When the group is read-ready, it should update its pollers as it sees fit.
-                        m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
-                    }
+                if (m_parent->m_IncludedGroup)
+                {
+                    // The current "APP reader" needs to simply decide as to whether
+                    // the next CUDTGroup::recv() call should return with no blocking or not.
+                    // When the group is read-ready, it should update its pollers as it sees fit.
+                    m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
+                }
             }
 #endif
             CGlobEvent::triggerEvent();
