@@ -199,7 +199,17 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if (moreoptions && a[0] == '-')
+        bool isoption = false;
+        if (a[0] == '-')
+        {
+            isoption = true;
+            // If a[0] isn't NUL - because it is dash - then
+            // we can safely check a[1].
+            if (a[1] && isdigit(a[1]))
+                isoption = false;
+        }
+
+        if (moreoptions && isoption)
         {
             bool arg_specified = false;
             size_t seppos; // (see goto, it would jump over initialization)

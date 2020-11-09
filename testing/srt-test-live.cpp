@@ -452,6 +452,7 @@ int main( int argc, char** argv )
         o_mxptool   ((optargs), " Use mxptool style to reconnect failed group nodes", "mxp", "mxptool"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
+        o_retry     ((optargs), "<N=-1,0,+N> Retry connection N times if failed on timeout", "rc", "retry"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -766,6 +767,17 @@ int main( int argc, char** argv )
         }
     }
 
+    string retryphrase = Option<OutString>(params, "", o_retry);
+    if (retryphrase != "")
+    {
+        if (retryphrase[retryphrase.size()-1] == 'a')
+        {
+            transmit_retry_always = true;
+            retryphrase = retryphrase.substr(0, retryphrase.size()-1);
+        }
+
+        transmit_retry_connect = stoi(retryphrase);
+    }
 
 #ifdef _WIN32
 #define alarm(argument) (void)0
