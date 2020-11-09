@@ -1461,10 +1461,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             targets[tii].token = data.token;
         }
 
-        CUDTGroup::gli_t f = g.add(data);
-        ns->m_IncludedIter = f;
-        ns->m_IncludedGroup = &g;
-        f->weight = targets[tii].weight;
+        {
+            ScopedLock cs(m_GlobControlLock);
+            CUDTGroup::gli_t f = g.add(data);
+            ns->m_IncludedIter = f;
+            ns->m_IncludedGroup = &g;
+            f->weight = targets[tii].weight;
+        }
 
         // XXX This should be reenabled later, this should
         // be probably still in use to exchange information about
@@ -1557,6 +1560,19 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         {
             ScopedLock grd (g.m_GroupLock);
+
+            if (!ns->m_IncludedGroup)
+            {
+                // The situation could get changed between the unlock and lock of m_GroupLock.
+                // This must be checked again.
+                // If a socket has been removed from group, it means that some other thread is
+                // currently trying to delete the socket. Therefore it doesn't have, and even shouldn't,
+                // be deleted here. Just exit with error report.
+                throw CUDTException(MJ_SETUP, MN_NORES);
+            }
+
+            // If m_IncludedGroup is not NULL, the m_IncludedIter is still valid.
+            CUDTGroup::gli_t f = ns->m_IncludedIter;
 
             if (was_empty)
             {
