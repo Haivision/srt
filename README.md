@@ -1,11 +1,5 @@
 # Secure Reliable Transport (SRT) Protocol
 
-<p align="center">
-  <a href="http://srtalliance.org/">
-    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="600"/>
-  </a>
-</p>
-
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
 [![Debian Badge][debian-badge]][debian-package]  
@@ -14,6 +8,12 @@
 [![codecov][codecov-badge]][codecov-project]  
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
+
+<p align="center">
+  <a href="http://srtalliance.org/">
+    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="500"/>
+  </a>
+</p>
 
 ## Introduction
 
