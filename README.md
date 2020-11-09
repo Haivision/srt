@@ -9,7 +9,7 @@
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
 
-<p align="center">
+<p align="left">
   <a href="http://srtalliance.org/">
     <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="500"/>
   </a>
