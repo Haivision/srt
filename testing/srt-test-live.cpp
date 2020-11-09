@@ -449,7 +449,6 @@ int main( int argc, char** argv )
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
 #if ENABLE_EXPERIMENTAL_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
-        o_mxptool   ((optargs), " Use mxptool style to reconnect failed group nodes", "mxp", "mxptool"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_retry     ((optargs), "<N=-1,0,+N> Retry connection N times if failed on timeout", "rc", "retry"),
@@ -659,10 +658,6 @@ int main( int argc, char** argv )
 
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
-
-#if ENABLE_EXPERIMENTAL_BONDING
-    transmit_groupreconn_mxptool = OptionPresent(params, o_mxptool);
-#endif
 
     string hook = Option<OutString>(params, "", o_hook);
     if (hook != "")
