@@ -1308,6 +1308,8 @@ int CUDTUnited::singleMemberConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* gd)
 int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int arraysize)
 {
     CUDTGroup& g = *pg;
+    SRT_ASSERT(g.m_iBusy > 0);
+
     // The group must be managed to use srt_connect on it,
     // as it must create particular socket automatically.
 
@@ -1434,10 +1436,9 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         if (targets[tii].errorcode != SRT_SUCCESS)
         {
             ScopedLock cs(m_GlobControlLock);
-            SRTSOCKET id = ns->m_SocketID;
             targets[tii].id = CUDT::INVALID_SOCK;
             delete ns;
-            m_Sockets.erase(id);
+            m_Sockets.erase(sid);
 
             // If failed to set options, then do not continue
             // neither with binding, nor with connecting.
@@ -1463,6 +1464,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         {
             ScopedLock cs(m_GlobControlLock);
+            if (m_Sockets.count(sid) == 0)
+            {
+                // Someone deleted the socket in the meantime?
+                // Unlikely, but possible in theory.
+                // Don't delete anyhting - it's alreay done.
+                continue;
+            }
             CUDTGroup::gli_t f = g.add(data);
             ns->m_IncludedIter = f;
             ns->m_IncludedGroup = &g;
@@ -1568,7 +1576,10 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 // If a socket has been removed from group, it means that some other thread is
                 // currently trying to delete the socket. Therefore it doesn't have, and even shouldn't,
                 // be deleted here. Just exit with error report.
-                throw CUDTException(MJ_SETUP, MN_NORES);
+                LOGC(aclog.Error, log << "groupConnect: self-created member socket deleted during process, SKIPPING.");
+
+                // Do not report the error from here, just ignore this socket.
+                continue;
             }
 
             // If m_IncludedGroup is not NULL, the m_IncludedIter is still valid.
