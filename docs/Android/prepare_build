@@ -12,6 +12,7 @@ do
  b) arch_abi=${OPTARG};;
  n) NDK_HOME=${OPTARG};;
  l) api_lev=${OPTARG};;
+ *) twentytwo=${OPTARG};;
  esac
 done
 

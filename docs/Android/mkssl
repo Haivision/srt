@@ -7,6 +7,7 @@ do
  n) ndk_home=${OPTARG};;
  o) ssl_ver=${OPTARG};;
  a) api_lev=${OPTARG};;
+ *) twentytwo=${OPTARG};;
  esac
 done
 
