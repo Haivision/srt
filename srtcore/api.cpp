@@ -1949,11 +1949,11 @@ int CUDTUnited::close(CUDTSocket* s)
        s->setClosed();
 
 #if ENABLE_EXPERIMENTAL_BONDING
-         if (s->m_IncludedGroup)
-         {
-             HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
-             s->removeFromGroup(true);
-         }
+       if (s->m_IncludedGroup)
+       {
+           HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+           s->removeFromGroup(true);
+       }
 #endif
 
        m_Sockets.erase(s->m_SocketID);

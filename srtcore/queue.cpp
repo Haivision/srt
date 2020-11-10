@@ -1263,6 +1263,8 @@ void *CRcvQueue::worker(void *param)
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
     }
 
+    HLOGC(qrlog.Debug, log << "worker: EXIT");
+
     THREAD_EXIT();
     return NULL;
 }

@@ -2175,7 +2175,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         // BOTH m_GlobControlLock AND m_GroupLock are locked here.
 
-        HLOGC(grlog.Debug, log << "group/recv: RDY: " << DisplayEpollResults(sready));
+        HLOGC(grlog.Debug, log << "group/recv: " << nready << " RDY: " << DisplayEpollResults(sready));
 
         if (nready == 0)
         {
@@ -2430,13 +2430,23 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 #endif
 
+        vector<SRTSOCKET> brokenid;
         // Now remove all broken sockets from aheads, if any.
         // Even if they have already delivered a packet.
         for (set<CUDTSocket*>::iterator di = broken.begin(); di != broken.end(); ++di)
         {
             CUDTSocket* ps = *di;
             m_Positions.erase(ps->m_SocketID);
-            ps->setBrokenClosed();
+            //ps->setBrokenClosed();
+        }
+
+        // Force closing
+        {
+            InvertedLock ung (m_GroupLock);
+            for (set<CUDTSocket*>::iterator b = broken.begin(); b != broken.end(); ++b)
+            {
+                CUDT::s_UDTUnited.close(*b);
+            }
         }
 
         if (broken.size() >= size) // This > is for sanity check
@@ -3309,7 +3319,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
 
             // As per sending, make it also broken so that scheduled
             // packets will be also abandoned.
-            s->setBrokenClosed();
+            s->setClosed();
         }
     }
 
@@ -4510,7 +4520,7 @@ void CUDTGroup::updateFailedLink()
     {
         // No healthy links, set ERR on epoll.
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: All sockets broken");
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
     }
     else
     {

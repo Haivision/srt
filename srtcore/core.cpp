@@ -5685,6 +5685,7 @@ void *CUDT::tsbpd(void *param)
                 // When the group is read-ready, it should update its pollers as it sees fit.
 
                 // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << current_pkt_seq << " makes group readable");
                 gkeeper.group->updateReadState(self->m_SocketID, current_pkt_seq);
 
                 if (shall_update_group)
@@ -6200,7 +6201,7 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-// [[using locked(m_GlobControlLock)]]
+// [[using maybe_locked(m_GlobControlLock, if called from GC)]]
 bool CUDT::closeInternal()
 {
     // NOTE: this function is called from within the garbage collector thread.
@@ -6210,6 +6211,11 @@ bool CUDT::closeInternal()
         return false;
     }
 
+    // IMPORTANT:
+    // This function may block indefinitely, if called for a socket
+    // that has m_bBroken == false or m_bConnected == true.
+    // If it is intended to forcefully close the socket, make sure
+    // that it's in response to a broken connection.
     HLOGC(smlog.Debug, log << CONID() << " - closing socket:");
 
     if (m_Linger.l_onoff != 0)

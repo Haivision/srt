@@ -2288,6 +2288,7 @@ Epoll_again:
                         // If the event was SRT_EPOLL_UPDATE, report it, and still wait.
 
                         bool any_read_ready = false;
+                        vector<int> errored;
                         for (int i = 0; i < len; ++i)
                         {
                             if (sready[i].events & SRT_EPOLL_UPDATE)
@@ -2297,11 +2298,16 @@ Epoll_again:
 
                             if (sready[i].events & SRT_EPOLL_IN)
                                 any_read_ready = true;
+
+                            if (sready[i].events & SRT_EPOLL_ERR)
+                            {
+                                errored.push_back(sready[i].fd);
+                            }
                         }
 
                         if (!any_read_ready)
                         {
-                            Verb() << " ... [NOT READ READY - AGAIN]";
+                            Verb() << " ... [NOT READ READY - AGAIN (" << errored.size() << " errored: " << Printable(errored) << ")]";
                             goto Epoll_again;
                         }
 
