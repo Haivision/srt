@@ -200,7 +200,7 @@ public:
         }
         else
         {
-            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND!");
+            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND (might be ok, if removed already by CheckValidSockets)");
             empty = true; // not exactly true, but this is to cause error on group in the APP
         }
 

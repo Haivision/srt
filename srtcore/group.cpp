@@ -1002,7 +1002,8 @@ void CUDTGroup::send_CheckValidSockets()
         CUDTSocket* revps = m_pGlobal->locateSocket_LOCKED(d->id);
         if (revps != d->ps)
         {
-            m_Group.erase(d);
+            HLOGC(gmlog.Debug, log << "group/send_CheckValidSockets: socket @" << d->id << " is no longer valid, REMOVING FROM $" << id());
+            remove_LOCKED(d->id);
         }
     }
 }
