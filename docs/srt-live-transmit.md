@@ -369,7 +369,7 @@ shell (using **"** **"** quotes or backslash).
 - **-pf**, **-statspf** - SRT statistics print format. Values: json, csv, default.
 - **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, based on the number of packets.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
-- **-logfa** - selected FAs in SRT to be logged (default: all is enabled, that is, you can filter out log messages from only wanted FAs using this option).
+- **-logfa, -lfa** - selected FAs in SRT to be logged (default: all are enabled). See the list of FAs running `-help:logging`.
 - **-logfile:logs.txt** - Output of logs is written to file logs.txt instead of being printed to `stderr`.
 - **-help, -h** - Show help.
 - **-version** - Show version info.
