@@ -196,7 +196,7 @@ srt_connect_group(conngrp, gdata, 3);
 This does the same as `srt_connect`, but blocking rules are different:
 it blocks until at least one connection from the given list is established.
 Then it returns and allows the group to be used for transmission, while
-continuing with the other connections in the background. Note that some group 
+continuing with the other connections in the background. Note that some group
 types may require certain conditions to be satisfied, like a minimum number of
 connections.
 
@@ -206,13 +206,13 @@ running `srt_connect` in a loop for all required endpoints.
 Once the connection is ready, you use the `conngrp` id for transmission, exactly
 the same way as above for the sockets.
 
-There's one additional thing to be covered here: just how much 
+There's one additional thing to be covered here: just how much
 should the application be involved with socket groups?
 
 
 # Controlling the member connections
 
-The object of type `SRT_MSGCTRL` is used to exchange some extra information with 
+The object of type `SRT_MSGCTRL` is used to exchange some extra information with
 `srt_sendmsg2` and `srt_recvmsg2`. Of particular interest in this case are two fields:
 
 * `grpdata`
@@ -221,7 +221,7 @@ The object of type `SRT_MSGCTRL` is used to exchange some extra information with
 These fields have to be set to the pointer and size of an existing `SRT_SOCKGROUPDATA`
 type array, which will be filled by this call (you can also obtain it separately
 by the `srt_group_data` function). The array must have a maximum possible size
-to get information about every single member link. Otherwise it will not fill and 
+to get information about every single member link. Otherwise it will not fill and
 return the proper size in `grpdata_size`.
 
 The application should be interested here in two types of information:
@@ -233,7 +233,7 @@ From the `sockstate` field you can track every member connection as to whether i
 state is still `SRTS_CONNECTED`. If a connection is detected as broken after
 the call to a transmission function (`srt_sendmsg2/srt_recvmsg2`) then the
 connection will appear in these data only once, and with `sockstate`
-equal to `SRTS_BROKEN`. It will not appear anymore in later calls, and it won't 
+equal to `SRTS_BROKEN`. It will not appear anymore in later calls, and it won't
 appear at all if you check the data through `srt_group_data`.
 
 Example:
