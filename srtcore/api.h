@@ -241,13 +241,18 @@ public:
    /// from within the GC thread only (that is, only when
    /// the socket should be no longer visible in the
    /// connection, including for sending remaining data).
-   void makeClosed();
-   void makeMemberClosed();
+   void breakSocket_LOCKED();
+
 
    /// This makes the socket no longer capable of performing any transmission
    /// operation, but continues to be responsive in the connection in order
    /// to finish sending the data that were scheduled for sending so far.
-   void makeShutdown();
+   void setClosed();
+
+   /// This does the same as setClosed, plus sets the m_bBroken to true.
+   /// Such a socket can still be read from so that remaining data from
+   /// the receiver buffer can be read, but no longer sends anything.
+   void setBrokenClosed();
    void removeFromGroup(bool broken);
 
    // Instrumentally used by select() and also required for non-blocking

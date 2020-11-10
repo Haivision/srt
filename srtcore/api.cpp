@@ -127,48 +127,33 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
 }
 
 // [[using locked(m_GlobControlLock)]]
-void CUDTSocket::makeShutdown()
+void CUDTSocket::breakSocket_LOCKED()
 {
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (m_IncludedGroup)
-    {
-        HLOGC(smlog.Debug, log << "@" << m_SocketID << " IS MEMBER OF $" << m_IncludedGroup->id() << " - REMOVING FROM GROUP");
-        removeFromGroup(true);
-    }
-#endif
-
+    // This function is intended to be called from GC,
+    // under a lock of m_GlobControlLock. 
+    m_pUDT->m_bBroken = true;
+    m_pUDT->m_iBrokenCounter = 0;
     HLOGC(smlog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
     m_pUDT->closeInternal();
+    setClosed();
 }
 
-// [[using locked(m_GlobControlLock)]]
-void CUDTSocket::makeClosed()
+void CUDTSocket::setClosed()
 {
-    m_pUDT->m_bBroken = true;
-    makeShutdown();
     m_Status = SRTS_CLOSED;
+
+    // a socket will not be immediately removed when it is closed
+    // in order to prevent other methods from accessing invalid address
+    // a timer is started and the socket will be removed after approximately
+    // 1 second
     m_tsClosureTimeStamp = steady_clock::now();
 }
 
-// [[using locked(m_IncludedGroup->m_GroupLock)]]
-void CUDTSocket::makeMemberClosed()
+void CUDTSocket::setBrokenClosed()
 {
+    m_pUDT->m_iBrokenCounter = 60;
     m_pUDT->m_bBroken = true;
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (m_IncludedGroup)
-    {
-        CUDTGroup* g = m_IncludedGroup;
-        HLOGC(smlog.Debug, log << "@" << m_SocketID << " IS MEMBER OF $" << g->id() << " - REMOVING FROM GROUP");
-
-        m_IncludedIter = CUDTGroup::gli_NULL();
-        m_IncludedGroup = NULL;
-        g->remove_LOCKED(m_SocketID);
-
-        HLOGC(smlog.Debug, log << "makeMemberClosed: socket @" << m_SocketID << " NO LONGER A MEMBER of $" << g->id());
-    }
-#endif
-    m_Status = SRTS_CLOSED;
-    m_tsClosureTimeStamp = steady_clock::now();
+    setClosed();
 }
 
 bool CUDTSocket::readReady()
@@ -529,8 +514,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       if (ns->m_pUDT->m_bBroken)
       {
          // last connection from the "peer" address has been broken
-         ns->m_Status = SRTS_CLOSED;
-         ns->m_tsClosureTimeStamp = steady_clock::now();
+         ns->setClosed();
 
          ScopedLock acceptcg(ls->m_AcceptLock);
          ls->m_pQueuedSockets->erase(ns->m_SocketID);
@@ -836,6 +820,11 @@ ERR_ROLLBACK:
        LOGC(cnlog.Warn, log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: "
                << why[error] << " - " << RequestTypeStr(URQFailure(w_error)));
 #endif
+
+      SRTSOCKET id = ns->m_SocketID;
+      ns->m_pUDT->closeInternal();
+      ns->setClosed();
+
       // The mapped socket should be now unmapped to preserve the situation that
       // was in the original UDT code.
       // In SRT additionally the acceptAndRespond() function (it was called probably
@@ -843,9 +832,14 @@ ERR_ROLLBACK:
       // further processed and should be removed.
       {
           ScopedLock cg(m_GlobControlLock);
-          SRTSOCKET id = ns->m_SocketID;
-          ns->makeClosed();
 
+#if ENABLE_EXPERIMENTAL_BONDING
+          if (ns->m_IncludedGroup)
+          {
+              HLOGC(smlog.Debug, log << "@" << ns->m_SocketID << " IS MEMBER OF $" << ns->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+              ns->removeFromGroup(true);
+          }
+#endif
           m_Sockets.erase(id);
           m_ClosedSockets[id] = ns;
       }
@@ -1925,18 +1919,16 @@ int CUDTUnited::close(CUDTSocket* s)
    }
    else
    {
+       // Note: this call may be done on a socket that hasn't finished
+       // sending all packets scheduled for sending, which means, this call
+       // may block INDEFINITELY. As long as it's acceptable to block the
+       // call to srt_close(), and all functions in all threads where this
+       // very socket is used, this shall not block the central database.
+       s->m_pUDT->closeInternal();
+
        // synchronize with garbage collection.
        HLOGC(smlog.Debug, log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->m_pUDT->CONID() << ". Acquiring GLOBAL control lock");
        ScopedLock manager_cg(m_GlobControlLock);
-
-       // Removing from group NOW - groups are used only for live mode
-       // and it shouldn't matter if the transmission is broken in the middle of sending.
-       // This makes the socket unable to process new requests, but it
-       // remains functional until all scheduled data are delivered.
-
-       // DONE AFTER LOCK because makeShutdown assumes lock on m_GlobControlLock.
-       s->makeShutdown();
-
        // since "s" is located before m_GlobControlLock, locate it again in case
        // it became invalid
        // XXX This is very weird; if we state that the CUDTSocket object
@@ -1954,14 +1946,15 @@ int CUDTUnited::close(CUDTSocket* s)
            return 0;
        }
        s = i->second;
+       s->setClosed();
 
-       s->m_Status = SRTS_CLOSED;
-
-       // a socket will not be immediately removed when it is closed
-       // in order to prevent other methods from accessing invalid address
-       // a timer is started and the socket will be removed after approximately
-       // 1 second
-       s->m_tsClosureTimeStamp = steady_clock::now();
+#if ENABLE_EXPERIMENTAL_BONDING
+         if (s->m_IncludedGroup)
+         {
+             HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+             s->removeFromGroup(true);
+         }
+#endif
 
        m_Sockets.erase(s->m_SocketID);
        m_ClosedSockets[s->m_SocketID] = s;
@@ -2579,11 +2572,18 @@ void CUDTUnited::checkBrokenSockets()
             continue;
          }
 
+#if ENABLE_EXPERIMENTAL_BONDING
+         if (s->m_IncludedGroup)
+         {
+             HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+             s->removeFromGroup(true);
+         }
+#endif
+
          HLOGC(smlog.Debug, log << "checkBrokenSockets: moving BROKEN socket to CLOSED: @" << i->first);
 
          //close broken connections and start removal timer
-         s->m_Status = SRTS_CLOSED;
-         s->m_tsClosureTimeStamp = steady_clock::now();
+         s->setClosed();
          tbc.push_back(i->first);
          m_ClosedSockets[i->first] = s;
 
@@ -2657,6 +2657,13 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    CUDTSocket* const s = i->second;
 
+#if ENABLE_EXPERIMENTAL_BONDING
+   if (s->m_IncludedGroup)
+   {
+       HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+       s->removeFromGroup(true);
+   }
+#endif
    // decrease multiplexer reference count, and remove it if necessary
    const int mid = s->m_iMuxID;
 
@@ -2681,7 +2688,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
          CUDTSocket* as = si->second;
 
-         as->makeClosed();
+         as->breakSocket_LOCKED();
          m_ClosedSockets[*q] = as;
          m_Sockets.erase(*q);
       }
@@ -2709,7 +2716,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    m_ClosedSockets.erase(i);
 
    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
-   s->makeClosed();
+   s->m_pUDT->closeInternal();
    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
 
@@ -2991,22 +2998,31 @@ void* CUDTUnited::garbageCollect(void* p)
        for (sockets_t::iterator i = self->m_Sockets.begin();
                i != self->m_Sockets.end(); ++ i)
        {
-           i->second->makeClosed();
-           self->m_ClosedSockets[i->first] = i->second;
+           CUDTSocket* s = i->second;
+           s->breakSocket_LOCKED();
+
+#if ENABLE_EXPERIMENTAL_BONDING
+           if (s->m_IncludedGroup)
+           {
+               HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_IncludedGroup->id() << " - REMOVING FROM GROUP");
+               s->removeFromGroup(true);
+           }
+#endif
+           self->m_ClosedSockets[i->first] = s;
 
            // remove from listener's queue
            sockets_t::iterator ls = self->m_Sockets.find(
-                   i->second->m_ListenSocket);
+                   s->m_ListenSocket);
            if (ls == self->m_Sockets.end())
            {
-               ls = self->m_ClosedSockets.find(i->second->m_ListenSocket);
+               ls = self->m_ClosedSockets.find(s->m_ListenSocket);
                if (ls == self->m_ClosedSockets.end())
                    continue;
            }
 
            enterCS(ls->second->m_AcceptLock);
-           ls->second->m_pQueuedSockets->erase(i->second->m_SocketID);
-           ls->second->m_pAcceptSockets->erase(i->second->m_SocketID);
+           ls->second->m_pQueuedSockets->erase(s->m_SocketID);
+           ls->second->m_pAcceptSockets->erase(s->m_SocketID);
            leaveCS(ls->second->m_AcceptLock);
        }
        self->m_Sockets.clear();
@@ -3198,28 +3214,30 @@ int CUDT::removeSocketFromGroup(SRTSOCKET socket)
 void CUDTSocket::removeFromGroup(bool broken)
 {
     CUDTGroup* g = m_IncludedGroup;
-
-    // Reset group-related fields immediately. They won't be accessed
-    // in the below calls, while the iterator will be invalidated for
-    // a short moment between removal from the group container and the end,
-    // while the GroupLock would be already taken out. It is safer to reset
-    // it to a NULL iterator before removal.
-    m_IncludedIter = CUDTGroup::gli_NULL();
-    m_IncludedGroup = NULL;
-
-    bool still_have = g->remove(m_SocketID);
-    if (broken)
+    if (g)
     {
-        // Activate the SRT_EPOLL_UPDATE event on the group
-        // if it was because of a socket that was earlier connected
-        // and became broken. This is not to be sent in case when
-        // it is a failure during connection, or the socket was
-        // explicitly removed from the group.
-        g->activateUpdateEvent(still_have);
-    }
+        // Reset group-related fields immediately. They won't be accessed
+        // in the below calls, while the iterator will be invalidated for
+        // a short moment between removal from the group container and the end,
+        // while the GroupLock would be already taken out. It is safer to reset
+        // it to a NULL iterator before removal.
+        m_IncludedIter = CUDTGroup::gli_NULL();
+        m_IncludedGroup = NULL;
 
-    HLOGC(smlog.Debug, log << "removeFromGroup: socket @" << m_SocketID << " NO LONGER A MEMBER of $" << g->id() << "; group is "
-            << (still_have ? "still ACTIVE" : "now EMPTY"));
+        bool still_have = g->remove(m_SocketID);
+        if (broken)
+        {
+            // Activate the SRT_EPOLL_UPDATE event on the group
+            // if it was because of a socket that was earlier connected
+            // and became broken. This is not to be sent in case when
+            // it is a failure during connection, or the socket was
+            // explicitly removed from the group.
+            g->activateUpdateEvent(still_have);
+        }
+
+        HLOGC(smlog.Debug, log << "removeFromGroup: socket @" << m_SocketID << " NO LONGER A MEMBER of $" << g->id() << "; group is "
+                << (still_have ? "still ACTIVE" : "now EMPTY"));
+    }
 }
 
 SRTSOCKET CUDT::getGroupOfSocket(SRTSOCKET socket)

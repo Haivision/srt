@@ -1347,34 +1347,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    if (!wipeme.empty())
-    {
-        InvertedLock ug(m_GroupLock);
-
-        // With unlocked GroupLock, we can now lock GlobControlLock.
-        // This is a requirement for makeClosed.
-        ScopedLock globlock(CUDT::s_UDTUnited.m_GlobControlLock);
-
-        for (vector<SRTSOCKET>::iterator p = wipeme.begin(); p != wipeme.end(); ++p)
-        {
-            CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(*p);
-
-            // If the socket has been just moved to ClosedSockets, it means that
-            // the object still exists, but it will be no longer findable.
-            if (!s)
-                continue;
-
-            HLOGC(gslog.Debug,
-                  log << "grp/sendBroadcast: BROKEN SOCKET @" << (*p) << " - CLOSING AND REMOVING.");
-
-            s->makeClosed(); // <-- will use GroupLock to delete the socket from the group container
-        }
-    }
-
-    HLOGC(gslog.Debug, log << "grp/sendBroadcast: - wiped " << wipeme.size() << " broken sockets");
-
-    // We'll need you again.
-    wipeme.clear();
+    send_CloseBrokenSockets(wipeme);
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
@@ -2463,7 +2436,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             CUDTSocket* ps = *di;
             m_Positions.erase(ps->m_SocketID);
-            ps->makeMemberClosed();
+            ps->setBrokenClosed();
         }
 
         if (broken.size() >= size) // This > is for sanity check
@@ -3318,7 +3291,8 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         InvertedLock ug(m_GroupLock);
 
         // With unlocked GroupLock, we can now lock GlobControlLock.
-        // This is a requirement for makeClosed.
+        // This is needed prevent any of them be deleted from the container
+        // at the same time.
         ScopedLock globlock(CUDT::s_UDTUnited.m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
@@ -3331,13 +3305,15 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
                 continue;
 
             HLOGC(gslog.Debug,
-                  log << "grp/send...: BROKEN SOCKET @" << (*p) << " - CLOSING AND REMOVING.");
+                  log << "grp/send...: BROKEN SOCKET @" << (*p) << " - CLOSING, to be removed from group.");
 
-            s->makeClosed(); // <-- will use GroupLock to delete the socket from the group container
+            // As per sending, make it also broken so that scheduled
+            // packets will be also abandoned.
+            s->setBrokenClosed();
         }
     }
 
-    HLOGC(gslog.Debug, log << "grp/sendBackup: - wiped " << w_wipeme.size() << " broken sockets");
+    HLOGC(gslog.Debug, log << "grp/send...: - wiped " << w_wipeme.size() << " broken sockets");
 
     // We'll need you again.
     w_wipeme.clear();
