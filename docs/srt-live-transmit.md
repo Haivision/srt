@@ -260,19 +260,19 @@ Examples:
 * `srt://[::]:5000` defines caller mode (!) with IPv6.
 
 * `srt://[::]:5000?mode=listener` defines listener mode with IPv6. If the
-* default value for `IPV6_V6ONLY` system socket option is 0, it will accept
-* also IPv4 connections.
+    default value for `IPV6_V6ONLY` system socket option is 0, it will accept
+    also IPv4 connections.
 
 * `srt://192.168.0.5:5000?mode=rendezvous` will make a rendezvous connection
-* with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
-* port 5000.
+    with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
+    port 5000.
 
 * `srt://[::1]:5000?mode=rendezvous&port=4000` will make a rendezvous
-* connection with local address `inaddr6_any` (IPv6) and port 4000 to a
-* destination with port 5000.
+    connection with local address `inaddr6_any` (IPv6) and port 4000 to a
+    destination with port 5000.
 
 * `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
-* (different IP versions for binding and target address)
+    (different IP versions for binding and target address)
 
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by `srt-live-transmit`:
 
