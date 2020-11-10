@@ -1,18 +1,21 @@
-<p align="center">
+# Secure Reliable Transport (SRT) Protocol
+
+<p align="left">
   <a href="http://srtalliance.org/">
-    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="600"/>
+    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="500"/>
   </a>
 </p>
 
-[![Build Status Linux and macOS][travis-badge]][travis]
-[![Build Status Windows][appveyor-badge]][appveyor]
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
 [![Debian Badge][debian-badge]][debian-package]  
 [![LGTM Code Quality][lgtm-quality-badge]][lgtm-project]
 [![LGTM Alerts][lgtm-alerts-badge]][lgtm-project]
+[![codecov][codecov-badge]][codecov-project]  
+[![Build Status Linux and macOS][travis-badge]][travis]
+[![Build Status Windows][appveyor-badge]][appveyor]
 
-# Introduction
+## Introduction
 
 Secure Reliable Transport (SRT) is an open source transport technology that optimizes streaming performance across unpredictable networks, such as the Internet.
 
@@ -28,7 +31,8 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 
 [Join the conversation](https://slackin-srtalliance.azurewebsites.net/) in the `#development` channel on [Slack](https://srtalliance.slack.com).
 
-# Guides
+### Guides
+
 * [Why SRT Was Created](docs/why-srt-was-created.md)
 * [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
 * SRT Cookbook: [website](https://srtlab.github.io/srt-cookbook), [GitHub](https://github.com/SRTLab/srt-cookbook)
@@ -40,7 +44,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * [API](docs/API.md)
 * [Reporting problems](docs/reporting.md)
 
-# Requirements
+## Requirements
 
 * cmake (as build system)
 * Tcl 8.5 (optional for user-friendly build system)
@@ -49,7 +53,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 
 For detailed description of the build system and options, please read [BuildOptions.md](docs/BuildOptions.md).
 
-## For Linux:
+### Build on Linux
 
 Install cmake and openssl-devel (or similar name) package. For pthreads
 there should be -lpthreads linker flag added.
@@ -61,23 +65,28 @@ or [`-DCMAKE_INSTALL_PREFIX`](https://cmake.org/cmake/help/v3.0/variable/CMAKE_I
 
 To uninstall, call `make -n install` to list all the dependencies, and then pass the list to `rm`.
 
-### Ubuntu 14
-```
+#### Ubuntu 14
+
+```shell
 sudo apt-get update
 sudo apt-get upgrade
 sudo apt-get install tclsh pkg-config cmake libssl-dev build-essential
 ./configure
 make
 ```
-### CentOS 7
-```
+
+#### CentOS 7
+
+```shell
 sudo yum update
 sudo yum install tcl pkgconfig openssl-devel cmake gcc gcc-c++ make automake
 ./configure
 make
 ```
-### CentOS 6
-```
+
+#### CentOS 6
+
+```shell
 sudo yum update
 sudo yum install tcl pkgconfig openssl-devel cmake gcc gcc-c++ make automake
 sudo yum install centos-release-scl-rh devtoolset-3-gcc devtoolset-3-gcc-c++
@@ -86,8 +95,7 @@ scl enable devtoolset-3 bash
 make
 ```
 
-
-## For Mac (Darwin, iOS):
+### Build on Mac (Darwin, iOS)
 
 [Homebrew](https://brew.sh/) supports "srt" formula.
 
@@ -118,7 +126,7 @@ export OPENSSL_INCLUDE_DIR=$(brew --prefix openssl)"/include"
 make
 ```
 
-## For Windows:
+### Build on Windows
 
 Follow the [Windows build instructions](docs/build-win.md).
 
@@ -131,6 +139,9 @@ Follow the [Windows build instructions](docs/build-win.md).
 [lgtm-alerts-badge]: https://img.shields.io/lgtm/alerts/github/Haivision/srt
 [lgtm-quality-badge]: https://img.shields.io/lgtm/grade/cpp/github/Haivision/srt
 [lgtm-project]: https://lgtm.com/projects/g/Haivision/srt/
+
+[codecov-project]: https://codecov.io/gh/haivision/srt
+[codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg
 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
