@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NDK=/home/nathan/srt/android-ndk-r19c
+NDK=/opt/android-ndk-r19c
 
 openssl_ver=1.1.1h
 #srt_version=1.4.2
