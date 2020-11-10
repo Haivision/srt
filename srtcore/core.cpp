@@ -6265,14 +6265,22 @@ bool CUDT::closeInternal()
      * What is in EPoll shall be the responsibility of the application, if it want local close event,
      * it would remove the socket from the EPoll after close.
      */
+
+    // Make a copy under a lock because other thread might access it
+    // at the same time.
+    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    set<int> epollid = m_sPollID;
+    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+
     // trigger any pending IO events.
-    HLOGC(smlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(m_sPollID) << " of @" << m_SocketID);
+    HLOGC(smlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(epollid) << " of @" << m_SocketID);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     try
     {
+
         int no_events = 0;
-        for (set<int>::iterator i = m_sPollID.begin(); i != m_sPollID.end(); ++i)
+        for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
         {
             HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
             s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
