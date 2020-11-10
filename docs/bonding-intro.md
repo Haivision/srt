@@ -54,13 +54,13 @@ caller-listener arrangement.
 On the listener side, you create a listening endpoint. Starting with creating
 a socket:
 
-```
+```c
 SRTSOCKET sock = srt_create_socket();
 ```
 
 The listener needs to bind it first (note: simplified code):
 
-```
+```c
 sockaddr_any sa = CreateAddr("0.0.0.0", 5000);
 srt_bind(sock, sa.get(), sa.len);
 srt_listen(sock, 5);
@@ -71,7 +71,7 @@ SRTSOCKET connsock = srt_accept(sock, &target, sizeof target);
 The caller side can use default system selected address and simply connect to
 the target:
 
-```
+```c
 SRTSOCKET connsock = srt_create_socket();
 sockaddr_any sa = CreateAddr("target.address", 5000);
 srt_connect(connsock, sa.get(), sa.len);
@@ -83,7 +83,7 @@ transmit the data. In this case we'll utilize the most advanced versions,
 
 Sender side does:
 
-```
+```c
 SRT_MSGCTRL mc = srt_msgctrl_default;
 packetdata = GetPacketData();
 srt_sendmsg2(connsock, packetdata.data(), packetdata.size(), &mc);
@@ -91,7 +91,7 @@ srt_sendmsg2(connsock, packetdata.data(), packetdata.size(), &mc);
 
 Receiver side does:
 
-```
+```c
 SRT_MSGCTRL mc = srt_msgctrl_default;
 vector<char> packetdata(SRT_LIVE_DEF_PLSIZE);
 int size = srt_recvmsg2(connsock, packetdata.data(), packetdata.size(), &mc);
@@ -123,13 +123,13 @@ for every link.
 For the listener side, note that groups only replace the communication socket.
 Listener sockets still have to be used:
 
-```
+```c
 SRTSOCKET sock = srt_create_socket();
 ```
 
 To handle group connections, you need to set `SRTO_GROUPCONNECT` option:
 
-```
+```c
 int gcon = 1;
 srt_setsockflag(sock, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
 
@@ -148,20 +148,20 @@ here is however the exact ID you will use for transmission.
 On the caller side, you start from creating a group first. We'll use the
 broadcast group type here:
 
-```
+```c
 SRTSOCKET conngrp = srt_create_group(SRT_GTYPE_BROADCAST);
 ```
 
 This will need to make the first connection this way:
 
-```
+```c
 sockaddr_any sa = CreateAddr("target.address.link1", 5000);
 srt_connect(conngrp, sa.get(), sizeof sa);
 ```
 
 Then further connections can be done by calling `srt_connect` again:
 
-```
+```c
 sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
 srt_connect(conngrp, sa.get(), sa2.len);
 ```
@@ -175,7 +175,7 @@ it's usually unwanted.
 So for blocking mode we use a different solution. Let's say, you have
 3 addresses:
 
-```
+```c
 sockaddr_any sa1 = CreateAddr("target.address.link1", 5000);
 sockaddr_any sa2 = CreateAddr("target.address.link2", 5000);
 sockaddr_any sa3 = CreateAddr("target.address.link3", 5000);
@@ -183,7 +183,7 @@ sockaddr_any sa3 = CreateAddr("target.address.link3", 5000);
 
 You have to prepare the array for them and then use one group-connect function:
 
-```
+```c
 SRT_SOCKGROUPDATA gdata [3] = {
 	srt_prepare_endpoint(NULL, &sa1, sizeof sa1),
 	srt_prepare_endpoint(NULL, &sa2, sizeof sa2),
@@ -238,12 +238,12 @@ appear at all if you check the data through `srt_group_data`.
 
 Example:
 
-```
+```c
 SRT_SOCKGROUPDATA gdata[3];
 SRT_MSGCTRL mc = srt_msgctrl_default;
 mc.grpdata = gdata;
 mc.grpdata_size = 3;
-...
+//...
 srt_sendmsg2(conngrp, packetdata.data(), packetdata.size(), &mc);
 for (int i = 0; i < 3; ++i)
     if (mc.grpdata[i].sockstate == SRTS_BROKEN)
