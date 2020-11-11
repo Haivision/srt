@@ -122,7 +122,7 @@ modified by
 //
 //  - CUDTSocket::m_ControlLock
 //
-//      - CRendezvousQueue::m_RIDVectorLock 
+//      - CRendezvousQueue::m_RIDVectorLock ??? (AFTER m_ConnectionLock?)
 //
 //  - CUDTUnited::m_GlobControlLock
 //
@@ -136,6 +136,8 @@ modified by
 //         - CUDTGroup::m_GroupLock  || CSndUList::m_ListLock(T)
 //
 //      - CUDT::m_ConnectionLock
+//           
+//               - CRendezvousQueue::m_RIDVectorLock
 //
 //  - CUDT::m_SendLock
 //

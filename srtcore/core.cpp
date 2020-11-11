@@ -8870,7 +8870,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
         // This does the same as it would happen on connection timeout,
         // just we know about this state prematurely thanks to this message.
-        updateBrokenConnection(SRT_ECONNLOST);
+        updateBrokenConnection();
+        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
@@ -10985,7 +10986,8 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // update snd U list to remove this socket
         m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
-        updateBrokenConnection(SRT_ECONNLOST);
+        updateBrokenConnection();
+        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
 
         return true;
     }
@@ -11134,10 +11136,16 @@ void CUDT::checkTimers()
     }
 }
 
-void CUDT::updateBrokenConnection(int errorcode)
+void CUDT::updateBrokenConnection()
 {
     releaseSynch();
+    // app can call any UDT API to learn the connection_broken error
+    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    CGlobEvent::triggerEvent();
+}
 
+void CUDT::completeBrokenConnectionDependencies(int errorcode)
+{
     int token = -1;
     bool pending_broken = false;
 
@@ -11163,9 +11171,6 @@ void CUDT::updateBrokenConnection(int errorcode)
     }
 #endif
 
-    // app can call any UDT API to learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-    CGlobEvent::triggerEvent();
     if (m_cbConnectHook)
     {
         CALLBACK_CALL(m_cbConnectHook, m_SocketID, errorcode, m_PeerAddr.get(), token);
