@@ -5942,7 +5942,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     {
         // This function will be called internally inside
         // synchronizeWithGroup(). This is just more complicated.
-        updateAfterSrtHandshake(m_ConnRes.m_iVersion);
+        updateAfterSrtHandshake(w_hs.m_iVersion);
     }
 
     SRT_REJECT_REASON rr = setupCC();
@@ -6278,7 +6278,6 @@ bool CUDT::closeInternal()
     // then remove itself from all epoll monitoring
     try
     {
-
         int no_events = 0;
         for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
         {
