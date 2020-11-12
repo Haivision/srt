@@ -964,7 +964,17 @@ void CUDTGroup::close()
     HLOGC(gmlog.Debug, log << "grp/close: closing $" << m_GroupID << ", closing first " << ids.size() << " sockets:");
     // Close all sockets with unlocked GroupLock
     for (vector<SRTSOCKET>::iterator i = ids.begin(); i != ids.end(); ++i)
-        m_pGlobal->close(*i);
+    {
+        try
+        {
+            CUDT::s_UDTUnited.close(*i);
+        }
+        catch (CUDTException&)
+        {
+            HLOGC(gmlog.Debug, log << "grp/close: socket @" << *i << " is likely closed already, ignoring");
+        }
+    }
+
     HLOGC(gmlog.Debug, log << "grp/close: closing $" << m_GroupID << ": sockets closed, clearing the group:");
 
     // Lock the group again to clear the group data
