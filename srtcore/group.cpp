@@ -966,6 +966,7 @@ void CUDTGroup::close()
             CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(ig->id);
             s->m_IncludedGroup = NULL;
             s->m_IncludedIter = gli_NULL();
+            LOGC(smlog.Note, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
         }
 
         // After all sockets that were group members have their ties cut,
