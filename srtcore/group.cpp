@@ -942,6 +942,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
+        ScopedLock glob(CUDT::s_UDTUnited.m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         // A non-managed group may only be closed if there are no
@@ -958,7 +959,25 @@ void CUDTGroup::close()
 
         // Copy the list of IDs into the array.
         for (gli_t ig = m_Group.begin(); ig != m_Group.end(); ++ig)
+        {
             ids.push_back(ig->id);
+            // Immediately cut ties to this group.
+            // Just for a case, redispatch the socket, to stay safe.
+            CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(ig->id);
+            s->m_IncludedGroup = NULL;
+            s->m_IncludedIter = gli_NULL();
+        }
+
+        // After all sockets that were group members have their ties cut,
+        // the container can be cleared. Note that sockets won't be now
+        // removing themselves from the group when closing because they
+        // are unaware of being group members.
+        m_Group.clear();
+        m_PeerGroupID = -1;
+
+        // NOW, the m_GroupLock is released, then m_GlobControlLock.
+        // The below code should work with no locks and execute socket
+        // closing.
     }
 
     HLOGC(gmlog.Debug, log << "grp/close: closing $" << m_GroupID << ", closing first " << ids.size() << " sockets:");
@@ -988,7 +1007,6 @@ void CUDTGroup::close()
             m_Group.clear();
         }
 
-        m_PeerGroupID = -1;
         // This takes care of the internal part.
         // The external part will be done in Global (CUDTUnited)
     }
@@ -1086,6 +1104,13 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     leaveCS(m_pGlobal->m_GlobControlLock);
     // LOCKED: GroupLock (only)
     // Since this moment GlobControlLock may only be locked if GroupLock is unlocked first.
+
+
+    if (m_bClosing)
+    {
+        // No temporary locks here. The group lock is scoped.
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
 
     // This simply requires the payload to be sent through every socket in the group
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
@@ -1328,6 +1353,12 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 THREAD_RESUMED();
             }
 
+            if (m_bClosing)
+            {
+                // No temporary locks here. The group lock is scoped.
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+            }
+
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
@@ -1397,6 +1428,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             InvertedLock ung (m_GroupLock);
             enterCS(CUDT::s_UDTUnited.m_GlobControlLock);
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: Locked GlobControlLock, locking back GroupLock");
         }
 
         // Under this condition, as an unlock-lock cycle was done on m_GroupLock,
@@ -1448,7 +1480,6 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         // Now you can leave GlobControlLock, while GroupLock is still locked.
         leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: locking back GroupLock");
     }
 
     // Re-check after the waiting lock has been reacquired
@@ -2252,6 +2283,13 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
 
         // m_GlobControlLock lifted, m_GroupLock still locked.
+        // Now we can safely do this scoped way.
+
+        if (m_bClosing)
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: GROUP CLOSED, ABANDONING");
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
         //
         // NOTE: Although m_GlobControlLock is lifted here so potentially sockets
         // colected in ready_sockets could be closed at any time, all of them are member
@@ -3276,6 +3314,12 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
                 InvertedLock ug(m_GroupLock);
                 m_pGlobal->m_EPoll.swait(
                     *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+            }
+
+            if (m_bClosing)
+            {
+                HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
+                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
             HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
@@ -4540,6 +4584,7 @@ void CUDTGroup::updateFailedLink()
 }
 
 #if ENABLE_HEAVY_LOGGING
+// [[using maybe_locked(CUDT::s_UDTUnited.m_GlobControlLock)]]
 void CUDTGroup::debugGroup()
 {
     ScopedLock gg(m_GroupLock);

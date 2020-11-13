@@ -761,6 +761,7 @@ public:
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, synconmsgno, m_bSyncOnMsgNo);
+    SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 
 #endif // INC_SRT_GROUP_H

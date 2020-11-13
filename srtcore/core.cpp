@@ -1882,6 +1882,7 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
 size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
 {
+    SRT_ASSERT(m_parent->m_IncludedGroup != NULL);
     uint32_t* space = pcmdspec + 1;
 
     SRTSOCKET id = m_parent->m_IncludedGroup->id();
@@ -2312,6 +2313,14 @@ bool CUDT::createSrtHandshake(
         }
         else
         {
+            ScopedLock lock_group(*m_parent->m_IncludedGroup->exp_groupLock());
+            if (m_parent->m_IncludedGroup->closing())
+            {
+                m_RejectReason = SRT_REJ_IPE;
+                LOGC(cnlog.Error, log << "createSrtHandshake: group is closing during the process, rejecting.");
+                return false;
+
+            }
             offset += ra_size + 1;
             ra_size = fillHsExtGroup(p + offset - 1);
 
@@ -3569,6 +3578,15 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
+        // Now we know the group exists, but it might still be closed
+        ScopedLock guard_group_internals (*pg->exp_groupLock());
+        if (pg->closing())
+        {
+            LOGC(cnlog.Error, log << "HS/RSP: group was closed in the process, can't continue connecting");
+            m_RejectReason = SRT_REJ_IPE;
+            return false;
+        }
+
         SRTSOCKET peer = pg->peerid();
         if (peer == -1)
         {
@@ -3613,7 +3631,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false; // error occurred
         }
 
-        if ( !m_parent->m_IncludedGroup )
+        if (!m_parent->m_IncludedGroup)
         {
             // Strange, we just added it...
             m_RejectReason = SRT_REJ_IPE;
@@ -3699,10 +3717,18 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         HLOGC(gmlog.Debug, log << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $" << gp->id());
     }
 
-    if (was_empty)
+
     {
         ScopedLock glock (*gp->exp_groupLock());
-        gp->syncWithSocket(s->core(), HSD_RESPONDER);
+        if (gp->closing())
+        {
+            HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group $" << gp->id() << " is being closed, can't process");
+        }
+
+        if (was_empty)
+        {
+            gp->syncWithSocket(s->core(), HSD_RESPONDER);
+        }
     }
 
     // Setting non-blocking reading for group socket.
@@ -3723,9 +3749,9 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         return 0;
     }
 
-    s->m_IncludedGroup = gp;
     s->m_IncludedIter = gp->add(gp->prepareData(s));
-  
+    s->m_IncludedGroup = gp;
+
     // Record the remote address in the group data.
 
     return gp->id();
