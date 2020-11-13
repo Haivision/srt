@@ -41,7 +41,12 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
+      #pragma warning(disable:4101)
+      #pragma warning(disable:4133)
+      #pragma warning(disable:4244)
       #pragma warning(disable:4251)
+      #pragma warning(disable:4267)
+      #pragma warning(disable:4717)
    #endif
 #else
 
@@ -61,6 +66,11 @@
    #include <sys/event.h>
    #include <sys/time.h>
    #include <unistd.h>
+#endif
+
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wunused-const-variable"
 #endif
 
 #endif
@@ -87,6 +97,11 @@
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>
+#endif
+
+#if defined(__GNUC__) || defined(__GNUG__)
+#pragma GCC diagnostic ignored "-Wunused-const-variable"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
 #endif
