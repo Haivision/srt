@@ -2313,7 +2313,6 @@ bool CUDT::createSrtHandshake(
         }
         else
         {
-            ScopedLock lock_group(*m_parent->m_IncludedGroup->exp_groupLock());
             if (m_parent->m_IncludedGroup->closing())
             {
                 m_RejectReason = SRT_REJ_IPE;
@@ -3579,7 +3578,6 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         }
 
         // Now we know the group exists, but it might still be closed
-        ScopedLock guard_group_internals (*pg->exp_groupLock());
         if (pg->closing())
         {
             LOGC(cnlog.Error, log << "HS/RSP: group was closed in the process, can't continue connecting");
