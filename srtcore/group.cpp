@@ -975,6 +975,30 @@ void CUDTGroup::close()
         m_Group.clear();
         m_PeerGroupID = -1;
 
+        set<int> epollid;
+        {
+            // Global EPOLL lock must be applied to access any socket's epoll set.
+            // This is a set of all epoll ids subscribed to it.
+            ScopedLock elock (CUDT::s_UDTUnited.m_EPoll.m_EPollLock);
+            epollid = m_sPollID; // use move() in C++11
+            m_sPollID.clear();
+        }
+
+        int no_events = 0;
+        for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
+        {
+            HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of $" << id());
+            try
+            {
+                CUDT::s_UDTUnited.m_EPoll.update_usock(*i, id(), &no_events);
+            }
+            catch (...)
+            {
+                // May catch an API exception, but this isn't an API call to be interrupted.
+            }
+            HLOGC(smlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of $" << id());
+        }
+
         // NOW, the m_GroupLock is released, then m_GlobControlLock.
         // The below code should work with no locks and execute socket
         // closing.

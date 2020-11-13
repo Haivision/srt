@@ -6300,29 +6300,32 @@ bool CUDT::closeInternal()
     HLOGC(smlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(epollid) << " of @" << m_SocketID);
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
-    try
+    int no_events = 0;
+    for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
     {
-        int no_events = 0;
-        for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
+        HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
+        try
         {
-            HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
             s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
-            HLOGC(smlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
         }
-
-        // Not deleting elements from m_sPollID inside the loop because it invalidates
-        // the control iterator of the loop. Instead, all will be removed at once.
-
-        // IMPORTANT: there's theoretically little time between setting ERR readiness
-        // and unsubscribing, however if there's an application waiting on this event,
-        // it should be informed before this below instruction locks the epoll mutex.
-        enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
-        m_sPollID.clear();
-        leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+        catch (...)
+        {
+            // The goal of this loop is to remove all subscriptions in
+            // the epoll system to this socket. If it's unsubscribed already,
+            // that's even better.
+        }
+        HLOGC(smlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
     }
-    catch (...)
-    {
-    }
+
+    // Not deleting elements from m_sPollID inside the loop because it invalidates
+    // the control iterator of the loop. Instead, all will be removed at once.
+
+    // IMPORTANT: there's theoretically little time between setting ERR readiness
+    // and unsubscribing, however if there's an application waiting on this event,
+    // it should be informed before this below instruction locks the epoll mutex.
+    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    m_sPollID.clear();
+    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
 
     // XXX What's this, could any of the above actions make it !m_bOpened?
     if (!m_bOpened)
