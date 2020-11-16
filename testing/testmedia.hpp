@@ -22,6 +22,7 @@
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
+extern bool transmit_groupreconn_mxptool;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -50,6 +51,7 @@ class SrtCommon
 protected:
 
     friend void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* peer, int token);
+    friend void TransmitMxptoolConnectCallback(void *srtcommon, SRTSOCKET ns, int errorcode, const struct sockaddr *psaPeer, int token);
 
     struct ConnectionBase
     {
