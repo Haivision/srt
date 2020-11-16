@@ -24,7 +24,7 @@
 #define TIMING_USE_QPC
 #include "win/wintime.h"
 #include <sys/timeb.h>
-#elif (TARGET_OS_OSX == 1) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif (TARGET_OS_MAC == 1)
 #define TIMING_USE_MACH_ABS_TIME
 #include <mach/mach_time.h>
 #elif defined(ENABLE_MONOTONIC_CLOCK)
