@@ -11232,7 +11232,9 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
     // explicitly, otherwise they will never be deleted.
     if (pending_broken)
     {
-        s_UDTUnited.close(m_parent);
+        // XXX This somehow can cause a deadlock
+        // s_UDTUnited.close(m_parent);
+        m_parent->setBrokenClosed();
     }
 #endif
 }
