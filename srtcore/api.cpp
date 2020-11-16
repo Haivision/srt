@@ -1930,6 +1930,7 @@ int CUDTUnited::close(const SRTSOCKET u)
     return close(s);
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 void CUDTUnited::deleteGroup(CUDTGroup* g)
 {
     using srt_logging::gmlog;
@@ -1971,6 +1972,7 @@ void CUDTUnited::deleteGroup(CUDTGroup* g)
         }
     }
 }
+#endif
 
 int CUDTUnited::close(CUDTSocket* s)
 {
