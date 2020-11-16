@@ -320,7 +320,6 @@ TEST(Bonding, CloseGroupAndSocket)
     listen_promise.wait();
 
     srt_cleanup();
-
 }
 
 #endif // ENABLE_EXPERIMENTAL_BONDING

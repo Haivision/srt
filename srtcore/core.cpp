@@ -7426,7 +7426,6 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
         {
-
             if (!m_bMessageAPI && m_bShutdown)
                 return 0;
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
