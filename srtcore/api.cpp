@@ -1930,6 +1930,48 @@ int CUDTUnited::close(const SRTSOCKET u)
     return close(s);
 }
 
+void CUDTUnited::deleteGroup(CUDTGroup* g)
+{
+    using srt_logging::gmlog;
+
+    srt::sync::ScopedLock cg (m_GlobControlLock);
+    SRT_ASSERT(g->groupEmpty());
+
+    // After that the group is no longer findable by GroupKeeper
+    m_Groups.erase(g->m_GroupID);
+    m_ClosedGroups[g->m_GroupID] = g;
+
+    // Paranoid check: since the group is in m_ClosedGroups
+    // it may potentially be deleted. Make sure no socket points
+    // to it. Actually all sockets should have been already removed
+    // from the group container, so if any does, it's invalid.
+    for (sockets_t::iterator i = m_Sockets.begin();
+            i != m_Sockets.end(); ++ i)
+    {
+        CUDTSocket* s = i->second;
+        if (s->m_IncludedGroup == g)
+        {
+            HLOGC(smlog.Debug, log << "deleteGroup: IPE: existing @" << s->m_SocketID << " points to a dead group!");
+            s->m_IncludedGroup = NULL;
+            s->m_IncludedIter = CUDTGroup::gli_NULL();
+        }
+    }
+
+    // Just in case, do it in closed sockets, too, although this should be
+    // always done before moving to it.
+    for (sockets_t::iterator i = m_ClosedSockets.begin();
+            i != m_ClosedSockets.end(); ++ i)
+    {
+        CUDTSocket* s = i->second;
+        if (s->m_IncludedGroup == g)
+        {
+            HLOGC(smlog.Debug, log << "deleteGroup: IPE: closed @" << s->m_SocketID << " points to a dead group!");
+            s->m_IncludedGroup = NULL;
+            s->m_IncludedIter = CUDTGroup::gli_NULL();
+        }
+    }
+}
+
 int CUDTUnited::close(CUDTSocket* s)
 {
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");

@@ -964,9 +964,14 @@ void CUDTGroup::close()
             // Immediately cut ties to this group.
             // Just for a case, redispatch the socket, to stay safe.
             CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(ig->id);
+            if (!s)
+            {
+                HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
+                continue;
+            }
             s->m_IncludedGroup = NULL;
             s->m_IncludedIter = gli_NULL();
-            LOGC(smlog.Note, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
+            HLOGC(smlog.Debug, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
         }
 
         // After all sockets that were group members have their ties cut,

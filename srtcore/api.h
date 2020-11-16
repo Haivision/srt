@@ -377,17 +377,7 @@ public:
        return *g;
    }
 
-   void deleteGroup(CUDTGroup* g)
-   {
-       using srt_logging::gmlog;
-
-       srt::sync::ScopedLock cg (m_GlobControlLock);
-       SRT_ASSERT(g->groupEmpty());
-
-       // After that the group is no longer findable by GroupKeeper
-       m_Groups.erase(g->m_GroupID);
-       m_ClosedGroups[g->m_GroupID] = g;
-   }
+   void deleteGroup(CUDTGroup* g);
 
    // [[using locked(m_GlobControlLock)]]
    CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
