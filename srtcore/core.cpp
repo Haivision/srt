@@ -5113,7 +5113,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
-    int token = -1;
+    //int token = -1;
 #if ENABLE_EXPERIMENTAL_BONDING
     {
         ScopedLock cl (s_UDTUnited.m_GlobControlLock);
@@ -5136,17 +5136,28 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
-            token = gi->token;
+            //token = gi->token;
             g->setGroupConnected();
         }
     }
 #endif
 
     CGlobEvent::triggerEvent();
+
+/* XXX Likely it should NOT be called here for two reasons:
+
+  - likely lots of mutexes are locked here so any
+    API call from here might cause a deadlock
+  - if called from an asynchronous connection process, it was
+    already called from inside updateConnStatus
+  - if called from startConnect (synchronous mode), it is even wrong.
+
     if (m_cbConnectHook)
     {
         CALLBACK_CALL(m_cbConnectHook, m_SocketID, SRT_SUCCESS, m_PeerAddr.get(), token);
     }
+
+    */
 
     LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
 
