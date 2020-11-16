@@ -1051,7 +1051,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                     // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
                     // its already set in this case.
                     LOGC(cnlog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
-                    FailedLinkInfo fi { i->m_pUDT, i->m_iID, SRT_ECONNREJ, -1};
+                    FailedLinkInfo fi = { i->m_pUDT, i->m_iID, SRT_ECONNREJ, -1};
                     ufailed.push_back(fi);
                     i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
                     i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
