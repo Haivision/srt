@@ -42,7 +42,9 @@ using namespace srt_logging;
 */
 
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
+#ifdef SRT_ENABLE_ENCRYPTION
 const int SRT_CRYPT_KM_PRE_ANNOUNCE = 0x10000;
+#endif
 
 namespace srt_logging
 {

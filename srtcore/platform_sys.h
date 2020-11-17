@@ -70,7 +70,6 @@
 
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
-#pragma clang diagnostic ignored "-Wunused-const-variable"
 #endif
 
 #endif
@@ -100,7 +99,6 @@
 #endif
 
 #if defined(__GNUC__) || defined(__GNUG__)
-#pragma GCC diagnostic ignored "-Wunused-const-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #endif
 
