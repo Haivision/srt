@@ -52,7 +52,6 @@
 #include "TargetConditionals.h"
 #define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
 
-
 #ifdef SRT_IMPORT_TIME
       #include <mach/mach_time.h>
 #endif
