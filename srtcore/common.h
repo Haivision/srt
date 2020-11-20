@@ -317,7 +317,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        CPacket* packet;
+        const CPacket* packet;
         int32_t ack;
         struct
         {
@@ -328,36 +328,36 @@ struct EventVariant
         EInitEvent init;
     } u;
 
-    EventVariant()
-    {
-        type = UNDEFINED;
-        memset(&u, 0, sizeof u);
-    }
 
     template<Type t>
     struct VariantFor;
 
-    template <Type tp, typename Arg>
-    void Assign(Arg arg)
-    {
-        type = tp;
-        (u.*(VariantFor<tp>::field())) = arg;
-        //(u.*field) = arg;
-    }
-
-    void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(int32_t  arg) { Assign<ACK>(arg); };
-    void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
-    void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-
-    template <class T>
-    EventVariant(const T arg)
+    explicit EventVariant(const CPacket* arg)
     {
-        *this = arg;
+        type = PACKET;
+        u.packet = arg;
+    }
+
+    explicit EventVariant(int32_t arg)
+    {
+        type = ACK;
+        u.ack = arg;
+    }
+
+    explicit EventVariant(ECheckTimerStage arg)
+    {
+        type = STAGE;
+        u.stage = arg;
+    }
+
+    explicit EventVariant(EInitEvent arg)
+    {
+        type = INIT;
+        u.init = arg;
     }
 
     const int32_t* get_ptr() const
@@ -422,10 +422,10 @@ class EventArgType;
 
 
 // The 'type' field wouldn't be even necessary if we
-
+// use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef CPacket* type;
+    typedef const CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
