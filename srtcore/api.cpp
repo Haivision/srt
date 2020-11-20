@@ -1381,7 +1381,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
         if (pg->m_cbConnectHook)
         {
-            // Derive the connect hook, if set on the socket
+            // Derive the connect hook by the socket, if set on the group
             ns->m_pUDT->m_cbConnectHook = pg->m_cbConnectHook;
         }
 
