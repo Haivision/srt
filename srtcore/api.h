@@ -69,84 +69,8 @@ modified by
 #include "group.h"
 #endif
 
-// IMPORTANT INFORMATION ABOUT LOCKING.
-//
-// The overall structure of the object database, involving sockets and groups
-// is as follows:
-//
-// CUDTUnited (singleton) {
-//      CONTAINER<CUDTSocket> m_Sockets;
-//      CONTAINER<CUDTSocket> m_ClosedSockets;
-//      CONTAINER<CUDTGroup> m_Groups;
-//      CONTAINER<CUDTGroup> m_ClosedGroups;
-// }
-//
-// CUDTGroup {
-//      type SocketData { CUDTSocket* ps; SRTSOCKET id; int state; ... }
-//      CONTAINER<SocketData> m_Group;
-// }
-//
-// Dead sockets (either closed manually or broken after connection) are
-// moved first from m_Sockets to m_ClosedSockets. The GC thread will take
-// care to delete them physically after making sure all inside facilities
-// do not contain any remaining data of interest.
-//
-// Groups may only be manually closed, however a closed group is moved
-// to m_ClosedGroups. The GC thread will take care to delete them, as long
-// as their usage counter is 0. Every call to an API function (as well as
-// TSBPD thread) increases the usage counter in the beginning and decreases
-// upon exit. A group may be closed in one thread and still being used in
-// another. The group will persist up to the time when the current API function
-// using it exits and decreases the usage counter back to 0.
-//
-// Containers and contents guarded by mutex:
-//
-// CUDTUnited::m_GlobControlLock - guards all containers in CUDTUnited.
-//
-// CUDTSocket::m_ControlLock - guards internal operation performed on particular socket, with its existence assumed
-// (this is because a socket will always exist until it's deleted while being in m_ClosedSockets, and when
-// the socket is in m_ClosedSockets it will not be deleted until it's free from any operation, while the socket
-// is assumed nonexistent for any newly called API function even if it exists physically, but is moved to m_ClosedSockets).
-//
-// CUDTGroup::m_GroupLock - guards the m_Group container inside a group that collects member sockets.
-//
-// There are unfortunately many situations when multiple locks have to be applied at a time. This
-// is then the hierarchy of the mutexes that must be preserved everywhere in the code.
-//
-// As mutexes cannot be really ordered unanimously, below are two trees, with also
-// some possible branches inside. The mutex marked with (T) is terminal, that is, no
-// other locks shall be allowed in the section where this mutex is locked.
-//
-// Note that the list isn't exactly complete, but it should contain all
-// mutexes for which the locking order must be preserved.
-//
-//  - CUDTSocket::m_ControlLock
-//
-//      - CRendezvousQueue::m_RIDVectorLock ??? (AFTER m_ConnectionLock?)
-//
-//  - CUDTUnited::m_GlobControlLock
-//
-//  - CUDTGroup::m_GroupLock
-// 
-//     - CUDT::m_RecvAckLock  || CEPoll::m_EPollLock(T)
-//
-// ----------------
-//  - CUDTUnited::m_GlobControlLock
-//
-//         - CUDTGroup::m_GroupLock  || CSndUList::m_ListLock(T)
-//
-//      - CUDT::m_ConnectionLock
-//           
-//               - CRendezvousQueue::m_RIDVectorLock
-//
-//  - CUDT::m_SendLock
-//
-//     - CUDT::m_RecvLock
-
-//        - CUDT::m_RecvBufferLock
-//
-//  - CUDT::m_RecvAckLock || CUDT::m_SendBlockLock
-//
+// Please refer to structure and locking information provided in the
+// LowLevelInfo.md document.
 
 class CUDT;
 
