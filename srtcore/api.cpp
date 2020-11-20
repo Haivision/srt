@@ -1318,9 +1318,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     if (!g.managed())
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
-    // In case the group was retried connection, clear first all epoll readiness.
-    m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, false);
-
     // Check and report errors on data brought in by srt_prepare_endpoint,
     // as the latter function has no possibility to report errors.
     for (int tii = 0; tii < arraysize; ++tii)
@@ -1338,7 +1335,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         }
     }
 
-
     // If the open state switched to OPENED, the blocking mode
     // must make it wait for connecting it. Doing connect when the
     // group is already OPENED returns immediately, regardless if the
@@ -1346,6 +1342,15 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // known in the group state information).
     bool block_new_opened = !g.m_bOpened && g.m_bSynRecving;
     const bool was_empty = g.groupEmpty();
+
+    // In case the group was retried connection, clear first all epoll readiness.
+    m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
+    if (was_empty)
+    {
+        // IN/OUT only in case when the group is empty, otherwise it would
+        // clear out correct readiness resulting from earlier calls.
+        m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+    }
     SRTSOCKET retval = -1;
 
     int eid = -1;
