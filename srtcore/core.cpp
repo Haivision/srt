@@ -489,7 +489,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // When not connected, this will do nothing, however this
         // event will be repeated just after connecting anyway.
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_RESET);
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET));
         break;
 
     case SRTO_IPTTL:
@@ -533,7 +533,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // (only if connected; if not, then the value
         // from m_iOverheadBW will be used initially)
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_INPUTBW);
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
         break;
 
     case SRTO_OHEADBW:
@@ -545,7 +545,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // (only if connected; if not, then the value
         // from m_iOverheadBW will be used initially)
         if (m_bConnected)
-            updateCC(TEV_INIT, TEV_INIT_OHEADBW);
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_OHEADBW));
         break;
 
     case SRTO_SENDER:
@@ -2479,7 +2479,8 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
                         LOGC(cnlog.Warn,
                              log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
                                  << " - rejecting per enforced encryption");
-                        return false;
+                        res = SRT_CMD_NONE;
+                        break;
                     }
                     HLOGC(cnlog.Debug,
                           log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
@@ -5999,7 +6000,7 @@ SRT_REJECT_REASON CUDT::setupCC()
               << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
               << " rtt=" << m_iRTT << " bw=" << m_iBandwidth);
 
-    if (!updateCC(TEV_INIT, TEV_INIT_RESET))
+    if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
     {
         LOGC(rslog.Error, log << "setupCC: IPE: resrouces not yet initialized!");
         return SRT_REJ_IPE;
@@ -8292,7 +8293,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
 
     checkSndTimers(REGEN_KM);
-    updateCC(TEV_ACK, ackdata_seqno);
+    updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
     ++m_stats.recvACK;
@@ -8484,7 +8485,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
         m_iRTT = avg_iir<8>(m_iRTT, rtt);
 
-        updateCC(TEV_ACKACK, ack);
+        updateCC(TEV_ACKACK, EventVariant(ack));
 
         // This function will put a lock on m_RecvLock by itself, as needed.
         // It must be done inside because this function reads the current time
@@ -8737,7 +8738,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             }
             else
             {
-                updateCC(TEV_CUSTOM, &ctrlpkt);
+                updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
             }
         }
         break;
@@ -9186,7 +9187,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     // the CSndQueue::worker thread. All others are reported from
     // CRcvQueue::worker. If you connect to this signal, make sure
     // that you are aware of prospective simultaneous access.
-    updateCC(TEV_SEND, &w_packet);
+    updateCC(TEV_SEND, EventVariant(&w_packet));
 
     // XXX This was a blocked code also originally in UDT. Probably not required.
     // Left untouched for historical reasons.
@@ -9426,7 +9427,7 @@ int CUDT::processData(CUnit* in_unit)
    }
 #endif
 
-    updateCC(TEV_RECEIVE, &packet);
+    updateCC(TEV_RECEIVE, EventVariant(&packet));
     ++m_iPktCount;
 
     const int pktsz = packet.getLength();
@@ -10862,7 +10863,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 
     checkSndTimers(DONT_REGEN_KM);
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
-    updateCC(TEV_CHECKTIMER, stage);
+    updateCC(TEV_CHECKTIMER, EventVariant(stage));
 
     // immediately restart transmission
     m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
@@ -10871,7 +10872,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 void CUDT::checkTimers()
 {
     // update CC parameters
-    updateCC(TEV_CHECKTIMER, TEV_CHT_INIT);
+    updateCC(TEV_CHECKTIMER, EventVariant(TEV_CHT_INIT));
 
     const steady_clock::time_point currtime = steady_clock::now();
 
