@@ -11184,9 +11184,9 @@ void CUDT::updateBrokenConnection()
 void CUDT::completeBrokenConnectionDependencies(int errorcode)
 {
     int token = -1;
-    bool pending_broken = false;
 
 #if ENABLE_EXPERIMENTAL_BONDING
+    bool pending_broken = false;
     {
         ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
         if (m_parent->m_IncludedGroup)
