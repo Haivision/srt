@@ -574,7 +574,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
        ns->m_SocketID = generateSocketID();
    }
-   catch (const CUDTException& e)
+   catch (const CUDTException&)
    {
        LOGF(cnlog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
        // generateSocketID throws exception, which can be naturally handled
@@ -2966,7 +2966,7 @@ void CUDTUnited::updateMux(
        s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
        s->m_iMuxID = m.m_iID;
    }
-   catch (CUDTException& e)
+   catch (CUDTException&)
    {
        m.destroy();
        throw;
