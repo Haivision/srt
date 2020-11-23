@@ -1226,7 +1226,7 @@ private: // Trace
     /// This function records the passed current time as the last response time.
     /// Before doing it, however, it checks if there exist any previous such time
     /// and updates statistics accordingly.
-    void calculateResponseTime(const time_point& now)
+    void recordResponseTime(const time_point& now)
     {
         using namespace srt::sync;
 

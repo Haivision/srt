@@ -8707,7 +8707,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
-    calculateResponseTime(currtime);
+    recordResponseTime(currtime);
     bool using_rexmit_flag = m_bPeerRexmitFlag;
 
     HLOGC(inlog.Debug,
@@ -9623,7 +9623,7 @@ int CUDT::processData(CUnit* in_unit)
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
-    calculateResponseTime(steady_clock::now());
+    recordResponseTime(steady_clock::now());
 
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
