@@ -631,15 +631,15 @@ different families (that is, both `local_name` and `remote_name` must be `AF_INE
 
 ### srt_connect_callback
 ```
-int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
+int srt_connect_callback(SRTSOCKET u, srt_connect_callback_fn* hook_fn, void* hook_opaque);
 ```
 
-This call installs a callback hook, which will be executed on a given `clr`
-socket just after the pending connection situation in the background has been
-resolved (that is, when the connection succeeded or failed). Note that this
-function is not guaranteed to be called if the `clr` socket is set to blocking
-mode (`SRTO_RCVSYN` option set to true). It is guaranteed to be called when
-a socket is in non-blocking mode, or when you use a group.
+This call installs a callback hook, which will be executed on a given `u`
+socket or all member sockets of `u` group, just after the pending connection
+situation in the background has been resolved and the connection has failed.
+Note that this function is not guaranteed to be called if the `u` socket is set
+to blocking mode (`SRTO_RCVSYN` option set to true). It is guaranteed to be
+called when a socket is in non-blocking mode, or when you use a group.
 
 This function is mainly intended to be used with group connections. Note that
 even if you use a group connection in blocking mode, after the group is considered
@@ -650,13 +650,15 @@ or all fail - in such a case those failures also happen only in the background,
 while the connecting function blocks until all connections are resolved. 
 When all links fail, you will only get a general error code for the group.
 This mechanism allows you to get individual errors for particular member
-connections.
+connection failures.
 
 You can also use this mechanism as an alternative method for a single-socket
 connection in non-blocking mode to trigger an action when the connection
-process is finished.
+process is finished. It is recommended, however, that you use this callback
+only to collect failure information, as the call will happen in one of the
+internal SRT threads.
 
-* `clr`: Socket that will be used for connecting and for which the hook is installed
+* `u`: Socket or group that will be used for connecting and for which the hook is installed
 * `hook_fn`: The callback hook function pointer
 * `hook_opaque`: The pointer value that will be passed to the callback function
 
@@ -1231,6 +1233,8 @@ typedef struct SRT_MsgCtrl_
    int64_t srctime;      // source time (microseconds since SRT internal clock epoch)
    int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
    int32_t msgno;        // message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata; // pointer to group data array
+   size_t grpdata_size;  // size of the group array
 } SRT_MSGCTRL;
 ```
 
@@ -1276,6 +1280,15 @@ UDP packet, only the sequence of the first one is reported. Note that in
 - `msgno`: Message number that can be sent by both sender and receiver,
 although it is required that this value remain monotonic in subsequent send calls. 
 Normally message numbers start with 1 and increase with every message sent.
+
+- 'grpdata' and 'grpdata_size': Pointer and size of the group array. For single
+socket connections these values should remain NULL and 0 respectively. When you
+call `srt_sendmsg2` or `srt_recvmsg2` function for a group, you should pass an
+array here so that you can retrieve the status of particular member sockets.
+If you pass an array that is too small, your `grpdata_size` field will be rewritten with
+the current number of members, but without filling in the array. For details,
+see (Bonding introduction)[bonding-intro.md] and (Socket Groups)[socket-groups.md]
+documents.
 
 **Helpers for `SRT_MSGCTRL`:**
 

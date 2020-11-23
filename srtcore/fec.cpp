@@ -8,6 +8,7 @@
  * 
  */
 
+#include "platform_sys.h"
 
 #include <string>
 #include <map>

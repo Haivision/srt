@@ -180,7 +180,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         o_statspf       = { "pf", "statspf" },
         o_statsfull     = { "f", "fullstats" },
         o_loglevel      = { "ll", "loglevel" },
-        o_logfa         = { "logfa" },
+        o_logfa         = { "lfa", "logfa" },
         o_log_internal  = { "loginternal"},
         o_logfile       = { "logfile" },
         o_quiet         = { "q", "quiet" },
@@ -238,20 +238,21 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
             cerr << "    -lfa <area...> - specify functional areas\n";
             cerr << "Where:\n\n";
             cerr << "    <LEVEL>: fatal error note warning debug\n\n";
-            cerr << "This turns on logs that are at the given log name and all on the left.\n";
-            cerr << "(Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
-            cerr << "recognized, but they are aligned to those that lie close in hierarchy.)\n\n";
-            cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
-            cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
-            cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
-            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
-            cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "Turns on logs that are at the given log level or any higher level\n";
+            cerr << "(all to the left in the list above from the selected level).\n";
+            cerr << "Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in the above hierarchy.\n\n";
+            cerr << "    <area...> is a coma-separated list of areas to turn on.\n\n";
+            cerr << "The list may include 'all' to turn all FAs on.\n";
+            cerr << "Example: `-lfa:sockmgmt,chn-recv` enables only `sockmgmt` and `chn-recv` log FAs.\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' FA can't be disabled.\n\n";
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
             for (auto entry: SrtLogFAList())
                 revmap[entry.second] = entry.first;
 
+            // Each group on a new line
             int en10 = 0;
             for (auto entry: revmap)
             {
@@ -401,8 +402,12 @@ int main(int argc, char** argv)
     // Set SRT log levels and functional areas
     //
     srt_setloglevel(cfg.loglevel);
-    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-        srt_addlogfa(*i);
+    if (!cfg.logfas.empty())
+    {
+        srt_resetlogfa(nullptr, 0);
+        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+            srt_addlogfa(*i);
+    }
 
     //
     // SRT log handler

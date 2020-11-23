@@ -259,6 +259,38 @@ TEST(SyncTimePoint, OperatorMinusEqDuration)
 
 /*****************************************************************************/
 /*
+ * UniqueLock tests
+ */
+/*****************************************************************************/
+TEST(SyncUniqueLock, LockUnlock)
+{
+    Mutex mtx;
+    UniqueLock lock(mtx);
+    EXPECT_FALSE(mtx.try_lock());
+    
+    lock.unlock();
+    EXPECT_TRUE(mtx.try_lock());
+    
+    mtx.unlock();
+    lock.lock();
+    EXPECT_FALSE(mtx.try_lock());
+}
+
+TEST(SyncUniqueLock, Scope)
+{
+    Mutex mtx;
+
+    {
+        UniqueLock lock(mtx);
+        EXPECT_FALSE(mtx.try_lock());
+    }
+    
+    EXPECT_TRUE(mtx.try_lock());
+    mtx.unlock();
+}
+
+/*****************************************************************************/
+/*
  * SyncEvent tests
  */
 /*****************************************************************************/
@@ -510,6 +542,34 @@ TEST(SyncEvent, WaitForNotifyAll)
     EXPECT_TRUE(wait_for_res) << "Woken up by condition";
 
     cond.destroy();
+}
+
+/*****************************************************************************/
+/*
+ * CThread
+ */
+ /*****************************************************************************/
+void* dummythread(void* param)
+{
+    *(bool*)(param) = true;
+    return nullptr;
+}
+
+TEST(SyncThread, Joinable)
+{
+    CThread foo;
+    volatile bool thread_finished = false;
+
+    StartThread(foo, dummythread, (void*)&thread_finished, "DumyThread");
+
+    EXPECT_TRUE(foo.joinable());
+    while (!thread_finished)
+    {
+        std::this_thread::sleep_for(chrono::milliseconds(50));
+    }
+    EXPECT_TRUE(foo.joinable());
+    foo.join();
+    EXPECT_FALSE(foo.joinable());
 }
 
 /*****************************************************************************/

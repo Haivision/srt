@@ -317,7 +317,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        CPacket* packet;
+        const CPacket* packet;
         int32_t ack;
         struct
         {
@@ -328,36 +328,36 @@ struct EventVariant
         EInitEvent init;
     } u;
 
-    EventVariant()
-    {
-        type = UNDEFINED;
-        memset(&u, 0, sizeof u);
-    }
 
     template<Type t>
     struct VariantFor;
 
-    template <Type tp, typename Arg>
-    void Assign(Arg arg)
-    {
-        type = tp;
-        (u.*(VariantFor<tp>::field())) = arg;
-        //(u.*field) = arg;
-    }
-
-    void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(int32_t  arg) { Assign<ACK>(arg); };
-    void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
-    void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-
-    template <class T>
-    EventVariant(const T arg)
+    explicit EventVariant(const CPacket* arg)
     {
-        *this = arg;
+        type = PACKET;
+        u.packet = arg;
+    }
+
+    explicit EventVariant(int32_t arg)
+    {
+        type = ACK;
+        u.ack = arg;
+    }
+
+    explicit EventVariant(ECheckTimerStage arg)
+    {
+        type = STAGE;
+        u.stage = arg;
+    }
+
+    explicit EventVariant(EInitEvent arg)
+    {
+        type = INIT;
+        u.init = arg;
     }
 
     const int32_t* get_ptr() const
@@ -422,10 +422,10 @@ class EventArgType;
 
 
 // The 'type' field wouldn't be even necessary if we
-
+// use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef CPacket* type;
+    typedef const CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
@@ -508,11 +508,14 @@ struct EventSlot
     // "Stealing" copy constructor, following the auto_ptr method.
     // This isn't very nice, but no other way to do it in C++03
     // without rvalue-reference and move.
-    EventSlot(const EventSlot& victim)
+    void moveFrom(const EventSlot& victim)
     {
         slot = victim.slot; // Should MOVE.
         victim.slot = 0;
     }
+
+    EventSlot(const EventSlot& victim) { moveFrom(victim); }
+    EventSlot& operator=(const EventSlot& victim) { moveFrom(victim); return *this; }
 
     EventSlot(void* op, EventSlotBase::dispatcher_t* disp)
     {
@@ -620,6 +623,7 @@ public:
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
    /// This function measures a length of the range from seq1 to seq2,
+   /// including endpoints (seqlen(a, a) = 1; seqlen(a, a + 1) = 2),
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test
