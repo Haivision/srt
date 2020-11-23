@@ -2966,7 +2966,7 @@ void CUDTUnited::updateMux(
        s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
        s->m_iMuxID = m.m_iID;
    }
-   catch (CUDTException&)
+   catch (const CUDTException&)
    {
        m.destroy();
        throw;
