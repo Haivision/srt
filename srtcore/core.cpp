@@ -8056,7 +8056,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     local_prevack = m_iDebugPrevLastAck;
 
-    string reason; // just for "a reason" of giving particular % for ACK
+    string reason = "first lost"; // just for "a reason" of giving particular % for ACK
 #endif
 
     {
@@ -8064,23 +8064,15 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // Otherwise it is the smallest sequence number in the receiver loss list.
         ScopedLock lock(m_RcvLossLock);
         ack = m_pRcvLossList->getFirstLostSeq();
+    }
 
-        // We don't need to check the length prematurely,
-        // if length is 0, this will return SRT_SEQNO_NONE.
-        // If so happened, simply use the latest received pkt + 1.
-        if (ack == SRT_SEQNO_NONE)
-        {
-            ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
-#if ENABLE_HEAVY_LOGGING
-            reason = "expected next";
-#endif
-        }
-#if ENABLE_HEAVY_LOGGING
-        else
-        {
-            reason = "first lost";
-        }
-#endif
+    // We don't need to check the length prematurely,
+    // if length is 0, this will return SRT_SEQNO_NONE.
+    // If so happened, simply use the latest received pkt + 1.
+    if (ack == SRT_SEQNO_NONE)
+    {
+        ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
+        IF_HEAVY_LOGGING(reason = "expected next");
     }
 
     if (m_iRcvLastAckAck == ack)
