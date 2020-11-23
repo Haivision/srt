@@ -7,6 +7,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
+#include "platform_sys.h"
 
 #include <iomanip>
 #include <math.h>
@@ -23,7 +24,7 @@
 #define TIMING_USE_QPC
 #include "win/wintime.h"
 #include <sys/timeb.h>
-#elif defined(OSX) || (TARGET_OS_OSX == 1) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif TARGET_OS_MAC
 #define TIMING_USE_MACH_ABS_TIME
 #include <mach/mach_time.h>
 #elif defined(ENABLE_MONOTONIC_CLOCK)
@@ -232,6 +233,12 @@ srt::sync::UniqueLock::UniqueLock(Mutex& m)
 srt::sync::UniqueLock::~UniqueLock()
 {
     unlock();
+}
+
+void srt::sync::UniqueLock::lock()
+{
+    if (m_iLocked == -1)
+        m_iLocked = m_Mutex.lock();
 }
 
 void srt::sync::UniqueLock::unlock()

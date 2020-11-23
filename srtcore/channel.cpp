@@ -267,7 +267,7 @@ void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 
 void CChannel::setUDPSockOpt()
 {
-   #if defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+   #if defined(BSD) || TARGET_OS_MAC
       // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
       int maxsize = 64000;
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_iRcvBufSize, sizeof(int)))
@@ -376,7 +376,7 @@ void CChannel::setUDPSockOpt()
 #else
    timeval tv;
    tv.tv_sec = 0;
-#if defined (BSD) || defined (OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#if defined (BSD) || TARGET_OS_MAC
    // Known BSD bug as the day I wrote this code.
    // A small time out value will cause the socket to block forever.
    tv.tv_usec = 10000;

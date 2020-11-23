@@ -16,7 +16,7 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON
     - name: build
       run: cd _build && cmake --build ./
     - name: test
