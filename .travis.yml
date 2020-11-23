@@ -77,7 +77,7 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6";
+        ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6:TestIPv6*";
       fi
     - source ./scripts/collect-gcov.sh
     - if (( "$RUN_CODECOV" )); then
