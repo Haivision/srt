@@ -2,6 +2,7 @@
 SOURCES
 test_buffer.cpp
 test_bonding.cpp
+test_common.cpp
 test_connection_timeout.cpp
 test_many_connections.cpp
 test_cryspr.cpp
