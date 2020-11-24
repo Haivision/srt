@@ -4412,7 +4412,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
             case SRT_KM_S_BADSECRET:
                 {
                     HLOGC(cnlog.Debug,
-                            log << "processRendezvous: No KMX recorded, status = "
+                            log << "craftKmResponse: No KMX recorded, status = "
                             << KmStateStr(m_pCryptoControl->m_RcvKmState) << ". Respond it.");
 
                     // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
@@ -4432,7 +4432,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
                     // Remaining situations:
                     // - password only on this site: shouldn't be considered to be sent to a no-password site
                     LOGC(cnlog.Error,
-                            log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
+                            log << "craftKmResponse: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
                             << KmStateStr(m_pCryptoControl->m_RcvKmState)
                             << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
                     return CONN_REJECT;
@@ -4452,14 +4452,14 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
             }
 
             HLOGC(cnlog.Debug,
-                    log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size="
+                    log << "craftKmResponse: getting KM DATA from the fore-recorded KMX from KMREQ, size="
                     << w_kmdatasize);
             memcpy((aw_kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
         }
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "processRendezvous: no KMX flag - not extracting KM data for KMRSP");
+        HLOGC(cnlog.Debug, log << "craftKmResponse: no KMX flag - not extracting KM data for KMRSP");
         w_kmdatasize = 0;
     }
 
@@ -10813,7 +10813,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     else
     {
         int error  = SRT_REJ_UNKNOWN;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        CUDT* acpu = NULL;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10853,7 +10854,17 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // reused for the connection rejection response (see URQ_ERROR_REJECT set
         // as m_iReqType).
 
-        if (result == 0)
+        // The 'acpu' should be set to a new socket, if found;
+        // this means simultaneously that result == 0, but it's safest to
+        // check this condition only. This means that 'newConnection' found
+        // that the connection attempt has already been accepted, just the
+        // caller side somehow didn't get the answer. The rule is that every
+        // connection request HS must be completed with a symmetric HS response,
+        // so craft one here.
+
+        // Note that this function runs in the listener socket context, while 'acpu'
+        // is the CUDT entity for the accepted socket.
+        if (acpu)
         {
             // This is an existing connection, so the handshake is only needed
             // because of the rule that every handshake request must be covered
@@ -10870,7 +10881,9 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
             if (hs.m_iVersion >= HS_VERSION_SRT1)
             {
-                conn = craftKmResponse((kmdata), (kmdatasize));
+                // Always attach extension.
+                hs.m_extension = true;
+                conn = acpu->craftKmResponse((kmdata), (kmdatasize));
             }
             else
             {
@@ -10881,9 +10894,9 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
                 return conn;
 
             packet.setLength(m_iMaxSRTPayloadSize);
-            if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
+            if (!acpu->createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
                         kmdata, kmdatasize,
-                        (packet), (m_ConnReq)))
+                        (packet), (hs)))
             {
                 HLOGC(cnlog.Debug,
                         log << "processConnectRequest: rejecting due to problems in createSrtHandshake.");
