@@ -4420,11 +4420,11 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
                     memcpy((aw_kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
                     w_kmdatasize = 1;
                 }
-                break;
+                break; // Treat as ACCEPT in general; might change to REJECT on enforced-encryption
 
             default:
                 // Remaining values:
-                // UNSECURED: should not fall here at alll
+                // UNSECURED: should not fall here at all
                 // SECURING: should not happen in HSv5
                 // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
                 {
