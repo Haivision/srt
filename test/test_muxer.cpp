@@ -100,6 +100,14 @@ protected:
 
 TEST_F(TestMuxer, IPv4_and_IPv6)
 {
+    char* venv = getenv("SRT_TEST_DISABLE_IPv6");
+    if (venv && venv[0] == '1')
+    {
+        std::cout << "TEST DISABLED DUE TO no IPv6 support\n";
+        //GTEST_SKIP(); <-- use when available
+        return;
+    }
+
     int yes = 1;
     int no = 0;
 
