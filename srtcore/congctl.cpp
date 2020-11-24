@@ -498,7 +498,7 @@ private:
         HLOGC(cclog.Debug, log << "FileCC: LOSS: "
             << "sent=" << CSeqNo::seqlen(m_iLastAck, m_parent->sndSeqNo()) << ", inFlight=" << pktsInFlight
             << ", lost=" << numPktsLost << " ("
-            << lost_pcent_x10 / 10 << "." << lost_pcent_x10 % 10 << "\%)");
+            << lost_pcent_x10 / 10 << "." << lost_pcent_x10 % 10 << "%)");
         if (lost_pcent_x10 < 20)    // 2.0%
         {
             HLOGC(cclog.Debug, log << "FileCC: LOSS: m_dLastDecPeriod=" << m_dLastDecPeriod << "->" << m_dPktSndPeriod);
