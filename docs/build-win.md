@@ -60,7 +60,7 @@ one of the following Crypto libraries is required:
 
 #### 1.2.2. Threading Library
 
-SRT as of v1.5.0 supports two threading libraries:
+SRT as of v1.4.2 supports two threading libraries:
 
 - `pthreads` (default)
 - Standard C++ thread library available in C++11 (recommended for Windows)
@@ -181,7 +181,7 @@ to specify the directory that will contain the LibreSSL headers and libraries.
 
 SRT can use one of these two threading libraries:
 
-- C++11 threads (SRT v1.5.0 and above) - recommended for Windows
+- C++11 threads (SRT v1.4.2 and above) - recommended for Windows
 - `pthreads` (default)
 
 #### 2.2.1. Using C++11 Threading
