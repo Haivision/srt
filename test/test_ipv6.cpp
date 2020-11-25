@@ -68,9 +68,10 @@ public:
     {
         ASSERT_NE(fam.count(w.family()), 0) << "INVALID FAMILY";
 
-        char out[INET6_ADDRSTRLEN];
-        ASSERT_NE(inet_ntop(w.family(), w.get_addr(), out, sizeof out), nullptr);
-        std::cout << src << ": " << out << " (" << fam[w.family()] << ")" << std::endl;
+        //char out[INET6_ADDRSTRLEN];
+        //ASSERT_NE(inet_ntop(w.family(), w.get_addr(), out, sizeof out), nullptr);
+        //std::cout << src << ": " << out << " (" << fam[w.family()] << ")" << std::endl;
+        std::cout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
     }
 
     void DoAccept()
