@@ -615,7 +615,6 @@ CUDTException& GetThreadLocalError()
     return *s_thErr.get();
 }
 
-
 } // namespace sync
 } // namespace srt
 
