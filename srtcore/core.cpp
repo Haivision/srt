@@ -8276,10 +8276,10 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
 void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
+#if ENABLE_EXPERIMENTAL_BONDING
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-#if ENABLE_EXPERIMENTAL_BONDING
     bool is_group = m_parent->m_IncludedGroup;
 #endif
 
