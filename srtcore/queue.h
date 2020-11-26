@@ -333,7 +333,7 @@ public:
    // the lock should be applied here. If called from some internals
    // and the lock IS ALREADY APPLIED, use false here to prevent
    // double locking and deadlock in result.
-   void remove(const SRTSOCKET& id, bool should_lock);
+   void remove(const SRTSOCKET& id);
    CUDT* retrieve(const sockaddr_any& addr, SRTSOCKET& id);
 
    void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
@@ -509,7 +509,7 @@ private:
    void removeListener(const CUDT* u);
 
    void registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const srt::sync::steady_clock::time_point& ttl);
-   void removeConnector(const SRTSOCKET& id, bool should_lock = true);
+   void removeConnector(const SRTSOCKET& id);
 
    void setNewEntry(CUDT* u);
    bool ifNewEntry();
