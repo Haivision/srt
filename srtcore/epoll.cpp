@@ -86,6 +86,7 @@ CEPoll::CEPoll():
 m_iIDSeed(0)
 {
    // Exception -> CUDTUnited ctor.
+   setupMutex(m_SeedLock, "EPoll:Seed");
    setupMutex(m_EPollLock, "EPoll");
 }
 

@@ -215,8 +215,10 @@ m_ClosedSockets()
    // might destroy the application before `main`. This shouldn't
    // be a problem in general.
    setupMutex(m_GlobControlLock, "GlobControl");
-   setupMutex(m_IDLock, "ID");
-   setupMutex(m_InitLock, "Init");
+   setupMutex(m_IDLock, "GlobID");
+   setupMutex(m_InitLock, "GlobInit");
+   setupMutex(m_MultiplexerLock, "GlobMultiplexer");
+   setupMutex(m_GCStopLock, "GCStop");
 
    m_pCache = new CCache<CInfoBlock>;
 }

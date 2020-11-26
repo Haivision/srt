@@ -122,6 +122,7 @@ struct LogConfig
         , loghandler_opaque()
         , flags()
     {
+        setupMutex(mutex, "LogConfig");
     }
 
     ~LogConfig()

@@ -263,6 +263,7 @@ CSndUList::CSndUList()
     , m_pTimer(NULL)
 {
     m_pHeap = new CSNode *[m_iArrayLength];
+    setupMutex(m_ListLock, "SndUList");
 }
 
 CSndUList::~CSndUList()
@@ -469,6 +470,7 @@ CSndQueue::CSndQueue()
     , m_WindowCond()
     , m_bClosing(false)
 {
+    setupMutex(m_WindowLock, "Window");
     setupCond(m_WindowCond, "Window");
 }
 
