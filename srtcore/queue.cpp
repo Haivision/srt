@@ -814,6 +814,7 @@ CRendezvousQueue::CRendezvousQueue()
     : m_lRendezvousID()
     , m_RIDVectorLock()
 {
+    setupMutex(m_RIDVectorLock, "RIDVectorLock");
 }
 
 CRendezvousQueue::~CRendezvousQueue()
@@ -1139,7 +1140,10 @@ CRcvQueue::CRcvQueue()
     , m_mBuffer()
     , m_BufferCond()
 {
-    setupCond(m_BufferCond, "QueueBuffer");
+    setupMutex(m_LSLock, "RcvQueue:LSLock");
+    setupMutex(m_IDLock, "RcvQueue:IDLock");
+    setupMutex(m_BufferLock, "RcvQueue:BufferLock");
+    setupCond(m_BufferCond, "RcvQueue:Buffer");
 }
 
 CRcvQueue::~CRcvQueue()

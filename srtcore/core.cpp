@@ -8103,7 +8103,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         const int32_t first_seq ATR_UNUSED = ackDataUpTo(ack);
-        bufflock.unlock();
+        InvertedLock un_bufflock (m_RcvBufferLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING
         // This actually should be done immediately after the ACK pointers were
@@ -8181,7 +8181,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #endif
             CGlobEvent::triggerEvent();
         }
-        bufflock.lock();
     }
     else if (ack == m_iRcvLastAck)
     {
