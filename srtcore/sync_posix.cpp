@@ -12,6 +12,7 @@
 #if ENABLE_MUTEX_DB
 #include <iostream>
 #include <string>
+#include <sstream>
 #endif
 
 #include <iomanip>
@@ -210,6 +211,21 @@ struct MutexDB
             cerr << m->name << "(" << m->mptr << ")" << endl;
         }
     }
+
+    std::string state()
+    {
+        using namespace std;
+        std::ostringstream out;
+        out << "{";
+
+        for (vector<MutexInfo>::iterator m = mstack.begin();
+                m != mstack.end(); ++m)
+        {
+            out << m->name << "(" << m->mptr << ")" << ";";
+        }
+        out << "}";
+        return out.str();
+    }
 };
 
 struct MutexDBHolder
@@ -287,6 +303,10 @@ void display_mutex_db()
     s_mutexDB.get()->display();
 }
 
+std::string show_mutex_db()
+{
+    return s_mutexDB.get()->state();
+}
 #endif
 
 srt::sync::Mutex::Mutex()

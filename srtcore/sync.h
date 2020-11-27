@@ -31,6 +31,23 @@
 
 class CUDTException;    // defined in common.h
 
+#if ENABLE_MUTEX_DB
+// C++11 threads - not implemented stubs
+#if ENABLE_STDCXX_SYNC
+void display_mutex_db()
+{
+    std::cerr << "display_mutex_db: not implemented with C++11 threads\n";
+}
+std::string show_mutex_db()
+{
+    return "show_mutex_db: not implemented with C++11 threads";
+}
+#else
+void display_mutex_db();
+std::string show_mutex_db();
+#endif // C++11 or posix
+#endif // mutex db
+
 namespace srt
 {
 namespace sync
@@ -48,18 +65,8 @@ using namespace std;
 template <class Clock>
 using Duration = chrono::duration<Clock>;
 
-#if ENABLE_MUTEX_DB
-void display_mutex_db()
-{
-    std::cerr << "display_mutex_db: not implemented with C++11 threads\n";
-}
-#endif
 
 #else
-
-#if ENABLE_MUTEX_DB
-void display_mutex_db();
-#endif
 
 /// Class template srt::sync::Duration represents a time interval.
 /// It consists of a count of ticks of _Clock.
