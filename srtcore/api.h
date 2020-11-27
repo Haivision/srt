@@ -229,6 +229,8 @@ public:
       /// @param [in] listen the listening UDT socket;
       /// @param [in] peer peer address.
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
+      /// @param [out] w_error error code when failed
+      /// @param [out] w_acpu entity of accepted socket, if connection already exists
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
