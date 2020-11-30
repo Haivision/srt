@@ -94,7 +94,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class SRT_API CUDTException: public std::exception
+class CUDTException: public std::exception
 {
 public:
 

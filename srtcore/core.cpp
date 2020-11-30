@@ -4237,7 +4237,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
     EConnectStatus cst = CONN_CONTINUE;
     CUDTException  e;
 
-    ScopedLock cg(m_ConnectionLock); // FIX
+    ScopedLock cg(m_ConnectionLock);
     HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
     cst = processConnectResponse(pkt, &e);
 
@@ -4275,7 +4275,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
 
     bool status = true;
 
-    ScopedLock cg(m_ConnectionLock); // FIX
+    ScopedLock cg(m_ConnectionLock);
 
     if (cst == CONN_RENDEZVOUS)
     {
@@ -8279,10 +8279,10 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
 void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
+#if ENABLE_EXPERIMENTAL_BONDING
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-#if ENABLE_EXPERIMENTAL_BONDING
     bool is_group = m_parent->m_IncludedGroup;
 #endif
 

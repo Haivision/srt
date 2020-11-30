@@ -3316,7 +3316,7 @@ void CUDTSocket::removeFromGroup(bool broken)
     CUDTGroup* g = m_IncludedGroup;
     if (g)
     {
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
         LOGC(smlog.Note, log << "removeFromGroup: @" << m_SocketID << " MUTEX STATE: " << show_mutex_db());
 #endif
         // Reset group-related fields immediately. They won't be accessed

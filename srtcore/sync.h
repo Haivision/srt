@@ -14,7 +14,7 @@
 //#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
 
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
 #include <iostream>
 #endif
 
@@ -31,7 +31,7 @@
 
 class CUDTException;    // defined in common.h
 
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
 // C++11 threads - not implemented stubs
 #if ENABLE_STDCXX_SYNC
 void display_mutex_db()
@@ -64,7 +64,6 @@ using namespace std;
 
 template <class Clock>
 using Duration = chrono::duration<Clock>;
-
 
 #else
 
@@ -329,7 +328,7 @@ public:
     // For debug-only purposes. Note that this need not
     // be able to be compiled in every implementation
     // even posix threads.
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
     int owner_id() { return m_mutex.__data.__owner; }
     std::string m_name;
 #endif
@@ -394,7 +393,7 @@ class InvertedLock
     }
 };
 
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
 inline void setupMutex(Mutex& m, const char* n) {m.m_name = n;}
 #else
 inline void setupMutex(Mutex&, const char*) {}

@@ -9,7 +9,7 @@
  */
 #include "platform_sys.h"
 
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -189,7 +189,7 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
     return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
 }
 
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
 
 struct MutexInfo
 {
@@ -326,7 +326,7 @@ srt::sync::Mutex::~Mutex()
 int srt::sync::Mutex::lock()
 {
     int ret = pthread_mutex_lock(&m_mutex);
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
     s_mutexDB.push(*this);
 #endif
     return ret;
@@ -335,7 +335,7 @@ int srt::sync::Mutex::lock()
 int srt::sync::Mutex::unlock()
 {
     int ret = pthread_mutex_unlock(&m_mutex);
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
     s_mutexDB.pull(*this);
 #endif
     return ret;
@@ -344,7 +344,7 @@ int srt::sync::Mutex::unlock()
 bool srt::sync::Mutex::try_lock()
 {
     bool val = (pthread_mutex_trylock(&m_mutex) == 0);
-#if ENABLE_MUTEX_DB
+#if SRT_DEBUG_MUTEX_DB
     if (val)
         s_mutexDB.push(*this);
 #endif
