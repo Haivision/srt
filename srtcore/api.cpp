@@ -490,9 +490,10 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-        CHandShake& w_hs, int& w_error)
+        CHandShake& w_hs, int& w_error, CUDT*& w_acpu)
 {
    CUDTSocket* ns = NULL;
+   w_acpu = NULL;
 
    w_error = SRT_REJ_IPE;
 
@@ -533,6 +534,10 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
          w_hs.m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
          w_hs.m_iReqType = URQ_CONCLUSION;
          w_hs.m_iID = ns->m_SocketID;
+
+         // Report the original UDT because it will be
+         // required to complete the HS data for conclusion response.
+         w_acpu = ns->m_pUDT;
 
          return 0;
 
