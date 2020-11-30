@@ -1447,9 +1447,12 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     if (!u)
         return false; // no socket has that peer in this multiplexer
 
-    // CRAFT KMX DATA FOR RESPONSE
+    uint32_t kmdata[SRTDATA_MAXSIZE];
+    size_t   kmdatasize = SRTDATA_MAXSIZE;
+    if (u->craftKmResponse((kmdata), (kmdatasize)) == CONN_ACCEPT)
+        return false;
 
-    return u->createSendHSResponse(kmdata, kmdatasize, (hs));
+    return u->createSendHSResponse(kmdata, kmdatasize, addr, (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)

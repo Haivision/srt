@@ -545,6 +545,9 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
+    /// TESTING
+    //srt_close(m_bindsock);
+
 #if ENABLE_EXPERIMENTAL_BONDING
     if (m_sock & SRTGROUP_MASK)
     {
