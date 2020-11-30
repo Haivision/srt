@@ -5773,7 +5773,7 @@ void *CUDT::tsbpd(void *param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
             THREAD_PAUSED();
-            tsbpd_cc.wait_for(timediff);
+            tsbpd_cc.wait_until(tsbpdtime);
             THREAD_RESUMED();
         }
         else
