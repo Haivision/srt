@@ -5656,9 +5656,12 @@ void *CUDT::tsbpd(void *param)
                     HLOGC(tslog.Debug,
                           log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno) << " ("
                               << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
-                              << (timediff_us / 1000) << "." << (timediff_us % 1000) << " ms");
+                              << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
 #endif
-                    LOGC(brlog.Warn, log << "RCV-DROPPED packet delay=" << (timediff_us/1000) << "ms");
+                    LOGC(brlog.Warn,
+                         log << "RCV-DROPPED " << seqlen << " packets, packet seqno " << skiptoseqno
+                             << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
+                             << (timediff_us % 1000) << " ms");
 #endif
 
                     tsbpdtime = steady_clock::time_point(); //Next sent ack will unblock
