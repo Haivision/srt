@@ -4237,7 +4237,7 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
     EConnectStatus cst = CONN_CONTINUE;
     CUDTException  e;
 
-    ScopedLock cg(m_ConnectionLock); // FIX
+    ScopedLock cg(m_ConnectionLock);
     HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
     cst = processConnectResponse(pkt, &e);
 
@@ -4275,7 +4275,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
 
     bool status = true;
 
-    ScopedLock cg(m_ConnectionLock); // FIX
+    ScopedLock cg(m_ConnectionLock);
 
     if (cst == CONN_RENDEZVOUS)
     {
