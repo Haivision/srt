@@ -773,16 +773,27 @@ CUDT *CHash::lookup(int32_t id)
     return NULL;
 }
 
+CUDT* CHash::lookupPeer(int32_t peerid)
+{
+    // Decode back the socket ID if it has that peer
+    int32_t id = map_get(m_RevPeerMap, peerid, -1);
+    if (id == -1)
+        return NULL; // no such peer id
+    return lookup(id);
+}
+
 void CHash::insert(int32_t id, CUDT *u)
 {
     CBucket *b = m_pBucket[id % m_iHashSize];
 
     CBucket *n = new CBucket;
     n->m_iID   = id;
+    n->m_iPeerID = u->peerID();
     n->m_pUDT  = u;
     n->m_pNext = b;
 
     m_pBucket[id % m_iHashSize] = n;
+    m_RevPeerMap[u->peerID()] = id;
 }
 
 void CHash::remove(int32_t id)
@@ -799,6 +810,7 @@ void CHash::remove(int32_t id)
             else
                 p->m_pNext = b->m_pNext;
 
+            m_RevPeerMap.erase(b->m_iPeerID);
             delete b;
 
             return;
@@ -1402,9 +1414,42 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
+    else
+    {
+        if (worker_TryAcceptedSocket(unit, addr))
+            return CONN_CONTINUE;
+    }
 
     // If there's no listener waiting for the packet, just store it into the queue.
     return worker_TryAsyncRend_OrStore(0, unit, addr); // 0 id because the packet came in with that very ID.
+}
+
+bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
+{
+    // We are working with a possibly HS packet... check that.
+    CPacket& pkt = unit->m_Packet;
+
+    if (pkt.getLength() < CHandShake::m_iContentSize || !pkt.isControl(UMSG_HANDSHAKE))
+        return false;
+
+    CHandShake hs;
+    if (0 != hs.load_from(pkt.data(), pkt.size()))
+        return false;
+
+    if (hs.m_iReqType != URQ_CONCLUSION)
+        return false;
+
+    // Ok, at last we have a peer ID info
+    int32_t peerid = hs.m_iID;
+
+    // Now search for a socket that has this peer ID
+    CUDT* u = m_pHash->lookupPeer(peerid);
+    if (!u)
+        return false; // no socket has that peer in this multiplexer
+
+    // CRAFT KMX DATA FOR RESPONSE
+
+    return u->createSendHSResponse(kmdata, kmdatasize, (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)

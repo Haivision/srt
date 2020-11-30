@@ -5997,6 +5997,14 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
+    if (!createSendHSResponse(kmdata, kmdatasize, peer, (w_hs)))
+    {
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+}
+
+bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const sockaddr_any& peer, CHandShake& w_hs) ATR_NOTHROW
+{
     // send the response to the peer, see listen() for more discussions about this
     // XXX Here create CONCLUSION RESPONSE with:
     // - just the UDT handshake, if HS_VERSION_UDT4,
@@ -6010,11 +6018,11 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
 
     // This will serialize the handshake according to its current form.
     HLOGC(cnlog.Debug,
-          log << "acceptAndRespond: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
+          log << "createSendHSResponse: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
     if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (response), (w_hs)))
     {
-        LOGC(cnlog.Error, log << "acceptAndRespond: error creating handshake response");
-        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        LOGC(cnlog.Error, log << "createSendHSResponse: error creating handshake response");
+        return false;
     }
 
     // Set target socket ID to the value from received handshake's source ID.
@@ -6027,7 +6035,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         CHandShake debughs;
         debughs.load_from(response.m_pcData, response.getLength());
         HLOGC(cnlog.Debug,
-              log << CONID() << "acceptAndRespond: sending HS from agent @"
+              log << CONID() << "createSendHSResponse: sending HS from agent @"
                 << debughs.m_iID << " to peer @" << response.m_iID
                 << "HS:" << debughs.show());
     }
@@ -6039,6 +6047,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
     m_pSndQueue->sendto(peer, response);
+    return true;
 }
 
 // This function is required to be called when a caller receives an INDUCTION
