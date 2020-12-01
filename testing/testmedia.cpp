@@ -1184,7 +1184,6 @@ Connect_Again:
 
 
                     Verb() << "...all links timeout, retrying NOW (" << transmit_retry_connect << ")...";
-                    //std::this_thread::sleep_for(std::chrono::milliseconds(1000));
                     goto Connect_Again;
                 }
 
