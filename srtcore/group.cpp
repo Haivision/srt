@@ -1158,9 +1158,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             // Check the socket state prematurely in order not to uselessly
             // send over a socket that is broken.
-            CUDT* pu = 0;
-            if (d->ps)
-                pu = &d->ps->core();
+            CUDT* const pu = (d->ps)
+                ?  &d->ps->core()
+                :  NULL;
 
             if (!pu || pu->m_bBroken)
             {
@@ -3790,9 +3790,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             // Check the socket state prematurely in order not to uselessly
             // send over a socket that is broken.
-            CUDT* pu = 0;
-            if (d->ps)
-                pu = &d->ps->core();
+            CUDT* const pu = (d->ps)
+                ?  &d->ps->core()
+                :  NULL;
 
             if (!pu || pu->m_bBroken)
             {
