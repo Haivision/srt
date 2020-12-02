@@ -465,12 +465,13 @@ public: // for CUDTUnited API
 
 public: // for CUDT to acknowledge IO status
 
-   /// Update events available for a UDT socket.
+   /// Update events available for a UDT socket. At the end this function
+   /// counts the number of updated EIDs with given events.
    /// @param [in] uid UDT socket ID.
    /// @param [in] eids EPoll IDs to be set
    /// @param [in] events Combination of events to update
    /// @param [in] enable true -> enable, otherwise disable
-   /// @return 0 if success, otherwise an error number
+   /// @return -1 if invalid events, otherwise the number of changes
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 

@@ -1344,11 +1344,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     const bool was_empty = g.groupEmpty();
 
     // In case the group was retried connection, clear first all epoll readiness.
-    m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
-    if (was_empty)
+    const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
+    if (was_empty || ncleared)
     {
+        HLOGC(aclog.Debug, log << "srt_connect/group: clearing IN/OUT because was_empty=" << was_empty << " || ncleared=" << ncleared);
         // IN/OUT only in case when the group is empty, otherwise it would
         // clear out correct readiness resulting from earlier calls.
+        // This also should happen if ERR flag was set, as IN and OUT could be set, too.
         m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
     }
     SRTSOCKET retval = -1;
