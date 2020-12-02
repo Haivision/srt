@@ -1062,8 +1062,16 @@ void CUDTGroup::send_CheckValidSockets()
         CUDTSocket* revps = m_pGlobal->locateSocket_LOCKED(d->id);
         if (revps != d->ps)
         {
-            HLOGC(gmlog.Debug, log << "group/send_CheckValidSockets: socket @" << d->id << " is no longer valid, REMOVING FROM $" << id());
-            remove_LOCKED(d->id);
+            // Note: the socket might STILL EXIST, just in the trash, so
+            // it can't be found by locateSocket. But it can still be bound
+            // to the group. Just mark it broken from upside so that the
+            // internal sending procedures will skip it. Removal from the
+            // group will happen in GC, which will both remove from
+            // group container and cut backward links to the group.
+
+            HLOGC(gmlog.Debug, log << "group/send_CheckValidSockets: socket @" << d->id << " is no longer valid, setting BROKEN in $" << id());
+            d->sndstate = SRT_GST_BROKEN;
+            d->rcvstate = SRT_GST_BROKEN;
         }
     }
 }
@@ -1137,7 +1145,6 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // LOCKED: GroupLock (only)
     // Since this moment GlobControlLock may only be locked if GroupLock is unlocked first.
 
-
     if (m_bClosing)
     {
         // No temporary locks here. The group lock is scoped.
@@ -1147,18 +1154,21 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // This simply requires the payload to be sent through every socket in the group
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
-        // Check the socket state prematurely in order not to uselessly
-        // send over a socket that is broken.
-        CUDT* pu = 0;
-        if (d->ps)
-            pu = &d->ps->core();
-
-        if (!pu || pu->m_bBroken)
+        if (d->sndstate != SRT_GST_BROKEN)
         {
-            HLOGC(gslog.Debug,
-                  log << "grp/sendBroadcast: socket @" << d->id << " detected +Broken - transit to BROKEN");
-            d->sndstate = SRT_GST_BROKEN;
-            d->rcvstate = SRT_GST_BROKEN;
+            // Check the socket state prematurely in order not to uselessly
+            // send over a socket that is broken.
+            CUDT* const pu = (d->ps)
+                ?  &d->ps->core()
+                :  NULL;
+
+            if (!pu || pu->m_bBroken)
+            {
+                HLOGC(gslog.Debug,
+                        log << "grp/sendBroadcast: socket @" << d->id << " detected +Broken - transit to BROKEN");
+                d->sndstate = SRT_GST_BROKEN;
+                d->rcvstate = SRT_GST_BROKEN;
+            }
         }
 
         // Check socket sndstate before sending
@@ -3776,17 +3786,20 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // First, check status of every link - no matter if idle or active.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
-        // Check the socket state prematurely in order not to uselessly
-        // send over a socket that is broken.
-        CUDT* pu = 0;
-        if (d->ps)
-            pu = &d->ps->core();
-
-        if (!pu || pu->m_bBroken)
+        if (d->sndstate != SRT_GST_BROKEN)
         {
-            HLOGC(gslog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
-            d->sndstate = SRT_GST_BROKEN;
-            d->rcvstate = SRT_GST_BROKEN;
+            // Check the socket state prematurely in order not to uselessly
+            // send over a socket that is broken.
+            CUDT* const pu = (d->ps)
+                ?  &d->ps->core()
+                :  NULL;
+
+            if (!pu || pu->m_bBroken)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
+                d->sndstate = SRT_GST_BROKEN;
+                d->rcvstate = SRT_GST_BROKEN;
+            }
         }
 
         // Check socket sndstate before sending

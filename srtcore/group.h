@@ -162,14 +162,9 @@ public:
     /// @return true if the container still contains any sockets after the operation
     bool remove(SRTSOCKET id)
     {
-        srt::sync::ScopedLock g(m_GroupLock);
-        return remove_LOCKED(id);
-    }
-
-    // No-locking version of the function above.
-    bool remove_LOCKED(SRTSOCKET id)
-    {
         using srt_logging::gmlog;
+        srt::sync::ScopedLock g(m_GroupLock);
+
         bool empty = false;
         HLOGC(gmlog.Debug, log << "group/remove: going to remove @" << id << " from $" << m_GroupID);
 
@@ -200,7 +195,7 @@ public:
         }
         else
         {
-            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND (might be ok, if removed already by CheckValidSockets)");
+            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND");
             empty = true; // not exactly true, but this is to cause error on group in the APP
         }
 
