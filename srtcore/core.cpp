@@ -4992,6 +4992,16 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
 
+    /// TESTING - unblock if necessary.
+    /// This part fictionally "loses" incoming conclusion HS 5 times.
+    /*
+    static int fail_count = 5;
+    if (--fail_count)
+    {
+        LOGC(cnlog.Note, log << "postConnect: FAKE LOSS HS conclusion message");
+        return CONN_CONTINUE;
+    } // */
+
     // This procedure isn't being executed in rendezvous because
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)

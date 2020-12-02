@@ -1448,7 +1448,14 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     else
     {
         if (worker_TryAcceptedSocket(unit, addr))
+        {
+            HLOGC(cnlog.Debug, log << "connection request to existing peer succeeded");
             return CONN_CONTINUE;
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << "connection request to an accepted socket failed. Will retry RDV or store");
+        }
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
@@ -1470,6 +1477,9 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     if (hs.m_iReqType != URQ_CONCLUSION)
         return false;
 
+    if (hs.m_iVersion >= CUDT::HS_VERSION_SRT1)
+        hs.m_extension = true;
+
     // Ok, at last we have a peer ID info
     int32_t peerid = hs.m_iID;
 
@@ -1478,10 +1488,16 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     if (!u)
         return false; // no socket has that peer in this multiplexer
 
+    HLOGC(cnlog.Debug, log << "FOUND accepted socket @" << u->m_SocketID << " that is a peer for -@"
+            << peerid << " - DISPATCHING to it to resend HS response");
+
     uint32_t kmdata[SRTDATA_MAXSIZE];
     size_t   kmdatasize = SRTDATA_MAXSIZE;
-    if (u->craftKmResponse((kmdata), (kmdatasize)) == CONN_ACCEPT)
+    if (u->craftKmResponse((kmdata), (kmdatasize)) != CONN_ACCEPT)
+    {
+        HLOGC(cnlog.Debug, log << "craftKmResponse: failed");
         return false;
+    }
 
     return u->createSendHSResponse(kmdata, kmdatasize, addr, (hs));
 }
