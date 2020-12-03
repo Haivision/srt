@@ -6022,6 +6022,9 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
+    // Save the handshake in m_ConnRes in case when needs repeating.
+    m_ConnRes = w_hs;
+
     // send the response to the peer, see listen() for more discussions about this
     // XXX Here create CONCLUSION RESPONSE with:
     // - just the UDT handshake, if HS_VERSION_UDT4,
