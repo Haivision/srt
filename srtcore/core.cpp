@@ -5890,40 +5890,13 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 {
-    HLOGC(cnlog.Debug, log << "acceptAndRespond: setting up data according to handshake");
-
-    ScopedLock cg(m_ConnectionLock);
-
-    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
-
-    // Uses the smaller MSS between the peers
-    if (w_hs.m_iMSS > m_iMSS)
-        w_hs.m_iMSS = m_iMSS;
-    else
-        m_iMSS = w_hs.m_iMSS;
-
-    // exchange info for maximum flow window size
-    m_iFlowWindowSize     = w_hs.m_iFlightFlagSize;
-    w_hs.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
-
-    m_iPeerISN = w_hs.m_iISN;
-
-   setInitialRcvSeq(m_iPeerISN);
-    m_iRcvCurrPhySeqNo = w_hs.m_iISN - 1;
-
-    m_PeerID  = w_hs.m_iID;
-    w_hs.m_iID = m_SocketID;
-
-    // use peer's ISN and send it back for security check
-    m_iISN = w_hs.m_iISN;
-
-   setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
-
     // this is a reponse handshake
     w_hs.m_iReqType = URQ_CONCLUSION;
+    w_hs.m_iMSS = m_iMSS;
+    w_hs.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
+    w_hs.m_iID = m_SocketID;
 
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
@@ -5933,11 +5906,40 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         w_hs.m_extension = true;
     }
 
+    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+}
+
+void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+{
+    HLOGC(cnlog.Debug, log << "acceptAndRespond: setting up data according to handshake");
+
+    ScopedLock cg(m_ConnectionLock);
+
+    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
+
+    // Uses the smaller MSS between the peers
+    m_iMSS = std::min(m_iMSS, w_hs.m_iMSS);
+
+    // exchange info for maximum flow window size
+    m_iFlowWindowSize = w_hs.m_iFlightFlagSize;
+    m_iPeerISN = w_hs.m_iISN;
+    setInitialRcvSeq(m_iPeerISN);
+    m_iRcvCurrPhySeqNo = CSeqNo::decseq(w_hs.m_iISN);
+
+    m_PeerID  = w_hs.m_iID;
+
+    // use peer's ISN and send it back for security check
+    m_iISN = w_hs.m_iISN;
+
+    setInitialSndSeq(m_iISN);
+    m_SndLastAck2Time = steady_clock::now();
+
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
     CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
-    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+
+    rewriteHandshakeData(peer, (w_hs));
 
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
@@ -6030,13 +6032,23 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
-    if (!createSendHSResponse(kmdata, kmdatasize, peer, (w_hs)))
+    // Save the handshake in m_ConnRes in case when needs repeating.
+    m_ConnRes = w_hs;
+
+    // NOTE: UNBLOCK THIS instruction in order to cause the final
+    // handshake to be missed and cause the problem solved in PR #417.
+    // When missed this message, the caller should not accept packets
+    // coming as connected, but continue repeated handshake until finally
+    // received the listener's handshake.
+    return;
+
+    if (!createSendHSResponse(kmdata, kmdatasize, (w_hs)))
     {
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 }
 
-bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const sockaddr_any& peer, CHandShake& w_hs) ATR_NOTHROW
+bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, CHandShake& w_hs) ATR_NOTHROW
 {
     // send the response to the peer, see listen() for more discussions about this
     // XXX Here create CONCLUSION RESPONSE with:
@@ -6058,9 +6070,6 @@ bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const socka
         return false;
     }
 
-    // Set target socket ID to the value from received handshake's source ID.
-    response.m_iID = m_PeerID;
-
 #if ENABLE_HEAVY_LOGGING
     {
         // To make sure what REALLY is being sent, parse back the handshake
@@ -6069,17 +6078,12 @@ bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const socka
         debughs.load_from(response.m_pcData, response.getLength());
         HLOGC(cnlog.Debug,
               log << CONID() << "createSendHSResponse: sending HS from agent @"
-                << debughs.m_iID << " to peer @" << response.m_iID
+                << debughs.m_iID << " to peer @" << m_PeerID // <-- will be used by addressAndSend
                 << "HS:" << debughs.show());
     }
 #endif
 
-    // NOTE: BLOCK THIS instruction in order to cause the final
-    // handshake to be missed and cause the problem solved in PR #417.
-    // When missed this message, the caller should not accept packets
-    // coming as connected, but continue repeated handshake until finally
-    // received the listener's handshake.
-    m_pSndQueue->sendto(peer, response);
+    addressAndSend((response));
     return true;
 }
 
@@ -10911,6 +10915,9 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
                   log << CONID() << "processConnectRequest: sending REPEATED handshake response req="
                       << RequestTypeStr(hs.m_iReqType));
 
+            // Rewrite already updated previously data in acceptAndRespond
+            acpu->rewriteHandshakeData(acpu->m_PeerAddr, (hs));
+
             uint32_t kmdata[SRTDATA_MAXSIZE];
             size_t   kmdatasize = SRTDATA_MAXSIZE;
             EConnectStatus conn = CONN_ACCEPT;
@@ -10943,7 +10950,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             {
                 // Send the crafted handshake
                 HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING (repeated) HS (a): " << hs.show());
-                m_pSndQueue->sendto(addr, packet);
+                acpu->addressAndSend((packet));
             }
         }
 

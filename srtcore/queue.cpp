@@ -1499,7 +1499,16 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
     }
 
-    return u->createSendHSResponse(kmdata, kmdatasize, addr, (hs));
+    // addr should be unnecessary because the accepted socket should have
+    // it in its data. However, if it happened that this is a different
+    // address, do not send (could be some kind of attack).
+    if (addr != u->m_PeerAddr)
+    {
+        HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: accepted socket has a different address: "
+                << u->m_PeerAddr.str() << " than the incoming HS request: " << addr.str());
+    }
+
+    return u->createSendHSResponse(kmdata, kmdatasize, (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
