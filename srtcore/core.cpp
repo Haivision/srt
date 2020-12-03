@@ -6040,7 +6040,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // When missed this message, the caller should not accept packets
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
-    return;
+    //return;
 
     if (!createSendHSResponse(kmdata, kmdatasize, (w_hs)))
     {
