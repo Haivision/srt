@@ -1449,7 +1449,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     {
         if (worker_TryAcceptedSocket(unit, addr))
         {
-            HLOGC(cnlog.Debug, log << "connection request to existing peer succeeded");
+            HLOGC(cnlog.Debug, log << "connection request to an accepted socket succeeded");
             return CONN_CONTINUE;
         }
         else
@@ -1505,7 +1505,8 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     if (addr != u->m_PeerAddr)
     {
         HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: accepted socket has a different address: "
-                << u->m_PeerAddr.str() << " than the incoming HS request: " << addr.str());
+                << u->m_PeerAddr.str() << " than the incoming HS request: " << addr.str() << " - POSSIBLE ATTACK");
+        return false;
     }
 
     return u->createSendHSResponse(kmdata, kmdatasize, (hs));
