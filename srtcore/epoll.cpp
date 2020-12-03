@@ -838,6 +838,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         return -1; // still, ignored.
     }
 
+    int nupdated = 0;
     vector<int> lost;
 
     IF_HEAVY_LOGGING(ostringstream debug);
@@ -901,6 +902,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         // - if enable, it will set event flags, possibly in a new notice object
         // - if !enable, it will clear event flags, possibly remove notice if resulted in 0
         ed.updateEventNotice(*pwait, uid, events, enable);
+        ++nupdated;
 
         HLOGC(eilog.Debug, log << debug.str() << ": E" << (*i)
                 << " TRACKING: " << ed.DisplayEpollWatch());
@@ -909,7 +911,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
     for (vector<int>::iterator i = lost.begin(); i != lost.end(); ++ i)
         eids.erase(*i);
 
-    return 0;
+    return nupdated;
 }
 
 // Debug use only.
