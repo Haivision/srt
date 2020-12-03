@@ -1,6 +1,6 @@
 #!/bin/bash
 
-while getopts t:h:a:s:i: option
+while getopts t:h:a:s:i:b:n:l: option
 do
  case "${option}"
  in
@@ -9,6 +9,10 @@ do
  a) target_host_api=${OPTARG};;
  s) src_dir=${OPTARG};;
  i) install_dir=$OPTARG;;
+ b) arch_abi=${OPTARG};;
+ n) NDK_HOME=${OPTARG};;
+ l) api_lev=${OPTARG};;
+ *) twentytwo=${OPTARG};;
  esac
 done
 

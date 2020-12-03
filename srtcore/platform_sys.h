@@ -83,7 +83,7 @@
 
 #endif
 
-#if defined(__ANDROID__) || defined(ANDROID)
+#ifdef __ANDROID__
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>

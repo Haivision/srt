@@ -4074,7 +4074,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         if (m_pRcvQueue->recvfrom(m_SocketID, (response)) > 0)
         {
             HLOGC(cnlog.Debug, log << CONID() << "startConnect: got response for connect request");
-            cst = processConnectResponse(response, &e, COM_SYNCHRO);
+            cst = processConnectResponse(response, &e);
 
             HLOGC(cnlog.Debug, log << CONID() << "startConnect: response processing result: " << ConnectStatusStr(cst));
 
@@ -4107,7 +4107,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 // it means that it has done all that was required, however none of the below
                 // things has to be done (this function will do it by itself if needed).
                 // Otherwise the handshake rolling can be interrupted and considered complete.
-                cst = processRendezvous(response, serv_addr, true /*synchro*/, RST_OK, (reqpkt));
+                cst = processRendezvous(response, serv_addr, RST_OK, (reqpkt));
                 if (cst == CONN_CONTINUE)
                     continue;
                 break;
@@ -4237,9 +4237,9 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
     EConnectStatus cst = CONN_CONTINUE;
     CUDTException  e;
 
-    ScopedLock cg(m_ConnectionLock); // FIX
+    ScopedLock cg(m_ConnectionLock);
     HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
-    cst = processConnectResponse(pkt, &e, COM_ASYNCHRO);
+    cst = processConnectResponse(pkt, &e);
 
     HLOGC(cnlog.Debug,
           log << CONID() << "processAsyncConnectResponse: response processing result: " << ConnectStatusStr(cst)
@@ -4275,10 +4275,12 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
 
     bool status = true;
 
+    ScopedLock cg(m_ConnectionLock);
+
     if (cst == CONN_RENDEZVOUS)
     {
         HLOGC(cnlog.Debug, log << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(response, serv_addr, false /*asynchro*/, rst, (request));
+        cst = processRendezvous(response, serv_addr, rst, (request));
         if (cst == CONN_ACCEPT)
         {
             HLOGC(cnlog.Debug,
@@ -4468,7 +4470,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
 
 EConnectStatus CUDT::processRendezvous(
     const CPacket& response, const sockaddr_any& serv_addr,
-    bool synchro, EReadStatus rst, CPacket& w_reqpkt)
+    EReadStatus rst, CPacket& w_reqpkt)
 {
     if (m_RdvState == CHandShake::RDV_CONNECTED)
     {
@@ -4655,7 +4657,7 @@ EConnectStatus CUDT::processRendezvous(
         // When synchro=false, don't lock a mutex for rendezvous queue.
         // This is required when this function is called in the
         // receive queue worker thread - it would lock itself.
-        int cst = postConnect(response, true, 0, synchro);
+        int cst = postConnect(response, true, 0);
         if (cst == CONN_REJECT)
         {
             // m_RejectReason already set
@@ -4731,7 +4733,8 @@ EConnectStatus CUDT::processRendezvous(
     return CONN_CONTINUE;
 }
 
-EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT
+// [[using locked(m_ConnectionLock)]];
+EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout) ATR_NOEXCEPT
 {
     // NOTE: ASSUMED LOCK ON: m_ConnectionLock.
 
@@ -4790,7 +4793,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             m_RdvState = CHandShake::RDV_CONNECTED;
         }
 
-        return postConnect(response, hsv5, eout, synchro);
+        return postConnect(response, hsv5, eout);
     }
 
     if (!response.isControl(UMSG_HANDSHAKE))
@@ -4960,7 +4963,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         }
     }
 
-    return postConnect(response, false, eout, synchro);
+    return postConnect(response, false, eout);
 }
 
 void CUDT::applyResponseSettings() ATR_NOEXCEPT
@@ -4984,7 +4987,7 @@ void CUDT::applyResponseSettings() ATR_NOEXCEPT
               << " peerID=" << m_ConnRes.m_iID);
 }
 
-EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout, bool synchro) ATR_NOEXCEPT
+EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
@@ -5105,7 +5108,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // because otherwise the packets that are coming for this socket before the
     // connection process is complete will be rejected as "attack", instead of
     // being enqueued for later pickup from the queue.
-    m_pRcvQueue->removeConnector(m_SocketID, synchro);
+    m_pRcvQueue->removeConnector(m_SocketID);
 
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
@@ -5124,7 +5127,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
     s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
-    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, s->m_SelfAddr.family(), m_PeerAddr);
+    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, m_PeerAddr);
 
     s->m_Status = SRTS_CONNECTED;
 
@@ -5668,11 +5671,14 @@ void *CUDT::tsbpd(void *param)
                         timediff_us = count_microseconds(steady_clock::now() - tsbpdtime);
 #if ENABLE_HEAVY_LOGGING
                     HLOGC(tslog.Debug,
-                          log << self->CONID() << "tsbpd: DROPSEQ: up to seq=" << CSeqNo::decseq(skiptoseqno) << " ("
+                          log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(skiptoseqno) << " ("
                               << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
-                              << (timediff_us / 1000) << "." << (timediff_us % 1000) << " ms");
+                              << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
 #endif
-                    LOGC(brlog.Warn, log << "RCV-DROPPED packet delay=" << (timediff_us/1000) << "ms");
+                    LOGC(brlog.Warn,
+                         log << "RCV-DROPPED " << seqlen << " packet(s), packet seqno %" << skiptoseqno
+                             << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
+                             << (timediff_us % 1000) << " ms");
 #endif
 
                     tsbpdtime = steady_clock::time_point(); //Next sent ack will unblock
@@ -5921,7 +5927,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
-    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, agent.family(), peer);
+    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
 
     rewriteHandshakeData(peer, (w_hs));
 
@@ -6121,7 +6127,7 @@ SRT_REJECT_REASON CUDT::setupCC()
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
         HLOGC(pflog.Debug, log << "filter: Configuring: " << m_OPT_PktFilterConfigString);
-        if (!m_PacketFilter.configure(this, m_pRcvBuffer->getUnitQueue(), m_OPT_PktFilterConfigString))
+        if (!m_PacketFilter.configure(this, &(m_pRcvQueue->m_UnitQueue), m_OPT_PktFilterConfigString))
         {
             return SRT_REJ_FILTER;
         }
@@ -8072,25 +8078,23 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     local_prevack = m_iDebugPrevLastAck;
 
-    string reason; // just for "a reason" of giving particular % for ACK
+    string reason = "first lost"; // just for "a reason" of giving particular % for ACK
 #endif
 
-    // If there is no loss, the ACK is the current largest sequence number plus 1;
-    // Otherwise it is the smallest sequence number in the receiver loss list.
-    if (m_pRcvLossList->getLossLength() == 0)
     {
-        ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
-#if ENABLE_HEAVY_LOGGING
-        reason = "expected next";
-#endif
-    }
-    else
-    {
+        // If there is no loss, the ACK is the current largest sequence number plus 1;
+        // Otherwise it is the smallest sequence number in the receiver loss list.
         ScopedLock lock(m_RcvLossLock);
         ack = m_pRcvLossList->getFirstLostSeq();
-#if ENABLE_HEAVY_LOGGING
-        reason = "first lost";
-#endif
+    }
+
+    // We don't need to check the length prematurely,
+    // if length is 0, this will return SRT_SEQNO_NONE.
+    // If so happened, simply use the latest received pkt + 1.
+    if (ack == SRT_SEQNO_NONE)
+    {
+        ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
+        IF_HEAVY_LOGGING(reason = "expected next");
     }
 
     if (m_iRcvLastAckAck == ack)
@@ -8118,7 +8122,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         const int32_t first_seq ATR_UNUSED = ackDataUpTo(ack);
-        bufflock.unlock();
+        InvertedLock un_bufflock (m_RcvBufferLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING
         // This actually should be done immediately after the ACK pointers were
@@ -8196,7 +8200,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #endif
             CGlobEvent::triggerEvent();
         }
-        bufflock.lock();
     }
     else if (ack == m_iRcvLastAck)
     {
@@ -8294,10 +8297,10 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
 void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
+#if ENABLE_EXPERIMENTAL_BONDING
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-#if ENABLE_EXPERIMENTAL_BONDING
     bool is_group = m_parent->m_IncludedGroup;
 #endif
 
@@ -8375,6 +8378,18 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
 {
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
+
+    // Check the value of ACK in case when it was some rogue peer
+    if (ackdata_seqno < 0)
+    {
+        // This embraces all cases when the most significant bit is set,
+        // as the variable is of a signed type. So, SRT_SEQNO_NONE is
+        // included, but it also triggers for any other kind of invalid value.
+        // This check MUST BE DONE before making any operation on this number.
+        LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: received invalid ACK value: " << ackdata_seqno
+                << " " << std::hex << ackdata_seqno << " (IGNORED)");
+        return;
+    }
 
     const bool isLiteAck = ctrlpkt.getLength() == (size_t)SEND_LITE_ACK;
     HLOGC(inlog.Debug,
@@ -10614,6 +10629,8 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
 //
 // XXX Make this function return EConnectStatus enum type (extend if needed),
 // and this will be directly passed to the caller.
+
+// [[using locked(m_pRcvQueue->m_LSLock)]];
 int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 {
     // XXX ASSUMPTIONS:
@@ -11263,9 +11280,9 @@ void CUDT::updateBrokenConnection()
 void CUDT::completeBrokenConnectionDependencies(int errorcode)
 {
     int token = -1;
-    bool pending_broken = false;
 
 #if ENABLE_EXPERIMENTAL_BONDING
+    bool pending_broken = false;
     {
         ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
         if (m_parent->m_IncludedGroup)

@@ -579,7 +579,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
        ns->m_SocketID = generateSocketID();
    }
-   catch (const CUDTException& e)
+   catch (const CUDTException&)
    {
        LOGF(cnlog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
        // generateSocketID throws exception, which can be naturally handled
@@ -659,7 +659,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    // - OVERWRITE just the IP address itself by a value taken from piSelfIP
    // (the family is used exactly as the one taken from what has been returned
    // by getsockaddr)
-   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, ns->m_SelfAddr.family(), peer);
+   CIPAddress::pton((ns->m_SelfAddr), ns->m_pUDT->m_piSelfIP, peer);
 
    {
        // protect the m_PeerRec structure (and group existence)
@@ -1349,11 +1349,13 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     const bool was_empty = g.groupEmpty();
 
     // In case the group was retried connection, clear first all epoll readiness.
-    m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
-    if (was_empty)
+    const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
+    if (was_empty || ncleared)
     {
+        HLOGC(aclog.Debug, log << "srt_connect/group: clearing IN/OUT because was_empty=" << was_empty << " || ncleared=" << ncleared);
         // IN/OUT only in case when the group is empty, otherwise it would
         // clear out correct readiness resulting from earlier calls.
+        // This also should happen if ERR flag was set, as IN and OUT could be set, too.
         m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
     }
     SRTSOCKET retval = -1;
@@ -1901,13 +1903,8 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
    */
    try
    {
-       // InvertedGuard unlocks in the constructor, then locks in the
-       // destructor, no matter if an exception has fired.
-       InvertedLock l_unlocker (s->m_pUDT->m_bSynRecving ? &s->m_ControlLock : 0);
-
        // record peer address
        s->m_PeerAddr = target_addr;
-
        s->m_pUDT->startConnect(target_addr, forced_isn);
    }
    catch (CUDTException& e) // Interceptor, just to change the state.
@@ -2971,7 +2968,7 @@ void CUDTUnited::updateMux(
        s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
        s->m_iMuxID = m.m_iID;
    }
-   catch (CUDTException& e)
+   catch (const CUDTException&)
    {
        m.destroy();
        throw;
