@@ -211,9 +211,7 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
 
 // GROUP
 
-std::list<CUDTGroup::SocketData> CUDTGroup::GroupContainer::s_NoList;
-
-CUDTGroup::gli_t CUDTGroup::add(SocketData data)
+CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 {
     ScopedLock g(m_GroupLock);
 
@@ -242,7 +240,8 @@ CUDTGroup::gli_t CUDTGroup::add(SocketData data)
         m_iMaxPayloadSize = plsize;
     }
 
-    return --end;
+    --end;
+    return &*end;
 }
 
 CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
@@ -363,6 +362,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         if (m_List.empty())
         {
             LOGC(gmlog.Error, log << "IPE: GroupContainer is empty and 'erase' is called on it.");
+            m_LastActiveLink = m_List.end();
             return; // this avoids any misunderstandings in iterator checks
         }
 
@@ -371,7 +371,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         if (bb == m_List.end()) // means: m_List.size() == 1
         {
             // One element, this one being deleted, nothing to point to.
-            m_LastActiveLink = null();
+            m_LastActiveLink = m_List.end();
         }
         else
         {
@@ -971,8 +971,8 @@ void CUDTGroup::close()
                 HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
                 continue;
             }
-            s->m_IncludedGroup = NULL;
-            s->m_IncludedIter = gli_NULL();
+            s->m_GroupOf = NULL;
+            s->m_GroupMemberData = NULL;
             HLOGC(smlog.Debug, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
         }
 
@@ -1257,7 +1257,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             curseq = w_mc.pktseq;
         }
 
-        const Sendstate cstate = {d->id, d, stat, erc};
+        const Sendstate cstate = {d->id, &*d, stat, erc};
         sendstates.push_back(cstate);
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
@@ -1307,7 +1307,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
     {
         gli_t d       = *i;
-        if (!d->ps->m_IncludedGroup)
+        if (!d->ps->m_GroupOf)
             continue;
 
         int   erc     = 0;
@@ -1355,7 +1355,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
 
-        const Sendstate cstate = {d->id, d, stat, erc};
+        const Sendstate cstate = {d->id, &*d, stat, erc};
         sendstates.push_back(cstate);
     }
 
@@ -1452,7 +1452,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // If there were only some reactivated idlers successful, the first
     // idler has defined the sequence.
 
-    vector<gli_t> successful, blocked;
+    vector<SocketData*> successful, blocked;
 
     // This iteration of the state will simply
     // qualify the remaining sockets into three categories:
@@ -1464,7 +1464,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Now - sendstates contain directly sockets.
     // In order to update members, you need to have locked:
     // - GlobControlLock to prevent sockets from disappearing or being closed
-    // - then GroupLock to latch the validity of m_IncludedIter field.
+    // - then GroupLock to latch the validity of m_GroupMemberData field.
 
     {
         {
@@ -1486,11 +1486,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
             // Is the socket still group member? If not, SKIP IT. It could only be taken ownership
             // by being explicitly closed and so it's deleted from the container.
-            if (!ps->m_IncludedGroup)
+            if (!ps->m_GroupOf)
                 continue;
 
-            // Now we are certain that m_IncludedIter is valid.
-            gli_t d = ps->m_IncludedIter;
+            // Now we are certain that m_GroupMemberData is valid.
+            SocketData* d = ps->m_GroupMemberData;
 
             if (is->stat == len)
             {
@@ -1542,7 +1542,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // Good. All blocked links are now qualified as broken.
         // You had your chance, but I can't leave you here,
         // there will be no further chance to reattempt sending.
-        for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
+        for (vector<SocketData*>::iterator b = blocked.begin(); b != blocked.end(); ++b)
         {
             (*b)->sndstate = SRT_GST_BROKEN;
         }
@@ -1573,7 +1573,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // haven't sent the payload over any link so far, so we still have
         // a chance to retry.
         int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-        for (vector<gli_t>::iterator b = blocked.begin(); b != blocked.end(); ++b)
+        for (vector<SocketData*>::iterator b = blocked.begin(); b != blocked.end(); ++b)
         {
             HLOGC(gslog.Debug,
                   log << "Will block on blocked socket @" << (*b)->id << " as only blocked socket remained");
@@ -1657,7 +1657,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (stat != -1)
                     curseq = w_mc.pktseq;
 
-                const Sendstate cstate = {d->id, d, stat, erc};
+                const Sendstate cstate = {d->id, &*d, stat, erc};
                 sendstates.push_back(cstate);
                 d->sndresult  = stat;
                 d->laststatus = d->ps->getStatus();
@@ -1671,7 +1671,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (is->stat == blocklen)
                 {
                     // Successful.
-                    successful.push_back(is->it);
+                    successful.push_back(is->mb);
                     rstat          = is->stat;
                     was_blocked    = false;
                     none_succeeded = false;
@@ -1684,7 +1684,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                           << "). Setting this socket broken status.");
 #endif
                 // Turn this link broken
-                is->it->sndstate = SRT_GST_BROKEN;
+                is->mb->sndstate = SRT_GST_BROKEN;
             }
         }
     }
@@ -3261,7 +3261,7 @@ size_t CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&        idler
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
 
-        const Sendstate cstate = {d->id, d, stat, erc};
+        const Sendstate cstate = {d->id, &*d, stat, erc};
         w_sendstates.push_back(cstate);
 
         if (stat != -1)
@@ -3931,7 +3931,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
             insert_uniq((unstable), d);
 
-        const Sendstate cstate = {d->id, d, stat, erc};
+        const Sendstate cstate = {d->id, &*d, stat, erc};
         sendstates.push_back(cstate);
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
@@ -4342,7 +4342,7 @@ void CUDTGroup::ackMessage(int32_t msgno)
     m_iSndAckedMsgNo = msgno;
 }
 
-void CUDTGroup::handleKeepalive(gli_t gli)
+void CUDTGroup::handleKeepalive(CUDTGroup::SocketData* gli)
 {
     // received keepalive for that group member
     // In backup group it means that the link went IDLE.
@@ -4379,7 +4379,7 @@ void CUDTGroup::handleKeepalive(gli_t gli)
     }
 }
 
-void CUDTGroup::internalKeepalive(gli_t gli)
+void CUDTGroup::internalKeepalive(SocketData* gli)
 {
     // This is in response to AGENT SENDING keepalive. This means that there's
     // no transmission in either direction, but the KEEPALIVE packet from the
@@ -4468,18 +4468,18 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
 
     UniqueLock lg(m_GroupLock);
     // Sanity check for a case when getting a deleted socket
-    if (!s->m_IncludedGroup)
+    if (!s->m_GroupOf)
         return;
 
     // Under a group lock, we block execution of removal of the socket
-    // from the group, so if m_IncludedGroup is not NULL, we are granted
-    // that m_IncludedIter is valid.
-    gli_t current = s->m_IncludedIter;
+    // from the group, so if m_GroupOf is not NULL, we are granted
+    // that m_GroupMemberData is valid.
+    SocketData* current = s->m_GroupMemberData;
 
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         // Skip the socket that has reported packet reception
-        if (gi == current)
+        if (&*gi == current)
         {
             HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
             continue;

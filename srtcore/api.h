@@ -83,7 +83,8 @@ public:
        , m_ListenSocket(0)
        , m_PeerID(0)
 #if ENABLE_EXPERIMENTAL_BONDING
-       , m_IncludedGroup()
+       , m_GroupMemberData()
+       , m_GroupOf()
 #endif
        , m_iISN(0)
        , m_pUDT(NULL)
@@ -118,8 +119,8 @@ public:
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup::gli_t m_IncludedIter;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
-   CUDTGroup* m_IncludedGroup;               //< Group this socket is a member of, or NULL if it isn't
+   CUDTGroup::SocketData* m_GroupMemberData;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
+   CUDTGroup* m_GroupOf;               //< Group this socket is a member of, or NULL if it isn't
 #endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
