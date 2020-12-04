@@ -52,7 +52,6 @@
 #include "TargetConditionals.h"
 #define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
 
-
 #ifdef SRT_IMPORT_TIME
       #include <mach/mach_time.h>
 #endif
@@ -66,6 +65,15 @@
 
 #endif
 
+#ifdef BSD
+#ifdef SRT_IMPORT_EVENT
+   #include <sys/types.h>
+   #include <sys/event.h>
+   #include <sys/time.h>
+   #include <unistd.h>
+#endif
+#endif
+
 #ifdef LINUX
 
 #ifdef SRT_IMPORT_EVENT
@@ -75,7 +83,7 @@
 
 #endif
 
-#if defined(__ANDROID__) || defined(ANDROID)
+#ifdef __ANDROID__
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>

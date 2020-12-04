@@ -18,6 +18,8 @@
 #include <stdexcept>
 #include <iterator>
 #include <map>
+#include <chrono>
+#include <thread>
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
@@ -40,8 +42,11 @@
 
 using namespace std;
 
+using srt_logging::KmStateStr;
 using srt_logging::SockStatusStr;
+#if ENABLE_EXPERIMENTAL_BONDING
 using srt_logging::MemberStatusStr;
+#endif
 
 volatile bool transmit_throw_on_interrupt = false;
 int transmit_bw_report = 0;
@@ -51,6 +56,8 @@ bool transmit_printformat_json = false;
 srt_listen_callback_fn* transmit_accept_hook_fn = nullptr;
 void* transmit_accept_hook_op = nullptr;
 bool transmit_use_sourcetime = false;
+int transmit_retry_connect = 0;
+bool transmit_retry_always = false;
 
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
@@ -138,7 +145,6 @@ public:
     {
         ofile.write(data.payload.data(), data.payload.size());
 #ifdef PLEASE_LOG
-        extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
 #endif
     }
@@ -149,7 +155,6 @@ public:
     void Close() override
     {
 #ifdef PLEASE_LOG
-        extern srt_logging::Logger applog;
         applog.Debug() << "FileTarget::Close";
 #endif
         ofile.close();
@@ -216,6 +221,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
         path = path.substr(2);
 
+#if ENABLE_EXPERIMENTAL_BONDING
         if (path == "group")
         {
             // Group specified, check type.
@@ -355,6 +361,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             // possible in future.
             par["mode"] = "caller";
         }
+#endif
     }
 
     string adapter;
@@ -441,6 +448,22 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         par.erase("groupconfig");
     }
 
+    // Fix Minversion, if specified as string
+    if (par.count("minversion"))
+    {
+        string v = par["minversion"];
+        if (v.find('.') != string::npos)
+        {
+            int version = SrtParseVersion(v.c_str());
+            if (version == 0)
+            {
+                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+            }
+            par["minversion"] = Sprint(version);
+            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+        }
+    }
+
     // Assign the others here.
     m_options = par;
     m_options["mode"] = m_mode;
@@ -522,6 +545,7 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
@@ -558,6 +582,7 @@ void SrtCommon::AcceptNewClient()
         Verb() << " connected(group epoll " << srt_epoll <<").";
     }
     else
+#endif
     {
         sockaddr_any peeraddr(AF_INET6);
         string peer = "<?PEER?>";
@@ -635,10 +660,12 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             {
                 OpenClient(host, port);
             }
+#if ENABLE_EXPERIMENTAL_BONDING
             else
             {
                 OpenGroupClient(); // Source data are in the fields already.
             }
+#endif
         }
         else if (m_mode == "listener")
             OpenServer(m_adapter, port, backlog);
@@ -671,9 +698,6 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
     srt_getsockflag(m_sock, SRTO_KMSTATE, &kmstate, &len);
     srt_getsockflag(m_sock, SRTO_SNDKMSTATE, &snd_kmstate, &len);
     srt_getsockflag(m_sock, SRTO_RCVKMSTATE, &rcv_kmstate, &len);
-
-    // Bring this declaration temporarily, this is only for testing
-    std::string KmStateStr(SRT_KM_STATE state);
 
     Verb() << "ENCRYPTION status: " << KmStateStr(kmstate)
         << " (SND:" << KmStateStr(snd_kmstate) << " RCV:" << KmStateStr(rcv_kmstate)
@@ -865,6 +889,7 @@ void SrtCommon::PrepareClient()
 
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     SrtCommon* that = (SrtCommon*)srtcommon;
@@ -873,6 +898,10 @@ void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, cons
     {
         return; // nothing to do for a successful socket
     }
+
+#ifdef PLEASE_LOG
+    applog.Debug("connect callback: error on @", sock, " erc=", error, " token=", token);
+#endif
 
     /* Example: identify by target address
     sockaddr_any peersa = peer;
@@ -999,26 +1028,48 @@ void SrtCommon::OpenGroupClient()
         targets.push_back(gd);
     }
 
-    Verb() << "Waiting for group connection... " << VerbNoEOL;
-
-    int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
-
-    if (fisock == SRT_ERROR)
+    ::transmit_throw_on_interrupt = true;
+    for (;;) // REPEATABLE BLOCK
     {
-        // Complete the error information for every member
+Connect_Again:
+        Verb() << "Waiting for group connection... " << VerbNoEOL;
 
-        ostringstream out;
-        for (Connection& c: m_group_nodes)
+        int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+
+        if (fisock == SRT_ERROR)
         {
-            if (c.error != SRT_SUCCESS)
+            // Complete the error information for every member
+            ostringstream out;
+            set<int> reasons;
+            for (Connection& c: m_group_nodes)
             {
-                out << "[" << c.token << "] " << c.host << ":" << c.port;
-                if (!c.source.empty())
-                    out << "[[" << c.source.str() << "]]";
-                out << ": " << srt_strerror(c.error, 0) << ": " << srt_rejectreason_str(c.reason) << endl;
+                if (c.error != SRT_SUCCESS)
+                {
+                    out << "[" << c.token << "] " << c.host << ":" << c.port;
+                    if (!c.source.empty())
+                        out << "[[" << c.source.str() << "]]";
+                    out << ": " << srt_strerror(c.error, 0) << ": " << srt_rejectreason_str(c.reason) << endl;
+                }
+                reasons.insert(c.reason);
             }
+
+            if (transmit_retry_connect && (transmit_retry_always || (reasons.size() == 1 && *reasons.begin() == SRT_REJ_TIMEOUT)))
+            {
+                if (transmit_retry_connect != -1)
+                    --transmit_retry_connect;
+
+                Verb() << "...all links timeout, retrying (" << transmit_retry_connect << ")...";
+                continue;
+            }
+
+            Error("srt_connect_group, nodes:\n" + out.str());
         }
-        Error("srt_connect_group, nodes:\n" + out.str());
+        else
+        {
+            Verb() << "[ASYNC] will wait..." << VerbNoEOL;
+        }
+
+        break;
     }
 
     if (m_blocking_mode)
@@ -1102,7 +1153,33 @@ void SrtCommon::OpenGroupClient()
             if (find(ready_err, ready_err+len2, m_sock) != ready_err+len2)
             {
                 Verb() << "[EPOLL: " << len2 << " entities FAILED]";
-                Error("All group connections failed", SRT_REJ_UNKNOWN, SRT_ENOCONN);
+                // Complete the error information for every member
+                ostringstream out;
+                set<int> reasons;
+                for (Connection& c: m_group_nodes)
+                {
+                    if (c.error != SRT_SUCCESS)
+                    {
+                        out << "[" << c.token << "] " << c.host << ":" << c.port;
+                        if (!c.source.empty())
+                            out << "[[" << c.source.str() << "]]";
+                        out << ": " << srt_strerror(c.error, 0) << ": " << srt_rejectreason_str(c.reason) << endl;
+                    }
+                    reasons.insert(c.reason);
+                }
+
+                if (transmit_retry_connect && (transmit_retry_always || (reasons.size() == 1 && *reasons.begin() == SRT_REJ_TIMEOUT)))
+                {
+                    if (transmit_retry_connect != -1)
+                        --transmit_retry_connect;
+
+
+                    Verb() << "...all links timeout, retrying in 250ms (" << transmit_retry_connect << ")...";
+                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                    goto Connect_Again;
+                }
+
+                Error("srt_connect_group, nodes:\n" + out.str());
             }
             else if (find(ready_conn, ready_conn+len1, m_sock) != ready_conn+len1)
             {
@@ -1128,6 +1205,7 @@ void SrtCommon::OpenGroupClient()
         Error("ConfigurePost");
     }
 
+    ::transmit_throw_on_interrupt = false;
 
     Verb() << "Group connection report:";
     for (auto& d: m_group_data)
@@ -1140,6 +1218,7 @@ void SrtCommon::OpenGroupClient()
     // Prepare group data for monitoring the group status.
     m_group_data.resize(m_group_nodes.size());
 }
+#endif
 
 /*
    This may be used sometimes for testing, but it's nonportable.
@@ -1194,16 +1273,31 @@ void SrtCommon::ConnectClient(string host, int port)
         srt_connect_callback(m_sock, &TransmitConnectCallback, 0);
     }
 
-    int stat = srt_connect(m_sock, sa.get(), sizeof sa);
-    if (stat == SRT_ERROR)
+    int stat = -1;
+    for (;;)
     {
-        int reason = srt_getrejectreason(m_sock);
+        ::transmit_throw_on_interrupt = true;
+        stat = srt_connect(m_sock, sa.get(), sizeof sa);
+        ::transmit_throw_on_interrupt = false;
+        if (stat == SRT_ERROR)
+        {
+            int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
-        extern srt_logging::Logger applog;
-        LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
+            LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
 #endif
-        srt_close(m_sock);
-        Error("srt_connect", reason);
+            if (transmit_retry_connect && (transmit_retry_always || reason == SRT_REJ_TIMEOUT))
+            {
+                if (transmit_retry_connect != -1)
+                    --transmit_retry_connect;
+
+                Verb() << "...timeout, retrying (" << transmit_retry_connect << ")...";
+                continue;
+            }
+
+            srt_close(m_sock);
+            Error("srt_connect", reason);
+        }
+        break;
     }
 
     // Wait for REAL connected state if nonblocking mode
@@ -1359,6 +1453,7 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
     if (!grpdata)
@@ -1451,6 +1546,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         }
     }
 }
+#endif
 
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
@@ -2139,7 +2235,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
-    bool have_group = !m_group_nodes.empty();
+    bool have_group ATR_UNUSED = !m_group_nodes.empty();
 
     bytevector data(chunk);
     // EXPERIMENTAL
@@ -2162,11 +2258,13 @@ MediaPacket SrtSource::Read(size_t chunk)
 
     do
     {
+#if ENABLE_EXPERIMENTAL_BONDING
         if (have_group || m_listener_group)
         {
             mctrl.grpdata = m_group_data.data();
             mctrl.grpdata_size = m_group_data.size();
         }
+#endif
 
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
@@ -2190,6 +2288,7 @@ Epoll_again:
                         // If the event was SRT_EPOLL_UPDATE, report it, and still wait.
 
                         bool any_read_ready = false;
+                        vector<int> errored;
                         for (int i = 0; i < len; ++i)
                         {
                             if (sready[i].events & SRT_EPOLL_UPDATE)
@@ -2199,11 +2298,16 @@ Epoll_again:
 
                             if (sready[i].events & SRT_EPOLL_IN)
                                 any_read_ready = true;
+
+                            if (sready[i].events & SRT_EPOLL_ERR)
+                            {
+                                errored.push_back(sready[i].fd);
+                            }
                         }
 
                         if (!any_read_ready)
                         {
-                            Verb() << " ... [NOT READ READY - AGAIN]";
+                            Verb() << " ... [NOT READ READY - AGAIN (" << errored.size() << " errored: " << Printable(errored) << ")]";
                             goto Epoll_again;
                         }
 
@@ -2236,6 +2340,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
@@ -2247,13 +2352,14 @@ Epoll_again:
         }
     }
     else
+#endif
     {
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {
             PrintSrtStats(m_sock, need_stats_report, need_bw_report, need_stats_report);
         }
     }
-    #endif
+#endif
 
     ++counter;
 
@@ -2326,12 +2432,14 @@ Epoll_again:
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
+#if ENABLE_EXPERIMENTAL_BONDING
     bool have_group = !m_group_nodes.empty();
     if (have_group || m_listener_group)
     {
         mctrl.grpdata = m_group_data.data();
         mctrl.grpdata_size = m_group_data.size();
     }
+#endif
 
     if (transmit_use_sourcetime)
     {
@@ -2351,6 +2459,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
+#if ENABLE_EXPERIMENTAL_BONDING
     if (have_group)
     {
         // For listener group this is not necessary. The group information
@@ -2364,6 +2473,7 @@ Epoll_again:
         }
     }
     else
+#endif
     {
         if (transmit_stats_writer && (need_stats_report || need_bw_report))
         {

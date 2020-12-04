@@ -70,11 +70,13 @@ inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 template<>
 inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
 {
     return srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
 }
+#endif
 
 
 template<>
@@ -244,11 +246,15 @@ const SocketOption srt_options [] {
     { "ipv6only", 0, SRTO_IPV6ONLY, SocketOption::PRE, SocketOption::INT, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
+#if ENABLE_EXPERIMENTAL_BONDING
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
+#endif
 #ifdef SRT_ENABLE_BINDTODEVICE
     { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
 #endif
+#if ENABLE_EXPERIMENTAL_BONDING
     { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
+#endif
     { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
 };
 }
