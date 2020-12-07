@@ -1183,7 +1183,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PBKEYLEN:
         if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->KeyLen(); // Running Key length.
+            *(int32_t *)optval = (int32_t) m_pCryptoControl->KeyLen(); // Running Key length.
         else
             *(int32_t *)optval = m_iSndCryptoKeyLen; // May be 0.
         optlen = sizeof(int32_t);
@@ -1255,14 +1255,14 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_sStreamName.c_str());
-        optlen = m_sStreamName.size();
+        optlen = (int) m_sStreamName.size();
         break;
 
     case SRTO_CONGESTION:
     {
         string tt = m_CongCtl.selected_name();
         strcpy((char *)optval, tt.c_str());
-        optlen = tt.size();
+        optlen = (int) tt.size();
     }
     break;
 
@@ -1273,7 +1273,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = m_zOPT_ExpPayloadSize;
+        *(int *)optval = (int) m_zOPT_ExpPayloadSize;
         break;
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -1308,7 +1308,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_OPT_PktFilterConfigString.c_str());
-        optlen = m_OPT_PktFilterConfigString.size();
+        optlen = (int) m_OPT_PktFilterConfigString.size();
         break;
 
     case SRTO_RETRANSMITALGO:
@@ -1803,7 +1803,7 @@ size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
+void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1819,7 +1819,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
-    int srtlen = 0;
+    size_t srtlen = 0;
 
     if (cmd == SRT_CMD_REJECT)
     {
