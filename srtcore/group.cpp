@@ -1369,7 +1369,26 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // { send_CheckBrokenSockets()
 
-    if (!pending.empty())
+    // Make an extra loop check to see if we could be
+    // in a condition of "all sockets either blocked or pending"
+
+    int nsuccessful = 0;
+    int nblocked = 0;
+    bool is_pending_blocked = false;
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        if (is->stat == -1)
+        {
+            if (is->code == SRT_EASYNCSND)
+                ++nblocked;
+        }
+        else
+        {
+            nsuccessful++;
+        }
+    }
+
+    if (!pending.empty() || nblocked)
     {
         HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
 
@@ -1386,12 +1405,24 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         else
         {
+            int swait_timeout = 0;
+
+            // There's also a hidden condition here that is the upper if condition.
+            is_pending_blocked = (nsuccessful == 0);
+
+            // If this is the case when 
+            if (m_bSynSending && is_pending_blocked)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendBroadcast: will block for " << m_iSndTimeOut << " - waiting for any writable in blocking mode");
+                swait_timeout = m_iSndTimeOut;
+            }
+
             {
                 InvertedLock ug(m_GroupLock);
 
                 THREAD_PAUSED();
                 m_pGlobal->m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                    *m_SndEpolld, (sready), swait_timeout, false /*report by retval*/); // Just check if anything happened
                 THREAD_RESUMED();
             }
 
@@ -1404,6 +1435,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
+            // IMPORTANT: we check only PENDING sockets (not blocked) because only
+            // pending sockets might report ERR epoll without being explicitly broken.
+            // Sockets that did connect and just have buffer full will be always broken,
+            // if they're going to report ERR in epoll.
             for (vector<SRTSOCKET>::iterator i = pending.begin(); i != pending.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
@@ -1415,6 +1450,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     int no_events = 0;
                     m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
                 }
+
+                if (CEPoll::isready(sready, *i, SRT_EPOLL_OUT))
+                    is_pending_blocked = false;
             }
 
             // After that, all sockets that have been reported
@@ -1431,7 +1469,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    send_CloseBrokenSockets(wipeme);
+    // Just for a case, when a socket that was blocked or pending
+    // had switched to write-enabled, 
+
+    send_CloseBrokenSockets((wipeme)); // wipeme will be cleared by this function
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
@@ -1693,9 +1734,18 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     if (none_succeeded)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        if (!m_bSynSending && (is_pending_blocked || was_blocked))
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: no links are ready for sending");
+            ercode = SRT_EASYNCSND;
+        }
+        else
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        }
+
         // Reparse error code, if set.
         // It might be set, if the last operation was failed.
         // If any operation succeeded, this will not be executed anyway.
@@ -3320,7 +3370,7 @@ size_t CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&        idler
 }
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vector<SRTSOCKET>& w_wipeme)
+bool CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, int nsuccessful, int nblocked, vector<SRTSOCKET>& w_wipeme)
 {
     // If we have at least one stable link, then select a link that have the
     // highest priority and silence the rest.
@@ -3332,7 +3382,8 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
     // we have one link that is stable and the freshly activated link is actually
     // stable too, we'll check this next time.
     //
-    if (!pending.empty())
+    bool is_pending_blocked = false;
+    if (!pending.empty() || nblocked)
     {
         HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
 
@@ -3348,19 +3399,34 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
         }
         else
         {
+            int swait_timeout = 0;
+
+            // There's also a hidden condition here that is the upper if condition.
+            is_pending_blocked = (nsuccessful == 0);
+
+            // If this is the case when 
+            if (m_bSynSending && is_pending_blocked)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendBroadcast: will block for " << m_iSndTimeOut << " - waiting for any writable in blocking mode");
+                swait_timeout = m_iSndTimeOut;
+            }
+
             // Some sockets could have been closed in the meantime.
             if (m_SndEpolld->watch_empty())
+            {
+                LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - ERROR!");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+            }
 
             {
                 InvertedLock ug(m_GroupLock);
                 m_pGlobal->m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                    *m_SndEpolld, sready, swait_timeout, false /*report by retval*/); // Just check if anything happened
             }
 
             if (m_bClosing)
             {
-                HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
+                LOGC(gslog.Error, log << "grp/send...: GROUP CLOSED, ABANDONING");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
@@ -3377,6 +3443,9 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
                     int no_events = 0;
                     m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
                 }
+
+                if (CEPoll::isready(sready, *i, SRT_EPOLL_OUT))
+                    is_pending_blocked = false;
             }
 
             // After that, all sockets that have been reported
@@ -3388,6 +3457,8 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
             m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
         }
     }
+
+    return is_pending_blocked;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -3489,13 +3560,13 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
         {
             // wipeme wiped, pending sockets checked, it can only mean that
             // all sockets are broken.
-            HLOGC(gslog.Debug, log << "grp/sendBackup: epolld empty - all sockets broken?");
+            LOGC(gslog.Error, log << "grp/sendBackup: epolld empty - all sockets broken?");
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
 
         if (!m_bSynSending)
         {
-            HLOGC(gslog.Debug, log << "grp/sendBackup: non-blocking mode - exit with no-write-ready");
+            LOGC(gslog.Error , log << "grp/sendBackup: non-blocking mode - exit with no-write-ready");
             throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
         }
         // Here is the situation that the only links left here are:
@@ -3523,7 +3594,7 @@ RetryWaitBlocked:
             // Some sockets could have been closed in the meantime.
             if (m_SndEpolld->watch_empty())
             {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: no more sendable sockets - group broken");
+                LOGC(gslog.Error, log << "grp/sendBackup: no more sendable sockets - group broken");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
@@ -3536,6 +3607,7 @@ RetryWaitBlocked:
 
             if (brdy == 0) // SND timeout exceeded
             {
+                LOGC(gslog.Error, log << "grp/sendBackup: not ready to write");
                 throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
             }
 
@@ -3572,7 +3644,10 @@ RetryWaitBlocked:
 
         // Re-check after the waiting lock has been reacquired
         if (m_bClosing)
+        {
+            LOGC(gslog.Error, log << "grp/sendBackup: group closed in the meantime");
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
 
         if (brdy == -1 || ndead >= nlinks)
         {
@@ -3738,6 +3813,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Avoid stupid errors in the beginning.
     if (len <= 0)
     {
+        LOGC(gslog.Error, log << "grp/send(backup): negative length: " << len);
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -3772,6 +3848,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
     {
         leaveCS(m_pGlobal->m_GlobControlLock);
+        LOGC(gslog.Error, log << "grp/send(backup): Cannot send, connection lost!");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -3890,6 +3967,10 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // and therefore need to be activated.
     set<uint16_t> sendable_pri;
 
+    // Likely will need to survive unlock-lock cycle on the group,
+    // so keep this by IDs.
+    vector<SRTSOCKET> blocked;
+
     // We believe that we need to send the payload over every sendable link anyway.
     for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
     {
@@ -3930,6 +4011,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
             insert_uniq((unstable), d);
+
+        if (is_unstable)
+            blocked.push_back(d->id);
 
         const Sendstate cstate = {d->id, d, stat, erc};
         sendstates.push_back(cstate);
@@ -4103,31 +4187,60 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                   << " unstable=" << unstable.size());
     }
 
-    send_CheckPendingSockets(pending, (wipeme));
+    int nsuccess = 0;
+    int nblocked = 0;
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        if (is->stat == -1)
+        {
+            if (is->code == SRT_EASYNCSND)
+                ++nblocked;
+        }
+        else
+        {
+            nsuccess++;
+        }
+    }
+
+    bool is_pending_blocked = send_CheckPendingSockets(pending, nsuccess, nblocked, (wipeme));
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
+    {
+        LOGC(gslog.Error, log << "grp/sendBackup: closing the group during operation");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
 
     send_CloseBrokenSockets((wipeme));
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
+    {
+        LOGC(gslog.Error, log << "grp/sendBackup: closing the group during operation");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
 
     sendBackup_CheckParallelLinks(unstable, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
     // (closing condition checked inside this call)
 
     if (none_succeeded)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBackup: all links broken (none succeeded to send a payload)");
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
-        // Reparse error code, if set.
-        // It might be set, if the last operation was failed.
-        // If any operation succeeded, this will not be executed anyway.
+        if (!m_bSynSending && (is_pending_blocked || nblocked))
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBackup: no links are ready for sending");
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL);
+        }
+        else
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBackup: all links broken (none succeeded to send a payload)");
+            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+            // Reparse error code, if set.
+            // It might be set, if the last operation was failed.
+            // If any operation succeeded, this will not be executed anyway.
 
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
     }
 
     // Now fill in the socket table. Check if the size is enough, if not,

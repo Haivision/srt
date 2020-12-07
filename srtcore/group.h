@@ -260,7 +260,7 @@ private:
                                       std::vector<gli_t>&       w_parallel,
                                       std::vector<SRTSOCKET>&   w_wipeme,
                                       const std::string&        activate_reason);
-    void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
+    bool send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, int nsuccessful, int nblocked, std::vector<SRTSOCKET>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
     void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,
                                        std::vector<gli_t>&       w_parallel,
