@@ -123,117 +123,128 @@ TEST(Bonding, ConnectNonBlocking)
 
     srt_startup();
 
-    g_listen_socket = srt_create_socket();
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    ASSERT_EQ(inet_pton(AF_INET, ADDR.c_str(), &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(PORT);
+    // NOTE: Add more group types, if implemented!
+    vector<SRT_GROUP_TYPE> types { SRT_GTYPE_BROADCAST, SRT_GTYPE_BACKUP };
 
-    ASSERT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
-    const int yes = 1;
-    srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
-    ASSERT_NE(srt_listen(g_listen_socket, 5), -1);
+    for (const auto GTYPE: types)
+    {
+        g_listen_socket = srt_create_socket();
+        sockaddr_in bind_sa;
+        memset(&bind_sa, 0, sizeof bind_sa);
+        bind_sa.sin_family = AF_INET;
+        ASSERT_EQ(inet_pton(AF_INET, ADDR.c_str(), &bind_sa.sin_addr), 1);
+        bind_sa.sin_port = htons(PORT);
 
-    int lsn_eid = srt_epoll_create();
-    int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
-    srt_epoll_add_usock(lsn_eid, g_listen_socket, &lsn_events);
+        ASSERT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+        const int yes = 1;
+        srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
+        ASSERT_NE(srt_listen(g_listen_socket, 5), -1);
 
-    // Caller part
+        int lsn_eid = srt_epoll_create();
+        int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
+        srt_epoll_add_usock(lsn_eid, g_listen_socket, &lsn_events);
 
-    const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
-    ASSERT_NE(ss, SRT_ERROR);
-    std::cout << "Created group socket: " << ss << '\n';
+        // Caller part
 
-    int no = 0;
-    ASSERT_NE(srt_setsockopt(ss, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // non-blocking mode
-    ASSERT_NE(srt_setsockopt(ss, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // non-blocking mode
+        const int ss = srt_create_group(GTYPE);
+        ASSERT_NE(ss, SRT_ERROR);
+        std::cout << "Created group socket: " << ss << '\n';
 
-    const int poll_id = srt_epoll_create();
-    // Will use this epoll to wait for srt_accept(...)
-    const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
+        int no = 0;
+        ASSERT_NE(srt_setsockopt(ss, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // non-blocking mode
+        ASSERT_NE(srt_setsockopt(ss, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // non-blocking mode
 
-    srt_connect_callback(ss, &ConnectCallback, this);
+        const int poll_id = srt_epoll_create();
+        // Will use this epoll to wait for srt_accept(...)
+        const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+        ASSERT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(PORT);
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+        srt_connect_callback(ss, &ConnectCallback, this);
 
-    srt_setloglevel(LOG_DEBUG);
+        sockaddr_in sa;
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(PORT);
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
-    auto acthr = std::thread([&lsn_eid]() {
-            SRT_EPOLL_EVENT ev[3];
+        //srt_setloglevel(LOG_DEBUG);
 
-            cout << "[A] Waiting for accept\n";
+        auto acthr = std::thread([&lsn_eid]() {
+                SRT_EPOLL_EVENT ev[3];
 
-            // This can wait in infinity; worst case it will be killed in process.
-            int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
-            ASSERT_EQ(uwait_res, 1);
-            ASSERT_EQ(ev[0].fd, g_listen_socket);
+                cout << "[A] Waiting for accept\n";
 
-            // Check if the IN event is set, even if it's not the only event
-            ASSERT_EQ(ev[0].events & SRT_EPOLL_IN, SRT_EPOLL_IN);
-            bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
-
-            sockaddr_any adr;
-            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
-
-            // Expected: group reporting
-            EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
-
-            if (have_also_update)
-            {
-                cout << "[A] NOT waiting for update - already reported previously\n";
-            }
-            else
-            {
-                cout << "[A] Waiting for update\n";
-                // Now another waiting is required and expected the update event
-                uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                // This can wait in infinity; worst case it will be killed in process.
+                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
                 ASSERT_EQ(uwait_res, 1);
                 ASSERT_EQ(ev[0].fd, g_listen_socket);
-                ASSERT_EQ(ev[0].events, SRT_EPOLL_UPDATE);
-            }
 
-            cout << "[A] Waitig for close (up to 5s)\n";
-            // Wait up to 5s for an error
-            srt_epoll_uwait(lsn_eid, ev, 3, 5000);
+                // Check if the IN event is set, even if it's not the only event
+                ASSERT_EQ(ev[0].events & SRT_EPOLL_IN, SRT_EPOLL_IN);
+                bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
 
-            srt_close(accept_id);
-            cout << "[A] thread finished\n";
-    });
+                sockaddr_any adr;
+                int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
-    cout << "Connecting two sockets\n";
+                // Expected: group reporting
+                EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
-    SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
-    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+                if (have_also_update)
+                {
+                    cout << "[A] NOT waiting for update - already reported previously\n";
+                }
+                else
+                {
+                    cout << "[A] Waiting for update\n";
+                    // Now another waiting is required and expected the update event
+                    uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                    ASSERT_EQ(uwait_res, 1);
+                    ASSERT_EQ(ev[0].fd, g_listen_socket);
+                    ASSERT_EQ(ev[0].events, SRT_EPOLL_UPDATE);
+                }
 
-    ASSERT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
+                cout << "[A] Waitig for close (up to 5s)\n";
+                // Wait up to 5s for an error
+                srt_epoll_uwait(lsn_eid, ev, 3, 5000);
 
-    int result = srt_connect_group(ss, cc, 2);
-    ASSERT_EQ(result, 0);
-    char data[4] = { 1, 2, 3, 4};
-    int wrong_send = srt_send(ss, data, sizeof data);
-    int errorcode = srt_getlasterror(NULL);
-    EXPECT_EQ(wrong_send, -1);
-    EXPECT_EQ(errorcode, SRT_EASYNCSND);
+                srt_close(accept_id);
+                cout << "[A] thread finished\n";
+        });
 
-    // Wait up to 2s
-    SRT_EPOLL_EVENT ev[3];
-    const int uwait_result = srt_epoll_uwait(poll_id, ev, 3, 2000);
-    std::cout << "Returned from connecting two sockets " << std::endl;
+        cout << "Connecting two sockets\n";
 
-    ASSERT_EQ(uwait_result, 1);  // Expect the group reported
-    EXPECT_EQ(ev[0].fd, ss);
+        SRT_SOCKGROUPCONFIG cc[2];
+        cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+        cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
 
-    // One second to make sure that both links are connected.
-    this_thread::sleep_for(seconds(1));
+        ASSERT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
-    EXPECT_EQ(srt_close(ss), 0);
-    acthr.join();
+        int result = srt_connect_group(ss, cc, 2);
+        ASSERT_EQ(result, 0);
+        char data[4] = { 1, 2, 3, 4};
+        int wrong_send = srt_send(ss, data, sizeof data);
+        int errorcode = srt_getlasterror(NULL);
+        EXPECT_EQ(wrong_send, -1);
+        EXPECT_EQ(errorcode, SRT_EASYNCSND);
+
+        // Wait up to 2s
+        SRT_EPOLL_EVENT ev[3];
+        const int uwait_result = srt_epoll_uwait(poll_id, ev, 3, 2000);
+        std::cout << "Returned from connecting two sockets " << std::endl;
+
+        ASSERT_EQ(uwait_result, 1);  // Expect the group reported
+        EXPECT_EQ(ev[0].fd, ss);
+
+        // One second to make sure that both links are connected.
+        this_thread::sleep_for(seconds(1));
+
+        EXPECT_EQ(srt_close(ss), 0);
+        acthr.join();
+
+        srt_epoll_release(lsn_eid);
+        srt_epoll_release(poll_id);
+
+        srt_close(g_listen_socket);
+    }
 
     srt_cleanup();
 }
@@ -665,7 +676,7 @@ TEST(Bonding, BackupPrioritySelection)
     int stabtimeo = 1000;
     srt_setsockflag(ss, SRTO_GROUPSTABTIMEO, &stabtimeo, sizeof stabtimeo);
 
-    srt_setloglevel(LOG_DEBUG);
+    //srt_setloglevel(LOG_DEBUG);
     srt::resetlogfa( std::set<srt_logging::LogFA> {
             SRT_LOGFA_GRP_SEND,
             SRT_LOGFA_GRP_MGMT,
