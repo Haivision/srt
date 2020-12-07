@@ -21,4 +21,4 @@ jobs:
     - name: build
       run: cd _build && cmake --build ./ --config Release
     - name: test
-      run: cd _build && ./test-srt --gtest_filter="-TestIPv6.v6_calls_v4"
+      run: cd _build && Release\test-srt --gtest_filter="-TestIPv6.v6_calls_v4"
