@@ -113,7 +113,7 @@ public:
     inline void setLength(size_t length)
     {
 #ifdef _WIN32
-        len = length;
+        len = (ULONG) length;
 #else
         iov_len = length;
 #endif

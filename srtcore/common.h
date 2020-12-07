@@ -1416,7 +1416,7 @@ struct PacketMetric
 
     void update(size_t mult, uint64_t value)
     {
-        pkts += mult;
+        pkts += (uint32_t) mult;
         bytes += mult * value;
     }
 
