@@ -5744,6 +5744,12 @@ void *CUDT::tsbpd(void *param)
             tsbpdtime = steady_clock::time_point();
         }
 
+        if (self->m_bClosing)
+        {
+            HLOGC(tslog.Debug, log << "tsbpd: IPE? Closing flag set in the meantime of checking. Exiting");
+            break;
+        }
+
         if (!is_zero(tsbpdtime))
         {
             const steady_clock::duration timediff = tsbpdtime - steady_clock::now();
@@ -5774,13 +5780,25 @@ void *CUDT::tsbpd(void *param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdAckWakeup = true;
-            THREAD_PAUSED();
-            tsbpd_cc.wait();
-            THREAD_RESUMED();
+
+            bool signaled = false;
+            while (!signaled)
+            {
+                // For safety reasons, do wakeup once per 1s and re-check the flag.
+                THREAD_PAUSED();
+                signaled = tsbpd_cc.wait_for(seconds_from(1));
+                THREAD_RESUMED();
+                if (self->m_bClosing)
+                {
+                    HLOGC(tslog.Debug, log << "tsbpd: IPE? Closing flag set in the meantime of waiting. Exiting");
+                    goto ExitLoops;
+                }
+            }
         }
 
         HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
     }
+ExitLoops:
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
@@ -7819,6 +7837,13 @@ void CUDT::destroySynch()
 void CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
+#if ENABLE_HEAVY_LOGGING
+    if (!m_bClosing)
+    {
+        LOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+    }
+#endif
+    m_bClosing = true;
     // wake up user calls
     CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
 
@@ -7826,8 +7851,8 @@ void CUDT::releaseSynch()
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_signal(m_RecvDataCond, m_RecvLock);
-    CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_broadcast(m_RecvDataCond, m_RecvLock);
+    CSync::lock_broadcast(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
@@ -11192,6 +11217,7 @@ void CUDT::checkTimers()
 
 void CUDT::updateBrokenConnection()
 {
+    m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);

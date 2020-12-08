@@ -1839,7 +1839,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     if (retval == -1)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    if (!block_new_opened)
+    if (!block_new_opened && arraysize > 1)
         return 0;
 
     return retval;
