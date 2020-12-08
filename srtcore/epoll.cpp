@@ -865,7 +865,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         if (!pwait)
         {
             // As this is mapped in the socket's data, it should be impossible.
-            LOGC(eilog.Error, log << "epoll/update: IPE: update struck E"
+            HLOGC(eilog.Debug, log << "epoll/update: IPE: update struck E"
                     << (*i) << " which is NOT SUBSCRIBED to @" << uid);
             continue;
         }
