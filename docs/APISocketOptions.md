@@ -217,6 +217,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre     | `int32_t` | bytes   | 1500          | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre     | `bool`    |         |  *            |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post    | `int32_t` | %       | 25            | 5..100   | RW  | GSD   |
+| [`SRTO_PACINGMODE`](#SRTO_PACINGMODE)                  | 1.4.3 | post    | `struct`  |         |               |          | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre     | `string`  |         | ""            | [512]    | W   | GSD   |
 | [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                  | 0.0.0 | pre     | `string`  |         | ""            | [10..79] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre     | `int32_t` | bytes   | \*            | \*       | W   | GSD   |
@@ -833,6 +834,82 @@ skyrocket when larger groups of packets are lost
 and break quickly at any rise in packet loss.
 
 - ***To do: set-only; get should be supported.***
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_PACINGMODE
+
+| OptName               | Since | Binding | Type   | Units  | Default  | Range   | Dir | Entity |
+| --------------------- | ----- | ------- | ------ | ------ | -------- | ------- | --- | ------ |
+| `SRTO_PACINGMODE `    | 1.5.x | post    | `int`  |        |          | enum    | RW  | GSD    |
+
+Pacing control mode. This option is only applicable in live transmission.
+
+`SRTO_PACINGMODE` option defines the way of configuring the maximum allowed bandwidth `MAXBW`
+which limits the bandwidth usage by SRT and is used by live congestion control
+(LiveCC) module to calculate the minimum inter-sending time of consecutive packets.
+
+A combination of pacing control and live congestion control (LiveCC) modules controls SRT
+packets pacing based on the input rate and an overhead for packets retransmission
+in order to avoid congestion during fluctuations of the source bitrate.
+
+The following structure must be supplied in the `optval` argument of the [`srt_setsockopt`](#getting-and-setting-options).
+
+```c++
+struct
+{
+   SRT_PACINGMODE mode;
+   int64_t bw;
+   int32_t bw_overhead;
+} SRT_PACING_CONFIG;
+```
+
+with the following interpretation of fields ("-" means field value is ignored):
+
+| SRT_PACINGMODE                 | bw         | bw_overhead  | Formula for `MAXBW` Calculation                                   |
+| ------------------------------ | ---------- | ------------ | ----------------------------------------------------------------- |
+| `SRT_PACING_UNSET`             | -          | -            | The mode is deduced, see the table below                          |
+| `SRT_PACING_MAXBW_DEFAULT`     | -          | -            | `MAXBW` is set to the default value of 1 Gbps                     |
+| `SRT_PACING_MAXBW_SET`         | `MAXBW`    | -            | `MAXBW` is set explicitly, in bytes per second, must be positive  |
+| `SRT_PACING_INBW_SET`          | `INPUTBW`  | `OHEADBW`    | `MAXBW = INPUTBW * (1 + OHEADBW /100)`                            |
+| `SRT_PACING_INBW_ESTIMATE`     | -          | `OHEADBW`    | `MAXBW = EST_INPUTBW * (1 + OHEADBW /100)`                        |
+| `SRT_PACING_INBW_MINESTIMANTE` | `INPUTBW`  | `OHEADBW`    | `MAXBW = max(INPUTBW, EST_INPUTBW) * (1 + OHEADBW /100)`          |
+
+where `INPUTBW` corresponds to the input rate set via [SRTO_INPUTBW](#SRTO_INPUTBW) option;
+`OHEADBW` corresponds to the overhead defined via [SRT_OHEADBW](#SRT_OHEADBW) option;
+`EST_INPUTBW` corresponds to an estimated rate of input to SRT sender (via `srt_sendmsg`).
+
+For example, the following code sets the `SRT_PACING_INBW_MINESTIMATE` mode where input bitrate is estimated with the minimum value of ~400 Mbits.
+The bandwidth limit will be 25% above the estimated or minimum input bitrate.
+
+```c++
+SRT_PACING_CONFIG cfg;
+cfg.mode = SRT_PACING_INBW_MINESTIMATE;
+cfg.bw   = 50000000;  // 50 MB ~ 400 Mbits
+cfg.bw_overhead = 25; // 25%
+
+srt_setsockopt(sock, 0, SRTO_PACINGMODE, &cfg, (int) sizeof cfg); // returns SRT_SUCCESS
+```
+
+By default, `SRTO_PACINGMODE` is set to `SRT_PACING_UNSET` mode which preserves the
+previous behavior of SRT (API/ABI backward compatibility).
+In this case, an actual pacing mode is deduced from a combination of individual socket options:
+[SRTO_MAXBW](#SRTO_MAXBW), [SRTO_INPUTBW](#SRTO_INPUTBW)
+and [SRT_OHEADBW](#SRT_OHEADBW).
+The following table shows the pacing mode deduction depending on options values
+set (✓). The value "-" means an option value is ignored.
+Please note that all the modes
+except `SRT_PACING_INBW_` can be defined by this combination. The latter requires
+setting `SRTO_PACINGMODE` to `SRT_PACING_INPUTBWADJUSTED`explicitly.
+
+| SRTO_MAXBW | SRTO_INPUTBW | SRTO_OHEADBW | Deduced Mode                   |
+| ---------- | ------------ | ------------ | ------------------------------ |
+| -1         | -            | -            | `SRT_PACING_MAXBW_DEFAULT`     |
+| ✓          | -            | -            | `SRT_PACING_MAXBW_SET`         |
+| 0          | ✓            | ✓            | `SRT_PACING_INBW_SET`          |
+| 0          | 0            | ✓            | `SRT_PACING_INBW_ESTIMATE`     |
 
 [Return to list](#list-of-options)
 
