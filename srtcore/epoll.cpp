@@ -864,15 +864,9 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
         CEPollDesc::Wait* pwait = ed.watch_find(uid);
         if (!pwait)
         {
-            // Don't print this error, if the intention was to clear the readiness.
-            // This is being usually done together with unsubscription, so this error
-            // would be misleading and unnecessary here. Report only cases when setting readiness.
-            if (enable)
-            {
-                // As this is mapped in the socket's data, it should be impossible.
-                LOGC(eilog.Error, log << "epoll/update: IPE: update struck E"
-                        << (*i) << " which is NOT SUBSCRIBED to @" << uid);
-            }
+            // As this is mapped in the socket's data, it should be impossible.
+            HLOGC(eilog.Debug, log << "epoll/update: IPE: update struck E"
+                    << (*i) << " which is NOT SUBSCRIBED to @" << uid);
             continue;
         }
 

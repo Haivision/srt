@@ -5739,6 +5739,12 @@ void *CUDT::tsbpd(void *param)
                     gkeeper.group->updateLatestRcv(self->m_parent);
                 }
             }
+
+            // After re-acquisition of the m_RecvLock, re-check the closing flag
+            if (self->m_bClosing)
+            {
+                break;
+            }
 #endif
             CGlobEvent::triggerEvent();
             tsbpdtime = steady_clock::time_point();
@@ -5762,8 +5768,9 @@ void *CUDT::tsbpd(void *param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
             THREAD_PAUSED();
-            tsbpd_cc.wait_for(timediff);
+            const bool ATR_UNUSED signaled = tsbpd_cc.wait_for(timediff);
             THREAD_RESUMED();
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
         else
         {
@@ -5784,21 +5791,31 @@ void *CUDT::tsbpd(void *param)
             bool signaled = false;
             while (!signaled)
             {
-                // For safety reasons, do wakeup once per 1s and re-check the flag.
+                // For safety reasons, do wakeup once per 1/8s and re-check the flag.
+                // This should be enough long time that during a normal transmission
+                // the TSBPD thread would be woken up much earlier when required by
+                // ACK per ACK timer (at most 10ms since the last check) and in case
+                // when this might result in a deadlock, it would only hold up to 125ms,
+                // which should be little harmful for the application. NOTE THAT THIS
+                // IS A SANITY CHECK FOR A SITUATION THAT SHALL NEVER HAPPEN.
                 THREAD_PAUSED();
-                signaled = tsbpd_cc.wait_for(seconds_from(1));
+                signaled = tsbpd_cc.wait_for(milliseconds_from(125));
                 THREAD_RESUMED();
-                if (self->m_bClosing)
+                if (self->m_bClosing && !signaled)
                 {
-                    HLOGC(tslog.Debug, log << "tsbpd: IPE? Closing flag set in the meantime of waiting. Exiting");
-                    goto ExitLoops;
+                    HLOGC(tslog.Debug, log << "tsbpd: IPE: Closing flag set in the meantime of waiting. Continue to EXIT");
+
+                    // This break doesn't have to be done in case when signaled
+                    // because if so this current loop will be interrupted anyway,
+                    // and the outer loop will be terminated at the check of self->m_bClosing.
+                    // This is only a sanity check.
+                    break;
                 }
             }
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
-
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
     }
-ExitLoops:
+
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
@@ -6372,7 +6389,7 @@ bool CUDT::closeInternal()
     // Inform the threads handler to stop.
     m_bClosing = true;
 
-    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE. Acquiring connection lock");
+    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE (closing=true). Acquiring connection lock");
 
     ScopedLock connectguard(m_ConnectionLock);
 
@@ -7837,13 +7854,11 @@ void CUDT::destroySynch()
 void CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
-#if ENABLE_HEAVY_LOGGING
     if (!m_bClosing)
     {
-        LOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        HLOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        m_bClosing = true;
     }
-#endif
-    m_bClosing = true;
     // wake up user calls
     CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
 
@@ -9545,7 +9560,7 @@ void CUDT::processClose()
     m_bBroken        = true;
     m_iBrokenCounter = 60;
 
-    HLOGP(smlog.Debug, "processClose: sent message and set flags");
+    HLOGP(smlog.Debug, "processClose: (closing=true) sent message and set flags");
 
     if (m_bTsbPd)
     {
@@ -11057,7 +11072,8 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // Application will detect this when it calls any UDT methods next time.
         //
         HLOGC(xtlog.Debug,
-              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - m_tsLastRspTime) << "ms");
+              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - m_tsLastRspTime)
+              << "ms (closing=true)");
         m_bClosing       = true;
         m_bBroken        = true;
         m_iBrokenCounter = 30;
@@ -11217,6 +11233,7 @@ void CUDT::checkTimers()
 
 void CUDT::updateBrokenConnection()
 {
+    HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing=true and taking out epoll events");
     m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
