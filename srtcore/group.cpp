@@ -1372,19 +1372,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Make an extra loop check to see if we could be
     // in a condition of "all sockets either blocked or pending"
 
-    int nsuccessful = 0;
-    int nblocked = 0;
+    int nsuccessful = 0; // number of successfully connected sockets
+    int nblocked    = 0; // number of sockets blocked in connection
     bool is_pending_blocked = false;
     for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
     {
-        if (is->stat == -1)
-        {
-            if (is->code == SRT_EASYNCSND)
-                ++nblocked;
-        }
-        else
+        if (is->stat != -1)
         {
             nsuccessful++;
+        }
+        // is->stat == -1
+        else if (is->code == SRT_EASYNCSND)
+        {
+            ++nblocked;
         }
     }
 
