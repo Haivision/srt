@@ -1688,6 +1688,26 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
 
     vector<SRTSOCKET> broken;
 
+    // Return value rules:
+    // In non-blocking mode:
+    // - return Socket ID, if:
+    //   - you requested only one connection in this call
+    // In blocking mode:
+    // - return Socket ID, if:
+    //   - you requested only one connection in this call
+    //   - you connect a group that was not connected yet
+    // - otherwise return 0
+
+    // Leave the last SID value in retval if you had only one
+    // connection to start. Otherwise override it with 0.
+    if (arraysize > 1)
+        retval = 0;
+
+    // For blocking mode only, and only in case when the group
+    // was not yet connected, this retval could be overridden
+    // again with the first ready socket ID, and this socket ID
+    // will be returned.
+
     while (block_new_opened)
     {
         if (spawned.empty())
@@ -1838,9 +1858,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
     // the `errorcode` field to determine the reaon for particular link.
     if (retval == -1)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-    if (!block_new_opened && arraysize > 1)
-        return 0;
 
     return retval;
 }
