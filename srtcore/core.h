@@ -115,7 +115,7 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 12;
+static const size_t SRT_SOCKOPT_NPOST = 13;
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
@@ -757,7 +757,7 @@ private: // Identification
     int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
     size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
 
-    // Options
+    // Options (socket config)
     int m_iMSS;                                  // Maximum Segment Size, in bytes
     bool m_bSynSending;                          // Sending syncronization mode
     bool m_bSynRecving;                          // Receiving syncronization mode
@@ -813,11 +813,14 @@ private: // Identification
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
                                                  // 0: use internally estimated input bandwidth
     int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
+    SRT_PACINGMODE m_PacingMode;                 // Output Pacing Mode
     bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
     int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
 #if ENABLE_EXPERIMENTAL_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake
 #endif
+
+    SRT_PACINGMODE DeducePacingMode() const;
 
 private:
     UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)

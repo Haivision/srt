@@ -242,7 +242,8 @@ typedef enum SRT_SOCKOPT {
 #endif
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
-   SRTO_RETRANSMITALGO = 61  // An option to select packet retransmission algorithm
+   SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
+   SRTO_PACINGMODE           // Set the parameters defining the output pacing mode
 } SRT_SOCKOPT;
 
 
@@ -302,6 +303,23 @@ static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hd
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
+
+typedef enum
+{
+    SRT_PACING_UNSET,            // API/ABI backward compatible mode, depending on SRTO_MAXBW, SRTO_INPUTBW and SRTO_OHEADBW
+    SRT_PACING_MAXBW_DEFAULT,    // Default Max BW mode (SRTO_MAXBW == -1)
+    SRT_PACING_MAXBW_SET,        // Maximum BW is set (SRTO_MAXBW > 0)
+    SRT_PACING_INBW_SET,         // Input rate and overhead are provided: MAXBW = INPUTBW * (1 + OHEADBW /100)
+    SRT_PACING_INBW_ESTIMATE,    // Internally sampled input rate and configured overhead: MAXBW = ESTINPUTBW * (1 + OHEADBW /100)
+    SRT_PACING_INBW_MINESTIMATE  // Use internally sampled and configured input rates and overhead: MAX_BW = max(INPUTBW, ESTINPUTBW) * (1 + OHEADBW /100)
+} SRT_PACINGMODE;
+
+typedef struct
+{
+   SRT_PACINGMODE mode;
+   int64_t bw;
+   int32_t bw_overhead;
+} SRT_PACING_CONFIG;
 
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
