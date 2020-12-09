@@ -5112,7 +5112,6 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
     CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, m_PeerAddr);
 
-    s->m_Status = SRTS_CONNECTED;
     //int token = -1;
 #if ENABLE_EXPERIMENTAL_BONDING
     {
@@ -5141,6 +5140,8 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         }
     }
 #endif
+
+    s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     // This must be done AFTER the group member status is upgraded to IDLE because
