@@ -11,7 +11,6 @@ typedef int SOCKET;
 
 #include"platform_sys.h"
 #include "srt.h"
-#include "logger_defs.h"
 
 using namespace std;
 

@@ -92,48 +92,48 @@ TEST(Transmission, FileUpload)
 
     bool thread_exit = false;
 
-    srt_logging::gglog.Warn("TEST: Transmission.FileUload");
-    srt_setloglevel(LOG_DEBUG);
+    //srt_logging::gglog.Warn("TEST: Transmission.FileUload");
+    //srt_setloglevel(LOG_DEBUG);
 
     auto client = std::thread([&]
-            {
-            sockaddr_in remote;
-            int len = sizeof remote;
-            const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
-            ASSERT_GT(accepted_sock, 0);
+    {
+        sockaddr_in remote;
+        int len = sizeof remote;
+        const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
+        ASSERT_GT(accepted_sock, 0);
 
-            if (accepted_sock == SRT_INVALID_SOCK)
-            {
+        if (accepted_sock == SRT_INVALID_SOCK)
+        {
             std::cerr << srt_getlasterror_str() << std::endl;
             EXPECT_NE(srt_close(sock_lsn), SRT_ERROR);
             return;
-            }
+        }
 
-            std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
+        std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
 
-            std::vector<char> buf(1456);
+        std::vector<char> buf(1456);
 
-            npackets = 0;
-            for (;;)
+        npackets = 0;
+        for (;;)
+        {
+            int n = srt_recv(accepted_sock, buf.data(), 1456);
+            ASSERT_NE(n, SRT_ERROR);
+            if (n == 0)
             {
-                int n = srt_recv(accepted_sock, buf.data(), 1456);
-                ASSERT_NE(n, SRT_ERROR);
-                if (n == 0)
-                {
-                    cout << endl;
-                    break;
-                }
-
-                // Write to file any amount of data received
-                copyfile.write(buf.data(), n);
-                ++npackets;
-                cout << "\r" << npackets << "     ";
+                cout << endl;
+                break;
             }
 
-            EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
+            // Write to file any amount of data received
+            copyfile.write(buf.data(), n);
+            ++npackets;
+            cout << "\r" << npackets << "     ";
+        }
 
-            thread_exit = true;
-            });
+        EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
+
+        thread_exit = true;
+    });
 
     sockaddr_in sa = sockaddr_in();
     sa.sin_family = AF_INET;
@@ -200,7 +200,7 @@ TEST(Transmission, FileUpload)
     remove("file.target");
 
     // restore log level to not affect the others
-    srt_setloglevel(LOG_NOTICE);
+    //srt_setloglevel(LOG_NOTICE);
 
     (void)srt_cleanup();
 }
