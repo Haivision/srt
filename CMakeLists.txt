@@ -1211,12 +1211,16 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	add_test(
-		NAME
-			test-srt
-		COMMAND
-			${CMAKE_BINARY_DIR}/test-srt
-	)
+	if(${CMAKE_VERSION} VERSION_LESS "3.9.0") 
+		add_test(
+			NAME
+				test-srt
+			COMMAND
+				${CMAKE_BINARY_DIR}/test-srt
+		)
+	else()
+		gtest_add_tests(test-srt .withArgs AUTO)
+	endif()
 
 	enable_testing()
 
