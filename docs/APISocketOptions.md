@@ -880,11 +880,11 @@ have the same password set, or otherwise the connection is rejected. This
 behavior can be changed by [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION).
 
 Note that since the introduction of bidirectional support, there's only one
-initial SEK to encrypt the stream (new keys after refreshing will be updated
-independently), and there's no distinction between "service party that defines
-the password" and "client party that is required to set matching password" - both
-parties are equivalent, and in order to have a working encrypted connection, they
-have to simply set the same passphrase.
+initial encryption key to encrypt the stream (new keys after refreshing will be
+updated independently), and there's no distinction between "service party that
+defines the password" and "client party that is required to set matching
+password" - both parties are equivalent, and in order to have a working
+encrypted connection, they have to simply set the same passphrase.
 
 [Return to list](#list-of-options)
 
