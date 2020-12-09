@@ -323,8 +323,8 @@ be internally dispatched appropriate way, depending on what kind of entity
 was used. For example, when you send a payload, it will be effectively sent:
 
 - For Broadcast group, over all sockets
-- For Backup group, over all currently active links
-- For Balancing group, over a currently selected link
+- For Backup group, over a currently selected link
+- For Balancing group, over all currently active links
 - For Multicast group, over an extra socket to the multicast group
 
 Similarly, the reading operation will read over all links and due to
