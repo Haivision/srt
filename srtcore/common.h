@@ -94,7 +94,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class SRT_API CUDTException: public std::exception
+class CUDTException: public std::exception
 {
 public:
 
@@ -835,7 +835,7 @@ struct CIPAddress
 {
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family, const sockaddr_any& peer);
+   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
    static std::string show(const struct sockaddr* adr);
 };
 
