@@ -142,23 +142,23 @@ size_t strerror_array_sizes [] = {
 
 const char* strerror_get_message(size_t major, size_t minor)
 {
-	static const char* const undefined = "UNDEFINED ERROR";
+    static const char* const undefined = "UNDEFINED ERROR";
 
-	// Extract the major array
-	if (major >= sizeof(strerror_array_major)/sizeof(const char**))
-	{
-		return undefined;
-	}
+    // Extract the major array
+    if (major >= sizeof(strerror_array_major)/sizeof(const char**))
+    {
+        return undefined;
+    }
 
-	const char** array = strerror_array_major[major];
-	size_t size = strerror_array_sizes[major];
+    const char** array = strerror_array_major[major];
+    size_t size = strerror_array_sizes[major];
 
-	if (minor >= size)
-	{
-		return undefined;
-	}
+    if (minor >= size)
+    {
+        return undefined;
+    }
 
-	return array[minor];
+    return array[minor];
 }
 
 
