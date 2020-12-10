@@ -321,7 +321,8 @@ void serverSocket(std::string ip, int port, bool expect_success)
     std::cout << "Server exit\n";
 }
 
-TEST(ReuseAddr, SameAddr1) {
+TEST(ReuseAddr, SameAddr1)
+{
     ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -341,8 +342,8 @@ TEST(ReuseAddr, SameAddr1) {
     srt_cleanup();
 }
 
-TEST(ReuseAddr, SameAddr2) {
-
+TEST(ReuseAddr, SameAddr2)
+{
     std::string localip = GetLocalIP();
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
@@ -366,7 +367,8 @@ TEST(ReuseAddr, SameAddr2) {
     srt_cleanup();
 }
 
-TEST(ReuseAddr, DiffAddr) {
+TEST(ReuseAddr, DiffAddr)
+{
     std::string localip = GetLocalIP();
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
@@ -390,11 +392,9 @@ TEST(ReuseAddr, DiffAddr) {
 TEST(ReuseAddr, Wildcard)
 {
 #if defined(_WIN32) || defined(CYGWIN)
-    {
-        std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
-            "Forcing test to pass, PLEASE FIX.\n";
-        return;
-    }
+    std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
+        "Forcing test to pass, PLEASE FIX.\n";
+    return;
 #endif
     std::string localip = GetLocalIP();
     if (localip == "")
@@ -421,11 +421,9 @@ TEST(ReuseAddr, Wildcard)
 TEST(ReuseAddr, ProtocolVersion)
 {
 #if defined(_WIN32) || defined(CYGWIN)
-    {
-        std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
-            "Forcing test to pass, PLEASE FIX.\n";
-        return;
-    }
+    std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
+        "Forcing test to pass, PLEASE FIX.\n";
+    return;
 #endif
     ASSERT_EQ(srt_startup(), 0);
 
