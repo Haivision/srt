@@ -71,42 +71,42 @@ set code_minor {
 
 set errortypes {
 
-	SUCCESS "Success" {
-		NONE      ""
-	}
+    SUCCESS "Success" {
+        NONE      ""
+    }
 
-	SETUP "Connection setup failure" {
-		NONE      ""
-		TIMEOUT   "connection timed out"
-		REJECTED  "connection rejected"
-		NORES     "unable to create/configure SRT socket"
-		SECURITY  "aborted for security reasons"
-		CLOSED    "socket closed during operation"
-	}
+    SETUP "Connection setup failure" {
+        NONE      ""
+        TIMEOUT   "connection timed out"
+        REJECTED  "connection rejected"
+        NORES     "unable to create/configure SRT socket"
+        SECURITY  "aborted for security reasons"
+        CLOSED    "socket closed during operation"
+    }
 
     CONNECTION "" {
-		NONE     ""
-		CONNLOST "Connection was broken"
-		NOCONN   "Connection does not exist"
-	}
+        NONE     ""
+        CONNLOST "Connection was broken"
+        NOCONN   "Connection does not exist"
+    }
 
     SYSTEMRES "System resource failure" {
-		NONE   ""
-		THREAD "unable to create new threads"
-		MEMORY "unable to allocate buffers"
-		OBJECT "unable to allocate a system object"
-	}
+        NONE   ""
+        THREAD "unable to create new threads"
+        MEMORY "unable to allocate buffers"
+        OBJECT "unable to allocate a system object"
+    }
 
     FILESYSTEM "File system failure" {
-		NONE      ""
-		SEEKGFAIL "cannot seek read position"
-		READFAIL  "failure in read"
-		SEEKPFAIL "cannot seek write position"
-		WRITEFAIL "failure in write"
-	}
+        NONE      ""
+        SEEKGFAIL "cannot seek read position"
+        READFAIL  "failure in read"
+        SEEKPFAIL "cannot seek write position"
+        WRITEFAIL "failure in write"
+    }
 
     NOTSUP "Operation not supported" {
-		NONE           ""
+        NONE           ""
         ISBOUND        "Cannot do this operation on a BOUND socket"
         ISCONNECTED    "Cannot do this operation on a CONNECTED socket"
         INVAL          "Bad parameters"
@@ -122,19 +122,19 @@ set errortypes {
         EIDINVAL       "Invalid epoll ID"
         EEMPTY         "All sockets removed from epoll, waiting would deadlock"
 
-	}
+    }
 
     AGAIN "Non-blocking call failure" {
-		NONE       ""
+        NONE       ""
         WRAVAIL    "no buffer available for sending"
         RDAVAIL    "no data available for reading"
         XMTIMEOUT  "transmission timed out"
-        CONGESTION "early congestion notification"		
-	}
+        CONGESTION "early congestion notification"        
+    }
 
     PEERERROR "The peer side has signaled an error" {
-		NONE ""
-	}
+        NONE ""
+    }
 
 }
 
@@ -162,23 +162,23 @@ set strerror_function {
 
 const char* strerror_get_message(size_t major, size_t minor)
 {
-	static const char* const undefined = "UNDEFINED ERROR";
+    static const char* const undefined = "UNDEFINED ERROR";
 
-	// Extract the major array
-	if (major >= sizeof(strerror_array_major)/sizeof(const char**))
-	{
-		return undefined;
-	}
+    // Extract the major array
+    if (major >= sizeof(strerror_array_major)/sizeof(const char**))
+    {
+        return undefined;
+    }
 
-	const char** array = strerror_array_major[major];
-	size_t size = strerror_array_sizes[major];
+    const char** array = strerror_array_major[major];
+    size_t size = strerror_array_sizes[major];
 
-	if (minor >= size)
-	{
-		return undefined;
-	}
+    if (minor >= size)
+    {
+        return undefined;
+    }
 
-	return array[minor];
+    return array[minor];
 }
 
 }
@@ -198,55 +198,55 @@ set globalheader {
 
 proc Generate:imp {} {
 
-	puts $::globalheader
+    puts $::globalheader
 
-	puts "namespace srt\n\{"
+    puts "namespace srt\n\{"
 
-	# Generate major array
-	set majitem 0
-	set minor_array_sizes ""
-	foreach {mt mm cont} $::errortypes {
+    # Generate major array
+    set majitem 0
+    set minor_array_sizes ""
+    foreach {mt mm cont} $::errortypes {
 
-		puts "// MJ_$mt '$mm'"
+        puts "// MJ_$mt '$mm'"
 
-		# Generate minor array
-		set majorlc [string tolower $mt]
-		set minor_message_items ""
-		set minitem 0
-		foreach {mnt mnm} $cont {
-			if {$mm == ""} {
-				set msg $mnm
-			} elseif {$mnm == ""} {
-				set msg $mm
-			} else {
-				set msg "$mm: $mnm"
-			}
-			append minor_message_items "    \"$msg\", // MN_$mnt = $minitem\n"
-			incr minitem
-		}
-		append minor_message_items "    \"\""
-		puts [subst -nobackslashes -nocommands $::minor_array_item]
+        # Generate minor array
+        set majorlc [string tolower $mt]
+        set minor_message_items ""
+        set minitem 0
+        foreach {mnt mnm} $cont {
+            if {$mm == ""} {
+                set msg $mnm
+            } elseif {$mnm == ""} {
+                set msg $mm
+            } else {
+                set msg "$mm: $mnm"
+            }
+            append minor_message_items "    \"$msg\", // MN_$mnt = $minitem\n"
+            incr minitem
+        }
+        append minor_message_items "    \"\""
+        puts [subst -nobackslashes -nocommands $::minor_array_item]
 
-		append minor_array_list "    strerror_msgs_$majorlc, // MJ_$mt = $majitem\n"
-		append minor_array_sizes "    [expr {$minitem}],\n"
-		incr majitem
-	}
-	append minor_array_list "    NULL\n"
-	append minor_array_sizes "    0\n"
+        append minor_array_list "    strerror_msgs_$majorlc, // MJ_$mt = $majitem\n"
+        append minor_array_sizes "    [expr {$minitem}],\n"
+        incr majitem
+    }
+    append minor_array_list "    NULL\n"
+    append minor_array_sizes "    0\n"
 
-	puts [subst -nobackslashes -nocommands $::main_array_item]
-	puts [subst -nobackslashes -nocommands $::major_size_item]
+    puts [subst -nobackslashes -nocommands $::main_array_item]
+    puts [subst -nobackslashes -nocommands $::major_size_item]
 
-	puts ""
-	puts $::strerror_function
+    puts ""
+    puts $::strerror_function
 
-	puts "\} // namespace srt"
+    puts "\} // namespace srt"
 }
 
 
 set defmode imp
 if {[lindex $argv 0] != ""} {
-	set defmode [lindex $argv 0]
+    set defmode [lindex $argv 0]
 }
 
 Generate:$defmode
