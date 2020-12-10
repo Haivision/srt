@@ -771,7 +771,7 @@ public:
         return right < *this;
     }
 
-    bool operator=(const this_t& right) const
+    bool operator==(const this_t& right) const
     {
         return number == right.number;
     }

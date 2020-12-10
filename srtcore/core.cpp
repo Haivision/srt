@@ -9668,8 +9668,10 @@ int CUDT::processData(CUnit* in_unit)
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
 
-        ThreadName tn(tns2.str().c_str());
-        const char* thname = tns2.str().c_str();
+        const string& tn = tns2.str();
+
+        ThreadName tnkeep(tn.c_str());
+        const char* thname = tn.c_str();
 #else
         const char* thname = "SRT:TsbPd";
 #endif
