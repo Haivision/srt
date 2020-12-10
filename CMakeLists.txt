@@ -1211,13 +1211,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	if(${CMAKE_VERSION} VERSION_LESS "3.9.0") 
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
-		add_test(
-			NAME	test-srt
-			COMMAND	${CMAKE_BINARY_DIR}/test-srt
+	if(${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+	add_test(
+		NAME	test-srt
+		COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
 	else()
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 		gtest_add_tests(
 			test-srt
 			""
