@@ -1,10 +1,14 @@
 #include "gtest/gtest.h"
+#include <thread>
+#ifndef _WIN32
+#include <ifaddrs.h>
+#endif
+
 #include "common.h"
 #include "srt.h"
 #include "udt.h"
-#include <thread>
 
-// Copied from ../apps/apputi.cpp, can't really link this file here.
+// Copied from ../apps/apputil.cpp, can't really link this file here.
 sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family = AF_INET)
 {
     using namespace std;
@@ -65,6 +69,71 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
     return result;
 }
 
+#ifdef _WIN32
+
+// On Windows there's a function for it, but it requires an extra
+// iphlp library to be attached to the executable, which is kinda
+// problematic. Temporarily block tests using this function on Windows.
+
+std::string GetLocalIP()
+{
+    std::cout << "!!!WARNING!!!: GetLocalIP not supported, test FORCEFULLY passed\n";
+    return "";
+}
+#else
+struct IfAddr
+{
+    ifaddrs* handle;
+    IfAddr()
+    {
+        getifaddrs(&handle);
+    }
+
+    ~IfAddr()
+    {
+        freeifaddrs(handle);
+    }
+};
+
+std::string GetLocalIP()
+{
+    struct ifaddrs * ifa=NULL;
+    void * tmpAddrPtr=NULL;
+
+    IfAddr ifAddr;
+
+    for (ifa = ifAddr.handle; ifa != NULL; ifa = ifa->ifa_next)
+    {
+        if (!ifa->ifa_addr)
+        {
+            continue;
+        }
+
+        if (ifa->ifa_addr->sa_family == AF_INET)
+        {
+            // is a valid IP4 Address
+            sockaddr_in* psin = (struct sockaddr_in *)ifa->ifa_addr;
+            tmpAddrPtr=&psin->sin_addr;
+
+            if (ntohl(psin->sin_addr.s_addr) == 0x7f000001) // Skip 127.0.0.1
+                continue;
+
+            char addressBuffer[INET_ADDRSTRLEN] = "";
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            return addressBuffer;
+            printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) { // check it is IP6
+            // is a valid IP6 Address
+            tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+            char addressBuffer[INET6_ADDRSTRLEN] = "";
+            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+            return addressBuffer;
+        }
+    }
+
+    return "";
+}
+#endif
 
 int client_pollid = SRT_ERROR;
 SRTSOCKET m_client_sock = SRT_ERROR;
@@ -266,6 +335,11 @@ TEST(ReuseAddr, SameAddr1) {
 }
 
 TEST(ReuseAddr, SameAddr2) {
+
+    std::string localip = GetLocalIP();
+    if (localip == "")
+        return; // DISABLE TEST if this doesn't work.
+
     ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -274,10 +348,10 @@ TEST(ReuseAddr, SameAddr2) {
     server_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, server_pollid);
 
-    std::thread server_1(serverSocket, "127.0.0.2", 5000, true);
+    std::thread server_1(serverSocket, localip, 5000, true);
     server_1.join();
 
-    std::thread server_2(serverSocket, "127.0.0.2", 5000, true);
+    std::thread server_2(serverSocket, localip, 5000, true);
     server_2.join();
 
     (void)srt_epoll_release(client_pollid);
@@ -286,6 +360,10 @@ TEST(ReuseAddr, SameAddr2) {
 }
 
 TEST(ReuseAddr, DiffAddr) {
+    std::string localip = GetLocalIP();
+    if (localip == "")
+        return; // DISABLE TEST if this doesn't work.
+
     ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -295,7 +373,7 @@ TEST(ReuseAddr, DiffAddr) {
     ASSERT_NE(SRT_ERROR, server_pollid);
 
     serverSocket("127.0.0.1", 5000, true);
-    serverSocket("127.0.0.2", 5000, true);
+    serverSocket(localip, 5000, true);
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
@@ -304,6 +382,10 @@ TEST(ReuseAddr, DiffAddr) {
 
 TEST(ReuseAddr, Wildcard)
 {
+    std::string localip = GetLocalIP();
+    if (localip == "")
+        return; // DISABLE TEST if this doesn't work.
+
     ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -313,7 +395,7 @@ TEST(ReuseAddr, Wildcard)
     ASSERT_NE(SRT_ERROR, server_pollid);
 
     serverSocket("0.0.0.0", 5000, true);
-    serverSocket("127.0.0.2", 5000, false);
+    serverSocket(localip, 5000, false);
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
