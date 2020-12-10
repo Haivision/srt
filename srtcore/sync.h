@@ -329,6 +329,7 @@ public:
     ~UniqueLock();
 
 public:
+    void lock();
     void unlock();
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 
@@ -347,15 +348,6 @@ class InvertedLock
     Mutex *m_pMutex;
 
   public:
-    InvertedLock(Mutex *m)
-        : m_pMutex(m)
-    {
-        if (!m_pMutex)
-            return;
-
-        leaveCS(*m_pMutex);
-    }
-
     InvertedLock(Mutex& m)
         : m_pMutex(&m)
     {

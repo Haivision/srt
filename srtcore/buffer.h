@@ -511,7 +511,6 @@ public:
    int64_t getDrift() const { return m_DriftTracer.drift(); }
 
 public:
-
    int32_t getTopMsgno() const;
 
    // @return Wrap check value
@@ -524,13 +523,6 @@ public:
    time_point debugGetDeliveryTime(int offset);
 
    size_t dropData(int len);
-   
-   // Required by PacketFilter facility to use as a storage
-   // for provided packets
-   CUnitQueue* getUnitQueue()
-   {
-       return m_pUnitQueue;
-   }
 
 private:
    int extractData(char *data, int len, int p, int q, bool passack);
