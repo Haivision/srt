@@ -549,6 +549,7 @@ private:
     void applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr_any& serv_addr);
+    SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
@@ -592,11 +593,18 @@ private:
 
     void checkNeedDrop(bool& bCongestion);
 
-    /// Connect to a UDT entity listening at address "peer", which has sent "hs" request.
+    /// Connect to a UDT entity as per hs request. This will update
+    /// required data in the entity, then update them also in the hs structure,
+    /// and then send the response back to the caller.
+    /// @param agent [in] The address to which the UDT entity is bound.
     /// @param peer [in] The address of the listening UDT entity.
+    /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
-
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+
+    /// Write back to the hs structure the data after they have been
+    /// negotiated by acceptAndRespond.
+    void rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
