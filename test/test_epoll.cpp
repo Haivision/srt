@@ -348,9 +348,9 @@ TEST(CEPoll, NotifyConnectionBreak)
 
     // The caller will close connection after 1 second
     auto close_res = std::async(std::launch::async, [&client_sock]() {
-        cout << "TEST(async call): WILL CLOSE client connection in 3s\n";
+        cout << "(async call): WILL CLOSE client connection in 3s\n";
         this_thread::sleep_for(chrono::seconds(1));
-        cout << "TEST(async call): Closing client connection\n";
+        cout << "(async call): Closing client connection\n";
         return srt_close(client_sock);
         });
 
