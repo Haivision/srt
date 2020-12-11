@@ -67,34 +67,27 @@ public:
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
         ASSERT_NE(fam.count(w.family()), 0) << "INVALID FAMILY";
-
-        //char out[INET6_ADDRSTRLEN];
-        //ASSERT_NE(inet_ntop(w.family(), w.get_addr(), out, sizeof out), nullptr);
-        //std::cout << src << ": " << out << " (" << fam[w.family()] << ")" << std::endl;
         std::cout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
     }
 
-    void DoAccept()
+    sockaddr_any DoAccept()
     {
         sockaddr_any sc1;
 
         SRTSOCKET accepted_sock = srt_accept(m_listener_sock, sc1.get(), &sc1.len);
-        ASSERT_NE(accepted_sock, SRT_INVALID_SOCK);
+        EXPECT_NE(accepted_sock, SRT_INVALID_SOCK);
 
         PrintAddresses(accepted_sock, "ACCEPTED");
 
-        //ShowAddress("Accepted", sc1);
-
         sockaddr_any sn;
-        ASSERT_NE(srt_getsockname(accepted_sock, sn.get(), &sn.len), SRT_ERROR);
-
-        //ShowAddress("srt_getsockname", sn);
+        EXPECT_NE(srt_getsockname(accepted_sock, sn.get(), &sn.len), SRT_ERROR);
 
         int32_t ipv6_zero [] = {0, 0, 0, 0};
-        ASSERT_NE(memcmp(ipv6_zero, sn.get_addr(), sizeof ipv6_zero), 0)
+        EXPECT_NE(memcmp(ipv6_zero, sn.get_addr(), sizeof ipv6_zero), 0)
             << "EMPTY address in srt_getsockname";
 
         srt_close(accepted_sock);
+        return sn;
     }
 
 private:
@@ -130,7 +123,8 @@ TEST_F(TestIPv6, v4_calls_v6_mapped)
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET, "127.0.0.1"_S);
 
-    DoAccept();
+    const sockaddr_any sa_accepted = DoAccept();
+    EXPECT_EQ(sa_accepted.str(), "::ffff:127.0.0.1:4200"_S);
 
     client.join();
 }
@@ -146,7 +140,8 @@ TEST_F(TestIPv6, v6_calls_v6_mapped)
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1"_S);
 
-    DoAccept();
+    const sockaddr_any sa_accepted = DoAccept();
+    EXPECT_EQ(sa_accepted.str(), "::1:4200"_S);
 
     client.join();
 }
@@ -165,7 +160,8 @@ TEST_F(TestIPv6, v6_calls_v6)
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1"_S);
 
-    DoAccept();
+    const sockaddr_any sa_accepted = DoAccept();
+    EXPECT_EQ(sa_accepted.str(), "::1:4200"_S);
 
     client.join();
 }
@@ -183,7 +179,8 @@ TEST_F(TestIPv6, v6_calls_v4)
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "0::FFFF:127.0.0.1"_S);
 
-    DoAccept();
+    const sockaddr_any sa_accepted = DoAccept();
+    EXPECT_EQ(sa_accepted.str(), "127.0.0.1:4200"_S);
 
     client.join();
 }
