@@ -1539,7 +1539,6 @@ void CUDT::open()
     m_iRTT    = 10 * COMM_SYN_INTERVAL_US;
     m_iRTTVar = m_iRTT >> 1;
 
-
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
     m_tdMinExpInterval = milliseconds_from(300);
@@ -6149,6 +6148,14 @@ SRT_REJECT_REASON CUDT::setupCC()
     const steady_clock::duration min_nak = microseconds_from(m_CongCtl->minNAKInterval());
     if (min_nak != steady_clock::duration::zero())
         m_tdMinNakInterval = min_nak;
+
+    if (m_bTsbPd)
+    {
+        // Initial Periodic NAK interval should not exceed the latency
+        // in case NAK or first retransmission was lost.
+        const steady_clock::duration interval = milliseconds_from(m_iTsbPdDelay_ms / 4);
+        m_tdNAKInterval = max(m_tdMinNakInterval, min(interval, m_tdNAKInterval));
+    }
 
     // Update timers
     const steady_clock::time_point currtime = steady_clock::now();
