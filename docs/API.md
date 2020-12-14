@@ -79,27 +79,26 @@ srt_close(sock);
 
 This closes the socket and frees all its resources. Note that the true life of the
 socket does not end exactly after this function exits - some details are being
-finished in a separate "SRT GC" thread. Still, at least all shared system resources 
+finished in a separate "SRT GC" thread. Still, at least all shared system resources
 (such as listener port) should be released after this function exits.
 
 ### Important Remarks
 
-1. Please note that the use of SRT with `AF_INET6` has not been fully tested; 
-use at your own risk.
-2. SRT uses the system UDP protocol as an underlying communication layer, and so 
-it uses also UDP sockets. The underlying communication layer is used only 
-instrumentally, and SRT manages UDP sockets as its own system resource as it 
-pleases - so in some cases it may be reasonable for multiple SRT sockets to share 
+1. SRT uses the system UDP protocol as an underlying communication layer, and so
+it uses also UDP sockets. The underlying communication layer is used only
+instrumentally, and SRT manages UDP sockets as its own system resource as it
+pleases - so in some cases it may be reasonable for multiple SRT sockets to share
 one UDP socket, or for one SRT socket to use multiple UDP sockets.
-3. The term "port" used in SRT is occasionally identical to the term "UDP
-port". However SRT offers more flexibility than UDP (or TCP, the more logical 
-similarity) because it manages ports as its own resources. For example, one port 
+
+2. The term "port" used in SRT is occasionally identical to the term "UDP
+port". However SRT offers more flexibility than UDP (or TCP, the more logical
+similarity) because it manages ports as its own resources. For example, one port
 may be shared between various services.
 
 ## Binding and connecting
 
-Connections are established using the same philosophy as TCP, using functions 
-with names and signatures similar to the BSD Socket API. What is new here is 
+Connections are established using the same philosophy as TCP, using functions
+with names and signatures similar to the BSD Socket API. What is new here is
 the _rendezvous_ mode.
 
 ### Synopsis
