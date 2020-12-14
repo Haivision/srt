@@ -22,6 +22,8 @@
 
 #include "fec.h"
 
+#define SRT_ENABLE_FEC_EMERGENCY_SHRINK 0
+
 using namespace std;
 using namespace srt_logging;
 
@@ -1094,7 +1096,7 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
         }
     }
 
-    if (want_collect_irrecover)
+    if (want_collect_irrecover) // AND rcv.rowq.size() > 1
     {
         int current = rcv.rowq.size() - 2;
         // We know we have at least 2 rows.
@@ -1143,17 +1145,21 @@ bool FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs
                 CollectIrrecoverRow(rcv.rowq[i], irrecover);
             }
 
-            if (want_remove_cells)
+            // Sanity check condition - rcv.rowq must be of size
+            // greater than the number of rows to remove so that
+            // the rcv.rowq[0] exists after the operation.
+            if (want_remove_cells && rcv.rowq.size() > size_t(nrowremove))
             {
+                // nrowremove >= 1
                 size_t npktremove = sizeRow() * nrowremove;
-                size_t ersize = min(npktremove, rcv.cells.size());
+                size_t ersize = min(npktremove, rcv.cells.size()); // ersize <= rcv.cells.size()
 
                 HLOGC(pflog.Debug, log << "FEC/H: Dismissing rows n=" << nrowremove
                         << ", starting at %" << rcv.rowq[0].base
                         << " AND " << npktremove << " CELLS, base switch %"
                         << rcv.cell_base << " -> %" << rcv.rowq[past].base);
 
-                rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + 1 + past);
+                rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + nrowremove);
                 rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ersize);
 
                 // We state that we have removed as many cells as for the removed
@@ -1437,7 +1443,7 @@ int FECFilterBuiltin::ExtendRows(int rowx)
         LOGC(pflog.Debug, log << "... [" << i << "] " << rcv.rowq[i].DisplayStats());
 #endif
 
-    if (rowx > int(m_number_cols*3))
+    if (rowx > int(m_number_cols*3) && rcv.rowq.size() > m_number_cols)
     {
         LOGC(pflog.Warn, log << "FEC/H: OFFSET=" << rowx << " exceeds maximum row container size, SHRINKING rows and cells");
 
@@ -1446,7 +1452,10 @@ int FECFilterBuiltin::ExtendRows(int rowx)
 
         // With rows, delete also an appropriate number of cells.
         int nerase = min(int(rcv.cells.size()), CSeqNo::seqoff(rcv.cell_base, rcv.rowq[0].base));
-        rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nerase);
+        if (size_t(nerase) >= rcv.cells.size())
+            rcv.cells.clear();
+        else
+            rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + nerase);
         rcv.cell_base = rcv.rowq[0].base;
     }
 
@@ -1730,18 +1739,18 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     bool any_dismiss SRT_ATR_UNUSED = false;
 
     // if (base0 +% mindist) <% seq
-    if (this_off < mindist)
+    if (this_off < mindist) // COND 1: minimum remaining
     {
         HLOGC(pflog.Debug, log << "FEC/V: NOT dismissing any columns at %" << seq
                 << ", need to pass %" << CSeqNo::incseq(base0, mindist));
     }
-    else if (rcv.colq.size() < numberCols())
+    else if (rcv.colq.size() < numberCols()) // COND 2: full matrix in columns
     {
         HLOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size());
     }
-    else if (rcv.rowq.size() < numberRows())
+    else if (rcv.rowq.size() < numberRows()) // COND 3: full matrix in rows
     {
         HLOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
@@ -1763,6 +1772,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
                 << rcv.rowq[0].base << " -> %" << newbase_row
                 << " AND " << matrix_size << " cells");
 
+        // ensured existence of the removed range: see COND 2 above.
         rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
 
 #if ENABLE_HEAVY_LOGGING
@@ -1787,6 +1797,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         else
         {
             // Remove "legally" a matrix of rows.
+            // ensured existence of the removed range: see COND 3 above
             rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + numberRows());
         }
 
@@ -1800,14 +1811,17 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
             // Try to shift it gently first. Find the cell that matches the base.
             int shift = CSeqNo::seqoff(rcv.cell_base, newbase);
-            if (shift < 0)
+            if (shift < 0 || size_t(shift) > rcv.cells.size())
                 rcv.cells.clear();
             else
                 rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + shift);
         }
         else
         {
-            rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + matrix_size);
+            if (rcv.cells.size() <= size_t(matrix_size))
+                rcv.cells.clear();
+            else
+                rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + matrix_size);
         }
         rcv.cell_base = newbase;
         DebugPrintCells(rcv.cell_base, rcv.cells, sizeRow());
@@ -2151,7 +2165,25 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno)
 
 int FECFilterBuiltin::ExtendColumns(int colgx)
 {
-    if (colgx > int(sizeRow() * 2))
+#if SRT_ENABLE_FEC_EMERGENCY_SHRINK
+    // FIXME THIS can go crazy, anyway. With a large drop
+    // that would exceed, say, 10 series, the result would be that
+    // this procedure dismisses 1 of 3 series, will leave 2 series,
+    // and then extend the container to 10 series. Likely this
+    // removal here should not take place because removal of groups
+    // should be connected with reporting of irrecoverable.
+    // Likely this should be moved to another place, or somehow
+    // connected with the procedure of irrecoverable reporting.
+
+    // Dismiss one series of column groups under two conditions:
+    // - the received colgx is pointing to a cell in further than 2nd series
+    // - THE CURRENT SIZE of groups covers more than one series
+    //
+    // Note: the number of dismissed columns would be only for one series,
+    // however the required extension might be for an undefined number of
+    // series. These excessive series will be however dismissed during
+    // the group dismissal process.
+    if (colgx > int(sizeRow() * 2) && rcv.colq.size() > sizeRow())
     {
         // This shouldn't happen because columns should be dismissed
         // once the last row of the first series is closed.
@@ -2159,12 +2191,14 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
 
         // Delete one series of columns.
         int32_t oldbase SRT_ATR_UNUSED = rcv.colq[0].base;
+        // FIXME VERIFY THE SIZE BEFORE ERASING!
         rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
         colgx -= numberCols();
         int32_t newbase = rcv.colq[0].base;
 
         // Delete also appropriate number of rows for one series
         rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + numberRows());
+        // FIXME VERIFY THE SIZE BEFORE ERASING!
 
         // Sanity-check if the resulting row absolute base is equal to column
         if (rcv.rowq[0].base != newbase)
@@ -2184,10 +2218,11 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
             for (size_t i = 0; i < rcv.rowq.size(); ++i)
             {
                 ConfigureGroup(rcv.rowq[i], rowbase, 1, sizeRow());
-                rowbase = CSeqNo::incseq(newbase, sizeRow());
+                rowbase = CSeqNo::incseq(rowbase, sizeRow());
             }
         }
 
+        // FIXME VERIFY THE SIZE BEFORE ERASING!
         size_t ncellrem = CSeqNo::seqoff(rcv.cell_base, newbase);
         rcv.cells.erase(rcv.cells.begin(), rcv.cells.begin() + ncellrem);
         rcv.cell_base = newbase;
@@ -2195,6 +2230,82 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // Note that after this shift, column groups that were
         // in particular column, remain in that column.
     }
+#else
+
+    // Alternative approach. This isn't safe to allow the group container
+    // to get expanded to any size, however with some very tolerant settings,
+    // such as 10 seconds of latency and very large receiver buffer, this
+    // might be tolerable.
+    //
+    // Therefore put only two conditions here:
+    //
+    // 1. The group containers must keep at most place for so many
+    // packets as it is intended for the receiver buffer. Keeping
+    // group cells for more packets doesn't make sense anyway.
+    //
+    // 2. Existing group containers should contain at least size
+    // for two series. If they don't contain that much, there's no
+    // need to do any emergency shrinking. Unknown whether this is
+    // physically possible, although it may also happen in case when
+    // you have very large FEC matrix size not coordinated with the
+    // receiver buffer size.
+
+    // colgx is the number of column + NSERIES * numberCols().
+    // We can state that for every column we should have a number
+    // of packets as many as the number of rows, so simply multiply this.
+    size_t size_in_packets = colgx * numberRows();
+    size_t n_series = colgx / numberCols();
+    if (size_in_packets > rcvBufferSize() && n_series > 2)
+    {
+        HLOGC(pflog.Debug, log << "FEC: Emergency resize, colgx=" << colgx << " series=" << n_series
+                << "npackets=" << size_in_packets << " exceeds buf=" << rcvBufferSize());
+        // This is simply a situation when the size is so excessive
+        // that it couldn't be withstood by the receiver buffer, so
+        // even if this isn't an extremely big size for allocation for
+        // FEC, it doesn't make sense anyway.
+        //
+        // Minimum of 2 series must remain in the group container,
+        // otherwise there's no need to guard the size.
+
+        // This requires simply resetting all group containers to
+        // the very initial state, just take the calculated base seq
+        // from the value of colgx reset to column 0.
+
+        // As colgx is calculated by stating that colgx == 0 represents
+        // the very first cell in the column groups, take this, shift
+        // by the number of series. 
+        int32_t oldbase = rcv.colq[0].base;
+
+        // SHIFT BY: n_series * matrix size
+        // n_series is at least 1 (see condition)
+        int shift = (n_series - 1) * numberCols() * numberRows();
+
+        // Always positive: colgx, and so n_series, and so shift
+        int32_t newbase = CSeqNo::incseq(oldbase, shift);
+
+        rcv.colq.clear();
+        rcv.rowq.clear();
+        rcv.cells.clear();
+
+        // This n_series is the number rounded downwards,
+        // So you just need to prepare place for ONE series.
+        // The procedure below will extend them to the required
+        // size for the received colgx.
+        rcv.rowq.resize(1);
+
+        HLOGC(pflog.Debug, log << "FEC: Reset recv row&col %" << oldbase << " -> %" << newbase << ", INIT ROWS:");
+        ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+        HLOGC(pflog.Debug, log << "FEC: INIT: receiver first " << numberCols() << " columns");
+        ConfigureColumns(rcv.colq, newbase);
+    }
+    else
+    {
+        HLOGC(pflog.Debug, log << "FEC: Will extend up to colgx=" << colgx << " series=" << n_series
+                << " for npackets=" << size_in_packets);
+    }
+
+
+#endif
 
 #if ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
