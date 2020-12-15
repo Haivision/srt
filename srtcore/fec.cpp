@@ -377,8 +377,8 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        SRT_ASSERT(vert_off > 0);
-        size_t vert_pos = vert_off / sizeRow();
+        SRT_ASSERT(vert_off >= 0);
+        const size_t vert_pos = vert_off / sizeRow();
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
@@ -2252,4 +2252,3 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
 
     return colgx;
 }
-
