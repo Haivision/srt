@@ -3022,7 +3022,6 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
                   << ", state RUNNING - will send a payload");
 
         u.m_tsUnstableSince = steady_clock::time_point();
-        //is_stable         = true; // the value is already true
     }
     else
     {
