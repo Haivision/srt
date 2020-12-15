@@ -2901,14 +2901,14 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     // buffer gets empty so that we can make sure that KEEPALIVE will be the
     // really last sent for longer time.
     CUDT& u = w_d->ps->core();
-    if (!is_zero(u.m_tsTmpActiveTime))
+    if (!is_zero(u.m_tsTmpActiveSince))
     {
         CSndBuffer* b = u.m_pSndBuffer;
         if (b && b->getCurrBufSize() == 0)
         {
             HLOGC(gslog.Debug,
                   log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
-            u.m_tsTmpActiveTime = steady_clock::time_point();
+            u.m_tsTmpActiveSince = steady_clock::time_point();
 
             // Send first immediate keepalive. The link is to be turn to IDLE
             // now so nothing will be sent to it over time and it will start
@@ -2937,13 +2937,13 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
     // negative value is relatively easy, while introducing a mutex would only add a
     // deadlock risk and performance degradation.
 
-    bool is_unstable = false;
+    bool is_stable = true;
 
     HLOGC(gslog.Debug,
           log << "grp/sendBackup: CHECK STABLE: @" << d->id
               << ": TIMEDIFF {response= " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime)
               << " ACK=" << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspAckTime) << " activation="
-              << (!is_zero(u.m_tsTmpActiveTime) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsTmpActiveTime) : "PAST")
+              << (!is_zero(u.m_tsTmpActiveSince) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsTmpActiveSince) : "PAST")
               << " unstable="
               << (!is_zero(u.m_tsUnstableSince) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsUnstableSince) : "NEVER")
               << "}");
@@ -2951,13 +2951,10 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
     if (currtime > u.m_tsLastRspTime)
     {
         // The last response predates the start of this function, look at the difference
-        steady_clock::duration td_responsive = currtime - u.m_tsLastRspTime;
-
-        IF_HEAVY_LOGGING(string source = "heard");
-
+        const steady_clock::duration td_responsive = currtime - u.m_tsLastRspTime;
         bool check_stability = true;
 
-        if (!is_zero(u.m_tsTmpActiveTime) && u.m_tsTmpActiveTime < currtime)
+        if (!is_zero(u.m_tsTmpActiveSince) && u.m_tsTmpActiveSince < currtime)
         {
             // The link is temporary-activated. Calculate then since the activation time.
 
@@ -2984,7 +2981,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
 
             // As we DO have activation time, we need to check if there's at least
             // one ACK newer than activation, that is, td_acked < td_active
-            if (u.m_tsLastRspAckTime < u.m_tsTmpActiveTime)
+            if (u.m_tsLastRspAckTime < u.m_tsTmpActiveSince)
             {
                 check_stability = false;
                 HLOGC(gslog.Debug,
@@ -2994,7 +2991,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
             }
             else
             {
-                u.m_tsTmpActiveTime = steady_clock::time_point();
+                u.m_tsTmpActiveSince = steady_clock::time_point();
             }
         }
 
@@ -3003,7 +3000,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
             if (is_zero(u.m_tsUnstableSince))
             {
                 HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: socket NEW UNSTABLE: @" << d->id << " last " << source << " "
+                      log << "grp/sendBackup: socket NEW UNSTABLE: @" << d->id << " last heard "
                           << FormatDuration(td_responsive) << " > " << m_uOPT_StabilityTimeout
                           << " (stability timeout)");
                 // The link seems to have missed two ACKs already.
@@ -3012,36 +3009,29 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
                 u.m_tsUnstableSince = currtime;
             }
 
-            is_unstable = true;
+            is_stable = false;
         }
     }
 
-    if (!is_unstable)
+    if (is_stable)
     {
         // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link STABLE: @" << d->id
-                  << (!is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED"));
+                  << (!is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED")
+                  << ", state RUNNING - will send a payload");
 
         u.m_tsUnstableSince = steady_clock::time_point();
-        is_unstable         = false;
+        //is_stable         = true; // the value is already true
     }
-
-#if ENABLE_HEAVY_LOGGING
-    // Could be set above
-    if (is_unstable)
+    else
     {
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link UNSTABLE for " << FormatDuration(currtime - u.m_tsUnstableSince) << " : @"
                   << d->id << " - will send a payload");
     }
-    else
-    {
-        HLOGC(gslog.Debug, log << "grp/sendBackup: socket in RUNNING state: @" << d->id << " - will send a payload");
-    }
-#endif
 
-    return !is_unstable;
+    return is_stable;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -3269,7 +3259,7 @@ size_t CUDTGroup::sendBackup_CheckNeedActivate(const vector<gli_t>&        idler
             if (d->sndstate != SRT_GST_RUNNING)
             {
                 steady_clock::time_point currtime = steady_clock::now();
-                d->ps->core().m_tsTmpActiveTime   = currtime;
+                d->ps->core().m_tsTmpActiveSince  = currtime;
                 HLOGC(gslog.Debug,
                       log << "@" << d->id << ":... sending SUCCESSFUL #" << w_mc.msgno
                           << " LINK ACTIVATED (pri: " << d->weight << ").");
@@ -3434,7 +3424,7 @@ struct FByOldestActive
         CUDT& x = a->ps->core();
         CUDT& y = b->ps->core();
 
-        return x.m_tsTmpActiveTime < y.m_tsTmpActiveTime;
+        return x.m_tsTmpActiveSince < y.m_tsTmpActiveSince;
     }
 };
 
@@ -3644,7 +3634,7 @@ RetryWaitBlocked:
             w_parallel.push_back(d);
             w_final_stat                      = stat;
             steady_clock::time_point currtime = steady_clock::now();
-            d->ps->core().m_tsTmpActiveTime   = currtime;
+            d->ps->core().m_tsTmpActiveSince   = currtime;
             d->sndstate                       = SRT_GST_RUNNING;
             w_none_succeeded                  = false;
             HLOGC(gslog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
@@ -3677,7 +3667,7 @@ RetryWaitBlocked:
         vector<gli_t>::iterator b = w_parallel.begin();
 
         // Additional criterion: if you have multiple links with the same weight,
-        // check if you have at least one with m_tsTmpActiveTime == 0. If not,
+        // check if you have at least one with m_tsTmpActiveSince == 0. If not,
         // sort them additionally by this time.
 
         vector<gli_t>::iterator b1 = b, e = ++b1;
@@ -3716,8 +3706,8 @@ RetryWaitBlocked:
             }
             CUDT&                  ce = d->ps->core();
             steady_clock::duration td(0);
-            if (!is_zero(ce.m_tsTmpActiveTime) &&
-                    count_microseconds(td = currtime - ce.m_tsTmpActiveTime) < ce.m_uOPT_StabilityTimeout)
+            if (!is_zero(ce.m_tsTmpActiveSince) &&
+                    count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_uOPT_StabilityTimeout)
             {
                 HLOGC(gslog.Debug,
                         log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
@@ -3727,8 +3717,8 @@ RetryWaitBlocked:
 
             // Clear activation time because the link is no longer active!
             d->sndstate = SRT_GST_IDLE;
-            HLOGC(gslog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveTime));
-            ce.m_tsTmpActiveTime = steady_clock::time_point();
+            HLOGC(gslog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveSince));
+            ce.m_tsTmpActiveSince = steady_clock::time_point();
         }
     }
 }
@@ -4370,7 +4360,7 @@ void CUDTGroup::handleKeepalive(gli_t gli)
         // which may result not only with exceeded stability timeout (which fortunately
         // isn't being measured in this case), but also with receiveing keepalive
         // (therefore we also don't reset the link to IDLE in the temporary activation period).
-        if (gli->sndstate == SRT_GST_RUNNING && is_zero(gli->ps->core().m_tsTmpActiveTime))
+        if (gli->sndstate == SRT_GST_RUNNING && is_zero(gli->ps->core().m_tsTmpActiveSince))
         {
             gli->sndstate = SRT_GST_IDLE;
             HLOGC(gslog.Debug,
@@ -4390,7 +4380,7 @@ void CUDTGroup::internalKeepalive(gli_t gli)
     {
         gli->rcvstate = SRT_GST_IDLE;
         // Prevent sending KEEPALIVE again in group-sending
-        gli->ps->core().m_tsTmpActiveTime = steady_clock::time_point();
+        gli->ps->core().m_tsTmpActiveSince = steady_clock::time_point();
         HLOGC(gslog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
     }
 }

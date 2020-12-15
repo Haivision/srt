@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    m_tsTmpActiveSince = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -6147,7 +6147,7 @@ SRT_REJECT_REASON CUDT::setupCC()
     // When default 0 value is returned, the current value set by CUDT
     // is preserved.
     const steady_clock::duration min_nak = microseconds_from(m_CongCtl->minNAKInterval());
-    if (min_nak != steady_clock::duration::zero())
+    if (!is_zero(min_nak))
         m_tdMinNakInterval = min_nak;
 
     // Update timers
