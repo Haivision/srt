@@ -1378,7 +1378,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     unsigned char* mem = new unsigned char[headersize + payload];
     SingleOption* option = reinterpret_cast<SingleOption*>(mem);
     option->option = optname;
-    option->length = optlen;
+    option->length = (uint16_t) optlen;
     memcpy(option->storage, optval, optlen);
 
     options.push_back(option);
@@ -1872,7 +1872,7 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
     // Preswap to little endian (in place due to possible padding zeros)
     HtoILA((space), space, wordsize);
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(wordsize);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) wordsize);
 
     return wordsize;
 }
@@ -1932,7 +1932,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     size_t ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
 
     // Store the CMD + SIZE in the next field
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     // Copy the key - do the endian inversion because another endian inversion
     // will be done for every control message before sending, and this KM message
@@ -1984,7 +1984,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
         keydata = reinterpret_cast<const uint32_t *>(kmdata);
     }
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
     HLOGC(cnlog.Debug,
             log << "createSrtHandshake: KMRSP: applying returned key length="
             << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
@@ -2230,7 +2230,7 @@ bool CUDT::createSrtHandshake(
     // NOTE: so far, ra_size is m_iMaxSRTPayloadSize expressed in number of elements.
     // WILL BE CHANGED HERE.
     ra_size   = fillSrtHandshake((p + offset), total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     HLOGC(cnlog.Debug,
           log << "createSrtHandshake: after HSREQ: offset=" << offset << " HSREQ size=" << ra_size
@@ -9286,7 +9286,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
              m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(qslog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
-        payload        = w_packet.getLength();
+        payload        = (int) w_packet.getLength();
         reason         = "filter";
         filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
@@ -9454,7 +9454,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             // Encryption failed
             return std::make_pair(-1, enter_time);
         }
-        payload = w_packet.getLength(); /* Cipher may change length */
+        payload = (int) w_packet.getLength(); /* Cipher may change length */
         reason += " (encrypted)";
     }
 
@@ -9583,7 +9583,7 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
     if (!seqbuffer.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], seqbuffer.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], (int) seqbuffer.size());
     }
 }
 
@@ -9724,7 +9724,7 @@ int CUDT::processData(CUnit* in_unit)
     updateCC(TEV_RECEIVE, EventVariant(&packet));
     ++m_iPktCount;
 
-    const int pktsz = packet.getLength();
+    const int pktsz = (int) packet.getLength();
     // Update time information
     // XXX Note that this adds the byte size of a packet
     // of which we don't yet know as to whether this has
@@ -10250,7 +10250,7 @@ int CUDT::processData(CUnit* in_unit)
     }
     if (!lossdata.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], (int) lossdata.size());
     }
 
     // was_sent_in_order means either of:

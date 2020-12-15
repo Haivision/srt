@@ -310,7 +310,7 @@ public:
        // the ETH+IP+UDP+SRT header part elliminates the constant packet delivery time influence.
        //
        const size_t pktsz = pkt.getLength();
-       m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? timediff_times_pl_size / pktsz : int(timediff);
+       m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? int(timediff_times_pl_size / pktsz) : int(timediff);
 
        // OLD CODE BEFORE BSTATS:
        // record the probing packets interval

@@ -247,7 +247,7 @@ public:
       /// @param rparam [in] pointer to the second data structure, explained by the packet type.
       /// @param size [in] size of rparam, in number of bytes;
 
-   void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
+   void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, size_t size = 0);
 
       /// Read the packet vector.
       /// @return Pointer to the packet vector.

@@ -100,7 +100,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         {
             if (level == levelnames[i])
             {
-                lv = i;
+                lv = (int) i;
                 break;
             }
         }
@@ -293,7 +293,7 @@ void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 
 void FECFilterBuiltin::ResetGroup(Group& g)
 {
-    int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
+    int32_t new_seq_base = CSeqNo::incseq(g.base, (int) g.drop);
 
     HLOGC(pflog.Debug, log << "FEC: ResetGroup (step=" << g.step << "): base %" << g.base << " -> %" << new_seq_base);
 
@@ -377,7 +377,8 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        int vert_pos = vert_off / sizeRow();
+        SRT_ASSERT(vert_off > 0);
+        size_t vert_pos = vert_off / sizeRow();
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
