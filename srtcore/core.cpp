@@ -6147,7 +6147,7 @@ SRT_REJECT_REASON CUDT::setupCC()
     // When default 0 value is returned, the current value set by CUDT
     // is preserved.
     const steady_clock::duration min_nak = microseconds_from(m_CongCtl->minNAKInterval());
-    if (!is_zero(min_nak))
+    if (min_nak != steady_clock::duration::zero())
         m_tdMinNakInterval = min_nak;
 
     // Update timers
