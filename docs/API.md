@@ -55,12 +55,9 @@ it is used to define a point of communication.
 ### Synopsis
 
 ```c++
-SRTSOCKET srt_socket(int af, int, int);
+SRTSOCKET srt_create_socket();
 int srt_close(SRTSOCKET s);
 ```
-
-The `srt_socket` function is based on the legacy UDT API except
-the first parameter. The other two are ignored.
 
 Note that `SRTSOCKET` is just an alias for `int`; this is a legacy naming convention
 from UDT, which is here only for clarity.
@@ -68,7 +65,7 @@ from UDT, which is here only for clarity.
 ### Usage
 
 ```c++
-sock = srt_socket(AF_INET, SOCK_DGRAM, 0);
+sock = srt_create_socket();
 ```
 
 This creates a socket, which can next be configured and then used for communication.
@@ -105,7 +102,7 @@ the _rendezvous_ mode.
 
 ```c++
 int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
-int srt_bind_peerof(SRTSOCKET u, UDPSOCKET udpsock);
+int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock);
 ```
 
 This function sets up the "sockname" for the socket, that is, the local IP address
@@ -114,8 +111,8 @@ this can be done on both listening and connecting sockets; for the latter it wil
 define the outgoing port. If you don't set up the outgoing port by calling this
 function (or use port number 0), a unique port number will be selected automatically.
 
-The `*_peerof` version simply copies the bound address setting from an existing 
-UDP socket.
+The `*_acquire` version simply takes over the given UDP socket and copies the
+bound address setting from it.
 
 ```c++
 int srt_listen(SRTSOCKET u, int backlog);
