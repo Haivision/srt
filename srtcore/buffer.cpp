@@ -933,7 +933,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
                 break; /* too early for this unit, return whatever was copied */
         }
 
-        const int pktlen = pkt.getLength();
+        const int pktlen = (int) pkt.getLength();
         const int remain_pktlen = pktlen - m_iNotch;
 
         const int unitsize = std::min(remain_pktlen, rs);

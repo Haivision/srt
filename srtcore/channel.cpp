@@ -247,7 +247,7 @@ void CChannel::open(int family)
         ::freeaddrinfo(res);
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
     }
-    m_BindAddr = sockaddr_any(res->ai_addr, res->ai_addrlen);
+    m_BindAddr = sockaddr_any(res->ai_addr, (sockaddr_any::len_t) res->ai_addrlen);
 
     ::freeaddrinfo(res);
 
@@ -538,14 +538,14 @@ void CChannel::getSockAddr(sockaddr_any& w_addr) const
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
-    socklen_t namelen = w_addr.storage_size();
+    socklen_t namelen = (socklen_t) w_addr.storage_size();
     ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
 void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 {
-    socklen_t namelen = w_addr.storage_size();
+    socklen_t namelen = (socklen_t) w_addr.storage_size();
     ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
