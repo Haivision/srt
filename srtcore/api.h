@@ -111,16 +111,16 @@ public:
    /// 1 second (see CUDTUnited::checkBrokenSockets()).
    srt::sync::steady_clock::time_point m_tsClosureTimeStamp;
 
-   sockaddr_any m_SelfAddr;                    //< local address of the socket
-   sockaddr_any m_PeerAddr;                    //< peer address of the socket
+   sockaddr_any m_SelfAddr;                  //< local address of the socket
+   sockaddr_any m_PeerAddr;                  //< peer address of the socket
 
    SRTSOCKET m_SocketID;                     //< socket ID
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup::SocketData* m_GroupMemberData;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
-   CUDTGroup* m_GroupOf;               //< Group this socket is a member of, or NULL if it isn't
+   CUDTGroup::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+   CUDTGroup* m_GroupOf;                     //< Group this socket is a member of, or NULL if it isn't
 #endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
