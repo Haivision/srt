@@ -256,7 +256,7 @@ public:
    int connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
    int connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
 #if ENABLE_EXPERIMENTAL_BONDING
-   int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets [], int arraysize);
+   int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets [], const int arraysize);
    int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
    int close(const SRTSOCKET u);
