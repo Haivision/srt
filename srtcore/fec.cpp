@@ -109,7 +109,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         {
             if (level == levelnames[i])
             {
-                lv = i;
+                lv = int(i);
                 break;
             }
         }
@@ -253,7 +253,7 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
 
     for (size_t i = zero; i < which.size(); ++i)
     {
-        int32_t seq = CSeqNo::incseq(isn, offset);
+        int32_t seq = CSeqNo::incseq(isn, int(offset));
         size_t col = i - zero;
 
         HLOGC(pflog.Debug, log << "ConfigureColumns: [" << col << "]: -> ConfigureGroup...");
@@ -302,7 +302,7 @@ void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 
 void FECFilterBuiltin::ResetGroup(Group& g)
 {
-    int32_t new_seq_base = CSeqNo::incseq(g.base, g.drop);
+    int32_t new_seq_base = CSeqNo::incseq(g.base, int(g.drop));
 
     HLOGC(pflog.Debug, log << "FEC: ResetGroup (step=" << g.step << "): base %" << g.base << " -> %" << new_seq_base);
 
@@ -386,7 +386,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        int vert_pos = vert_off / sizeRow();
+        int vert_pos = vert_off / int(sizeRow());
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
@@ -438,7 +438,7 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
 
-    uint16_t length_net = htons(pkt.size());
+    uint16_t length_net = htons(uint16_t(pkt.size()));
     uint8_t kflg = uint8_t(pkt.getMsgCryptoFlags());
 
     // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
@@ -487,7 +487,7 @@ void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 
 void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 {
-    uint16_t length_net = htons(pkt.length);
+    uint16_t length_net = htons(uint16_t(pkt.length));
     uint8_t kflg = MSGNO_ENCKEYSPEC::unwrap(pkt.hdr[SRT_PH_MSGNO]);
 
     // NOTE: Unlike length, the TIMESTAMP is NOT endian-reordered
@@ -567,7 +567,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     else
     {
         int offset_to_row_base = CSeqNo::seqoff(snd.row.base, seq);
-        int vert_gx = (offset_to_row_base + m_number_cols) % m_number_cols;
+        int vert_gx = (offset_to_row_base + int(m_number_cols)) % int(m_number_cols);
 
         // This can actually happen only for the very first sent packet.
         // It looks like "following the last packet from the previous group",
@@ -879,7 +879,7 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
 
             int32_t oldbase = rcv.rowq[0].base;
             size_t rowdist = offset / sizeRow();
-            int32_t newbase = CSeqNo::incseq(oldbase, rowdist * sizeRow());
+            int32_t newbase = CSeqNo::incseq(oldbase, int(rowdist * sizeRow()));
 
             LOGC(pflog.Warn, log << "FEC: LARGE DROP detected! Resetting row groups. Base: %" << oldbase
                     << " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
@@ -923,14 +923,14 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
     const size_t size_in_packets = colx * numberRows();
     const size_t matrix = numberRows() * numberCols();
 
-    const int colseries = coloff / matrix;
+    const int colseries = coloff / int(matrix);
 
     if (size_in_packets > rcvBufferSize()/2 || colseries > SRT_FEC_MAX_RCV_HISTORY || reset_anyway)
     {
         // Ok, now define the new ABSOLUTE BASE. This is the base of the column 0
         // column group from the series previous towards this one.
         int32_t oldbase = rcv.colq[0].base;
-        int32_t newbase = CSeqNo::incseq(oldbase, (colseries-1) * matrix);
+        int32_t newbase = CSeqNo::incseq(oldbase, (colseries-1) * int(matrix));
 
         LOGC(pflog.Warn, log << "FEC: LARGE DROP detected! Resetting all groups. Base: %" << oldbase
                 << " -> %" << newbase << "(shift by " << CSeqNo::seqoff(oldbase, newbase) << ")");
@@ -974,7 +974,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     {
         LOGC(pflog.Error, log << "FEC: IPE: Collecting loss from row %"
                 << g.base << "+" << m_number_cols << " while cells <= %"
-                << CSeqNo::seqoff(rcv.cell_base, rcv.cells.size()-1));
+                << CSeqNo::seqoff(rcv.cell_base, int(rcv.cells.size())-1));
         return;
     }
 
@@ -988,11 +988,11 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
         if (gone && !last)
         {
             // Switch full -> loss. Store the sequence, as single (for now)
-            val.first = val.second = CSeqNo::incseq(base, i);
+            val.first = val.second = CSeqNo::incseq(base, int(i));
         }
         else if (last && !gone)
         {
-            val.second = CSeqNo::incseq(base, i);
+            val.second = CSeqNo::incseq(base, int(i));
             irrecover.push_back(val);
         }
     }
@@ -1018,30 +1018,32 @@ static inline char CellMark(const std::deque<bool>& cells, int index)
     return cells[index] ? '#' : '.';
 }
 
-static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row_size)
+static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, size_t row_size)
 {
-    int i = 0;
+    size_t i = 0;
     // Shift to the first empty cell
-    for ( ; i < int(cells.size()); ++i)
+    for ( ; i < cells.size(); ++i)
         if (cells[i] == false)
             break;
 
-    if (i == int(cells.size()))
+    if (i == cells.size())
     {
         LOGC(pflog.Debug, log << "FEC: ... cell[0-" << (cells.size()-1) << "]: ALL CELLS EXIST");
         return;
     }
 
     // Ok, we have some empty cells, so just adjust to the start of a row.
-    i -= i % row_size;
-    if (i < 0)
-        i = 0; // you never know...
-
-    for ( ; i < int(cells.size()); i += row_size )
+	size_t bstep = i % row_size;
+	if (i < bstep)  // you never know...
+		i = 0;
+	else
+		i -= bstep;
+    
+    for ( ; i < cells.size(); i += row_size )
     {
         std::ostringstream os;
         os << "cell[" << i << "-" << (i+row_size-1) << "] %" << CSeqNo::incseq(base, i) << ":";
-        for (int y = 0; y < row_size; ++y)
+        for (size_t y = 0; y < row_size; ++y)
         {
             os << " " << CellMark(cells, i+y);
         }
@@ -1049,7 +1051,7 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, int row
     }
 }
 #else
-static void DebugPrintCells(int32_t /*base*/, const std::deque<bool>& /*cells*/, int /*row_size*/) {}
+static void DebugPrintCells(int32_t /*base*/, const std::deque<bool>& /*cells*/, size_t /*row_size*/) {}
 #endif
 
 FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangHorizontal(const CPacket& rpkt, bool isfec, loss_seqs_t& irrecover)
@@ -1132,7 +1134,7 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangHorizontal(const CPacket& rp
 
     if (want_collect_irrecover) // AND rcv.rowq.size() > 1
     {
-        int current = rcv.rowq.size() - 2;
+        int current = int(rcv.rowq.size()) - 2;
         // We know we have at least 2 rows.
         // This value is then 0 or more.
         int past = current - 1;
@@ -1233,10 +1235,10 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
     {
         if (!rcv.CellAt(cix))
         {
-            offset = cix;
+            offset = int(cix);
 #if ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
-            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
 
 #else
@@ -1250,7 +1252,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
 #if ENABLE_HEAVY_LOGGING
         else
         {
-            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): exists");
         }
 #endif
@@ -1286,10 +1288,10 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
         size_t cix = baseoff + (col * sizeRow());
         if (!rcv.CellAt(cix))
         {
-            offset = cix;
+            offset = int(cix);
 #if ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
-            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
 
 #else
@@ -1303,7 +1305,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
 #if ENABLE_HEAVY_LOGGING
         else
         {
-            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, cix)
+            LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): exists");
         }
 #endif
@@ -1465,7 +1467,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
 }
 
-int FECFilterBuiltin::ExtendRows(int rowx)
+size_t FECFilterBuiltin::ExtendRows(size_t rowx)
 {
     // Check if oversize. Oversize is when the
     // index is > 2*m_number_cols. If so, shrink
@@ -1479,7 +1481,7 @@ int FECFilterBuiltin::ExtendRows(int rowx)
 #endif
 
     const size_t size_in_packets = rowx * numberCols();
-    const int n_series = rowx / numberRows();
+    const int n_series = int(rowx / numberRows());
 
     if (size_in_packets > rcvBufferSize() && n_series > 2)
     {
@@ -1498,7 +1500,7 @@ int FECFilterBuiltin::ExtendRows(int rowx)
     for (size_t i = old; i < rcv.rowq.size(); ++i)
     {
         // Initialize the base for the row group
-        int32_t ibase = CSeqNo::incseq(rcv.rowq[0].base, i*m_number_cols);
+        int32_t ibase = CSeqNo::incseq(rcv.rowq[0].base, int(i*m_number_cols));
         ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
     }
 
@@ -1554,14 +1556,14 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq, EHangStatus& w_status)
     }
 
     w_status = HANG_SUCCESS;
-    return rowx;
+    return int(rowx);
 }
 
 void FECFilterBuiltin::MarkCellReceived(int32_t seq, ECellReceived is_received)
 {
     // Mark the packet as received. This will allow later to
     // determine, which exactly packet is lost and needs rebuilding.
-    const int cellsize = rcv.cells.size();
+    const int cellsize = int(rcv.cells.size());
     const int cell_offset = CSeqNo::seqoff(rcv.cell_base, seq);
     bool resized SRT_ATR_UNUSED = false;
     if (cell_offset >= cellsize)
@@ -1663,7 +1665,7 @@ void FECFilterBuiltin::EmergencyShrink(size_t n_series)
     const size_t shift = shift_series * numberCols() * numberRows();
 
     // Always positive: colgx, and so n_series, and so shift
-    const int32_t newbase = CSeqNo::incseq(oldbase, shift);
+    const int32_t newbase = CSeqNo::incseq(oldbase, int(shift));
 
     const size_t shift_rows = shift_series * numberRows();
 
@@ -1801,7 +1803,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     // - get the series for this column
     // - if series is 0, just return
 
-    int series = colgx / numberCols();
+    const size_t series = colgx / numberCols();
     if (series == 0)
         return;
 
@@ -1812,7 +1814,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
     set<int32_t> loss;
 
-    int colx SRT_ATR_UNUSED = colgx % numberCols();
+    size_t colx SRT_ATR_UNUSED = colgx % numberCols();
 
     HLOGC(pflog.Debug, log << "FEC/V: going to DISMISS cols past %" << seq
             << " at INDEX=" << colgx << " col=" << colx
@@ -1839,7 +1841,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // because they can't be dismissed yet. Jump them over, so maybe
         // they can be dismissed in future.
         int this_col_offset = CSeqNo::seqoff(pg.base, seq);
-        int last_seq_offset = this_col_offset - (sizeCol()-1)*sizeRow();
+        int last_seq_offset = this_col_offset - int((sizeCol()-1)*sizeRow());
 
         if (last_seq_offset < 0)
         {
@@ -1862,7 +1864,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         pg.dismissed = true; // mark irrecover already collected
         for (size_t sof = 0; sof < pg.step * sizeCol(); sof += pg.step)
         {
-            int32_t lseq = CSeqNo::incseq(pg.base, sof);
+            int32_t lseq = CSeqNo::incseq(pg.base, int(sof));
             if (!IsLost(lseq))
             {
                 loss.insert(lseq);
@@ -1893,11 +1895,11 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     int32_t base0 = rcv.colq[0].base;
     int this_off = CSeqNo::seqoff(base0, seq);
 
-    int mindist =
+    int mindist = int(
         m_arrangement_staircase ?
         (numberCols() * numberRows() * 2)
         :
-        (numberCols() * numberRows());
+        (numberCols() * numberRows()));
 
     bool any_dismiss SRT_ATR_UNUSED = false;
 
@@ -2301,8 +2303,8 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
         return -1;
     }
 
-    const int colseries = coloff / (m_number_cols * m_number_rows);
-    size_t colgx = colx + (colseries * m_number_cols);
+    const int colseries = coloff / int(m_number_cols * m_number_rows);
+    size_t colgx = colx + int(colseries * m_number_cols);
 
     HLOGC(pflog.Debug, log << "FEC/V: Lookup group for %" << seqno << ": cg_base=%" << rcv.colq[0].base
             << " column=" << colx << " with base %" << colbase << ": SERIES=" << colseries
@@ -2323,7 +2325,7 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
         colgx = ExtendColumns(colgx);
     }
     w_status = HANG_SUCCESS;
-    return colgx;
+    return int(colgx);
 
     //
     // Even though column groups are arranged in a "staircase", it only means
@@ -2378,7 +2380,7 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
     //        DISMISS COLUMNS from 0 to GROUP_INDEX - i; break
 }
 
-int FECFilterBuiltin::ExtendColumns(int colgx)
+size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 {
     // This isn't safe to allow the group container to get expanded to any
     // size, however with some very tolerant settings, such as 10 seconds of
@@ -2423,11 +2425,11 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
 #endif
 
     // First, obtain the "series" of columns, possibly fixed.
-    int series = colgx / numberCols();
+    const int series = int(colgx / numberCols());
 
     // Now, the base of the series is the base increased by one matrix size.
 
-    int32_t base = rcv.colq[0].base;
+    const int32_t base = rcv.colq[0].base;
 
     // This is the base for series 0, but this procedure must be prepared
     // for that the series will not necessarily be 1, may be greater.
@@ -2437,7 +2439,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
 
     // Check, up to which series the columns are initialized.
     // Start with the series that doesn't exist
-    int old_series = rcv.colq.size() / numberCols();
+    const int old_series = int(rcv.colq.size() / numberCols());
 
     // Each iteration of this loop adds one series of columns.
     // One series count numberCols() columns.
@@ -2450,7 +2452,7 @@ int FECFilterBuiltin::ExtendColumns(int colgx)
         // Every base sequence for a series of columns is the series 0
         // base increased by one matrix size times series number.
         // THIS REMAINS TRUE NO MATTER IF WE USE STRAIGNT OR STAIRCASE ARRANGEMENT.
-        int32_t sbase = CSeqNo::incseq(base, (numberCols()*numberRows()) * s);
+        const int32_t sbase = CSeqNo::incseq(base, int(numberCols()*numberRows()) * s);
         HLOGC(pflog.Debug, log << "FEC/V: EXTENDING column groups series " << s
                 << ", size " << rcv.colq.size() << " -> "
                 << (rcv.colq.size() + numberCols())

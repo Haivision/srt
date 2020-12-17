@@ -183,8 +183,8 @@ private:
 
     // Receiving
     void CheckLargeDrop(int32_t seqno);
-    int ExtendRows(int rowx);
-    int ExtendColumns(int colgx);
+    size_t ExtendRows(size_t rowx);
+    size_t ExtendColumns(size_t colgx);
 
     enum ECellReceived
     {
