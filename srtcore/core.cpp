@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    m_tsTmpActiveSince = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 

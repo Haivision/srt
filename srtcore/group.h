@@ -233,7 +233,12 @@ private:
     // Support functions for sendBackup and sendBroadcast
     bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
+
+    /// Check if a running link is stable.
+    /// @retval true running link is stable
+    /// @retval false running link is unstable
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
+    
     bool sendBackup_CheckSendStatus(const gli_t         d,
                                     const time_point&   currtime,
                                     const int           stat,
