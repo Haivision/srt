@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    m_tsTmpActiveSince = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -5785,7 +5785,7 @@ void *CUDT::tsbpd(void *param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
             THREAD_PAUSED();
-            const bool ATR_UNUSED signaled = tsbpd_cc.wait_for(timediff);
+            const bool ATR_UNUSED signaled = tsbpd_cc.wait_until(tsbpdtime);
             THREAD_RESUMED();
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
@@ -7875,7 +7875,7 @@ void CUDT::releaseSynch()
     SRT_ASSERT(m_bClosing);
     if (!m_bClosing)
     {
-        HLOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
         m_bClosing = true;
     }
     // wake up user calls
