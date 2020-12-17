@@ -2376,7 +2376,6 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
     //     gmax = SHIFT(g.base, m_number_cols * m_number_rows)
     //     IF ( gs %> gmax )
     //        DISMISS COLUMNS from 0 to GROUP_INDEX - i; break
-
 }
 
 int FECFilterBuiltin::ExtendColumns(int colgx)
