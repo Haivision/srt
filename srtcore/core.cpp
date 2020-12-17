@@ -1183,7 +1183,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PBKEYLEN:
         if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->KeyLen(); // Running Key length.
+            *(int32_t *)optval = (int32_t) m_pCryptoControl->KeyLen(); // Running Key length.
         else
             *(int32_t *)optval = m_iSndCryptoKeyLen; // May be 0.
         optlen = sizeof(int32_t);
@@ -1255,14 +1255,14 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_sStreamName.c_str());
-        optlen = m_sStreamName.size();
+        optlen = (int) m_sStreamName.size();
         break;
 
     case SRTO_CONGESTION:
     {
         string tt = m_CongCtl.selected_name();
         strcpy((char *)optval, tt.c_str());
-        optlen = tt.size();
+        optlen = (int) tt.size();
     }
     break;
 
@@ -1273,7 +1273,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = m_zOPT_ExpPayloadSize;
+        *(int *)optval = (int) m_zOPT_ExpPayloadSize;
         break;
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -1308,7 +1308,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_OPT_PktFilterConfigString.c_str());
-        optlen = m_OPT_PktFilterConfigString.size();
+        optlen = (int) m_OPT_PktFilterConfigString.size();
         break;
 
     case SRTO_RETRANSMITALGO:
@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    m_tsTmpActiveSince = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -1588,7 +1588,7 @@ void CUDT::setListenState()
     m_bListening = true;
 }
 
-size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int hs_version)
+size_t CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgtype, int hs_version)
 {
     if (srtlen < SRT_HS_E_SIZE)
     {
@@ -1599,24 +1599,24 @@ size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int
 
     srtlen = SRT_HS_E_SIZE; // We use only that much space.
 
-    memset((srtdata), 0, sizeof(uint32_t) * srtlen);
+    memset((aw_srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
-    srtdata[SRT_HS_VERSION] = m_lSrtVersion; /* Required version */
-    srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
+    aw_srtdata[SRT_HS_VERSION] = m_lSrtVersion; /* Required version */
+    aw_srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
 
     switch (msgtype)
     {
     case SRT_CMD_HSREQ:
-        return fillSrtHandshake_HSREQ(srtdata, srtlen, hs_version);
+        return fillSrtHandshake_HSREQ((aw_srtdata), srtlen, hs_version);
     case SRT_CMD_HSRSP:
-        return fillSrtHandshake_HSRSP(srtdata, srtlen, hs_version);
+        return fillSrtHandshake_HSRSP((aw_srtdata), srtlen, hs_version);
     default:
         LOGC(cnlog.Fatal, log << "IPE: fillSrtHandshake/sendSrtMsg called with value " << msgtype);
         return 0;
     }
 }
 
-size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *srtdata, size_t /* srtlen - unused */, int hs_version)
+size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *aw_srtdata, size_t /* srtlen - unused */, int hs_version)
 {
     // INITIATOR sends HSREQ.
 
@@ -1636,50 +1636,50 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *srtdata, size_t /* srtlen - unused
          * Sent data is real-time, use Time-based Packet Delivery,
          * set option bit and configured delay
          */
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
 
         if (hs_version < CUDT::HS_VERSION_SRT1)
         {
             // HSv4 - this uses only one value.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay_ms);
         }
         else
         {
             // HSv5 - this will be understood only since this version when this exists.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
             // And in the reverse direction.
-            srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
-            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
+            aw_srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
 
             // This wasn't there for HSv4, this setting is only for the receiver.
             // HSv5 is bidirectional, so every party is a receiver.
 
             if (m_bTLPktDrop)
-                srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
+                aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
         }
     }
 
     if (m_bRcvNakReport)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
 
     // I support SRT_OPT_REXMITFLG. Do you?
-    srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
+    aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
     // Declare the API used. The flag is set for "stream" API because
     // the older versions will never set this flag, but all old SRT versions use message API.
     if (!m_bMessageAPI)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_STREAM;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_STREAM;
 
     HLOGC(cnlog.Debug,
-          log << "HSREQ/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY])
-              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]) << "] FLAGS["
-              << SrtFlagString(srtdata[SRT_HS_FLAGS]) << "]");
+          log << "HSREQ/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(aw_srtdata[SRT_HS_LATENCY])
+              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(aw_srtdata[SRT_HS_LATENCY]) << "] FLAGS["
+              << SrtFlagString(aw_srtdata[SRT_HS_FLAGS]) << "]");
 
     return 3;
 }
 
-size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused */, int hs_version)
+size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *aw_srtdata, size_t /* srtlen - unused */, int hs_version)
 {
     // Setting m_tsRcvPeerStartTime is done in processSrtMsg_HSREQ(), so
     // this condition will be skipped only if this function is called without
@@ -1698,18 +1698,18 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
          * We got and transposed peer start time (HandShake request timestamp),
          * we can support Timestamp-based Packet Delivery
          */
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
 
         if (hs_version < HS_VERSION_SRT1)
         {
             // HSv4 - this uses only one value
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay_ms);
         }
         else
         {
             // HSv5 - this puts "agent's" latency into RCV field and "peer's" -
             // into SND field.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
         }
     }
     else
@@ -1723,8 +1723,8 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
     {
         // HSv5 is bidirectional - so send the TSBPDSND flag, and place also the
         // peer's latency into SND field.
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
-        srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
+        aw_srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
         HLOGC(cnlog.Debug,
               log << "HSRSP/snd: HSv5 peer uses TSBPD, responding TSBPDSND latency=" << m_iPeerTsbPdDelay_ms);
@@ -1737,14 +1737,14 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
     }
 
     if (m_bTLPktDrop)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
 
     if (m_bRcvNakReport)
     {
         // HSv5: Note that this setting is independent on the value of
         // m_bPeerNakReport, which represent this setting in the peer.
 
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
         /*
          * NAK Report is so efficient at controlling bandwidth that sender TLPktDrop
          * is not needed. SRT 1.0.5 to 1.0.7 sender TLPktDrop combined with SRT 1.0
@@ -1754,7 +1754,7 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
          * from enabling Too-Late Packet Drop.
          */
         if (m_lPeerSrtVersion <= SrtVersion(1, 0, 7))
-            srtdata[SRT_HS_FLAGS] &= ~SRT_OPT_TLPKTDROP;
+            aw_srtdata[SRT_HS_FLAGS] &= ~SRT_OPT_TLPKTDROP;
     }
 
     if (m_lSrtVersion >= SrtVersion(1, 2, 0))
@@ -1768,7 +1768,7 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
         else
         {
             // Request that the rexmit bit be used as a part of msgno.
-            srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
+            aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
             HLOGF(cnlog.Debug, "HSRSP/snd: AGENT UNDERSTANDS REXMIT flag and PEER reported that it does, too.");
         }
     }
@@ -1780,9 +1780,9 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
     }
 
     HLOGC(cnlog.Debug,
-          log << "HSRSP/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY])
-              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]) << "] FLAGS["
-              << SrtFlagString(srtdata[SRT_HS_FLAGS]) << "]");
+          log << "HSRSP/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(aw_srtdata[SRT_HS_LATENCY])
+              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(aw_srtdata[SRT_HS_LATENCY]) << "] FLAGS["
+              << SrtFlagString(aw_srtdata[SRT_HS_FLAGS]) << "]");
 
     return 3;
 }
@@ -1803,7 +1803,7 @@ size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
+void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1819,7 +1819,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
-    int srtlen = 0;
+    size_t srtlen = 0;
 
     if (cmd == SRT_CMD_REJECT)
     {
@@ -2229,7 +2229,7 @@ bool CUDT::createSrtHandshake(
     // ra_size after that
     // NOTE: so far, ra_size is m_iMaxSRTPayloadSize expressed in number of elements.
     // WILL BE CHANGED HERE.
-    ra_size   = fillSrtHandshake(p + offset, total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
+    ra_size   = fillSrtHandshake((p + offset), total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
     *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
     HLOGC(cnlog.Debug,
@@ -4389,6 +4389,85 @@ void CUDT::cookieContest()
     m_SrtHsSide = HSD_DRAW;
 }
 
+// This function should complete the data for KMX needed for an out-of-band
+// handshake response. Possibilities are:
+// - There's no KMX (including first responder's handshake in rendezvous). This writes 0 to w_kmdatasize.
+// - The encryption status is failure. Respond with fail code and w_kmdatasize = 1.
+// - The last KMX was successful. Respond with the original kmdata and their size in w_kmdatasize.
+EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
+{
+    // If the last CONCLUSION message didn't contain the KMX extension, there's
+    // no key recorded yet, so it can't be extracted. Mark this w_kmdatasize empty though.
+    int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+    if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
+    {
+        // This is a periodic handshake update, so you need to extract the KM data from the
+        // first message, provided that it is there.
+        size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
+        if (msgsize == 0)
+        {
+            switch (m_pCryptoControl->m_RcvKmState)
+            {
+                // If the KMX process ended up with a failure, the KMX is not recorded.
+                // In this case as the KMRSP answer the "failure status" should be crafted.
+            case SRT_KM_S_NOSECRET:
+            case SRT_KM_S_BADSECRET:
+                {
+                    HLOGC(cnlog.Debug,
+                            log << "craftKmResponse: No KMX recorded, status = "
+                            << KmStateStr(m_pCryptoControl->m_RcvKmState) << ". Respond it.");
+
+                    // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
+                    // that is, copy the NOSECRET code into KMX message.
+                    memcpy((aw_kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
+                    w_kmdatasize = 1;
+                }
+                break; // Treat as ACCEPT in general; might change to REJECT on enforced-encryption
+
+            default:
+                // Remaining values:
+                // UNSECURED: should not fall here at all
+                // SECURING: should not happen in HSv5
+                // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
+                {
+                    m_RejectReason = SRT_REJ_IPE;
+                    // Remaining situations:
+                    // - password only on this site: shouldn't be considered to be sent to a no-password site
+                    LOGC(cnlog.Error,
+                            log << "craftKmResponse: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
+                            << KmStateStr(m_pCryptoControl->m_RcvKmState)
+                            << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
+                    return CONN_REJECT;
+                }
+                break;
+            }
+        }
+        else
+        {
+            w_kmdatasize = msgsize / 4;
+            if (msgsize > w_kmdatasize * 4)
+            {
+                // Sanity check
+                LOGC(cnlog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
+                memset((aw_kmdata + (w_kmdatasize * 4)), 0, msgsize - (w_kmdatasize * 4));
+                ++w_kmdatasize;
+            }
+
+            HLOGC(cnlog.Debug,
+                    log << "craftKmResponse: getting KM DATA from the fore-recorded KMX from KMREQ, size="
+                    << w_kmdatasize);
+            memcpy((aw_kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
+        }
+    }
+    else
+    {
+        HLOGC(cnlog.Debug, log << "craftKmResponse: no KMX flag - not extracting KM data for KMRSP");
+        w_kmdatasize = 0;
+    }
+
+    return CONN_ACCEPT;
+}
+
 EConnectStatus CUDT::processRendezvous(
     const CPacket& response, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
@@ -4485,73 +4564,11 @@ EConnectStatus CUDT::processRendezvous(
         }
         else
         {
-            // If the last CONCLUSION message didn't contain the KMX extension, there's
-            // no key recorded yet, so it can't be extracted. Mark this kmdatasize empty though.
-            int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-            if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
-            {
-                // This is a periodic handshake update, so you need to extract the KM data from the
-                // first message, provided that it is there.
-                size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
-                if (msgsize == 0)
-                {
-                    switch (m_pCryptoControl->m_RcvKmState)
-                    {
-                        // If the KMX process ended up with a failure, the KMX is not recorded.
-                        // In this case as the KMRSP answer the "failure status" should be crafted.
-                    case SRT_KM_S_NOSECRET:
-                    case SRT_KM_S_BADSECRET:
-                    {
-                        HLOGC(cnlog.Debug,
-                              log << "processRendezvous: No KMX recorded, status = NOSECRET. Respond with NOSECRET.");
-
-                        // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
-                        // that is, copy the NOSECRET code into KMX message.
-                        memcpy((kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
-                        kmdatasize = 1;
-                    }
-                    break;
-
-                    default:
-                        // Remaining values:
-                        // UNSECURED: should not fall here at alll
-                        // SECURING: should not happen in HSv5
-                        // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
-                        {
-                            m_RejectReason = SRT_REJ_IPE;
-                            // Remaining situations:
-                            // - password only on this site: shouldn't be considered to be sent to a no-password site
-                            LOGC(cnlog.Error,
-                                 log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
-                                     << KmStateStr(m_pCryptoControl->m_RcvKmState)
-                                     << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
-                            return CONN_REJECT;
-                        }
-                        break;
-                    }
-                }
-                else
-                {
-                    kmdatasize = msgsize / 4;
-                    if (msgsize > kmdatasize * 4)
-                    {
-                        // Sanity check
-                        LOGC(cnlog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
-                        memset((kmdata + (kmdatasize * 4)), 0, msgsize - (kmdatasize * 4));
-                        ++kmdatasize;
-                    }
-
-                    HLOGC(cnlog.Debug,
-                          log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size="
-                              << kmdatasize);
-                    memcpy((kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
-                }
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << "processRendezvous: no KMX flag - not extracting KM data for KMRSP");
-                kmdatasize = 0;
-            }
+            // This is a repeated handshake, so you can't use the incoming data to
+            // prepare data for createSrtHandshake. They have to be extracted from inside.
+            EConnectStatus conn = craftKmResponse((kmdata), (kmdatasize));
+            if (conn != CONN_ACCEPT)
+                return conn;
         }
 
         // No matter the value of needs_extension, the extension is always needed
@@ -5768,7 +5785,7 @@ void *CUDT::tsbpd(void *param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
             THREAD_PAUSED();
-            const bool ATR_UNUSED signaled = tsbpd_cc.wait_for(timediff);
+            const bool ATR_UNUSED signaled = tsbpd_cc.wait_until(tsbpdtime);
             THREAD_RESUMED();
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
@@ -5898,40 +5915,13 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 {
-    HLOGC(cnlog.Debug, log << "acceptAndRespond: setting up data according to handshake");
-
-    ScopedLock cg(m_ConnectionLock);
-
-    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
-
-    // Uses the smaller MSS between the peers
-    if (w_hs.m_iMSS > m_iMSS)
-        w_hs.m_iMSS = m_iMSS;
-    else
-        m_iMSS = w_hs.m_iMSS;
-
-    // exchange info for maximum flow window size
-    m_iFlowWindowSize     = w_hs.m_iFlightFlagSize;
-    w_hs.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
-
-    m_iPeerISN = w_hs.m_iISN;
-
-   setInitialRcvSeq(m_iPeerISN);
-    m_iRcvCurrPhySeqNo = w_hs.m_iISN - 1;
-
-    m_PeerID  = w_hs.m_iID;
-    w_hs.m_iID = m_SocketID;
-
-    // use peer's ISN and send it back for security check
-    m_iISN = w_hs.m_iISN;
-
-   setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
-
     // this is a reponse handshake
     w_hs.m_iReqType = URQ_CONCLUSION;
+    w_hs.m_iMSS = m_iMSS;
+    w_hs.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
+    w_hs.m_iID = m_SocketID;
 
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
@@ -5941,11 +5931,40 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         w_hs.m_extension = true;
     }
 
+    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+}
+
+void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+{
+    HLOGC(cnlog.Debug, log << "acceptAndRespond: setting up data according to handshake");
+
+    ScopedLock cg(m_ConnectionLock);
+
+    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
+
+    // Uses the smaller MSS between the peers
+    m_iMSS = std::min(m_iMSS, w_hs.m_iMSS);
+
+    // exchange info for maximum flow window size
+    m_iFlowWindowSize = w_hs.m_iFlightFlagSize;
+    m_iPeerISN = w_hs.m_iISN;
+    setInitialRcvSeq(m_iPeerISN);
+    m_iRcvCurrPhySeqNo = CSeqNo::decseq(w_hs.m_iISN);
+
+    m_PeerID  = w_hs.m_iID;
+
+    // use peer's ISN and send it back for security check
+    m_iISN = w_hs.m_iISN;
+
+    setInitialSndSeq(m_iISN);
+    m_SndLastAck2Time = steady_clock::now();
+
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
     CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
-    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+
+    rewriteHandshakeData(peer, (w_hs));
 
     int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
@@ -6038,6 +6057,9 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
+    // Save the handshake in m_ConnRes in case when needs repeating.
+    m_ConnRes = w_hs;
+
     // send the response to the peer, see listen() for more discussions about this
     // XXX Here create CONCLUSION RESPONSE with:
     // - just the UDT handshake, if HS_VERSION_UDT4,
@@ -6058,9 +6080,6 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
-    // Set target socket ID to the value from received handshake's source ID.
-    response.m_iID = m_PeerID;
-
 #if ENABLE_HEAVY_LOGGING
     {
         // To make sure what REALLY is being sent, parse back the handshake
@@ -6079,7 +6098,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // When missed this message, the caller should not accept packets
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
-    m_pSndQueue->sendto(peer, response);
+    addressAndSend((response));
 }
 
 // This function is required to be called when a caller receives an INDUCTION
@@ -7856,7 +7875,7 @@ void CUDT::releaseSynch()
     SRT_ASSERT(m_bClosing);
     if (!m_bClosing)
     {
-        HLOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
         m_bClosing = true;
     }
     // wake up user calls
@@ -8846,7 +8865,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         CHandShake req;
         req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
 
-      HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
+        HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
 
         if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
             || (m_bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
@@ -8881,7 +8900,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                     HLOGC(inlog.Debug,
                           log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
                               << " WITH SRT ext");
-                    have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
+                    have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
                     if (!have_hsreq)
                     {
                         initdata.m_iVersion = 0;
@@ -8919,6 +8938,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             else
             {
                 initdata.m_iVersion = HS_VERSION_UDT4;
+                kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
             }
 
             initdata.m_extension = have_hsreq;
@@ -8927,7 +8947,6 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                   log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
                       << (have_hsreq ? " WITH SRT HS response extensions" : ""));
 
-            // XXX here interpret SRT handshake extension
             CPacket response;
             response.setControl(UMSG_HANDSHAKE);
             response.allocate(m_iMaxSRTPayloadSize);
@@ -9689,8 +9708,10 @@ int CUDT::processData(CUnit* in_unit)
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
 
-        ThreadName tn(tns2.str().c_str());
-        const char* thname = tns2.str().c_str();
+        const string& tn = tns2.str();
+
+        ThreadName tnkeep(tn.c_str());
+        const char* thname = tn.c_str();
 #else
         const char* thname = "SRT:TsbPd";
 #endif
@@ -10853,7 +10874,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     else
     {
         int error  = SRT_REJ_UNKNOWN;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        CUDT* acpu = NULL;
+        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10893,9 +10915,69 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // reused for the connection rejection response (see URQ_ERROR_REJECT set
         // as m_iReqType).
 
+        // The 'acpu' should be set to a new socket, if found;
+        // this means simultaneously that result == 0, but it's safest to
+        // check this condition only. This means that 'newConnection' found
+        // that the connection attempt has already been accepted, just the
+        // caller side somehow didn't get the answer. The rule is that every
+        // connection request HS must be completed with a symmetric HS response,
+        // so craft one here.
+
+        // Note that this function runs in the listener socket context, while 'acpu'
+        // is the CUDT entity for the accepted socket.
+        if (acpu)
+        {
+            // This is an existing connection, so the handshake is only needed
+            // because of the rule that every handshake request must be covered
+            // by the handshake response. It wouldn't be good to call interpretSrtHandshake
+            // here because the data from the handshake have been already interpreted
+            // and recorded. We just need to craft a response.
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "processConnectRequest: sending REPEATED handshake response req="
+                      << RequestTypeStr(hs.m_iReqType));
+
+            // Rewrite already updated previously data in acceptAndRespond
+            acpu->rewriteHandshakeData(acpu->m_PeerAddr, (hs));
+
+            uint32_t kmdata[SRTDATA_MAXSIZE];
+            size_t   kmdatasize = SRTDATA_MAXSIZE;
+            EConnectStatus conn = CONN_ACCEPT;
+
+            if (hs.m_iVersion >= HS_VERSION_SRT1)
+            {
+                // Always attach extension.
+                hs.m_extension = true;
+                conn = acpu->craftKmResponse((kmdata), (kmdatasize));
+            }
+            else
+            {
+                kmdatasize = 0;
+            }
+
+            if (conn != CONN_ACCEPT)
+                return conn;
+
+            packet.setLength(m_iMaxSRTPayloadSize);
+            if (!acpu->createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
+                        kmdata, kmdatasize,
+                        (packet), (hs)))
+            {
+                HLOGC(cnlog.Debug,
+                        log << "processConnectRequest: rejecting due to problems in createSrtHandshake.");
+                result = -1; // enforce fallthrough for the below condition!
+                hs.m_iReqType = URQFailure(m_RejectReason == SRT_REJ_UNKNOWN ? SRT_REJ_IPE : m_RejectReason);
+            }
+            else
+            {
+                // Send the crafted handshake
+                HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING (repeated) HS (a): " << hs.show());
+                acpu->addressAndSend((packet));
+            }
+        }
+
         // send back a response if connection failed or connection already existed
-        // new connection response should be sent in acceptAndRespond()
-        if (result != 1)
+        // (or the above procedure failed)
+        if (result == -1)
         {
             HLOGC(cnlog.Debug,
                   log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
@@ -10908,6 +10990,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
             m_pSndQueue->sendto(addr, packet);
         }
+        // new connection response should be sent in acceptAndRespond()
+        // turn the socket writable if this is the first time when this was found out.
         else
         {
             // a new connection has been created, enable epoll for write

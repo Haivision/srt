@@ -771,7 +771,7 @@ public:
         return right < *this;
     }
 
-    bool operator=(const this_t& right) const
+    bool operator==(const this_t& right) const
     {
         return number == right.number;
     }
@@ -1416,7 +1416,7 @@ struct PacketMetric
 
     void update(size_t mult, uint64_t value)
     {
-        pkts += mult;
+        pkts += (uint32_t) mult;
         bytes += mult * value;
     }
 
