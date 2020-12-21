@@ -96,6 +96,7 @@ endforeach()
 # SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
+# SRT_DEBUG_BONDING_STATES 1
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 
 # option defaults
