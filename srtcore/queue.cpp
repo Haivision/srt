@@ -1129,7 +1129,7 @@ CRcvQueue::CRcvQueue()
     , m_pHash(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_iPayloadSize()
+    , m_szPayloadSize()
     , m_bClosing(false)
     , m_LSLock()
     , m_pListener(NULL)
@@ -1175,11 +1175,11 @@ CRcvQueue::~CRcvQueue()
 #endif
 
 
-void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *cc, CTimer *t)
+void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel *cc, CTimer *t)
 {
-    m_iPayloadSize = payload;
+    m_szPayloadSize = payload;
 
-    m_UnitQueue.init(qsize, payload, version);
+    m_UnitQueue.init(qsize, (int) payload, version);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1362,8 +1362,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
     {
         // no space, skip this packet
         CPacket temp;
-        temp.m_pcData = new char[m_iPayloadSize];
-        temp.setLength(m_iPayloadSize);
+        temp.m_pcData = new char[m_szPayloadSize];
+        temp.setLength(m_szPayloadSize);
         THREAD_PAUSED();
         EReadStatus rst = m_pChannel->recvfrom((w_addr), (temp));
         THREAD_RESUMED();
@@ -1376,7 +1376,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
         return rst == RST_ERROR ? RST_ERROR : RST_AGAIN;
     }
 
-    w_unit->m_Packet.setLength(m_iPayloadSize);
+    w_unit->m_Packet.setLength(m_szPayloadSize);
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();

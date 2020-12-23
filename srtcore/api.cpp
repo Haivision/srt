@@ -1413,7 +1413,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
                 error_reason = "setting group-derived option: #" + Sprint(g.m_config[i].so);
-                ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], g.m_config[i].value.size());
+                ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int) g.m_config[i].value.size());
             }
 
             // Do not try to set a user option if failed already.
@@ -1700,7 +1700,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             break;
         }
         HLOGC(aclog.Debug, log << "groupConnect: first connection, applying EPOLL WAITING.");
-        int len = spawned.size();
+        int len = (int) spawned.size();
         vector<SRTSOCKET> ready(spawned.size());
         const int estat = srt_epoll_wait(eid,
                     NULL, NULL,  // IN/ACCEPT

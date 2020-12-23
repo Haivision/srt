@@ -302,7 +302,7 @@ void FECFilterBuiltin::ConfigureGroup(Group& g, int32_t seqno, size_t gstep, siz
 
 void FECFilterBuiltin::ResetGroup(Group& g)
 {
-    int32_t new_seq_base = CSeqNo::incseq(g.base, int(g.drop));
+    const int32_t new_seq_base = CSeqNo::incseq(g.base, int(g.drop));
 
     HLOGC(pflog.Debug, log << "FEC: ResetGroup (step=" << g.step << "): base %" << g.base << " -> %" << new_seq_base);
 
@@ -386,6 +386,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
+        SRT_ASSERT(vert_off >= 0);
         int vert_pos = vert_off / int(sizeRow());
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
@@ -2472,4 +2473,3 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 
     return colgx;
 }
-

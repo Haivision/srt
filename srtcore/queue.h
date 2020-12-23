@@ -461,7 +461,7 @@ public:
       /// @param [in] c UDP channel to be associated to the queue
       /// @param [in] t timer
 
-   void init(int size, int payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
+   void init(int size, size_t payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
 
       /// Read a packet for a specific UDT socket id.
       /// @param [in] id Socket ID
@@ -493,7 +493,7 @@ private:
    CChannel* m_pChannel;        // UDP channel for receving packets
    srt::sync::CTimer* m_pTimer; // shared timer with the snd queue
 
-   int m_iPayloadSize;          // packet payload size
+   size_t m_szPayloadSize;      // packet payload size
 
    volatile bool m_bClosing;    // closing the worker
 #if ENABLE_LOGGING
