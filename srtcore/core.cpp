@@ -9145,7 +9145,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
     const steady_clock::time_point time_now = steady_clock::now();
-    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT - 4 * m_iRTTVar);
+    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT + 4 * m_iRTTVar);
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
