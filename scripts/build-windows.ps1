@@ -135,8 +135,8 @@ if ( $VS_VERSION -eq '2019' ) {
 $execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags"
 Write-Output $execVar
 
-#Invoke-Expression "& $execVar"
-& { Invoke-Expression $execVar } 2>&1 | Tee-Object -Variable out_content
+Invoke-Expression "& $execVar 2>$null"
+#& { Invoke-Expression $execVar } 2>&1 | Tee-Object -Variable out_content
 
 # check build ran OK, exit if cmake failed
 if( $LASTEXITCODE -ne 0 ) {
