@@ -132,11 +132,11 @@ if ( $VS_VERSION -eq '2019' ) {
 }
 
 # fire cmake to build project files
-$execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags"
+$execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags 2>&1"
 Write-Output $execVar
 
-# Invoke-Expression "& $execVar"
-& { Invoke-Expression $execVar } 2>$null | Tee-Object -Variable out_content
+Invoke-Expression "& $execVar"
+#& { Invoke-Expression $execVar } 2>$null | Tee-Object -Variable out_content
 
 # check build ran OK, exit if cmake failed
 if( $LASTEXITCODE -ne 0 ) {
