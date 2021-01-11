@@ -564,8 +564,7 @@ elseif(LINUX)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
 elseif(ANDROID)
 	add_definitions(-DLINUX=1)
-	add_definitions(-DANDROID=1)
-	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1 ANDROID=1" )
+	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
 elseif(CYGWIN)
 	add_definitions(-DCYGWIN=1)
 	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
@@ -1211,12 +1210,19 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	add_test(
-		NAME
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		add_test(
+			NAME	test-srt
+			COMMAND	${CMAKE_BINARY_DIR}/test-srt
+		)
+	else()
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+		gtest_add_tests(
 			test-srt
-		COMMAND
-			${CMAKE_BINARY_DIR}/test-srt
-	)
+			""
+			AUTO
+		)
+	endif()
 
 	enable_testing()
 

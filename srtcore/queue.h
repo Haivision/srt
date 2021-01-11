@@ -329,11 +329,7 @@ public:
    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr,
                const srt::sync::steady_clock::time_point &ttl);
 
-   // The should_lock parameter is given here to state as to whether
-   // the lock should be applied here. If called from some internals
-   // and the lock IS ALREADY APPLIED, use false here to prevent
-   // double locking and deadlock in result.
-   void remove(const SRTSOCKET& id, bool should_lock);
+   void remove(const SRTSOCKET& id);
    CUDT* retrieve(const sockaddr_any& addr, SRTSOCKET& id);
 
    void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
@@ -465,7 +461,7 @@ public:
       /// @param [in] c UDP channel to be associated to the queue
       /// @param [in] t timer
 
-   void init(int size, int payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
+   void init(int size, size_t payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
 
       /// Read a packet for a specific UDT socket id.
       /// @param [in] id Socket ID
@@ -497,7 +493,7 @@ private:
    CChannel* m_pChannel;        // UDP channel for receving packets
    srt::sync::CTimer* m_pTimer; // shared timer with the snd queue
 
-   int m_iPayloadSize;          // packet payload size
+   size_t m_szPayloadSize;      // packet payload size
 
    volatile bool m_bClosing;    // closing the worker
 #if ENABLE_LOGGING
@@ -509,7 +505,7 @@ private:
    void removeListener(const CUDT* u);
 
    void registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const srt::sync::steady_clock::time_point& ttl);
-   void removeConnector(const SRTSOCKET& id, bool should_lock = true);
+   void removeConnector(const SRTSOCKET& id);
 
    void setNewEntry(CUDT* u);
    bool ifNewEntry();

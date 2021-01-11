@@ -838,10 +838,9 @@ void CRendezvousQueue::insert(
             << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
 
-void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
+void CRendezvousQueue::remove(const SRTSOCKET &id)
 {
-    if (should_lock)
-        enterCS(m_RIDVectorLock);
+    ScopedLock lkv (m_RIDVectorLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
@@ -851,9 +850,6 @@ void CRendezvousQueue::remove(const SRTSOCKET &id, bool should_lock)
             break;
         }
     }
-
-    if (should_lock)
-        leaveCS(m_RIDVectorLock);
 }
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
@@ -886,17 +882,34 @@ CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
     return NULL;
 }
 
-struct FailedLinkInfo
+struct LinkStatusInfo
 {
     CUDT* u;
     SRTSOCKET id;
     int errorcode;
+    sockaddr_any peeraddr;
     int token;
+
+    struct HasID
+    {
+        SRTSOCKET id;
+        HasID(SRTSOCKET p): id(p) {}
+        bool operator()(const LinkStatusInfo& i)
+        {
+            return i.id == id;
+        }
+    };
 };
 
 void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket &response)
 {
-    vector<FailedLinkInfo> ufailed;
+    vector<LinkStatusInfo> ufailed, uprocess;
+
+#if ENABLE_HEAVY_LOGGING
+        int debug_nupd  = 0;
+        int debug_nrun  = 0;
+        int debug_nfail = 0;
+#endif
 
     {
         ScopedLock vg(m_RIDVectorLock);
@@ -907,12 +920,6 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         HLOGC(cnlog.Debug,
                 log << "updateConnStatus: updating after getting pkt id=" << response.m_iID
                 << " status: " << ConnectStatusStr(cst));
-
-#if ENABLE_HEAVY_LOGGING
-        int debug_nupd  = 0;
-        int debug_nrun  = 0;
-        int debug_nfail = 0;
-#endif
 
         for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
         {
@@ -972,9 +979,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                         << " removed - EXPIRED ("
                         // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
                         << (is_zero(i->m_tsTTL) ? "enforced on FAILURE" : "passed TTL")
-                        << "). removing from queue");
-                // connection timer expired, acknowledge app via epoll
-                i->m_pUDT->m_bConnecting = false;
+                        << "). WILL REMOVE from queue");
+
+                // Set appropriate error information, but do not update yet.
+                // Exit the lock first. Collect objects to update them later.
                 int ccerror = SRT_ECONNREJ;
                 if (i->m_pUDT->m_RejectReason == SRT_REJ_UNKNOWN)
                 {
@@ -992,12 +1000,10 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                     }
                 }
 
-                i->m_pUDT->updateBrokenConnection();
-
                 // The call to completeBrokenConnectionDependencies() cannot happen here
                 // under the lock of m_RIDVectorLock as it risks a deadlock. Collect it
                 // to update later.
-                FailedLinkInfo fi = {i->m_pUDT, i->m_iID, ccerror, -1};
+                LinkStatusInfo fi = {i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1};
                 ufailed.push_back(fi);
 
                 /*
@@ -1020,46 +1026,11 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             // Synchronous connection requests are handled in startConnect() completely.
             if (!i->m_pUDT->m_bSynRecving)
             {
-#if ENABLE_HEAVY_LOGGING
-                ++debug_nupd;
-#endif
-                // IMPORTANT INFORMATION concerning changes towards UDT legacy.
-                // In the UDT code there was no attempt to interpret any incoming data.
-                // All data from the incoming packet were considered to be already deployed into
-                // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
-                // Therefore this procedure did only one thing: craft a new handshake packet and send it.
-                // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
-                // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
-                // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
-                // due to have received the packet (RST_OK).
-                //
-                // In the below call, only the underlying `processRendezvous` function will be attempting
-                // to interpret these data (for caller-listener this was already done by `processConnectRequest`
-                // before calling this function), and it checks for the data presence.
+                IF_HEAVY_LOGGING(++debug_nupd);
 
-                EReadStatus    read_st = rst;
-                EConnectStatus conn_st = cst;
-
-                if (i->m_iID != response.m_iID)
-                {
-                    read_st = RST_AGAIN;
-                    conn_st = CONN_AGAIN;
-                }
-
-                if (!i->m_pUDT->processAsyncConnectRequest(read_st, conn_st, response, i->m_PeerAddr))
-                {
-                    // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
-                    // its already set in this case.
-                    LOGC(cnlog.Error, log << "RendezvousQueue: processAsyncConnectRequest FAILED. Setting TTL as EXPIRED.");
-                    FailedLinkInfo fi = { i->m_pUDT, i->m_iID, SRT_ECONNREJ, -1};
-                    ufailed.push_back(fi);
-                    i->m_pUDT->sendCtrl(UMSG_SHUTDOWN);
-                    i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
-#if ENABLE_HEAVY_LOGGING
-                    ++debug_nfail;
-#endif
-                }
-
+                // Collect them so that they can be updated out of m_RIDVectorLock.
+                LinkStatusInfo fi = { i->m_pUDT, i->m_iID, SRT_SUCCESS, i->m_PeerAddr, -1};
+                uprocess.push_back(fi);
                 // NOTE: safe loop, the incrementation was done before the loop body,
                 // so the `i' node can be safely deleted. Just the body must end here.
                 continue;
@@ -1070,12 +1041,52 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             }
         }
 
-        HLOGC(cnlog.Debug,
-                log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
-                << (debug_nrun - debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets.");
     }
 
     // [[using locked()]];
+
+    HLOGC(cnlog.Debug, log << "updateConnStatus: collected " << uprocess.size() << " for processing, "
+            << ufailed.size() << " to close");
+
+    for (vector<LinkStatusInfo>::iterator i = uprocess.begin(); i != uprocess.end(); ++i)
+    {
+        // IMPORTANT INFORMATION concerning changes towards UDT legacy.
+        // In the UDT code there was no attempt to interpret any incoming data.
+        // All data from the incoming packet were considered to be already deployed into
+        // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
+        // Therefore this procedure did only one thing: craft a new handshake packet and send it.
+        // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
+        // and the `response` packet may sometimes contain no data. Therefore the passed `rst`
+        // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
+        // due to have received the packet (RST_OK).
+        //
+        // In the below call, only the underlying `processRendezvous` function will be attempting
+        // to interpret these data (for caller-listener this was already done by `processConnectRequest`
+        // before calling this function), and it checks for the data presence.
+
+        EReadStatus    read_st = rst;
+        EConnectStatus conn_st = cst;
+
+        if (i->id != response.m_iID)
+        {
+            read_st = RST_AGAIN;
+            conn_st = CONN_AGAIN;
+        }
+
+        HLOGC(cnlog.Debug, log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+
+        if (!i->u->processAsyncConnectRequest(read_st, conn_st, response, i->peeraddr))
+        {
+            // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
+            // its already set in this case.
+            LinkStatusInfo fi = *i;
+            fi.errorcode = SRT_ECONNREJ;
+            ufailed.push_back(fi);
+            i->u->sendCtrl(UMSG_SHUTDOWN);
+            IF_HEAVY_LOGGING(++debug_nfail);
+        }
+
+    }
 
     // NOTE: it is "believed" here that all CUDT objects will not be
     // deleted in the meantime. This is based on a statement that at worst
@@ -1083,11 +1094,31 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     // they are moved to ClosedSockets and it is believed that this function will
     // not be held on mutexes that long.
 
-    for (vector<FailedLinkInfo>::iterator i = ufailed.begin(); i != ufailed.end(); ++i)
+    for (vector<LinkStatusInfo>::iterator i = ufailed.begin(); i != ufailed.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        i->u->m_bConnecting = false;
+        i->u->updateBrokenConnection();
         i->u->completeBrokenConnectionDependencies(i->errorcode);
     }
+
+    {
+        // Now, additionally for every failed link reset the TTL so that
+        // they are set expired right now.
+        ScopedLock vg(m_RIDVectorLock);
+        for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
+        {
+            if (find_if(ufailed.begin(), ufailed.end(), LinkStatusInfo::HasID(i->m_iID)) != ufailed.end())
+            {
+                LOGC(cnlog.Error, log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID << ". Setting TTL as EXPIRED.");
+                i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
+            }
+        }
+    }
+
+    HLOGC(cnlog.Debug,
+            log << "updateConnStatus: " << debug_nupd << "/" << debug_nrun << " sockets updated ("
+            << (debug_nrun - debug_nupd) << " useless). REMOVED " << debug_nfail << " sockets.");
 }
 
 //
@@ -1098,7 +1129,7 @@ CRcvQueue::CRcvQueue()
     , m_pHash(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_iPayloadSize()
+    , m_szPayloadSize()
     , m_bClosing(false)
     , m_LSLock()
     , m_pListener(NULL)
@@ -1144,11 +1175,11 @@ CRcvQueue::~CRcvQueue()
 #endif
 
 
-void CRcvQueue::init(int qsize, int payload, int version, int hsize, CChannel *cc, CTimer *t)
+void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel *cc, CTimer *t)
 {
-    m_iPayloadSize = payload;
+    m_szPayloadSize = payload;
 
-    m_UnitQueue.init(qsize, payload, version);
+    m_UnitQueue.init(qsize, (int) payload, version);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1331,8 +1362,8 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
     {
         // no space, skip this packet
         CPacket temp;
-        temp.m_pcData = new char[m_iPayloadSize];
-        temp.setLength(m_iPayloadSize);
+        temp.m_pcData = new char[m_szPayloadSize];
+        temp.setLength(m_szPayloadSize);
         THREAD_PAUSED();
         EReadStatus rst = m_pChannel->recvfrom((w_addr), (temp));
         THREAD_RESUMED();
@@ -1345,7 +1376,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
         return rst == RST_ERROR ? RST_ERROR : RST_AGAIN;
     }
 
-    w_unit->m_Packet.setLength(m_iPayloadSize);
+    w_unit->m_Packet.setLength(m_szPayloadSize);
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
@@ -1686,10 +1717,10 @@ void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_a
     m_pRendezvousQueue->insert(id, u, addr, ttl);
 }
 
-void CRcvQueue::removeConnector(const SRTSOCKET &id, bool should_lock)
+void CRcvQueue::removeConnector(const SRTSOCKET &id)
 {
     HLOGC(cnlog.Debug, log << "removeConnector: removing @" << id);
-    m_pRendezvousQueue->remove(id, should_lock);
+    m_pRendezvousQueue->remove(id);
 
     ScopedLock bufferlock(m_BufferLock);
 

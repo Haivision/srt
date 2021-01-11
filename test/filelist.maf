@@ -2,6 +2,7 @@
 SOURCES
 test_buffer.cpp
 test_bonding.cpp
+test_common.cpp
 test_connection_timeout.cpp
 test_many_connections.cpp
 test_cryspr.cpp
@@ -9,6 +10,7 @@ test_enforced_encryption.cpp
 test_epoll.cpp
 test_fec_rebuilding.cpp
 test_file_transmission.cpp
+test_ipv6.cpp
 test_list.cpp
 test_listen_callback.cpp
 test_muxer.cpp

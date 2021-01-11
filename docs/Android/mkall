@@ -1,15 +1,16 @@
 #!/bin/bash
 
-NDK=/opt/android-ndk-r19
+NDK=/opt/android-ndk-r19c
 
-openssl_ver=1.0.2q
-srt_version=1.3.1
+openssl_ver=1.1.1h
+#srt_version=1.4.2
 #srt_branch=dev
 
+API_LEVEL=28
 # Determine the path of the executing script
 BASE_DIR=$(readlink -f $0 | xargs dirname)
 
-wget -N https://www.openssl.org/source/openssl-$openssl_ver.tar.gz
+#wget -N https://www.openssl.org/source/openssl-$openssl_ver.tar.gz
 
 if [ ! -d $BASE_DIR/srt ]; then
  git clone https://github.com/Haivision/srt srt
@@ -23,6 +24,7 @@ toolchain=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 # Cross-compiler tool prefix
 declare -A target_hosts
 target_hosts=(
+ [armeabi]=arm-linux-androideabi
  [arm]=arm-linux-androideabi
  [arm64]=aarch64-linux-android
  [x86]=i686-linux-android
@@ -32,6 +34,7 @@ target_hosts=(
 # Cross-compiler prefix for -clang and -clang++ has api version
 declare -A target_api
 target_api=(
+ [armeabi]=armv5te-linux-androideabi16
  [arm]=armv7a-linux-androideabi16
  [arm64]=aarch64-linux-android21
  [x86]=i686-linux-android16
@@ -40,17 +43,29 @@ target_api=(
 
 declare -A sysroots
 sysroots=(
+ [armeabi]=$BASE_DIR/armeabi
  [arm]=$BASE_DIR/armeabi-v7a
  [arm64]=$BASE_DIR/arm64-v8a
  [x86]=$BASE_DIR/x86
  [x86_64]=$BASE_DIR/x86_64
 )
 
-for arch in arm arm64 x86 x86_64; do
- rm -rf $BASE_DIR/openssl-$openssl_ver
- tar xf $BASE_DIR/openssl-$openssl_ver.tar.gz
- $BASE_DIR/mkssl -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/openssl-$openssl_ver -i ${sysroots[$arch]}
+declare -A archabi
+archabi=(
+ [armeabi]=armeabi
+ [arm]=armeabi-v7a
+ [arm64]=arm64-v8a
+ [x86]=x86
+ [x86_64]=x86_64
+)
+
+$BASE_DIR/mkssl -n $NDK -o $openssl_ver -a $API_LEVEL
+
+for arch in armeabi arm arm64 x86 x86_64; do
+ #rm -rf $BASE_DIR/openssl-$openssl_ver
+ #tar xf $BASE_DIR/openssl-$openssl_ver.tar.gz
+ #$BASE_DIR/mkssl -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/openssl-$openssl_ver -i ${sysroots[$arch]}
 
  git -C $BASE_DIR/srt clean -fd
- $BASE_DIR/mksrt -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/srt -i ${sysroots[$arch]}
+ $BASE_DIR/mksrt -t $toolchain -h ${target_hosts[$arch]} -a ${target_api[$arch]} -s $BASE_DIR/srt -i ${sysroots[$arch]} -b ${archabi[$arch]} -n  $NDK -l $API_LEVEL 
 done

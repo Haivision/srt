@@ -117,7 +117,7 @@ public:
     struct Sendstate
     {
         SRTSOCKET id;
-        gli_t     it;
+        SocketData* mb;
         int   stat;
         int   code;
     };
@@ -127,7 +127,7 @@ public:
 
     static SocketData prepareData(CUDTSocket* s);
 
-    gli_t add(SocketData data);
+    SocketData* add(SocketData data);
 
     struct HaveID
     {
@@ -139,15 +139,17 @@ public:
         bool operator()(const SocketData& s) { return s.id == id; }
     };
 
-    gli_t find(SRTSOCKET id)
+    bool contains(SRTSOCKET id, SocketData*& w_f)
     {
         srt::sync::ScopedLock g(m_GroupLock);
-        gli_t                 f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
+        gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f == m_Group.end())
         {
-            return gli_NULL();
+            w_f = NULL;
+            return false;
         }
-        return f;
+        w_f = &*f;
+        return true;
     }
 
     // NEED LOCKING
@@ -156,20 +158,15 @@ public:
 
     /// Remove the socket from the group container.
     /// REMEMBER: the group spec should be taken from the socket
-    /// (set m_IncludedGroup to NULL and m_IncludedIter to grp->gli_NULL())
+    /// (set m_GroupOf and m_GroupMemberData to NULL
     /// PRIOR TO calling this function.
     /// @param id Socket ID to look for in the container to remove
     /// @return true if the container still contains any sockets after the operation
     bool remove(SRTSOCKET id)
     {
-        srt::sync::ScopedLock g(m_GroupLock);
-        return remove_LOCKED(id);
-    }
-
-    // No-locking version of the function above.
-    bool remove_LOCKED(SRTSOCKET id)
-    {
         using srt_logging::gmlog;
+        srt::sync::ScopedLock g(m_GroupLock);
+
         bool empty = false;
         HLOGC(gmlog.Debug, log << "group/remove: going to remove @" << id << " from $" << m_GroupID);
 
@@ -200,7 +197,7 @@ public:
         }
         else
         {
-            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND (might be ok, if removed already by CheckValidSockets)");
+            HLOGC(gmlog.Debug, log << "group/remove: IPE: id @" << id << " NOT FOUND");
             empty = true; // not exactly true, but this is to cause error on group in the APP
         }
 
@@ -224,8 +221,6 @@ public:
 
     void setGroupConnected();
 
-    static gli_t gli_NULL() { return GroupContainer::null(); }
-
     int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int            sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int            sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
@@ -238,7 +233,12 @@ private:
     // Support functions for sendBackup and sendBroadcast
     bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
+
+    /// Check if a running link is stable.
+    /// @retval true running link is stable
+    /// @retval false running link is unstable
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
+    
     bool sendBackup_CheckSendStatus(const gli_t         d,
                                     const time_point&   currtime,
                                     const int           stat,
@@ -346,8 +346,8 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
-    void handleKeepalive(gli_t);
-    void internalKeepalive(gli_t);
+    void handleKeepalive(SocketData*);
+    void internalKeepalive(SocketData*);
 
 private:
     // Check if there's at least one connected socket.
@@ -362,7 +362,6 @@ private:
     struct GroupContainer
     {
         std::list<SocketData>        m_List;
-        static std::list<SocketData> s_NoList; // This is to have a predictable "null iterator".
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -371,7 +370,7 @@ private:
         gli_t m_LastActiveLink;
 
         GroupContainer()
-            : m_LastActiveLink(s_NoList.begin())
+            : m_LastActiveLink(m_List.end())
         {
         }
 
@@ -380,12 +379,11 @@ private:
 
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
-        static gli_t null() { return s_NoList.begin(); }
         bool         empty() { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); }
         void         clear()
         {
-            m_LastActiveLink = null();
+            m_LastActiveLink = end();
             m_List.clear();
         }
         size_t size() { return m_List.size(); }

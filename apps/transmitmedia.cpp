@@ -1012,6 +1012,9 @@ class UdpTarget: public Target, public UdpCommon
 public:
     UdpTarget(string host, int port, const map<string,string>& attr )
     {
+        if (host.empty())
+            cerr << "\nWARN Host for UDP target is not provided. Will send to localhost:" << port << ".\n";
+
         Setup(host, port, attr);
         if (adapter != "")
         {

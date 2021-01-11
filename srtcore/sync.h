@@ -348,15 +348,6 @@ class InvertedLock
     Mutex *m_pMutex;
 
   public:
-    InvertedLock(Mutex *m)
-        : m_pMutex(m)
-    {
-        if (!m_pMutex)
-            return;
-
-        leaveCS(*m_pMutex);
-    }
-
     InvertedLock(Mutex& m)
         : m_pMutex(&m)
     {
@@ -484,26 +475,20 @@ public:
     /// Block the call until either @a timestamp time achieved
     /// or the conditional is signaled.
     /// @param [in] delay Maximum time to wait since the moment of the call
-    /// @retval true Resumed due to getting a CV signal
-    /// @retval false Resumed due to being past @a timestamp
+    /// @retval false if the relative timeout specified by rel_time expired,
+    /// @retval true if condition is signaled or spurious wake up.
     bool wait_for(const steady_clock::duration& delay)
     {
         return m_cond->wait_for(*m_locker, delay);
     }
 
-    // Wait until the given time is achieved. This actually
-    // refers to wait_for for the time remaining to achieve
-    // given time.
+    // Wait until the given time is achieved.
+    /// @param [in] exptime The target time to wait until.
+    /// @retval false if the target wait time is reached.
+    /// @retval true if condition is signal or spurious wake up.
     bool wait_until(const steady_clock::time_point& exptime)
     {
-        // This will work regardless as to which clock is in use. The time
-        // should be specified as steady_clock::time_point, so there's no
-        // question of the timer base.
-        steady_clock::time_point now = steady_clock::now();
-        if (now >= exptime)
-            return false; // timeout
-
-        return wait_for(exptime - now);
+        return m_cond->wait_until(*m_locker, exptime);
     }
 
     // Static ad-hoc version
