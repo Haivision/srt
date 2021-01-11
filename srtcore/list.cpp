@@ -123,7 +123,16 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     // Find the insert position in the non-empty list
     const int origlen = m_iLength;
     const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
-    int       loc     = (m_iHead + offset + m_iSize) % m_iSize;
+
+    if (offset >= m_iSize)
+    {
+        LOGC(qslog.Error, log << "IPE: New loss record is too far from the first record. Ignoring. "
+                << "First loss seqno " << m_caSeq[m_iHead].seqstart
+                << ", insert seqno " << seqno1 << ":" << seqno2);
+        return 0;
+    }
+
+    int loc = (m_iHead + offset + m_iSize) % m_iSize;
 
     if (loc < 0)
     {

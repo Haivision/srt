@@ -519,7 +519,7 @@ TEST_F(CSndLossListTest, InsertFullListCoalesce)
     CheckEmptyArray();
 }
 
-TEST_F(CSndLossListTest, DISABLED_InsertFullListNoCoalesce)
+TEST_F(CSndLossListTest, InsertFullListNoCoalesce)
 {
     // We will insert each element with a gap of one elements.
     // This should lead to having space for only [i; SIZE] sequence numbers.
@@ -530,23 +530,22 @@ TEST_F(CSndLossListTest, DISABLED_InsertFullListNoCoalesce)
     // [0]:taken, [1]: empty, [2]: taken, [3]: empty, ...
     EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE / 2);
 
-    // Inserting additional element: 1 item more than list size.
-    // There should be one free place for it at list[SIZE-1]
-    // right after previously inserted element.
+    // Inserting additional element out of the list span must fail.
     const int seqno1 = CSndLossListTest::SIZE + 2;
-    EXPECT_EQ(m_lossList->insert(seqno1, seqno1), 1);
+    EXPECT_EQ(m_lossList->insert(seqno1, seqno1), 0);
 
-    // Inserting one more element into a full list.
-    // There should be no place for it.
-    const int seqno2 = CSndLossListTest::SIZE + 4;
-    EXPECT_EQ(m_lossList->insert(seqno2, seqno2), 0);
+    // There should however be a place for one element right after the last inserted one.
+    const int seqno_last = CSndLossListTest::SIZE + 1;
+    EXPECT_EQ(m_lossList->insert(seqno_last, seqno_last), 1);
 
-    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
-    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
+    const int initial_length = m_lossList->getLossLength();
+    EXPECT_EQ(initial_length, CSndLossListTest::SIZE / 2 + 1);
+    for (int i = 1; i <= CSndLossListTest::SIZE / 2; i++)
     {
         EXPECT_EQ(m_lossList->popLostSeq(), 2 * i);
-        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE  - i);
+        EXPECT_EQ(m_lossList->getLossLength(), initial_length - i);
     }
+    EXPECT_EQ(m_lossList->popLostSeq(), seqno_last);
     EXPECT_EQ(m_lossList->popLostSeq(), -1);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
