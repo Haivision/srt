@@ -134,7 +134,9 @@ if ( $VS_VERSION -eq '2019' ) {
 # fire cmake to build project files
 $execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags"
 Write-Output $execVar
-Invoke-Expression "& $execVar"
+
+# Redirect stderr to stdout so that printing to stderr isn't treated as error
+Invoke-Expression "& $execVar 2>&1"
 
 # check build ran OK, exit if cmake failed
 if( $LASTEXITCODE -ne 0 ) {
