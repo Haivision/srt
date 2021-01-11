@@ -505,13 +505,14 @@ TEST_F(CSndLossListTest, InsertFullListCoalesce)
         EXPECT_EQ(m_lossList->insert(i, i), 1);
     EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
     // Inserting additional element: 1 item more than list size.
-    // But given all elements coalesce into one entry, list size should still increase.
-    EXPECT_EQ(m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1), 1);
-    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
-    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
+    // Given all elements coalesce into one entry, there is a place to insert it,
+    // but sequence span now exceeds list size.
+    EXPECT_EQ(m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1), 0);
+    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
+    for (int i = 1; i <= CSndLossListTest::SIZE; i++)
     {
         EXPECT_EQ(m_lossList->popLostSeq(), i);
-        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1 - i);
+        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE - i);
     }
     EXPECT_EQ(m_lossList->popLostSeq(), -1);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
