@@ -1,4 +1,4 @@
-name: cxx11_win
+name: cxx11
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 jobs:
   build:
 
-    name: windows-cxx11
+    name: windows
     runs-on: windows-latest
 
     steps:
@@ -21,4 +21,4 @@ jobs:
     - name: build
       run: cd _build && cmake --build ./ --config Release
     - name: test
-      run: cd _build && ctest --extra-verbose -C Release
+      run: cd _build && ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C Release

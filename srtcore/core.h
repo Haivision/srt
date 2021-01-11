@@ -370,7 +370,7 @@ public: // internal API
     static std::vector<SRTSOCKET> existingSockets();
 
     void addressAndSend(CPacket& pkt);
-    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
+    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
     int RTT() const { return m_iRTT; }
@@ -1189,7 +1189,7 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
-    time_point m_tsTmpActiveTime;  // time since temporary activated, or 0 if not temporary activated
+    time_point m_tsTmpActiveSince; // time since temporary activated, or 0 if not temporary activated
     time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS

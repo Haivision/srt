@@ -1183,7 +1183,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PBKEYLEN:
         if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->KeyLen(); // Running Key length.
+            *(int32_t *)optval = (int32_t) m_pCryptoControl->KeyLen(); // Running Key length.
         else
             *(int32_t *)optval = m_iSndCryptoKeyLen; // May be 0.
         optlen = sizeof(int32_t);
@@ -1255,14 +1255,14 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_sStreamName.c_str());
-        optlen = m_sStreamName.size();
+        optlen = (int) m_sStreamName.size();
         break;
 
     case SRTO_CONGESTION:
     {
         string tt = m_CongCtl.selected_name();
         strcpy((char *)optval, tt.c_str());
-        optlen = tt.size();
+        optlen = (int) tt.size();
     }
     break;
 
@@ -1273,7 +1273,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = m_zOPT_ExpPayloadSize;
+        *(int *)optval = (int) m_zOPT_ExpPayloadSize;
         break;
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -1308,7 +1308,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         strcpy((char *)optval, m_OPT_PktFilterConfigString.c_str());
-        optlen = m_OPT_PktFilterConfigString.size();
+        optlen = (int) m_OPT_PktFilterConfigString.size();
         break;
 
     case SRTO_RETRANSMITALGO:
@@ -1378,7 +1378,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     unsigned char* mem = new unsigned char[headersize + payload];
     SingleOption* option = reinterpret_cast<SingleOption*>(mem);
     option->option = optname;
-    option->length = optlen;
+    option->length = (uint16_t) optlen;
     memcpy(option->storage, optval, optlen);
 
     options.push_back(option);
@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    m_tsTmpActiveSince = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -1803,7 +1803,7 @@ size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
+void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1819,7 +1819,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
     uint32_t srtdata[SRTDATA_SIZE];
 
-    int srtlen = 0;
+    size_t srtlen = 0;
 
     if (cmd == SRT_CMD_REJECT)
     {
@@ -1872,7 +1872,7 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
     // Preswap to little endian (in place due to possible padding zeros)
     HtoILA((space), space, wordsize);
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(wordsize);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) wordsize);
 
     return wordsize;
 }
@@ -1882,17 +1882,17 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
 size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
 {
-    SRT_ASSERT(m_parent->m_IncludedGroup != NULL);
+    SRT_ASSERT(m_parent->m_GroupOf != NULL);
     uint32_t* space = pcmdspec + 1;
 
-    SRTSOCKET id = m_parent->m_IncludedGroup->id();
-    SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
+    SRTSOCKET id = m_parent->m_GroupOf->id();
+    SRT_GROUP_TYPE tp = m_parent->m_GroupOf->type();
     uint32_t flags = 0;
 
     // Note: if agent is a listener, and the current version supports
     // both sync methods, this flag might have been changed according to
     // the wish of the caller.
-    if (m_parent->m_IncludedGroup->synconmsgno())
+    if (m_parent->m_GroupOf->synconmsgno())
         flags |= SRT_GFLAG_SYNCONMSG;
 
     // NOTE: this code remains as is for historical reasons.
@@ -1902,7 +1902,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // extension, but it was later seen not necessary. Therefore
     // this code remains, but now it's informational only.
 #if ENABLE_HEAVY_LOGGING
-    m_parent->m_IncludedGroup->debugMasterData(m_SocketID);
+    m_parent->m_GroupOf->debugMasterData(m_SocketID);
 #endif
 
     // See CUDT::interpretGroup()
@@ -1910,7 +1910,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     uint32_t dataword = 0
         | SrtHSRequest::HS_GROUP_TYPE::wrap(tp)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
-        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_IncludedIter->weight);
+        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
     const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
     memcpy((space), storedata, sizeof storedata);
@@ -1932,7 +1932,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     size_t ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
 
     // Store the CMD + SIZE in the next field
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     // Copy the key - do the endian inversion because another endian inversion
     // will be done for every control message before sending, and this KM message
@@ -1984,7 +1984,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
         keydata = reinterpret_cast<const uint32_t *>(kmdata);
     }
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
     HLOGC(cnlog.Debug,
             log << "createSrtHandshake: KMRSP: applying returned key length="
             << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
@@ -2193,7 +2193,7 @@ bool CUDT::createSrtHandshake(
     // hurt, even if this field could be dangling in the moment. This will be
     // followed by an additional check, done this time under lock, and there will
     // be no dangling pointers at this time.
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         // Whatever group this socket belongs to, the information about
         // the group is always sent the same way with the handshake.
@@ -2230,7 +2230,7 @@ bool CUDT::createSrtHandshake(
     // NOTE: so far, ra_size is m_iMaxSRTPayloadSize expressed in number of elements.
     // WILL BE CHANGED HERE.
     ra_size   = fillSrtHandshake((p + offset), total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     HLOGC(cnlog.Debug,
           log << "createSrtHandshake: after HSREQ: offset=" << offset << " HSREQ size=" << ra_size
@@ -2303,9 +2303,9 @@ bool CUDT::createSrtHandshake(
         // NOTE: See information about mutex ordering in api.h
         ScopedLock grd (m_parent->m_ControlLock); // Required to make sure 
         ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
-        if (!m_parent->m_IncludedGroup)
+        if (!m_parent->m_GroupOf)
         {
-            // This may only happen if since last check of m_IncludedGroup pointer the socket was removed
+            // This may only happen if since last check of m_GroupOf pointer the socket was removed
             // from the group in the meantime, which can only happen due to that the group was closed.
             // In such a case it simply means that the handshake process was requested to be interrupted.
             LOGC(cnlog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
@@ -2313,7 +2313,7 @@ bool CUDT::createSrtHandshake(
         }
         else
         {
-            if (m_parent->m_IncludedGroup->closing())
+            if (m_parent->m_GroupOf->closing())
             {
                 m_RejectReason = SRT_REJ_IPE;
                 LOGC(cnlog.Error, log << "createSrtHandshake: group is closing during the process, rejecting.");
@@ -3390,9 +3390,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
 #if ENABLE_EXPERIMENTAL_BONDING
-    // m_IncludedGroup and locking info: NULL check won't hurt here. If the group
+    // m_GroupOf and locking info: NULL check won't hurt here. If the group
     // was deleted in the meantime, it will be found out later anyway and result with error.
-    if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_IncludedGroup)
+    if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_GroupOf)
     {
         // XXX Later probably needs to check if this group REQUIRES the group
         // response. Currently this implements the bonding-category group, and this
@@ -3567,7 +3567,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // the same id, otherwise the connection should be rejected.
 
         // So, first check the group of the current socket and see if a peer is set.
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (!pg)
         {
             // This means that the responder has responded with a group membership,
@@ -3630,7 +3630,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false; // error occurred
         }
 
-        if (!m_parent->m_IncludedGroup)
+        if (!m_parent->m_GroupOf)
         {
             // Strange, we just added it...
             m_RejectReason = SRT_REJ_IPE;
@@ -3638,14 +3638,14 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        CUDTGroup::gli_t f = m_parent->m_IncludedIter;
+        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
         f->peer = m_PeerAddr;
     }
 
-    m_parent->m_IncludedGroup->debugGroup();
+    m_parent->m_GroupOf->debugGroup();
 
     // That's all. For specific things concerning group
     // types, this will be later.
@@ -3737,19 +3737,19 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    CUDTGroup::gli_t f = gp->find(m_SocketID);
-    if (f != CUDTGroup::gli_NULL())
+    CUDTGroup::SocketData* f;
+    if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
         // (A newly created socket from acceptAndRespond should not have any group membership yet)
         LOGC(gmlog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-        s->m_IncludedGroup = gp;
-        s->m_IncludedIter = f;
+        s->m_GroupOf = gp;
+        s->m_GroupMemberData = f;
         return 0;
     }
 
-    s->m_IncludedIter = gp->add(gp->prepareData(s));
-    s->m_IncludedGroup = gp;
+    s->m_GroupMemberData = gp->add(gp->prepareData(s));
+    s->m_GroupOf = gp;
 
     // Record the remote address in the group data.
 
@@ -5032,7 +5032,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     {
 #if ENABLE_EXPERIMENTAL_BONDING
         ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+        CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
             // This is the last moment when this can be done.
@@ -5133,7 +5133,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 #if ENABLE_EXPERIMENTAL_BONDING
     {
         ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+        CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
             // XXX this might require another check of group type.
@@ -5142,13 +5142,13 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
             // LEAVING as comment for historical reasons. Locking is here most
             // likely not necessary because the socket cannot be removed from the
             // group until the socket isn't removed, and this requires locking of
-            // m_GlobControlLock. This should ensure that when m_IncludedGroup is
-            // not NULL, m_IncludedIter is also valid.
+            // m_GlobControlLock. This should ensure that when m_GroupOf is
+            // not NULL, m_GroupMemberData is also valid.
             // ScopedLock glock(g->m_GroupLock);
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            CUDTGroup::gli_t gi       = m_parent->m_IncludedIter;
+            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -5743,7 +5743,7 @@ void *CUDT::tsbpd(void *param)
                 // the next CUDTGroup::recv() call should return with no blocking or not.
                 // When the group is read-ready, it should update its pollers as it sees fit.
 
-                // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
+                // NOTE: this call will set lock to m_GroupOf->m_GroupLock
                 HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << current_pkt_seq << " makes group readable");
                 gkeeper.group->updateReadState(self->m_SocketID, current_pkt_seq);
 
@@ -5773,7 +5773,7 @@ void *CUDT::tsbpd(void *param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
             THREAD_PAUSED();
-            tsbpd_cc.wait_for(timediff);
+            tsbpd_cc.wait_until(tsbpdtime);
             THREAD_RESUMED();
         }
         else
@@ -5986,7 +5986,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     {
 #if ENABLE_EXPERIMENTAL_BONDING
         ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+        CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
             // This is the last moment when this can be done.
@@ -6558,7 +6558,7 @@ int CUDT::receiveBuffer(char *data, int len)
     return res;
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]];
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]];
 // [[using locked(m_SendLock)]];
 void CUDT::checkNeedDrop(bool& w_bCongestion)
 {
@@ -6638,9 +6638,9 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             // What's important is that the lock on GroupLock cannot be applied
             // here, both because it might be applied already, and because the
             // locks on the later lock ordered mutexes are already set.
-            if (m_parent->m_IncludedGroup)
+            if (m_parent->m_GroupOf)
             {
-                m_parent->m_IncludedGroup->ackMessage(first_msgno);
+                m_parent->m_GroupOf->ackMessage(first_msgno);
             }
 #endif
         }
@@ -6665,9 +6665,9 @@ int CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t sr
     return this->sendmsg2(data, len, (mctrl));
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]]
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::send,
-// which is the only case when the m_parent->m_IncludedGroup is not NULL.
+// which is the only case when the m_parent->m_GroupOf is not NULL.
 int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
     bool         bCongestion = false;
@@ -6959,16 +6959,16 @@ int CUDT::recvmsg(char* data, int len, int64_t& srctime)
     return res;
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]]
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::recv,
-// which is the only case when the m_parent->m_IncludedGroup is not NULL.
+// which is the only case when the m_parent->m_GroupOf is not NULL.
 int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     // Check if the socket is a member of a receiver group.
     // If so, then reading by receiveMessage is disallowed.
 
 #if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
+    if (m_parent->m_GroupOf && m_parent->m_GroupOf->isGroupReceiver())
     {
         LOGP(arlog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
@@ -8139,7 +8139,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // required in the defined order. At present we only need the lock
         // on m_GlobControlLock to prevent the group from being deleted
         // in the meantime
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
             // Check is first done before locking to avoid unnecessary
             // mutex locking. The condition for this field is that it
@@ -8148,14 +8148,14 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // the dangling case.
             ScopedLock glock (s_UDTUnited.m_GlobControlLock);
 
-            // Note that updateLatestRcv will lock m_IncludedGroup->m_GroupLock,
+            // Note that updateLatestRcv will lock m_GroupOf->m_GroupLock,
             // but this is an intended order.
-            if (m_parent->m_IncludedGroup)
+            if (m_parent->m_GroupOf)
             {
                 // A group may need to update the parallelly used idle links,
                 // should it have any. Pass the current socket position in order
                 // to skip it from the group loop.
-                m_parent->m_IncludedGroup->updateLatestRcv(m_parent);
+                m_parent->m_GroupOf->updateLatestRcv(m_parent);
             }
         }
 #endif
@@ -8187,17 +8187,17 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // acknowledge any waiting epolls to read
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
 #if ENABLE_EXPERIMENTAL_BONDING
-            if (m_parent->m_IncludedGroup)
+            if (m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
                 ScopedLock glock (s_UDTUnited.m_GlobControlLock);
 
-                if (m_parent->m_IncludedGroup)
+                if (m_parent->m_GroupOf)
                 {
                     // The current "APP reader" needs to simply decide as to whether
                     // the next CUDTGroup::recv() call should return with no blocking or not.
                     // When the group is read-ready, it should update its pollers as it sees fit.
-                    m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
+                    m_parent->m_GroupOf->updateReadState(m_SocketID, first_seq);
                 }
             }
 #endif
@@ -8304,7 +8304,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-    bool is_group = m_parent->m_IncludedGroup;
+    bool is_group = m_parent->m_GroupOf;
 #endif
 
     // Update sender's loss list and acknowledge packets in the sender's buffer
@@ -8350,12 +8350,12 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
         // be done now that m_RecvAckLock is unlocked.
         ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
             HLOGC(xtlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
             // NOTE: ackMessage also accepts and ignores the trap representation
             // which is SRT_MSGNO_CONTROL.
-            m_parent->m_IncludedGroup->ackMessage(msgno_at_last_acked_seq);
+            m_parent->m_GroupOf->ackMessage(msgno_at_last_acked_seq);
         }
     }
 #endif
@@ -8488,14 +8488,14 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     //
     leaveCS(m_RecvAckLock);
 #if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
             // Will apply m_GroupLock, ordered after m_GlobControlLock.
             // m_GlobControlLock is necessary for group existence.
-            m_parent->m_IncludedGroup->updateWriteState();
+            m_parent->m_GroupOf->updateWriteState();
         }
     }
 #endif
@@ -8782,12 +8782,12 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
                     (udrift), (newtimebase));
 #if ENABLE_EXPERIMENTAL_BONDING
-            if (drift_updated && m_parent->m_IncludedGroup)
+            if (drift_updated && m_parent->m_GroupOf)
             {
                 ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-                if (m_parent->m_IncludedGroup)
+                if (m_parent->m_GroupOf)
                 {
-                    m_parent->m_IncludedGroup->synchronizeDrift(this, udrift, newtimebase);
+                    m_parent->m_GroupOf->synchronizeDrift(this, udrift, newtimebase);
                 }
             }
 #endif
@@ -9107,11 +9107,11 @@ void CUDT::updateAfterSrtHandshake(int hsv)
 #if ENABLE_EXPERIMENTAL_BONDING
     string grpspec;
 
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        grpspec = m_parent->m_IncludedGroup
-            ? " group=$" + Sprint(m_parent->m_IncludedGroup->id())
+        grpspec = m_parent->m_GroupOf
+            ? " group=$" + Sprint(m_parent->m_GroupOf->id())
             : string();
     }
 #else
@@ -9286,7 +9286,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
              m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(qslog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
-        payload        = w_packet.getLength();
+        payload        = (int) w_packet.getLength();
         reason         = "filter";
         filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
@@ -9330,7 +9330,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                 // sequence is moved due to the difference between ISN caught during the existing
                 // transmission and the first sequence possible to be used at the first sending
                 // instruction. The group itself isn't being accessed.
-                if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
+                if (m_parent->m_GroupOf && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
                 {
                     const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
 
@@ -9371,7 +9371,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
                             << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
 #if ENABLE_EXPERIMENTAL_BONDING
-                    HLOGC(qslog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_IncludedGroup ? "yes":"no")
+                    HLOGC(qslog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_GroupOf ? "yes":"no")
                             << " extraction-seq=" << m_iSndCurrSeqNo << " scheduling-seq=" << w_packet.m_iSeqNo << " ISN=" << m_iISN);
 #endif
 
@@ -9454,7 +9454,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             // Encryption failed
             return std::make_pair(-1, enter_time);
         }
-        payload = w_packet.getLength(); /* Cipher may change length */
+        payload = (int) w_packet.getLength(); /* Cipher may change length */
         reason += " (encrypted)";
     }
 
@@ -9583,7 +9583,7 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
 
     if (!seqbuffer.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], seqbuffer.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], (int) seqbuffer.size());
     }
 }
 
@@ -9668,8 +9668,10 @@ int CUDT::processData(CUnit* in_unit)
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
 
-        ThreadName tn(tns2.str().c_str());
-        const char* thname = tns2.str().c_str();
+        const string& tn = tns2.str();
+
+        ThreadName tnkeep(tn.c_str());
+        const char* thname = tn.c_str();
 #else
         const char* thname = "SRT:TsbPd";
 #endif
@@ -9722,7 +9724,7 @@ int CUDT::processData(CUnit* in_unit)
     updateCC(TEV_RECEIVE, EventVariant(&packet));
     ++m_iPktCount;
 
-    const int pktsz = packet.getLength();
+    const int pktsz = (int) packet.getLength();
     // Update time information
     // XXX Note that this adds the byte size of a packet
     // of which we don't yet know as to whether this has
@@ -9821,16 +9823,16 @@ int CUDT::processData(CUnit* in_unit)
     // accepted or rejected because if it was belated it may result in a
     // "runaway train" problem as the IDLE links are being updated the base
     // reception sequence pointer stating that this link is not receiving.
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         ScopedLock protect_group_existence (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup::gli_t gi = m_parent->m_IncludedIter;
+        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
         // as gi is non-NULL iterator, the group does exist and it does contain
         // this socket as member (that is, 'gi' cannot be a dangling iterator).
-        if (gi != CUDTGroup::gli_NULL())
+        if (gi != NULL)
         {
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
             {
@@ -10248,7 +10250,7 @@ int CUDT::processData(CUnit* in_unit)
     }
     if (!lossdata.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], (int) lossdata.size());
     }
 
     // was_sent_in_order means either of:
@@ -10321,9 +10323,9 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
     // XXX When an alternative packet arrival callback is installed
     // in case of groups, move this part to the groupwise version.
 
-    if (self->m_parent->m_IncludedGroup)
+    if (self->m_parent->m_GroupOf)
     {
-        CUDTGroup::gli_t gi = self->m_parent->m_IncludedIter;
+        CUDTGroup::SocketData* gi = self->m_parent->m_GroupMemberData;
         if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
         {
             HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
@@ -11255,15 +11257,15 @@ void CUDT::checkTimers()
     {
         sendCtrl(UMSG_KEEPALIVE);
 #if ENABLE_EXPERIMENTAL_BONDING
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
             ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-            if (m_parent->m_IncludedGroup)
+            if (m_parent->m_GroupOf)
             {
                 // Pass socket ID because it's about changing group socket data
-                m_parent->m_IncludedGroup->internalKeepalive(m_parent->m_IncludedIter);
+                m_parent->m_GroupOf->internalKeepalive(m_parent->m_GroupMemberData);
                 // NOTE: GroupLock is unnecessary here because the only data read and
-                // modified is the target of the iterator from m_IncludedIter. The
+                // modified is the target of the iterator from m_GroupMemberData. The
                 // iterator will be valid regardless of any container modifications.
             }
         }
@@ -11274,6 +11276,7 @@ void CUDT::checkTimers()
 
 void CUDT::updateBrokenConnection()
 {
+    m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
@@ -11288,21 +11291,21 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
     bool pending_broken = false;
     {
         ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
-            token = m_parent->m_IncludedIter->token;
-            if (m_parent->m_IncludedIter->sndstate == SRT_GST_PENDING)
+            token = m_parent->m_GroupMemberData->token;
+            if (m_parent->m_GroupMemberData->sndstate == SRT_GST_PENDING)
             {
                 HLOGC(gmlog.Debug, log << "updateBrokenConnection: a pending link was broken - will be removed");
                 pending_broken = true;
             }
             else
             {
-                HLOGC(gmlog.Debug, log << "updateBrokenConnection: state=" << CUDTGroup::StateStr(m_parent->m_IncludedIter->sndstate) << " a used link was broken - not closing automatically");
+                HLOGC(gmlog.Debug, log << "updateBrokenConnection: state=" << CUDTGroup::StateStr(m_parent->m_GroupMemberData->sndstate) << " a used link was broken - not closing automatically");
             }
 
-            m_parent->m_IncludedIter->sndstate = SRT_GST_BROKEN;
-            m_parent->m_IncludedIter->rcvstate = SRT_GST_BROKEN;
+            m_parent->m_GroupMemberData->sndstate = SRT_GST_BROKEN;
+            m_parent->m_GroupMemberData->rcvstate = SRT_GST_BROKEN;
         }
     }
 #endif
@@ -11320,7 +11323,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
         ScopedLock lock(s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {
             // Bound to one call because this requires locking
@@ -11562,7 +11565,7 @@ void CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
     // for extra data sent through keepalive.
 
 #if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         // Lock GlobControlLock in order to make sure that
         // the state if the socket having the group and the
@@ -11570,13 +11573,13 @@ void CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
         ScopedLock lock(s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {
             // Whether anything is to be done with this socket
             // about the fact that keepalive arrived, let the
             // group handle it
-            pg->handleKeepalive(m_parent->m_IncludedIter);
+            pg->handleKeepalive(m_parent->m_GroupMemberData);
         }
     }
 #endif

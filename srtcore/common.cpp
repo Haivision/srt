@@ -585,7 +585,7 @@ void CMD5::compute(const char* input, unsigned char result[16])
    md5_state_t state;
 
    md5_init(&state);
-   md5_append(&state, (const md5_byte_t *)input, strlen(input));
+   md5_append(&state, (const md5_byte_t *)input, (int) strlen(input));
    md5_finish(&state, result);
 }
 

@@ -626,7 +626,7 @@ static const char* const socket_state_array[] = {
 const char* const* TestEnforcedEncryption::m_socket_state = socket_state_array+1;
 
 /** 
- * @fn TEST_F(TestEnforcedEncryption, PasswordLength)
+ * @fn TestEnforcedEncryption.PasswordLength
  * @brief The password length should belong to the interval of [10; 80]
  */
 TEST_F(TestEnforcedEncryption, PasswordLength)
@@ -661,7 +661,7 @@ TEST_F(TestEnforcedEncryption, PasswordLength)
 
 
 /**
- * @fn TEST_F(TestEnforcedEncryption, SetGetDefault)
+ * @fn TestEnforcedEncryption.SetGetDefault
  * @brief The default value for the enforced encryption should be ON
  */
 TEST_F(TestEnforcedEncryption, SetGetDefault)
