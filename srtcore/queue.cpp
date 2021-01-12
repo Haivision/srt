@@ -1097,6 +1097,14 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     for (vector<LinkStatusInfo>::iterator i = ufailed.begin(); i != ufailed.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        // This is still done without locks, but a successful call to `locateSocket` should
+        // ensure that this entity will not be deleted in the next 1 second.
+        CUDTSocket* s = CUDT::uglobal()->locateSocket(i->id);
+        if (!s)
+        {
+            LOGC(cnlog.Warn, log << "updateConnStatus: ... NOT updating because the socket is already closed");
+            continue;
+        }
         i->u->m_bConnecting = false;
         i->u->updateBrokenConnection();
         i->u->completeBrokenConnectionDependencies(i->errorcode);

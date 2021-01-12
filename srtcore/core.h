@@ -480,7 +480,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
     // For SRT_tsbpdLoop
-    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
