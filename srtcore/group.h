@@ -239,6 +239,21 @@ private:
     /// @retval false running link is unstable
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
     
+    /// Check link sending status
+    /// @param[in]  d              Group member iterator
+    /// @param[in]  currtime       Current time (logging only)
+    /// @param[in]  stat           Result of sending over the socket
+    /// @param[in]  lastseq        Last sent sequence number before the current sending operation
+    /// @param[in]  pktseq         Packet sequence number currently tried to be sent
+    /// @param[out] w_u            CUDT unit of the current member (to allow calling overrideSndSeqNo)
+    /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
+    /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
+    /// @param[out] w_final_stat   Status to be reported by this function eventually
+    /// @param[out] w_sendable_pri Weight value from every link (will auto-sort)
+    /// @param[out] w_nsuccessful  Updates the number of successful links
+    /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
+    ///
+    /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
     bool sendBackup_CheckSendStatus(const gli_t         d,
                                     const time_point&   currtime,
                                     const int           stat,
@@ -253,7 +268,27 @@ private:
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
-    size_t sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
+
+    /// Check activation conditions and activate a backup link if needed.
+    /// Backup link activation is needed if:
+    ///
+    /// 1. All currently active links are unstable.
+    /// Note that unstable links still count as sendable; they
+    /// are simply links that were qualified for sending, but:
+    /// - have exceeded response timeout
+    /// - have hit EASYNCSND error during sending
+    ///
+    /// 2. Another reason to activate might be if one of idle links
+    /// has a higher weight than any link currently active
+    /// (those are collected in 'sendable_pri').
+    /// If there are no sendable, a new link needs to be activated anyway.
+    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idlers,
+        const std::vector<gli_t>& unstable,
+        const std::vector<gli_t>& sendable,
+        const std::set<uint16_t> sendable_pri,
+        std::string& activate_reason) const;
+
+    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idlers,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
