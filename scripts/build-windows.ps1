@@ -135,6 +135,9 @@ if ( $VS_VERSION -eq '2019' ) {
 $execVar = "cmake ../ -G`"$CMAKE_GENERATOR`" $cmakeFlags"
 Write-Output $execVar
 
+# Reset reaction to Continue for cmake as it sometimes tends to print
+# things on stderr, which is understood by PowerShell as error. The
+# exit code from cmake will be checked anyway.
 $ErrorActionPreference = "Continue"
 Invoke-Expression "& $execVar"
 

@@ -182,6 +182,13 @@ TEST_F(TestIPv6, v6_calls_v6)
     client.join();
 }
 
+// XXX This test must be disabled on Windows; calling ::FFFF:127.0.0.1:4200
+// address with bound 127.0.0.1:4200 service doesn't work, including when
+// connecting between Windows and Linux. There's little information about that
+// available, investigation is underway. It doesn't work even if the SRTO_IPV6ONLY
+// option is set to false (on Windows it's true by default).
+
+#if !defined(_WIN32)
 TEST_F(TestIPv6, v6_calls_v4)
 {
     if (ForceNoIPv6()) return;
@@ -201,4 +208,5 @@ TEST_F(TestIPv6, v6_calls_v4)
 
     client.join();
 }
+#endif
 
