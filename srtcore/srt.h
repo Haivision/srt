@@ -980,7 +980,7 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
-const char* srt_rejectreason_str(int id);
+SRT_API const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
 
