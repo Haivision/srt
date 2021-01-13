@@ -3898,7 +3898,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     sendable.reserve(m_Group.size());
 
     // Qualify states of member links
-    sendBackup_QualifyMemberStates(currtime, wipeme, idlers, pending, unstable, sendable);
+    sendBackup_QualifyMemberStates(currtime, (wipeme), (idlers), (pending), (unstable), (sendable));
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
     sort(idlers.begin(), idlers.end(), FPriorityOrder());
