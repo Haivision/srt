@@ -249,7 +249,7 @@ private:
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
     /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
     /// @param[out] w_final_stat   Status to be reported by this function eventually
-    /// @param[out] w_sendable_pri Weight value from every link (will auto-sort)
+    /// @param[out] w_max_sendable_weight Maximum weight value of sendable links
     /// @param[out] w_nsuccessful  Updates the number of successful links
     /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
     ///
@@ -264,7 +264,7 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    std::set<uint16_t>& w_sendable_pri,
+                                    uint16_t&           w_max_sendable_weight,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
@@ -285,7 +285,7 @@ private:
     bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idlers,
         const std::vector<gli_t>& unstable,
         const std::vector<gli_t>& sendable,
-        const std::set<uint16_t> sendable_pri,
+        const uint16_t max_sendable_weight,
         std::string& activate_reason) const;
 
     size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idlers,
