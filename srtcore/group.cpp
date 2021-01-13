@@ -2894,6 +2894,79 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
     return true;
 }
 
+void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
+        vector<SRTSOCKET>& w_wipeme,
+        vector<gli_t>& w_idlers,
+        vector<SRTSOCKET>& w_pending,
+        vector<gli_t>& w_unstable,
+        vector<gli_t>& w_sendable)
+{
+    // First, check status of every link - no matter if idle or active.
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        if (d->sndstate != SRT_GST_BROKEN)
+        {
+            // Check the socket state prematurely in order not to uselessly
+            // send over a socket that is broken.
+            CUDT* const pu = (d->ps)
+                ?  &d->ps->core()
+                :  NULL;
+
+            if (!pu || pu->m_bBroken)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
+                d->sndstate = SRT_GST_BROKEN;
+                d->rcvstate = SRT_GST_BROKEN;
+            }
+        }
+
+        // Check socket sndstate before sending
+        if (d->sndstate == SRT_GST_BROKEN)
+        {
+            HLOGC(gslog.Debug,
+                  log << "grp/sendBackup: socket in BROKEN state: @" << d->id
+                      << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
+            w_wipeme.push_back(d->id);
+            continue;
+        }
+
+        if (d->sndstate == SRT_GST_IDLE)
+        {
+            if (!send_CheckIdle(d, (w_wipeme), (w_pending)))
+                continue;
+
+            HLOGC(gslog.Debug,
+                  log << "grp/sendBackup: socket in IDLE state: @" << d->id << " - will activate it IF NEEDED");
+            // This is idle, we'll take care of them next time
+            // Might be that:
+            // - this socket is idle, while some NEXT socket is running
+            // - we need at least one running socket to work BEFORE activating the idle one.
+            // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
+            //   and all others will be activated using the ISN from the first one.
+            w_idlers.push_back(d);
+            sendBackup_CheckIdleTime(d);
+            continue;
+        }
+
+        if (d->sndstate == SRT_GST_RUNNING)
+        {
+            if (!sendBackup_CheckRunningStability(d, (currtime)))
+            {
+                insert_uniq((w_unstable), d);
+            }
+            // Unstable links should still be used for sending.
+            w_sendable.push_back(d);
+            continue;
+        }
+
+        HLOGC(gslog.Debug,
+              log << "grp/sendBackup: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
+                  << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
+
+        w_pending.push_back(d->id);
+    }
+}
+
 // [[using locked(this->m_GroupLock)]]
 void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
 {
@@ -3824,70 +3897,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     sendable.reserve(m_Group.size());
 
-    // First, check status of every link - no matter if idle or active.
-    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
-    {
-        if (d->sndstate != SRT_GST_BROKEN)
-        {
-            // Check the socket state prematurely in order not to uselessly
-            // send over a socket that is broken.
-            CUDT* const pu = (d->ps)
-                ?  &d->ps->core()
-                :  NULL;
-
-            if (!pu || pu->m_bBroken)
-            {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
-                d->sndstate = SRT_GST_BROKEN;
-                d->rcvstate = SRT_GST_BROKEN;
-            }
-        }
-
-        // Check socket sndstate before sending
-        if (d->sndstate == SRT_GST_BROKEN)
-        {
-            HLOGC(gslog.Debug,
-                  log << "grp/sendBackup: socket in BROKEN state: @" << d->id
-                      << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
-            wipeme.push_back(d->id);
-            continue;
-        }
-
-        if (d->sndstate == SRT_GST_IDLE)
-        {
-            if (!send_CheckIdle(d, (wipeme), (pending)))
-                continue;
-
-            HLOGC(gslog.Debug,
-                  log << "grp/sendBackup: socket in IDLE state: @" << d->id << " - will activate it IF NEEDED");
-            // This is idle, we'll take care of them next time
-            // Might be that:
-            // - this socket is idle, while some NEXT socket is running
-            // - we need at least one running socket to work BEFORE activating the idle one.
-            // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
-            //   and all others will be activated using the ISN from the first one.
-            idlers.push_back(d);
-            sendBackup_CheckIdleTime(d);
-            continue;
-        }
-
-        if (d->sndstate == SRT_GST_RUNNING)
-        {
-            if (!sendBackup_CheckRunningStability(d, (currtime)))
-            {
-                insert_uniq((unstable), d);
-            }
-            // Unstable links should still be used for sending.
-            sendable.push_back(d);
-            continue;
-        }
-
-        HLOGC(gslog.Debug,
-              log << "grp/sendBackup: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
-                  << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
-
-        pending.push_back(d->id);
-    }
+    // Qualify states of member links
+    sendBackup_QualifyMemberStates(currtime, wipeme, idlers, pending, unstable, sendable);
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
     sort(idlers.begin(), idlers.end(), FPriorityOrder());

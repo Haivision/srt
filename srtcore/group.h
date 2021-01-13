@@ -233,6 +233,21 @@ private:
     // Support functions for sendBackup and sendBroadcast
     bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
     void sendBackup_CheckIdleTime(gli_t w_d);
+    
+    /// Qualify states of member links.
+    /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
+    /// @param[in] currtime    current timestamp
+    /// @param[out] w_wipeme   broken links or links about to be closed
+    /// @param[out] w_idlers   idle links
+    /// @param[out] w_pending  links pending to be connected
+    /// @param[out] w_unstable member links qualified as unstable
+    /// @param[out] w_sendable all running member links, including unstable
+    void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
+        std::vector<SRTSOCKET>& w_wipeme,
+        std::vector<gli_t>& w_idlers,
+        std::vector<SRTSOCKET>& w_pending,
+        std::vector<gli_t>& w_unstable,
+        std::vector<gli_t>& w_sendable);
 
     /// Check if a running link is stable.
     /// @retval true running link is stable
