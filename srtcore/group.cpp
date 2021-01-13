@@ -3044,7 +3044,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
                                            int32_t&                                 w_curseq,
                                            vector<gli_t>&                           w_parallel,
                                            int&                                     w_final_stat,
-                                           set<uint16_t>&                           w_sendable_pri,
+                                           uint16_t&                                w_max_sendable_weight,
                                            size_t&                                  w_nsuccessful,
                                            bool&                                    w_is_unstable)
 {
@@ -3113,7 +3113,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
         none_succeeded = false;
         w_final_stat   = stat;
         ++w_nsuccessful;
-        w_sendable_pri.insert(d->weight);
+        w_max_sendable_weight = max(w_max_sendable_weight, d->weight);
     }
     else if (erc == SRT_EASYNCSND)
     {
@@ -3178,7 +3178,7 @@ void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_
 bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
                                               const vector<gli_t>&    unstable,
                                               const vector<gli_t>&    sendable,
-                                              const set<uint16_t>     sendable_pri,
+                                              const uint16_t          max_sendable_weight,
                                               string& activate_reason ATR_UNUSED) const
 {
     SRT_ASSERT(sendable.size() >= unstable.size());
@@ -3190,12 +3190,12 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
               log << "grp/sendBackup: all " << sendable.size() << " links unstable - will activate an idle link");
         IF_HEAVY_LOGGING(activate_reason = "no stable links");
     }
-    else if (sendable_pri.empty() ||
-             (!idlers.empty() && FPriorityOrder::check(idlers[0]->weight, *sendable_pri.begin())))
+    else if (sendable.empty() ||
+             (!idlers.empty() && idlers[0]->weight > max_sendable_weight))
     {
         need_activate = true;
 #if ENABLE_HEAVY_LOGGING
-        if (sendable_pri.empty())
+        if (sendable.empty())
         {
             activate_reason = "no successful links found";
             LOGC(gslog.Debug, log << "grp/sendBackup: no active links were successful - will activate an idle link");
@@ -3209,19 +3209,18 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
         }
         else
         {
-            // Only now we are granted that both sendable_pri and idlers are nonempty
             LOGC(gslog.Debug,
-                 log << "grp/sendBackup: found link pri " << idlers[0]->weight << " PREF OVER "
-                     << (*sendable_pri.begin()) << " (highest from sendable) - will activate an idle link");
-            activate_reason = "found higher pri link";
+                 log << "grp/sendBackup: found link weight " << idlers[0]->weight << " PREF OVER "
+                     << max_sendable_weight << " (highest from sendable) - will activate an idle link");
+            activate_reason = "found higher weight link";
         }
 #endif
     }
     else
     {
         HLOGC(gslog.Debug,
-              log << "grp/sendBackup: sendable_pri (" << sendable_pri.size() << "): " << Printable(sendable_pri)
-                  << " first idle pri: " << (idlers.size() > 0 ? int(idlers[0]->weight) : -1)
+              log << "grp/sendBackup: sendable max weight " << max_sendable_weight << ",: "
+                  << " first idle wight: " << (idlers.size() > 0 ? int(idlers[0]->weight) : -1)
                   << " - will NOT activate an idle link");
     }
 
@@ -3927,10 +3926,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     int32_t curseq      = SRT_SEQNO_NONE;
     size_t  nsuccessful = 0;
 
-    // Collect priorities from sendable links, added only after sending is successful.
-    // This will be used to check if any of the idlers have higher priority
-    // and therefore need to be activated.
-    set<uint16_t> sendable_pri;
+    // Maximum weight of sendable links.
+    uint16_t max_sendable_weight = 0;
 
     // We believe that we need to send the payload over every sendable link anyway.
     for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
@@ -3966,7 +3963,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                                      (curseq),
                                                      (parallel),
                                                      (final_stat),
-                                                     (sendable_pri),
+                                                     (max_sendable_weight),
                                                      (nsuccessful),
                                                      (is_unstable));
 
@@ -4057,7 +4054,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     sendBackup_Buffering(buf, len, (curseq), (w_mc));
 
     string activate_reason;
-    if (sendBackup_IsActivationNeeded(idlers, unstable, sendable, sendable_pri, activate_reason))
+    if (sendBackup_IsActivationNeeded(idlers, unstable, sendable, max_sendable_weight, activate_reason))
     {
         if (idlers.empty())
         {
