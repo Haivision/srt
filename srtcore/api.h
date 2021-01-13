@@ -88,8 +88,6 @@ public:
 #endif
        , m_iISN(0)
        , m_pUDT(NULL)
-       , m_pQueuedSockets(NULL)
-       , m_pAcceptSockets(NULL)
        , m_AcceptCond()
        , m_AcceptLock()
        , m_uiBackLog(0)
@@ -127,8 +125,7 @@ public:
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
-   std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
+   std::set<SRTSOCKET> m_QueuedSockets;    //< set of connections waiting for accept()
 
    srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
    srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
