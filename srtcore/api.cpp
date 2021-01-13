@@ -516,7 +516,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
          ScopedLock acceptcg(ls->m_AcceptLock);
          ls->m_QueuedSockets.erase(ns->m_SocketID);
-//         ls->m_pAcceptSockets->erase(ns->m_SocketID);
       }
       else
       {
@@ -801,10 +800,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
    {
       HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID
             << " NOT submitted to acceptance, another socket in the group is already connected");
-      /*{
-         ScopedLock cg (ls->m_AcceptLock);
-         ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), ns->m_SocketID);
-      }*/
 
       // acknowledge INTERNAL users waiting for new connections on the listening socket
       // that are reported when a new socket is connected within an already connected group.
@@ -1106,7 +1101,6 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            // set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
            // u = *b;
            // ls->m_QueuedSockets.erase(b);
-           // ls->m_pAcceptSockets->insert(u);
            //
            // It is also questionable why m_pQueuedSockets should be of type 'set'.
            // There's no quick-searching capabilities of that container used anywhere except
@@ -1121,7 +1115,6 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            // Consider using std::list or std::vector here.
 
            u = *(ls->m_QueuedSockets.begin());
-           //ls->m_pAcceptSockets->insert(ls->m_pAcceptSockets->end(), u);
            ls->m_QueuedSockets.erase(ls->m_QueuedSockets.begin());
            accepted = true;
        }
@@ -2677,7 +2670,6 @@ void CUDTUnited::checkBrokenSockets()
 
          enterCS(ls->second->m_AcceptLock);
          ls->second->m_QueuedSockets.erase(s->m_SocketID);
-         //ls->second->m_pAcceptSockets->erase(s->m_SocketID);
          leaveCS(ls->second->m_AcceptLock);
       }
    }
@@ -3100,7 +3092,6 @@ void* CUDTUnited::garbageCollect(void* p)
 
            enterCS(ls->second->m_AcceptLock);
            ls->second->m_QueuedSockets.erase(s->m_SocketID);
-           //ls->second->m_pAcceptSockets->erase(s->m_SocketID);
            leaveCS(ls->second->m_AcceptLock);
        }
        self->m_Sockets.clear();
