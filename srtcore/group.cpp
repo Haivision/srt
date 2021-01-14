@@ -1447,10 +1447,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Links that were successful, have the len value in state.
 
     // First thing then, find out if at least one link was successful.
-    // This might even be one of the idle links only, this doesn't matter.
-    // If there were any running links successful, they have set the sequence.
-    // If there were only some successfully reactivated idle link, the first
-    // idler has defined the sequence.
+    // even if it was one of the idle links.
+    // The first successful link sets the sequence.
 
     vector<SocketData*> successful, blocked;
 
@@ -3637,7 +3635,7 @@ RetryWaitBlocked:
             // Some sockets could have been closed in the meantime.
             if (m_SndEpolld->watch_empty())
             {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: no more active sockets - group broken");
+                HLOGC(gslog.Debug, log << "grp/sendBackup: no more sockets available for sending - group broken");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
