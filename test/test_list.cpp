@@ -59,6 +59,16 @@ TEST_F(CSndLossListTest, InsertPopOneElem)
     CheckEmptyArray();
 }
 
+TEST_F(CSndLossListTest, InsertNegativeSeqno)
+{
+    cerr << "Expecting IPE message:" << endl;
+    EXPECT_EQ(m_lossList->insert(1, SRT_SEQNO_NONE), 0);
+    EXPECT_EQ(m_lossList->insert(SRT_SEQNO_NONE, SRT_SEQNO_NONE), 0);
+    EXPECT_EQ(m_lossList->insert(SRT_SEQNO_NONE, 1), 0);
+    
+    CheckEmptyArray();
+}
+
 /// Insert two elements at once and pop one by one
 TEST_F(CSndLossListTest, InsertPopTwoElemsRange)
 {
