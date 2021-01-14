@@ -199,7 +199,17 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
     {
         const char* a = *p;
         // cout << "*D ARG: '" << a << "'\n";
-        if (moreoptions && a[0] == '-')
+        bool isoption = false;
+        if (a[0] == '-')
+        {
+            isoption = true;
+            // If a[0] isn't NUL - because it is dash - then
+            // we can safely check a[1].
+            if (a[1] && isdigit(a[1]))
+                isoption = false;
+        }
+
+        if (moreoptions && isoption)
         {
             bool arg_specified = false;
             size_t seppos; // (see goto, it would jump over initialization)
@@ -538,6 +548,7 @@ public:
 
 #ifdef HAS_PUT_TIME
         // HDR: Timepoint
+        // Follows ISO 8601
         auto print_timestamp = [&output]() {
             using namespace std;
             using namespace std::chrono;
@@ -547,11 +558,11 @@ public:
 
             // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
             const tm tm_now = SysLocalTime(time_now);
-            output << std::put_time(&tm_now, "%d.%m.%Y %T.") << std::setfill('0') << std::setw(6);
+            output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
             const auto    since_epoch = systime_now.time_since_epoch();
             const seconds s           = duration_cast<seconds>(since_epoch);
             output << duration_cast<microseconds>(since_epoch - s).count();
-            output << std::put_time(&tm_now, " %z");
+            output << std::put_time(&tm_now, "%z");
             output << ",";
         };
 

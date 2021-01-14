@@ -1,4 +1,4 @@
-name: cxx11_win
+name: cxx11
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: ubuntu-cxx11
+    name: ubuntu
     runs-on: ubuntu-18.04
 
     steps:
@@ -16,7 +16,7 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON
     - name: build
       run: cd _build && cmake --build ./
     - name: test

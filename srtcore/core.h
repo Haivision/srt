@@ -416,7 +416,7 @@ public: // internal API
     static std::vector<SRTSOCKET> existingSockets();
 
     void addressAndSend(CPacket& pkt);
-    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, int srtlen_in = 0);
+    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
     int RTT() const { return m_iRTT; }
@@ -440,17 +440,40 @@ public: // internal API
     duration minNAKInterval() const { return m_tdMinNakInterval; }
     sockaddr_any peerAddr() const { return m_PeerAddr; }
 
+    /// Returns the number of packets in flight (sent, but not yet acknowledged).
+    /// @param lastack is the sequence number of the first unacknowledged packet.
+    /// @param curseq is the sequence number of the latest original packet sent
+    ///
+    /// @note When there are no packets in flight, lastack = incseq(curseq).
+    ///
+    /// @returns The number of packets in flight belonging to the interval [0; ...)
+    static int32_t getFlightSpan(int32_t lastack, int32_t curseq)
+    {
+        // Packets sent:
+        // | 1 | 2 | 3 | 4 | 5 |
+        //   ^               ^
+        //   |               |
+        // lastack           |
+        //                curseq
+        //
+        // In Flight: [lastack; curseq]
+        //
+        // Normally 'lastack' should be PAST the 'curseq',
+        // however in a case when the sending stopped and all packets were
+        // ACKed, the 'lastack' is one sequence ahead of 'curseq'.
+        // Therefore we increase 'curseq' by 1 forward and then
+        // get the distance towards the last ACK. This way this value may
+        // be only positive as seqlen() includes endpoints.
+        // Finally, we subtract 1 to exclude the increment added earlier.
+
+        return CSeqNo::seqlen(lastack, CSeqNo::incseq(curseq)) - 1;
+    }
+
+    /// Returns the number of packets in flight (sent, but not yet acknowledged).
+    /// @returns The number of packets in flight belonging to the interval [0; ...)
     int32_t getFlightSpan() const
     {
-        // This is a number of unacknowledged packets at this moment
-        // Note that normally m_iSndLastAck should be PAST m_iSndCurrSeqNo,
-        // however in a case when the sending stopped and all packets were
-        // ACKed, the m_iSndLastAck is one sequence ahead of m_iSndCurrSeqNo.
-        // Therefore we increase m_iSndCurrSeqNo by 1 forward and then
-        // get the distance towards the last ACK. This way this value may
-        // be only positive or 0.
-
-        return CSeqNo::seqlen(m_iSndLastAck, CSeqNo::incseq(m_iSndCurrSeqNo));
+        return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
     }
 
     int minSndSize(int len = 0) const
@@ -547,7 +570,7 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout, EConnectMethod synchro) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
     // according to the present state and received message type, as well as the
@@ -565,15 +588,14 @@ private:
     /// @param reqpkt Packet to be written with handshake data
     /// @param response incoming handshake response packet to be interpreted
     /// @param serv_addr incoming packet's address
-    /// @param synchro True when this function was called in blocking mode
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket &response, const sockaddr_any& serv_addr, bool synchro, EReadStatus,
-            CPacket& reqpkt);
+    SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket &response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
     SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
-    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout, bool synchro) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
     void applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr_any& serv_addr);
+    SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
@@ -617,16 +639,25 @@ private:
 
     void checkNeedDrop(bool& bCongestion);
 
-    /// Connect to a UDT entity listening at address "peer", which has sent "hs" request.
+    /// Connect to a UDT entity as per hs request. This will update
+    /// required data in the entity, then update them also in the hs structure,
+    /// and then send the response back to the caller.
+    /// @param agent [in] The address to which the UDT entity is bound.
     /// @param peer [in] The address of the listening UDT entity.
+    /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
-
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+
+    /// Write back to the hs structure the data after they have been
+    /// negotiated by acceptAndRespond.
+    void rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs);
     bool runAcceptHook(CUDT* acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt);
 
     /// Close the opened UDT entity.
 
     bool closeInternal();
+    void updateBrokenConnection();
+    void completeBrokenConnectionDependencies(int errorcode);
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.
@@ -1008,8 +1039,9 @@ private: // Receiving related data
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.
 
     srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
-    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready
+    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready. Use together with m_RecvLock.
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
+    srt::sync::Mutex m_RcvTsbPdStartupLock;      // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
@@ -1040,11 +1072,10 @@ private: // synchronization: mutexes and conditions
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
     srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
-    srt::sync::Condition m_RecvDataCond;         // used to block "recv" when there is no data
-    srt::sync::Mutex m_RecvDataLock;             // lock associated to m_RecvDataCond
+    srt::sync::Condition m_RecvDataCond;         // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
+    srt::sync::Mutex m_RecvLock;                 // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
-    srt::sync::Mutex m_RecvLock;                 // used to synchronize "recv" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
     srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
     srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
 
@@ -1070,6 +1101,15 @@ private: // Common connection Congestion Control setup
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
+
+    /// Forms and sends ACK packet
+    /// @note Assumes @ctrlpkt already has a timestamp.
+    ///
+    /// @param ctrlpkt  A control packet structure to fill. It must have a timestemp already set.
+    /// @param size     Sends lite ACK if size is SEND_LITE_ACK, Full ACK otherwise
+    ///
+    /// @returns the nmber of packets sent.
+    int  sendCtrlAck(CPacket& ctrlpkt, int size);
 
     void processCtrl(const CPacket& ctrlpkt);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
@@ -1217,7 +1257,7 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
-    time_point m_tsTmpActiveTime;  // time since temporary activated, or 0 if not temporary activated
+    time_point m_tsTmpActiveSince; // time since temporary activated, or 0 if not temporary activated
     time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS

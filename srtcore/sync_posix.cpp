@@ -7,6 +7,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
+#include "platform_sys.h"
 
 #include <iomanip>
 #include <math.h>
@@ -23,7 +24,7 @@
 #define TIMING_USE_QPC
 #include "win/wintime.h"
 #include <sys/timeb.h>
-#elif defined(OSX) || (TARGET_OS_OSX == 1) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#elif TARGET_OS_MAC
 #define TIMING_USE_MACH_ABS_TIME
 #include <mach/mach_time.h>
 #elif defined(ENABLE_MONOTONIC_CLOCK)
@@ -234,6 +235,12 @@ srt::sync::UniqueLock::~UniqueLock()
     unlock();
 }
 
+void srt::sync::UniqueLock::lock()
+{
+    if (m_iLocked == -1)
+        m_iLocked = m_Mutex.lock();
+}
+
 void srt::sync::UniqueLock::unlock()
 {
     if (m_iLocked == 0)
@@ -363,13 +370,13 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
         LOGC(inlog.Error, log << "IPE: Assigning to a thread that is not terminated!");
 
 #ifndef DEBUG
-#ifndef ANDROID
+#ifndef __ANDROID__
         // In case of production build the hanging thread should be terminated
         // to avoid hang ups and align with C++11 implementation.
         // There is no pthread_cancel on Android. See #1476. This error should not normally
         // happen, but if it happen, then detaching the thread.
         pthread_cancel(m_thread);
-#endif // ANDROID
+#endif // __ANDROID__
 #else
         join();
 #endif
@@ -437,45 +444,84 @@ class CThreadError
 public:
     CThreadError()
     {
-        pthread_key_create(&m_TLSError, TLSDestroy);
+        pthread_key_create(&m_ThreadSpecKey, ThreadSpecKeyDestroy);
+
+        // This is a global object and as such it should be called in the
+        // main application thread or at worst in the thread that has first
+        // run `srt_startup()` function and so requested the SRT library to
+        // be dynamically linked. Most probably in this very thread the API
+        // errors will be reported, so preallocate the ThreadLocalSpecific
+        // object for this error description.
+
+        // This allows std::bac_alloc to crash the program during
+        // the initialization of the SRT library (likely it would be
+        // during the DL constructor, still way before any chance of
+        // doing any operations here). This will prevent SRT from running
+        // into trouble while trying to operate.
+        CUDTException* ne = new CUDTException();
+        pthread_setspecific(m_ThreadSpecKey, ne);
     }
 
     ~CThreadError()
     {
-        delete (CUDTException*)pthread_getspecific(m_TLSError);
-        pthread_key_delete(m_TLSError);
+        // Likely all objects should be deleted in all
+        // threads that have exited, but std::this_thread didn't exit
+        // yet :).
+        ThreadSpecKeyDestroy(pthread_getspecific(m_ThreadSpecKey));
+        pthread_key_delete(m_ThreadSpecKey);
     }
 
-public:
     void set(const CUDTException& e)
     {
         CUDTException* cur = get();
-        SRT_ASSERT(cur != NULL);
+        // If this returns NULL, it means that there was an unexpected
+        // memory allocation error. Simply ignore this request if so
+        // happened, and then when trying to get the error description
+        // the application will always get the memory allocation error.
+
+        // There's no point in doing anything else here; lack of memory
+        // must be prepared for prematurely, and that was already done.
+        if (!cur)
+            return;
+
         *cur = e;
     }
 
-    CUDTException* get()
+    /*[[nullable]]*/ CUDTException* get()
     {
-        if (!pthread_getspecific(m_TLSError))
+        if (!pthread_getspecific(m_ThreadSpecKey))
         {
-            CUDTException* ne = new CUDTException();
-            pthread_setspecific(m_TLSError, ne);
+            // This time if this can't be done due to memory allocation
+            // problems, just allow this value to be NULL, which during
+            // getting the error description will redirect to a memory
+            // allocation error.
+
+            // It would be nice to somehow ensure that this object is
+            // created in every thread of the application using SRT, but
+            // POSIX thread API doesn't contain any possibility to have
+            // a creation callback that would apply to every thread in
+            // the application (as it is for C++11 thread_local storage).
+            CUDTException* ne = new(std::nothrow) CUDTException();
+            pthread_setspecific(m_ThreadSpecKey, ne);
             return ne;
         }
-        return (CUDTException*)pthread_getspecific(m_TLSError);
+        return (CUDTException*)pthread_getspecific(m_ThreadSpecKey);
     }
 
-    static void TLSDestroy(void* e)
+    static void ThreadSpecKeyDestroy(void* e)
     {
         delete (CUDTException*)e;
     }
 
 private:
-    pthread_key_t m_TLSError;
+    pthread_key_t m_ThreadSpecKey;
 };
 
 // Threal local error will be used by CUDTUnited
 // that has a static scope
+
+// This static makes this object file-private access so that
+// the access is granted only for the accessor functions.
 static CThreadError s_thErr;
 
 void SetThreadLocalError(const CUDTException& e)
@@ -485,7 +531,17 @@ void SetThreadLocalError(const CUDTException& e)
 
 CUDTException& GetThreadLocalError()
 {
-    return *s_thErr.get();
+    // In POSIX version we take into account the possibility
+    // of having an allocation error here. Therefore we need to
+    // allow thie value to return NULL and have some fallback
+    // for that case. The dynamic memory allocation failure should
+    // be the only case as to why it is unable to get the pointer
+    // to the error description.
+    static CUDTException resident_alloc_error (MJ_SYSTEMRES, MN_MEMORY);
+    CUDTException* curx = s_thErr.get();
+    if (!curx)
+        return resident_alloc_error;
+    return *curx;
 }
 
 } // namespace sync

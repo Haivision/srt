@@ -555,8 +555,7 @@ if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
 	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
 elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN;  OSX=1")
-	add_definitions(-DOSX=1)
+	message(STATUS "DETECTED SYSTEM: DARWIN")
 elseif(BSD)
 	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
 	add_definitions(-DBSD=1)
@@ -565,8 +564,7 @@ elseif(LINUX)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
 elseif(ANDROID)
 	add_definitions(-DLINUX=1)
-	add_definitions(-DANDROID=1)
-	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1 ANDROID=1" )
+	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
 elseif(CYGWIN)
 	add_definitions(-DCYGWIN=1)
 	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
@@ -823,7 +821,7 @@ if (srt_libspec_shared)
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
-	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
@@ -1212,12 +1210,19 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	add_test(
-		NAME
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		add_test(
+			NAME	test-srt
+			COMMAND	${CMAKE_BINARY_DIR}/test-srt
+		)
+	else()
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+		gtest_add_tests(
 			test-srt
-		COMMAND
-			${CMAKE_BINARY_DIR}/test-srt
-	)
+			""
+			AUTO
+		)
+	endif()
 
 	enable_testing()
 

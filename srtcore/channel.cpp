@@ -247,7 +247,7 @@ void CChannel::open(int family)
         ::freeaddrinfo(res);
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
     }
-    m_BindAddr = sockaddr_any(res->ai_addr, res->ai_addrlen);
+    m_BindAddr = sockaddr_any(res->ai_addr, (sockaddr_any::len_t) res->ai_addrlen);
 
     ::freeaddrinfo(res);
 
@@ -267,7 +267,7 @@ void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 
 void CChannel::setUDPSockOpt()
 {
-   #if defined(BSD) || defined(OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+   #if defined(BSD) || TARGET_OS_MAC
       // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
       int maxsize = 64000;
       if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_iRcvBufSize, sizeof(int)))
@@ -376,7 +376,7 @@ void CChannel::setUDPSockOpt()
 #else
    timeval tv;
    tv.tv_sec = 0;
-#if defined (BSD) || defined (OSX) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
+#if defined (BSD) || TARGET_OS_MAC
    // Known BSD bug as the day I wrote this code.
    // A small time out value will cause the socket to block forever.
    tv.tv_usec = 10000;
@@ -538,14 +538,14 @@ void CChannel::getSockAddr(sockaddr_any& w_addr) const
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
-    socklen_t namelen = w_addr.storage_size();
+    socklen_t namelen = (socklen_t) w_addr.storage_size();
     ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }
 
 void CChannel::getPeerAddr(sockaddr_any& w_addr) const
 {
-    socklen_t namelen = w_addr.storage_size();
+    socklen_t namelen = (socklen_t) w_addr.storage_size();
     ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
     w_addr.len = namelen;
 }

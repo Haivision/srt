@@ -254,7 +254,7 @@ void CPacket::setLength(size_t len)
    m_PacketVector[PV_DATA].setLength(len);
 }
 
-void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
+void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
     setControl(pkttype);

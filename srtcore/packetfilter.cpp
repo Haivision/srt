@@ -8,6 +8,7 @@
  * 
  */
 
+#include "platform_sys.h"
 
 #include <string>
 #include <map>
@@ -245,7 +246,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     init.snd_isn = parent->sndSeqNo();
     init.rcv_isn = parent->rcvSeqNo();
     init.payload_size = parent->OPT_PayloadSize();
-
+    init.rcvbuf_size = parent->m_iRcvBufSize;
 
     // Found a filter, so call the creation function
     m_filter = selector->second->Create(init, m_provided, confstr);

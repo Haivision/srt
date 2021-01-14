@@ -111,6 +111,7 @@ void CSndLossList::traceState() const
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
+    SRT_ASSERT(CSeqNo::seqlen(seqno1, seqno2) > 0);
     ScopedLock listguard(m_ListLock);
 
     if (m_iLength == 0)

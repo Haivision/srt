@@ -575,8 +575,6 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // the packet originally (the other overload of this function) must set these
     // flags.
     w_packet.m_iMsgNo = p->m_iMsgNoBitset;
-
-    // TODO: FR #930. Use source time if it is provided.
     w_srctime = getSourceTime(*p);
 
     // This function is called when packet retransmission is triggered.
@@ -935,7 +933,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
                 break; /* too early for this unit, return whatever was copied */
         }
 
-        const int pktlen = pkt.getLength();
+        const int pktlen = (int) pkt.getLength();
         const int remain_pktlen = pktlen - m_iNotch;
 
         const int unitsize = std::min(remain_pktlen, rs);
@@ -996,7 +994,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 #if ENABLE_LOGGING
         trace_seq = pkt.getSeqNo();
 #endif
-        const int pktlen = pkt.getLength();
+        const int pktlen = (int) pkt.getLength();
         const int remain_pktlen = pktlen - m_iNotch;
 
         const int unitsize = std::min(remain_pktlen, rs);
@@ -2297,7 +2295,7 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
         }
 
         rmpkts++;
-        rmbytes += freeUnitAt(m_iStartPos);
+        rmbytes += (int) freeUnitAt((size_t) m_iStartPos);
 
         m_iStartPos = shiftFwd(m_iStartPos);
     }
