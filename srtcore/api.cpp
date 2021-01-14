@@ -2750,7 +2750,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          if (si == m_Sockets.end())
          {
             // gone in the meantime
-            LOGC(smlog.Error, log << "removeSocket: IPE? socket @" << u
+            LOGC(smlog.Error, log << "removeSocket: IPE? socket @" << (*q)
                     << " being queued for listener socket @" << s->m_SocketID
                     << " is GONE in the meantime ???");
             continue;
