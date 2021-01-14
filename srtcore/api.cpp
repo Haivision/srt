@@ -1096,26 +1096,9 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        }
        else if (ls->m_QueuedSockets.size() > 0)
        {
-           // XXX REFACTORING REQUIRED HERE!
-           // Actually this should at best be something like that:
-           // set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
-           // u = *b;
-           // ls->m_QueuedSockets.erase(b);
-           //
-           // It is also questionable why m_pQueuedSockets should be of type 'set'.
-           // There's no quick-searching capabilities of that container used anywhere except
-           // checkBrokenSockets and garbageCollect, which aren't performance-critical,
-           // whereas it's mainly used for getting the first element and iterating
-           // over elements, which is slow in case of std::set. It's also doubtful
-           // as to whether the sorting capability of std::set is properly used;
-           // the first is taken here, which is actually the socket with lowest
-           // possible descriptor value (as default operator< and ascending sorting
-           // used for std::set<SRTSOCKET> where SRTSOCKET=int).
-           //
-           // Consider using std::list or std::vector here.
-
-           u = *(ls->m_QueuedSockets.begin());
-           ls->m_QueuedSockets.erase(ls->m_QueuedSockets.begin());
+           set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
+           u = *b;
+           ls->m_QueuedSockets.erase(b);
            accepted = true;
        }
        else if (!ls->m_pUDT->m_bSynRecving)
