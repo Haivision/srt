@@ -111,7 +111,19 @@ void CSndLossList::traceState() const
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 {
-    SRT_ASSERT(CSeqNo::seqlen(seqno1, seqno2) > 0);
+    if (seqno1 < 0 || seqno2 < 0 ) {
+        LOGC(qslog.Error, log << "IPE: Tried to insert negative seqno " << seqno1 << ":" << seqno2
+            << " into sender's loss list. Ignoring.");
+        return 0;
+    }
+
+    const int inserted_range = CSeqNo::seqlen(seqno1, seqno2);
+    if (inserted_range <= 0 || inserted_range >= m_iSize) {
+        LOGC(qslog.Error, log << "IPE: Tried to insert too big range of seqno: " << inserted_range <<  ". Ignoring. "
+                << "seqno " << seqno1 << ":" << seqno2);
+        return 0;
+    }
+
     ScopedLock listguard(m_ListLock);
 
     if (m_iLength == 0)
