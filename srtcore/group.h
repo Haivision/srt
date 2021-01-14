@@ -297,13 +297,13 @@ private:
     /// has a higher weight than any link currently active
     /// (those are collected in 'sendable_pri').
     /// If there are no sendable, a new link needs to be activated anyway.
-    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idlers,
+    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idleLinks,
         const std::vector<gli_t>& unstable,
         const std::vector<gli_t>& sendable,
         const uint16_t max_sendable_weight,
         std::string& activate_reason) const;
 
-    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idlers,
+    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idleLinks,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,

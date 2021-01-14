@@ -1115,7 +1115,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // for which NO ITERATORS ARE INVALIDATED after a node at particular
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
-    vector<gli_t> idlers;
+    vector<gli_t> idleLinks;
     vector<SRTSOCKET> pending; // need sock ids as it will be checked out of lock
 
     int32_t curseq = SRT_SEQNO_NONE;
@@ -1211,7 +1211,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // - we need at least one running socket to work BEFORE activating the idle one.
             // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
             //   and all others will be activated using the ISN from the first one.
-            idlers.push_back(d);
+            idleLinks.push_back(d);
             continue;
         }
 
@@ -1303,8 +1303,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
 
-    // { sendBroadcast_ActivateIdlers
-    for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+    // TODO: { sendBroadcast_ActivateIdleLinks
+    for (vector<gli_t>::iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
     {
         gli_t d       = *i;
         if (!d->ps->m_GroupOf)
@@ -1447,9 +1447,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Links that were successful, have the len value in state.
 
     // First thing then, find out if at least one link was successful.
-    // This might even be one of the idlers only, this doesn't matter.
+    // This might even be one of the idle links only, this doesn't matter.
     // If there were any running links successful, they have set the sequence.
-    // If there were only some reactivated idlers successful, the first
+    // If there were only some successfully reactivated idle link, the first
     // idler has defined the sequence.
 
     vector<SocketData*> successful, blocked;
@@ -2896,7 +2896,7 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
 
 void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
         vector<SRTSOCKET>& w_wipeme,
-        vector<gli_t>& w_idlers,
+        vector<gli_t>& w_idleLinks,
         vector<SRTSOCKET>& w_pending,
         vector<gli_t>& w_unstableLinks,
         vector<gli_t>& w_activeLinks)
@@ -2943,7 +2943,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
             // - we need at least one running socket to work BEFORE activating the idle one.
             // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
             //   and all others will be activated using the ISN from the first one.
-            w_idlers.push_back(d);
+            w_idleLinks.push_back(d);
             sendBackup_CheckIdleTime(d);
             continue;
         }
@@ -3248,7 +3248,7 @@ void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_
         m_iLastSchedSeqNo = oldest_buffer_seq;
 }
 
-bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
+bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idleLinks,
                                               const vector<gli_t>&    unstableLinks,
                                               const vector<gli_t>&    activeLinks,
                                               const uint16_t          maxActiveWeight,
@@ -3264,7 +3264,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
         IF_HEAVY_LOGGING(activate_reason = "no stable links");
     }
     else if (activeLinks.empty() ||
-             (!idlers.empty() && idlers[0]->weight > maxActiveWeight))
+             (!idleLinks.empty() && idleLinks[0]->weight > maxActiveWeight))
     {
         need_activate = true;
 #if ENABLE_HEAVY_LOGGING
@@ -3273,7 +3273,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
             activate_reason = "no successful links found";
             LOGC(gslog.Debug, log << "grp/sendBackup: no active links were successful - will activate an idle link");
         }
-        else if (idlers.empty())
+        else if (idleLinks.empty())
         {
             // This should be impossible.
             activate_reason = "WEIRD (no idle links!)";
@@ -3283,7 +3283,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
         else
         {
             LOGC(gslog.Debug,
-                 log << "grp/sendBackup: found link weight " << idlers[0]->weight << " PREF OVER "
+                 log << "grp/sendBackup: found link weight " << idleLinks[0]->weight << " PREF OVER "
                      << maxActiveWeight << " (highest from activeLinks) - will activate an idle link");
             activate_reason = "found higher weight link";
         }
@@ -3293,7 +3293,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
     {
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: max active weight " << maxActiveWeight << ",: "
-                  << " first idle wight: " << (idlers.size() > 0 ? int(idlers[0]->weight) : -1)
+                  << " first idle wight: " << (idleLinks.size() > 0 ? int(idleLinks[0]->weight) : -1)
                   << " - will NOT activate an idle link");
     }
 
@@ -3301,7 +3301,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
 }
 
 // [[using locked(this->m_GroupLock)]]
-size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          idlers,
+size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          idleLinks,
                                                  const char*                   buf,
                                                  const int                     len,
                                                  bool&                         w_none_succeeded,
@@ -3319,12 +3319,12 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
     // If we have no stable links, activate one of idle links.
 
     HLOGC(gslog.Debug,
-          log << "grp/sendBackup: " << activate_reason << ", trying to activate an idle link (" << idlers.size()
+          log << "grp/sendBackup: " << activate_reason << ", trying to activate an idle link (" << idleLinks.size()
               << " available)");
 
     size_t nactive = 0;
 
-    for (vector<gli_t>::const_iterator i = idlers.begin(); i != idlers.end(); ++i)
+    for (vector<gli_t>::const_iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
     {
         int   erc = 0;
         gli_t d   = *i;
@@ -3870,7 +3870,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // for which NO ITERATORS ARE INVALIDATED after a node at particular
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
-    vector<gli_t> idlers;
+    vector<gli_t> idleLinks;
     vector<SRTSOCKET> pending;
     vector<gli_t> activeLinks;   // To be used to send payload
     vector<gli_t> unstableLinks; // Active, but unstable.
@@ -3898,10 +3898,10 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     activeLinks.reserve(m_Group.size());
 
     // Qualify states of member links
-    sendBackup_QualifyMemberStates(currtime, (wipeme), (idlers), (pending), (unstableLinks), (activeLinks));
+    sendBackup_QualifyMemberStates(currtime, (wipeme), (idleLinks), (pending), (unstableLinks), (activeLinks));
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
-    sort(idlers.begin(), idlers.end(), FPriorityOrder());
+    sort(idleLinks.begin(), idleLinks.end(), FPriorityOrder());
 
 #if ENABLE_HEAVY_LOGGING
     {
@@ -3909,7 +3909,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         for (vector<gli_t>::iterator i = activeLinks.begin(); i != activeLinks.end(); ++i)
             show_running.push_back((*i)->id);
 
-        for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+        for (vector<gli_t>::iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
             show_idle.push_back((*i)->id);
 
         LOGC(gslog.Debug,
@@ -4065,15 +4065,15 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     sendBackup_Buffering(buf, len, (curseq), (w_mc));
 
     string activate_reason;
-    if (sendBackup_IsActivationNeeded(idlers, unstableLinks, activeLinks, maxActiveWeight, activate_reason))
+    if (sendBackup_IsActivationNeeded(idleLinks, unstableLinks, activeLinks, maxActiveWeight, activate_reason))
     {
-        if (idlers.empty())
+        if (idleLinks.empty())
         {
-            HLOGP(gslog.Debug, "grp/sendBackup: no idlers to activate, keeping only unstable links");
+            HLOGP(gslog.Debug, "grp/sendBackup: no idle links to activate, keeping only unstable links");
         }
         else
         {
-            const size_t n ATR_UNUSED = sendBackup_TryActivateIdleLink(idlers,
+            const size_t n ATR_UNUSED = sendBackup_TryActivateIdleLink(idleLinks,
                                      buf,
                                      len,
                                      (none_succeeded),
