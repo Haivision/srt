@@ -1116,7 +1116,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
     vector<gli_t> idleLinks;
-    vector<SRTSOCKET> pending; // need sock ids as it will be checked out of lock
+    vector<SRTSOCKET> pendingSockets; // need sock ids as it will be checked out of lock
 
     int32_t curseq = SRT_SEQNO_NONE;
 
@@ -1200,7 +1200,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 HLOGC(gslog.Debug,
                       log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
-                pending.push_back(d->id);
+                pendingSockets.push_back(d->id);
                 continue;
             }
 
@@ -1227,7 +1227,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
               log << "grp/sendBroadcast: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
-        pending.push_back(d->id);
+        pendingSockets.push_back(d->id);
     }
 
     vector<Sendstate> sendstates;
@@ -1369,7 +1369,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // { send_CheckBrokenSockets()
 
-    if (!pending.empty())
+    if (!pendingSockets.empty())
     {
         HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
 
@@ -1382,7 +1382,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // Sanity check - weird pending reported.
             LOGC(gslog.Error,
                  log << "grp/sendBroadcast: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pending.begin(), pending.end(), back_inserter(wipeme));
+            copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(wipeme));
         }
         else
         {
@@ -1404,7 +1404,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
-            for (vector<SRTSOCKET>::iterator i = pending.begin(); i != pending.end(); ++i)
+            for (vector<SRTSOCKET>::iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
                 {
@@ -3434,7 +3434,7 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 }
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vector<SRTSOCKET>& w_wipeme)
+void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets, vector<SRTSOCKET>& w_wipeme)
 {
     // If we have at least one stable link, then select a link that have the
     // highest priority and silence the rest.
@@ -3446,7 +3446,7 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
     // we have one link that is stable and the freshly activated link is actually
     // stable too, we'll check this next time.
     //
-    if (!pending.empty())
+    if (!pendingSockets.empty())
     {
         HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
 
@@ -3458,7 +3458,7 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
         {
             // Sanity check - weird pending reported.
             LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pending.begin(), pending.end(), back_inserter(w_wipeme));
+            copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(w_wipeme));
         }
         else
         {
@@ -3481,7 +3481,7 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vecto
             HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to w_wipeme.
-            for (vector<SRTSOCKET>::const_iterator i = pending.begin(); i != pending.end(); ++i)
+            for (vector<SRTSOCKET>::const_iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
                 {
@@ -3849,13 +3849,12 @@ RetryWaitBlocked:
 
 int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
-    // Avoid stupid errors in the beginning.
     if (len <= 0)
     {
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    // Live only - sorry.
+    // Only live streaming is supported
     if (len > SRT_LIVE_MAX_PLSIZE)
     {
         LOGC(gslog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
@@ -3871,7 +3870,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
     vector<gli_t> idleLinks;
-    vector<SRTSOCKET> pending;
+    vector<SRTSOCKET> pendingSockets;
     vector<gli_t> activeLinks;   // To be used to send payload
     vector<gli_t> unstableLinks; // Active, but unstable.
 
@@ -3898,7 +3897,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     activeLinks.reserve(m_Group.size());
 
     // Qualify states of member links
-    sendBackup_QualifyMemberStates(currtime, (wipeme), (idleLinks), (pending), (unstableLinks), (activeLinks));
+    sendBackup_QualifyMemberStates(currtime, (wipeme), (idleLinks), (pendingSockets), (unstableLinks), (activeLinks));
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
     sort(idleLinks.begin(), idleLinks.end(), FPriorityOrder());
@@ -4096,7 +4095,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                   << " unstable=" << unstableLinks.size());
     }
 
-    send_CheckPendingSockets(pending, (wipeme));
+    send_CheckPendingSockets(pendingSockets, (wipeme));
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)

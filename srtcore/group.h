@@ -231,7 +231,7 @@ private:
     int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
-    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
+    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pendingLinks);
     void sendBackup_CheckIdleTime(gli_t w_d);
     
     /// Qualify states of member links.
@@ -239,13 +239,13 @@ private:
     /// @param[in] currtime          current timestamp
     /// @param[out] w_wipeme         broken links or links about to be closed
     /// @param[out] w_idleLinks      idle links (connected, but not used for transmission)
-    /// @param[out] w_pendingLinks   links pending to be connected
+    /// @param[out] w_pendingSockets sockets pending to be connected
     /// @param[out] w_unstableLinks  active member links qualified as unstable
     /// @param[out] w_activeLinks    all active member links, including unstable
     void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
         std::vector<SRTSOCKET>& w_wipeme,
         std::vector<gli_t>& w_idleLinks,
-        std::vector<SRTSOCKET>& w_pendingLinks,
+        std::vector<SRTSOCKET>& w_pendingSockets,
         std::vector<gli_t>& w_unstableLinks,
         std::vector<gli_t>& w_activeLinks);
 
@@ -264,7 +264,7 @@ private:
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
     /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
     /// @param[out] w_final_stat   Status to be reported by this function eventually
-    /// @param[out] w_max_sendable_weight Maximum weight value of sendable links
+    /// @param[out] w_maxActiveWight Maximum weight value of active links
     /// @param[out] w_nsuccessful  Updates the number of successful links
     /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
     ///
@@ -279,7 +279,7 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    uint16_t&           w_max_sendable_weight,
+                                    uint16_t&           w_maxActiveWight,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
