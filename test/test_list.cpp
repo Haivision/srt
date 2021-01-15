@@ -563,7 +563,7 @@ TEST_F(CSndLossListTest, InsertFullListNoCoalesce)
     CheckEmptyArray();
 }
 
-TEST_F(CSndLossListTest, DISABLED_InsertFullListNegativeOffset)
+TEST_F(CSndLossListTest, InsertFullListNegativeOffset)
 {
     for (int i = 10000000; i < 10000000 + CSndLossListTest::SIZE; i++)
         m_lossList->insert(i, i);
@@ -579,6 +579,23 @@ TEST_F(CSndLossListTest, DISABLED_InsertFullListNegativeOffset)
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
+}
+
+TEST_F(CSndLossListTest, InsertPositiveOffsetTooFar)
+{
+    const int32_t head_seqno = 1000;
+    EXPECT_EQ(m_lossList->insert(head_seqno, head_seqno), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+
+    // The offset of the sequence number being added does not fit
+    // into the size of the loss list, it must be ignored.
+    // Normally this situation should not happen.
+
+    const int32_t outofbound_seqno = head_seqno + CSndLossListTest::SIZE;
+    m_lossList->insert(outofbound_seqno, outofbound_seqno);
+
+    const int32_t outofbound_seqno2 = head_seqno + 2 * CSndLossListTest::SIZE;
+    m_lossList->insert(outofbound_seqno2, outofbound_seqno2);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
