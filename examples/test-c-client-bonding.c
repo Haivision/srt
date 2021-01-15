@@ -256,7 +256,10 @@ int main(int argc, char** argv)
     }
 
 end:
-
+    if (eid != -1)
+    {
+        srt_epoll_release(eid);
+    }
     printf("srt close\n");
     st = srt_close(ss);
     if (st == SRT_ERROR)
