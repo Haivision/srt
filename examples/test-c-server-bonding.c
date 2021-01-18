@@ -22,6 +22,49 @@
 
 #include "srt.h"
 
+// Note that in this example application there's a listening
+// socket, off which then a transmission socket is accepted,
+// then this socket will be used for reading. Therefore the same
+// function will be used for waiting for the listener to get the
+// accepted socket ready and then to wait for read-readiness on
+// the transmission socket. For a model of waiting for write-ready
+// see test-c-client-bonding.c file.
+int WaitForReadReady(int eid, SRTSOCKET ss)
+{
+    int ready_in[2];
+    int ready_in_len = 2;
+    int ready_err[2];
+    int ready_err_len = 2;
+
+    int st = srt_epoll_wait(eid, ready_in, &ready_in_len, ready_err, &ready_err_len, -1,
+            0, 0, 0, 0);
+
+    // Note: with indefinite wait time we can either have a connection reported
+    // or possibly error. Also srt_epoll_wait never returns 0 - at least the number
+    // of ready connections is reported or -1 is returned for error, including timeout.
+    if (st < 1)
+    {
+        fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+        return 0;
+    }
+
+    // Check if this was reported as error-ready, in which case it doesn't
+    // matter if read-ready.
+    if (ready_err[0] == ss)
+    {
+        fprintf(stderr, "srt_epoll_wait: socket @%d reported error\n", ss);
+        return 0;
+    }
+
+    if (ready_in[0] != ss)
+    {
+        fprintf(stderr, "srt_epoll_wait: socket @%d not reported ready\n", ss);
+        return 0;
+    }
+
+    return 1;
+}
+
 int main(int argc, char** argv)
 {
     int globstatus = 0;
@@ -32,9 +75,10 @@ int main(int argc, char** argv)
     struct sockaddr_storage their_addr;
     SRT_SOCKGROUPDATA* grpdata = NULL;
 
-    if (argc < 3 || argc > 4) {
-      fprintf(stderr, "Usage: %s <host> <port> [options]\n", argv[0]);
-      return 1;
+    if (argc < 3 || argc > 4)
+    {
+        fprintf(stderr, "Usage: %s <host> <port> [options]\n", argv[0]);
+        return 1;
     }
 
     printf("srt startup\n");
@@ -53,6 +97,10 @@ int main(int argc, char** argv)
 
     // Check options
     int is_nonblocking = 0;
+    SRTSOCKET their_fd = SRT_INVALID_SOCK; // declared early because of gotos
+    int eid = -1;
+    int lsn_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+    int read_modes = lsn_modes;
     if (argc > 3)
     {
         const char* opt = argv[3];
@@ -86,9 +134,6 @@ int main(int argc, char** argv)
         goto end;
     }
 
-    int eid = -1;
-    int lsn_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    int read_modes = lsn_modes;
     if (is_nonblocking)
     {
         int blockingmode = 0;
@@ -124,42 +169,13 @@ int main(int argc, char** argv)
     if (is_nonblocking)
     {
         printf("srt wait for listener socket reporting in a new connection\n");
-        int ready_in[2];
-        int ready_in_len = 2;
-        int ready_err[2];
-        int ready_err_len = 2;
-
-        int st = srt_epoll_wait(eid, ready_in, &ready_in_len, ready_err, &ready_err_len, -1,
-                0, 0, 0, 0);
-
-
-        // Note: with indefinite wait time we can either have a connection reported
-        // or possibly error. Also srt_epoll_wait never returns 0 - at least the number
-        // of ready connections is reported or -1 is returned for error, including timeout.
-        if (st < 1)
-        {
-            fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+        if (!WaitForReadReady(eid, ss))
             goto end;
-        }
-
-        // Check if this was reported as error-ready, in which case it doesn't
-        // matter if read-ready.
-        if (ready_err[0] == ss)
-        {
-            fprintf(stderr, "srt_epoll_wait: socket @%d reported error\n", ss);
-            goto end;
-        }
-
-        if (ready_in[0] != ss)
-        {
-            fprintf(stderr, "srt_epoll_wait: socket @%d not reported ready\n", ss);
-            goto end;
-        }
     }
 
     printf("srt accept\n");
     int addr_size = sizeof their_addr;
-    SRTSOCKET their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
+    their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
 
     if (their_fd == -1)
     {
@@ -206,25 +222,8 @@ int main(int argc, char** argv)
         if (is_nonblocking)
         {
             // Block in epoll as srt_recvmsg2 will not block.
-            int ready_in[2];
-            int ready_in_len = 2;
-            int ready_err[2];
-            int ready_err_len = 2;
-
-            int st = srt_epoll_wait(eid, ready_in, &ready_in_len, ready_err, &ready_err_len, -1,
-                    0, 0, 0, 0);
-
-            if (st < 1)
-            {
-                fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+            if (!WaitForReadReady(eid, their_fd))
                 goto end;
-            }
-
-            if (ready_in[0] != their_fd)
-            {
-                fprintf(stderr, "srt_epoll_wait: no ready IN socket @%d\n", their_fd);
-                goto end;
-            }
         }
 
         st = srt_recvmsg2(their_fd, msg, sizeof msg, &mc);
