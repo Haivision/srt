@@ -264,7 +264,7 @@ private:
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
     /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
     /// @param[out] w_final_stat   Status to be reported by this function eventually
-    /// @param[out] w_maxActiveWight Maximum weight value of active links
+    /// @param[out] w_maxActiveWeight Maximum weight value of active links
     /// @param[out] w_nsuccessful  Updates the number of successful links
     /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
     ///
@@ -279,7 +279,7 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    uint16_t&           w_maxActiveWight,
+                                    uint16_t&           w_maxActiveWeight,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
