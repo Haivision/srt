@@ -311,7 +311,6 @@ private:
                                       int32_t&                  w_curseq,
                                       int32_t&                  w_final_stat,
                                       CUDTException&            w_cx,
-                                      std::vector<Sendstate>&   w_sendstates,
                                       std::vector<gli_t>&       w_parallel,
                                       std::vector<SRTSOCKET>&   w_wipeme,
                                       const std::string&        activate_reason);

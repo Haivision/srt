@@ -3309,7 +3309,6 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
                                                  int32_t&                      w_curseq,
                                                  int32_t&                      w_final_stat,
                                                  CUDTException&                w_cx,
-                                                 vector<Sendstate>&            w_sendstates,
                                                  vector<gli_t>&                w_parallel,
                                                  vector<SRTSOCKET>&            w_wipeme,
                                                  const string& activate_reason ATR_UNUSED)
@@ -3374,9 +3373,6 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
-
-        const Sendstate cstate = {d->id, &*d, stat, erc};
-        w_sendstates.push_back(cstate);
 
         if (stat != -1)
         {
@@ -3917,8 +3913,6 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 #endif
 
-    vector<Sendstate> sendstates;
-
     // Ok, we've separated the unstable from activeLinks just to know if:
     // - we have any STABLE activeLinks (if not, we must activate a backup link)
     // - we have multiple stable activeLinks and we need to stop all but one
@@ -3977,11 +3971,11 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                                      (nsuccessful),
                                                      (is_unstable));
 
+        // TODO: Wasn't it done in sendBackup_QualifyMemberStates()? Sanity check?
         if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
             insert_uniq((unstableLinks), d);
 
         const Sendstate cstate = {d->id, &*d, stat, erc};
-        sendstates.push_back(cstate);
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
     }
@@ -4080,7 +4074,6 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                      (curseq),
                                      (final_stat),
                                      (cx),
-                                     (sendstates),
                                      (parallel),
                                      (wipeme),
                                      activate_reason);
