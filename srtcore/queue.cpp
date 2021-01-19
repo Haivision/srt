@@ -1098,7 +1098,15 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
         i->u->m_bConnecting = false;
-        i->u->updateBrokenConnection();
+
+        // DO NOT close the socket here because in this case it might be
+        // unable to get status from at the right moment. Also only member
+        // sockets should be taken care of internally - single sockets should
+        // be normally closed by the application, after it is done with them.
+
+        // app can call any UDT API to learn the connection_broken error
+        CUDT::s_UDTUnited.m_EPoll.update_events(i->u->m_SocketID, i->u->m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+
         i->u->completeBrokenConnectionDependencies(i->errorcode);
     }
 

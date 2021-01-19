@@ -415,22 +415,16 @@ public:
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 } while (!caller_done);
 
-                const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
+                EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
+                EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+
                 if (m_is_tracing)
                 {
+                    const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
                     std::cerr << "LATE Socket state accepted: " << m_socket_state[status]
                         << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
                 }
 
-                if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
-                {
-                    EXPECT_TRUE(accepted_socket == -1 || status == SRTS_BROKEN || status == SRTS_CLOSED);
-                }
-                else
-                {
-                    EXPECT_EQ(status, expect.socket_state[CHECK_SOCKET_ACCEPTED]);
-                    EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
-                }
             }
         });
 
