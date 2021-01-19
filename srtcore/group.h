@@ -320,12 +320,14 @@ private:
     /// @param[in,out] w_wipeme a list of sockets to be removed from the group
     void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
+    void sendBackup_RetryWaitBlocked(const std::vector<gli_t>& unstable,
+        std::vector<gli_t>& w_parallel,
+        int& w_final_stat,
+        bool& w_none_succeeded,
+        SRT_MSGCTRL& w_mc,
+        CUDTException& w_cx);
     void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,
-                                       std::vector<gli_t>&       w_parallel,
-                                       int&                      w_final_stat,
-                                       bool&                     w_none_succeeded,
-                                       SRT_MSGCTRL&              w_mc,
-                                       CUDTException&            w_cx);
+                                       std::vector<gli_t>&       w_parallel);
 
     void send_CheckValidSockets();
 

@@ -3540,12 +3540,12 @@ struct FByOldestActive
 };
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks,
-                                              vector<gli_t>&       w_parallel,
-                                              int&                 w_final_stat,
-                                              bool&                w_none_succeeded,
-                                              SRT_MSGCTRL&         w_mc,
-                                              CUDTException&       w_cx)
+void CUDTGroup::sendBackup_RetryWaitBlocked(const vector<gli_t>& unstableLinks,
+    vector<gli_t>& w_parallel,
+    int& w_final_stat,
+    bool& w_none_succeeded,
+    SRT_MSGCTRL& w_mc,
+    CUDTException& w_cx)
 {
     // In contradiction to broadcast sending, backup sending must check
     // the blocking state in total first. We need this information through
@@ -3560,6 +3560,207 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks
     // unstable links and none other or others just got broken), continue sending
     // anyway.
 
+
+    // This procedure is for a case when the packet could not be sent
+    // over any link (hence "none succeeded"), but there are some unstable
+    // links and no parallel links. We need to WAIT for any of the links
+    // to become available for sending.
+    if (!w_parallel.empty() || unstableLinks.empty() || !w_none_succeeded)
+        return;
+
+
+    HLOGC(gslog.Debug, log << "grp/sendBackup: no parallel links and "
+        << unstableLinks.size() << " unstable links - checking...");
+
+    // Note: GroupLock is set already, skip locks and checks
+    getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
+    m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+    m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+
+    if (m_SndEpolld->watch_empty())
+    {
+        // wipeme wiped, pending sockets checked, it can only mean that
+        // all sockets are broken.
+        HLOGC(gslog.Debug, log << "grp/sendBackup: epolld empty - all sockets broken?");
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+    if (!m_bSynSending)
+    {
+        HLOGC(gslog.Debug, log << "grp/sendBackup: non-blocking mode - exit with no-write-ready");
+        throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+    }
+    // Here is the situation that the only links left here are:
+    // - those that failed to send (already closed and wiped out)
+    // - those that got blockade on sending
+
+    // At least, there was so far no socket through which we could
+    // successfully send anything.
+
+    // As a last resort in this situation, try to wait for any links
+    // remaining in the group to become ready to write.
+
+    CEPoll::fmap_t sready;
+    int            brdy;
+
+    // This keeps the number of links that existed at the entry.
+    // Simply notify all dead links, regardless as to whether the number
+    // of group members decreases below. If the number of corpses reaches
+    // this number, consider the group connection broken.
+    size_t nlinks = m_Group.size();
+    size_t ndead = 0;
+
+RetryWaitBlocked:
+    {
+        // Some sockets could have been closed in the meantime.
+        if (m_SndEpolld->watch_empty())
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBackup: no more sockets available for sending - group broken");
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+        }
+
+        InvertedLock ug(m_GroupLock);
+        HLOGC(gslog.Debug,
+            log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
+        THREAD_PAUSED();
+        brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, (sready), m_iSndTimeOut);
+        THREAD_RESUMED();
+
+        if (brdy == 0) // SND timeout exceeded
+        {
+            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
+        }
+
+        HLOGC(gslog.Debug, log << "grp/sendBackup: swait exited with " << brdy << " ready sockets:");
+
+        // Check if there's anything in the "error" section.
+        // This must be cleared here before the lock on group is set again.
+        // (This loop will not fire neither once if no failed sockets found).
+        for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+        {
+            if (i->second & SRT_EPOLL_ERR)
+            {
+                SRTSOCKET   id = i->first;
+                CUDTSocket* s = m_pGlobal->locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
+                if (s)
+                {
+                    HLOGC(gslog.Debug,
+                        log << "grp/sendBackup: swait/ex on @" << (id)
+                        << " while waiting for any writable socket - CLOSING");
+                    CUDT::s_UDTUnited.close(s); // << LOCKS m_GlobControlLock, then GroupLock!
+                }
+                else
+                {
+                    HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
+                }
+
+                ++ndead;
+            }
+        }
+        HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
+    }
+
+    // GroupLock is locked back
+
+    // Re-check after the waiting lock has been reacquired
+    if (m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    if (brdy == -1 || ndead >= nlinks)
+    {
+        LOGC(gslog.Error,
+            log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
+            << " - looxlike all links broken");
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        // You can safely throw here - nothing to fill in when all sockets down.
+        // (timeout was reported by exception in the swait call).
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+    // Ok, now check if we have at least one write-ready.
+    // Note that the procedure of activation of a new link in case of
+    // no stable links found embraces also rexmit-sending and status
+    // check as well, including blocked status.
+
+    // Find which one it was. This is so rare case that we can
+    // suffer linear search.
+
+    int nwaiting = 0;
+    int nactivated ATR_UNUSED = 0;
+    int stat = -1;
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        // int erc = 0;
+
+        // Skip if not writable in this run
+        if (!CEPoll::isready(sready, d->id, SRT_EPOLL_OUT))
+        {
+            ++nwaiting;
+            HLOGC(gslog.Debug, log << "grp/sendBackup: @" << d->id << " NOT ready:OUT, added as waiting");
+            continue;
+        }
+
+        if (d->sndstate == SRT_GST_RUNNING)
+        {
+            HLOGC(gslog.Debug,
+                log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
+            continue;
+        }
+
+        try
+        {
+            // Note: this will set the currently required packet
+            // because it has been just freshly added to the sender buffer
+            stat = sendBackupRexmit(d->ps->core(), (w_mc));
+            ++nactivated;
+        }
+        catch (CUDTException& e)
+        {
+            // This will be propagated from internal sendmsg2 call,
+            // but that's ok - we want this sending interrupted even in half.
+            w_cx = e;
+            stat = -1;
+            // erc = e.getErrorCode();
+        }
+
+        d->sndresult = stat;
+        d->laststatus = d->ps->getStatus();
+
+        if (stat == -1)
+        {
+            // This link is no longer waiting.
+            continue;
+        }
+
+        w_parallel.push_back(d);
+        w_final_stat = stat;
+        steady_clock::time_point currtime = steady_clock::now();
+        d->ps->core().m_tsTmpActiveSince = currtime;
+        d->sndstate = SRT_GST_RUNNING;
+        w_none_succeeded = false;
+        HLOGC(gslog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
+
+        break;
+    }
+
+    // If we have no links successfully activated, but at least
+    // one link "not ready for writing", continue waiting for at
+    // least one link ready.
+    if (stat == -1 && nwaiting > 0)
+    {
+        HLOGC(gslog.Debug, log << "grp/sendBackup: still have " << nwaiting << " waiting and none succeeded, REPEAT");
+        goto RetryWaitBlocked;
+    }
+
+    HLOGC(gslog.Debug, log << "grp/sendBackup: " << nactivated << " links activated with "
+        << unstableLinks.size() << " unstable");
+}
+
+// [[using locked(this->m_GroupLock)]]
+void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks,
+                                              vector<gli_t>&       w_parallel)
+{
 #if ENABLE_HEAVY_LOGGING
     // Potential problem to be checked in developer mode
     for (vector<gli_t>::iterator p = w_parallel.begin(); p != w_parallel.end(); ++p)
@@ -3572,265 +3773,72 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks
     }
 #endif
 
-    // This procedure is for a case when the packet could not be sent
-    // over any link (hence "none succeeded"), but there are some unstable
-    // links and no parallel links. We need to WAIT for any of the links
-    // to become available for sending.
-    if (w_parallel.empty() && !unstableLinks.empty() && w_none_succeeded)
-    {
-        HLOGC(gslog.Debug, log << "grp/sendBackup: no parallel links and "
-                << unstableLinks.size() << " unstable links - checking...");
-
-        // Note: GroupLock is set already, skip locks and checks
-        getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
-
-        if (m_SndEpolld->watch_empty())
-        {
-            // wipeme wiped, pending sockets checked, it can only mean that
-            // all sockets are broken.
-            HLOGC(gslog.Debug, log << "grp/sendBackup: epolld empty - all sockets broken?");
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-
-        if (!m_bSynSending)
-        {
-            HLOGC(gslog.Debug, log << "grp/sendBackup: non-blocking mode - exit with no-write-ready");
-            throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
-        }
-        // Here is the situation that the only links left here are:
-        // - those that failed to send (already closed and wiped out)
-        // - those that got blockade on sending
-
-        // At least, there was so far no socket through which we could
-        // successfully send anything.
-
-        // As a last resort in this situation, try to wait for any links
-        // remaining in the group to become ready to write.
-
-        CEPoll::fmap_t sready;
-        int            brdy;
-
-        // This keeps the number of links that existed at the entry.
-        // Simply notify all dead links, regardless as to whether the number
-        // of group members decreases below. If the number of corpses reaches
-        // this number, consider the group connection broken.
-        size_t nlinks = m_Group.size();
-        size_t ndead  = 0;
-
-RetryWaitBlocked:
-        {
-            // Some sockets could have been closed in the meantime.
-            if (m_SndEpolld->watch_empty())
-            {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: no more sockets available for sending - group broken");
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-            }
-
-            InvertedLock ug(m_GroupLock);
-            HLOGC(gslog.Debug,
-                    log << "grp/sendBackup: swait call to get at least one link alive up to " << m_iSndTimeOut << "us");
-            THREAD_PAUSED();
-            brdy = m_pGlobal->m_EPoll.swait(*m_SndEpolld, (sready), m_iSndTimeOut);
-            THREAD_RESUMED();
-
-            if (brdy == 0) // SND timeout exceeded
-            {
-                throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
-            }
-
-            HLOGC(gslog.Debug, log << "grp/sendBackup: swait exited with " << brdy << " ready sockets:");
-
-            // Check if there's anything in the "error" section.
-            // This must be cleared here before the lock on group is set again.
-            // (This loop will not fire neither once if no failed sockets found).
-            for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
-            {
-                if (i->second & SRT_EPOLL_ERR)
-                {
-                    SRTSOCKET   id = i->first;
-                    CUDTSocket* s  = m_pGlobal->locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
-                    if (s)
-                    {
-                        HLOGC(gslog.Debug,
-                                log << "grp/sendBackup: swait/ex on @" << (id)
-                                << " while waiting for any writable socket - CLOSING");
-                        CUDT::s_UDTUnited.close(s); // << LOCKS m_GlobControlLock, then GroupLock!
-                    }
-                    else
-                    {
-                        HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << (id) << " - WAS DELETED IN THE MEANTIME");
-                    }
-
-                    ++ndead;
-                }
-            }
-            HLOGC(gslog.Debug, log << "grp/sendBackup: swait/?close done, re-acquiring GroupLock");
-        }
-
-        // GroupLock is locked back
-
-        // Re-check after the waiting lock has been reacquired
-        if (m_bClosing)
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-        if (brdy == -1 || ndead >= nlinks)
-        {
-            LOGC(gslog.Error,
-                    log << "grp/sendBackup: swait=>" << brdy << " nlinks=" << nlinks << " ndead=" << ndead
-                    << " - looxlike all links broken");
-            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-            m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
-            // You can safely throw here - nothing to fill in when all sockets down.
-            // (timeout was reported by exception in the swait call).
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-
-        // Ok, now check if we have at least one write-ready.
-        // Note that the procedure of activation of a new link in case of
-        // no stable links found embraces also rexmit-sending and status
-        // check as well, including blocked status.
-
-        // Find which one it was. This is so rare case that we can
-        // suffer linear search.
-
-        int nwaiting = 0;
-        int nactivated ATR_UNUSED = 0;
-        int stat     = -1;
-        for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
-        {
-            // int erc = 0;
-
-            // Skip if not writable in this run
-            if (!CEPoll::isready(sready, d->id, SRT_EPOLL_OUT))
-            {
-                ++nwaiting;
-                HLOGC(gslog.Debug, log << "grp/sendBackup: @" << d->id << " NOT ready:OUT, added as waiting");
-                continue;
-            }
-
-            if (d->sndstate == SRT_GST_RUNNING)
-            {
-                HLOGC(gslog.Debug,
-                        log << "grp/sendBackup: link @" << d->id << " RUNNING - SKIPPING from activate and resend");
-                continue;
-            }
-
-            try
-            {
-                // Note: this will set the currently required packet
-                // because it has been just freshly added to the sender buffer
-                stat = sendBackupRexmit(d->ps->core(), (w_mc));
-                ++nactivated;
-            }
-            catch (CUDTException& e)
-            {
-                // This will be propagated from internal sendmsg2 call,
-                // but that's ok - we want this sending interrupted even in half.
-                w_cx = e;
-                stat = -1;
-                // erc = e.getErrorCode();
-            }
-
-            d->sndresult  = stat;
-            d->laststatus = d->ps->getStatus();
-
-            if (stat == -1)
-            {
-                // This link is no longer waiting.
-                continue;
-            }
-
-            w_parallel.push_back(d);
-            w_final_stat                      = stat;
-            steady_clock::time_point currtime = steady_clock::now();
-            d->ps->core().m_tsTmpActiveSince   = currtime;
-            d->sndstate                       = SRT_GST_RUNNING;
-            w_none_succeeded                  = false;
-            HLOGC(gslog.Debug, log << "grp/sendBackup: after waiting, ACTIVATED link @" << d->id);
-
-            break;
-        }
-
-        // If we have no links successfully activated, but at least
-        // one link "not ready for writing", continue waiting for at
-        // least one link ready.
-        if (stat == -1 && nwaiting > 0)
-        {
-            HLOGC(gslog.Debug, log << "grp/sendBackup: still have " << nwaiting << " waiting and none succeeded, REPEAT");
-            goto RetryWaitBlocked;
-        }
-
-        HLOGC(gslog.Debug, log << "grp/sendBackup: " << nactivated << " links activated with "
-                << unstableLinks.size() << " unstable");
-    }
 
     // The most important principle is to keep the data being sent constantly,
     // even if it means temporarily full redundancy. However, if you are certain
     // that you have multiple stable links running at the moment, SILENCE all but
     // the one with highest priority.
-    if (w_parallel.size() > 1)
+    if (w_parallel.size() <= 1)
+        return;
+
+    sort(w_parallel.begin(), w_parallel.end(), FPriorityOrder());
+    steady_clock::time_point currtime = steady_clock::now();
+
+    vector<gli_t>::iterator b = w_parallel.begin();
+
+    // Additional criterion: if you have multiple links with the same weight,
+    // check if you have at least one with m_tsTmpActiveSince == 0. If not,
+    // sort them additionally by this time.
+
+    vector<gli_t>::iterator b1 = b, e = ++b1;
+
+    // Both e and b1 stand on b+1 position.
+    // We have a guarantee that b+1 still points to a valid element.
+    while (e != w_parallel.end())
     {
-        sort(w_parallel.begin(), w_parallel.end(), FPriorityOrder());
-        steady_clock::time_point currtime = steady_clock::now();
+        if ((*e)->weight != (*b)->weight)
+            break;
+        ++e;
+    }
 
-        vector<gli_t>::iterator b = w_parallel.begin();
+    if (b1 != e)
+    {
+        // More than 1 link with the same weight. Sorting them according
+        // to a different criterion will not change the previous sorting order
+        // because the elements in this range are equal according to the previous
+        // criterion.
+        // Here find the link with least time. The "trap" zero time matches this
+        // requirement, occasionally.
+        sort(b, e, FByOldestActive());
+    }
 
-        // Additional criterion: if you have multiple links with the same weight,
-        // check if you have at least one with m_tsTmpActiveSince == 0. If not,
-        // sort them additionally by this time.
-
-        vector<gli_t>::iterator b1 = b, e = ++b1;
-
-        // Both e and b1 stand on b+1 position.
-        // We have a guarantee that b+1 still points to a valid element.
-        while (e != w_parallel.end())
+    // After finding the link to leave active, leave it behind.
+    HLOGC(gslog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
+    ++b;
+    for (; b != w_parallel.end(); ++b)
+    {
+        gli_t& d = *b;
+        if (d->sndstate != SRT_GST_RUNNING)
         {
-            if ((*e)->weight != (*b)->weight)
-                break;
-            ++e;
+            LOGC(gslog.Error,
+                    log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
+            continue;
+        }
+        CUDT&                  ce = d->ps->core();
+        steady_clock::duration td(0);
+        if (!is_zero(ce.m_tsTmpActiveSince) &&
+                count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_uOPT_StabilityTimeout)
+        {
+            HLOGC(gslog.Debug,
+                    log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
+                    << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+            continue;
         }
 
-        if (b1 != e)
-        {
-            // More than 1 link with the same weight. Sorting them according
-            // to a different criterion will not change the previous sorting order
-            // because the elements in this range are equal according to the previous
-            // criterion.
-            // Here find the link with least time. The "trap" zero time matches this
-            // requirement, occasionally.
-            sort(b, e, FByOldestActive());
-        }
-
-        // After finding the link to leave active, leave it behind.
-        HLOGC(gslog.Debug, log << "grp/sendBackup: keeping parallel link @" << (*b)->id << " and silencing others:");
-        ++b;
-        for (; b != w_parallel.end(); ++b)
-        {
-            gli_t& d = *b;
-            if (d->sndstate != SRT_GST_RUNNING)
-            {
-                LOGC(gslog.Error,
-                        log << "grp/sendBackup: IPE: parallel link container contains non-running link @" << d->id);
-                continue;
-            }
-            CUDT&                  ce = d->ps->core();
-            steady_clock::duration td(0);
-            if (!is_zero(ce.m_tsTmpActiveSince) &&
-                    count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_uOPT_StabilityTimeout)
-            {
-                HLOGC(gslog.Debug,
-                        log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                        << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
-                continue;
-            }
-
-            // Clear activation time because the link is no longer active!
-            d->sndstate = SRT_GST_IDLE;
-            HLOGC(gslog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveSince));
-            ce.m_tsTmpActiveSince = steady_clock::time_point();
-        }
+        // Clear activation time because the link is no longer active!
+        d->sndstate = SRT_GST_IDLE;
+        HLOGC(gslog.Debug, log << " ... @" << d->id << " ACTIVATED: " << FormatTime(ce.m_tsTmpActiveSince));
+        ce.m_tsTmpActiveSince = steady_clock::time_point();
     }
 }
 
@@ -4091,7 +4099,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    sendBackup_CheckParallelLinks(unstableLinks, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
+    sendBackup_RetryWaitBlocked(unstableLinks, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
+
+    sendBackup_CheckParallelLinks(unstableLinks, (parallel));
     // (closing condition checked inside this call)
 
     if (none_succeeded)
