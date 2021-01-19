@@ -1447,10 +1447,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Links that were successful, have the len value in state.
 
     // First thing then, find out if at least one link was successful.
-    // even if it was one of the idle links.
-    // The first successful link sets the sequence, the followin links derive it.
-    // If there are no active links (only idle), the sending sequence number will be taken as is
-    // from the FIRST activated idle link.
+    // The first successful link sets the sequence value,
+    // the following links derive it. This might be also the first idle
+    // link with its random-generated ISN, if there were no active links.
 
     vector<SocketData*> successful, blocked;
 
