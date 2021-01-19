@@ -231,23 +231,23 @@ private:
     int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
-    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
+    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pendingLinks);
     void sendBackup_CheckIdleTime(gli_t w_d);
     
     /// Qualify states of member links.
     /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
-    /// @param[in] currtime    current timestamp
-    /// @param[out] w_wipeme   broken links or links about to be closed
-    /// @param[out] w_idlers   idle links
-    /// @param[out] w_pending  links pending to be connected
-    /// @param[out] w_unstable member links qualified as unstable
-    /// @param[out] w_sendable all running member links, including unstable
+    /// @param[in] currtime          current timestamp
+    /// @param[out] w_wipeme         broken links or links about to be closed
+    /// @param[out] w_idleLinks      idle links (connected, but not used for transmission)
+    /// @param[out] w_pendingSockets sockets pending to be connected
+    /// @param[out] w_unstableLinks  active member links qualified as unstable
+    /// @param[out] w_activeLinks    all active member links, including unstable
     void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
         std::vector<SRTSOCKET>& w_wipeme,
-        std::vector<gli_t>& w_idlers,
-        std::vector<SRTSOCKET>& w_pending,
-        std::vector<gli_t>& w_unstable,
-        std::vector<gli_t>& w_sendable);
+        std::vector<gli_t>& w_idleLinks,
+        std::vector<SRTSOCKET>& w_pendingSockets,
+        std::vector<gli_t>& w_unstableLinks,
+        std::vector<gli_t>& w_activeLinks);
 
     /// Check if a running link is stable.
     /// @retval true running link is stable
@@ -264,7 +264,7 @@ private:
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
     /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
     /// @param[out] w_final_stat   Status to be reported by this function eventually
-    /// @param[out] w_max_sendable_weight Maximum weight value of sendable links
+    /// @param[out] w_maxActiveWeight Maximum weight value of active links
     /// @param[out] w_nsuccessful  Updates the number of successful links
     /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
     ///
@@ -279,7 +279,7 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    uint16_t&           w_max_sendable_weight,
+                                    uint16_t&           w_maxActiveWeight,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
@@ -297,13 +297,13 @@ private:
     /// has a higher weight than any link currently active
     /// (those are collected in 'sendable_pri').
     /// If there are no sendable, a new link needs to be activated anyway.
-    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idlers,
+    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idleLinks,
         const std::vector<gli_t>& unstable,
         const std::vector<gli_t>& sendable,
         const uint16_t max_sendable_weight,
         std::string& activate_reason) const;
 
-    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idlers,
+    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idleLinks,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
@@ -311,10 +311,13 @@ private:
                                       int32_t&                  w_curseq,
                                       int32_t&                  w_final_stat,
                                       CUDTException&            w_cx,
-                                      std::vector<Sendstate>&   w_sendstates,
                                       std::vector<gli_t>&       w_parallel,
                                       std::vector<SRTSOCKET>&   w_wipeme,
                                       const std::string&        activate_reason);
+
+    /// Check if pending sockets are to be closed.
+    /// @param[in]     pending pending sockets
+    /// @param[in,out] w_wipeme a list of sockets to be removed from the group
     void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
     void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,

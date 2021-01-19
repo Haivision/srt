@@ -1115,8 +1115,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // for which NO ITERATORS ARE INVALIDATED after a node at particular
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
-    vector<gli_t> idlers;
-    vector<SRTSOCKET> pending; // need sock ids as it will be checked out of lock
+    vector<gli_t> idleLinks;
+    vector<SRTSOCKET> pendingSockets; // need sock ids as it will be checked out of lock
 
     int32_t curseq = SRT_SEQNO_NONE;
 
@@ -1125,7 +1125,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     int                          stat = 0;
     SRT_ATR_UNUSED CUDTException cx(MJ_SUCCESS, MN_NONE, 0);
 
-    vector<gli_t> sendable;
+    vector<gli_t> activeLinks;
 
     // First, acquire GlobControlLock to make sure all member sockets still exist
     enterCS(m_pGlobal->m_GlobControlLock);
@@ -1200,7 +1200,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 HLOGC(gslog.Debug,
                       log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
-                pending.push_back(d->id);
+                pendingSockets.push_back(d->id);
                 continue;
             }
 
@@ -1211,7 +1211,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // - we need at least one running socket to work BEFORE activating the idle one.
             // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
             //   and all others will be activated using the ISN from the first one.
-            idlers.push_back(d);
+            idleLinks.push_back(d);
             continue;
         }
 
@@ -1219,7 +1219,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             HLOGC(gslog.Debug,
                   log << "grp/sendBroadcast: socket in RUNNING state: @" << d->id << " - will send a payload");
-            sendable.push_back(d);
+            activeLinks.push_back(d);
             continue;
         }
 
@@ -1227,12 +1227,12 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
               log << "grp/sendBroadcast: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
-        pending.push_back(d->id);
+        pendingSockets.push_back(d->id);
     }
 
     vector<Sendstate> sendstates;
 
-    for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+    for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
     {
         gli_t d   = *snd;
         int   erc = 0; // success
@@ -1303,8 +1303,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
 
-    // { sendBroadcast_ActivateIdlers
-    for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+    // TODO: { sendBroadcast_ActivateIdleLinks
+    for (vector<gli_t>::iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
     {
         gli_t d       = *i;
         if (!d->ps->m_GroupOf)
@@ -1369,7 +1369,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // { send_CheckBrokenSockets()
 
-    if (!pending.empty())
+    if (!pendingSockets.empty())
     {
         HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
 
@@ -1382,7 +1382,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // Sanity check - weird pending reported.
             LOGC(gslog.Error,
                  log << "grp/sendBroadcast: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pending.begin(), pending.end(), back_inserter(wipeme));
+            copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(wipeme));
         }
         else
         {
@@ -1404,7 +1404,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
-            for (vector<SRTSOCKET>::iterator i = pending.begin(); i != pending.end(); ++i)
+            for (vector<SRTSOCKET>::iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
                 {
@@ -1447,10 +1447,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Links that were successful, have the len value in state.
 
     // First thing then, find out if at least one link was successful.
-    // This might even be one of the idlers only, this doesn't matter.
-    // If there were any running links successful, they have set the sequence.
-    // If there were only some reactivated idlers successful, the first
-    // idler has defined the sequence.
+    // The first successful link sets the sequence value,
+    // the following links derive it. This might be also the first idle
+    // link with its random-generated ISN, if there were no active links.
 
     vector<SocketData*> successful, blocked;
 
@@ -1613,7 +1612,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         else
         {
-            sendable.clear();
+            activeLinks.clear();
             sendstates.clear();
             // Extract gli's from the whole group that have id found in the array.
 
@@ -1631,10 +1630,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     dd->sndstate = SRT_GST_BROKEN;
                 }
                 else if (rdev & SRT_EPOLL_OUT)
-                    sendable.push_back(dd);
+                    activeLinks.push_back(dd);
             }
 
-            for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+            for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
             {
                 gli_t d   = *snd;
 
@@ -2869,7 +2868,7 @@ struct FPriorityOrder
 };
 
 // [[using maybe_locked(this->m_GroupLock)]]
-bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vector<SRTSOCKET>& w_pending)
+bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vector<SRTSOCKET>& w_pendingSockets)
 {
     SRT_SOCKSTATUS st = SRTS_NONEXIST;
     if (d->ps)
@@ -2887,7 +2886,7 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
     if (st != SRTS_CONNECTED)
     {
         HLOGC(gslog.Debug, log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
-        w_pending.push_back(d->id);
+        w_pendingSockets.push_back(d->id);
         return false;
     }
 
@@ -2896,10 +2895,10 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
 
 void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
         vector<SRTSOCKET>& w_wipeme,
-        vector<gli_t>& w_idlers,
-        vector<SRTSOCKET>& w_pending,
-        vector<gli_t>& w_unstable,
-        vector<gli_t>& w_sendable)
+        vector<gli_t>& w_idleLinks,
+        vector<SRTSOCKET>& w_pendingSockets,
+        vector<gli_t>& w_unstableLinks,
+        vector<gli_t>& w_activeLinks)
 {
     // First, check status of every link - no matter if idle or active.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
@@ -2932,7 +2931,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
 
         if (d->sndstate == SRT_GST_IDLE)
         {
-            if (!send_CheckIdle(d, (w_wipeme), (w_pending)))
+            if (!send_CheckIdle(d, (w_wipeme), (w_pendingSockets)))
                 continue;
 
             HLOGC(gslog.Debug,
@@ -2943,7 +2942,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
             // - we need at least one running socket to work BEFORE activating the idle one.
             // - if ALL SOCKETS ARE IDLE, then we simply activate the first from the list,
             //   and all others will be activated using the ISN from the first one.
-            w_idlers.push_back(d);
+            w_idleLinks.push_back(d);
             sendBackup_CheckIdleTime(d);
             continue;
         }
@@ -2952,10 +2951,10 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
         {
             if (!sendBackup_CheckRunningStability(d, (currtime)))
             {
-                insert_uniq((w_unstable), d);
+                insert_uniq((w_unstableLinks), d);
             }
             // Unstable links should still be used for sending.
-            w_sendable.push_back(d);
+            w_activeLinks.push_back(d);
             continue;
         }
 
@@ -2963,7 +2962,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
               log << "grp/sendBackup: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
-        w_pending.push_back(d->id);
+        w_pendingSockets.push_back(d->id);
     }
 }
 
@@ -3117,7 +3116,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
                                            int32_t&                                 w_curseq,
                                            vector<gli_t>&                           w_parallel,
                                            int&                                     w_final_stat,
-                                           uint16_t&                                w_max_sendable_weight,
+                                           uint16_t&                                w_maxActiveWeight,
                                            size_t&                                  w_nsuccessful,
                                            bool&                                    w_is_unstable)
 {
@@ -3186,7 +3185,7 @@ bool CUDTGroup::sendBackup_CheckSendStatus(gli_t                                
         none_succeeded = false;
         w_final_stat   = stat;
         ++w_nsuccessful;
-        w_max_sendable_weight = max(w_max_sendable_weight, d->weight);
+        w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
     }
     else if (erc == SRT_EASYNCSND)
     {
@@ -3248,32 +3247,32 @@ void CUDTGroup::sendBackup_Buffering(const char* buf, const int len, int32_t& w_
         m_iLastSchedSeqNo = oldest_buffer_seq;
 }
 
-bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
-                                              const vector<gli_t>&    unstable,
-                                              const vector<gli_t>&    sendable,
-                                              const uint16_t          max_sendable_weight,
+bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idleLinks,
+                                              const vector<gli_t>&    unstableLinks,
+                                              const vector<gli_t>&    activeLinks,
+                                              const uint16_t          maxActiveWeight,
                                               string& activate_reason ATR_UNUSED) const
 {
-    SRT_ASSERT(sendable.size() >= unstable.size());
-    bool need_activate = sendable.size() <= unstable.size(); // <= for sanity, should be just =
+    SRT_ASSERT(activeLinks.size() >= unstableLinks.size());
+    bool need_activate = activeLinks.size() <= unstableLinks.size(); // <= for sanity, should be just ==
     IF_HEAVY_LOGGING(activate_reason = "BY NO REASON???");
     if (need_activate)
     {
         HLOGC(gslog.Debug,
-              log << "grp/sendBackup: all " << sendable.size() << " links unstable - will activate an idle link");
+              log << "grp/sendBackup: all " << activeLinks.size() << " links unstable - will activate an idle link");
         IF_HEAVY_LOGGING(activate_reason = "no stable links");
     }
-    else if (sendable.empty() ||
-             (!idlers.empty() && idlers[0]->weight > max_sendable_weight))
+    else if (activeLinks.empty() ||
+             (!idleLinks.empty() && idleLinks[0]->weight > maxActiveWeight))
     {
         need_activate = true;
 #if ENABLE_HEAVY_LOGGING
-        if (sendable.empty())
+        if (activeLinks.empty())
         {
             activate_reason = "no successful links found";
             LOGC(gslog.Debug, log << "grp/sendBackup: no active links were successful - will activate an idle link");
         }
-        else if (idlers.empty())
+        else if (idleLinks.empty())
         {
             // This should be impossible.
             activate_reason = "WEIRD (no idle links!)";
@@ -3283,8 +3282,8 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
         else
         {
             LOGC(gslog.Debug,
-                 log << "grp/sendBackup: found link weight " << idlers[0]->weight << " PREF OVER "
-                     << max_sendable_weight << " (highest from sendable) - will activate an idle link");
+                 log << "grp/sendBackup: found link weight " << idleLinks[0]->weight << " PREF OVER "
+                     << maxActiveWeight << " (highest from active links) - will activate an idle link");
             activate_reason = "found higher weight link";
         }
 #endif
@@ -3292,8 +3291,8 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
     else
     {
         HLOGC(gslog.Debug,
-              log << "grp/sendBackup: sendable max weight " << max_sendable_weight << ",: "
-                  << " first idle wight: " << (idlers.size() > 0 ? int(idlers[0]->weight) : -1)
+              log << "grp/sendBackup: max active weight " << maxActiveWeight << ",: "
+                  << " first idle wight: " << (idleLinks.size() > 0 ? int(idleLinks[0]->weight) : -1)
                   << " - will NOT activate an idle link");
     }
 
@@ -3301,7 +3300,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idlers,
 }
 
 // [[using locked(this->m_GroupLock)]]
-size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          idlers,
+size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          idleLinks,
                                                  const char*                   buf,
                                                  const int                     len,
                                                  bool&                         w_none_succeeded,
@@ -3309,7 +3308,6 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
                                                  int32_t&                      w_curseq,
                                                  int32_t&                      w_final_stat,
                                                  CUDTException&                w_cx,
-                                                 vector<Sendstate>&            w_sendstates,
                                                  vector<gli_t>&                w_parallel,
                                                  vector<SRTSOCKET>&            w_wipeme,
                                                  const string& activate_reason ATR_UNUSED)
@@ -3319,12 +3317,12 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
     // If we have no stable links, activate one of idle links.
 
     HLOGC(gslog.Debug,
-          log << "grp/sendBackup: " << activate_reason << ", trying to activate an idle link (" << idlers.size()
+          log << "grp/sendBackup: " << activate_reason << ", trying to activate an idle link (" << idleLinks.size()
               << " available)");
 
     size_t nactive = 0;
 
-    for (vector<gli_t>::const_iterator i = idlers.begin(); i != idlers.end(); ++i)
+    for (vector<gli_t>::const_iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
     {
         int   erc = 0;
         gli_t d   = *i;
@@ -3333,6 +3331,8 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 
         try
         {
+            // TODO: At this point all packets that could be sent
+            // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
             if (w_curseq == SRT_SEQNO_NONE)
             {
                 // This marks the fact that the given here packet
@@ -3374,9 +3374,6 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
-
-        const Sendstate cstate = {d->id, &*d, stat, erc};
-        w_sendstates.push_back(cstate);
 
         if (stat != -1)
         {
@@ -3434,73 +3431,63 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 }
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pending, vector<SRTSOCKET>& w_wipeme)
+void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets, vector<SRTSOCKET>& w_wipeme)
 {
-    // If we have at least one stable link, then select a link that have the
-    // highest priority and silence the rest.
+    if (pendingSockets.empty())
+        return;
 
-    // Note: If we have one stable link, this is the situation we need.
-    // If we have no stable links at all, there's nothing we can do anyway.
-    // The freshly activated previously idle links don't count because we
-    // just started them and we can't determine their stability. At least if
-    // we have one link that is stable and the freshly activated link is actually
-    // stable too, we'll check this next time.
-    //
-    if (!pending.empty())
+    HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
+
+    // These sockets if they are in pending state, they should be added to m_SndEID
+    // at the connecting stage.
+    CEPoll::fmap_t sready;
+
+    if (m_SndEpolld->watch_empty())
     {
-        HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
-
-        // These sockets if they are in pending state, they should be added to m_SndEID
-        // at the connecting stage.
-        CEPoll::fmap_t sready;
-
+        // Sanity check - weird pending reported.
+        LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
+        copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(w_wipeme));
+    }
+    else
+    {
+        // Some sockets could have been closed in the meantime.
         if (m_SndEpolld->watch_empty())
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
         {
-            // Sanity check - weird pending reported.
-            LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pending.begin(), pending.end(), back_inserter(w_wipeme));
+            InvertedLock ug(m_GroupLock);
+            m_pGlobal->m_EPoll.swait(
+                *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
         }
-        else
+
+        if (m_bClosing)
         {
-            // Some sockets could have been closed in the meantime.
-            if (m_SndEpolld->watch_empty())
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-            {
-                InvertedLock ug(m_GroupLock);
-                m_pGlobal->m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
-            }
-
-            if (m_bClosing)
-            {
-                HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-            }
-
-            HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
-
-            // sockets in EX: should be moved to w_wipeme.
-            for (vector<SRTSOCKET>::const_iterator i = pending.begin(); i != pending.end(); ++i)
-            {
-                if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
-                {
-                    HLOGC(gslog.Debug, log << "grp/send*: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
-                    // Failed socket. Move d to w_wipeme. Remove from eid.
-                    w_wipeme.push_back(*i);
-                    int no_events = 0;
-                    m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
-                }
-            }
-
-            // After that, all sockets that have been reported
-            // as ready to write should be removed from EID. This
-            // will also remove those sockets that have been added
-            // as redundant links at the connecting stage and became
-            // writable (connected) before this function had a chance
-            // to check them.
-            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+            HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
+
+        HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
+
+        // sockets in EX: should be moved to w_wipeme.
+        for (vector<SRTSOCKET>::const_iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
+        {
+            if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
+            {
+                HLOGC(gslog.Debug, log << "grp/send*: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
+                // Failed socket. Move d to w_wipeme. Remove from eid.
+                w_wipeme.push_back(*i);
+                int no_events = 0;
+                m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
+            }
+        }
+
+        // After that, all sockets that have been reported
+        // as ready to write should be removed from EID. This
+        // will also remove those sockets that have been added
+        // as redundant links at the connecting stage and became
+        // writable (connected) before this function had a chance
+        // to check them.
+        m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
     }
 }
 
@@ -3553,7 +3540,7 @@ struct FByOldestActive
 };
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
+void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks,
                                               vector<gli_t>&       w_parallel,
                                               int&                 w_final_stat,
                                               bool&                w_none_succeeded,
@@ -3577,7 +3564,7 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
     // Potential problem to be checked in developer mode
     for (vector<gli_t>::iterator p = w_parallel.begin(); p != w_parallel.end(); ++p)
     {
-        if (std::find(unstable.begin(), unstable.end(), *p) != unstable.end())
+        if (std::find(unstableLinks.begin(), unstableLinks.end(), *p) != unstableLinks.end())
         {
             LOGC(gslog.Debug,
                     log << "grp/sendBackup: IPE: parallel links enclose unstable link @" << (*p)->ps->m_SocketID);
@@ -3589,10 +3576,10 @@ void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstable,
     // over any link (hence "none succeeded"), but there are some unstable
     // links and no parallel links. We need to WAIT for any of the links
     // to become available for sending.
-    if (w_parallel.empty() && !unstable.empty() && w_none_succeeded)
+    if (w_parallel.empty() && !unstableLinks.empty() && w_none_succeeded)
     {
         HLOGC(gslog.Debug, log << "grp/sendBackup: no parallel links and "
-                << unstable.size() << " unstable links - checking...");
+                << unstableLinks.size() << " unstable links - checking...");
 
         // Note: GroupLock is set already, skip locks and checks
         getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
@@ -3637,7 +3624,7 @@ RetryWaitBlocked:
             // Some sockets could have been closed in the meantime.
             if (m_SndEpolld->watch_empty())
             {
-                HLOGC(gslog.Debug, log << "grp/sendBackup: no more sendable sockets - group broken");
+                HLOGC(gslog.Debug, log << "grp/sendBackup: no more sockets available for sending - group broken");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
@@ -3776,7 +3763,7 @@ RetryWaitBlocked:
         }
 
         HLOGC(gslog.Debug, log << "grp/sendBackup: " << nactivated << " links activated with "
-                << unstable.size() << " unstable");
+                << unstableLinks.size() << " unstable");
     }
 
     // The most important principle is to keep the data being sent constantly,
@@ -3849,13 +3836,12 @@ RetryWaitBlocked:
 
 int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
-    // Avoid stupid errors in the beginning.
     if (len <= 0)
     {
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    // Live only - sorry.
+    // Only live streaming is supported
     if (len > SRT_LIVE_MAX_PLSIZE)
     {
         LOGC(gslog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
@@ -3870,10 +3856,10 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // for which NO ITERATORS ARE INVALIDATED after a node at particular
     // iterator has been removed, except for that iterator itself.
     vector<SRTSOCKET> wipeme;
-    vector<gli_t> idlers;
-    vector<SRTSOCKET> pending;
-    vector<gli_t> unstable;
-    vector<gli_t> sendable;
+    vector<gli_t> idleLinks;
+    vector<SRTSOCKET> pendingSockets;
+    vector<gli_t> activeLinks;   // All non-idle and non-pending links
+    vector<gli_t> unstableLinks; // Active, but unstable.
 
     int                          stat       = 0;
     int                          final_stat = -1;
@@ -3895,21 +3881,21 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     steady_clock::time_point currtime = steady_clock::now();
 
-    sendable.reserve(m_Group.size());
+    activeLinks.reserve(m_Group.size());
 
     // Qualify states of member links
-    sendBackup_QualifyMemberStates(currtime, (wipeme), (idlers), (pending), (unstable), (sendable));
+    sendBackup_QualifyMemberStates(currtime, (wipeme), (idleLinks), (pendingSockets), (unstableLinks), (activeLinks));
 
     // Sort the idle sockets by priority so the highest priority idle links are checked first.
-    sort(idlers.begin(), idlers.end(), FPriorityOrder());
+    sort(idleLinks.begin(), idleLinks.end(), FPriorityOrder());
 
 #if ENABLE_HEAVY_LOGGING
     {
         vector<SRTSOCKET> show_running, show_idle;
-        for (vector<gli_t>::iterator i = sendable.begin(); i != sendable.end(); ++i)
+        for (vector<gli_t>::iterator i = activeLinks.begin(); i != activeLinks.end(); ++i)
             show_running.push_back((*i)->id);
 
-        for (vector<gli_t>::iterator i = idlers.begin(); i != idlers.end(); ++i)
+        for (vector<gli_t>::iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
             show_idle.push_back((*i)->id);
 
         LOGC(gslog.Debug,
@@ -3918,11 +3904,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 #endif
 
-    vector<Sendstate> sendstates;
-
-    // Ok, we've separated the unstable from sendable just to know if:
-    // - we have any STABLE sendable (if not, we must activate a backup link)
-    // - we have multiple stable sendable and we need to stop all but one
+    // Ok, we've separated the unstable from activeLinks just to know if:
+    // - we have any STABLE activeLinks (if not, we must activate a backup link)
+    // - we have multiple stable activeLinks and we need to stop all but one
 
     // Normally there should be only one link with state == SRT_GST_RUNNING, but there might
     // be multiple links set as running when a "breaking suspection" is set on a link.
@@ -3937,11 +3921,11 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     int32_t curseq      = SRT_SEQNO_NONE;
     size_t  nsuccessful = 0;
 
-    // Maximum weight of sendable links.
-    uint16_t max_sendable_weight = 0;
+    // Maximum weight of active links.
+    uint16_t maxActiveWeight = 0;
 
-    // We believe that we need to send the payload over every sendable link anyway.
-    for (vector<gli_t>::iterator snd = sendable.begin(); snd != sendable.end(); ++snd)
+    // We believe that we need to send the payload over every activeLinks link anyway.
+    for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
     {
         gli_t d   = *snd;
         int   erc = 0; // success
@@ -3974,15 +3958,15 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                                      (curseq),
                                                      (parallel),
                                                      (final_stat),
-                                                     (max_sendable_weight),
+                                                     (maxActiveWeight),
                                                      (nsuccessful),
                                                      (is_unstable));
 
+        // TODO: Wasn't it done in sendBackup_QualifyMemberStates()? Sanity check?
         if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
-            insert_uniq((unstable), d);
+            insert_uniq((unstableLinks), d);
 
         const Sendstate cstate = {d->id, &*d, stat, erc};
-        sendstates.push_back(cstate);
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
     }
@@ -4065,15 +4049,15 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     sendBackup_Buffering(buf, len, (curseq), (w_mc));
 
     string activate_reason;
-    if (sendBackup_IsActivationNeeded(idlers, unstable, sendable, max_sendable_weight, activate_reason))
+    if (sendBackup_IsActivationNeeded(idleLinks, unstableLinks, activeLinks, maxActiveWeight, activate_reason))
     {
-        if (idlers.empty())
+        if (idleLinks.empty())
         {
-            HLOGP(gslog.Debug, "grp/sendBackup: no idlers to activate, keeping only unstable links");
+            HLOGP(gslog.Debug, "grp/sendBackup: no idle links to activate, keeping only unstable links");
         }
         else
         {
-            const size_t n ATR_UNUSED = sendBackup_TryActivateIdleLink(idlers,
+            const size_t n ATR_UNUSED = sendBackup_TryActivateIdleLink(idleLinks,
                                      buf,
                                      len,
                                      (none_succeeded),
@@ -4081,7 +4065,6 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                                      (curseq),
                                      (final_stat),
                                      (cx),
-                                     (sendstates),
                                      (parallel),
                                      (wipeme),
                                      activate_reason);
@@ -4092,11 +4075,11 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     else
     {
         HLOGC(gslog.Debug,
-              log << "grp/sendBackup: have sendable links, stable=" << (sendable.size() - unstable.size())
-                  << " unstable=" << unstable.size());
+              log << "grp/sendBackup: have activeLinks links, stable=" << (activeLinks.size() - unstableLinks.size())
+                  << " unstable=" << unstableLinks.size());
     }
 
-    send_CheckPendingSockets(pending, (wipeme));
+    send_CheckPendingSockets(pendingSockets, (wipeme));
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
@@ -4108,7 +4091,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    sendBackup_CheckParallelLinks(unstable, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
+    sendBackup_CheckParallelLinks(unstableLinks, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
     // (closing condition checked inside this call)
 
     if (none_succeeded)
