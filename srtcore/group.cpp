@@ -2869,7 +2869,7 @@ struct FPriorityOrder
 };
 
 // [[using maybe_locked(this->m_GroupLock)]]
-bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vector<SRTSOCKET>& w_pending)
+bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vector<SRTSOCKET>& w_pendingSockets)
 {
     SRT_SOCKSTATUS st = SRTS_NONEXIST;
     if (d->ps)
@@ -2887,7 +2887,7 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
     if (st != SRTS_CONNECTED)
     {
         HLOGC(gslog.Debug, log << "CUDTGroup::send. @" << d->id << " is still " << SockStatusStr(st) << ", skipping.");
-        w_pending.push_back(d->id);
+        w_pendingSockets.push_back(d->id);
         return false;
     }
 
@@ -2897,7 +2897,7 @@ bool CUDTGroup::send_CheckIdle(const gli_t d, vector<SRTSOCKET>& w_wipeme, vecto
 void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
         vector<SRTSOCKET>& w_wipeme,
         vector<gli_t>& w_idleLinks,
-        vector<SRTSOCKET>& w_pending,
+        vector<SRTSOCKET>& w_pendingSockets,
         vector<gli_t>& w_unstableLinks,
         vector<gli_t>& w_activeLinks)
 {
@@ -2932,7 +2932,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
 
         if (d->sndstate == SRT_GST_IDLE)
         {
-            if (!send_CheckIdle(d, (w_wipeme), (w_pending)))
+            if (!send_CheckIdle(d, (w_wipeme), (w_pendingSockets)))
                 continue;
 
             HLOGC(gslog.Debug,
@@ -2963,7 +2963,7 @@ void CUDTGroup::sendBackup_QualifyMemberStates(const steady_clock::time_point& c
               log << "grp/sendBackup: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
-        w_pending.push_back(d->id);
+        w_pendingSockets.push_back(d->id);
     }
 }
 
@@ -3871,7 +3871,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     vector<SRTSOCKET> wipeme;
     vector<gli_t> idleLinks;
     vector<SRTSOCKET> pendingSockets;
-    vector<gli_t> activeLinks;   // To be used to send payload
+    vector<gli_t> activeLinks;   // All non-idle and non-pending links
     vector<gli_t> unstableLinks; // Active, but unstable.
 
     int                          stat       = 0;
