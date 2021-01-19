@@ -1448,7 +1448,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // First thing then, find out if at least one link was successful.
     // even if it was one of the idle links.
-    // The first successful link sets the sequence.
+    // The first successful link sets the sequence, the followin links derive it.
+    // If there are no active links (only idle), the sending sequence number will be taken as is
+    // from the FIRST activated idle link.
 
     vector<SocketData*> successful, blocked;
 
@@ -3282,7 +3284,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idleLinks,
         {
             LOGC(gslog.Debug,
                  log << "grp/sendBackup: found link weight " << idleLinks[0]->weight << " PREF OVER "
-                     << maxActiveWeight << " (highest from activeLinks) - will activate an idle link");
+                     << maxActiveWeight << " (highest from active links) - will activate an idle link");
             activate_reason = "found higher weight link";
         }
 #endif
