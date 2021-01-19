@@ -314,6 +314,10 @@ private:
                                       std::vector<gli_t>&       w_parallel,
                                       std::vector<SRTSOCKET>&   w_wipeme,
                                       const std::string&        activate_reason);
+
+    /// Check if pending sockets are to be closed.
+    /// @param[in]     pending pending sockets
+    /// @param[in,out] w_wipeme a list of sockets to be removed from the group
     void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
     void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,

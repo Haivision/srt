@@ -3255,7 +3255,7 @@ bool CUDTGroup::sendBackup_IsActivationNeeded(const vector<gli_t>&    idleLinks,
                                               string& activate_reason ATR_UNUSED) const
 {
     SRT_ASSERT(activeLinks.size() >= unstableLinks.size());
-    bool need_activate = activeLinks.size() <= unstableLinks.size(); // <= for sanity, should be just =
+    bool need_activate = activeLinks.size() <= unstableLinks.size(); // <= for sanity, should be just ==
     IF_HEAVY_LOGGING(activate_reason = "BY NO REASON???");
     if (need_activate)
     {
@@ -3332,6 +3332,8 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 
         try
         {
+            // TODO: At this point all packets that could be sent
+            // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
             if (w_curseq == SRT_SEQNO_NONE)
             {
                 // This marks the fact that the given here packet
@@ -3432,71 +3434,61 @@ size_t CUDTGroup::sendBackup_TryActivateIdleLink(const vector<gli_t>&          i
 // [[using locked(this->m_GroupLock)]]
 void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets, vector<SRTSOCKET>& w_wipeme)
 {
-    // If we have at least one stable link, then select a link that have the
-    // highest priority and silence the rest.
+    if (pendingSockets.empty())
+        return;
 
-    // Note: If we have one stable link, this is the situation we need.
-    // If we have no stable links at all, there's nothing we can do anyway.
-    // The freshly activated previously idle links don't count because we
-    // just started them and we can't determine their stability. At least if
-    // we have one link that is stable and the freshly activated link is actually
-    // stable too, we'll check this next time.
-    //
-    if (!pendingSockets.empty())
+    HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
+
+    // These sockets if they are in pending state, they should be added to m_SndEID
+    // at the connecting stage.
+    CEPoll::fmap_t sready;
+
+    if (m_SndEpolld->watch_empty())
     {
-        HLOGC(gslog.Debug, log << "grp/send*: found pending sockets, polling them.");
-
-        // These sockets if they are in pending state, they should be added to m_SndEID
-        // at the connecting stage.
-        CEPoll::fmap_t sready;
-
+        // Sanity check - weird pending reported.
+        LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
+        copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(w_wipeme));
+    }
+    else
+    {
+        // Some sockets could have been closed in the meantime.
         if (m_SndEpolld->watch_empty())
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
         {
-            // Sanity check - weird pending reported.
-            LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
-            copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(w_wipeme));
+            InvertedLock ug(m_GroupLock);
+            m_pGlobal->m_EPoll.swait(
+                *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
         }
-        else
+
+        if (m_bClosing)
         {
-            // Some sockets could have been closed in the meantime.
-            if (m_SndEpolld->watch_empty())
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-            {
-                InvertedLock ug(m_GroupLock);
-                m_pGlobal->m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
-            }
-
-            if (m_bClosing)
-            {
-                HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-            }
-
-            HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
-
-            // sockets in EX: should be moved to w_wipeme.
-            for (vector<SRTSOCKET>::const_iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
-            {
-                if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
-                {
-                    HLOGC(gslog.Debug, log << "grp/send*: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
-                    // Failed socket. Move d to w_wipeme. Remove from eid.
-                    w_wipeme.push_back(*i);
-                    int no_events = 0;
-                    m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
-                }
-            }
-
-            // After that, all sockets that have been reported
-            // as ready to write should be removed from EID. This
-            // will also remove those sockets that have been added
-            // as redundant links at the connecting stage and became
-            // writable (connected) before this function had a chance
-            // to check them.
-            m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
+            HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
+
+        HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
+
+        // sockets in EX: should be moved to w_wipeme.
+        for (vector<SRTSOCKET>::const_iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
+        {
+            if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
+            {
+                HLOGC(gslog.Debug, log << "grp/send*: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
+                // Failed socket. Move d to w_wipeme. Remove from eid.
+                w_wipeme.push_back(*i);
+                int no_events = 0;
+                m_pGlobal->m_EPoll.update_usock(m_SndEID, *i, &no_events);
+            }
+        }
+
+        // After that, all sockets that have been reported
+        // as ready to write should be removed from EID. This
+        // will also remove those sockets that have been added
+        // as redundant links at the connecting stage and became
+        // writable (connected) before this function had a chance
+        // to check them.
+        m_pGlobal->m_EPoll.clear_ready_usocks(*m_SndEpolld, SRT_EPOLL_OUT);
     }
 }
 
