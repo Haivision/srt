@@ -1163,6 +1163,9 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-client.c)
 	srt_make_application(test-c-client)
 
+	srt_add_example(example-client-nonblock.c)
+	srt_make_application(example-client-nonblock)
+
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
