@@ -40,6 +40,43 @@ struct
 
 #define SIZE(array) (sizeof array/sizeof(array[0]))
 
+// Note that in this example application there's a socket
+// used first to connect to the service and then it will be
+// used for writing. Therefore the same function will be used
+// for waiting for the socket to be connected and then to wait
+// for write-ready on the socket used for transmission. For a
+// model of waiting for read-ready see test-c-server-bonding.c file.
+int WaitForWriteReady(int eid, SRTSOCKET ss)
+{
+    int ready_err[2];
+    int ready_err_len = 2;
+    int ready_out[2];
+    int ready_out_len = 2;
+
+    int st = srt_epoll_wait(eid, ready_err, &ready_err_len, ready_out, &ready_out_len, -1,
+            0, 0, 0, 0);
+
+    // Note: with indefinite wait time we can either have a connection reported
+    // or possibly error. Also srt_epoll_wait never returns 0 - at least the number
+    // of ready connections is reported or -1 is returned for error, including timeout.
+    if (st < 1)
+    {
+        fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+        return 0;
+    }
+
+    // Check if this was reported as error-ready, in which case it doesn't
+    // matter if read-ready.
+    if (ready_err[0] == ss)
+    {
+        int reason = srt_getrejectreason(ss);
+        fprintf(stderr, "srt_epoll_wait: socket @%d reported error reason=%d: %s\n", ss, reason, srt_rejectreason_str(reason));
+        return 0;
+    }
+
+    return 1;
+}
+
 int main(int argc, char** argv)
 {
     int ss, st;
@@ -62,18 +99,34 @@ int main(int argc, char** argv)
             break;
         }
 
-    printf("srt startup\n");
-    srt_startup();
-
+    int is_nonblocking = 0;
     size_t nmemb = argc - 2;
+    if (nmemb < 2)
+    {
+        fprintf(stderr, "Usage error: no members specified\n");
+        return 1;
+    }
+
     if (nmemb % 2)
     {
-        fprintf(stderr, "Usage error: after <type>, <host> <port> pairs are expected.\n");
-        return 1;
+        // Last argument is then optionset
+        --nmemb;
+        const char* opt = argv[argc-1];
+        if (strchr(opt, 'n'))
+            is_nonblocking = 1;
     }
 
     nmemb /= 2;
 
+    printf("srt startup\n");
+    srt_startup();
+
+    // Declare all variables before any destructive goto.
+    // In C++ such a code that jumps over initialization would be illegal,
+    // in C it causes an uninitialized value to be used.
+    int eid = -1;
+    int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+    SRT_SOCKGROUPDATA* grpdata = NULL;
     SRT_SOCKGROUPCONFIG* grpconfig = calloc(nmemb, sizeof (SRT_SOCKGROUPCONFIG));
 
     printf("srt group\n");
@@ -81,7 +134,7 @@ int main(int argc, char** argv)
     if (ss == SRT_ERROR)
     {
         fprintf(stderr, "srt_create_group: %s\n", srt_getlasterror_str());
-        return 1;
+        goto end;
     }
 
     const int B = 2;
@@ -94,10 +147,19 @@ int main(int argc, char** argv)
         sa.sin_port = htons(atoi(argv[B + 2*i + 1]));
         if (inet_pton(AF_INET, argv[B + 2*i], &sa.sin_addr) != 1)
         {
-            return 1;
+            fprintf(stderr, "inet_pton: can't resolve address: %s\n", argv[B + 2*i]);
+            goto end;
         }
 
         grpconfig[i] = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
+    }
+
+    if (is_nonblocking)
+    {
+        int blockingmode = 0;
+        srt_setsockflag(ss, SRTO_RCVSYN, &blockingmode, sizeof (blockingmode));
+        eid = srt_epoll_create();
+        srt_epoll_add_usock(eid, ss, &write_modes);
     }
 
     printf("srt connect (group)\n");
@@ -109,7 +171,28 @@ int main(int argc, char** argv)
     if (st == SRT_ERROR)
     {
         fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
-        return 1;
+        goto end;
+    }
+
+    // In non-blocking mode the srt_connect function returns immediately
+    // and displays only errors of the initial usage, not runtime errors.
+    // These could be reported by epoll.
+    if (is_nonblocking)
+    {
+        // WRITE-ready means connected
+
+        printf("srt wait for socket reporting connection success\n");
+        if (!WaitForWriteReady(eid, ss))
+            goto end;
+    }
+
+    // In non-blocking mode now is the time to possibly change the epoll.
+    // As this socket will be used for writing, it is in the right mode already.
+    // Just set the right flag, as for non-blocking connect it needs RCVSYN.
+    if (is_nonblocking)
+    {
+        int blockingmode = 0;
+        srt_setsockflag(ss, SRTO_SNDSYN, &blockingmode, sizeof (blockingmode));
     }
 
     // Important: Normally you need that at least one link is ready for
@@ -123,7 +206,7 @@ int main(int argc, char** argv)
     printf("sleeping 1s to make it probable all links are established\n");
     sleep(1);
 
-    SRT_SOCKGROUPDATA* grpdata = calloc(nmemb, sizeof (SRT_SOCKGROUPDATA));
+    grpdata = calloc(nmemb, sizeof (SRT_SOCKGROUPDATA));
 
     for (i = 0; i < 100; i++)
     {
@@ -133,11 +216,18 @@ int main(int argc, char** argv)
         mc.grpdata = grpdata;
         mc.grpdata_size = nmemb; // Set maximum known
 
+        if (is_nonblocking)
+        {
+            // Block in epoll as srt_recvmsg2 will not block.
+            if (!WaitForWriteReady(eid, ss))
+                goto end;
+        }
+
         st = srt_sendmsg2(ss, message, sizeof message, &mc);
         if (st == SRT_ERROR)
         {
             fprintf(stderr, "srt_sendmsg: %s\n", srt_getlasterror_str());
-            return 1;
+            goto end;
         }
 
         // Perform the group check. This can be used to recognize broken connections
@@ -162,7 +252,11 @@ int main(int argc, char** argv)
         usleep(1000);   // 1 ms
     }
 
-
+end:
+    if (eid != -1)
+    {
+        srt_epoll_release(eid);
+    }
     printf("srt close\n");
     st = srt_close(ss);
     if (st == SRT_ERROR)
@@ -174,6 +268,7 @@ int main(int argc, char** argv)
     free(grpdata);
     free(grpconfig);
 
+//cleanup:
     printf("srt cleanup\n");
     srt_cleanup();
     return 0;
