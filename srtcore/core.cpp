@@ -5676,7 +5676,7 @@ void *CUDT::tsbpd(void *param)
                               << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
 #endif
                     LOGC(brlog.Warn,
-                         log << "RCV-DROPPED " << seqlen << " packet(s), packet seqno %" << skiptoseqno
+                         log << self->CONID() << "RCV-DROPPED " << seqlen << " packet(s), packet seqno %" << skiptoseqno
                              << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
                              << (timediff_us % 1000) << " ms");
 #endif
