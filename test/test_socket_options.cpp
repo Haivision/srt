@@ -120,4 +120,31 @@ TEST_F(TestSocketOptions, LossMaxTTL)
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
 
+TEST_F(TestSocketOptions, OptionsContainer)
+{
+    SRT_SOCKOPT_CONFIG* cfg = srt_create_config();
+
+    int no = 0;
+    srt_config_add(cfg, SRTO_SNDSYN, &no, sizeof no);
+    srt_config_add(cfg, SRTO_RCVSYN, &no, sizeof no);
+
+    ASSERT_EQ(srt_config_apply(cfg, m_caller_sock), SRT_SUCCESS);
+
+    SRT_SOCKOPT_CONFIG* cfg2 = srt_clone_config(cfg);
+
+    int out = 321;
+    int s_out = sizeof (out);
+    ASSERT_EQ(srt_getsockflag(m_listen_sock, SRTO_RCVSYN, &out, &s_out), SRT_SUCCESS);
+    ASSERT_EQ(out, 1);
+
+    ASSERT_EQ(srt_config_apply(cfg2, m_listen_sock), SRT_SUCCESS);
+
+    ASSERT_EQ(srt_getsockflag(m_listen_sock, SRTO_RCVSYN, &out, &s_out), SRT_SUCCESS);
+
+    EXPECT_EQ(out, 0);
+
+    srt_delete_config(cfg);
+    srt_delete_config(cfg2);
+}
+
 

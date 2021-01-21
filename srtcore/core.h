@@ -138,8 +138,6 @@ enum SeqPairItems
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
 };
 
-#if ENABLE_EXPERIMENTAL_BONDING
-
 struct SRT_SocketOptionObject
 {
     struct SingleOption
@@ -166,6 +164,7 @@ struct SRT_SocketOptionObject
     bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
 };
 
+#if ENABLE_EXPERIMENTAL_BONDING
 class CUDTGroup;
 #endif
 
@@ -305,6 +304,7 @@ public: //API
     static int rejectReason(SRTSOCKET s);
     static int rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
+    static int applyConfigObject(SRTSOCKET s, const SRT_SocketOptionObject& opt);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -685,9 +685,10 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
 
-#if ENABLE_EXPERIMENTAL_BONDING
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
+    SRT_ERRNO applyConfigObject(const SRT_SocketOptionObject& opt);
+#if ENABLE_EXPERIMENTAL_BONDING
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 #endif
 
