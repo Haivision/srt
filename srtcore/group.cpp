@@ -3974,7 +3974,6 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (is_unstable && is_zero(u.m_tsUnstableSince)) // Add to unstable only if it wasn't unstable already
             insert_uniq((unstableLinks), d);
 
-        const Sendstate cstate = {d->id, &*d, stat, erc};
         d->sndresult  = stat;
         d->laststatus = d->ps->getStatus();
     }
