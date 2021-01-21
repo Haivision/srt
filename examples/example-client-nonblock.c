@@ -73,6 +73,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // When a caller is connected, a write-readiness event is triggered.
     int modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     if (SRT_ERROR == srt_epoll_add_usock(epollid, ss, &modes))
     {
@@ -88,15 +89,25 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // In case of a caller a connection event triggers write-readiness.
-    int       len = 2;
-    SRTSOCKET ready[2];
-    if (srt_epoll_wait(epollid, 0, 0, ready, &len, -1, 0, 0, 0, 0) != -1)
+    // We had subscribed for write-readiness or error.
+    // Write readiness comes in wready array,
+    // error is notified via rready in this case.
+    int       rlen = 1;
+    SRTSOCKET rready;
+    int       wlen = 1;
+    SRTSOCKET wready;
+    if (srt_epoll_wait(epollid, &rready, &rlen, &wready, &wlen, -1, 0, 0, 0, 0) != -1)
     {
         SRT_SOCKSTATUS state = srt_getsockstate(ss);
-        if (state != SRTS_CONNECTED)
+        if (state != SRTS_CONNECTED || rlen > 0) // rlen > 0 - an error notification
         {
-            fprintf(stderr, "srt_connect: %s\n", srt_getlasterror_str());
+            fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+            return 1;
+        }
+
+        if (wlen != 1 || wready != ss)
+        {
+            fprintf(stderr, "srt_epoll_wait: wlen %d, wready %d, socket %d\n", wlen, wready, ss);
             return 1;
         }
     }
@@ -109,12 +120,17 @@ int main(int argc, char** argv)
     int i;
     for (i = 0; i < 100; i++)
     {
-        int wready[2] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK};
-        int wlen      = 2;
+        rready = SRT_INVALID_SOCK;
+        rlen   = 1;
+        wready = SRT_INVALID_SOCK;
+        wlen   = 1;
 
+        // As we have subscribed only for write-readiness or error events,
+        // but have not subscribed for read-readiness,
+        // through readfds we are notified about an error.
         int timeout_ms = 5000; // ms
-        int res = srt_epoll_wait(epollid, 0, 0, wready, &wlen, timeout_ms, 0, 0, 0, 0);
-        if (res == SRT_ERROR)
+        int res = srt_epoll_wait(epollid, &rready, &rlen, &wready, &wlen, timeout_ms, 0, 0, 0, 0);
+        if (res == SRT_ERROR || rlen > 0)
         {
             fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
             return 1;
@@ -131,6 +147,10 @@ int main(int argc, char** argv)
         usleep(1000);   // 1 ms
     }
 
+    // Let's wait a bit so that all packets reach destination
+    usleep(100000);   // 100 ms
+
+    // In live mode the connection will be closed even if some packets were not yet acknowledged.
     printf("srt close\n");
     st = srt_close(ss);
     if (st == SRT_ERROR)
