@@ -326,8 +326,8 @@ private:
                                      bool&                     w_none_succeeded,
                                      SRT_MSGCTRL&              w_mc,
                                      CUDTException&            w_cx);
-    void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,
-                                       std::vector<gli_t>&       w_parallel);
+    void sendBackup_SilenceRedundantLinks(const std::vector<gli_t>& unstable,
+                                          std::vector<gli_t>&       w_parallel);
 
     void send_CheckValidSockets();
 

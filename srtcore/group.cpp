@@ -3758,8 +3758,8 @@ RetryWaitBlocked:
 }
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::sendBackup_CheckParallelLinks(const vector<gli_t>& unstableLinks,
-                                              vector<gli_t>&       w_parallel)
+void CUDTGroup::sendBackup_SilenceRedundantLinks(const vector<gli_t>& unstableLinks,
+                                                 vector<gli_t>&       w_parallel)
 {
 #if ENABLE_HEAVY_LOGGING
     // Potential problem to be checked in developer mode
@@ -4100,7 +4100,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     sendBackup_RetryWaitBlocked(unstableLinks, (parallel), (final_stat), (none_succeeded), (w_mc), (cx));
 
-    sendBackup_CheckParallelLinks(unstableLinks, (parallel));
+    sendBackup_SilenceRedundantLinks(unstableLinks, (parallel));
     // (closing condition checked inside this call)
 
     if (none_succeeded)
