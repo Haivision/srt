@@ -366,7 +366,7 @@ shell (using **"** **"** quotes or backslash).
 - **-chunk, -c** - use given size of the buffer. The default size is 1456 bytes, which is the maximum payload size for a single SRT packet.
 - **-verbose, -v** - Display additional information on the standard output. Note that it's not allowed to be combined with output specified as **file://con**.
 - **-statsout** - SRT statistics output: filename. Without this option specified, the statistics will be printed to the standard output.
-- **-pf**, **-statspf** - SRT statistics print format. Values: json, csv, default.
+- **-pf**, **-statspf** - SRT statistics print format. Values: json, csv, default. After a comma, options can be specified (e.g. "json,pretty").
 - **-s**, **-stats**, **-stats-report-frequency** - The frequency of SRT statistics collection, based on the number of packets.
 - **-loglevel** - lowest logging level for SRT, one of: *fatal, error, warning, note, debug* (default: *error*)
 - **-logfa, -lfa** - selected FAs in SRT to be logged (default: all are enabled). See the list of FAs running `-help:logging`.
