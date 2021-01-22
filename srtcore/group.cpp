@@ -3541,11 +3541,11 @@ struct FByOldestActive
 
 // [[using locked(this->m_GroupLock)]]
 void CUDTGroup::sendBackup_RetryWaitBlocked(const vector<gli_t>& unstableLinks,
-    vector<gli_t>& w_parallel,
-    int& w_final_stat,
-    bool& w_none_succeeded,
-    SRT_MSGCTRL& w_mc,
-    CUDTException& w_cx)
+                                            vector<gli_t>&       w_parallel,
+                                            int&                 w_final_stat,
+                                            bool&                w_none_succeeded,
+                                            SRT_MSGCTRL&         w_mc,
+                                            CUDTException&       w_cx)
 {
     // In contradiction to broadcast sending, backup sending must check
     // the blocking state in total first. We need this information through
