@@ -3,6 +3,7 @@
 #include "gtest/gtest.h"
 #include "packet.h"
 #include "fec.h"
+#include "core.h"
 #include "packetfilter.h"
 #include "packetfilter_api.h"
 
@@ -32,7 +33,8 @@ protected:
             sockid,
             isn - 1, // It's passed in this form to PacketFilter constructor, it should increase it
             isn - 1, // XXX Probably this better be changed.
-            plsize
+            plsize,
+            CUDT::DEF_BUFFER_SIZE
         };
 
 

@@ -1,5 +1,7 @@
 language: cpp
 dist: trusty
+jdk:
+  - oraclejdk11
 
 addons:
     apt:
@@ -54,6 +56,16 @@ matrix:
             - make
             - cd ..
           env: BUILD_TYPE=Release
+          
+         # Power jobs
+        - os: linux
+          arch: ppc64le
+          env:
+          - BUILD_TYPE=Debug
+        - arch: ppc64le
+          env:
+          - BUILD_TYPE=Release
+          - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";

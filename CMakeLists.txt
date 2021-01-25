@@ -821,7 +821,7 @@ if (srt_libspec_shared)
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
-	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
@@ -1162,6 +1162,9 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(test-c-client.c)
 	srt_make_application(test-c-client)
+
+	srt_add_example(example-client-nonblock.c)
+	srt_make_application(example-client-nonblock)
 
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
