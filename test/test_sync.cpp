@@ -314,7 +314,8 @@ TEST(SyncEvent, WaitFor)
         // - SyncEvent::wait_for( 50us) took 6us
         // - SyncEvent::wait_for(100us) took 4us
         if (on_timeout) {
-            EXPECT_GE(waittime_us, timeout_us);
+            int tolerance = timeout_us/1000;
+            EXPECT_GE(waittime_us, timeout_us - tolerance);
         }
 #endif
         if (on_timeout) {
