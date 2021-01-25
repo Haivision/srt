@@ -172,20 +172,20 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
 */
 TEST_F(TestConnectionTimeout, BlockingLoop)
 {
-    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+    const SRTSOCKET client_sock = srt_create_socket();
+    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+
+    // Set connection timeout to 999 ms to reduce the test execution time.
+    // Also need to hit a time point between two threads:
+    // srt_connect will check TTL every second,
+    // CRcvQueue::worker will wait on a socket for 10 ms.
+    // Need to have a condition, when srt_connect will process the timeout.
     const int connection_timeout_ms = 999;
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
     for (int i = 0; i < 10; ++i)
     {
-        const SRTSOCKET client_sock = srt_create_socket();
-        ASSERT_GT(client_sock, 0);    // socket_id should be > 0
-
-        // Set connection timeout to 999 ms to reduce the test execution time.
-        // Also need to hit a time point between two threads:
-        // srt_connect will check TTL every second,
-        // CRcvQueue::worker will wait on a socket for 10 ms.
-        // Need to have a condition, when srt_connect will process the timeout.
-        EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
-
         EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
 
         const int error_code = srt_getlasterror(nullptr);
@@ -196,9 +196,9 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
                 << error_code << " " << srt_getlasterror_str() << "\n";
             break;
         }
-
-        EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
     }
+
+    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
 }
 
 
