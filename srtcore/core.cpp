@@ -509,6 +509,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_BINDTODEVICE:
 #ifdef SRT_ENABLE_BINDTODEVICE
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         {
             string val;
             if (optlen == -1)
