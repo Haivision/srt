@@ -214,7 +214,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                        | 1.0.2 | pre-bind | `int32_t` | ms      | 120 *         | 0..      | RW  | GSD   |
 | [`SRTO_LINGER`](#SRTO_LINGER)                          |       | post     | `linger`  | s       | on, 180       | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre      | `int32_t` | packets | 0             | 0..      | RW  | GSD+  |
-| [`SRTO_MAXBW`](#SRTO_MAXBW)                            | 1.0.5 | post     | `int64_t` | B/s     | -1            | -1..     | RW  | GSD   |
+| [`SRTO_MAXBW`](#SRTO_MAXBW)                            |       | post     | `int64_t` | B/s     | -1            | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre      | `bool`    |         | true          |          | W   | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre      | `int32_t` | version | 0             | *        | W   | GSD   |
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre      | `int32_t` | bytes   | 1500          | 76..     | RW  | GSD   |
@@ -256,9 +256,9 @@ The following table lists SRT socket options in alphabetical order. Option detai
 
 #### SRTO_BINDTODEVICE
 
-| OptName               | Since | Binding | Type     | Units  | Default  | Range  | Dir |Entity|
-| --------------------- | ----- | ------- | -------- | ------ | -------- | ------ |-----|------|
-| `SRTO_BINDTODEVICE`   | 1.4.2 | pre     | `string` |        |          |        | RW  | GSD+ |
+| OptName               | Since | Restrict | Type     | Units  | Default  | Range  | Dir |Entity|
+| --------------------- | ----- | -------- | -------- | ------ | -------- | ------ |-----|------|
+| `SRTO_BINDTODEVICE`   | 1.4.2 | pre      | `string` |        |          |        | RW  | GSD+ |
 
 Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
 This effectively limits the packets received by this socket to only those
@@ -279,9 +279,9 @@ for a process that runs as root. Otherwise the function that applies the setting
 
 #### SRTO_CONGESTION
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_CONGESTION` | 1.3.0 | pre     | `string`   |         | "live"    | *      | W   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_CONGESTION` | 1.3.0 | pre      | `string`   |         | "live"    | *      | W   | S      |
 
 The type of congestion controller used for the transmission for that socket.
 
@@ -301,9 +301,9 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 
 #### SRTO_CONNTIMEO
 
-| OptName            | Since | Binding |   Type    | Units  | Default  | Range  | Dir | Entity |
-| ------------------ | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_CONNTIMEO`   | 1.1.2 | pre     | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
+| OptName            | Since | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
+| ------------------ | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_CONNTIMEO`   | 1.1.2 | post     | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
 
 Connect timeout. This option applies to the caller and rendezvous connection
 modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
@@ -315,8 +315,8 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 #### SRTO_DRIFTTRACER
 
-| OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
+| OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_DRIFTTRACER`| 1.4.2 | post    | `bool`    |        | true     |        | RW  | GSD    |
 
 Enables or disables time drift tracer (receiver).
@@ -327,9 +327,9 @@ Enables or disables time drift tracer (receiver).
 
 #### SRTO_ENFORCEDENCRYPTION
 
-| OptName                    | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_ENFORCEDENCRYPTION`  | 1.3.2 | pre     | `bool`     |         | true      |        | W   | GSD    |
+| OptName                    | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_ENFORCEDENCRYPTION`  | 1.3.2 | pre      | `bool`     |         | true      |        | W   | GSD    |
 
 This option enforces that both connection parties have the same passphrase
 set, or both do not set the passphrase, otherwise the connection is rejected.
@@ -372,9 +372,9 @@ on the caller side.
 
 #### SRTO_EVENT
 
-| OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_EVENT`      |       |         | `int32_t` | flags  |          |        | R   | S      |
+| OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_EVENT`      |       |          | `int32_t` | flags  |          |        | R   | S      |
 
 Returns bit flags set according to the current active events on the socket.
 
@@ -387,9 +387,9 @@ Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of
 
 #### SRTO_FC
 
-| OptName           | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_FC`         |       | pre     | `int32_t` | pkts   | 25600    | 32..   | RW  | GSD    |
+| OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_FC`         |       | pre      | `int32_t` | pkts   | 25600    | 32..   | RW  | GSD    |
 
 Flight Flag Size (maximum number of bytes that can be sent without
 being acknowledged)
@@ -400,9 +400,9 @@ being acknowledged)
 
 #### SRTO_GROUPCONNECT
 
-| OptName              | Since | Binding | Type      | Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPCONNECT`  | 1.5.0 | pre     | `int32_t` |        | 0        | 0...1  | W   | S      |
+| OptName              | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_GROUPCONNECT`  | 1.5.0 | pre      | `int32_t` |        | 0        | 0...1  | W   | S      |
 
 When this flag is set to 1 on a listener socket, it allows this socket to
 accept group connections. When set to the default 0, group connections will be
@@ -426,9 +426,9 @@ function will return the group, not this socket ID.
 
 #### SRTO_GROUPSTABTIMEO
 
-| OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPSTABTIMEO` | 1.5.0 | pre     | `int32_t`  | ms     | 80       | 10-... | W   | GSD+   |
+| OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_GROUPSTABTIMEO` | 1.5.0 | pre      | `int32_t`  | ms     | 80       | 10-... | W   | GSD+   |
 
 This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability
 timeout, which is the maximum interval between two consecutive packets retrieved from
@@ -469,9 +469,9 @@ option, as the default value of it is way above any sensible value of
 
 #### SRTO_GROUPTYPE
 
-| OptName              | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPTYPE`     | 1.5.0 | pre     | `int32_t`  | enum   |          |        | R   | S      |
+| OptName              | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_GROUPTYPE`     | 1.5.0 |          | `int32_t`  | enum   |          |        | R   | S      |
 
 This option is read-only and it is intended to be called inside the listener
 callback handler (see `srt_listen_callback`). Possible values are defined in
@@ -488,9 +488,9 @@ context than inside the listener callback handler, the value is undefined.
 
 #### SRTO_INPUTBW
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_INPUTBW`   | 1.0.5 | post    | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
+| OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_INPUTBW`   | 1.0.5 | post     | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
 
 This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
 controls the maximum bandwidth together with `SRTO_OHEADBW` option according
@@ -508,9 +508,9 @@ and keep the default 25% value for `SRTO_OHEADBW`*.
 
 #### SRTO_IPTOS
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_IPTOS`     | 1.0.5 | pre     | `int32_t`  |        | (system) | 0..255 | RW  | GSD    |
+| OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_IPTOS`     | 1.0.5 | pre-bind | `int32_t`  |        | (system) | 0..255 | RW  | GSD    |
 
 IPv4 Type of Service (see `IP_TOS` option for IP) or IPv6 Traffic Class (see `IPV6_TCLASS`
 of IPv6) depending on socket address family. Applies to sender only.
@@ -526,9 +526,9 @@ and the actual value for connected sockets.
 
 #### SRTO_IPTTL
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_IPTTL`     | 1.0.5 | pre     | `int32_t`  | hops   | (system) | 1..255 | RW  | GSD    |
+| OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_IPTTL`     | 1.0.5 | pre-bind | `int32_t`  | hops   | (system) | 1..255 | RW  | GSD    |
 
 IPv4 Time To Live (see `IP_TTL` option for IP) or IPv6 unicast hops (see
 `IPV6_UNICAST_HOPS` for IPv6) depending on socket address family. Applies to sender only.
@@ -544,9 +544,9 @@ and the actual value for connected sockets.
 
 #### SRTO_IPV6ONLY
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_IPV6ONLY`  | 1.4.0 | pre     | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
+| OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_IPV6ONLY`  | 1.4.0 | pre-bind | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
 
 Set system socket flag `IPV6_V6ONLY`. When set to 0 a listening socket binding an
 IPv6 address accepts also IPv4 clients (their addresses will be formatted as
@@ -559,9 +559,9 @@ platform default value is used.
 
 #### SRTO_ISN
 
-| OptName          | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| ---------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_ISN`       | 1.3.0 |         | `int32_t`  |        |          |        | R   | S      |
+| OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_ISN`       | 1.3.0 |          | `int32_t`  |        |          |        | R   | S      |
 
 The value of the ISN (Initial Sequence Number), which is the first sequence
 number put on the first UDP packets sent that are carrying an SRT data payload.
@@ -576,9 +576,9 @@ used in any regular development.*
 
 #### SRTO_KMPREANNOUNCE
 
-| OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_KMPREANNOUNCE`  | 1.3.2 | pre     | `int32_t`  | pkts   | 0x1000   | 0.. *  | RW  | GSD    |
+| OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_KMPREANNOUNCE`  | 1.3.2 | pre      | `int32_t`  | pkts   | 0x1000   | 0.. *  | RW  | GSD    |
 
 The interval (defined in packets) between when a new Stream Encrypting Key
 (SEK) is sent and when switchover occurs. This value also applies to the
@@ -606,9 +606,9 @@ not yet arrived at the receiver).
 
 #### SRTO_KMREFRESHRATE
 
-| OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_KMREFRESHRATE`  | 1.3.2 | pre     | `int32_t`  | pkts   | 0x1000000| 0..    | RW  | GSD    |
+| OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_KMREFRESHRATE`  | 1.3.2 | pre      | `int32_t`  | pkts   | 0x1000000| 0..    | RW  | GSD    |
 
 The number of packets to be transmitted after which the Stream Encryption Key
 (SEK), used to encrypt packets, will be switched to the new one. Note that
@@ -626,9 +626,9 @@ might still be in flight, or packets that have to be retransmitted.
 
 #### SRTO_KMSTATE
 
-| OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_KMSTATE`        | 1.0.2 |         | `int32_t`  | enum   |          |        | R   | S      |
+| OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_KMSTATE`        | 1.0.2 |          | `int32_t`  | enum   |          |        | R   | S      |
 
 Keying Material state. This is a legacy option that is equivalent to
 `SRTO_SNDKMSTATE`, if the socket has set `SRTO_SENDER` to true, and
@@ -644,9 +644,9 @@ for more details.
 
 #### SRTO_LATENCY
 
-| OptName               | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_LATENCY`        | 1.0.2 | pre     | `int32_t`  | ms     | 120 *    | 0..    | RW  | GSD    |
+| OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_LATENCY`        | 1.0.2 | pre-bind | `int32_t`  | ms     | 120 *    | 0..    | RW  | GSD    |
 
 This option sets both [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY) and [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY)
 to the same value specified.
@@ -663,9 +663,9 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 #### SRTO_LINGER
 
-| OptName              | Since | Binding | Type       | Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_LINGER`        |       | pre     | `linger`   | s      | on, 180  | 0..    | RW  | GSD    |
+| OptName              | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_LINGER`        |       | pre      | `linger`   | s      | on, 180  | 0..    | RW  | GSD    |
 
 Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
 
@@ -677,9 +677,9 @@ Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/sock
 
 #### SRTO_LOSSMAXTTL
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_LOSSMAXTTL`    | 1.2.0 | pre     | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_LOSSMAXTTL`    | 1.2.0 | pre      | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
 
 The value up to which the *Reorder Tolerance* may grow. The *Reorder Tolerance*
 is the number of packets that must follow the experienced "gap" in sequence numbers
@@ -698,9 +698,9 @@ By default this value is set to 0, which means that this mechanism is off.
 
 #### SRTO_MAXBW
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MAXBW`         | 1.0.5 | pre     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MAXBW`         | 1.0.5 | post     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
 
 Maximum send bandwidth:
 
@@ -722,9 +722,9 @@ therefore the default -1 remains even in live mode.
 
 #### SRTO_MESSAGEAPI
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MESSAGEAPI`    | 1.3.0 | pre     | `bool`     |         | true     |        | W   | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MESSAGEAPI`    | 1.3.0 | pre      | `bool`     |         | true     |        | W   | GSD    |
 
 When set, this socket uses the Message API[\*], otherwise it uses the
 Stream API. Note that in live mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option) only the
@@ -761,9 +761,9 @@ SCTP protocol.
 
 #### SRTO_MINVERSION
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MINVERSION`    | 1.3.0 | pre     | `int32_t`  | version | 0        | *      | W   | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MINVERSION`    | 1.3.0 | pre      | `int32_t`  | version | 0        | *      | W   | GSD    |
 
 The minimum SRT version that is required from the peer. A connection to a
 peer that does not satisfy the minimum version requirement will be rejected.
@@ -775,9 +775,9 @@ See [`SRTO_VERSION`](#SRTO_VERSION) for the version format.
 
 #### SRTO_MSS
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MSS`           |       | pre     | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MSS`           |       | pre      | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
 
 Maximum Segment Size. Used for buffer allocation and rate calculation using
 packet counter assuming fully filled packets. Each party can set its own MSS
@@ -796,9 +796,9 @@ UDP and SRT headers*
 
 #### SRTO_NAKREPORT
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_NAKREPORT`     | 1.1.0 | pre     | `bool`     |         |  *       |        | RW  | GSD+   |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_NAKREPORT`     | 1.1.0 | pre-bind | `bool`     |         |  *       |        | RW  | GSD+   |
 
 When set to true, every report for a detected loss will be repeated when the
 timeout for the expected retransmission of this loss has expired and the
@@ -813,9 +813,9 @@ The default is true for Live mode, and false for File mode (see [`SRTO_TRANSTYPE
 
 #### SRTO_OHEADBW
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_OHEADBW`       | 1.0.5 | post    | `int32_t`  | %       | 25       | 5..100 | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_OHEADBW`       | 1.0.5 | post     | `int32_t`  | %       | 25       | 5..100 | RW  | GSD    |
 
 Recovery bandwidth overhead above input rate (see [`SRTO_INPUTBW`](#SRTO_INPUTBW)),
 in percentage of the input rate. It is effective only if `SRTO_MAXBW` is set to 0.
@@ -843,9 +843,9 @@ and break quickly at any rise in packet loss.
 
 #### SRTO_PACKETFILTER
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PACKETFILTER`  | 1.4.0 | pre     | `string`   |         |  ""      | [512]  | W   | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PACKETFILTER`  | 1.4.0 | pre      | `string`   |         |  ""      | [512]  | W   | GSD    |
 
 Set up the packet filter. The string must match appropriate syntax for packet
 filter setup.
@@ -865,9 +865,9 @@ For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
 #### SRTO_PASSPHRASE
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PASSPHRASE`    | 0.0.0 | pre     | `string`   |         | ""       |[10..79]| W   | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PASSPHRASE`    | 0.0.0 | pre      | `string`   |         | ""       |[10..79]| W   | GSD    |
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
@@ -894,9 +894,9 @@ encrypted connection, they have to simply set the same passphrase.
 
 #### SRTO_PAYLOADSIZE
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre     | `int32_t`  | bytes   | \*       | \*     | W   | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre      | `int32_t`  | bytes   | \*       | \*     | W   | GSD    |
 
 Sets the maximum declared size of a single call to sending function in Live
 mode. When set to 0, there's no limit for a single sending call.
@@ -913,9 +913,9 @@ For File mode: Default value is 0 and it's recommended not to be changed.
 
 #### SRTO_PBKEYLEN
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PBKEYLEN`      | 0.0.0 | pre     | `int32_t`  | bytes   | 0        | *      | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PBKEYLEN`      | 0.0.0 | pre      | `int32_t`  | bytes   | 0        | *      | RW  | GSD    |
 
 Encryption key length.
 
@@ -969,9 +969,9 @@ undefined behavior:
 
 #### SRTO_PEERIDLETIMEO
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PEERIDLETIMEO` | 1.3.3 | pre     | `int32_t`  | ms      | 5000     | 0..    | RW  | GSD+   |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PEERIDLETIMEO` | 1.3.3 | pre      | `int32_t`  | ms      | 5000     | 0..    | RW  | GSD+   |
 
 The maximum time in `[ms]` to wait until another packet is received from a peer
 since the last such packet reception. If this time is passed, the connection is
@@ -983,9 +983,9 @@ considered broken on timeout.
 
 #### SRTO_PEERLATENCY
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PEERLATENCY`   | 1.3.0 | pre     | `int32_t`  | ms      | 0        | 0..    | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PEERLATENCY`   | 1.3.0 | pre-bind | `int32_t`  | ms      | 0        | 0..    | RW  | GSD    |
 
 The latency value (as described in [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY)) provided by the sender
 side as a minimum value for the receiver.
@@ -1004,9 +1004,9 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 #### SRTO_PEERVERSION
 
-| OptName              | Since | Binding | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PEERVERSION`   | 1.1.0 |         | `int32_t`  | *       |          |        | R   | GS     |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_PEERVERSION`   | 1.1.0 |          | `int32_t`  | *       |          |        | R   | GS     |
 
 SRT version used by the peer. The value 0 is returned if not connected, SRT
 handshake not yet performed (HSv4 only), or if peer is not SRT.
@@ -1018,9 +1018,9 @@ See [`SRTO_VERSION`](#SRTO_VERSION) for the version format.
 
 #### SRTO_RCVBUF
 
-| OptName              | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVBUF`        |       | pre     | `int32_t`  | bytes   | 8192 bufs  | *      | RW  | GSD+   |
+| OptName              | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVBUF`        |       | pre-bind | `int32_t`  | bytes   | 8192 bufs  | *      | RW  | GSD+   |
 
 Receive Buffer Size, in bytes. Note, however, that the internal setting of this
 value is in the number of buffers, each one of size equal to SRT payload size,
@@ -1038,9 +1038,9 @@ than the Flight Flag size).
 
 #### SRTO_RCVDATA
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVDATA`    |       |         | `int32_t`  | pkts    |            |        | R   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVDATA`    |       |          | `int32_t`  | pkts    |            |        | R   | S      |
 
 Size of the available data in the receive buffer.
 
@@ -1050,9 +1050,9 @@ Size of the available data in the receive buffer.
 
 #### SRTO_RCVKMSTATE
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVKMSTATE` | 1.2.0 |         | `int32_t`  | enum    |            |        | R   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVKMSTATE` | 1.2.0 |          | `int32_t`  | enum    |            |        | R   | S      |
 
 KM state on the agent side when it's a receiver.
 
@@ -1064,9 +1064,9 @@ Values defined in enum [`SRT_KM_STATE`](#srt_km_state).
 
 #### SRTO_RCVLATENCY
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVLATENCY` | 1.3.0 | pre     | `int32_t`  | ms      | *          | 0..    | RW  | GSD    |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVLATENCY` | 1.3.0 | pre      | `int32_t`  | ms      | *          | 0..    | RW  | GSD    |
 
 The latency value in the receiving direction of the socket.
 This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
@@ -1106,9 +1106,9 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 #### SRTO_RCVSYN
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVSYN`     |       | post    | `bool`     |         | true       |        | RW  | GSI    |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVSYN`     |       | post     | `bool`     |         | true       |        | RW  | GSI    |
 
 When true, sets blocking mode on reading function when it's not ready to
 perform the operation. When false ("non-blocking mode"), the reading function
@@ -1143,9 +1143,9 @@ derived from the socket of which the group is a member).
 
 #### SRTO_RCVTIMEO
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RCVTIMEO`   |       | post    | `int32_t`  | ms      | -1         | -1, 0..| RW  | GSI    |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RCVTIMEO`   |       | post     | `int32_t`  | ms      | -1         | -1, 0..| RW  | GSI    |
 
 Limits the time up to which the receiving operation will block (see
 [`SRTO_RCVSYN`](#SRTO_RCVSYN) for details), such that when this time is exceeded,
@@ -1157,9 +1157,9 @@ it will behave as if in "non-blocking mode". The -1 value means no time limit.
 
 #### SRTO_RENDEZVOUS
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_RENDEZVOUS` |       | pre     | `bool`     |         | false      |        | RW  | S      |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_RENDEZVOUS` |       | pre      | `bool`     |         | false      |        | RW  | S      |
 
 Use Rendezvous connection mode (both sides must set this and both must use the
 procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one another.
@@ -1170,9 +1170,9 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 #### SRTO_RETRANSMITALGO
 
-| OptName               | Since | Binding | Type      | Units  | Default | Range  | Dir | Entity |
-| --------------------- | ----- | ------- | --------- | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMITALGO` | 1.4.2 | pre     | `int32_t` |        | 0       | [0, 1] | RW  | GSD    |
+| OptName               | Since | Restrict | Type      | Units  | Default | Range  | Dir | Entity |
+| --------------------- | ----- | -------- | --------- | ------ | ------- | ------ | --- | ------ |
+| `SRTO_RETRANSMITALGO` | 1.4.2 | pre      | `int32_t` |        | 0       | [0, 1] | RW  | GSD    |
 
 Retransmission algorithm to use (SENDER option):
 
@@ -1193,9 +1193,9 @@ Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
 #### SRTO_REUSEADDR
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_REUSEADDR`  |       | pre     | `bool`     |         | true       |        | RW  | GSD    |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_REUSEADDR`  |       | pre-bind | `bool`     |         | true       |        | RW  | GSD    |
 
 When true, allows the SRT socket to use the binding address used already by
 another SRT socket in the same application. Note that SRT socket uses an
@@ -1220,9 +1220,9 @@ its address.*
 
 #### SRTO_SENDER
 
-| OptName           | Since | Binding | Type       |  Units  |   Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | ---------- | ------ | --- | ------ |
-| `SRTO_SENDER`     | 1.0.4 | pre     | `bool`     |         | false      |        | W   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
+| `SRTO_SENDER`     | 1.0.4 | pre      | `bool`     |         | false      |        | W   | S      |
 
 Set sender side. The side that sets this flag is expected to be a sender. This
 flag is only required when communicating with a receiver that uses SRT version
@@ -1236,9 +1236,9 @@ work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 
 #### SRTO_SNDBUF
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDBUF`     |       | pre     | `int32_t`  | bytes   |8192 bufs  | *      | RW  | GSD+   |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDBUF`     |       | pre-bind | `int32_t`  | bytes   |8192 bufs  | *      | RW  | GSD+   |
 
 Sender Buffer Size. See [`SRTO_RCVBUF`](#SRTO_RCVBUF) for more information.
 
@@ -1248,9 +1248,9 @@ Sender Buffer Size. See [`SRTO_RCVBUF`](#SRTO_RCVBUF) for more information.
 
 #### SRTO_SNDDATA
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDDATA`    |       |         | `int32_t`  | pkts    |           |        | R   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDDATA`    |       |          | `int32_t`  | pkts    |           |        | R   | S      |
 
 Size of the unacknowledged data in send buffer.
 
@@ -1260,9 +1260,9 @@ Size of the unacknowledged data in send buffer.
 
 #### SRTO_SNDDROPDELAY
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDDROPDELAY`  | 1.3.2 | pre     | `int32_t`  | ms      | *         | -1..   | W   | GSD+   |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDDROPDELAY`  | 1.3.2 | post     | `int32_t`  | ms      | *         | -1..   | W   | GSD+   |
 
 Sets an extra delay before `TLPKTDROP` is triggered on the data sender.
 This delay is added to the default drop delay time interval value. Keep in mind
@@ -1287,9 +1287,9 @@ always when requested).
 
 #### SRTO_SNDKMSTATE
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDKMSTATE`    | 1.2.0 | post    | `int32_t`  |  enum   |           |        | R   | S      |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDKMSTATE`    | 1.2.0 |          | `int32_t`  |  enum   |           |        | R   | S      |
 
 Peer KM state on receiver side for `SRTO_KMSTATE`
 
@@ -1301,9 +1301,9 @@ Values defined in enum [`SRT_KM_STATE`](#srt_km_state).
 
 #### SRTO_SNDSYN
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDSYN`        |       | post    | `bool`     |         | true      |        | RW  | GSI    |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDSYN`        |       | post     | `bool`     |         | true      |        | RW  | GSI    |
 
 When true, sets blocking mode on writing function when it's not ready to
 perform the operation. When false ("non-blocking mode"), the writing function
@@ -1327,9 +1327,9 @@ but will have no effect on the listener socket itself.
 
 #### SRTO_SNDTIMEO
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_SNDTIMEO`      |       | post    | `int32_t`  | ms      | -1        | -1..   | RW  | GSI    |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_SNDTIMEO`      |       | post     | `int32_t`  | ms      | -1        | -1..   | RW  | GSI    |
 
 limit the time up to which the sending operation will block (see
 `SRTO_SNDSYN` for details), so when this time is exceeded, it will behave as
@@ -1341,9 +1341,9 @@ if in "non-blocking mode". The -1 value means no time limit.
 
 #### SRTO_STATE
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_STATE`         |       |         | `int32_t`  |  enum   |           |        | R   | S      |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_STATE`         |       |          | `int32_t`  |  enum   |           |        | R   | S      |
 
 Returns the current socket state, same as `srt_getsockstate`.
 
@@ -1353,9 +1353,9 @@ Returns the current socket state, same as `srt_getsockstate`.
 
 #### SRTO_STREAMID
 
-| OptName              | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| -------------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_STREAMID`      | 1.3.0 | pre     | `string`   |         | ""        | [512]  | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_STREAMID`      | 1.3.0 | pre      | `string`   |         | ""        | [512]  | RW  | GSD    |
 
 - A string that can be set on the socket prior to connecting. The listener side 
 will be able to retrieve this stream ID from the socket that is returned from 
@@ -1378,9 +1378,9 @@ roles in the connection.
 
 #### SRTO_TLPKTDROP
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_TLPKTDROP`  | 1.0.6 | pre     | `bool`     |         | *         |        | RW  | GSD    |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_TLPKTDROP`  | 1.0.6 | pre-bind | `bool`     |         | *         |        | RW  | GSD    |
 
 Too-late Packet Drop. When enabled on receiver, it skips missing packets that
 have not been delivered in time and delivers the subsequent packets to the
@@ -1397,9 +1397,9 @@ enabled in sender if receiver supports it.
 
 #### SRTO_TRANSTYPE
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_TRANSTYPE`  | 1.3.0 | pre     | `int32_t`  |  enum   |`SRTT_LIVE`| \*     | W   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_TRANSTYPE`  | 1.3.0 | pre-bind | `int32_t`  |  enum   |`SRTT_LIVE`| \*     | W   | S      |
 
 Sets the transmission type for the socket, in particular, setting this option
 sets multiple other parameters to their default values as required for a
@@ -1413,9 +1413,9 @@ Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
 
 #### SRTO_TSBPDMODE
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_TSBPDMODE`  | 0.0.0 | pre     | `bool`     |         | \*        |        | W   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_TSBPDMODE`  | 0.0.0 | pre-bind | `bool`     |         | \*        |        | W   | S      |
 
 When true, use Timestamp-based Packet Delivery mode. In this mode the
 packet's time is assigned at the sending time (or allowed to be predefined),
@@ -1431,9 +1431,9 @@ the application.
 
 #### SRTO_UDP_RCVBUF
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_UDP_RCVBUF` |       | pre     | `int32_t`  | bytes   | 8192 bufs | *      | RW  | GSD+   |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_UDP_RCVBUF` |       | pre-bind | `int32_t`  | bytes   | 8192 bufs | *      | RW  | GSD+   |
 
 UDP Socket Receive Buffer Size. Configured in bytes, maintained in packets
 based on MSS value. Receive buffer must not be greater than FC size.
@@ -1444,9 +1444,9 @@ based on MSS value. Receive buffer must not be greater than FC size.
 
 #### SRTO_UDP_SNDBUF
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_UDP_SNDBUF` |       | pre     | `int32_t`  | bytes   | 65536     | *      | RW  | GSD+   |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_UDP_SNDBUF` |       | pre-bind | `int32_t`  | bytes   | 65536     | *      | RW  | GSD+   |
 
 UDP Socket Send Buffer Size. Configured in bytes, maintained in packets based
 on `SRTO_MSS` value.
@@ -1457,9 +1457,9 @@ on `SRTO_MSS` value.
 
 #### SRTO_VERSION
 
-| OptName           | Since | Binding | Type       |  Units  |  Default  | Range  | Dir | Entity |
-| ----------------- | ----- | ------- | ---------- | ------- | --------- | ------ | --- | ------ |
-| `SRTO_VERSION`    | 1.1.0 |         | `int32_t`  |         |           |        | R   | S      |
+| OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
+| `SRTO_VERSION`    | 1.1.0 |          | `int32_t`  |         |           |        | R   | S      |
 
 Local SRT version. This is the highest local version supported if not
 connected, or the highest version supported by the peer if connected.
