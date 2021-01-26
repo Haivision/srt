@@ -559,37 +559,37 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_TSBPDMODE:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bOPT_TsbPd = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_LATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
         m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval);
         break;
 
     case SRTO_RCVLATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_TsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_PEERLATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_TLPKTDROP:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bOPT_TLPktDrop = cast_optval<bool>(optval, optlen);
         break;
@@ -685,8 +685,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_NAKREPORT:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bRcvNakReport = cast_optval<bool>(optval, optlen);
         break;
@@ -792,8 +792,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_TRANSTYPE:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        if (m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         // XXX Note that here the configuration for SRTT_LIVE
         // is the same as DEFAULT VALUES for these fields set
