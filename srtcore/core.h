@@ -209,6 +209,79 @@ class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 
+class CSrtConfig
+{
+    typedef srt::sync::steady_clock::time_point time_point;
+    typedef srt::sync::steady_clock::duration duration;
+//protected:
+    int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
+    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
+
+    // Options
+    int m_iMSS;                                  // Maximum Segment Size, in bytes
+    bool m_bSynSending;                          // Sending syncronization mode
+    bool m_bSynRecving;                          // Receiving syncronization mode
+    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
+    int m_iSndBufSize;                           // Maximum UDT sender buffer size
+    int m_iRcvBufSize;                           // Maximum UDT receiver buffer size
+    linger m_Linger;                             // Linger information on close
+    int m_iUDPSndBufSize;                        // UDP sending buffer size
+    int m_iUDPRcvBufSize;                        // UDP receiving buffer size
+    bool m_bRendezvous;                          // Rendezvous connection mode
+
+    duration m_tdConnTimeOut;    // connect timeout in milliseconds
+    bool m_bDriftTracer;
+    int m_iSndTimeOut;                           // sending timeout in milliseconds
+    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
+    bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
+    int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
+    int m_iIpTTL;
+    int m_iIpToS;
+#ifdef SRT_ENABLE_BINDTODEVICE
+    std::string m_BindToDevice;
+#endif
+
+    // These fields keep the options for encryption
+    // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
+    // created later and takes values from these.
+    HaiCrypt_Secret m_CryptoSecret;
+    int m_iSndCryptoKeyLen;
+
+    // XXX Consider removing. The m_bDataSender stays here
+    // in order to maintain the HS side selection in HSv4.
+    bool m_bDataSender;
+
+    bool m_bMessageAPI;
+    bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
+    int m_iOPT_TsbPdDelay;           // Agent's Rx latency
+    int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.
+    bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
+    int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
+    bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
+    int m_OPT_GroupConnect;
+    std::string m_sStreamName;
+    int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
+    uint32_t m_uOPT_StabilityTimeout;
+    int m_iOPT_RetransmitAlgo;
+
+    int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
+    int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
+    bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
+    int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
+                                                 // 0: use internally estimated input bandwidth
+    int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
+    bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
+    int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
+
+public:
+    bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
+    int64_t maxBandwidth() const { return m_llMaxBW; }
+    int MSS() const { return m_iMSS; }
+    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
+};
+
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
 // anyhow managed separately. After this is done, with a small help with
@@ -372,7 +445,6 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
-    bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
     int RTT() const { return m_iRTT; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
@@ -382,12 +454,7 @@ public: // internal API
     int flowWindowSize() const { return m_iFlowWindowSize; }
     int32_t deliveryRate() const { return m_iDeliveryRate; }
     int bandwidth() const { return m_iBandwidth; }
-    int64_t maxBandwidth() const { return m_llMaxBW; }
-    int MSS() const { return m_iMSS; }
 
-    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
-    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
@@ -432,9 +499,10 @@ public: // internal API
 
     int minSndSize(int len = 0) const
     {
+        int ps = m_config.maxPayloadSize();
         if (len == 0) // wierd, can't use non-static data member as default argument!
-            len = m_iMaxSRTPayloadSize;
-        return m_bMessageAPI ? (len+m_iMaxSRTPayloadSize-1)/m_iMaxSRTPayloadSize : 1;
+            len = ps;
+        return m_config.m_bMessageAPI ? (len+ps-1)/ps : 1;
     }
 
     int32_t makeTS(const time_point& from_time) const
@@ -482,6 +550,8 @@ public: // internal API
     // For SRT_tsbpdLoop
     CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
+
+    CSrtConfig m_config;
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
@@ -762,67 +832,10 @@ private: // Identification
     SRTSOCKET m_SocketID;                        // UDT socket number
     SRTSOCKET m_PeerID;                          // peer id, for multiplexer
 
-    int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
-    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
-
-    // Options
-    int m_iMSS;                                  // Maximum Segment Size, in bytes
-    bool m_bSynSending;                          // Sending syncronization mode
-    bool m_bSynRecving;                          // Receiving syncronization mode
-    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
-    int m_iSndBufSize;                           // Maximum UDT sender buffer size
-    int m_iRcvBufSize;                           // Maximum UDT receiver buffer size
-    linger m_Linger;                             // Linger information on close
-    int m_iUDPSndBufSize;                        // UDP sending buffer size
-    int m_iUDPRcvBufSize;                        // UDP receiving buffer size
-    bool m_bRendezvous;                          // Rendezvous connection mode
-
-    duration m_tdConnTimeOut;    // connect timeout in milliseconds
-    bool m_bDriftTracer;
-    int m_iSndTimeOut;                           // sending timeout in milliseconds
-    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
-    bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
-    int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
-    int m_iIpTTL;
-    int m_iIpToS;
-#ifdef SRT_ENABLE_BINDTODEVICE
-    std::string m_BindToDevice;
-#endif
-    // These fields keep the options for encryption
-    // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
-    // created later and takes values from these.
-    HaiCrypt_Secret m_CryptoSecret;
-    int m_iSndCryptoKeyLen;
-
-    // XXX Consider removing. The m_bDataSender stays here
-    // in order to maintain the HS side selection in HSv4.
-    bool m_bDataSender;
-
     // HSv4 (legacy handshake) support)
     time_point m_tsSndHsLastTime;	    //Last SRT handshake request time
     int      m_iSndHsRetryCnt;       //SRT handshake retries left
 
-    bool m_bMessageAPI;
-    bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
-    int m_iOPT_TsbPdDelay;           // Agent's Rx latency
-    int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.
-    bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
-    int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
-    bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    int m_OPT_GroupConnect;
-    std::string m_sStreamName;
-    int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
-    uint32_t m_uOPT_StabilityTimeout;
-    int m_iOPT_RetransmitAlgo;
-
-    int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
-    int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
-    bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
-    int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
-                                                 // 0: use internally estimated input bandwidth
-    int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
-    bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
-    int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
 #if ENABLE_EXPERIMENTAL_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // group type about-to-be-set in the handshake
 #endif
