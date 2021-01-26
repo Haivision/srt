@@ -127,18 +127,19 @@ of SRT ever created and put into use.
 2. **Restrict**: Defines restrictions on setting the option. The field is empty if the option
 is not settable (see **Dir** column):
 
-    - `pre`: A connecting socket (both as caller and rendezvous) must be set
-prior to calling `srt_connect()` and never changed thereafter. A listener
-socket should be set to "listening" and it will be derived by every socket
-returned by `srt_accept()`.
+	- `pre-bind`: The option cannot be altered on a socket that is already bound (by calling
+`srt_bind()` or any other function doing this, including automatic binding when trying to
+connect, as well as accepted sockets).
 
-    - `pre-bind`: Like `pre`, but the option is not allowed to be altered after
-calling `srt_bind()`.
+    - `pre`: Like pre-bind, but only for a connected socket (including accepted socket). If
+an option was set on a listener socket, it will be set the same on a socket returned by
+`srt_accept()`.
 
-    - `post`: This flag can be changed any time, including after the socket is
-connected (as well as on an accepted socket). Setting this flag on a listening 
-socket is effective only on that socket itself. Note though that there are some
-post-bound options that have important meaning when set prior to connecting.
+    - `post`: The option is unrestricted and can be altered at any time, also when the
+socket is connected and on an accepted socket. Setting this flag on a listening 
+socket is usually derived by the accepted socket, but this isn't a rule for all options.
+Note though that there are some unrestricted options that have important meaning when
+set prior to connecting (different one than for a connected socket).
 
 3. **Type**: The data type of the option (see above).
 
