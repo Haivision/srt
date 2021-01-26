@@ -2127,6 +2127,8 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectReadReady(set<CUDTSocket*>& broken)
         if (ps)
             ready_sockets.push_back(ps);
     }
+    
+    leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
     return ready_sockets;
 }
 
@@ -2314,6 +2316,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
         // Will be filled inside
         const vector<CUDTSocket*> ready_sockets = recv_CollectReadReady(broken);
+        // m_GlobControlLock lifted, m_GroupLock still locked.
+        // Now we can safely do this scoped way.
 
         // Ok, now we need to have some extra qualifications:
         // 1. If a socket has no registry yet, we read anyway, just
@@ -2328,10 +2332,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
         int32_t next_seq = m_RcvBaseSeqNo;
 
-        leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
+        
 
-        // m_GlobControlLock lifted, m_GroupLock still locked.
-        // Now we can safely do this scoped way.
 
         if (m_bClosing)
         {

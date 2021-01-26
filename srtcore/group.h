@@ -668,6 +668,9 @@ private:
     std::vector<CUDTSocket*> recv_CollectNonBroken(std::set<CUDTSocket*>& broken);
 
     /// The function polls alive member sockets and retrieves a list of read-ready.
+    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
+    ///
     /// @returns list of read-ready sockets
     /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
     /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
