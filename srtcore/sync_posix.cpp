@@ -114,8 +114,18 @@ int64_t get_cpu_frequency()
     return frequency;
 }
 
-const int64_t s_cpu_frequency = get_cpu_frequency();
+int caclulate_subsecond_signs(int64_t ticks_per_us)
+{
+    int signs = 0;
+    while (ticks_per_us /= 10) ++signs;
+    return signs;
+}
 
+const int64_t s_cpu_ticks_per_us = get_cpu_frequency();
+
+const int s_clock_subsecond_signs = caclulate_subsecond_signs(s_cpu_ticks_per_us);
+
+int clock_decimal_precision() { return s_clock_subsecond_signs; }
 
 } // namespace sync
 } // namespace srt
@@ -155,32 +165,32 @@ srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
 
 int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency;
+    return t.count() / s_cpu_ticks_per_us;
 }
 
 int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency / 1000;
+    return t.count() / s_cpu_ticks_per_us / 1000;
 }
 
 int64_t srt::sync::count_seconds(const steady_clock::duration& t)
 {
-    return t.count() / s_cpu_frequency / 1000000;
+    return t.count() / s_cpu_ticks_per_us / 1000000;
 }
 
 srt::sync::steady_clock::duration srt::sync::microseconds_from(int64_t t_us)
 {
-    return steady_clock::duration(t_us * s_cpu_frequency);
+    return steady_clock::duration(t_us * s_cpu_ticks_per_us);
 }
 
 srt::sync::steady_clock::duration srt::sync::milliseconds_from(int64_t t_ms)
 {
-    return steady_clock::duration((1000 * t_ms) * s_cpu_frequency);
+    return steady_clock::duration((1000 * t_ms) * s_cpu_ticks_per_us);
 }
 
 srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
 {
-    return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
+    return steady_clock::duration((1000000 * t_s) * s_cpu_ticks_per_us);
 }
 
 srt::sync::Mutex::Mutex()

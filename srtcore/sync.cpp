@@ -34,26 +34,22 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     if (is_zero(timestamp))
     {
         // Use special string for 0
-        return "00:00:00.000000";
+        return "00:00:00.000000 [STD]";
     }
 
-    const uint64_t total_us  = count_microseconds(timestamp.time_since_epoch());
-    const uint64_t us        = total_us % 1000000;
-    const uint64_t total_sec = total_us / 1000000;
-
-    const uint64_t days  = total_sec / (60 * 60 * 24);
+    const int decimals = clock_decimal_precision();
+    const uint64_t total_sec = count_seconds(timestamp.time_since_epoch());
+    const uint64_t days = total_sec / (60 * 60 * 24);
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
-
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-
     ostringstream out;
     if (days)
         out << days << "D ";
-    out << setfill('0') << setw(2) << hours << ":" 
-        << setfill('0') << setw(2) << minutes << ":" 
-        << setfill('0') << setw(2) << seconds << "." 
-        << setfill('0') << setw(6) << us << " [STD]";
+    out << setfill('0') << setw(2) << hours << ":"
+        << setfill('0') << setw(2) << minutes << ":"
+        << setfill('0') << setw(2) << seconds << "."
+        << setfill('0') << setw(decimals) << timestamp.time_since_epoch().count() << " [STD]";
     return out.str();
 }
 
