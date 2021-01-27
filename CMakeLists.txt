@@ -8,11 +8,15 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-# XXX This can be potentially done in future, but there still exist
-# some dependent project using cmake 2.8 - this can't be done this way.
-#cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.4.2")
-project(SRT C CXX)
+set (SRT_VERSION 1.4.2)
+# CMake version 3.0 introduced the VERSION option of the project() command
+# to specify a project version as well as the name.
+if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
+  project(SRT C CXX)
+else()
+  cmake_policy(SET CMP0048 NEW)
+  project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
+endif()
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
@@ -43,7 +47,7 @@ if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
 
-set (SRT_VERSION 1.4.2)
+# Sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
 set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
@@ -774,8 +778,6 @@ MafReadDir(srtcore filelist.maf
 	PROTECTED_HEADERS HEADERS_srt
 	PRIVATE_HEADERS HEADERS_srt_private
 )
-
-message(STATUS "SRT Sources: ${SOURCES_srt}")
 
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
