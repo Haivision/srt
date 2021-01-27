@@ -230,9 +230,8 @@ private:
 
       int32_t m_iMsgNoBitset;           // message number
       int32_t m_iSeqNo;                 // sequence number for scheduling
-      time_point m_tsOriginTime;        // original request time
+      time_point m_tsTimestamp;         // externally provided source time or the time when a packet was added to the buffer (in us since epoch)
       time_point m_tsRexmitTime;        // packet retransmission time
-      uint64_t m_llSourceTime_us;
       int m_iTTL;                       // time to live (milliseconds)
 
       Block* m_pNext;                   // next block
@@ -268,7 +267,7 @@ private:
    int m_iCount;                        // number of used blocks
 
    int m_iBytesCount;                   // number of payload bytes in queue
-   time_point m_tsLastOriginTime;
+   time_point m_tsLastTimestamp;
 
    AvgBufSize m_mavg;
 
