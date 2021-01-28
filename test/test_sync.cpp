@@ -586,7 +586,7 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[STD\\]");
+        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STD\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_LE(sm.size(), 6);
@@ -595,10 +595,10 @@ TEST(Sync, FormatTime)
 
         // Day may be missing if zero
         const long long d = sm[1].matched ? std::stoi(sm[1]) : 0;
-        const long long h = std::stoi(sm[2]);
-        const long long m = std::stoi(sm[3]);
-        const long long s = std::stoi(sm[4]);
-        const long long u = std::stoi(sm[5]);
+        const long long h = std::stoll(sm[2]);
+        const long long m = std::stoll(sm[3]);
+        const long long s = std::stoll(sm[4]);
+        const long long u = std::stoll(sm[5]);
 
         return u + s * 1000000 + m * 60000000 + h * 60 * 60 * 1000000 + d * 24 * 60 * 60 * 1000000;
     };
