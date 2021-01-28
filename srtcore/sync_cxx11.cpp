@@ -39,7 +39,7 @@ int pow10()
 }
 }
 
-int clock_decimal_precision()
+int srt::sync::clock_decimal_precision()
 {
     const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
     const int     decimals      = pow10<ticks_per_sec>();
