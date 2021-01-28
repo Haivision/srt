@@ -9,17 +9,21 @@
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 set (SRT_VERSION 1.4.2)
+
+set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
 if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
   project(SRT C CXX)
+  # Sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  set_version_variables(SRT_VERSION ${SRT_VERSION})
 else()
   cmake_policy(SET CMP0048 NEW)
+  # Also sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
   project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
-set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-include(haiUtil)
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -46,9 +50,6 @@ set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
 if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
-
-# Sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
-set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
