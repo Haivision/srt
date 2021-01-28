@@ -114,7 +114,7 @@ int64_t get_cpu_frequency()
     return frequency;
 }
 
-int caclulate_subsecond_signs(int64_t ticks_per_us)
+static int count_subsecond_precision(int64_t ticks_per_us)
 {
     int signs = 0;
     while (ticks_per_us /= 10) ++signs;
@@ -123,7 +123,7 @@ int caclulate_subsecond_signs(int64_t ticks_per_us)
 
 const int64_t s_cpu_ticks_per_us = get_cpu_frequency();
 
-const int s_clock_subsecond_signs = caclulate_subsecond_signs(s_cpu_ticks_per_us);
+const int s_clock_subsecond_signs = count_subsecond_precision(s_cpu_ticks_per_us);
 
 int clock_decimal_precision() { return s_clock_subsecond_signs; }
 

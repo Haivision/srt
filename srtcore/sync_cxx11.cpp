@@ -22,6 +22,7 @@
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace {
 template <int val>
 int pow10();
 
@@ -36,10 +37,11 @@ int pow10()
 {
     return 1 + pow10<val / 10>();
 }
+}
 
 int clock_decimal_precision()
 {
-    const int64_t ticks_per_sec = (steady_clock::period::den / steady_clock::period::num);
+    const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
     const int     decimals      = pow10<ticks_per_sec>();
     return decimals;
 }
