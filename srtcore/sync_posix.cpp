@@ -125,7 +125,7 @@ const int64_t s_clock_ticks_per_us = get_cpu_frequency();
 
 const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_per_us);
 
-int clock_subsecond_precision() { return s_clock_subsecond_precision; }
+int clockSubsecondPrecision() { return s_clock_subsecond_precision; }
 
 } // namespace sync
 } // namespace srt
