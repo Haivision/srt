@@ -16,11 +16,11 @@ include(haiUtil) # needed for set_version_variables
 # to specify a project version as well as the name.
 if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
   project(SRT C CXX)
-  # Sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  # Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
   set_version_variables(SRT_VERSION ${SRT_VERSION})
 else()
   cmake_policy(SET CMP0048 NEW)
-  # Also sets SRT_VERSION_MJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
   project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
@@ -1202,8 +1202,6 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	MafReadDir(test filelist.maf
 		SOURCES SOURCES_unittests
 	)
-	
-	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
