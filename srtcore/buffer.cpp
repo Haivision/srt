@@ -195,7 +195,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     if (len <= 0)
     {
         LOGC(bslog.Error,
-              log << "IPE: addBuffer: %" << w_seqno << " #" << w_msgno << " non-positive message length " << len);
+             log << "IPE: addBuffer: %" << w_seqno << " #" << w_msgno << " invalid message length " << len);
         return;
     }
 
