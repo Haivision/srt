@@ -34,7 +34,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     if (is_zero(timestamp))
     {
         // Use special string for 0
-        return "00:00:00.000000 [STD]";
+        return "00:00:00.000000 [STDY]";
     }
 
     const int decimals = clock_subsecond_precision();
@@ -49,7 +49,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     out << setfill('0') << setw(2) << hours << ":"
         << setfill('0') << setw(2) << minutes << ":"
         << setfill('0') << setw(2) << seconds << "."
-        << setfill('0') << setw(decimals) << timestamp.time_since_epoch().count() << " [STD]";
+        << setfill('0') << setw(decimals) << timestamp.time_since_epoch().count() << " [STDY]";
     return out.str();
 }
 
@@ -66,7 +66,7 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     strftime(tmp_buf, 512, "%X.", &tm);
 
     ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYS]";
+    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
     return out.str();
 }
 
