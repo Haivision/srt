@@ -220,7 +220,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 /// Function return number of decimals in a subsecond precision.
 /// E.g. for a microsecond accuracy of steady_clock the return would be 6.
 /// For a nanosecond accuracy of the steady_clock the return value would be 9.
-int clock_decimal_precision();
+int clock_subsecond_precision();
 
 #if ENABLE_STDCXX_SYNC
 

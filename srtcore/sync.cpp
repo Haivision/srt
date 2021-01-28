@@ -37,7 +37,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
         return "00:00:00.000000 [STD]";
     }
 
-    const int decimals = clock_decimal_precision();
+    const int decimals = clock_subsecond_precision();
     const uint64_t total_sec = count_seconds(timestamp.time_since_epoch());
     const uint64_t days = total_sec / (60 * 60 * 24);
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
