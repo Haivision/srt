@@ -116,7 +116,7 @@ int64_t get_cpu_frequency()
 
 static int count_subsecond_precision(int64_t ticks_per_us)
 {
-    int signs = 0;
+    int signs = 6; // starting from 1 us
     while (ticks_per_us /= 10) ++signs;
     return signs;
 }
