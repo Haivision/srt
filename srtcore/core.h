@@ -379,7 +379,7 @@ public: // internal API
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
     srt::sync::steady_clock::time_point LastRspTime() const { return m_tsLastRspTime; }
-    srt::sync::steady_clock::time_point ActivatedSince() const { return m_tsActivationSince; }
+    srt::sync::steady_clock::time_point FreshActivationStart() const { return m_tsFreshActivation; }
 
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
     int flowWindowSize() const { return m_iFlowWindowSize; }

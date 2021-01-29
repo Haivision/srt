@@ -2995,7 +2995,7 @@ public:
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.LastRspTime()) << ",";
         m_fout << state << ",";
-        m_fout << (srt::sync::is_zero(u.ActivatedSince()) ? -1 : (count_microseconds(currtime - u.ActivatedSince()))) << "\n";
+        m_fout << (srt::sync::is_zero(u.FreshActivationStart()) ? -1 : (count_microseconds(currtime - u.FreshActivationStart()))) << "\n";
         m_fout.flush();
     }
 
@@ -3051,8 +3051,8 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
     // therefore it is incorrect to use the dymanic timeout.
     const uint32_t latency_us = u.latency_us();
     const uint32_t activation_period_us = latency_us + 50000;
-    const bool is_activation_phase = !is_zero(u.ActivatedSince())
-        && (count_microseconds(currtime - u.ActivatedSince()) < activation_period_us);
+    const bool is_activation_phase = !is_zero(u.FreshActivationStart())
+        && (count_microseconds(currtime - u.FreshActivationStart()) < activation_period_us);
 
     const int32_t min_stability_us = 60000; // Minimum Link Stability Timeout: 60ms.
     const int peer_idle_tout_us = u.peer_idle_tout_ms() * 1000;
@@ -3062,7 +3062,7 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
         ? min<int64_t>(max<int64_t>(min_stability_us, latency_us), peer_idle_tout_us) // activation phase
         : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.RTT() + 4 * u.RTTVar()), latency_us);
     
-    // TODO: td_response = currtime - max(u.LastRspTime(), u.ActivatedSince());
+    // TODO: td_response = currtime - max(u.LastRspTime(), u.FreshActivationStart());
     // TODO: remove m_iOptGroupStabTimeout
     const steady_clock::duration td_response = currtime - u.LastRspTime();
     if (count_microseconds(td_response) > stability_tout_us)
@@ -3120,7 +3120,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
 
         // For some cases
         if (is_stable > 0)
-            u.m_tsActivationSince = steady_clock::time_point();
+            u.m_tsFreshActivation = steady_clock::time_point();
     }
     else
     {
@@ -3856,7 +3856,7 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
         }
         CUDT&                  ce = d->ps->core();
         steady_clock::duration td(0);
-        if (!is_zero(ce.m_tsActivationSince) && sendBackup_CheckRunningLinkStable(ce, currtime) != 1)
+        if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime) != 1)
         {
             HLOGC(gslog.Debug,
                     log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td));
