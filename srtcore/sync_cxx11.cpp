@@ -18,6 +18,36 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 //
+// Clock frequency helpers
+//
+////////////////////////////////////////////////////////////////////////////////
+
+namespace {
+template <int val>
+int pow10();
+
+template <>
+int pow10<10>()
+{
+    return 1;
+}
+
+template <int val>
+int pow10()
+{
+    return 1 + pow10<val / 10>();
+}
+}
+
+int srt::sync::clockSubsecondPrecision()
+{
+    const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
+    const int     decimals      = pow10<ticks_per_sec>();
+    return decimals;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
 // SyncCond (based on stl chrono C++11)
 //
 ////////////////////////////////////////////////////////////////////////////////
