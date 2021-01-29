@@ -2983,7 +2983,8 @@ public:
         m_fout.close();
     }
 
-    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, int64_t stability_tmo_us, const std::string& state, uint16_t weight)
+    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint32_t activation_period_us,
+               int64_t stability_tmo_us, const std::string& state, uint16_t weight)
     {
         srt::sync::ScopedLock lck(m_mtx);
         create_file();
@@ -2997,7 +2998,8 @@ public:
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.LastRspTime()) << ",";
         m_fout << state << ",";
-        m_fout << (srt::sync::is_zero(u.FreshActivationStart()) ? -1 : (count_microseconds(currtime - u.FreshActivationStart()))) << "\n";
+        m_fout << (srt::sync::is_zero(u.FreshActivationStart()) ? -1 : (count_microseconds(currtime - u.FreshActivationStart()))) << ",";
+        m_fout << activation_period_us << "\n";
         m_fout.flush();
     }
 
@@ -3005,7 +3007,7 @@ private:
     void print_header()
     {
         //srt::sync::ScopedLock lck(m_mtx);
-        m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation\n";
+        m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation,usActivationPeriod\n";
     }
 
     void create_file()
@@ -3054,8 +3056,9 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
     // therefore it is incorrect to use the dymanic timeout.
     const uint32_t latency_us = u.peer_latency_us();
     const uint32_t activation_period_us = latency_us + 50000;
+    //const int64_t since_activation_us = count_microseconds(currtime - u.FreshActivationStart());
     const bool is_activation_phase = !is_zero(u.FreshActivationStart())
-        && (count_microseconds(currtime - u.FreshActivationStart()) < activation_period_us);
+        && (count_microseconds(currtime - u.FreshActivationStart()) <= activation_period_us);
 
     const int32_t min_stability_us = 60000; // Minimum Link Stability Timeout: 60ms.
     const int peer_idle_tout_us = u.peer_idle_tout_ms() * 1000;
@@ -3071,14 +3074,14 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
     if (count_microseconds(td_response) > stability_tout_us)
     {
 #if SRT_DEBUG_BONDING_STATES
-        s_stab_trace.trace(u, currtime, stability_tout_us, "UNSTABLE", weight);
+        s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION-UNSTABLE" : "UNSTABLE", weight);
 #endif
         return -1;
     }
 
     // u.LastRspTime() > currtime is alwats true due to the very first check above in this function
 #if SRT_DEBUG_BONDING_STATES
-    s_stab_trace.trace(u, currtime, stability_tout_us, "STABLE", weight);
+    s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION" : "STABLE", weight);
 #endif
     return is_activation_phase ? 0 : 1;
 }
