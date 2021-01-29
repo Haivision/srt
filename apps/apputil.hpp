@@ -333,6 +333,7 @@ struct SrtStatData
     std::string longname;
 
     SrtStatData(SrtStatCat cat, std::string n, std::string l): category(cat), name(n), longname(l) {}
+    virtual ~SrtStatData() {}
 
     virtual void PrintValue(std::ostream& str, const CBytePerfMon& mon) = 0;
 };
@@ -379,7 +380,6 @@ public:
 
 protected:
     std::map<std::string, std::string> options;
-
 };
 
 extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;

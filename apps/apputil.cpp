@@ -405,7 +405,6 @@ struct SrtStatsTableInit
         STAT(RECV, bytesLost, byteRcvLoss);
         STAT(RECV, bytesDropped, byteRcvDrop);
         STAT(RECV, mbitRate, mbpsRecvRate);
-
     }
 } g_SrtStatsTableInit (g_SrtStatsTable);
 
