@@ -509,7 +509,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     case SRTO_BINDTODEVICE:
 #ifdef SRT_ENABLE_BINDTODEVICE
-        if (m_bConnected)
+        if (m_bOpened)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         {
@@ -559,14 +559,14 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_TSBPDMODE:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bOPT_TsbPd = cast_optval<bool>(optval, optlen);
         break;
 
     case SRTO_LATENCY:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
@@ -574,21 +574,21 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_RCVLATENCY:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_TsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_PEERLATENCY:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
         break;
 
     case SRTO_TLPKTDROP:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bOPT_TLPktDrop = cast_optval<bool>(optval, optlen);
@@ -685,7 +685,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_NAKREPORT:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_bRcvNakReport = cast_optval<bool>(optval, optlen);
@@ -792,7 +792,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_TRANSTYPE:
-        if (m_bConnected)
+        if (m_bConnecting || m_bConnected)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         // XXX Note that here the configuration for SRTT_LIVE
@@ -902,8 +902,8 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 
     case SRTO_IPV6ONLY:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        if (m_bOpened)
+            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
         m_iIpV6Only = cast_optval<int>(optval, optlen);
         break;
