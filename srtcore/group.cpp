@@ -2973,23 +2973,23 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     // buffer gets empty so that we can make sure that KEEPALIVE will be the
     // really last sent for longer time.
     CUDT& u = w_d->ps->core();
-    if (!is_zero(u.m_tsTmpActiveSince))
-    {
-        CSndBuffer* b = u.m_pSndBuffer;
-        if (b && b->getCurrBufSize() == 0)
-        {
-            HLOGC(gslog.Debug,
-                  log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
-            u.m_tsTmpActiveSince = steady_clock::time_point();
+    if (is_zero(u.m_tsTmpActiveSince))
+        return;
 
-            // Send first immediate keepalive. The link is to be turn to IDLE
-            // now so nothing will be sent to it over time and it will start
-            // getting KEEPALIVES since now. Send the first one now to increase
-            // probability that the link will be recognized as IDLE on the
-            // reception side ASAP.
-            int32_t arg = 1;
-            w_d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE, &arg);
-        }
+    CSndBuffer* b = u.m_pSndBuffer;
+    if (b && b->getCurrBufSize() == 0)
+    {
+        HLOGC(gslog.Debug,
+                log << "grp/sendBackup: FRESH IDLE LINK reached empty buffer - setting permanent and KEEPALIVE");
+        u.m_tsTmpActiveSince = steady_clock::time_point();
+
+        // Send first immediate keepalive. The link is to be turn to IDLE
+        // now so nothing will be sent to it over time and it will start
+        // getting KEEPALIVES since now. Send the first one now to increase
+        // probability that the link will be recognized as IDLE on the
+        // reception side ASAP.
+        int32_t arg = 1;
+        w_d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE, &arg);
     }
 }
 
