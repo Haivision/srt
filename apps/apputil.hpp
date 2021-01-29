@@ -380,7 +380,6 @@ public:
 
 protected:
     std::map<std::string, std::string> options;
-
 };
 
 extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;
