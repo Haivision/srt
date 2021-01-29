@@ -2983,13 +2983,15 @@ public:
         m_fout.close();
     }
 
-    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, int64_t stability_tmo_us, const std::string& state)
+    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, int64_t stability_tmo_us, const std::string& state, uint16_t weight)
     {
         srt::sync::ScopedLock lck(m_mtx);
         create_file();
         
         m_fout << srt::sync::FormatTime(currtime) << ",";
         m_fout << u.id() << ",";
+        m_fout << weight << ",";
+        m_fout << u.peer_latency_us() << ",";
         m_fout << u.RTT() << ",";
         m_fout << u.RTTVar() << ",";
         m_fout << stability_tmo_us << ",";
@@ -3003,7 +3005,7 @@ private:
     void print_header()
     {
         //srt::sync::ScopedLock lck(m_mtx);
-        m_fout << "Timepoint,SocketID,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation\n";
+        m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation\n";
     }
 
     void create_file()
@@ -3032,24 +3034,25 @@ private:
 StabilityTracer s_stab_trace;
 #endif
 
+/// TODO: Remove 'weight' parameter. Only needed for logging.
 /// @retval  1 - link is identified as stable
 /// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
 /// @retval -1 - link is identified as unstable
-static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime)
+static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight)
 {
     // There was already a response from peer while we are here.
     // m_tsUnstableSince = 0;
     // Do we need to keep the activation phase?
-    if (currtime <= u.LastRspTime()) {
+    /*if (currtime <= u.LastRspTime()) {
 #if SRT_DEBUG_BONDING_STATES
-        s_stab_trace.trace(u, currtime, -1, "STABLE");
+        s_stab_trace.trace(u, currtime, -1, "STABLE", weight);
 #endif
         return 1;
-    }
+    }*/
 
     // RTT and RTTVar values during activation period are still being refined,
     // therefore it is incorrect to use the dymanic timeout.
-    const uint32_t latency_us = u.latency_us();
+    const uint32_t latency_us = u.peer_latency_us();
     const uint32_t activation_period_us = latency_us + 50000;
     const bool is_activation_phase = !is_zero(u.FreshActivationStart())
         && (count_microseconds(currtime - u.FreshActivationStart()) < activation_period_us);
@@ -3068,14 +3071,14 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
     if (count_microseconds(td_response) > stability_tout_us)
     {
 #if SRT_DEBUG_BONDING_STATES
-        s_stab_trace.trace(u, currtime, stability_tout_us, "UNSTABLE");
+        s_stab_trace.trace(u, currtime, stability_tout_us, "UNSTABLE", weight);
 #endif
         return -1;
     }
 
     // u.LastRspTime() > currtime is alwats true due to the very first check above in this function
 #if SRT_DEBUG_BONDING_STATES
-    s_stab_trace.trace(u, currtime, stability_tout_us, "STABLE");
+    s_stab_trace.trace(u, currtime, stability_tout_us, "STABLE", weight);
 #endif
     return is_activation_phase ? 0 : 1;
 }
@@ -3107,7 +3110,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
               << "}");
 
 
-    const int is_stable = sendBackup_CheckRunningLinkStable(u, currtime);
+    const int is_stable = sendBackup_CheckRunningLinkStable(u, currtime, d->weight);
 
     if (is_stable >= 0)
     {
@@ -3856,7 +3859,7 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
         }
         CUDT&                  ce = d->ps->core();
         steady_clock::duration td(0);
-        if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime) != 1)
+        if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime, d->weight) != 1)
         {
             HLOGC(gslog.Debug,
                     log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td));

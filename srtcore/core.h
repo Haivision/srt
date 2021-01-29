@@ -388,7 +388,7 @@ public: // internal API
     int64_t maxBandwidth() const { return m_llMaxBW; }
     int MSS() const { return m_iMSS; }
 
-    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    uint32_t peer_latency_us() const {return m_iPeerTsbPdDelay_ms * 1000; }
     int peer_idle_tout_ms() const { return m_iOPT_PeerIdleTimeout; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
