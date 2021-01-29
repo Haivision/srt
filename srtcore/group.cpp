@@ -1918,7 +1918,7 @@ struct FLookupSocketWithEvent_LOCKED
     }
 };
 
-vector<CUDTSocket*> CUDTGroup::recv_CollectNonBroken(set<CUDTSocket*>& broken)
+void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream ds;
@@ -1928,8 +1928,7 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectNonBroken(set<CUDTSocket*>& broken)
 #define HCLOG(x) if (false) {}
 #endif
 
-    vector<CUDTSocket*> aliveMembers;
-    aliveMembers.reserve(m_Group.size());
+    alive.reserve(m_Group.size());
 
     HLOGC(grlog.Debug, log << "group/recv: Reviewing member sockets for polling");
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
@@ -1979,58 +1978,29 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectNonBroken(set<CUDTSocket*>& broken)
         // on write, when it's attempting to connect, but now it's connected.
         // This will update the socket with the new event set.
 
-        aliveMembers.push_back(gi->ps);
+        alive.push_back(gi->ps);
         HCLOG(ds << "@" << gi->id << "[READ] ");
     }
 
     HLOGC(grlog.Debug, log << "group/recv: " << ds.str() << " --> EPOLL/SWAIT");
 #undef HCLOG
-
-    return aliveMembers;
 }
 
-vector<CUDTSocket*> CUDTGroup::recv_CollectReadReady(set<CUDTSocket*>& broken)
+vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& aliveMembers, set<CUDTSocket*>& w_broken)
 {
-    // TODO: Function. Get a list of readable (non-broken) sockets.
+    if (aliveMembers.empty())
     {
-        // You can't lock the whole group for that
-        // action because this will result in a deadlock.
-        // Prepare first the list of sockets to be added as connect-pending
-        // and as read-ready, then unlock the group, and then add them to epoll.
-        vector<CUDTSocket*> aliveMembers = recv_CollectNonBroken(broken);
-        const bool still_alive = !aliveMembers.empty();
+        LOGC(grlog.Error, log << "group/recv: all links broken");
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    }
 
-        /* Done at the connecting stage so that it won't be missed.
-
-           int connect_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-           for (vector<SRTSOCKET>::iterator i = connect_pending.begin(); i != connect_pending.end(); ++i)
-           {
-           XXX This is wrong code; this should use the internal function and pass CUDTSocket*
-           epoll_add_usock_INTERNAL(m_RcvEID, i->second, &connect_modes);
-           }
-
-           AND this below additionally for sockets that were so far pending connection,
-           will be now "upgraded" to readable sockets. The epoll adding function for a
-           socket that already is in the eid container will only change the poll flags,
-           but will not re-add it, that is, event reports that are both in old and new
-           flags will survive the operation.
-
-         */
-
-        for (vector<CUDTSocket*>::iterator i = aliveMembers.begin(); i != aliveMembers.end(); ++i)
-        {
-            // NOT using the official srt_epoll_add_usock because this will do socket dispatching,
-            // which requires lock on m_GlobControlLock, while this lock cannot be applied without
-            // first unlocking m_GroupLock.
-            const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-            CUDT::s_UDTUnited.epoll_add_usock_INTERNAL(m_RcvEID, *i, &read_modes);
-        }
-
-        if (!still_alive)
-        {
-            LOGC(grlog.Error, log << "group/recv: all links broken");
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        }
+    for (vector<CUDTSocket*>::const_iterator i = aliveMembers.begin(); i != aliveMembers.end(); ++i)
+    {
+        // NOT using the official srt_epoll_add_usock because this will do socket dispatching,
+        // which requires lock on m_GlobControlLock, while this lock cannot be applied without
+        // first unlocking m_GroupLock.
+        const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+        CUDT::s_UDTUnited.epoll_add_usock_INTERNAL(m_RcvEID, *i, &read_modes);
     }
 
     // Here we need to make an additional check.
@@ -2048,11 +2018,9 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectReadReady(set<CUDTSocket*>& broken)
     // Now the situation is that we don't have any packets
     // waiting for delivery so we need to wait for any to report one.
 
-    // XXX We support blocking mode only at the moment.
     // The non-blocking mode would need to simply check the readiness
     // with only immediate report, and read-readiness would have to
     // be done in background.
-    
 
     // In blocking mode, use m_iRcvTimeOut, which's default value -1
     // means to block indefinitely, also in swait().
@@ -2102,16 +2070,15 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectReadReady(set<CUDTSocket*>& broken)
     FilterIf(
         /*FROM*/ sready.begin(),
         sready.end(),
-        /*TO*/ std::inserter(broken, broken.begin()),
+        /*TO*/ std::inserter(w_broken, w_broken.begin()),
         /*VIA*/ FLookupSocketWithEvent_LOCKED(m_pGlobal, SRT_EPOLL_ERR));
 
     
     // If this set is empty, it won't roll even once, therefore output
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
-
-    vector<CUDTSocket*> ready_sockets;
-
+    vector<CUDTSocket*> w_readReady;
+    w_readReady.reserve(sready.size());
     for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
     {
         if (i->second & SRT_EPOLL_ERR)
@@ -2125,11 +2092,12 @@ vector<CUDTSocket*> CUDTGroup::recv_CollectReadReady(set<CUDTSocket*>& broken)
         SRTSOCKET   id = i->first;
         CUDTSocket* ps = m_pGlobal->locateSocket_LOCKED(id);
         if (ps)
-            ready_sockets.push_back(ps);
+            w_readReady.push_back(ps);
     }
     
     leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
-    return ready_sockets;
+
+    return w_readReady;
 }
 
 void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequence)
@@ -2314,8 +2282,12 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         //bool   still_alive = false;
         const size_t size = m_Group.size();
 
-        // Will be filled inside
-        const vector<CUDTSocket*> ready_sockets = recv_CollectReadReady(broken);
+        // Prepare first the list of sockets to be added as connect-pending
+        // and as read-ready, then unlock the group, and then add them to epoll.
+        vector<CUDTSocket*> aliveMembers;
+        recv_CollectAliveAndBroken(aliveMembers, broken);
+
+        const vector<CUDTSocket*> ready_sockets = recv_WaitForReadReady(aliveMembers, broken);
         // m_GlobControlLock lifted, m_GroupLock still locked.
         // Now we can safely do this scoped way.
 
@@ -2331,9 +2303,6 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // sequence will be simply defined by the fact that `output` is nonempty.
 
         int32_t next_seq = m_RcvBaseSeqNo;
-
-        
-
 
         if (m_bClosing)
         {
