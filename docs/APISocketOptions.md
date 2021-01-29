@@ -194,7 +194,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 
 | Option Name                                            | Since | Restrict | Type      | Units   | Default       | Range    | Dir |Entity |
 | :----------------------------------------------------- | :---: | :------: | :-------: | :-----: | :-----------: | :------: |:---:|:-----:|
-| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)              | 1.4.2 | pre      | `string`  |         |               |          | RW  | GSD+  |
+| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)              | 1.4.2 | pre-bind | `string`  |         |               |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                  | 1.3.0 | pre      | `string`  |         | "live"        | *        | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                    | 1.1.2 | post     | `int32_t` | ms      | 3000          | 0..      | W   | GSD+  |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                | 1.4.2 | post     | `bool`    |         | true          |          | RW  | GSD   |
@@ -259,7 +259,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 
 | OptName               | Since | Restrict | Type     | Units  | Default  | Range  | Dir |Entity|
 | --------------------- | ----- | -------- | -------- | ------ | -------- | ------ |-----|------|
-| `SRTO_BINDTODEVICE`   | 1.4.2 | pre      | `string` |        |          |        | RW  | GSD+ |
+| `SRTO_BINDTODEVICE`   | 1.4.2 | pre-bind | `string` |        |          |        | RW  | GSD+ |
 
 Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
 This effectively limits the packets received by this socket to only those
