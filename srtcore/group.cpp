@@ -290,7 +290,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
-    , m_uOPT_StabilityTimeout(CUDT::COMM_DEF_STABILITY_TIMEOUT_US)
+    , m_uOPT_StabilityTimeout(CSrtConfig::COMM_DEF_STABILITY_TIMEOUT_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
@@ -422,7 +422,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         const int val = cast_optval<int>(optval, optlen);
 
         // Search if you already have SRTO_PEERIDLETIMEO set
-        int                          idletmo = CUDT::COMM_RESPONSE_TIMEOUT_MS;
+        int                          idletmo = CSrtConfig::COMM_RESPONSE_TIMEOUT_MS;
         vector<ConfigItem>::iterator f =
             find_if(m_config.begin(), m_config.end(), ConfigItem::OfType(SRTO_PEERIDLETIMEO));
         if (f != m_config.end())
@@ -525,16 +525,16 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // the option is altered on the group.
 
     // SRTO_RCVSYN
-    m_bSynRecving = u->m_bSynRecving;
+    m_bSynRecving = u->m_config.m_bSynRecving;
 
     // SRTO_SNDSYN
-    m_bSynSending = u->m_bSynSending;
+    m_bSynSending = u->m_config.m_bSynSending;
 
     // SRTO_RCVTIMEO
-    m_iRcvTimeOut = u->m_iRcvTimeOut;
+    m_iRcvTimeOut = u->m_config.m_iRcvTimeOut;
 
     // SRTO_SNDTIMEO
-    m_iSndTimeOut = u->m_iSndTimeOut;
+    m_iSndTimeOut = u->m_config.m_iSndTimeOut;
 
     // Ok, this really is disgusting, but there's only one way
     // to properly do it. Would be nice to have some more universal
@@ -547,14 +547,15 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // to be potentially replicated on the socket. So both pre
     // and post options apply.
 
-#define IM(option, field) importOption(m_config, option, u->field)
+#define IM(option, field) importOption(m_config, option, u->m_config.field)
+#define IMF(option, field) importOption(m_config, option, u->field)
 
     IM(SRTO_MSS, m_iMSS);
     IM(SRTO_FC, m_iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_iSndBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_iRcvBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_SNDBUF, u->m_config.m_iSndBufSize * (u->m_config.m_iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_RCVBUF, u->m_config.m_iRcvBufSize * (u->m_config.m_iMSS - CPacket::UDP_HDR_SIZE));
 
     IM(SRTO_LINGER, m_Linger);
     IM(SRTO_UDP_SNDBUF, m_iUDPSndBufSize);
@@ -574,8 +575,10 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_PEERLATENCY, m_iOPT_PeerTsbPdDelay);
     IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
     IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
-    IM(SRTO_TLPKTDROP, m_bTLPktDrop);
-    IM(SRTO_STREAMID, m_sStreamName);
+    IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
+
+    importOption(m_config, SRTO_STREAMID, u->m_config.m_StreamName.str());
+
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);
     IM(SRTO_MINVERSION, m_lMinimumPeerSrtVersion);
@@ -583,15 +586,16 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_IPV6ONLY, m_iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, m_iOPT_PeerIdleTimeout);
     IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
-    IM(SRTO_PACKETFILTER, m_OPT_PktFilterConfigString);
+
+    importOption(m_config, SRTO_PACKETFILTER, u->m_config.m_PacketFilterConfig.str());
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
-    if (u->m_CryptoSecret.len)
+    if (u->m_config.m_CryptoSecret.len)
     {
-        string password((const char*)u->m_CryptoSecret.str, u->m_CryptoSecret.len);
+        string password((const char*)u->m_config.m_CryptoSecret.str, u->m_config.m_CryptoSecret.len);
         m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), password.size()));
     }
 
@@ -609,6 +613,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // are assigned to configurable items.
 
 #undef IM
+#undef IMF
 }
 
 bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
@@ -674,7 +679,7 @@ inline int fillValue(void* optval, int len, V value)
 
 static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 {
-    static const linger def_linger = {1, CUDT::DEF_LINGER_S};
+    static const linger def_linger = {1, CSrtConfig::DEF_LINGER_S};
     switch (optname)
     {
     default:
@@ -692,7 +697,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(16);
 
     case SRTO_MSS:
-        RD(CUDT::DEF_MSS);
+        RD(CSrtConfig::DEF_MSS);
 
     case SRTO_SNDSYN:
         RD(true);
@@ -701,18 +706,18 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     case SRTO_ISN:
         RD(SRT_SEQNO_NONE);
     case SRTO_FC:
-        RD(CUDT::DEF_FLIGHT_SIZE);
+        RD(CSrtConfig::DEF_FLIGHT_SIZE);
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue((pw_optval), w_optlen, CUDT::DEF_BUFFER_SIZE * (CUDT::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
         break;
 
     case SRTO_LINGER:
         RD(def_linger);
     case SRTO_UDP_SNDBUF:
     case SRTO_UDP_RCVBUF:
-        RD(CUDT::DEF_UDP_BUFFER_SIZE);
+        RD(CSrtConfig::DEF_UDP_BUFFER_SIZE);
     case SRTO_RENDEZVOUS:
         RD(false);
     case SRTO_SNDTIMEO:
@@ -3827,11 +3832,11 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(const vector<gli_t>& unstableLi
         CUDT&                  ce = d->ps->core();
         steady_clock::duration td(0);
         if (!is_zero(ce.m_tsTmpActiveSince) &&
-                count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_uOPT_StabilityTimeout)
+                count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_config.m_uOPT_StabilityTimeout)
         {
             HLOGC(gslog.Debug,
                     log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                    << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                    << ce.m_config.m_uOPT_StabilityTimeout << "(stability timeout)");
             continue;
         }
 

@@ -240,9 +240,11 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPSTABTIMEO,      // Stability timeout (backup groups) in [us]
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
 #endif
-   SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
+   SRTO_BINDTODEVICE = 59,   // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
-   SRTO_RETRANSMITALGO = 61  // An option to select packet retransmission algorithm
+   SRTO_RETRANSMITALGO = 61,  // An option to select packet retransmission algorithm
+
+   SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
 
 
