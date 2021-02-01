@@ -140,13 +140,12 @@ struct CSrtConfigSetter
 template <size_t SIZE>
 class StringStorage
 {
-    char stor[SIZE];
+    char stor[SIZE+1];
     uint16_t len;
 
     // NOTE: default copying allowed.
 
 public:
-
     StringStorage()
     {
         len = 0;
@@ -193,8 +192,8 @@ class CSrtConfig: public CSrtMuxerConfig
 {
     typedef srt::sync::steady_clock::time_point time_point;
     typedef srt::sync::steady_clock::duration duration;
-public:
 
+public:
     static const int
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
@@ -714,6 +713,8 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
         co.m_CryptoSecret.len = (optlen <= (int)sizeof(co.m_CryptoSecret.str) ? optlen : (int)sizeof(co.m_CryptoSecret.str));
         memcpy((co.m_CryptoSecret.str), optval, co.m_CryptoSecret.len);
 #else
+        (void)co; // prevent warning
+        (void)optval;
         if (optlen == 0)
             return; // Allow to set empty passphrase if no encryption supported.
 
@@ -777,6 +778,9 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
 
         co.m_iSndCryptoKeyLen = v;
 #else
+        (void)co; // prevent warning
+        (void)optval;
+        (void)optlen;
         LOGC(aclog.Error, log << "SRTO_PBKEYLEN: encryption not enabled at compile time");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif

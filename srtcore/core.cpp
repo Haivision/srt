@@ -2480,7 +2480,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         // When encryption is not enabled at compile time, behave as if encryption wasn't set,
         // so accordingly to StrictEncryption flag.
 
-        if (m_bEnforcedEnc)
+        if (m_config.m_bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,
