@@ -593,6 +593,7 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        using namespace srt_logging;
 #ifdef SRT_ENABLE_BINDTODEVICE
         using namespace std;
         using namespace srt_logging;
@@ -610,6 +611,9 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 
         co.m_BindToDevice = val;
 #else
+        (void)co; // prevent warning
+        (void)optval;
+        (void)optlen;
         LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
