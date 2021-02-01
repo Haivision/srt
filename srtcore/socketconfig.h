@@ -702,6 +702,7 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        using namespace srt_logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         // Password must be 10-80 characters.
         // Or it can be empty to clear the password.
