@@ -351,6 +351,11 @@ string OptionHelpItem(const OptionName& o)
 
 // Stats module
 
+// Note: std::put_time is supported only in GCC 5 and higher
+#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ >= 5)
+#define HAS_PUT_TIME
+#endif
+
 template <class TYPE>
 inline SrtStatData* make_stat(SrtStatCat cat, const string& name, const string& longname,
         TYPE CBytePerfMon::*field)
@@ -420,14 +425,53 @@ string srt_json_cat_names [] = {
     "recv"
 };
 
+#ifdef HAS_PUT_TIME
+        // Follows ISO 8601
+std::string SrtStatsWriter::print_timestamp()
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    const auto   systime_now = system_clock::now();
+    const time_t time_now    = system_clock::to_time_t(systime_now);
+
+    std::ostringstream output;
+
+    // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
+    const tm tm_now = SysLocalTime(time_now);
+    output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
+    const auto    since_epoch = systime_now.time_since_epoch();
+    const seconds s           = duration_cast<seconds>(since_epoch);
+    output << duration_cast<microseconds>(since_epoch - s).count();
+    output << std::put_time(&tm_now, "%z");
+    return output.str();
+}
+#else
+
+// This is a stub. The error when not defining it would be too
+// misleading, so this stub will work if someone mistakenly adds
+// the item to the output format without checking that HAS_PUT_TIME.
+string SrtStatsWriter::print_timestamp()
+{ return "<NOT IMPLEMENTED>"; }
+#endif // HAS_PUT_TIME
+
+
 class SrtStatsJson : public SrtStatsWriter
 {
-    static string keyspec(const string& name)
+    static string quotekey(const string& name)
     {
         if (name == "")
             return "";
 
         return R"(")" + name + R"(":)";
+    }
+
+    static string quote(const string& name)
+    {
+        if (name == "")
+            return "";
+
+        return R"(")" + name + R"(")";
     }
 
 public: 
@@ -446,10 +490,17 @@ public:
         SrtStatCat cat = SSC_GEN;
 
         // Do general manually
-        output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr;
+        output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr;
 
         // SID is displayed manually
-        output << pretty_tab << keyspec("sid") << sid;
+        output << pretty_tab << quotekey("sid") << sid;
+
+        // Extra Timepoint is also displayed manually
+#ifdef HAS_PUT_TIME
+        // NOTE: still assumed SSC_GEN category
+        output << "," << pretty_cr << pretty_tab
+            << quotekey("timepoint") << quote(print_timestamp());
+#endif
 
         // Now continue with fields as specified in the table
         for (auto& i: g_SrtStatsTable)
@@ -476,13 +527,13 @@ public:
                 if (cat != SSC_GEN)
                     output << pretty_tab;
 
-                output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
+                output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
                 if (cat != SSC_GEN)
                     output << pretty_tab;
             }
 
             // Print the current field
-            output << keyspec(i->name);
+            output << quotekey(i->name);
             output << qt;
             i->PrintValue(output, mon);
             output << qt;
@@ -518,10 +569,6 @@ public:
 
     string WriteStats(int sid, const CBytePerfMon& mon) override
     {
-        // Note: std::put_time is supported only in GCC 5 and higher
-#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ >= 5)
-#define HAS_PUT_TIME
-#endif
         std::ostringstream output;
 
         // Header
@@ -547,25 +594,7 @@ public:
 
 #ifdef HAS_PUT_TIME
         // HDR: Timepoint
-        // Follows ISO 8601
-        auto print_timestamp = [&output]() {
-            using namespace std;
-            using namespace std::chrono;
-
-            const auto   systime_now = system_clock::now();
-            const time_t time_now    = system_clock::to_time_t(systime_now);
-
-            // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
-            const tm tm_now = SysLocalTime(time_now);
-            output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
-            const auto    since_epoch = systime_now.time_since_epoch();
-            const seconds s           = duration_cast<seconds>(since_epoch);
-            output << duration_cast<microseconds>(since_epoch - s).count();
-            output << std::put_time(&tm_now, "%z");
-            output << ",";
-        };
-
-        print_timestamp();
+        output << print_timestamp() << ",";
 #endif // HAS_PUT_TIME
 
         // HDR: Time,SocketID
