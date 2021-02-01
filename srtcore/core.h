@@ -1189,8 +1189,8 @@ public:
     static const size_t MAX_SID_LENGTH = 512;
 
 private: // Timers functions
-    time_point m_tsTmpActiveSince; // time since temporary activated, or 0 if not temporary activated
-    time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
+    time_point m_tsFreshActivation; // time of fresh activation of the link, or 0 if past the activation phase or idle
+    time_point m_tsUnstableSince;   // time since unexpected ACK delay experienced, or 0 if link seems healthy
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,

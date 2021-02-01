@@ -1556,7 +1556,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveSince = steady_clock::time_point();
+    m_tsFreshActivation = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -5763,7 +5763,7 @@ void *CUDT::tsbpd(void *param)
 
         if (!is_zero(tsbpdtime))
         {
-            const steady_clock::duration timediff = tsbpdtime - steady_clock::now();
+            IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsbpdtime - steady_clock::now());
             /*
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
