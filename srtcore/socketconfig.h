@@ -588,7 +588,6 @@ struct CSrtConfigSetter<SRTO_IPTOS>
     }
 };
 
-#ifdef SRT_ENABLE_BINDTODEVICE
 template<>
 struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 {
@@ -616,7 +615,6 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 #endif
     }
 };
-#endif
 
 template<>
 struct CSrtConfigSetter<SRTO_INPUTBW>
