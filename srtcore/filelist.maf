@@ -65,6 +65,7 @@ packet.h
 sync.h
 queue.h
 congctl.h
+socketconfig.h
 srt_compat.h
 threadname.h
 utilities.h
