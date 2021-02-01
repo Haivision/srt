@@ -3057,9 +3057,9 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
             {
                 check_stability = false;
                 HLOGC(gslog.Debug,
-                    log << "grp/sendBackup: link @" << d->id
-                        << " activated after ACK, "
-                           "not checking for stability");
+                      log << "grp/sendBackup: link @" << d->id
+                          << " activated after ACK, "
+                             "not checking for stability");
             }
             else
             {
