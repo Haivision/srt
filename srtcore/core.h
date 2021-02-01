@@ -301,11 +301,6 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool isOPT_TsbPd() const { return m_config.m_bOPT_TsbPd; }
-    int64_t maxBandwidth() const { return m_config.m_llMaxBW; }
-    int MSS() const { return m_config.m_iMSS; }
-    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
-    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() const { return m_config.m_zOPT_ExpPayloadSize; }
     int RTT() const { return m_iRTT; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
@@ -315,7 +310,12 @@ public: // internal API
     int flowWindowSize() const { return m_iFlowWindowSize; }
     int32_t deliveryRate() const { return m_iDeliveryRate; }
     int bandwidth() const { return m_iBandwidth; }
+    int64_t maxBandwidth() const { return m_config.m_llMaxBW; }
+    int MSS() const { return m_config.m_iMSS; }
 
+    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_config.m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
@@ -360,7 +360,7 @@ public: // internal API
 
     int minSndSize(int len = 0) const
     {
-        int ps = maxPayloadSize();
+        const int ps = maxPayloadSize();
         if (len == 0) // wierd, can't use non-static data member as default argument!
             len = ps;
         return m_config.m_bMessageAPI ? (len+ps-1)/ps : 1;
@@ -711,13 +711,12 @@ private:
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV_E_SIZE];
+    SrtCongestion m_CongCtl;
 
     // Packet filtering
     PacketFilter m_PacketFilter;
     SRT_ARQLevel m_PktFilterRexmitLevel;
     std::string m_sPeerPktFilterConfigString;
-
-    SrtCongestion m_CongCtl;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);

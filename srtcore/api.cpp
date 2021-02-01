@@ -2858,18 +2858,6 @@ void CUDTUnited::updateMux(
    {
        m.m_pChannel = new CChannel();
        m.m_pChannel->setConfig(m.m_mcfg);
-       /*
-
-       m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
-       m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-#ifdef SRT_ENABLE_BINDTODEVICE
-       m.m_pChannel->setBind(m.m_BindToDevice);
-#endif
-       m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
-       m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
-       if (s->m_pUDT->m_iIpV6Only != -1)
-           m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
-           */
 
        if (udpsock)
        {

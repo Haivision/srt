@@ -272,7 +272,7 @@ public:
     // Shortcuts and utilities
     int32_t flightCapacity()
     {
-        return (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
+        return std::min(m_iRcvBufSize, m_iFlightFlagSize);
     }
 
     CSrtConfig()

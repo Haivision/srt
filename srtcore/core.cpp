@@ -269,10 +269,10 @@ struct SrtOptionAction
         flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
         flags[SRTO_MINVERSION]         = SRTO_R_PRE;
         flags[SRTO_STREAMID]           = SRTO_R_PRE;
-        flags[SRTO_CONGESTION]         = SRTO_R_PRE | SRTO_POST_SPEC;
+        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
         flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
         flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
-        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND | SRTO_POST_SPEC;
+        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
         flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
         flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
         flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
@@ -2501,7 +2501,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     string agsm = m_config.m_Congestion.str();
     if (agsm == "")
     {
-        // SANITY CHECK, this should not happen.
+        agsm = "live";
         m_config.m_Congestion.set("live", 4);
     }
 
@@ -2529,7 +2529,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 if (!bytelen || bytelen > CSrtConfig::MAX_SID_LENGTH)
                 {
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << (+CSrtConfig::MAX_SID_LENGTH)
+                         log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << +CSrtConfig::MAX_SID_LENGTH
                              << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
@@ -2745,7 +2745,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     // Now parse your own string, if you have it.
     if (thisconf != "")
     {
-        // - for rendezvous, both must be exactly the same, or only one side specified.
+        // - for rendezvous, both must be exactly the same (it's unspecified, which will be the first one)
         if (m_config.m_bRendezvous && thisconf != confstr)
         {
             return false;
@@ -5207,7 +5207,7 @@ void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
     // this is a reponse handshake
     w_hs.m_iReqType = URQ_CONCLUSION;
     w_hs.m_iMSS = m_config.m_iMSS;
-    w_hs.m_iFlightFlagSize = (m_config.m_iRcvBufSize < m_config.m_iFlightFlagSize) ? m_config.m_iRcvBufSize : m_config.m_iFlightFlagSize;
+    w_hs.m_iFlightFlagSize = m_config.flightCapacity();
     w_hs.m_iID = m_SocketID;
 
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
