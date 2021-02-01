@@ -570,11 +570,11 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_OHEADBW, m_iOverheadBW);
     IM(SRTO_IPTOS, m_iIpToS);
     IM(SRTO_IPTTL, m_iIpTTL);
-    IM(SRTO_TSBPDMODE, m_bOPT_TsbPd);
-    IM(SRTO_RCVLATENCY, m_iOPT_TsbPdDelay);
-    IM(SRTO_PEERLATENCY, m_iOPT_PeerTsbPdDelay);
-    IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
-    IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
+    IM(SRTO_TSBPDMODE, m_bTSBPD);
+    IM(SRTO_RCVLATENCY, m_iRcvLatency);
+    IM(SRTO_PEERLATENCY, m_iPeerLatency);
+    IM(SRTO_SNDDROPDELAY, m_iSndDropDelay);
+    IM(SRTO_PAYLOADSIZE, m_zExpPayloadSize);
     IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
 
     importOption(m_config, SRTO_STREAMID, u->m_config.m_StreamName.str());
@@ -582,10 +582,10 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_MESSAGEAPI, m_bMessageAPI);
     IM(SRTO_NAKREPORT, m_bRcvNakReport);
     IM(SRTO_MINVERSION, m_lMinimumPeerSrtVersion);
-    IM(SRTO_ENFORCEDENCRYPTION, m_bOPT_StrictEncryption);
+    IM(SRTO_ENFORCEDENCRYPTION, m_bEnforcedEnc);
     IM(SRTO_IPV6ONLY, m_iIpV6Only);
-    IM(SRTO_PEERIDLETIMEO, m_iOPT_PeerIdleTimeout);
-    IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
+    IM(SRTO_PEERIDLETIMEO, m_iPeerIdleTimeout);
+    IM(SRTO_GROUPSTABTIMEO, m_uStabilityTimeout);
 
     importOption(m_config, SRTO_PACKETFILTER, u->m_config.m_PacketFilterConfig.str());
 
@@ -3832,11 +3832,11 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(const vector<gli_t>& unstableLi
         CUDT&                  ce = d->ps->core();
         steady_clock::duration td(0);
         if (!is_zero(ce.m_tsTmpActiveSince) &&
-                count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_config.m_uOPT_StabilityTimeout)
+                count_microseconds(td = currtime - ce.m_tsTmpActiveSince) < ce.m_config.m_uStabilityTimeout)
         {
             HLOGC(gslog.Debug,
                     log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                    << ce.m_config.m_uOPT_StabilityTimeout << "(stability timeout)");
+                    << ce.m_config.m_uStabilityTimeout << "(stability timeout)");
             continue;
         }
 

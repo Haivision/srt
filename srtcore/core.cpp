@@ -528,7 +528,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_TSBPDMODE:
-        *(int32_t *)optval = m_config.m_bOPT_TsbPd;
+        *(int32_t *)optval = m_config.m_bTSBPD;
         optlen             = sizeof(int32_t);
         break;
 
@@ -537,7 +537,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (m_bConnected)
             *(int32_t *)optval = m_iTsbPdDelay_ms;
         else
-            *(int32_t *)optval = m_config.m_iOPT_TsbPdDelay;
+            *(int32_t *)optval = m_config.m_iRcvLatency;
         optlen             = sizeof(int32_t);
         break;
 
@@ -545,7 +545,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (m_bConnected)
             *(int32_t *)optval = m_iPeerTsbPdDelay_ms;
         else
-            *(int32_t *)optval = m_config.m_iOPT_PeerTsbPdDelay;
+            *(int32_t *)optval = m_config.m_iPeerLatency;
 
         optlen             = sizeof(int32_t);
         break;
@@ -556,7 +556,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_SNDDROPDELAY:
-        *(int32_t *)optval = m_config.m_iOPT_SndDropDelay;
+        *(int32_t *)optval = m_config.m_iSndDropDelay;
         optlen             = sizeof(int32_t);
         break;
 
@@ -649,13 +649,13 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = (int) m_config.m_zOPT_ExpPayloadSize;
+        *(int *)optval = (int) m_config.m_zExpPayloadSize;
         break;
 
 #if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPCONNECT:
         optlen         = sizeof (int);
-        *(int*)optval = m_config.m_OPT_GroupConnect;
+        *(int*)optval = m_config.m_GroupConnect;
         break;
 
     case SRTO_GROUPTYPE:
@@ -666,7 +666,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_ENFORCEDENCRYPTION:
         optlen             = sizeof(int32_t); // also with TSBPDMODE and SENDER
-        *(int32_t *)optval = m_config.m_bOPT_StrictEncryption;
+        *(int32_t *)optval = m_config.m_bEnforcedEnc;
         break;
 
     case SRTO_IPV6ONLY:
@@ -675,7 +675,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_PEERIDLETIMEO:
-        *(int *)optval = m_config.m_iOPT_PeerIdleTimeout;
+        *(int *)optval = m_config.m_iPeerIdleTimeout;
         optlen         = sizeof(int);
         break;
 
@@ -688,7 +688,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_RETRANSMITALGO:
-        *(int32_t *)optval = m_config.m_iOPT_RetransmitAlgo;
+        *(int32_t *)optval = m_config.m_iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
 
@@ -817,8 +817,8 @@ void CUDT::clearData()
     // should they be set to possibly true.
     m_bTsbPd = false;
     m_bGroupTsbPd = false;
-    m_iTsbPdDelay_ms = m_config.m_iOPT_TsbPdDelay;
-    m_bTLPktDrop     = m_config.m_bOPT_TLPktDrop;
+    m_iTsbPdDelay_ms = m_config.m_iRcvLatency;
+    m_bTLPktDrop     = m_config.m_bTLPktDrop;
     m_bPeerTLPktDrop = false;
 
     m_bPeerNakReport = false;
@@ -941,10 +941,10 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *aw_srtdata, size_t /* srtlen - unu
     // not set TsbPd mode, it will simply ignore the proposed latency (PeerTsbPdDelay), although
     // if it has received the Rx latency as well, it must honor it and respond accordingly
     // (the latter is only in case of HSv5 and bidirectional connection).
-    if (m_config.m_bOPT_TsbPd)
+    if (m_config.m_bTSBPD)
     {
-        m_iTsbPdDelay_ms     = m_config.m_iOPT_TsbPdDelay;
-        m_iPeerTsbPdDelay_ms = m_config.m_iOPT_PeerTsbPdDelay;
+        m_iTsbPdDelay_ms     = m_config.m_iRcvLatency;
+        m_iPeerTsbPdDelay_ms = m_config.m_iPeerLatency;
         /*
          * Sent data is real-time, use Time-based Packet Delivery,
          * set option bit and configured delay
@@ -1822,7 +1822,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             {
                 if (len_out == 1)
                 {
-                    if (m_config.m_bOPT_StrictEncryption)
+                    if (m_config.m_bEnforcedEnc)
                     {
                         LOGC(cnlog.Warn,
                              log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
@@ -1885,8 +1885,8 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
 
     // Prepare the initial runtime values of latency basing on the option values.
     // They are going to get the value fixed HERE.
-    m_iTsbPdDelay_ms     = m_config.m_iOPT_TsbPdDelay;
-    m_iPeerTsbPdDelay_ms = m_config.m_iOPT_PeerTsbPdDelay;
+    m_iTsbPdDelay_ms     = m_config.m_iRcvLatency;
+    m_iPeerTsbPdDelay_ms = m_config.m_iPeerLatency;
 
     if (bytelen < SRT_CMD_HSREQ_MINSZ)
     {
@@ -2382,7 +2382,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 #ifdef SRT_ENABLE_ENCRYPTION
         if (!m_pCryptoControl->hasPassphrase())
         {
-            if (m_config.m_bOPT_StrictEncryption)
+            if (m_config.m_bEnforcedEnc)
             {
                 m_RejectReason = SRT_REJ_UNSECURE;
                 LOGC(cnlog.Error,
@@ -2433,7 +2433,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 {
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.
-                    if (m_config.m_bOPT_StrictEncryption)
+                    if (m_config.m_bEnforcedEnc)
                     {
                         if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADSECRET)
                         {
@@ -2453,7 +2453,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else if (cmd == SRT_CMD_KMRSP)
             {
                 int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, HS_VERSION_SRT1);
-                if (m_config.m_bOPT_StrictEncryption && res == -1)
+                if (m_config.m_bEnforcedEnc && res == -1)
                 {
                     m_RejectReason = SRT_REJ_UNSECURE;
                     LOGC(cnlog.Error, log << "KMRSP failed - rejecting connection as per enforced encryption.");
@@ -2480,7 +2480,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         // When encryption is not enabled at compile time, behave as if encryption wasn't set,
         // so accordingly to StrictEncryption flag.
 
-        if (m_bOPT_StrictEncryption)
+        if (m_bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,
@@ -2677,7 +2677,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     // Check if peer declared encryption
     if (!encrypted && m_config.m_CryptoSecret.len > 0)
     {
-        if (m_config.m_bOPT_StrictEncryption)
+        if (m_config.m_bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,
@@ -2803,12 +2803,12 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     }
 
     size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
-    if (m_config.m_zOPT_ExpPayloadSize > efc_max_payload_size)
+    if (m_config.m_zExpPayloadSize > efc_max_payload_size)
     {
         LOGC(cnlog.Warn,
              log << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
                  << efc_max_payload_size << " bytes");
-        m_config.m_zOPT_ExpPayloadSize = efc_max_payload_size;
+        m_config.m_zExpPayloadSize = efc_max_payload_size;
     }
 
     return true;
@@ -2830,7 +2830,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     int link_weight = SrtHSRequest::HS_GROUP_WEIGHT::unwrap(gd);
     uint32_t link_flags = SrtHSRequest::HS_GROUP_FLAGS::unwrap(gd);
 
-    if (m_config.m_OPT_GroupConnect == 0)
+    if (m_config.m_GroupConnect == 0)
     {
         m_RejectReason = SRT_REJ_GROUP;
         LOGC(cnlog.Error, log << "HS/GROUP: this socket is not allowed for group connect.");
@@ -5434,7 +5434,7 @@ SRT_REJECT_REASON CUDT::setupCC()
     // tsbpd mode, but PEER doesn't, even in bidirectional mode.
     // This way, the reception side should get precedense.
     // if (bidirectional || m_config.m_bDataSender || m_bTwoWayData)
-    //    m_bPeerTsbPd = m_bOPT_TsbPd;
+    //    m_bPeerTsbPd = m_bTSBPD;
 
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
@@ -5904,9 +5904,9 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
     // picture rate would be useful in auto SRT setting for min latency
     // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
     int threshold_ms = 0;
-    if (m_config.m_iOPT_SndDropDelay >= 0)
+    if (m_config.m_iSndDropDelay >= 0)
     {
-        threshold_ms = std::max(m_iPeerTsbPdDelay_ms + m_config.m_iOPT_SndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS) +
+        threshold_ms = std::max(m_iPeerTsbPdDelay_ms + m_config.m_iSndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS) +
                        (2 * COMM_SYN_INTERVAL_US / 1000);
     }
 
@@ -8499,7 +8499,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             continue;
         }
 
-        if (m_bPeerNakReport && m_config.m_iOPT_RetransmitAlgo != 0)
+        if (m_bPeerNakReport && m_config.m_iRetransmitAlgo != 0)
         {
             const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
             if (tsLastRexmit >= time_nak)
@@ -10426,7 +10426,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         return false;
 
     // ms -> us
-    const int PEER_IDLE_TMO_US = m_config.m_iOPT_PeerIdleTimeout * 1000;
+    const int PEER_IDLE_TMO_US = m_config.m_iPeerIdleTimeout * 1000;
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
     if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
@@ -10855,14 +10855,14 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
     }
 
 #if ENABLE_EXPERIMENTAL_BONDING
-    if (have_group && acore->m_config.m_OPT_GroupConnect == 0)
+    if (have_group && acore->m_config.m_GroupConnect == 0)
     {
         HLOGC(cnlog.Debug, log << "runAcceptHook: REJECTING connection WITHOUT calling the hook - groups not allowed");
         return false;
     }
 
     // Update the groupconnect flag
-    acore->m_config.m_OPT_GroupConnect = have_group ? 1 : 0;
+    acore->m_config.m_GroupConnect = have_group ? 1 : 0;
     acore->m_HSGroupType = gt;
 #endif
 

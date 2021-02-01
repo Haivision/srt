@@ -212,7 +212,7 @@ public:
     static const size_t MAX_CONG_LENGTH = 16;
 
     int m_iMSS;                                  // Maximum Segment Size, in bytes
-    size_t m_zOPT_ExpPayloadSize;                    // Expected average payload size (user option)
+    size_t m_zExpPayloadSize;                    // Expected average payload size (user option)
 
     // Options
     bool m_bSynSending;                          // Sending syncronization mode
@@ -240,16 +240,16 @@ public:
     bool m_bDataSender;
 
     bool m_bMessageAPI;
-    bool m_bOPT_TsbPd;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
-    int m_iOPT_TsbPdDelay;           // Agent's Rx latency
-    int m_iOPT_PeerTsbPdDelay;       // Peer's Rx latency for the traffic made by Agent's Tx.
-    bool m_bOPT_TLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
-    int m_iOPT_SndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
-    bool m_bOPT_StrictEncryption;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    int m_OPT_GroupConnect;
-    int m_iOPT_PeerIdleTimeout;      // Timeout for hearing anything from the peer.
-    uint32_t m_uOPT_StabilityTimeout;
-    int m_iOPT_RetransmitAlgo;
+    bool m_bTSBPD;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
+    int m_iRcvLatency;           // Agent's Rx latency
+    int m_iPeerLatency;       // Peer's Rx latency for the traffic made by Agent's Tx.
+    bool m_bTLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
+    int m_iSndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
+    bool m_bEnforcedEnc;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
+    int m_GroupConnect;
+    int m_iPeerIdleTimeout;      // Timeout for hearing anything from the peer.
+    uint32_t m_uStabilityTimeout;
+    int m_iRetransmitAlgo;
 
     int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
     // 0: use internally estimated input bandwidth
@@ -277,7 +277,7 @@ public:
 
     CSrtConfig()
         : m_iMSS(DEF_MSS)
-          , m_zOPT_ExpPayloadSize(SRT_LIVE_DEF_PLSIZE)
+          , m_zExpPayloadSize(SRT_LIVE_DEF_PLSIZE)
           , m_bSynSending(true)
           , m_bSynRecving(true)
           , m_iFlightFlagSize(DEF_FLIGHT_SIZE)
@@ -291,16 +291,16 @@ public:
           , m_llMaxBW(-1)
           , m_bDataSender(false)
           , m_bMessageAPI(true)
-          , m_bOPT_TsbPd(true)
-          , m_iOPT_TsbPdDelay(SRT_LIVE_DEF_LATENCY_MS)
-          , m_iOPT_PeerTsbPdDelay(0)
-          , m_bOPT_TLPktDrop(true)
-          , m_iOPT_SndDropDelay(0)
-          , m_bOPT_StrictEncryption(true)
-          , m_OPT_GroupConnect(0)
-          , m_iOPT_PeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
-          , m_uOPT_StabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
-          , m_iOPT_RetransmitAlgo(0)
+          , m_bTSBPD(true)
+          , m_iRcvLatency(SRT_LIVE_DEF_LATENCY_MS)
+          , m_iPeerLatency(0)
+          , m_bTLPktDrop(true)
+          , m_iSndDropDelay(0)
+          , m_bEnforcedEnc(true)
+          , m_GroupConnect(0)
+          , m_iPeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
+          , m_uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
+          , m_iRetransmitAlgo(0)
           , m_llInputBW(0)
           , m_iOverheadBW(25)
           , m_bRcvNakReport(true)
@@ -651,7 +651,7 @@ struct CSrtConfigSetter<SRTO_TSBPDMODE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_bOPT_TsbPd = cast_optval<bool>(optval, optlen);
+        co.m_bTSBPD = cast_optval<bool>(optval, optlen);
     }
 };
 template<>
@@ -659,8 +659,8 @@ struct CSrtConfigSetter<SRTO_LATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
-        co.m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval);
+        co.m_iRcvLatency     = cast_optval<int>(optval, optlen);
+        co.m_iPeerLatency = cast_optval<int>(optval);
     }
 };
 template<>
@@ -668,7 +668,7 @@ struct CSrtConfigSetter<SRTO_RCVLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_iOPT_TsbPdDelay = cast_optval<int>(optval, optlen);
+        co.m_iRcvLatency = cast_optval<int>(optval, optlen);
     }
 };
 template<>
@@ -676,7 +676,7 @@ struct CSrtConfigSetter<SRTO_PEERLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
+        co.m_iPeerLatency = cast_optval<int>(optval, optlen);
     }
 };
 template<>
@@ -684,7 +684,7 @@ struct CSrtConfigSetter<SRTO_TLPKTDROP>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_bOPT_TLPktDrop = cast_optval<bool>(optval, optlen);
+        co.m_bTLPktDrop = cast_optval<bool>(optval, optlen);
     }
 };
 template<>
@@ -694,7 +694,7 @@ struct CSrtConfigSetter<SRTO_SNDDROPDELAY>
     {
         // Surprise: you may be connected to alter this option.
         // The application may manipulate this option on sender while transmitting.
-        co.m_iOPT_SndDropDelay = cast_optval<int>(optval, optlen);
+        co.m_iSndDropDelay = cast_optval<int>(optval, optlen);
     }
 };
 template<>
@@ -908,7 +908,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
 
             size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (co.m_zOPT_ExpPayloadSize > efc_max_payload_size)
+            if (co.m_zExpPayloadSize > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
                      log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
@@ -917,7 +917,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
         }
 
-        co.m_zOPT_ExpPayloadSize = cast_optval<int>(optval, optlen);
+        co.m_zExpPayloadSize = cast_optval<int>(optval, optlen);
     }
 };
 
@@ -938,14 +938,14 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - linger: off
             // - congctl: live
             // - extraction method: message (reading call extracts one message)
-            co.m_bOPT_TsbPd          = true;
-            co.m_iOPT_TsbPdDelay     = SRT_LIVE_DEF_LATENCY_MS;
-            co.m_iOPT_PeerTsbPdDelay = 0;
-            co.m_bOPT_TLPktDrop      = true;
-            co.m_iOPT_SndDropDelay   = 0;
+            co.m_bTSBPD          = true;
+            co.m_iRcvLatency     = SRT_LIVE_DEF_LATENCY_MS;
+            co.m_iPeerLatency = 0;
+            co.m_bTLPktDrop      = true;
+            co.m_iSndDropDelay   = 0;
             co.m_bMessageAPI         = true;
             co.m_bRcvNakReport       = true;
-            co.m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
+            co.m_zExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
             co.m_Linger.l_onoff      = 0;
             co.m_Linger.l_linger     = 0;
             co.m_Congestion.set("live", 4);
@@ -958,14 +958,14 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - linger: 2 minutes (180s)
             // - congctl: file (original UDT congestion control)
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
-            co.m_bOPT_TsbPd          = false;
-            co.m_iOPT_TsbPdDelay     = 0;
-            co.m_iOPT_PeerTsbPdDelay = 0;
-            co.m_bOPT_TLPktDrop      = false;
-            co.m_iOPT_SndDropDelay   = -1;
+            co.m_bTSBPD          = false;
+            co.m_iRcvLatency     = 0;
+            co.m_iPeerLatency = 0;
+            co.m_bTLPktDrop      = false;
+            co.m_iSndDropDelay   = -1;
             co.m_bMessageAPI         = false;
             co.m_bRcvNakReport       = false;
-            co.m_zOPT_ExpPayloadSize = 0; // use maximum
+            co.m_zExpPayloadSize = 0; // use maximum
             co.m_Linger.l_onoff      = 1;
             co.m_Linger.l_linger     = CSrtConfig::DEF_LINGER_S;
             co.m_Congestion.set("file", 4);
@@ -983,7 +983,7 @@ struct CSrtConfigSetter<SRTO_GROUPCONNECT>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_OPT_GroupConnect = cast_optval<int>(optval, optlen);
+        co.m_GroupConnect = cast_optval<int>(optval, optlen);
     }
 };
 #endif
@@ -1034,7 +1034,7 @@ struct CSrtConfigSetter<SRTO_ENFORCEDENCRYPTION>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_bOPT_StrictEncryption = cast_optval<bool>(optval, optlen);
+        co.m_bEnforcedEnc = cast_optval<bool>(optval, optlen);
     }
 };
 
@@ -1043,7 +1043,7 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_iOPT_PeerIdleTimeout = cast_optval<int>(optval, optlen);
+        co.m_iPeerIdleTimeout = cast_optval<int>(optval, optlen);
     }
 };
 
@@ -1075,12 +1075,12 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
         }
 
         size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-        if (co.m_zOPT_ExpPayloadSize > efc_max_payload_size)
+        if (co.m_zExpPayloadSize > efc_max_payload_size)
         {
             LOGC(aclog.Warn,
                     log << "Due to filter-required extra " << fc.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
                     << efc_max_payload_size << " bytes");
-            co.m_zOPT_ExpPayloadSize = efc_max_payload_size;
+            co.m_zExpPayloadSize = efc_max_payload_size;
         }
 
         co.m_PacketFilterConfig.set(arg);
@@ -1102,7 +1102,7 @@ struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
 
         // Search if you already have SRTO_PEERIDLETIMEO set
 
-        const int idletmo = co.m_iOPT_PeerIdleTimeout;
+        const int idletmo = co.m_iPeerIdleTimeout;
 
         // Both are in milliseconds.
         // This option is RECORDED in microseconds, while
@@ -1115,7 +1115,7 @@ struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        co.m_uOPT_StabilityTimeout = val * 1000;
+        co.m_uStabilityTimeout = val * 1000;
     }
 };
 #endif
@@ -1125,7 +1125,7 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_iOPT_RetransmitAlgo = cast_optval<int32_t>(optval, optlen);
+        co.m_iRetransmitAlgo = cast_optval<int32_t>(optval, optlen);
     }
 };
 

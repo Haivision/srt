@@ -1130,13 +1130,13 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
 
    // Set properly the SRTO_GROUPCONNECT flag
-   s->core().m_config.m_OPT_GroupConnect = 0;
+   s->core().m_config.m_GroupConnect = 0;
 
    // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
    // and the already accepted socket has successfully joined
    // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
 #if ENABLE_EXPERIMENTAL_BONDING
-   if (ls->m_pUDT->m_config.m_OPT_GroupConnect == 1 && s->m_GroupOf)
+   if (ls->m_pUDT->m_config.m_GroupConnect == 1 && s->m_GroupOf)
    {
        // Put a lock to protect the group against accidental deletion
        // in the meantime.
@@ -1146,7 +1146,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        if (s->m_GroupOf)
        {
            u = s->m_GroupOf->m_GroupID;
-           s->core().m_config.m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
+           s->core().m_config.m_GroupConnect = 1; // should be derived from ls, but make sure
        }
        else
        {
@@ -1490,7 +1490,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         }
 
         // Set it the groupconnect option, as all in-group sockets should have.
-        ns->m_pUDT->m_config.m_OPT_GroupConnect = 1;
+        ns->m_pUDT->m_config.m_GroupConnect = 1;
 
         // Every group member will have always nonblocking
         // (this implies also non-blocking connect/accept).

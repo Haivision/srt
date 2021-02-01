@@ -300,7 +300,7 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
-    bool isOPT_TsbPd() const { return m_config.m_bOPT_TsbPd; }
+    bool isOPT_TsbPd() const { return m_config.m_bTSBPD; }
     int RTT() const { return m_iRTT; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
@@ -315,7 +315,7 @@ public: // internal API
 
     uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() const { return m_config.m_zOPT_ExpPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_config.m_zExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
