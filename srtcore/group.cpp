@@ -2077,8 +2077,8 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     // If this set is empty, it won't roll even once, therefore output
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
-    vector<CUDTSocket*> w_readReady;
-    w_readReady.reserve(sready.size());
+    vector<CUDTSocket*> readReady;
+    readReady.reserve(sready.size());
     for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
     {
         if (i->second & SRT_EPOLL_ERR)
@@ -2092,12 +2092,12 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         SRTSOCKET   id = i->first;
         CUDTSocket* ps = m_pGlobal->locateSocket_LOCKED(id);
         if (ps)
-            w_readReady.push_back(ps);
+            readReady.push_back(ps);
     }
     
     leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
 
-    return w_readReady;
+    return readReady;
 }
 
 void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequence)
@@ -2279,7 +2279,6 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // during the next time ahead check, after which they will become
         // horses.
 
-        //bool   still_alive = false;
         const size_t size = m_Group.size();
 
         // Prepare first the list of sockets to be added as connect-pending
@@ -3748,7 +3747,7 @@ RetryWaitBlocked:
 }
 
 // [[using locked(this->m_GroupLock)]]
-void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>&       w_parallel)
+void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
 {
     // The most important principle is to keep the data being sent constantly,
     // even if it means temporarily full redundancy. However, if you are certain
