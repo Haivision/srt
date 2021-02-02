@@ -244,7 +244,7 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     // packets shall not be sent, as the other party doesn't have a
     // room to receive and store it. Therefore this value should be
     // overridden before any sending happens.
-    //m_iFlowWindowSize = 0;
+    m_iFlowWindowSize = 0;
 
     // Default congctl is "live".
     // Available builtin congctl: "file".
