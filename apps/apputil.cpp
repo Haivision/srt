@@ -426,7 +426,7 @@ string srt_json_cat_names [] = {
 };
 
 #ifdef HAS_PUT_TIME
-        // Follows ISO 8601
+// Follows ISO 8601
 std::string SrtStatsWriter::print_timestamp()
 {
     using namespace std;
@@ -685,5 +685,4 @@ SrtStatsPrintFormat ParsePrintFormat(string pf, string& w_extras)
 
     return SRTSTATS_PROFMAT_INVALID;
 }
-
 
