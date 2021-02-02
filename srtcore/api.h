@@ -202,6 +202,9 @@ public:
    CUDTUnited();
    ~CUDTUnited();
 
+   // Public constants
+   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+
 public:
 
    enum ErrorHandling { ERH_RETURN, ERH_THROW, ERH_ABORT };
@@ -345,8 +348,6 @@ private:
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
-
-   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
 
    SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
    SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
