@@ -2215,6 +2215,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                           << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
                 memcpy(buf, &pos->packet[0], pos->packet.size());
                 fillGroupData((w_mc), pos->mctrl);
+                m_RcvBaseSeqNo = pos->mctrl.pktseq;
                 len = pos->packet.size();
                 pos->packet.clear();
 
@@ -2385,7 +2386,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 }
                 if (stat == 0)
                 {
-                    HLOGC(grlog.Debug, log << "group/recv: SPURIOUS epoll, ignoring");
+                    HLOGC(grlog.Debug, log << "group/recv @" << id << ": SPURIOUS epoll, ignoring");
                     // This is returned in case of "again". In case of errors, we have SRT_ERROR.
                     // Do not treat this as spurious, just stop reading.
                     break;
@@ -2434,7 +2435,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
                 {
                     // Now we can safely check it.
-                    int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo);
+                    const int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo);
 
                     if (seqdiff <= 0)
                     {
@@ -2550,7 +2551,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 m_RcvBaseSeqNo = next_seq;
             }
 
-            ReadPos* pos = checkPacketAhead();
+            const ReadPos* pos = checkPacketAhead();
             if (!pos)
             {
                 // Don't clear the read-readinsess state if you have a packet ahead because
@@ -2658,7 +2659,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // clears the possibility of having aheads at all.
                 // XXX Research if this is possible at all; if it isn't, then don't waste time on
                 // looking for it.
-                ReadPos* pos = checkPacketAhead();
+                const ReadPos* pos = checkPacketAhead();
                 if (!pos)
                 {
                     // Don't clear the read-readinsess state if you have a packet ahead because
@@ -2700,8 +2701,6 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         if (seqdiff == 1)
         {
             // The very next packet. Return it.
-            // XXX SETTING THIS ONE IS PROBABLY A BUG.
-            m_RcvBaseSeqNo = a.mctrl.pktseq;
             HLOGC(grlog.Debug,
                   log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq << "#"
                       << a.mctrl.msgno << " from @" << i->first << ")");
