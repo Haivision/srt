@@ -2078,21 +2078,36 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
     vector<CUDTSocket*> readReady;
-    readReady.reserve(sready.size());
-    for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+    readReady.reserve(aliveMembers.size());
+    for (vector<CUDTSocket*>::const_iterator sockiter = aliveMembers.begin(); sockiter != aliveMembers.end(); ++sockiter)
     {
-        if (i->second & SRT_EPOLL_ERR)
-            continue; // broken already
+        CUDTSocket* sock = *sockiter;
+        const CEPoll::fmap_t::const_iterator ready_iter = sready.find(sock->m_SocketID);
+        if (ready_iter != sready.end())
+        {
+            if (ready_iter->second & SRT_EPOLL_ERR)
+                continue; // broken already
 
-        if ((i->second & SRT_EPOLL_IN) == 0)
-            continue; // not ready for reading
+            if ((ready_iter->second & SRT_EPOLL_IN) == 0)
+                continue; // not ready for reading
 
-        // Check if this socket is in aheads
-        // If so, don't read from it, wait until the ahead is flushed.
-        SRTSOCKET   id = i->first;
-        CUDTSocket* ps = m_pGlobal->locateSocket_LOCKED(id);
-        if (ps)
-            readReady.push_back(ps);
+            readReady.push_back(*sockiter);
+        }
+        else
+        {
+            // No reqd-readiness on the socket, but could have missed or not yet handled, so check the state manually
+            steady_clock::time_point tsbpdtime;
+            int current_pkt_seq = 0;
+
+            int32_t skiptoseqno = SRT_SEQNO_NONE;
+            bool    passack     = true; // Get next packet to wait for even if not acked
+            const bool rxready = sock->core().m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
+
+            if (rxready)
+            {
+                readReady.push_back(sock);
+            }
+        }
     }
     
     leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
