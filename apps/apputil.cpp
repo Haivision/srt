@@ -351,58 +351,156 @@ string OptionHelpItem(const OptionName& o)
 
 // Stats module
 
+template <class TYPE>
+inline SrtStatData* make_stat(SrtStatCat cat, const string& name, const string& longname,
+        TYPE CBytePerfMon::*field)
+{
+    return new SrtStatDataType<TYPE>(cat, name, longname, field);
+}
+
+#define STATX(catsuf, sname, lname, field) s.emplace_back(make_stat(SSC_##catsuf, #sname, #lname, &CBytePerfMon:: field))
+#define STAT(catsuf, sname, field) STATX(catsuf, sname, field, field)
+
+vector<unique_ptr<SrtStatData>> g_SrtStatsTable;
+
+struct SrtStatsTableInit
+{
+    SrtStatsTableInit(vector<unique_ptr<SrtStatData>>& s)
+    {
+        STATX(GEN, time, Time, msTimeStamp);
+
+        STAT(WINDOW, flow, pktFlowWindow);
+        STAT(WINDOW, congestion, pktCongestionWindow);
+        STAT(WINDOW, flight, pktFlightSize);
+
+        STAT(LINK, rtt, msRTT);
+        STAT(LINK, bandwidth, mbpsBandwidth);
+        STAT(LINK, maxBandwidth, mbpsMaxBW);
+
+        STAT(SEND, packets, pktSent);
+        STAT(SEND, packetsUnique, pktSentUnique);
+        STAT(SEND, packetsLost, pktSndLoss);
+        STAT(SEND, packetsDropped, pktSndDrop);
+        STAT(SEND, packetsRetransmitted, pktRetrans);
+        STAT(SEND, packetsFilterExtra, pktSndFilterExtra);
+        STAT(SEND, bytes, byteSent);
+        STAT(SEND, bytesUnique, byteSentUnique);
+        STAT(SEND, bytesDropped, byteSndDrop);
+        STAT(SEND, mbitRate, mbpsSendRate);
+        STAT(SEND, sendPeriod, usPktSndPeriod);
+        //STAT(SEND, msAvgResponseTime, msAvgResponseTime);
+        //STAT(SEND, msMaxResponseTime, msMaxResponseTime);
+
+        STAT(RECV, packets, pktRecv);
+        STAT(RECV, packetsUnique, pktRecvUnique);
+        STAT(RECV, packetsLost, pktRcvLoss);
+        STAT(RECV, packetsDropped, pktRcvDrop);
+        STAT(RECV, packetsRetransmitted, pktRcvRetrans);
+        STAT(RECV, packetsBelated, pktRcvBelated);
+        STAT(RECV, packetsFilterExtra, pktRcvFilterExtra);
+        STAT(RECV, packetsFilterSupply, pktRcvFilterSupply);
+        STAT(RECV, packetsFilterLoss, pktRcvFilterLoss);
+        STAT(RECV, bytes, byteRecv);
+        STAT(RECV, bytesUnique, byteRecvUnique);
+        STAT(RECV, bytesLost, byteRcvLoss);
+        STAT(RECV, bytesDropped, byteRcvDrop);
+        STAT(RECV, mbitRate, mbpsRecvRate);
+    }
+} g_SrtStatsTableInit (g_SrtStatsTable);
+
+
+#undef STAT
+#undef STATX
+
+string srt_json_cat_names [] = {
+    "",
+    "window",
+    "link",
+    "send",
+    "recv"
+};
+
 class SrtStatsJson : public SrtStatsWriter
 {
-public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
-    { 
-        std::ostringstream output;
-        output << "{";
-        output << "\"sid\":" << sid << ",";
-        output << "\"time\":" << mon.msTimeStamp << ",";
-        output << "\"window\":{";
-        output << "\"flow\":" << mon.pktFlowWindow << ",";
-        output << "\"congestion\":" << mon.pktCongestionWindow << ",";    
-        output << "\"flight\":" << mon.pktFlightSize;    
-        output << "},";
-        output << "\"link\":{";
-        output << "\"rtt\":" << mon.msRTT << ",";
-        output << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
-        output << "\"maxBandwidth\":" << mon.mbpsMaxBW;
-        output << "},";
-        output << "\"send\":{";
-        output << "\"packets\":" << mon.pktSent << ",";
-        output << "\"packetsUnique\":" << mon.pktSentUnique << ",";
-        output << "\"packetsLost\":" << mon.pktSndLoss << ",";
-        output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
-        output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
-        output << "\"bytes\":" << mon.byteSent << ",";
-        output << "\"bytesUnique\":" << mon.byteSentUnique << ",";
-        output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
-        output << "\"mbitRate\":" << mon.mbpsSendRate;
-        output << "},";
-        output << "\"recv\": {";
-        output << "\"packets\":" << mon.pktRecv << ",";
-        output << "\"packetsUnique\":" << mon.pktRecvUnique << ",";
-        output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
-        output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
-        output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
-        output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
-        output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
-        output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
-        output << "\"bytes\":" << mon.byteRecv << ",";
-        output << "\"bytesUnique\":" << mon.byteRecvUnique << ",";
-        output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
-        output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
-        output << "\"mbitRate\":" << mon.mbpsRecvRate;
-        output << "}";
-        output << "}" << endl;
-        return output.str();
-    } 
+    static string keyspec(const string& name)
+    {
+        if (name == "")
+            return "";
 
-    string WriteBandwidth(double mbpsBandwidth) override 
+        return R"(")" + name + R"(":)";
+    }
+
+public: 
+    string WriteStats(int sid, const CBytePerfMon& mon) override
+    {
+        std::ostringstream output;
+        static const string qt = R"(")";
+
+        string pretty_cr, pretty_tab;
+        if (Option("pretty"))
+        {
+            pretty_cr = "\n";
+            pretty_tab = "\t";
+        }
+
+        SrtStatCat cat = SSC_GEN;
+
+        // Do general manually
+        output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr;
+
+        // SID is displayed manually
+        output << pretty_tab << keyspec("sid") << sid;
+
+        // Now continue with fields as specified in the table
+        for (auto& i: g_SrtStatsTable)
+        {
+            if (i->category == cat)
+            {
+                output << ","; // next item in same cat
+                output << pretty_cr;
+                output << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+            else
+            {
+                if (cat != SSC_GEN)
+                {
+                    // DO NOT close if general category, just
+                    // enter the depth.
+                    output << pretty_cr << pretty_tab << "}";
+                }
+                cat = i->category;
+                output << ",";
+                output << pretty_cr;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+
+                output << keyspec(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+
+            // Print the current field
+            output << keyspec(i->name);
+            output << qt;
+            i->PrintValue(output, mon);
+            output << qt;
+        }
+
+        // Close the previous subcategory
+        if (cat != SSC_GEN)
+        {
+            output << pretty_cr << pretty_tab << "}" << pretty_cr;
+        }
+
+        // Close the general category entity
+        output << "}," << pretty_cr << endl;
+
+        return output.str();
+    }
+
+    string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
         output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
@@ -425,18 +523,19 @@ public:
 #define HAS_PUT_TIME
 #endif
         std::ostringstream output;
+
+        // Header
         if (!first_line_printed)
         {
 #ifdef HAS_PUT_TIME
             output << "Timepoint,";
 #endif
-            output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
-            output << "msRTT,mbpsBandwidth,mbpsMaxBW,pktSent,pktSndLoss,pktSndDrop,";
-            output << "pktRetrans,byteSent,byteSndDrop,mbpsSendRate,usPktSndPeriod,";
-            output << "pktRecv,pktRcvLoss,pktRcvDrop,pktRcvRetrans,pktRcvBelated,";
-            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms,";
-            // Filter stats
-            output << "pktSndFilterExtra,pktRcvFilterExtra,pktRcvFilterSupply,pktRcvFilterLoss";
+            output << "Time,SocketID";
+
+            for (auto& i: g_SrtStatsTable)
+            {
+                output << "," << i->longname;
+            }
             output << endl;
             first_line_printed = true;
         }
@@ -444,7 +543,10 @@ public:
         int int_len     = sizeof rcv_latency;
         srt_getsockopt(sid, 0, SRTO_RCVLATENCY, &rcv_latency, &int_len);
 
+        // Values
+
 #ifdef HAS_PUT_TIME
+        // HDR: Timepoint
         // Follows ISO 8601
         auto print_timestamp = [&output]() {
             using namespace std;
@@ -466,37 +568,16 @@ public:
         print_timestamp();
 #endif // HAS_PUT_TIME
 
-        output << mon.msTimeStamp << ",";
-        output << sid << ",";
-        output << mon.pktFlowWindow << ",";
-        output << mon.pktCongestionWindow << ",";
-        output << mon.pktFlightSize << ",";
-        output << mon.msRTT << ",";
-        output << mon.mbpsBandwidth << ",";
-        output << mon.mbpsMaxBW << ",";
-        output << mon.pktSent << ",";
-        output << mon.pktSndLoss << ",";
-        output << mon.pktSndDrop << ",";
-        output << mon.pktRetrans << ",";
-        output << mon.byteSent << ",";
-        output << mon.byteSndDrop << ",";
-        output << mon.mbpsSendRate << ",";
-        output << mon.usPktSndPeriod << ",";
-        output << mon.pktRecv << ",";
-        output << mon.pktRcvLoss << ",";
-        output << mon.pktRcvDrop << ",";
-        output << mon.pktRcvRetrans << ",";
-        output << mon.pktRcvBelated << ",";
-        output << mon.byteRecv << ",";
-        output << mon.byteRcvLoss << ",";
-        output << mon.byteRcvDrop << ",";
-        output << mon.mbpsRecvRate << ",";
-        output << rcv_latency << ",";
-        // Filter stats
-        output << mon.pktSndFilterExtra << ",";
-        output << mon.pktRcvFilterExtra << ",";
-        output << mon.pktRcvFilterSupply << ",";
-        output << mon.pktRcvFilterLoss; //<< ",";
+        // HDR: Time,SocketID
+        output << mon.msTimeStamp << "," << sid;
+
+        // HDR: the loop of all values in g_SrtStatsTable
+        for (auto& i: g_SrtStatsTable)
+        {
+            output << ",";
+            i->PrintValue(output, mon);
+        }
+
         output << endl;
         return output.str();
     }
@@ -555,8 +636,15 @@ shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat
     return nullptr;
 }
 
-SrtStatsPrintFormat ParsePrintFormat(string pf)
+SrtStatsPrintFormat ParsePrintFormat(string pf, string& w_extras)
 {
+    size_t havecomma = pf.find(',');
+    if (havecomma != string::npos)
+    {
+        w_extras = pf.substr(havecomma+1);
+        pf = pf.substr(0, havecomma);
+    }
+
     if (pf == "default")
         return SRTSTATS_PROFMAT_2COLS;
 

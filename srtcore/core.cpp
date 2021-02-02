@@ -815,8 +815,8 @@ void CUDT::clearData()
     // TSBPD as state should be set to FALSE here.
     // Only when the HSREQ handshake is exchanged,
     // should they be set to possibly true.
-    m_bTsbPd = false;
-    m_bGroupTsbPd = false;
+    m_bTsbPd         = false;
+    m_bGroupTsbPd    = false;
     m_iTsbPdDelay_ms = m_config.m_iRcvLatency;
     m_bTLPktDrop     = m_config.m_bTLPktDrop;
     m_bPeerTLPktDrop = false;
@@ -825,7 +825,7 @@ void CUDT::clearData()
 
     m_bPeerRexmitFlag = false;
 
-    m_RdvState         = CHandShake::RDV_INVALID;
+    m_RdvState           = CHandShake::RDV_INVALID;
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
@@ -869,7 +869,7 @@ void CUDT::open()
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveSince = steady_clock::time_point();
+    m_tsFreshActivation = steady_clock::time_point();
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
 
@@ -1569,9 +1569,9 @@ bool CUDT::createSrtHandshake(
         ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_SID, m_config.m_StreamName.str());
 
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: after SID [" << m_config.m_StreamName.c_str() << "] length=" << m_config.m_StreamName.size()
-                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " SID size=" << ra_size
-                  << " space left: " << (total_ra_size - offset));
+              log << "createSrtHandshake: after SID [" << m_config.m_StreamName.c_str()
+                  << "] length=" << m_config.m_StreamName.size() << " alignedln=" << (4 * ra_size)
+                  << ": offset=" << offset << " SID size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
     if (have_congctl)
@@ -1585,7 +1585,7 @@ bool CUDT::createSrtHandshake(
 
         HLOGC(cnlog.Debug,
               log << "createSrtHandshake: after CONGCTL [" << sm << "] length=" << sm.size()
-                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " CONGCTL size=" << ra_size
+                  << " alignedln=" << (4 * ra_size) << ": offset=" << offset << " CONGCTL size=" << ra_size
                   << " space left: " << (total_ra_size - offset));
     }
 
@@ -1596,7 +1596,7 @@ bool CUDT::createSrtHandshake(
 
         HLOGC(cnlog.Debug,
               log << "createSrtHandshake: after filter [" << m_config.m_PacketFilterConfig.c_str() << "] length="
-                  << m_config.m_PacketFilterConfig.size() << " alignedln=" << (4*ra_size) << ": offset=" << offset
+                  << m_config.m_PacketFilterConfig.size() << " alignedln=" << (4 * ra_size) << ": offset=" << offset
                   << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
@@ -1935,13 +1935,15 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
         m_RejectReason = SRT_REJ_VERSION;
         LOGC(cnlog.Error,
              log << "HSREQ/rcv: Peer version: " << SrtVersionString(m_lPeerSrtVersion)
-                 << " is too old for requested: " << SrtVersionString(m_config.m_lMinimumPeerSrtVersion) << " - REJECTING");
+                 << " is too old for requested: " << SrtVersionString(m_config.m_lMinimumPeerSrtVersion)
+                 << " - REJECTING");
         return SRT_CMD_REJECT;
     }
 
     HLOGC(cnlog.Debug,
           log << "HSREQ/rcv: PEER Version: " << SrtVersionString(m_lPeerSrtVersion) << " Flags: " << m_lPeerSrtFlags
-              << "(" << SrtFlagString(m_lPeerSrtFlags) << ") Min req version:" << SrtVersionString(m_config.m_lMinimumPeerSrtVersion));
+              << "(" << SrtFlagString(m_lPeerSrtFlags)
+              << ") Min req version:" << SrtVersionString(m_config.m_lMinimumPeerSrtVersion));
 
     m_bPeerRexmitFlag = IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG);
     HLOGF(cnlog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND");
@@ -1952,8 +1954,9 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
     {
         m_RejectReason = SRT_REJ_MESSAGEAPI;
         LOGC(cnlog.Error,
-             log << "HSREQ/rcv: Agent uses " << (m_config.m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, but the Peer declares "
-                 << (peer_message_api ? "MESSAGE" : "STREAM") << " API. Not compatible transmission type, rejecting.");
+             log << "HSREQ/rcv: Agent uses " << (m_config.m_bMessageAPI ? "MESSAGE" : "STREAM")
+                 << " API, but the Peer declares " << (peer_message_api ? "MESSAGE" : "STREAM")
+                 << " API. Not compatible transmission type, rejecting.");
         return SRT_CMD_REJECT;
     }
 
@@ -2137,7 +2140,8 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
         m_RejectReason = SRT_REJ_VERSION;
         LOGC(cnlog.Error,
              log << "HSRSP/rcv: Peer version: " << SrtVersionString(m_lPeerSrtVersion)
-                 << " is too old for requested: " << SrtVersionString(m_config.m_lMinimumPeerSrtVersion) << " - REJECTING");
+                 << " is too old for requested: " << SrtVersionString(m_config.m_lMinimumPeerSrtVersion)
+                 << " - REJECTING");
         return SRT_CMD_REJECT;
     }
 
@@ -4291,7 +4295,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 void CUDT::applyResponseSettings() ATR_NOEXCEPT
 {
     // Re-configure according to the negotiated values.
-    m_config.m_iMSS               = m_ConnRes.m_iMSS;
+    m_config.m_iMSS      = m_ConnRes.m_iMSS;
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
     int udpsize          = m_config.m_iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
@@ -4520,7 +4524,8 @@ void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t ty
         if (m_config.m_iSndCryptoKeyLen == 0)
         {
             m_config.m_iSndCryptoKeyLen = rcv_pbkeylen;
-            HLOGC(cnlog.Debug, log << loghdr << ": PBKEYLEN adopted from advertised value: " << m_config.m_iSndCryptoKeyLen);
+            HLOGC(cnlog.Debug, log << loghdr << ": PBKEYLEN adopted from advertised value: "
+                  << m_config.m_iSndCryptoKeyLen);
         }
         else if (m_config.m_iSndCryptoKeyLen != rcv_pbkeylen)
         {
@@ -5085,7 +5090,7 @@ void *CUDT::tsbpd(void *param)
 
         if (!is_zero(tsbpdtime))
         {
-            const steady_clock::duration timediff = tsbpdtime - steady_clock::now();
+            IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsbpdtime - steady_clock::now());
             /*
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
@@ -5205,10 +5210,10 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
 void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 {
     // this is a reponse handshake
-    w_hs.m_iReqType = URQ_CONCLUSION;
-    w_hs.m_iMSS = m_config.m_iMSS;
+    w_hs.m_iReqType        = URQ_CONCLUSION;
+    w_hs.m_iMSS            = m_config.m_iMSS;
     w_hs.m_iFlightFlagSize = m_config.flightCapacity();
-    w_hs.m_iID = m_SocketID;
+    w_hs.m_iID             = m_SocketID;
 
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
@@ -5234,11 +5239,11 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
 
     // exchange info for maximum flow window size
     m_iFlowWindowSize = w_hs.m_iFlightFlagSize;
-    m_iPeerISN = w_hs.m_iISN;
+    m_iPeerISN        = w_hs.m_iISN;
     setInitialRcvSeq(m_iPeerISN);
     m_iRcvCurrPhySeqNo = CSeqNo::decseq(w_hs.m_iISN);
 
-    m_PeerID  = w_hs.m_iID;
+    m_PeerID = w_hs.m_iID;
 
     // use peer's ISN and send it back for security check
     m_iISN = w_hs.m_iISN;
@@ -5824,7 +5829,8 @@ int CUDT::receiveBuffer(char *data, int len)
             }
             else
             {
-                const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_config.m_iRcvTimeOut);
+                const steady_clock::time_point exptime =
+                    steady_clock::now() + milliseconds_from(m_config.m_iRcvTimeOut);
                 THREAD_PAUSED();
                 while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
                 {
@@ -6110,7 +6116,8 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             }
             else
             {
-                const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_config.m_iSndTimeOut);
+                const steady_clock::time_point exptime =
+                    steady_clock::now() + milliseconds_from(m_config.m_iSndTimeOut);
                 THREAD_PAUSED();
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
@@ -6189,7 +6196,8 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         int32_t seqno = m_iSndNextSeqNo;
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
-        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
+                             steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
@@ -6483,8 +6491,8 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 const steady_clock::time_point exptime = steady_clock::now() + recv_timeout;
 
                 HLOGC(tslog.Debug,
-                      log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime) << " lock=" << (&m_RecvLock)
-                          << " cond=" << (&m_RecvDataCond));
+                      log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime)
+                          << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
 
                 if (!recv_cond.wait_until(exptime))
                 {
@@ -6893,19 +6901,21 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
     perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
 
-    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
-    perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
-    perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
+    double interval           = count_microseconds(currtime - m_stats.tsLastSampleTime);
+    perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
+    perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
     perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
     perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
-    perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
-    perf->msRcvTsbPdDelay = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
-    perf->byteMSS         = m_config.m_iMSS;
+    perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+    perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
+    perf->byteMSS             = m_config.m_iMSS;
 
-    perf->mbpsMaxBW = m_config.m_llMaxBW > 0 ? Bps2Mbps(m_config.m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
+    perf->mbpsMaxBW = m_config.m_llMaxBW > 0 ? Bps2Mbps(m_config.m_llMaxBW)
+                      : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
+                                             : 0;
 
     const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth;
 

@@ -335,7 +335,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     cfg.stats_report = Option<OutNumber>(params, o_statsrep);
     cfg.stats_out    = Option<OutString>(params, o_statsout);
     const string pf  = Option<OutString>(params, "default", o_statspf);
-    cfg.stats_pf     = ParsePrintFormat(pf);
+    string pfext;
+    cfg.stats_pf     = ParsePrintFormat(pf, (pfext));
     if (cfg.stats_pf == SRTSTATS_PROFMAT_INVALID)
     {
         cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;

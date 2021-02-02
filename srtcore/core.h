@@ -702,21 +702,21 @@ private: // Identification
 #endif
 
 private:
-    int m_iMaxSRTPayloadSize;                 // Maximum/regular payload size, in bytes
-    int m_iTsbPdDelay_ms;                           // Rx delay to absorb burst in milliseconds
-    int m_iPeerTsbPdDelay_ms;                       // Tx delay that the peer uses to absorb burst in milliseconds
-    bool m_bTLPktDrop;                           // Enable Too-late Packet Drop
-    UniquePtr<CCryptoControl> m_pCryptoControl;                            // congestion control SRT class (small data extension)
-    CCache<CInfoBlock>* m_pCache;                // network information cache
+    int                       m_iMaxSRTPayloadSize; // Maximum/regular payload size, in bytes
+    int                       m_iTsbPdDelay_ms;     // Rx delay to absorb burst in milliseconds
+    int                       m_iPeerTsbPdDelay_ms; // Tx delay that the peer uses to absorb burst in milliseconds
+    bool                      m_bTLPktDrop;         // Enable Too-late Packet Drop
+    UniquePtr<CCryptoControl> m_pCryptoControl;     // congestion control SRT class (small data extension)
+    CCache<CInfoBlock>*       m_pCache;             // network information cache
 
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV_E_SIZE];
-    SrtCongestion m_CongCtl;
+    SrtCongestion          m_CongCtl;
 
     // Packet filtering
     PacketFilter m_PacketFilter;
     SRT_ARQLevel m_PktFilterRexmitLevel;
-    std::string m_sPeerPktFilterConfigString;
+    std::string  m_sPeerPktFilterConfigString;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -1061,8 +1061,8 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
-    time_point m_tsTmpActiveSince; // time since temporary activated, or 0 if not temporary activated
-    time_point m_tsUnstableSince;  // time since unexpected ACK delay experienced, or 0 if link seems healthy
+    time_point m_tsFreshActivation; // time of fresh activation of the link, or 0 if past the activation phase or idle
+    time_point m_tsUnstableSince;   // time since unexpected ACK delay experienced, or 0 if link seems healthy
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,

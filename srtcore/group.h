@@ -326,8 +326,7 @@ private:
                                      bool&                     w_none_succeeded,
                                      SRT_MSGCTRL&              w_mc,
                                      CUDTException&            w_cx);
-    void sendBackup_SilenceRedundantLinks(const std::vector<gli_t>& unstable,
-                                          std::vector<gli_t>&       w_parallel);
+    void sendBackup_SilenceRedundantLinks(std::vector<gli_t>&  w_parallel);
 
     void send_CheckValidSockets();
 
@@ -665,6 +664,17 @@ private:
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
     ReadPos* checkPacketAhead();
+
+    void recv_CollectAliveAndBroken(std::vector<CUDTSocket*>& w_alive, std::set<CUDTSocket*>& w_broken);
+
+    /// The function polls alive member sockets and retrieves a list of read-ready.
+    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
+    ///
+    /// @returns list of read-ready sockets
+    /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
+    /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
+    std::vector<CUDTSocket*> recv_WaitForReadReady(const std::vector<CUDTSocket*>& aliveMembers, std::set<CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
