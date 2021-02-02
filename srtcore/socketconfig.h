@@ -71,9 +71,8 @@ written by
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
 
-class CSrtMuxerConfig
+struct CSrtMuxerConfig
 {
-public:
     static const int
         DEF_UDP_BUFFER_SIZE = 65536;
 
@@ -126,7 +125,7 @@ public:
     }
 };
 
-class CSrtConfig;
+struct CSrtConfig;
 
 typedef void setter_function(CSrtConfig& co, const void* optval, int optlen);
 
@@ -188,12 +187,11 @@ public:
     bool empty() { return len == 0; }
 };
 
-class CSrtConfig: public CSrtMuxerConfig
+struct CSrtConfig: CSrtMuxerConfig
 {
     typedef srt::sync::steady_clock::time_point time_point;
     typedef srt::sync::steady_clock::duration duration;
 
-public:
     static const int
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
