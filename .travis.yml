@@ -1,7 +1,5 @@
 language: cpp
-dist: trusty
-jdk:
-  - oraclejdk11
+dist: xenial
 
 addons:
     apt:
