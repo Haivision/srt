@@ -231,14 +231,44 @@ private:
     int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
-    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pending);
+    bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pendingLinks);
     void sendBackup_CheckIdleTime(gli_t w_d);
+    
+    /// Qualify states of member links.
+    /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
+    /// @param[in] currtime          current timestamp
+    /// @param[out] w_wipeme         broken links or links about to be closed
+    /// @param[out] w_idleLinks      idle links (connected, but not used for transmission)
+    /// @param[out] w_pendingSockets sockets pending to be connected
+    /// @param[out] w_unstableLinks  active member links qualified as unstable
+    /// @param[out] w_activeLinks    all active member links, including unstable
+    void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
+        std::vector<SRTSOCKET>& w_wipeme,
+        std::vector<gli_t>& w_idleLinks,
+        std::vector<SRTSOCKET>& w_pendingSockets,
+        std::vector<gli_t>& w_unstableLinks,
+        std::vector<gli_t>& w_activeLinks);
 
     /// Check if a running link is stable.
     /// @retval true running link is stable
     /// @retval false running link is unstable
     bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
     
+    /// Check link sending status
+    /// @param[in]  d              Group member iterator
+    /// @param[in]  currtime       Current time (logging only)
+    /// @param[in]  stat           Result of sending over the socket
+    /// @param[in]  lastseq        Last sent sequence number before the current sending operation
+    /// @param[in]  pktseq         Packet sequence number currently tried to be sent
+    /// @param[out] w_u            CUDT unit of the current member (to allow calling overrideSndSeqNo)
+    /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
+    /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
+    /// @param[out] w_final_stat   Status to be reported by this function eventually
+    /// @param[out] w_maxActiveWeight Maximum weight value of active links
+    /// @param[out] w_nsuccessful  Updates the number of successful links
+    /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
+    ///
+    /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
     bool sendBackup_CheckSendStatus(const gli_t         d,
                                     const time_point&   currtime,
                                     const int           stat,
@@ -249,11 +279,31 @@ private:
                                     int32_t&            w_curseq,
                                     std::vector<gli_t>& w_parallel,
                                     int&                w_final_stat,
-                                    std::set<uint16_t>& w_sendable_pri,
+                                    uint16_t&           w_maxActiveWeight,
                                     size_t&             w_nsuccessful,
                                     bool&               w_is_unstable);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
-    size_t sendBackup_CheckNeedActivate(const std::vector<gli_t>& idlers,
+
+    /// Check activation conditions and activate a backup link if needed.
+    /// Backup link activation is needed if:
+    ///
+    /// 1. All currently active links are unstable.
+    /// Note that unstable links still count as sendable; they
+    /// are simply links that were qualified for sending, but:
+    /// - have exceeded response timeout
+    /// - have hit EASYNCSND error during sending
+    ///
+    /// 2. Another reason to activate might be if one of idle links
+    /// has a higher weight than any link currently active
+    /// (those are collected in 'sendable_pri').
+    /// If there are no sendable, a new link needs to be activated anyway.
+    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idleLinks,
+        const std::vector<gli_t>& unstable,
+        const std::vector<gli_t>& sendable,
+        const uint16_t max_sendable_weight,
+        std::string& activate_reason) const;
+
+    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idleLinks,
                                       const char*               buf,
                                       const int                 len,
                                       bool&                     w_none_succeeded,
@@ -261,18 +311,22 @@ private:
                                       int32_t&                  w_curseq,
                                       int32_t&                  w_final_stat,
                                       CUDTException&            w_cx,
-                                      std::vector<Sendstate>&   w_sendstates,
                                       std::vector<gli_t>&       w_parallel,
                                       std::vector<SRTSOCKET>&   w_wipeme,
                                       const std::string&        activate_reason);
+
+    /// Check if pending sockets are to be closed.
+    /// @param[in]     pending pending sockets
+    /// @param[in,out] w_wipeme a list of sockets to be removed from the group
     void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
-    void sendBackup_CheckParallelLinks(const std::vector<gli_t>& unstable,
-                                       std::vector<gli_t>&       w_parallel,
-                                       int&                      w_final_stat,
-                                       bool&                     w_none_succeeded,
-                                       SRT_MSGCTRL&              w_mc,
-                                       CUDTException&            w_cx);
+    void sendBackup_RetryWaitBlocked(const std::vector<gli_t>& unstable,
+                                     std::vector<gli_t>&       w_parallel,
+                                     int&                      w_final_stat,
+                                     bool&                     w_none_succeeded,
+                                     SRT_MSGCTRL&              w_mc,
+                                     CUDTException&            w_cx);
+    void sendBackup_SilenceRedundantLinks(std::vector<gli_t>&  w_parallel);
 
     void send_CheckValidSockets();
 
@@ -610,6 +664,17 @@ private:
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
     ReadPos* checkPacketAhead();
+
+    void recv_CollectAliveAndBroken(std::vector<CUDTSocket*>& w_alive, std::set<CUDTSocket*>& w_broken);
+
+    /// The function polls alive member sockets and retrieves a list of read-ready.
+    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
+    ///
+    /// @returns list of read-ready sockets
+    /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
+    /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
+    std::vector<CUDTSocket*> recv_WaitForReadReady(const std::vector<CUDTSocket*>& aliveMembers, std::set<CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read

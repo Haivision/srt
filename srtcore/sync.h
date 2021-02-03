@@ -217,6 +217,11 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+/// Function return number of decimals in a subsecond precision.
+/// E.g. for a microsecond accuracy of steady_clock the return would be 6.
+/// For a nanosecond accuracy of the steady_clock the return value would be 9.
+int clockSubsecondPrecision();
+
 #if ENABLE_STDCXX_SYNC
 
 inline long long count_microseconds(const steady_clock::duration &t)
@@ -620,7 +625,7 @@ private:
 
 
 /// Print steady clock timepoint in a human readable way.
-/// days HH:MM::SS.us [STD]
+/// days HH:MM:SS.us [STD]
 /// Example: 1D 02:12:56.123456
 ///
 /// @param [in] steady clock timepoint
@@ -628,7 +633,7 @@ private:
 std::string FormatTime(const steady_clock::time_point& time);
 
 /// Print steady clock timepoint relative to the current system time
-/// Date HH:MM::SS.us [SYS]
+/// Date HH:MM:SS.us [SYS]
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);

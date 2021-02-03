@@ -110,7 +110,7 @@ public:
         return getErrorMessage();
     }
 
-    const std::string& getErrorString() const;
+    std::string getErrorString() const;
 
     /// Get the system errno for the exception.
     /// @return errno.

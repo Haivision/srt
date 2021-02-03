@@ -783,6 +783,11 @@ is through the epoll flag with [`SRT_EPOLL_ERR`](#SRT_EPOLL_ERR). In this case y
 also call [`srt_getrejectreason`](#srt_getrejectreason) to get the detailed reason for 
 the error, including connection timeout ([`SRT_REJ_TIMEOUT`](#SRT_REJ_TIMEOUT)).
 
+Note that in case of failure the socket is in `SRTS_CONNECTING`, not in
+`SRTS_BROKEN` state. After the failure was reported and you read any extra
+information from the socket, the socket should be manually closed using
+`srt_close` function.
+
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

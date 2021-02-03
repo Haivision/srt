@@ -8,14 +8,22 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-# XXX This can be potentially done in future, but there still exist
-# some dependent project using cmake 2.8 - this can't be done this way.
-#cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.4.2")
-project(SRT C CXX)
+set (SRT_VERSION 1.4.2)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-include(haiUtil)
+include(haiUtil) # needed for set_version_variables
+# CMake version 3.0 introduced the VERSION option of the project() command
+# to specify a project version as well as the name.
+if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
+  project(SRT C CXX)
+  # Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  set_version_variables(SRT_VERSION ${SRT_VERSION})
+else()
+  cmake_policy(SET CMP0048 NEW)
+  # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
+endif()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -42,9 +50,6 @@ set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
 if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
-
-set (SRT_VERSION 1.4.2)
-set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
@@ -775,8 +780,6 @@ MafReadDir(srtcore filelist.maf
 	PRIVATE_HEADERS HEADERS_srt_private
 )
 
-message(STATUS "SRT Sources: ${SOURCES_srt}")
-
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
@@ -821,7 +824,7 @@ if (srt_libspec_shared)
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
-	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
@@ -1163,6 +1166,9 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-client.c)
 	srt_make_application(test-c-client)
 
+	srt_add_example(example-client-nonblock.c)
+	srt_make_application(example-client-nonblock)
+
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
@@ -1196,8 +1202,6 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	MafReadDir(test filelist.maf
 		SOURCES SOURCES_unittests
 	)
-	
-	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)

@@ -59,6 +59,16 @@ TEST_F(CSndLossListTest, InsertPopOneElem)
     CheckEmptyArray();
 }
 
+TEST_F(CSndLossListTest, InsertNegativeSeqno)
+{
+    cerr << "Expecting IPE message:" << endl;
+    EXPECT_EQ(m_lossList->insert(1, SRT_SEQNO_NONE), 0);
+    EXPECT_EQ(m_lossList->insert(SRT_SEQNO_NONE, SRT_SEQNO_NONE), 0);
+    EXPECT_EQ(m_lossList->insert(SRT_SEQNO_NONE, 1), 0);
+    
+    CheckEmptyArray();
+}
+
 /// Insert two elements at once and pop one by one
 TEST_F(CSndLossListTest, InsertPopTwoElemsRange)
 {
@@ -505,13 +515,14 @@ TEST_F(CSndLossListTest, InsertFullListCoalesce)
         EXPECT_EQ(m_lossList->insert(i, i), 1);
     EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
     // Inserting additional element: 1 item more than list size.
-    // But given all elements coalesce into one entry, list size should still increase.
-    EXPECT_EQ(m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1), 1);
-    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
-    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
+    // Given all elements coalesce into one entry, there is a place to insert it,
+    // but sequence span now exceeds list size.
+    EXPECT_EQ(m_lossList->insert(CSndLossListTest::SIZE + 1, CSndLossListTest::SIZE + 1), 0);
+    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE);
+    for (int i = 1; i <= CSndLossListTest::SIZE; i++)
     {
         EXPECT_EQ(m_lossList->popLostSeq(), i);
-        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1 - i);
+        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE - i);
     }
     EXPECT_EQ(m_lossList->popLostSeq(), -1);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
@@ -519,7 +530,7 @@ TEST_F(CSndLossListTest, InsertFullListCoalesce)
     CheckEmptyArray();
 }
 
-TEST_F(CSndLossListTest, DISABLED_InsertFullListNoCoalesce)
+TEST_F(CSndLossListTest, InsertFullListNoCoalesce)
 {
     // We will insert each element with a gap of one elements.
     // This should lead to having space for only [i; SIZE] sequence numbers.
@@ -530,30 +541,29 @@ TEST_F(CSndLossListTest, DISABLED_InsertFullListNoCoalesce)
     // [0]:taken, [1]: empty, [2]: taken, [3]: empty, ...
     EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE / 2);
 
-    // Inserting additional element: 1 item more than list size.
-    // There should be one free place for it at list[SIZE-1]
-    // right after previously inserted element.
+    // Inserting additional element out of the list span must fail.
     const int seqno1 = CSndLossListTest::SIZE + 2;
-    EXPECT_EQ(m_lossList->insert(seqno1, seqno1), 1);
+    EXPECT_EQ(m_lossList->insert(seqno1, seqno1), 0);
 
-    // Inserting one more element into a full list.
-    // There should be no place for it.
-    const int seqno2 = CSndLossListTest::SIZE + 4;
-    EXPECT_EQ(m_lossList->insert(seqno2, seqno2), 0);
+    // There should however be a place for one element right after the last inserted one.
+    const int seqno_last = CSndLossListTest::SIZE + 1;
+    EXPECT_EQ(m_lossList->insert(seqno_last, seqno_last), 1);
 
-    EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE + 1);
-    for (int i = 1; i <= CSndLossListTest::SIZE + 1; i++)
+    const int initial_length = m_lossList->getLossLength();
+    EXPECT_EQ(initial_length, CSndLossListTest::SIZE / 2 + 1);
+    for (int i = 1; i <= CSndLossListTest::SIZE / 2; i++)
     {
         EXPECT_EQ(m_lossList->popLostSeq(), 2 * i);
-        EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE  - i);
+        EXPECT_EQ(m_lossList->getLossLength(), initial_length - i);
     }
+    EXPECT_EQ(m_lossList->popLostSeq(), seqno_last);
     EXPECT_EQ(m_lossList->popLostSeq(), -1);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
 }
 
-TEST_F(CSndLossListTest, DISABLED_InsertFullListNegativeOffset)
+TEST_F(CSndLossListTest, InsertFullListNegativeOffset)
 {
     for (int i = 10000000; i < 10000000 + CSndLossListTest::SIZE; i++)
         m_lossList->insert(i, i);
@@ -569,6 +579,23 @@ TEST_F(CSndLossListTest, DISABLED_InsertFullListNegativeOffset)
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
+}
+
+TEST_F(CSndLossListTest, InsertPositiveOffsetTooFar)
+{
+    const int32_t head_seqno = 1000;
+    EXPECT_EQ(m_lossList->insert(head_seqno, head_seqno), 1);
+    EXPECT_EQ(m_lossList->getLossLength(), 1);
+
+    // The offset of the sequence number being added does not fit
+    // into the size of the loss list, it must be ignored.
+    // Normally this situation should not happen.
+
+    const int32_t outofbound_seqno = head_seqno + CSndLossListTest::SIZE;
+    m_lossList->insert(outofbound_seqno, outofbound_seqno);
+
+    const int32_t outofbound_seqno2 = head_seqno + 2 * CSndLossListTest::SIZE;
+    m_lossList->insert(outofbound_seqno2, outofbound_seqno2);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////

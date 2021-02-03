@@ -154,6 +154,15 @@ and `remote_name` must use the same port. The peer to which this is going to con
 should call the same function, with appropriate local and remote addresses. A rendezvous
 connection means that both parties connect to one another simultaneously.
 
+**IMPORTANT**: The connection may fail, but the socket that was used for connecting
+is not automatically closed and it's also not in broken state (broken state can be
+only if a socket was first successfully connected and then broken). When using blocking
+mode, the connection failure will result in reporting an error from this function call.
+In non-blocking mode the connection failure is designated by the `SRT_EPOLL_ERR` flag
+set for this socket in the epoll container. After that failure you can read an extra
+information from the socket using `srt_getrejectreason` function, and then you should
+close the socket.
+
 ### Listener (Server) Example
 
 ```c++
