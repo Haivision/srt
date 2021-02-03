@@ -238,6 +238,11 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+/// Function return number of decimals in a subsecond precision.
+/// E.g. for a microsecond accuracy of steady_clock the return would be 6.
+/// For a nanosecond accuracy of the steady_clock the return value would be 9.
+int clockSubsecondPrecision();
+
 #if ENABLE_STDCXX_SYNC
 
 inline long long count_microseconds(const steady_clock::duration &t)
@@ -510,26 +515,20 @@ public:
     /// Block the call until either @a timestamp time achieved
     /// or the conditional is signaled.
     /// @param [in] delay Maximum time to wait since the moment of the call
-    /// @retval true Resumed due to getting a CV signal
-    /// @retval false Resumed due to being past @a timestamp
+    /// @retval false if the relative timeout specified by rel_time expired,
+    /// @retval true if condition is signaled or spurious wake up.
     bool wait_for(const steady_clock::duration& delay)
     {
         return m_cond->wait_for(*m_locker, delay);
     }
 
-    // Wait until the given time is achieved. This actually
-    // refers to wait_for for the time remaining to achieve
-    // given time.
+    // Wait until the given time is achieved.
+    /// @param [in] exptime The target time to wait until.
+    /// @retval false if the target wait time is reached.
+    /// @retval true if condition is signal or spurious wake up.
     bool wait_until(const steady_clock::time_point& exptime)
     {
-        // This will work regardless as to which clock is in use. The time
-        // should be specified as steady_clock::time_point, so there's no
-        // question of the timer base.
-        steady_clock::time_point now = steady_clock::now();
-        if (now >= exptime)
-            return false; // timeout
-
-        return wait_for(exptime - now);
+        return m_cond->wait_until(*m_locker, exptime);
     }
 
     // Static ad-hoc version
@@ -661,7 +660,7 @@ private:
 
 
 /// Print steady clock timepoint in a human readable way.
-/// days HH:MM::SS.us [STD]
+/// days HH:MM:SS.us [STD]
 /// Example: 1D 02:12:56.123456
 ///
 /// @param [in] steady clock timepoint
@@ -669,7 +668,7 @@ private:
 std::string FormatTime(const steady_clock::time_point& time);
 
 /// Print steady clock timepoint relative to the current system time
-/// Date HH:MM::SS.us [SYS]
+/// Date HH:MM:SS.us [SYS]
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);

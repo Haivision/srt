@@ -22,7 +22,7 @@ build_script:
   - ps: if ($VSIMG -match '2013' -and $CNFG -eq "Debug")   { Exit-AppveyorBuild } # just skip 2013 debug build for speed
 
 test_script:
-  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest --extra-verbose -C $Env:CONFIGURATION; cd ../ }
+  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C $Env:CONFIGURATION; cd ../ }
   
 after_build:
 - cmd: >-

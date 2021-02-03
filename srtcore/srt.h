@@ -206,8 +206,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_LATENCY = 23,        // NOT RECOMMENDED. SET: to both SRTO_RCVLATENCY and SRTO_PEERLATENCY. GET: same as SRTO_RCVLATENCY.
    SRTO_INPUTBW = 24,        // Estimated input stream rate.
    SRTO_OHEADBW,             // MaxBW ceiling based on % over input stream rate. Applies when UDT_MAXBW=0 (auto).
-   SRTO_PASSPHRASE = 26,     // Crypto PBKDF2 Passphrase size[0,10..64] 0:disable crypto
-   SRTO_PBKEYLEN,            // Crypto key len in bytes {16,24,32} Default: 16 (128-bit)
+   SRTO_PASSPHRASE = 26,     // Crypto PBKDF2 Passphrase (must be 10..79 characters, or empty to disable encryption)
+   SRTO_PBKEYLEN,            // Crypto key len in bytes {16,24,32} Default: 16 (AES-128)
    SRTO_KMSTATE,             // Key Material exchange status (UDT_SRTKmState)
    SRTO_IPTTL = 29,          // IP Time To Live (passthru for system sockopt IPPROTO_IP/IP_TTL)
    SRTO_IPTOS,               // IP Type of Service (passthru for system sockopt IPPROTO_IP/IP_TOS)
@@ -980,7 +980,7 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API extern const char* const srt_rejectreason_msg [];
-const char* srt_rejectreason_str(int id);
+SRT_API const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
 

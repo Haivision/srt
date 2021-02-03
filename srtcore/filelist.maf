@@ -22,6 +22,7 @@ congctl.cpp
 srt_c_api.cpp
 window.cpp
 srt_compat.c
+strerror_defs.cpp
 sync.cpp
 
 SOURCES - ENABLE_EXPERIMENTAL_BONDING

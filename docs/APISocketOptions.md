@@ -867,20 +867,23 @@ For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 | `SRTO_PASSPHRASE`    | 0.0.0 | pre     | `string`   |         | ""       |[10..79]| W   | GSD    |
 
 Sets the passphrase for encryption. This enables encryption on this party (or
-disables it, if an empty passphrase is passed).
+disables it, if an empty passphrase is passed). The password must be minimum
+10 and maximum 79 characters long.
 
 The passphrase is the shared secret between the sender and the receiver. It is
 used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2)
-(Password-Based Key Derivation Function 2). It is used on the receiver only if
-the received data is encrypted.
+(Password-Based Key Derivation Function 2).
+
+When a socket with configured passphrase is being connected, the peer must
+have the same password set, or the connection is rejected. This behavior can be
+changed by [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION).
 
 Note that since the introduction of bidirectional support, there's only one
-initial SEK to encrypt the stream (new keys after refreshing will be updated
-independently), and there's no distinction between "service party that defines
-the password" and "client party that is required to set matching password" - both
-parties are equivalent, and in order to have a working encrypted connection, they
-have to simply set the same passphrase. Otherwise the connection is rejected by
-default (see also [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)).
+initial encryption key to encrypt the stream (new keys after refreshing will be
+updated independently), and there's no distinction between "service party that
+defines the password" and "client party that is required to set matching
+password" - both parties are equivalent, and in order to have a working
+encrypted connection, they have to simply set the same passphrase.
 
 [Return to list](#list-of-options)
 
@@ -911,7 +914,7 @@ For File mode: Default value is 0 and it's recommended not to be changed.
 | -------------------- | ----- | ------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_PBKEYLEN`      | 0.0.0 | pre     | `int32_t`  | bytes   | 0        | *      | RW  | GSD    |
 
-Sender encryption key length.
+Encryption key length.
 
 Possible values:
 

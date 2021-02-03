@@ -22,6 +22,49 @@
 
 #include "srt.h"
 
+// Note that in this example application there's a listening
+// socket, off which then a transmission socket is accepted,
+// then this socket will be used for reading. Therefore the same
+// function will be used for waiting for the listener to get the
+// accepted socket ready and then to wait for read-readiness on
+// the transmission socket. For a model of waiting for write-ready
+// see test-c-client-bonding.c file.
+int WaitForReadReady(int eid, SRTSOCKET ss)
+{
+    int ready_in[2];
+    int ready_in_len = 2;
+    int ready_err[2];
+    int ready_err_len = 2;
+
+    int st = srt_epoll_wait(eid, ready_in, &ready_in_len, ready_err, &ready_err_len, -1,
+            0, 0, 0, 0);
+
+    // Note: with indefinite wait time we can either have a connection reported
+    // or possibly error. Also srt_epoll_wait never returns 0 - at least the number
+    // of ready connections is reported or -1 is returned for error, including timeout.
+    if (st < 1)
+    {
+        fprintf(stderr, "srt_epoll_wait: %s\n", srt_getlasterror_str());
+        return 0;
+    }
+
+    // Check if this was reported as error-ready, in which case it doesn't
+    // matter if read-ready.
+    if (ready_err[0] == ss)
+    {
+        fprintf(stderr, "srt_epoll_wait: socket @%d reported error\n", ss);
+        return 0;
+    }
+
+    if (ready_in[0] != ss)
+    {
+        fprintf(stderr, "srt_epoll_wait: socket @%d not reported ready\n", ss);
+        return 0;
+    }
+
+    return 1;
+}
+
 int main(int argc, char** argv)
 {
     int globstatus = 0;
@@ -32,9 +75,10 @@ int main(int argc, char** argv)
     struct sockaddr_storage their_addr;
     SRT_SOCKGROUPDATA* grpdata = NULL;
 
-    if (argc != 3) {
-      fprintf(stderr, "Usage: %s <host> <port>\n", argv[0]);
-      return 1;
+    if (argc < 3 || argc > 4)
+    {
+        fprintf(stderr, "Usage: %s <host> <port> [options]\n", argv[0]);
+        return 1;
     }
 
     printf("srt startup\n");
@@ -50,6 +94,19 @@ int main(int argc, char** argv)
         goto cleanup;
     }
     // Now that the socket is created, jump to 'end' on error.
+
+    // Check options
+    int is_nonblocking = 0;
+    SRTSOCKET their_fd = SRT_INVALID_SOCK; // declared early because of gotos
+    int eid = -1;
+    int lsn_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+    int read_modes = lsn_modes;
+    if (argc > 3)
+    {
+        const char* opt = argv[3];
+        if (strchr(opt, 'n'))
+            is_nonblocking = 1;
+    }
 
     printf("srt bind address\n");
     if (0 == strcmp(argv[1], "0"))
@@ -77,6 +134,14 @@ int main(int argc, char** argv)
         goto end;
     }
 
+    if (is_nonblocking)
+    {
+        int blockingmode = 0;
+        srt_setsockflag(ss, SRTO_RCVSYN, &blockingmode, sizeof (blockingmode));
+        eid = srt_epoll_create();
+        srt_epoll_add_usock(eid, ss, &lsn_modes);
+    }
+
     printf("srt listen\n");
 
     // We set here 10, just for a case. Every unit in this number
@@ -91,6 +156,7 @@ int main(int argc, char** argv)
         goto end;
     }
 
+
     // In this example, there will be prepared an array of 10 items.
     // The listener, however, doesn't know how many member connections
     // one bonded connection will contain, so a real application should be
@@ -98,14 +164,49 @@ int main(int argc, char** argv)
     const size_t N = 10;
     grpdata = calloc(N, sizeof (SRT_SOCKGROUPDATA));
 
+    // In non-blocking mode you can't call srt_accept immediately.
+    // You must first wait for readiness on the listener socket.
+    if (is_nonblocking)
+    {
+        printf("srt wait for listener socket reporting in a new connection\n");
+        if (!WaitForReadReady(eid, ss))
+            goto end;
+    }
+
     printf("srt accept\n");
     int addr_size = sizeof their_addr;
-    SRTSOCKET their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
+    their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
+
+    if (their_fd == -1)
+    {
+        fprintf(stderr, "srt_accept: %s\n", srt_getlasterror_str());
+        goto end;
+    }
+
+    printf("accepted socket: @%d\n", their_fd);
 
     // You never know if `srt_accept` is going to give you a socket or a group.
     // You have to check it on your own. The SRTO_GROUPCONNECT flag doesn't disallow
     // single socket connections.
     int isgroup = their_fd & SRTGROUP_MASK;
+
+    if (!isgroup)
+    {
+        fprintf(stderr, "srt_accept: Accepted @%d is not a group???\n", their_fd);
+        goto end;
+    }
+
+    if (is_nonblocking)
+    {
+        // NOTE: The SRTO_RCVSYN = false flag will be derived from
+        // the listener socket and we are going to read, so it matches
+        // the need. In case when you'd like to write to the accepted
+        // socket, you'd have to set also SRTO_SNDSYN = false.
+        srt_epoll_add_usock(eid, their_fd, &read_modes);
+
+        // The listener socket is no longer important.
+        srt_epoll_remove_usock(eid, ss);
+    }
 
     // Still, use the same procedure for receiving, no matter if
     // this is a bonded or single connection.
@@ -117,6 +218,14 @@ int main(int argc, char** argv)
         SRT_MSGCTRL mc = srt_msgctrl_default;
         mc.grpdata = grpdata;
         mc.grpdata_size = N;
+
+        if (is_nonblocking)
+        {
+            // Block in epoll as srt_recvmsg2 will not block.
+            if (!WaitForReadReady(eid, their_fd))
+                goto end;
+        }
+
         st = srt_recvmsg2(their_fd, msg, sizeof msg, &mc);
         if (st == SRT_ERROR)
         {
@@ -146,8 +255,18 @@ int main(int argc, char** argv)
     }
 
 end:
+    if (eid != -1)
+    {
+        srt_epoll_release(eid);
+    }
     free(grpdata);
     printf("srt close\n");
+    st = srt_close(their_fd); // just for a case; broken socket should be wiped out anyway
+    if (st == SRT_ERROR)
+    {
+        fprintf(stderr, "srt_close: %s\n", srt_getlasterror_str());
+        // But not matter, we're finishing here.
+    }
     st = srt_close(ss);
     if (st == SRT_ERROR)
     {

@@ -83,12 +83,11 @@ public:
        , m_ListenSocket(0)
        , m_PeerID(0)
 #if ENABLE_EXPERIMENTAL_BONDING
-       , m_IncludedGroup()
+       , m_GroupMemberData()
+       , m_GroupOf()
 #endif
        , m_iISN(0)
        , m_pUDT(NULL)
-       , m_pQueuedSockets(NULL)
-       , m_pAcceptSockets(NULL)
        , m_AcceptCond()
        , m_AcceptLock()
        , m_uiBackLog(0)
@@ -110,24 +109,23 @@ public:
    /// 1 second (see CUDTUnited::checkBrokenSockets()).
    srt::sync::steady_clock::time_point m_tsClosureTimeStamp;
 
-   sockaddr_any m_SelfAddr;                    //< local address of the socket
-   sockaddr_any m_PeerAddr;                    //< peer address of the socket
+   sockaddr_any m_SelfAddr;                  //< local address of the socket
+   sockaddr_any m_PeerAddr;                  //< peer address of the socket
 
    SRTSOCKET m_SocketID;                     //< socket ID
    SRTSOCKET m_ListenSocket;                 //< ID of the listener socket; 0 means this is an independent socket
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup::gli_t m_IncludedIter;          //< Container's iterator of the group to which it belongs, or gli_NULL() if it isn't
-   CUDTGroup* m_IncludedGroup;               //< Group this socket is a member of, or NULL if it isn't
+   CUDTGroup::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+   CUDTGroup* m_GroupOf;                     //< Group this socket is a member of, or NULL if it isn't
 #endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
-   std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
+   std::set<SRTSOCKET> m_QueuedSockets;    //< set of connections waiting for accept()
 
    srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
    srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
@@ -204,6 +202,9 @@ public:
    CUDTUnited();
    ~CUDTUnited();
 
+   // Public constants
+   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+
 public:
 
    enum ErrorHandling { ERH_RETURN, ERH_THROW, ERH_ABORT };
@@ -229,10 +230,12 @@ public:
       /// @param [in] listen the listening UDT socket;
       /// @param [in] peer peer address.
       /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
+      /// @param [out] w_error error code when failed
+      /// @param [out] w_acpu entity of accepted socket, if connection already exists
       /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
 
    int newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
-           CHandShake& w_hs, int& w_error);
+           CHandShake& w_hs, int& w_error, CUDT*& w_acpu);
 
    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
    int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
@@ -345,8 +348,6 @@ private:
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
-
-   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
 
    SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
    SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
