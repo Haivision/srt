@@ -520,6 +520,8 @@ bool DoDownload(UriParser& us, string directory, string filename,
         status = srt_getsockstate(s);
         Verb() << "Event with status " << status << "\n";
 
+        bool broken = false;
+
         switch (status)
         {
             case SRTS_LISTENING:
@@ -557,7 +559,12 @@ bool DoDownload(UriParser& us, string directory, string filename,
                 }
             }
             break;
+
             case SRTS_BROKEN:
+            cerr << "Connection closed, reading buffer remains\n";
+            broken = true;
+            break;
+
             case SRTS_NONEXIST:
             case SRTS_CLOSED:
             {
