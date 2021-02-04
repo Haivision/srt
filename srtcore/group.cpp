@@ -3036,40 +3036,28 @@ private:
 StabilityTracer s_stab_trace;
 #endif
 
-/// TODO: Remove 'weight' parameter. Only needed for logging.
+/// TODO: Remove 'weight' parameter? Only needed for logging.
 /// @retval  1 - link is identified as stable
 /// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
 /// @retval -1 - link is identified as unstable
 static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight)
 {
-    // There was already a response from peer while we are here.
-    // m_tsUnstableSince = 0;
-    // Do we need to keep the activation phase?
-    /*if (currtime <= u.LastRspTime()) {
-#if SRT_DEBUG_BONDING_STATES
-        s_stab_trace.trace(u, currtime, -1, "STABLE", weight);
-#endif
-        return 1;
-    }*/
-
-    // RTT and RTTVar values during activation period are still being refined,
-    // therefore it is incorrect to use the dymanic timeout.
     const uint32_t latency_us = u.peer_latency_us();
-    const uint32_t activation_period_us = latency_us + 50000;
-    //const int64_t since_activation_us = count_microseconds(currtime - u.FreshActivationStart());
+    const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
+    const int64_t initial_stabtout_us  = max<int64_t>(min_stability_us, latency_us);
+    const int64_t activation_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
+
+    // RTT and RTTVar values are still being refined during activation period,
+    // therefore the dymanic timeout should not be used in activation phase.
     const bool is_activation_phase = !is_zero(u.FreshActivationStart())
         && (count_microseconds(currtime - u.FreshActivationStart()) <= activation_period_us);
 
-    const int32_t min_stability_us = 60000; // Minimum Link Stability Timeout: 60ms.
     const int peer_idle_tout_us = u.peer_idle_tout_ms() * 1000;
 
-    SRT_ASSERT(latency_us < peer_idle_tout_us);
     const int64_t stability_tout_us = is_activation_phase
-        ? min<int64_t>(max<int64_t>(min_stability_us, latency_us), peer_idle_tout_us) // activation phase
+        ? initial_stabtout_us // activation phase
         : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.RTT() + 4 * u.RTTVar()), latency_us);
     
-    // TODO: td_response = currtime - max(u.LastRspTime(), u.FreshActivationStart());
-    // TODO: remove m_iOptGroupStabTimeout
     const steady_clock::duration td_response = currtime - u.LastRspTime();
     if (count_microseconds(td_response) > stability_tout_us)
     {
@@ -3111,7 +3099,6 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
               << " unstable="
               << (!is_zero(u.m_tsUnstableSince) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsUnstableSince) : "NEVER")
               << "}");
-
 
     const int is_stable = sendBackup_CheckRunningLinkStable(u, currtime, d->weight);
 
