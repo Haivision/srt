@@ -2093,20 +2093,10 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
 
             readReady.push_back(*sockiter);
         }
-        else
+        else if (sock->core().m_pRcvBuffer->isRcvDataReady())
         {
             // No reqd-readiness on the socket, but could have missed or not yet handled, so check the state manually
-            steady_clock::time_point tsbpdtime;
-            int current_pkt_seq = 0;
-
-            int32_t skiptoseqno = SRT_SEQNO_NONE;
-            bool    passack     = true; // Get next packet to wait for even if not acked
-            const bool rxready = sock->core().m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
-
-            if (rxready)
-            {
-                readReady.push_back(sock);
-            }
+            readReady.push_back(sock);
         }
     }
     
