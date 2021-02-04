@@ -2095,7 +2095,8 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
         else if (sock->core().m_pRcvBuffer->isRcvDataReady())
         {
-            // No reqd-readiness on the socket, but could have missed or not yet handled, so check the state manually
+            // No read-readiness reported by epoll, but probably missed or not yet handled
+            // as the receiver buffer is read-ready.
             readReady.push_back(sock);
         }
     }
