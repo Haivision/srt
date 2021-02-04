@@ -196,11 +196,16 @@ private:
 
     enum EHangStatus
     {
+        HANG_NOTDONE,
         HANG_SUCCESS,
         HANG_PAST,
-        HANG_CRAZY,
-        HANG_NOTDONE
+        HANG_CRAZY
     };
+
+    friend bool operator <(FECFilterBuiltin::EHangStatus a, FECFilterBuiltin::EHangStatus b)
+    {
+        return int(a) < int(b);
+    }
 
     EHangStatus HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
     EHangStatus HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
