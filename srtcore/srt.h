@@ -759,6 +759,7 @@ SRT_API       SRTSOCKET srt_create_socket(void);
 // Stubs when off
 
 typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
+typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
 
 #if ENABLE_EXPERIMENTAL_BONDING
 
@@ -796,8 +797,6 @@ struct SRT_SocketGroupData_
     int token;
 };
 
-typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
-
 typedef struct SRT_GroupMemberConfig_
 {
     SRTSOCKET id;
@@ -816,14 +815,16 @@ SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
 SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
-SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
-SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
-SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
-
 SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
 SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
 
 #endif // ENABLE_EXPERIMENTAL_BONDING
+
+SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
+SRT_API SRT_SOCKOPT_CONFIG* srt_clone_config(const SRT_SOCKOPT_CONFIG* old);
+SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
+SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
+SRT_API int srt_config_apply(SRT_SOCKOPT_CONFIG* config, SRTSOCKET s);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);

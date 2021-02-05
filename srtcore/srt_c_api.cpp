@@ -49,10 +49,16 @@ int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
     return CUDT::configureGroup(socketgroup, str);
 }
+#endif
 
 SRT_SOCKOPT_CONFIG* srt_create_config()
 {
     return new SRT_SocketOptionObject;
+}
+
+SRT_SOCKOPT_CONFIG* srt_clone_config(const SRT_SOCKOPT_CONFIG* old)
+{
+    return new SRT_SocketOptionObject(*old);
 }
 
 void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
@@ -70,7 +76,21 @@ int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* c
 
     return 0;
 }
-#endif
+
+int srt_config_apply(SRT_SOCKOPT_CONFIG* config, SRTSOCKET s)
+{
+    if (!config)
+        return SRT_ERROR;
+
+    if (s == SRT_INVALID_SOCK)
+        return SRT_ERROR;
+
+    if (CUDT::applyConfigObject(s, *config) == SRT_ERROR)
+        return SRT_ERROR;
+
+    return 0;
+}
+
 
 // int srt_bind_multicast()
 

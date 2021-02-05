@@ -1332,53 +1332,10 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     }
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
 bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
 {
     // Check first if this option is allowed to be set
     // as on a member socket.
-
-    switch (optname)
-    {
-    case SRTO_BINDTODEVICE:
-    case SRTO_CONNTIMEO:
-    case SRTO_DRIFTTRACER:
-        //SRTO_FC - not allowed to be different among group members
-    case SRTO_GROUPSTABTIMEO:
-        //SRTO_INPUTBW - per transmission setting
-    case SRTO_IPTOS:
-    case SRTO_IPTTL:
-    case SRTO_KMREFRESHRATE:
-    case SRTO_KMPREANNOUNCE:
-        //SRTO_LATENCY - per transmission setting
-        //SRTO_LINGER - not for managed sockets
-    case SRTO_LOSSMAXTTL:
-        //SRTO_MAXBW - per transmission setting
-        //SRTO_MESSAGEAPI - groups are live mode only
-        //SRTO_MINVERSION - per group connection setting
-    case SRTO_NAKREPORT:
-        //SRTO_OHEADBW - per transmission setting
-        //SRTO_PACKETFILTER - per transmission setting
-        //SRTO_PASSPHRASE - per group connection setting
-        //SRTO_PASSPHRASE - per transmission setting
-        //SRTO_PBKEYLEN - per group connection setting
-    case SRTO_PEERIDLETIMEO:
-    case SRTO_RCVBUF:
-        //SRTO_RCVSYN - must be always false in groups
-        //SRTO_RCVTIMEO - must be alwyas -1 in groups
-    case SRTO_SNDBUF:
-    case SRTO_SNDDROPDELAY:
-        //SRTO_TLPKTDROP - per transmission setting
-        //SRTO_TSBPDMODE - per transmission setting
-    case SRTO_UDP_RCVBUF:
-    case SRTO_UDP_SNDBUF:
-        break;
-
-    default:
-        // Other options are not allowed
-        return false;
-
-    }
 
     // Header size will get the size likely aligned, but it won't
     // hurt if the memory size will be up to 4 bytes more than
@@ -1397,14 +1354,72 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     return true;
 }
 
+SRT_ERRNO CUDT::applyConfigObject(const SRT_SocketOptionObject& opt)
+{
+    SRT_SOCKOPT this_opt = SRTO_VERSION;
+    for (size_t i = 0; i < opt.options.size(); ++i)
+    {
+        SRT_SocketOptionObject::SingleOption* o = opt.options[i];
+        HLOGC(smlog.Debug, log << "applyConfigObject: OPTION @" << m_SocketID << " #" << o->option);
+        this_opt = SRT_SOCKOPT(o->option);
+        setOpt(this_opt, o->storage, o->length);
+    }
+    return SRT_SUCCESS;
+}
+
+#if ENABLE_EXPERIMENTAL_BONDING
 SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 {
     SRT_SOCKOPT this_opt = SRTO_VERSION;
     for (size_t i = 0; i < opt.options.size(); ++i)
     {
         SRT_SocketOptionObject::SingleOption* o = opt.options[i];
-        HLOGC(smlog.Debug, log << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
         this_opt = SRT_SOCKOPT(o->option);
+
+        switch (this_opt)
+        {
+        case SRTO_BINDTODEVICE:
+        case SRTO_CONNTIMEO:
+        case SRTO_DRIFTTRACER:
+            //SRTO_FC - not allowed to be different among group members
+        case SRTO_GROUPSTABTIMEO:
+            //SRTO_INPUTBW - per transmission setting
+        case SRTO_IPTOS:
+        case SRTO_IPTTL:
+        case SRTO_KMREFRESHRATE:
+        case SRTO_KMPREANNOUNCE:
+            //SRTO_LATENCY - per transmission setting
+            //SRTO_LINGER - not for managed sockets
+        case SRTO_LOSSMAXTTL:
+            //SRTO_MAXBW - per transmission setting
+            //SRTO_MESSAGEAPI - groups are live mode only
+            //SRTO_MINVERSION - per group connection setting
+        case SRTO_NAKREPORT:
+            //SRTO_OHEADBW - per transmission setting
+            //SRTO_PACKETFILTER - per transmission setting
+            //SRTO_PASSPHRASE - per group connection setting
+            //SRTO_PASSPHRASE - per transmission setting
+            //SRTO_PBKEYLEN - per group connection setting
+        case SRTO_PEERIDLETIMEO:
+        case SRTO_RCVBUF:
+            //SRTO_RCVSYN - must be always false in groups
+            //SRTO_RCVTIMEO - must be alwyas -1 in groups
+        case SRTO_SNDBUF:
+        case SRTO_SNDDROPDELAY:
+            //SRTO_TLPKTDROP - per transmission setting
+            //SRTO_TSBPDMODE - per transmission setting
+        case SRTO_UDP_RCVBUF:
+        case SRTO_UDP_SNDBUF:
+            break;
+
+        default:
+            // Other options are not allowed
+            LOGC(smlog.Error, log << "applyMemberConfigObject: OPTION #" << o->option << " not allowed on members");
+
+            continue; // Simply ignore. It's not a big deal, and interrupting connection process would be hard here.
+        }
+
+        HLOGC(smlog.Debug, log << "applyConfigObject: OPTION @" << m_SocketID << " #" << o->option);
         setOpt(this_opt, o->storage, o->length);
     }
     return SRT_SUCCESS;

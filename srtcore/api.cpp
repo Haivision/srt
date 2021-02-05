@@ -4226,6 +4226,33 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
    }
 }
 
+int CUDT::applyConfigObject(SRTSOCKET u, const SRT_SocketOptionObject& opt)
+{
+    try
+    {
+        SRT_ERRNO e = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT->applyConfigObject(opt);
+        if (e != SRT_SUCCESS) // Not supported for now, just leaving for future.
+        {
+            SetThreadLocalError(CUDTException(MJ_NOTSUP, MN_INVAL));
+            return SRT_ERROR;
+        }
+    }
+    catch (const CUDTException& e)
+    {
+        SetThreadLocalError(e);
+        return SRT_ERROR;
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal, log << "getUDTHandle: UNEXPECTED EXCEPTION: "
+                << typeid(ee).name() << ": " << ee.what());
+        SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+        return SRT_ERROR;
+    }
+
+    return 0;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
