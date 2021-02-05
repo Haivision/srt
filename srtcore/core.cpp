@@ -11172,7 +11172,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
      * (keepalive fix)
      * duB:
      * It seems there is confusion of the direction of the Response here.
-     * LastRspTime is supposed to be when receiving (data/ctrl) from peer
+     * lastRspTime is supposed to be when receiving (data/ctrl) from peer
      * as shown in processCtrl and processData,
      * Here we set because we sent something?
      *

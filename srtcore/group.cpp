@@ -2992,13 +2992,13 @@ public:
         m_fout << srt::sync::FormatTime(currtime) << ",";
         m_fout << u.id() << ",";
         m_fout << weight << ",";
-        m_fout << u.peer_latency_us() << ",";
+        m_fout << u.peerLatency_us() << ",";
         m_fout << u.RTT() << ",";
         m_fout << u.RTTVar() << ",";
         m_fout << stability_tmo_us << ",";
-        m_fout << count_microseconds(currtime - u.LastRspTime()) << ",";
+        m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
         m_fout << state << ",";
-        m_fout << (srt::sync::is_zero(u.FreshActivationStart()) ? -1 : (count_microseconds(currtime - u.FreshActivationStart()))) << ",";
+        m_fout << (srt::sync::is_zero(u.freshActivationStart()) ? -1 : (count_microseconds(currtime - u.freshActivationStart()))) << ",";
         m_fout << activation_period_us << "\n";
         m_fout.flush();
     }
@@ -3042,23 +3042,22 @@ StabilityTracer s_stab_trace;
 /// @retval -1 - link is identified as unstable
 static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight)
 {
-    const uint32_t latency_us = u.peer_latency_us();
+    const uint32_t latency_us = u.peerLatency_us();
     const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
     const int64_t initial_stabtout_us  = max<int64_t>(min_stability_us, latency_us);
     const int64_t activation_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
 
     // RTT and RTTVar values are still being refined during activation period,
     // therefore the dymanic timeout should not be used in activation phase.
-    const bool is_activation_phase = !is_zero(u.FreshActivationStart())
-        && (count_microseconds(currtime - u.FreshActivationStart()) <= activation_period_us);
-
-    const int peer_idle_tout_us = u.peer_idle_tout_ms() * 1000;
+    const bool is_activation_phase = !is_zero(u.freshActivationStart())
+        && (count_microseconds(currtime - u.freshActivationStart()) <= activation_period_us);
 
     const int64_t stability_tout_us = is_activation_phase
         ? initial_stabtout_us // activation phase
         : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.RTT() + 4 * u.RTTVar()), latency_us);
     
-    const steady_clock::duration td_response = currtime - u.LastRspTime();
+    const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
+    const steady_clock::duration td_response = currtime - last_rsp;
     if (count_microseconds(td_response) > stability_tout_us)
     {
 #if SRT_DEBUG_BONDING_STATES
@@ -3067,7 +3066,7 @@ static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::ste
         return -1;
     }
 
-    // u.LastRspTime() > currtime is alwats true due to the very first check above in this function
+    // u.lastRspTime() > currtime is alwats true due to the very first check above in this function
 #if SRT_DEBUG_BONDING_STATES
     s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION" : "STABLE", weight);
 #endif
