@@ -2640,6 +2640,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (jump > 0)
                 {
                     m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
+                    LOGC(grlog.Warn,
+                         log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
+                             << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
                 }
 
                 m_RcvBaseSeqNo    = slowest_kangaroo->second.mctrl.pktseq;
