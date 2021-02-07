@@ -161,6 +161,10 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    typedef int SYSSOCKET;
 #endif
 
+#ifndef ENABLE_EXPERIMENTAL_BONDING
+#define ENABLE_EXPERIMENTAL_BONDING 0
+#endif
+
 typedef SYSSOCKET UDPSOCKET;
 
 
