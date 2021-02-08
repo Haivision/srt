@@ -192,6 +192,13 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
           log << "addBuffer: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for "
               << len << " bytes");
 
+    if (len <= 0)
+    {
+        LOGC(bslog.Error,
+             log << "IPE: addBuffer: %" << w_seqno << " #" << w_msgno << " invalid message length " << len);
+        return;
+    }
+
     // dynamically increase sender buffer
     while (size + m_iCount >= m_iSize)
     {
@@ -199,7 +206,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         increase();
     }
 
-    const steady_clock::time_point time = steady_clock::now();
+    const steady_clock::time_point currtime = steady_clock::now();
     const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     HLOGC(bslog.Debug,
@@ -223,6 +230,17 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(bslog.Debug, log << "addBuffer: OVERWRITTEN by msgno supplied by caller: msgno=" << w_msgno);
         m_iNextMsgNo = w_msgno;
     }
+
+    if (!w_srctime)
+    {
+        // Rewrite the actual sending time back into w_srctime
+        // so that the calling facilities can reuse it
+        w_srctime = count_microseconds(currtime.time_since_epoch());
+    }
+
+    // Intentionally dropping a possible sub-microsecond precision
+    // in case this timestamp is to be populated on other packets via msgctrl.src_time
+    const steady_clock::time_point timestamp = steady_clock::time_point() + microseconds_from(w_srctime);
 
     for (int i = 0; i < size; ++i)
     {
@@ -251,14 +269,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_llSourceTime_us = w_srctime;
-        s->m_tsOriginTime = time;
+        s->m_tsTimestamp = timestamp;
         s->m_tsRexmitTime = time_point();
         s->m_iTTL = w_ttl;
-        // Rewrite the actual sending time back into w_srctime
-        // so that the calling facilities can reuse it
-        if (!w_srctime)
-            w_srctime = count_microseconds(s->m_tsOriginTime.time_since_epoch());
 
         // XXX unchecked condition: s->m_pNext == NULL.
         // Should never happen, as the call to increase() should ensure enough buffers.
@@ -271,11 +284,11 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     m_iCount += size;
 
     m_iBytesCount += len;
-    m_tsLastOriginTime = time;
+    m_tsLastTimestamp = timestamp;
 
-    updateInputRate(time, size, len);
+    updateInputRate(currtime, size, len);
 
-    updAvgBufSize(time);
+    updAvgBufSize(currtime);
 
     leaveCS(m_BufLock);
 
@@ -402,12 +415,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 
 steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& block)
 {
-    if (block.m_llSourceTime_us)
-    {
-        return steady_clock::time_point() + microseconds_from(block.m_llSourceTime_us);
-    }
-
-    return block.m_tsOriginTime;
+    return block.m_tsTimestamp;
 }
 
 int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
@@ -538,7 +546,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // if found block is stale
     // (This is for messages that have declared TTL - messages that fail to be sent
     // before the TTL defined time comes, will be dropped).
-    if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
+    if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsTimestamp) > p->m_iTTL))
     {
         int32_t msgno = p->getMsgSeq();
         w_msglen      = 1;
@@ -665,7 +673,7 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
      * Also, if there is only one pkt in buffer, the time difference will be 0.
      * Therefore, always add 1 ms if not empty.
      */
-    w_timespan = 0 < m_iCount ? count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
+    w_timespan = 0 < m_iCount ? count_milliseconds(m_tsLastTimestamp - m_pFirstBlock->m_tsTimestamp) + 1 : 0;
 
     return m_iCount;
 }
@@ -678,7 +686,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     int32_t msgno  = 0;
 
     ScopedLock bufferguard(m_BufLock);
-    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsOriginTime < too_late_time; ++i)
+    for (int i = 0; i < m_iCount && m_pFirstBlock->m_tsTimestamp < too_late_time; ++i)
     {
         dpkts++;
         dbytes += m_pFirstBlock->m_iLength;
