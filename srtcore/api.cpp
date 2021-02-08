@@ -1947,7 +1947,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
 
-   bool synch_close_snd = s->m_pUDT->m_config.m_bSynSending;
+   const bool synch_close_snd = s->m_pUDT->m_config.m_bSynSending;
 
    SRTSOCKET u = s->m_SocketID;
 
@@ -2829,7 +2829,7 @@ void CUDTUnited::updateMux(
           // need to find an existing multiplexer that binds to the
           // given port in the same family as requested address.
           if ((i->second.m_iIPversion == addr.family())
-                  && i->second.m_mcfg.compatWith(s->m_pUDT->m_config))
+                  && i->second.m_mcfg == s->m_pUDT->m_config)
           {
             if (i->second.m_iPort == port)
             {

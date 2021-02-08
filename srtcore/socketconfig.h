@@ -98,7 +98,7 @@ struct CSrtMuxerConfig
     DEFINEP(IpToS);
 #undef DEFINEP
 
-    bool compatWith(const CSrtMuxerConfig& other)
+    bool operator==(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(m_iIpTTL)
