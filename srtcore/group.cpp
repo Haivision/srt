@@ -3027,7 +3027,7 @@ private:
             return;
 
         std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
-        str_tnow.resize(str_tnow.size() - 6); // remove trailing ' [SYS]' part
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
         while (str_tnow.find(':') != std::string::npos) {
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
         }
@@ -3051,7 +3051,7 @@ StabilityTracer s_stab_trace;
 /// @retval  1 - link is identified as stable
 /// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
 /// @retval -1 - link is identified as unstable
-static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight)
+static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight ATR_UNUSED)
 {
     const uint32_t latency_us = u.peerLatency_us();
     const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
