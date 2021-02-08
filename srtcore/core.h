@@ -374,9 +374,12 @@ public: // internal API
 
     bool isOPT_TsbPd() const { return m_bOPT_TsbPd; }
     int RTT() const { return m_iRTT; }
+    int RTTVar() const { return m_iRTTVar; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
+    srt::sync::steady_clock::time_point lastRspTime() const { return m_tsLastRspTime; }
+    srt::sync::steady_clock::time_point freshActivationStart() const { return m_tsFreshActivation; }
 
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
     int flowWindowSize() const { return m_iFlowWindowSize; }
@@ -385,7 +388,8 @@ public: // internal API
     int64_t maxBandwidth() const { return m_llMaxBW; }
     int MSS() const { return m_iMSS; }
 
-    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    uint32_t peerLatency_us() const {return m_iPeerTsbPdDelay_ms * 1000; }
+    int peerIdleTimeout_ms() const { return m_iOPT_PeerIdleTimeout; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_zOPT_ExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }

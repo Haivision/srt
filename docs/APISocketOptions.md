@@ -437,6 +437,8 @@ function will return the group, not this socket ID.
 | --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_GROUPSTABTIMEO` | 1.5.0 | pre      | `int32_t`  | ms     | 80       | 10-... | W   | GSD+   |
 
+**Not in use at the moment. Is to be repurposed in SRT v1.4.3!**
+
 This setting is used for groups of type `SRT_GTYPE_BACKUP`. It defines the stability
 timeout, which is the maximum interval between two consecutive packets retrieved from
 the peer on the currently active link. These two packets can be of any type,
