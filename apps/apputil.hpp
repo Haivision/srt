@@ -362,6 +362,9 @@ public:
     virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
     virtual ~SrtStatsWriter() { };
 
+    // Only if HAS_PUT_TIME. Specified in the imp file.
+    std::string print_timestamp();
+
     void Option(const std::string& key, const std::string& val)
     {
         options[key] = val;

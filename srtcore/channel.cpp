@@ -137,8 +137,8 @@ static int set_cloexec(int fd, int set) {
 #endif // ifndef _WIN32
 #endif // if ENABLE_CLOEXEC
 
-CChannel::CChannel():
-m_iSocket(INVALID_SOCKET)
+CChannel::CChannel()
+    :m_iSocket(INVALID_SOCKET)
 {
 }
 

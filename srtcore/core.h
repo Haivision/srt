@@ -302,9 +302,12 @@ public: // internal API
 
     bool isOPT_TsbPd() const { return m_config.m_bTSBPD; }
     int RTT() const { return m_iRTT; }
+    int RTTVar() const { return m_iRTTVar; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
+    srt::sync::steady_clock::time_point lastRspTime() const { return m_tsLastRspTime; }
+    srt::sync::steady_clock::time_point freshActivationStart() const { return m_tsFreshActivation; }
 
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
     int flowWindowSize() const { return m_iFlowWindowSize; }
@@ -313,7 +316,8 @@ public: // internal API
     int64_t maxBandwidth() const { return m_config.m_llMaxBW; }
     int MSS() const { return m_config.m_iMSS; }
 
-    uint32_t latency_us() const {return m_iTsbPdDelay_ms*1000; }
+    uint32_t peerLatency_us() const {return m_iPeerTsbPdDelay_ms * 1000; }
+    int peerIdleTimeout_ms() const { return m_config.m_iPeerIdleTimeout; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
     size_t OPT_PayloadSize() const { return m_config.m_zExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
@@ -477,7 +481,7 @@ private:
     SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket &response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
     SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
     SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket& response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
-    void applyResponseSettings() ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket& response, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);

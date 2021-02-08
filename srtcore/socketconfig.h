@@ -73,24 +73,23 @@ extern const int32_t SRT_DEF_VERSION;
 
 struct CSrtMuxerConfig
 {
-    static const int
-        DEF_UDP_BUFFER_SIZE = 65536;
+    static const int DEF_UDP_BUFFER_SIZE = 65536;
 
-    int m_iIpTTL;
-    int m_iIpToS;
-    int m_iIpV6Only;                             // IPV6_V6ONLY option (-1 if not set)
-    bool m_bReuseAddr;                           // reuse an exiting port or not, for UDP multiplexer
+    int  m_iIpTTL;
+    int  m_iIpToS;
+    int  m_iIpV6Only;  // IPV6_V6ONLY option (-1 if not set)
+    bool m_bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
 
 #ifdef SRT_ENABLE_BINDTODEVICE
     std::string m_BindToDevice;
 #endif
-    int m_iUDPSndBufSize;                        // UDP sending buffer size
-    int m_iUDPRcvBufSize;                        // UDP receiving buffer size
+    int m_iUDPSndBufSize; // UDP sending buffer size
+    int m_iUDPRcvBufSize; // UDP receiving buffer size
 
     // Some shortcuts
-#define DEFINEP(psym) \
-        char* pv##psym () { return (char*)&m_i##psym; } \
-        const char* pv##psym () const { return (char*)&m_i##psym; }
+#define DEFINEP(psym)                                                                                                  \
+    char*       pv##psym() { return (char*)&m_i##psym; }                                                               \
+    const char* pv##psym() const { return (char*)&m_i##psym; }
 
     DEFINEP(UDPSndBufSize);
     DEFINEP(UDPRcvBufSize);
@@ -115,12 +114,12 @@ struct CSrtMuxerConfig
     }
 
     CSrtMuxerConfig()
-          : m_iIpTTL(-1)   /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
-          , m_iIpToS(-1)   /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
-          , m_iIpV6Only(-1)
-          , m_bReuseAddr(true) // This is default in SRT
-          , m_iUDPSndBufSize(DEF_UDP_BUFFER_SIZE)
-          , m_iUDPRcvBufSize(DEF_UDP_BUFFER_SIZE)
+        : m_iIpTTL(-1) /* IPv4 TTL or IPv6 HOPs [1..255] (-1:undefined) */
+        , m_iIpToS(-1) /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
+        , m_iIpV6Only(-1)
+        , m_bReuseAddr(true) // This is default in SRT
+        , m_iUDPSndBufSize(DEF_UDP_BUFFER_SIZE)
+        , m_iUDPRcvBufSize(DEF_UDP_BUFFER_SIZE)
     {
     }
 };
@@ -132,22 +131,21 @@ typedef void setter_function(CSrtConfig& co, const void* optval, int optlen);
 template<SRT_SOCKOPT name>
 struct CSrtConfigSetter
 {
-    //static void set(CSrtConfig& co, const void* val, int size);
     static setter_function set;
 };
 
 template <size_t SIZE>
 class StringStorage
 {
-    char stor[SIZE+1];
+    char     stor[SIZE + 1];
     uint16_t len;
 
     // NOTE: default copying allowed.
 
 public:
     StringStorage()
+        : len(0)
     {
-        len = 0;
         memset(stor, 0, sizeof stor);
     }
 
@@ -158,7 +156,7 @@ public:
 
         memcpy(stor, s, length);
         stor[length] = 0;
-        len = length;
+        len          = length;
         return true;
     }
 
@@ -169,90 +167,90 @@ public:
 
         s.copy(stor, SIZE);
         stor[SIZE] = 0;
-        len = s.size();
+        len        = s.size();
         return true;
     }
 
-    std::string str()
+    std::string str() const
     {
         return len == 0 ? std::string() : std::string(stor);
     }
 
-    const char* c_str()
+    const char* c_str() const
     {
         return stor;
     }
 
-    size_t size() { return size_t(len); }
-    bool empty() { return len == 0; }
+    size_t size() const { return size_t(len); }
+    bool   empty() const { return len == 0; }
 };
 
 struct CSrtConfig: CSrtMuxerConfig
 {
     typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration duration;
+    typedef srt::sync::steady_clock::duration   duration;
 
     static const int
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
         DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
-        DEF_LINGER_S = 3*60,  // 3 minutes
-        DEF_CONNTIMEO_S = 3; // 3 seconds
+        DEF_LINGER_S = 3*60,    // 3 minutes
+        DEF_CONNTIMEO_S = 3;    // 3 seconds
 
-    static const int COMM_RESPONSE_TIMEOUT_MS = 5*1000; // 5 seconds
-    static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80*1000;
+    static const int      COMM_RESPONSE_TIMEOUT_MS      = 5 * 1000; // 5 seconds
+    static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80 * 1000;
 
     // Mimimum recv flight flag size is 32 packets
-    static const int DEF_MAX_FLIGHT_PKT = 32;
-    static const size_t MAX_SID_LENGTH = 512;
+    static const int    DEF_MAX_FLIGHT_PKT = 32;
+    static const size_t MAX_SID_LENGTH     = 512;
     static const size_t MAX_PFILTER_LENGTH = 64;
-    static const size_t MAX_CONG_LENGTH = 16;
+    static const size_t MAX_CONG_LENGTH    = 16;
 
-    int m_iMSS;                                  // Maximum Segment Size, in bytes
-    size_t m_zExpPayloadSize;                    // Expected average payload size (user option)
+    int    m_iMSS;            // Maximum Segment Size, in bytes
+    size_t m_zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
-    bool m_bSynSending;                          // Sending syncronization mode
-    bool m_bSynRecving;                          // Receiving syncronization mode
-    int m_iFlightFlagSize;                       // Maximum number of packets in flight from the peer side
-    int m_iSndBufSize;                           // Maximum UDT sender buffer size
-    int m_iRcvBufSize;                           // Maximum UDT receiver buffer size
-    linger m_Linger;                             // Linger information on close
-    bool m_bRendezvous;                          // Rendezvous connection mode
+    bool   m_bSynSending;     // Sending syncronization mode
+    bool   m_bSynRecving;     // Receiving syncronization mode
+    int    m_iFlightFlagSize; // Maximum number of packets in flight from the peer side
+    int    m_iSndBufSize;     // Maximum UDT sender buffer size
+    int    m_iRcvBufSize;     // Maximum UDT receiver buffer size
+    linger m_Linger;          // Linger information on close
+    bool   m_bRendezvous;     // Rendezvous connection mode
 
-    duration m_tdConnTimeOut;    // connect timeout in milliseconds
-    bool m_bDriftTracer;
-    int m_iSndTimeOut;                           // sending timeout in milliseconds
-    int m_iRcvTimeOut;                           // receiving timeout in milliseconds
-    int64_t m_llMaxBW;                           // maximum data transfer rate (threshold)
+    duration m_tdConnTimeOut; // connect timeout in milliseconds
+    bool     m_bDriftTracer;
+    int      m_iSndTimeOut; // sending timeout in milliseconds
+    int      m_iRcvTimeOut; // receiving timeout in milliseconds
+    int64_t  m_llMaxBW;     // maximum data transfer rate (threshold)
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
     // created later and takes values from these.
     HaiCrypt_Secret m_CryptoSecret;
-    int m_iSndCryptoKeyLen;
+    int             m_iSndCryptoKeyLen;
 
     // XXX Consider removing. The m_bDataSender stays here
     // in order to maintain the HS side selection in HSv4.
     bool m_bDataSender;
 
-    bool m_bMessageAPI;
-    bool m_bTSBPD;               // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
-    int m_iRcvLatency;           // Agent's Rx latency
-    int m_iPeerLatency;       // Peer's Rx latency for the traffic made by Agent's Tx.
-    bool m_bTLPktDrop;           // Whether Agent WILL DO TLPKTDROP on Rx.
-    int m_iSndDropDelay;         // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
-    bool m_bEnforcedEnc;    // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    int m_GroupConnect;
-    int m_iPeerIdleTimeout;      // Timeout for hearing anything from the peer.
+    bool     m_bMessageAPI;
+    bool     m_bTSBPD;        // Whether AGENT will do TSBPD Rx (whether peer does, is not agent's problem)
+    int      m_iRcvLatency;   // Agent's Rx latency
+    int      m_iPeerLatency;  // Peer's Rx latency for the traffic made by Agent's Tx.
+    bool     m_bTLPktDrop;    // Whether Agent WILL DO TLPKTDROP on Rx.
+    int      m_iSndDropDelay; // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
+    bool     m_bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
+    int      m_GroupConnect;
+    int      m_iPeerIdleTimeout; // Timeout for hearing anything from the peer.
     uint32_t m_uStabilityTimeout;
-    int m_iRetransmitAlgo;
+    int      m_iRetransmitAlgo;
 
-    int64_t m_llInputBW;                         // Input stream rate (bytes/sec)
+    int64_t m_llInputBW; // Input stream rate (bytes/sec)
     // 0: use internally estimated input bandwidth
-    int m_iOverheadBW;                           // Percent above input stream rate (applies if m_llMaxBW == 0)
-    bool m_bRcvNakReport;                        // Enable Receiver Periodic NAK Reports
-    int m_iMaxReorderTolerance;                  //< Maximum allowed value for dynamic reorder tolerance
+    int  m_iOverheadBW;          // Percent above input stream rate (applies if m_llMaxBW == 0)
+    bool m_bRcvNakReport;        // Enable Receiver Periodic NAK Reports
+    int  m_iMaxReorderTolerance; //< Maximum allowed value for dynamic reorder tolerance
 
     // For the use of CCryptoControl
     // HaiCrypt configuration
@@ -274,38 +272,38 @@ struct CSrtConfig: CSrtMuxerConfig
 
     CSrtConfig()
         : m_iMSS(DEF_MSS)
-          , m_zExpPayloadSize(SRT_LIVE_DEF_PLSIZE)
-          , m_bSynSending(true)
-          , m_bSynRecving(true)
-          , m_iFlightFlagSize(DEF_FLIGHT_SIZE)
-          , m_iSndBufSize(DEF_BUFFER_SIZE)
-          , m_iRcvBufSize(DEF_BUFFER_SIZE)
-          , m_bRendezvous(false)
-          , m_tdConnTimeOut(srt::sync::seconds_from(DEF_CONNTIMEO_S))
-          , m_bDriftTracer(true)
-          , m_iSndTimeOut(-1)
-          , m_iRcvTimeOut(-1)
-          , m_llMaxBW(-1)
-          , m_bDataSender(false)
-          , m_bMessageAPI(true)
-          , m_bTSBPD(true)
-          , m_iRcvLatency(SRT_LIVE_DEF_LATENCY_MS)
-          , m_iPeerLatency(0)
-          , m_bTLPktDrop(true)
-          , m_iSndDropDelay(0)
-          , m_bEnforcedEnc(true)
-          , m_GroupConnect(0)
-          , m_iPeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
-          , m_uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
-          , m_iRetransmitAlgo(0)
-          , m_llInputBW(0)
-          , m_iOverheadBW(25)
-          , m_bRcvNakReport(true)
-          , m_iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
-          , m_uKmRefreshRatePkt(0)
-          , m_uKmPreAnnouncePkt(0)
-          , m_lSrtVersion(SRT_DEF_VERSION)
-          , m_lMinimumPeerSrtVersion(SRT_VERSION_MAJ1)
+        , m_zExpPayloadSize(SRT_LIVE_DEF_PLSIZE)
+        , m_bSynSending(true)
+        , m_bSynRecving(true)
+        , m_iFlightFlagSize(DEF_FLIGHT_SIZE)
+        , m_iSndBufSize(DEF_BUFFER_SIZE)
+        , m_iRcvBufSize(DEF_BUFFER_SIZE)
+        , m_bRendezvous(false)
+        , m_tdConnTimeOut(srt::sync::seconds_from(DEF_CONNTIMEO_S))
+        , m_bDriftTracer(true)
+        , m_iSndTimeOut(-1)
+        , m_iRcvTimeOut(-1)
+        , m_llMaxBW(-1)
+        , m_bDataSender(false)
+        , m_bMessageAPI(true)
+        , m_bTSBPD(true)
+        , m_iRcvLatency(SRT_LIVE_DEF_LATENCY_MS)
+        , m_iPeerLatency(0)
+        , m_bTLPktDrop(true)
+        , m_iSndDropDelay(0)
+        , m_bEnforcedEnc(true)
+        , m_GroupConnect(0)
+        , m_iPeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
+        , m_uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
+        , m_iRetransmitAlgo(0)
+        , m_llInputBW(0)
+        , m_iOverheadBW(25)
+        , m_bRcvNakReport(true)
+        , m_iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
+        , m_uKmRefreshRatePkt(0)
+        , m_uKmPreAnnouncePkt(0)
+        , m_lSrtVersion(SRT_DEF_VERSION)
+        , m_lMinimumPeerSrtVersion(SRT_VERSION_MAJ1)
 
     {
         // Default UDT configurations
@@ -313,8 +311,8 @@ struct CSrtConfig: CSrtMuxerConfig
 
         // Linger: LIVE mode defaults, please refer to `SRTO_TRANSTYPE` option
         // for other modes.
-        m_Linger.l_onoff  = 0;
-        m_Linger.l_linger = 0;
+        m_Linger.l_onoff   = 0;
+        m_Linger.l_linger  = 0;
         m_CryptoSecret.len = 0;
         m_iSndCryptoKeyLen = 0;
 
@@ -348,8 +346,8 @@ struct SRT_SocketOptionObject
 {
     struct SingleOption
     {
-        uint16_t option;
-        uint16_t length;
+        uint16_t      option;
+        uint16_t      length;
         unsigned char storage[1]; // NOTE: Variable length object!
     };
 
@@ -364,14 +362,13 @@ struct SRT_SocketOptionObject
         {
             // Convert back
             unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
-            delete [] mem;
+            delete[] mem;
         }
     }
 
     bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
 };
 #endif
-
 
 template <typename T>
 inline T cast_optval(const void* optval)
@@ -407,7 +404,6 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
-
 
 template<>
 struct CSrtConfigSetter<SRTO_MSS>
@@ -945,14 +941,14 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - extraction method: message (reading call extracts one message)
             co.m_bTSBPD          = true;
             co.m_iRcvLatency     = SRT_LIVE_DEF_LATENCY_MS;
-            co.m_iPeerLatency = 0;
+            co.m_iPeerLatency    = 0;
             co.m_bTLPktDrop      = true;
             co.m_iSndDropDelay   = 0;
-            co.m_bMessageAPI         = true;
-            co.m_bRcvNakReport       = true;
+            co.m_bMessageAPI     = true;
+            co.m_bRcvNakReport   = true;
             co.m_zExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
-            co.m_Linger.l_onoff      = 0;
-            co.m_Linger.l_linger     = 0;
+            co.m_Linger.l_onoff  = 0;
+            co.m_Linger.l_linger = 0;
             co.m_Congestion.set("live", 4);
             break;
 
@@ -965,14 +961,14 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
             co.m_bTSBPD          = false;
             co.m_iRcvLatency     = 0;
-            co.m_iPeerLatency = 0;
+            co.m_iPeerLatency    = 0;
             co.m_bTLPktDrop      = false;
             co.m_iSndDropDelay   = -1;
-            co.m_bMessageAPI         = false;
-            co.m_bRcvNakReport       = false;
+            co.m_bMessageAPI     = false;
+            co.m_bRcvNakReport   = false;
             co.m_zExpPayloadSize = 0; // use maximum
-            co.m_Linger.l_onoff      = 1;
-            co.m_Linger.l_linger     = CSrtConfig::DEF_LINGER_S;
+            co.m_Linger.l_onoff  = 1;
+            co.m_Linger.l_linger = CSrtConfig::DEF_LINGER_S;
             co.m_Congestion.set("file", 4);
             break;
 

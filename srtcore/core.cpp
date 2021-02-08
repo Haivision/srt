@@ -177,6 +177,14 @@ CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
     m_bTLPktDrop            = true; // Too-late Packet Drop
 
     m_pCache = NULL;
+    // This is in order to set it ANY kind of initial value, however
+    // this value should not be used when not connected and should be
+    // updated in the handshake. When this value is 0, it means that
+    // packets shall not be sent, as the other party doesn't have a
+    // room to receive and store it. Therefore this value should be
+    // overridden before any sending happens.
+    m_iFlowWindowSize = 0;
+
 }
 
 CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
@@ -324,6 +332,9 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     if (IsSet(oflags, SRTO_POST_SPEC))
     {
         if (m_bConnected)
+        if (m_bOpened)
+            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+
         {
             switch (optName)
             {
@@ -3848,7 +3859,11 @@ EConnectStatus CUDT::processRendezvous(
     m_ConnReq.m_extension = needs_extension;
 
     // This must be done before prepareConnectionObjects().
-    applyResponseSettings();
+    if (!applyResponseSettings())
+    {
+        LOGC(cnlog.Error, log << "processRendezvous: rogue peer");
+        return CONN_REJECT;
+    }
 
     // This must be done before interpreting and creating HSv5 extensions.
     if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
@@ -4292,8 +4307,15 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     return postConnect(response, false, eout);
 }
 
-void CUDT::applyResponseSettings() ATR_NOEXCEPT
+bool CUDT::applyResponseSettings() ATR_NOEXCEPT
 {
+    if (!m_ConnRes.valid())
+    {
+        LOGC(cnlog.Error, log << "applyResponseSettings: ROGUE HANDSHAKE - rejecting");
+        m_RejectReason = SRT_REJ_ROGUE;
+        return false;
+    }
+
     // Re-configure according to the negotiated values.
     m_config.m_iMSS      = m_ConnRes.m_iMSS;
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
@@ -4303,7 +4325,7 @@ void CUDT::applyResponseSettings() ATR_NOEXCEPT
 
     setInitialRcvSeq(m_iPeerISN);
 
-    m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
+    m_iRcvCurrPhySeqNo = CSeqNo::decseq(m_ConnRes.m_iISN);
     m_PeerID           = m_ConnRes.m_iID;
     memcpy((m_piSelfIP), m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
 
@@ -4311,6 +4333,8 @@ void CUDT::applyResponseSettings() ATR_NOEXCEPT
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
               << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
               << " peerID=" << m_ConnRes.m_iID);
+
+    return true;
 }
 
 EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
@@ -4333,24 +4357,28 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         //
         // Currently just this function must be called always BEFORE prepareConnectionObjects
         // everywhere except acceptAndRespond().
-        applyResponseSettings();
+        bool ok = applyResponseSettings();
 
         // This will actually be done also in rendezvous HSv4,
         // however in this case the HSREQ extension will not be attached,
         // so it will simply go the "old way".
-        bool ok = prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
+        // (&&: skip if failed already)
+        ok = ok &&  prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
+
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
         // In this situation the interpretation of handshake was already done earlier.
-        if (ok && response.isControl())
+        ok = ok && response.isControl();
+        ok = ok && interpretSrtHandshake(m_ConnRes, response, 0, 0);
+
+        if (!ok)
         {
-            ok = interpretSrtHandshake(m_ConnRes, response, 0, 0);
-            if (!ok && eout)
+            if (eout)
             {
                 *eout = CUDTException(MJ_SETUP, MN_REJECTED, 0);
             }
-        }
-        if (!ok) // m_RejectReason already set
+            // m_RejectReason already set
             return CONN_REJECT;
+        }
     }
 
     bool have_group = false;
@@ -10090,6 +10118,13 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // set in the above INDUCTION, in the HS_VERSION_SRT1
     // should also contain extra data.
 
+    if (!hs.valid())
+    {
+        LOGC(cnlog.Error, log << "processConnectRequest: ROGUE HS RECEIVED. Rejecting");
+        m_RejectReason = SRT_REJ_ROGUE;
+        return SRT_REJ_ROGUE;
+    }
+
     HLOGC(cnlog.Debug,
           log << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType) << " - checking cookie...");
     if (hs.m_iCookie != cookie_val)
@@ -10472,7 +10507,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
      * (keepalive fix)
      * duB:
      * It seems there is confusion of the direction of the Response here.
-     * LastRspTime is supposed to be when receiving (data/ctrl) from peer
+     * lastRspTime is supposed to be when receiving (data/ctrl) from peer
      * as shown in processCtrl and processData,
      * Here we set because we sent something?
      *
