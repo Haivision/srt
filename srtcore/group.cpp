@@ -1231,6 +1231,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     vector<Sendstate> sendstates;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
     {
@@ -3960,6 +3962,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // Maximum weight of active links.
     uint16_t maxActiveWeight = 0;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     // We believe that we need to send the payload over every activeLinks link anyway.
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
