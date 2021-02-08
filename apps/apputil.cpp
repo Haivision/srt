@@ -417,6 +417,81 @@ struct SrtStatsTableInit
 #undef STAT
 #undef STATX
 
+vector<unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
+
+
+#define STATX(catsuf, shname, lgname, field) \
+    s.emplace_back(new SrtStatCell(SSC_##catsuf, #shname, #lgname, [](std::ostream& out, const SrtStatsTables& t) { out << t.field; }))
+
+#define MSTAT(catsuf, shname, name) STATX(catsuf, shname, name, metrics. name)
+
+#define LSTAT(catsuf, shaname, name) STATX(catsuf, shname, name, clocal. name)
+#define TSTAT(catsuf, shaname, name) STATX(catsuf, shname, name##Total, clocal. name)
+
+#define LPSTAT(catsuf, shnamesuf, name) STATX(catsuf, pkt##shnamesuf, pkt##name, clocal. name .pkts)
+#define LBSTAT(catsuf, shnamesuf, name) STATX(catsuf, bytes##shnamesuf, bytes##name, clocal. name .bytes)
+#define TPSTAT(catsuf, shnamesuf, name) STATX(catsuf, pkt##shnamesuf##Total, pkt##name##Total, ctotal. name .pkts)
+#define TBSTAT(catsuf, shnamesuf, name) STATX(catsuf, bytes##shnamesuf##Total, bytes##name##Total, ctotal. name .bytes)
+
+#define XSTAT(catsuf, shnamesuf, name) \
+    LPSTAT(catsuf, shnamesuf, name); \
+    TPSTAT(catsuf, shnamesuf, name); \
+    LBSTAT(catsuf, shnamesuf, name); \
+    TBSTAT(catsuf, shnamesuf, name)
+
+struct SrtStatsCellsInit
+{
+    SrtStatsCellsInit(vector<unique_ptr<SrtStatCell>>& s)
+    {
+        STATX(GEN, time, Time, metrics.msTimeStamp);
+
+        // Data counters
+        XSTAT(SEND, , snd);
+        XSTAT(SEND, Loss, sndLoss);
+        XSTAT(SEND, Retrans, sndRetrans);
+        XSTAT(SEND, Drop, sndDrop);
+        XSTAT(SEND, Belated, sndBelated);
+        XSTAT(SEND, Unique, sndUnique);
+        LSTAT(SEND, filterExtra, pktSndFilterExtra);
+        TSTAT(SEND, filterExtra, pktSndFilterExtra);
+
+        XSTAT(RECV, , rcv);
+        XSTAT(RECV, Loss, rcvLoss);
+        XSTAT(RECV, Retrans, rcvRetrans);
+        XSTAT(RECV, Drop, rcvDrop);
+        XSTAT(RECV, Undecrypt, rcvUndecrypt);
+        XSTAT(RECV, Belated, rcvBelated);
+        XSTAT(RECV, Unique, rcvUnique);
+        LSTAT(RECV, filterExtra, pktRcvFilterExtra);
+        TSTAT(RECV, filterExtra, pktRcvFilterExtra);
+        LSTAT(RECV, filterSupply, pktRcvFilterSupply);
+        TSTAT(RECV, filterSupply, pktRcvFilterSupply);
+        LSTAT(RECV, filterLoss, pktRcvFilterLoss);
+        TSTAT(RECV, filterLoss, pktRcvFilterLoss);
+
+        MSTAT(WINDOW, flow, pktFlowWindow);
+        MSTAT(WINDOW, congestion, pktCongestionWindow);
+        MSTAT(WINDOW, pktFlightSize, pktFlightSize);
+
+        MSTAT(SEND, mbpsSendRate, mbpsSendRate);
+        MSTAT(RECV, mbpsRecvRate, mbpsRecvRate);
+        MSTAT(SEND, sndACK, sndACK);
+        MSTAT(RECV, rcvACK, rcvACK);
+        MSTAT(SEND, sndNAK, sndNAK);
+        MSTAT(RECV, rcvNAK, rcvNAK);
+        MSTAT(SEND, usSndDuration, usSndDuration);
+        MSTAT(RECV, avgBelatedTime, rcvAvgBelatedTime);
+        MSTAT(SEND, usPktSndPeriod, usPktSndPeriod);
+        MSTAT(LINK, msRTT, msRTT);
+        MSTAT(LINK, mbpsBandwidth, mbpsBandwidth);
+        MSTAT(LINK, mbpsMaxBW, mbpsMaxBW);
+        MSTAT(SEND, msSndTsbPdDelay, msSndTsbPdDelay);
+        MSTAT(RECV, msRcvTsbPdDelay, msRcvTsbPdDelay);
+        MSTAT(LINK, byteMSS, byteMSS);
+    }
+} g_SrtStatsCellsInit (g_SrtStatsTableCells);
+
+
 string srt_json_cat_names [] = {
     "",
     "window",
@@ -551,6 +626,11 @@ public:
         return output.str();
     }
 
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        return "<not implemented>";
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
@@ -611,6 +691,46 @@ public:
         return output.str();
     }
 
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        std::ostringstream output;
+
+        // Header
+        if (!first_line_printed)
+        {
+#ifdef HAS_PUT_TIME
+            output << "Timepoint,";
+#endif
+            output << "SocketID";
+
+            for (auto& i: g_SrtStatsTableCells)
+            {
+                output << "," << i->longname;
+            }
+            output << endl;
+            first_line_printed = true;
+        }
+
+        // Values
+#ifdef HAS_PUT_TIME
+        // HDR: Timepoint
+        output << print_timestamp() << ",";
+#endif // HAS_PUT_TIME
+
+        // HDR: Time,SocketID
+        output << sid;
+
+        // HDR: the loop of all values in g_SrtStatsTable
+        for (auto& i: g_SrtStatsTableCells)
+        {
+            output << ",";
+            i->PrintValue(output, t);
+        }
+
+        output << endl;
+        return output.str();
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
@@ -639,7 +759,12 @@ public:
         output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
         return output.str();
-    } 
+    }
+
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        return "<not implemented>";
+    }
 
     string WriteBandwidth(double mbpsBandwidth) override 
     {

@@ -307,6 +307,15 @@ std::string OptionHelpItem(const OptionName& o);
 
 // Statistics module
 
+// NEW STATS
+struct SrtStatsTables
+{
+    CStreamCounters clocal;
+    CStreamCounters ctotal;
+    CStatsMetrics metrics;
+};
+
+
 enum SrtStatsPrintFormat
 {
     SRTSTATS_PROFMAT_INVALID = -1,
@@ -359,6 +368,7 @@ class SrtStatsWriter
 {
 public:
     virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
+    virtual std::string WriteStats(int sid, const SrtStatsTables& mon) = 0;
     virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
     virtual ~SrtStatsWriter() { };
 
@@ -386,6 +396,39 @@ protected:
 };
 
 extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;
+
+struct SrtStatCell
+{
+    SrtStatCat category;
+    std::string name;
+    std::string longname;
+    std::function< void(std::ostream&, const SrtStatsTables&) > printer;
+
+    SrtStatCell(SrtStatCat cat, std::string n, std::string l,
+            const std::function< void(std::ostream&, const SrtStatsTables&) >& p)
+        : category(cat)
+        , name(n)
+        , longname(l)
+        , printer(p)
+    {}
+
+    void PrintValue(std::ostream& str, const SrtStatsTables& source)
+    {
+        printer(str, source);
+    }
+};
+
+extern std::vector<std::unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
+
+
+/*
+void model()
+{
+    items += SrtStatCell(SSC_GEN, "Time", "timestamp", [&table](std::ostream& out) { out << table.timestamp; });
+}
+*/
+
+
 
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
 

@@ -4144,6 +4144,32 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
    }
 }
 
+int CUDT::stats(SRTSOCKET u, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total, size_t sc_size,
+        struct CStatsMetrics* sm, size_t sm_size, int flags)
+{
+// #if ENABLE_EXPERIMENTAL_BONDING
+//    if (u & SRTGROUP_MASK)
+//        return groupsockbstats(u, perf, clear);
+// #endif
+
+   try
+   {
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
+      udt->stats((sc_local), (sc_total), sc_size, (sm), sm_size, flags);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      return APIError(e);
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(aclog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      return APIError(MJ_UNKNOWN, MN_NONE, 0);
+   }
+}
+
 #if ENABLE_EXPERIMENTAL_BONDING
 int CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
 {

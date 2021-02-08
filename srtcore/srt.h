@@ -411,6 +411,94 @@ struct CBytePerfMon
    uint64_t byteRecvUnique;             // number of data bytes to be received by the application
 };
 
+// New statisticsl structures
+
+struct CPktByteStatCell
+{
+    int pkts;
+    int64_t bytes;
+};
+
+struct CStreamCounters
+{
+    struct CPktByteStatCell snd;          // sent data
+    struct CPktByteStatCell rcv;          // received data
+    struct CPktByteStatCell sndLoss;      // sent lost data
+    struct CPktByteStatCell rcvLoss;      // lost and recovered data
+    struct CPktByteStatCell sndRetrans;   // retransmitted data from sender
+    struct CPktByteStatCell rcvRetrans;   // retransmitted data received
+    struct CPktByteStatCell sndDrop;      // dropped data before sending
+    struct CPktByteStatCell rcvDrop;      // dropped data skipped by the receiver
+    struct CPktByteStatCell rcvUndecrypt; // received, but not decrypted data
+    struct CPktByteStatCell sndBelated;   // sent despite being too late to play
+    struct CPktByteStatCell rcvBelated;   // received and ignored (retrans duplicated or dropped)
+    struct CPktByteStatCell sndUnique;
+    struct CPktByteStatCell rcvUnique;
+
+    // NEW STATS: V2 (fake version to implement the solution)
+    int      pktSndFilterExtra;          // number of control packets supplied by packet filter
+    int      pktRcvFilterExtra;          // number of control packets received and not supplied back
+    int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
+    int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
+};
+
+#define SRT_CTR_STATS_SIZE (sizeof(CStreamCounters))
+
+struct CStatsMetrics
+{
+    int64_t  msTimeStamp;                // time since the UDT entity is started, in milliseconds
+    double   mbpsSendRate;               // sending rate in Mb/s
+    double   mbpsRecvRate;               // receiving rate in Mb/s
+
+    int      sndACK;                 // number of sent ACK packets
+    int      sndNAK;                 // number of sent NAK packets
+    int      rcvACK;                 // number of received ACK packets
+    int      rcvNAK;                 // number of received NAK packets
+    int64_t  usSndDuration;              // busy sending time (i.e., idle time exclusive)
+
+    double   rcvAvgBelatedTime;       // average time of packet delay for belated packets (packets with sequence past the ACK)
+
+    double   usPktSndPeriod;             // packet sending period, in microseconds
+    int      pktFlowWindow;              // flow window size, in number of packets
+    int      pktCongestionWindow;        // congestion window size, in number of packets
+    int      pktFlightSize;              // number of packets on flight
+    double   msRTT;                      // RTT, in milliseconds
+    double   mbpsBandwidth;              // estimated bandwidth, in Mb/s
+    double   mbpsMaxBW;                  // Transmit Bandwidth ceiling (Mbps)
+    int      msSndTsbPdDelay;            // Timestamp-based Packet Delivery Delay
+    int      msRcvTsbPdDelay;            // Timestamp-based Packet Delivery Delay
+    int      byteMSS;                    // MTU
+
+    // Buffer stats
+
+    // NOTE: The below 6 fields are controlled by
+    // the SRTM_F_INSTANT flag. When this flag is passed,
+    // they are filled by instantaneous values from the
+    // buffer, otherwise the average value is retrieved
+    int      pktSndBuf;                  // UnACKed packets in UDT sender
+    int      byteSndBuf;                 // UnACKed bytes in UDT sender
+    int      msSndBuf;                   // UnACKed timespan (msec) of UDT sender
+    int      pktRcvBuf;                  // Undelivered packets in UDT receiver
+    int      byteRcvBuf;                 // Undelivered bytes of UDT receiver
+    int      msRcvBuf;                   // Undelivered timespan (msec) of UDT receiver
+
+    int      byteAvailSndBuf;            // available UDT sender buffer size
+    int      byteAvailRcvBuf;            // available UDT receiver buffer size
+
+    // NEW STATS: V2 (fake version to implement the solution)
+    int      pktReorderTolerance;        // packet reorder tolerance value
+    int      pktReorderDistance;         // size of order discrepancy in received sequences
+};
+
+#define SRT_MTR_STATS_SIZE (sizeof(CStatsMetrics))
+
+#define SRTM_F_CLEAR 1
+#define SRTM_F_INSTANT 2
+
+
+int srt_stats(SRTSOCKET s, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total, size_t sc_size,
+        struct CStatsMetrics* sm, size_t sm_size, int flags);
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // Error codes - define outside the CUDTException class

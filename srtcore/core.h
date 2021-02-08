@@ -295,6 +295,8 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static int stats(SRTSOCKET u, CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, size_t sc_size,
+            CStatsMetrics* pw_sm, size_t sm_size, int flags);
 #if ENABLE_EXPERIMENTAL_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
@@ -480,7 +482,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
     // For SRT_tsbpdLoop
-    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
@@ -698,6 +700,20 @@ private:
     /// @param instantaneous [in] flag to request instantaneous data 
     /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+
+    void stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, size_t sc_size,
+            CStatsMetrics* pw_sm, size_t sm_size, int flags);
+
+    struct StatsInterimData
+    {
+        uint64_t byteSent;
+        uint64_t byteRecv;
+        time_point currtime;
+    };
+
+    void fillLocalStats(CStreamCounters* pw_sc, size_t size, int flags, const StatsInterimData& im);
+    void fillTotalStats(CStreamCounters* pw_sc, size_t size, int flags);
+    void fillMetrics(CStatsMetrics* pw_sm, size_t size, int flags, const StatsInterimData& im);
 
     /// Mark sequence contained in the given packet as not lost. This
     /// removes the loss record from both current receiver loss list and
