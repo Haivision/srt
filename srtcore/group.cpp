@@ -3858,11 +3858,10 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
             continue;
         }
         CUDT&                  ce = d->ps->core();
-        steady_clock::duration td(0);
         if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime, d->weight) != 1)
         {
             HLOGC(gslog.Debug,
-                    log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td));
+                    log << "... not silencing @" << d->id << ": too early");
             continue;
         }
 
