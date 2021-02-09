@@ -425,8 +425,8 @@ vector<unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
 
 #define MSTAT(catsuf, shname, name) STATX(catsuf, shname, name, metrics. name)
 
-#define LSTAT(catsuf, shaname, name) STATX(catsuf, shname, name, clocal. name)
-#define TSTAT(catsuf, shaname, name) STATX(catsuf, shname, name##Total, clocal. name)
+#define LSTAT(catsuf, shname, name) STATX(catsuf, shname, name, clocal. name)
+#define TSTAT(catsuf, shname, name) STATX(catsuf, shname##Total, name##Total, clocal. name)
 
 #define LPSTAT(catsuf, shnamesuf, name) STATX(catsuf, pkt##shnamesuf, pkt##name, clocal. name .pkts)
 #define LBSTAT(catsuf, shnamesuf, name) STATX(catsuf, bytes##shnamesuf, bytes##name, clocal. name .bytes)
@@ -454,6 +454,12 @@ struct SrtStatsCellsInit
         XSTAT(SEND, Unique, sndUnique);
         LSTAT(SEND, filterExtra, pktSndFilterExtra);
         TSTAT(SEND, filterExtra, pktSndFilterExtra);
+        MSTAT(SEND, mbpsSendRate, mbpsSendRate);
+        MSTAT(SEND, sndACK, sndACK);
+        MSTAT(SEND, sndNAK, sndNAK);
+        MSTAT(SEND, usSndDuration, usSndDuration);
+        MSTAT(SEND, usPktSndPeriod, usPktSndPeriod);
+        MSTAT(SEND, msSndTsbPdDelay, msSndTsbPdDelay);
 
         XSTAT(RECV, , rcv);
         XSTAT(RECV, Loss, rcvLoss);
@@ -468,25 +474,19 @@ struct SrtStatsCellsInit
         TSTAT(RECV, filterSupply, pktRcvFilterSupply);
         LSTAT(RECV, filterLoss, pktRcvFilterLoss);
         TSTAT(RECV, filterLoss, pktRcvFilterLoss);
+        MSTAT(RECV, mbpsRecvRate, mbpsRecvRate);
+        MSTAT(RECV, rcvACK, rcvACK);
+        MSTAT(RECV, rcvNAK, rcvNAK);
+        MSTAT(RECV, avgBelatedTime, rcvAvgBelatedTime);
+        MSTAT(RECV, msRcvTsbPdDelay, msRcvTsbPdDelay);
 
         MSTAT(WINDOW, flow, pktFlowWindow);
         MSTAT(WINDOW, congestion, pktCongestionWindow);
         MSTAT(WINDOW, pktFlightSize, pktFlightSize);
 
-        MSTAT(SEND, mbpsSendRate, mbpsSendRate);
-        MSTAT(RECV, mbpsRecvRate, mbpsRecvRate);
-        MSTAT(SEND, sndACK, sndACK);
-        MSTAT(RECV, rcvACK, rcvACK);
-        MSTAT(SEND, sndNAK, sndNAK);
-        MSTAT(RECV, rcvNAK, rcvNAK);
-        MSTAT(SEND, usSndDuration, usSndDuration);
-        MSTAT(RECV, avgBelatedTime, rcvAvgBelatedTime);
-        MSTAT(SEND, usPktSndPeriod, usPktSndPeriod);
         MSTAT(LINK, msRTT, msRTT);
         MSTAT(LINK, mbpsBandwidth, mbpsBandwidth);
         MSTAT(LINK, mbpsMaxBW, mbpsMaxBW);
-        MSTAT(SEND, msSndTsbPdDelay, msSndTsbPdDelay);
-        MSTAT(RECV, msRcvTsbPdDelay, msRcvTsbPdDelay);
         MSTAT(LINK, byteMSS, byteMSS);
     }
 } g_SrtStatsCellsInit (g_SrtStatsTableCells);
@@ -628,7 +628,78 @@ public:
 
     string WriteStats(int sid, const SrtStatsTables& t) override
     {
-        return "<not implemented>";
+        std::ostringstream output;
+        static const string qt = R"(")";
+
+        string pretty_cr, pretty_tab;
+        if (Option("pretty"))
+        {
+            pretty_cr = "\n";
+            pretty_tab = "\t";
+        }
+
+        SrtStatCat cat = SSC_GEN;
+
+        // Do general manually
+        output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr;
+
+        // SID is displayed manually
+        output << pretty_tab << quotekey("sid") << sid;
+
+        // Extra Timepoint is also displayed manually
+#ifdef HAS_PUT_TIME
+        // NOTE: still assumed SSC_GEN category
+        output << "," << pretty_cr << pretty_tab
+            << quotekey("timepoint") << quote(print_timestamp());
+#endif
+
+        // Now continue with fields as specified in the table
+        for (auto& i: g_SrtStatsTableCells)
+        {
+            if (i->category == cat)
+            {
+                output << ","; // next item in same cat
+                output << pretty_cr;
+                output << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+            else
+            {
+                if (cat != SSC_GEN)
+                {
+                    // DO NOT close if general category, just
+                    // enter the depth.
+                    output << pretty_cr << pretty_tab << "}";
+                }
+                cat = i->category;
+                output << ",";
+                output << pretty_cr;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+
+                output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+
+            // Print the current field
+            output << quotekey(i->name);
+            output << qt;
+            i->PrintValue(output, t);
+            output << qt;
+        }
+
+        // Close the previous subcategory
+        if (cat != SSC_GEN)
+        {
+            output << pretty_cr << pretty_tab << "}" << pretty_cr;
+        }
+
+        // Close the general category entity
+        output << "}," << pretty_cr << endl;
+
+        return output.str();
     }
 
     string WriteBandwidth(double mbpsBandwidth) override
@@ -763,7 +834,23 @@ public:
 
     string WriteStats(int sid, const SrtStatsTables& t) override
     {
-        return "<not implemented>";
+        std::ostringstream output;
+
+        output << "======= SRT STATS: sid=" << sid << endl;
+        output << "PACKETS     SENT: " << setw(11) << t.clocal.snd.pkts            << "  RECEIVED:   "   << setw(11) << t.clocal.rcv.pkts              << endl;
+        output << "LOST PKT    SENT: " << setw(11) << t.clocal.sndLoss.pkts        << "  RECEIVED:   "   << setw(11) << t.clocal.rcvLoss.pkts          << endl;
+        output << "REXMIT      SENT: " << setw(11) << t.clocal.sndRetrans.pkts     << "  RECEIVED:   "   << setw(11) << t.clocal.rcvRetrans.pkts       << endl;
+        output << "DROP PKT    SENT: " << setw(11) << t.clocal.sndDrop.pkts        << "  RECEIVED:   "   << setw(11) << t.clocal.rcvDrop.pkts          << endl;
+        output << "FILTER EXTRA  TX: " << setw(11) << t.clocal.pktSndFilterExtra   << "        RX:   "   << setw(11) << t.clocal.pktRcvFilterExtra     << endl;
+        output << "FILTER RX  SUPPL: " << setw(11) << t.clocal.pktRcvFilterSupply  << "  RX  LOSS:   "   << setw(11) << t.clocal.pktRcvFilterLoss      << endl;
+        output << "RATE     SENDING: " << setw(11) << t.metrics.mbpsSendRate       << "  RECEIVING:  "   << setw(11) << t.metrics.mbpsRecvRate         << endl;
+        output << "BELATED RECEIVED: " << setw(11) << t.clocal.rcvBelated.pkts     << "  AVG TIME:   "   << setw(11) << t.metrics.rcvAvgBelatedTime    << endl;
+        output << "REORDER DISTANCE: " << setw(11) << t.metrics.pktReorderDistance << endl;
+        output << "WINDOW      FLOW: " << setw(11) << t.metrics.pktFlowWindow      << "  CONGESTION: "   << setw(11) << t.metrics.pktCongestionWindow  << "  FLIGHT: " << setw(11) << t.metrics.pktFlightSize << endl;
+        output << "LINK         RTT: " << setw(9)  << t.metrics.msRTT              << "ms  BANDWIDTH:  " << setw(7)  << t.metrics.mbpsBandwidth        << "Mb/s " << endl;
+        output << "BUFFERLEFT:  SND: " << setw(11) << t.metrics.byteAvailSndBuf    << "  RCV:        "   << setw(11) << t.metrics.byteAvailRcvBuf      << endl;
+
+        return output.str();
     }
 
     string WriteBandwidth(double mbpsBandwidth) override 

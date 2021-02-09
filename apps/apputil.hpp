@@ -420,16 +420,6 @@ struct SrtStatCell
 
 extern std::vector<std::unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
 
-
-/*
-void model()
-{
-    items += SrtStatCell(SSC_GEN, "Time", "timestamp", [&table](std::ostream& out) { out << table.timestamp; });
-}
-*/
-
-
-
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
 
 
