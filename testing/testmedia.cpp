@@ -49,6 +49,7 @@ using srt_logging::MemberStatusStr;
 #endif
 
 volatile bool transmit_throw_on_interrupt = false;
+volatile bool transmit_int_state = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -530,8 +531,15 @@ void SrtCommon::AcceptNewClient()
 
         int len = 2;
         SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == -1)
+        {
+            if (::transmit_int_state)
+                Error("srt_epoll_wait for srt_accept: interrupt");
+
+            if (srt_getlasterror(NULL) == SRT_ETIMEOUT)
+                continue;
             Error("srt_epoll_wait(srt_conn_epoll)");
+        }
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -785,6 +793,11 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
         if (m_timeout)
             result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+        else
+        {
+            int timeout = 1000;
+            result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &timeout, sizeof timeout);
+        }
         if (result == -1)
             return result;
     }
@@ -2294,6 +2307,9 @@ MediaPacket SrtSource::Read(size_t chunk)
         }
 #endif
 
+        if (::transmit_int_state)
+            Error("srt_recvmsg2: interrupted");
+
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
@@ -2343,6 +2359,13 @@ Epoll_again:
                     }
                     // If was -1, then passthru.
                 }
+            }
+            else
+            {
+                // In blocking mode it uses a minimum of 1s timeout,
+                // and continues only if interrupt not requested.
+                if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                    continue;
             }
             Error("srt_recvmsg2");
         }

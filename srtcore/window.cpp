@@ -85,7 +85,7 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
 
       for (int i = r_iTail, n = r_iHead; i < n; ++ i)
       {
-         // looking for indentical ACK Seq. No.
+         // looking for identical ACK Seq. No.
          if (seq == r_aSeq[i].iACKSeqNo)
          {
             // return the Data ACK it carried

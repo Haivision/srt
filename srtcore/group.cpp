@@ -1231,6 +1231,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     vector<Sendstate> sendstates;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
     {
@@ -2078,21 +2080,27 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
     vector<CUDTSocket*> readReady;
-    readReady.reserve(sready.size());
-    for (CEPoll::fmap_t::const_iterator i = sready.begin(); i != sready.end(); ++i)
+    readReady.reserve(aliveMembers.size());
+    for (vector<CUDTSocket*>::const_iterator sockiter = aliveMembers.begin(); sockiter != aliveMembers.end(); ++sockiter)
     {
-        if (i->second & SRT_EPOLL_ERR)
-            continue; // broken already
+        CUDTSocket* sock = *sockiter;
+        const CEPoll::fmap_t::const_iterator ready_iter = sready.find(sock->m_SocketID);
+        if (ready_iter != sready.end())
+        {
+            if (ready_iter->second & SRT_EPOLL_ERR)
+                continue; // broken already
 
-        if ((i->second & SRT_EPOLL_IN) == 0)
-            continue; // not ready for reading
+            if ((ready_iter->second & SRT_EPOLL_IN) == 0)
+                continue; // not ready for reading
 
-        // Check if this socket is in aheads
-        // If so, don't read from it, wait until the ahead is flushed.
-        SRTSOCKET   id = i->first;
-        CUDTSocket* ps = m_pGlobal->locateSocket_LOCKED(id);
-        if (ps)
-            readReady.push_back(ps);
+            readReady.push_back(*sockiter);
+        }
+        else if (sock->core().m_pRcvBuffer->isRcvDataReady())
+        {
+            // No read-readiness reported by epoll, but probably missed or not yet handled
+            // as the receiver buffer is read-ready.
+            readReady.push_back(sock);
+        }
     }
     
     leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
@@ -2634,6 +2642,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (jump > 0)
                 {
                     m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
+                    LOGC(grlog.Warn,
+                         log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
+                             << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
                 }
 
                 m_RcvBaseSeqNo    = slowest_kangaroo->second.mctrl.pktseq;
@@ -2969,6 +2980,111 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     }
 }
 
+#if SRT_DEBUG_BONDING_STATES
+class StabilityTracer
+{
+public:
+    StabilityTracer()
+    {
+    }
+
+    ~StabilityTracer()
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint32_t activation_period_us,
+               int64_t stability_tmo_us, const std::string& state, uint16_t weight)
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        create_file();
+        
+        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << u.id() << ",";
+        m_fout << weight << ",";
+        m_fout << u.peerLatency_us() << ",";
+        m_fout << u.RTT() << ",";
+        m_fout << u.RTTVar() << ",";
+        m_fout << stability_tmo_us << ",";
+        m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
+        m_fout << state << ",";
+        m_fout << (srt::sync::is_zero(u.freshActivationStart()) ? -1 : (count_microseconds(currtime - u.freshActivationStart()))) << ",";
+        m_fout << activation_period_us << "\n";
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        //srt::sync::ScopedLock lck(m_mtx);
+        m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation,usActivationPeriod\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout)
+            return;
+
+        std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos) {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "stability_trace_" + str_tnow + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex m_mtx;
+    std::ofstream m_fout;
+};
+
+StabilityTracer s_stab_trace;
+#endif
+
+/// TODO: Remove 'weight' parameter? Only needed for logging.
+/// @retval  1 - link is identified as stable
+/// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
+/// @retval -1 - link is identified as unstable
+static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight ATR_UNUSED)
+{
+    const uint32_t latency_us = u.peerLatency_us();
+    const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
+    const int64_t initial_stabtout_us  = max<int64_t>(min_stability_us, latency_us);
+    const int64_t activation_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
+
+    // RTT and RTTVar values are still being refined during activation period,
+    // therefore the dymanic timeout should not be used in activation phase.
+    const bool is_activation_phase = !is_zero(u.freshActivationStart())
+        && (count_microseconds(currtime - u.freshActivationStart()) <= activation_period_us);
+
+    const int64_t stability_tout_us = is_activation_phase
+        ? initial_stabtout_us // activation phase
+        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.RTT() + 4 * u.RTTVar()), latency_us);
+    
+    const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
+    const steady_clock::duration td_response = currtime - last_rsp;
+    if (count_microseconds(td_response) > stability_tout_us)
+    {
+#if SRT_DEBUG_BONDING_STATES
+        s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION-UNSTABLE" : "UNSTABLE", weight);
+#endif
+        return -1;
+    }
+
+    // u.lastRspTime() > currtime is alwats true due to the very first check above in this function
+#if SRT_DEBUG_BONDING_STATES
+    s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION" : "STABLE", weight);
+#endif
+    return is_activation_phase ? 0 : 1;
+}
+
+
 // [[using locked(this->m_GroupLock)]]
 bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point currtime)
 {
@@ -2985,8 +3101,6 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
     // negative value is relatively easy, while introducing a mutex would only add a
     // deadlock risk and performance degradation.
 
-    bool is_stable = true;
-
     HLOGC(gslog.Debug,
           log << "grp/sendBackup: CHECK STABLE: @" << d->id
               << ": TIMEDIFF {response= " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime)
@@ -2996,89 +3110,33 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
               << (!is_zero(u.m_tsUnstableSince) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsUnstableSince) : "NEVER")
               << "}");
 
-    if (currtime > u.m_tsLastRspTime)
+    const int is_stable = sendBackup_CheckRunningLinkStable(u, currtime, d->weight);
+
+    if (is_stable >= 0)
     {
-        // The last response predates the start of this function, look at the difference
-        const steady_clock::duration td_responsive = currtime - u.m_tsLastRspTime;
-        bool check_stability = true;
-
-        if (!is_zero(u.m_tsFreshActivation) && u.m_tsFreshActivation < currtime)
-        {
-            // The link is temporary-activated. Calculate then since the activation time.
-
-            // Check the last received ACK time first. This time is initialized with 'now'
-            // at the CUDT::open call, so you can't count on the trap zero time here, but
-            // it's still possible to check if activation time predates the ACK time. Things
-            // are here in the following possible order:
-            //
-            // - ACK time (old because defined at open)
-            // - Response time (old because the time of received handshake or keepalive counts)
-            // ... long time nothing ...
-            // - Activation time.
-            //
-            // If we have this situation, we have to wait for at least one ACK that is
-            // newer than activation time. However, if in this situation we have a fresh
-            // response, that is:
-            //
-            // - ACK time
-            // ...
-            // - Activation time
-            // - Response time (because a Keepalive had a caprice to come accidentally after sending)
-            //
-            // We still wait for a situation that there's at least one ACK that is newer than activation.
-
-            // As we DO have activation time, we need to check if there's at least
-            // one ACK newer than activation, that is, td_acked < td_active
-            if (u.m_tsLastRspAckTime < u.m_tsFreshActivation)
-            {
-                check_stability = false;
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: link @" << d->id
-                          << " activated after ACK, "
-                             "not checking for stability");
-            }
-            else
-            {
-                u.m_tsFreshActivation = steady_clock::time_point();
-            }
-        }
-
-        if (check_stability && count_microseconds(td_responsive) > m_uOPT_StabilityTimeout)
-        {
-            if (is_zero(u.m_tsUnstableSince))
-            {
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: socket NEW UNSTABLE: @" << d->id << " last heard "
-                          << FormatDuration(td_responsive) << " > " << m_uOPT_StabilityTimeout
-                          << " (stability timeout)");
-                // The link seems to have missed two ACKs already.
-                // Qualify this link as unstable
-                // Notify that it has been seen so since now
-                u.m_tsUnstableSince = currtime;
-            }
-
-            is_stable = false;
-        }
-    }
-
-    if (is_stable)
-    {
-        // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link STABLE: @" << d->id
                   << (!is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED")
                   << ", state RUNNING - will send a payload");
 
         u.m_tsUnstableSince = steady_clock::time_point();
+
+        // For some cases
+        if (is_stable > 0)
+            u.m_tsFreshActivation = steady_clock::time_point();
     }
     else
     {
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link UNSTABLE for " << FormatDuration(currtime - u.m_tsUnstableSince) << " : @"
                   << d->id << " - will send a payload");
+        if (is_zero(u.m_tsUnstableSince))
+        {
+            u.m_tsUnstableSince = currtime;
+        }
     }
 
-    return is_stable;
+    return is_stable >= 0;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -3801,12 +3859,10 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
         }
         CUDT&                  ce = d->ps->core();
         steady_clock::duration td(0);
-        if (!is_zero(ce.m_tsFreshActivation) &&
-            count_microseconds(td = currtime - ce.m_tsFreshActivation) < ce.m_uOPT_StabilityTimeout)
+        if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime, d->weight) != 1)
         {
             HLOGC(gslog.Debug,
-                  log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                      << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                    log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td));
             continue;
         }
 
@@ -3906,6 +3962,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // Maximum weight of active links.
     uint16_t maxActiveWeight = 0;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     // We believe that we need to send the payload over every activeLinks link anyway.
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)

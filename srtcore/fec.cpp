@@ -772,6 +772,9 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     static string hangname [] = {"SUCCESS", "PAST", "CRAZY", "NOT-DONE"};
 #endif
 
+    // Required for EHangStatus
+    using namespace std::rel_ops;
+
     EHangStatus okh = HANG_NOTDONE;
     if (!isfec.col) // == regular packet or FEC/ROW
     {
@@ -783,7 +786,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
                 << " RESULT=" << hangname[okh] << " IRRECOVERABLE: " << Printable(irrecover_row));
     }
 
-    if (okh != HANG_SUCCESS)
+    if (okh > HANG_SUCCESS)
     {
         // Just informative.
         LOGC(pflog.Warn, log << "FEC/H: rebuilding/hanging FAILED.");
@@ -806,7 +809,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
                 << " IRRECOVERABLE: " << Printable(irrecover_col));
     }
 
-    if (okv != HANG_SUCCESS)
+    if (okv > HANG_SUCCESS)
     {
         // Just informative.
         LOGC(pflog.Warn, log << "FEC/V: rebuilding/hanging FAILED.");
