@@ -1587,8 +1587,8 @@ static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
     // We take always average values of the buffer metrics.
 
     SrtStatsTables tables;
-    srt_stats(sock, &tables.clocal, &tables.ctotal, SRT_CTR_STATS_SIZE,
-            &tables.metrics, SRT_MTR_STATS_SIZE, flags);
+    srt_stats(sock, &tables.clocal, &tables.ctotal,
+            &tables.metrics, SRT_VERSION_VALUE, flags);
 
     if (bw)
         cout << transmit_stats_writer->WriteBandwidth(tables.metrics.mbpsBandwidth);

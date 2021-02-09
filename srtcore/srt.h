@@ -434,15 +434,16 @@ struct CStreamCounters
     struct CPktByteStatCell rcvBelated;   // received and ignored (retrans duplicated or dropped)
     struct CPktByteStatCell sndUnique;
     struct CPktByteStatCell rcvUnique;
+    // END: SRT_STATS_VERSION_V1
 
     // NEW STATS: V2 (fake version to implement the solution)
     int      pktSndFilterExtra;          // number of control packets supplied by packet filter
     int      pktRcvFilterExtra;          // number of control packets received and not supplied back
     int      pktRcvFilterSupply;         // number of packets that the filter supplied extra (e.g. FEC rebuilt)
     int      pktRcvFilterLoss;           // number of packet loss not coverable by filter
+    // END: SRT_STATS_VERSION_V2
 };
 
-#define SRT_CTR_STATS_SIZE (sizeof(CStreamCounters))
 
 struct CStatsMetrics
 {
@@ -484,20 +485,21 @@ struct CStatsMetrics
 
     int      byteAvailSndBuf;            // available UDT sender buffer size
     int      byteAvailRcvBuf;            // available UDT receiver buffer size
+    // END: SRT_STATS_VERSION_V1
 
     // NEW STATS: V2 (fake version to implement the solution)
     int      pktReorderTolerance;        // packet reorder tolerance value
     int      pktReorderDistance;         // size of order discrepancy in received sequences
+    // END: SRT_STATS_VERSION_V2
 };
 
-#define SRT_MTR_STATS_SIZE (sizeof(CStatsMetrics))
 
 #define SRTM_F_CLEAR 1
 #define SRTM_F_INSTANT 2
 
 
-int srt_stats(SRTSOCKET s, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total, size_t sc_size,
-        struct CStatsMetrics* sm, size_t sm_size, int flags);
+int srt_stats(SRTSOCKET s, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total,
+        struct CStatsMetrics* sm, uint32_t version, int flags);
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -411,10 +411,10 @@ int64_t srt_connection_time(SRTSOCKET sock)
     return CUDT::socketStartTime(sock);
 }
 
-int srt_stats(SRTSOCKET s, CStreamCounters* sc_local, CStreamCounters* sc_total, size_t sc_size,
-        CStatsMetrics* sm, size_t sm_size, int flags)
+int srt_stats(SRTSOCKET s, CStreamCounters* sc_local, CStreamCounters* sc_total,
+        CStatsMetrics* sm, uint32_t version, int flags)
 {
-    return CUDT::stats(s, sc_local, sc_total, sc_size, sm, sm_size, flags);
+    return CUDT::stats(s, sc_local, sc_total, sm, version, flags);
 }
 
 }

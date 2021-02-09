@@ -7706,15 +7706,12 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
 
 // As a trial: pretend that there existed an old
-// version that contained fields only up to this one.
-
-// Assign the name of the FIRST field introduced in the
-// new series to the symbol used to calculate the size.
-// This offset to this field will be equal to the
-// hypothetic size of the stucture that ends before
-// this field's definition.
-#define SRT_CTR_STATS_END_V1 pktSndFilterExtra
-#define SRT_MTR_STATS_END_V1 pktReorderTolerance
+// version that contained fields only up to specified.
+// In this version the new stats didn't actually exist,
+// so this is provided as a fake that they existed, but
+// only up to the field marked with V1. This is only to have
+// a model solution.
+#define SRT_STATS_VERSION_V1 0x010401
 
 // Since this time, whenever there's an update of the patch
 // release that has added some extra stats, must be introduced
@@ -7727,8 +7724,8 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 // it is allowed to remove all those symbols, except the
 // last one (in order to preserve a model).
 
-void CUDT::stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, size_t sc_size,
-        CStatsMetrics* pw_sm, size_t sm_size, int flags)
+void CUDT::stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+        CStatsMetrics* pw_sm, uint32_t version, int flags)
 {
     if (!m_bConnected)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
@@ -7748,14 +7745,14 @@ void CUDT::stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, siz
     };
 
     if (pw_sc_local)
-        fillLocalStats((pw_sc_local), sc_size, flags, im);
+        fillLocalStats((pw_sc_local), version, flags, im);
 
     if (pw_sc_total)
-        fillTotalStats((pw_sc_total), sc_size, flags);
+        fillTotalStats((pw_sc_total), version, flags);
 
     if (pw_sm)
     {
-        fillMetrics((pw_sm), sm_size, flags, im);
+        fillMetrics((pw_sm), version, flags, im);
     }
 
     if (IsSet(flags, SRTM_F_CLEAR))
@@ -7787,7 +7784,7 @@ void CUDT::stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, siz
     }
 }
 
-void CUDT::fillLocalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_UNUSED, const CUDT::StatsInterimData& im)
+void CUDT::fillLocalStats(CStreamCounters* perf, uint32_t version, int flags SRT_ATR_UNUSED, const CUDT::StatsInterimData& im)
 {
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
 
@@ -7833,8 +7830,7 @@ void CUDT::fillLocalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_
     perf->rcvUnique.bytes = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
 
     // End of V1
-    const size_t SIZE_V1 = offsetof(CStreamCounters, SRT_CTR_STATS_END_V1);
-    if (size <= SIZE_V1)
+    if (version <= SRT_STATS_VERSION_V1)
         return;
 
     // Fill extra over-V1 stats
@@ -7846,7 +7842,7 @@ void CUDT::fillLocalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_
     // Place prospective V2 size check here.
 }
 
-void CUDT::fillTotalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_UNUSED)
+void CUDT::fillTotalStats(CStreamCounters* perf, uint32_t version, int flags SRT_ATR_UNUSED)
 {
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
 
@@ -7892,8 +7888,7 @@ void CUDT::fillTotalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_
     perf->rcvUnique.bytes = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
 
     // End of V1
-    const size_t SIZE_V1 = offsetof(CStreamCounters, SRT_CTR_STATS_END_V1);
-    if (size <= SIZE_V1)
+    if (version <= SRT_STATS_VERSION_V1)
         return;
 
     // Fill extra over-V1 stats
@@ -7905,7 +7900,7 @@ void CUDT::fillTotalStats(CStreamCounters* perf, size_t size, int flags SRT_ATR_
     // Place prospective V2 size check here.
 }
 
-void CUDT::fillMetrics(CStatsMetrics* perf, size_t size, int flags, const CUDT::StatsInterimData& im)
+void CUDT::fillMetrics(CStatsMetrics* perf, uint32_t version, int flags, const CUDT::StatsInterimData& im)
 {
     const double interval = count_microseconds(im.currtime - m_stats.tsLastSampleTime);
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
@@ -8000,8 +7995,7 @@ void CUDT::fillMetrics(CStatsMetrics* perf, size_t size, int flags, const CUDT::
     }
 
     // End of V1
-    const size_t SIZE_V1 = offsetof(CStatsMetrics, SRT_MTR_STATS_END_V1);
-    if (size <= SIZE_V1)
+    if (version <= SRT_STATS_VERSION_V1)
         return;
 
     // Fill extra over-V1 stats

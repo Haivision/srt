@@ -295,8 +295,8 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
-    static int stats(SRTSOCKET u, CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, size_t sc_size,
-            CStatsMetrics* pw_sm, size_t sm_size, int flags);
+    static int stats(SRTSOCKET u, CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+            CStatsMetrics* pw_sm, uint32_t version, int flags);
 #if ENABLE_EXPERIMENTAL_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
@@ -701,8 +701,8 @@ private:
     /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
-    void stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total, size_t sc_size,
-            CStatsMetrics* pw_sm, size_t sm_size, int flags);
+    void stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+            CStatsMetrics* pw_sm, uint32_t version, int flags);
 
     struct StatsInterimData
     {
@@ -711,9 +711,9 @@ private:
         time_point currtime;
     };
 
-    void fillLocalStats(CStreamCounters* pw_sc, size_t size, int flags, const StatsInterimData& im);
-    void fillTotalStats(CStreamCounters* pw_sc, size_t size, int flags);
-    void fillMetrics(CStatsMetrics* pw_sm, size_t size, int flags, const StatsInterimData& im);
+    void fillLocalStats(CStreamCounters* pw_sc, uint32_t version, int flags, const StatsInterimData& im);
+    void fillTotalStats(CStreamCounters* pw_sc, uint32_t version, int flags);
+    void fillMetrics(CStatsMetrics* pw_sm, uint32_t version, int flags, const StatsInterimData& im);
 
     /// Mark sequence contained in the given packet as not lost. This
     /// removes the loss record from both current receiver loss list and
