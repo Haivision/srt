@@ -419,19 +419,37 @@ struct SrtStatsTableInit
 
 vector<unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
 
+static inline string Capit(string in)
+{
+    if (in.empty())
+        return in;
 
-#define STATX(catsuf, shname, lgname, field) \
-    s.emplace_back(new SrtStatCell(SSC_##catsuf, #shname, #lgname, [](std::ostream& out, const SrtStatsTables& t) { out << t.field; }))
+    in[0] = std::toupper(in[0]);
+    return in;
+}
+
+static inline string Camel(string prefix, string name, string suffix = "")
+{
+    std::ostringstream out;
+    out << prefix << Capit(name) << Capit(suffix);
+    return out.str();
+}
+
+#define STATRAW(cat, shname, lgname, field) \
+    s.emplace_back(new SrtStatCell(cat, shname, lgname, [](std::ostream& out, const SrtStatsTables& t) { out << t.field; }))
+
+#define STATX(catsuf, shname, lgname, field) STATRAW(SSC_##catsuf, #shname, #lgname, field)
 
 #define MSTAT(catsuf, shname, name) STATX(catsuf, shname, name, metrics. name)
 
 #define LSTAT(catsuf, shname, name) STATX(catsuf, shname, name, clocal. name)
 #define TSTAT(catsuf, shname, name) STATX(catsuf, shname##Total, name##Total, clocal. name)
 
-#define LPSTAT(catsuf, shnamesuf, name) STATX(catsuf, pkt##shnamesuf, pkt##name, clocal. name .pkts)
-#define LBSTAT(catsuf, shnamesuf, name) STATX(catsuf, bytes##shnamesuf, bytes##name, clocal. name .bytes)
-#define TPSTAT(catsuf, shnamesuf, name) STATX(catsuf, pkt##shnamesuf##Total, pkt##name##Total, ctotal. name .pkts)
-#define TBSTAT(catsuf, shnamesuf, name) STATX(catsuf, bytes##shnamesuf##Total, bytes##name##Total, ctotal. name .bytes)
+#define LPSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("pkt", #shnamesuf), Camel("pkt", #name), clocal. name .pkts)
+#define LBSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("bytes", #shnamesuf), Camel("bytes", #name), clocal. name .bytes)
+#define TPSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("pkt", #shnamesuf, "total"), Camel("pkt", #name, "total"), ctotal. name .pkts)
+#define TBSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("bytes", #shnamesuf, "total"), Camel("bytes", #name, "total"), ctotal. name .bytes)
+
 
 #define XSTAT(catsuf, shnamesuf, name) \
     LPSTAT(catsuf, shnamesuf, name); \

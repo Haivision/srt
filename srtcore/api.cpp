@@ -1147,6 +1147,10 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        {
            u = s->m_GroupOf->m_GroupID;
            s->core().m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
+
+           // Mark the beginning of the connection at the moment
+           // when the group ID is returned to the app caller
+            s->m_GroupOf->m_stats.tsLastSampleTime = steady_clock::now();
        }
        else
        {
@@ -1615,6 +1619,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             // Or, OPEN should be removed from here and srt_connect(_group)
             // should block always if the group doesn't have neither 1 conencted link
             g.m_bOpened = true;
+
+            g.m_stats.tsLastSampleTime = steady_clock::now();
 
             f->laststatus = st;
             // Check the socket status and update it.
@@ -4147,10 +4153,10 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
 int CUDT::stats(SRTSOCKET u, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total,
         struct CStatsMetrics* sm, uint32_t version, int flags)
 {
-// #if ENABLE_EXPERIMENTAL_BONDING
-//    if (u & SRTGROUP_MASK)
-//        return groupsockbstats(u, perf, clear);
-// #endif
+#if ENABLE_EXPERIMENTAL_BONDING
+    if (u & SRTGROUP_MASK)
+        return groupsockstats(u, (sc_local), (sc_total), (sm), version, flags);
+#endif
 
    try
    {
@@ -4177,6 +4183,33 @@ int CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
    {
       CUDTUnited::GroupKeeper k(s_UDTUnited, u, s_UDTUnited.ERH_THROW);
       k.group->bstatsSocket(perf, clear);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      SetThreadLocalError(e);
+      return ERROR;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(aclog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::groupsockstats(SRTSOCKET               u,
+                         struct CStreamCounters* sc_local,
+                         struct CStreamCounters* sc_total,
+                         struct CStatsMetrics*   sm,
+                         uint32_t                version,
+                         int                     flags)
+{
+   try
+   {
+      CUDTUnited::GroupKeeper k(s_UDTUnited, u, s_UDTUnited.ERH_THROW);
+      k.group->statsSocket((sc_local), (sc_total), (sm), version, flags);
       return 0;
    }
    catch (const CUDTException& e)

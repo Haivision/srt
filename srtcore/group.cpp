@@ -2836,6 +2836,131 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     }
 }
 
+void CUDTGroup::statsSocket(struct CStreamCounters* sc_local,
+        struct CStreamCounters* sc_total,
+        struct CStatsMetrics*   sm,
+        uint32_t                version,
+        int                     flags)
+{
+    if (!m_bConnected)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    const steady_clock::time_point currtime = steady_clock::now();
+
+    ScopedLock gg(m_GroupLock);
+
+    CPktByteStatCell snd = m_stats.sent.local.read();
+    CPktByteStatCell rcv = m_stats.recv.local.read();
+
+    while (sc_local) // BREAKABLE BLOCK
+    {
+        sc_local->snd = {0, 0};
+        sc_local->rcv = {0, 0};
+        sc_local->sndLoss = {0, 0};
+        sc_local->rcvLoss = {0, 0};
+        sc_local->sndRetrans = {0, 0};
+        sc_local->rcvRetrans = {0, 0};
+        sc_local->sndDrop = {0, 0};
+        sc_local->rcvDrop   = m_stats.recvDrop.local.read();
+        sc_local->rcvUndecrypt = {0, 0};
+        sc_local->sndBelated = {0, 0};
+        sc_local->rcvBelated = {0, 0};
+        sc_local->sndUnique = snd;
+        sc_local->rcvUnique = rcv;
+
+        if (version <= SRT_STATS_VERSION_V1)
+            break;
+
+        sc_local->pktSndFilterExtra = 0;
+        sc_local->pktRcvFilterExtra = 0;
+        sc_local->pktRcvFilterSupply = 0;
+        sc_local->pktRcvFilterLoss = 0;
+
+        break;
+    }
+
+    while (sc_total) // BREAKABLE BLOCK
+    {
+        sc_total->snd = {0, 0};
+        sc_total->rcv = {0, 0};
+        sc_total->sndLoss = {0, 0};
+        sc_total->rcvLoss = {0, 0};
+        sc_total->sndRetrans = {0, 0};
+        sc_total->rcvRetrans = {0, 0};
+        sc_total->sndDrop = {0, 0};
+        sc_total->rcvDrop   = m_stats.recvDrop.total.read();
+        sc_total->rcvUndecrypt = {0, 0};
+        sc_total->sndBelated = {0, 0};
+        sc_total->rcvBelated = {0, 0};
+        sc_total->sndUnique = m_stats.sent.total.read();
+        sc_total->rcvUnique = m_stats.recv.total.read();
+
+        if (version <= SRT_STATS_VERSION_V1)
+            break;
+
+        sc_total->pktSndFilterExtra = 0;
+        sc_total->pktRcvFilterExtra = 0;
+        sc_total->pktRcvFilterSupply = 0;
+        sc_total->pktRcvFilterLoss = 0;
+
+        break;
+    }
+
+    while (sm) // breakable block
+    {
+        const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
+        sm->msTimeStamp       = count_milliseconds(currtime - m_tsStartTime);
+        sm->mbpsSendRate      = double(snd.bytes) * 8.0 / interval;
+        sm->mbpsRecvRate      = double(rcv.bytes) * 8.0 / interval;
+
+        sm->sndACK        = 0;
+        sm->sndNAK        = 0;
+        sm->rcvACK        = 0;
+        sm->rcvNAK        = 0;
+        sm->usSndDuration = 0;
+
+        sm->rcvAvgBelatedTime = 0;
+
+        sm->usPktSndPeriod      = 0;
+        sm->pktFlowWindow       = 0;
+        sm->pktCongestionWindow = 0;
+        sm->pktFlightSize       = 0;
+        sm->msRTT               = 0;
+
+        sm->mbpsBandwidth = 0;
+        sm->mbpsMaxBW     = 0;
+
+        sm->msSndTsbPdDelay = 0;
+        sm->msRcvTsbPdDelay = 0;
+        sm->byteMSS         = 0;
+
+        sm->byteAvailSndBuf = 0;
+        sm->byteAvailRcvBuf = 0;
+        sm->pktSndBuf       = 0;
+        sm->byteSndBuf      = 0;
+        sm->msSndBuf        = 0;
+        sm->byteRcvBuf      = 0;
+        sm->msRcvBuf        = 0;
+
+        // End of V1
+        if (version <= SRT_STATS_VERSION_V1)
+            break;
+
+        // Fill extra over-V1 stats
+        sm->pktReorderDistance  = 0;
+        sm->pktReorderTolerance = 0;
+
+        break;
+    }
+
+    if (IsSet(flags, SRTM_F_CLEAR))
+    {
+        m_stats.reset();
+    }
+}
+
 // For sorting group members by priority
 
 struct FPriorityOrder

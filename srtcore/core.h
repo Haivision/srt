@@ -209,6 +209,16 @@ class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 
+// STATS.
+// As a trial: pretend that there existed an old
+// version that contained fields only up to specified.
+// In this version the new stats didn't actually exist,
+// so this is provided as a fake that they existed, but
+// only up to the field marked with V1. This is only to have
+// a model solution.
+#define SRT_STATS_VERSION_V1 0x010401
+
+
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
 // anyhow managed separately. After this is done, with a small help with
@@ -299,6 +309,12 @@ public: //API
             CStatsMetrics* pw_sm, uint32_t version, int flags);
 #if ENABLE_EXPERIMENTAL_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static int groupsockstats(SRTSOCKET u,
+                              struct CStreamCounters * sc_local,
+                              struct CStreamCounters * sc_total,
+                              struct CStatsMetrics * sm,
+                              uint32_t version,
+                              int      flags);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);

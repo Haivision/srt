@@ -7707,15 +7707,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
 // NEW STATS STUFF.
 
-
-// As a trial: pretend that there existed an old
-// version that contained fields only up to specified.
-// In this version the new stats didn't actually exist,
-// so this is provided as a fake that they existed, but
-// only up to the field marked with V1. This is only to have
-// a model solution.
-#define SRT_STATS_VERSION_V1 0x010401
-
 // Since this time, whenever there's an update of the patch
 // release that has added some extra stats, must be introduced
 // the "next" symbol of that kind. This is used only internally

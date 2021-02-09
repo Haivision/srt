@@ -755,6 +755,12 @@ private:
 public:
     void bstatsSocket(CBytePerfMon* perf, bool clear);
 
+    void statsSocket(struct CStreamCounters* sc_local,
+            struct CStreamCounters* sc_total,
+            struct CStatsMetrics*   sm,
+            uint32_t                version,
+            int                     flags);
+
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
