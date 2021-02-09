@@ -2372,21 +2372,25 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // by "more correct data" if found more appropriate later. But we have to
                 // copy these data anyway anywhere, even if they need to fall on the floor later.
                 int stat;
+                char lostbuf[SRT_LIVE_MAX_PLSIZE];
+                char* msgbuf = NULL;
                 if (output_size)
                 {
                     // We have already the data, so this must fall on the floor
-                    char lostbuf[SRT_LIVE_MAX_PLSIZE];
+                    msgbuf = lostbuf;
                     stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
                               << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
                     if (stat > 0)
                     {
+                        // TODO: Too early to conclude. May be an ahead packet.
                         m_stats.recvDiscard.Update(stat);
                     }
                 }
                 else
                 {
+                    msgbuf = buf;
                     stat = ps->core().receiveMessage((buf), len, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " EXTRACTED data with %" << mctrl.pktseq << " #"
@@ -2464,7 +2468,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                         HLOGC(grlog.Debug,
                               log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " AHEAD base=%"
                                   << m_RcvBaseSeqNo);
-                        p->packet.assign(buf, buf + stat);
+                        p->packet.assign(msgbuf, msgbuf + stat);
                         p->mctrl = mctrl;
                         break; // Don't read from that socket anymore.
                     }
@@ -2713,8 +2717,8 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         {
             // The very next packet. Return it.
             HLOGC(grlog.Debug,
-                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq << "#"
-                      << a.mctrl.msgno << " from @" << i->first << ")");
+                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
+                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
