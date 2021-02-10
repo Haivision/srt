@@ -15,6 +15,7 @@
 //#define ENABLE_CXX17
 
 #include <cstdlib>
+#include <limits>
 #ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
