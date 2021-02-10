@@ -2380,13 +2380,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                     msgbuf = lostbuf;
                     stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
-                          log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
-                              << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
-                    if (stat > 0)
-                    {
-                        // TODO: Too early to conclude. May be an ahead packet.
-                        m_stats.recvDiscard.Update(stat);
-                    }
+                          log << "group/recv: @" << id << " EXTRACTED EXTRA data with %" << mctrl.pktseq
+                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
                 }
                 else
                 {
@@ -2455,7 +2450,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
                                   << " BEHIND base=%" << m_RcvBaseSeqNo << " - discarding");
                         // The sequence is recorded, the packet has to be discarded.
-                        // That's all.
+                        m_stats.recvDiscard.Update(stat);
                         continue;
                     }
 
