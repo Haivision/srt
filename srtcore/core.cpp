@@ -8108,10 +8108,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
     {
         int32_t ack = 0;
-        int     rtt = -1;
-
-        // update RTT
-        rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
+        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
         if (rtt <= 0)
         {
             LOGC(inlog.Error,

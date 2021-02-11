@@ -1147,6 +1147,10 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        {
            u = s->m_GroupOf->m_GroupID;
            s->core().m_config.m_GroupConnect = 1; // should be derived from ls, but make sure
+
+           // Mark the beginning of the connection at the moment
+           // when the group ID is returned to the app caller
+            s->m_GroupOf->m_stats.tsLastSampleTime = steady_clock::now();
        }
        else
        {
@@ -1615,6 +1619,8 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
             // Or, OPEN should be removed from here and srt_connect(_group)
             // should block always if the group doesn't have neither 1 conencted link
             g.m_bOpened = true;
+
+            g.m_stats.tsLastSampleTime = steady_clock::now();
 
             f->laststatus = st;
             // Check the socket status and update it.
