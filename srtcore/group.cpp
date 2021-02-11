@@ -2372,16 +2372,18 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // by "more correct data" if found more appropriate later. But we have to
                 // copy these data anyway anywhere, even if they need to fall on the floor later.
                 int stat;
-                char lostbuf[SRT_LIVE_MAX_PLSIZE];
+                char extrabuf[SRT_LIVE_MAX_PLSIZE];
                 char* msgbuf = NULL;
                 if (output_size)
                 {
-                    // We have already the data, so this must fall on the floor
-                    msgbuf = lostbuf;
-                    stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
+                    // We already have the target data in `buf`. Now reading extra data potentially redundant (to be ignored)
+                    // or AHEAD (to be buffered internally by the group)
+                    msgbuf = extrabuf;
+                    stat = ps->core().receiveMessage((extrabuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " EXTRACTED EXTRA data with %" << mctrl.pktseq
-                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
+                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(extrabuf, stat))
+                              << (CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo) > 0 ? " - TO STORE" : " - TO IGNORE"));
                 }
                 else
                 {
