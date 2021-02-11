@@ -168,7 +168,7 @@ bool CUDTSocket::readReady()
 bool CUDTSocket::writeReady()
 {
     return (m_pUDT->m_bConnected
-                && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_iSndBufSize))
+                && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_config.m_iSndBufSize))
         || broken();
 }
 
@@ -526,8 +526,8 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                << w_hs.m_iID << " - ADAPTING.");
 
          w_hs.m_iISN = ns->m_pUDT->m_iISN;
-         w_hs.m_iMSS = ns->m_pUDT->m_iMSS;
-         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_iFlightFlagSize;
+         w_hs.m_iMSS = ns->m_pUDT->MSS();
+         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_config.m_iFlightFlagSize;
          w_hs.m_iReqType = URQ_CONCLUSION;
          w_hs.m_iID = ns->m_SocketID;
 
@@ -1000,7 +1000,7 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    // [[using assert(s->m_Status == OPENED)]];
 
    // listen is not supported in rendezvous connection setup
-   if (s->m_pUDT->m_bRendezvous)
+   if (s->m_pUDT->m_config.m_bRendezvous)
       throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
    s->m_uiBackLog = backlog;
@@ -1073,7 +1073,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
 
    // no "accept" in rendezvous connection setup
-   if (ls->m_pUDT->m_bRendezvous)
+   if (ls->m_pUDT->m_config.m_bRendezvous)
    {
        LOGC(cnlog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
        // This problem should never happen because `srt_listen` function should have
@@ -1103,7 +1103,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            ls->m_QueuedSockets.erase(b);
            accepted = true;
        }
-       else if (!ls->m_pUDT->m_bSynRecving)
+       else if (!ls->m_pUDT->m_config.m_bSynRecving)
        {
            accepted = true;
        }
@@ -1118,7 +1118,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    if (u == CUDT::INVALID_SOCK)
    {
       // non-blocking receiving, no connection available
-      if (!ls->m_pUDT->m_bSynRecving)
+      if (!ls->m_pUDT->m_config.m_bSynRecving)
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
 
       // listening socket is closed
@@ -1130,13 +1130,13 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
 
    // Set properly the SRTO_GROUPCONNECT flag
-   s->core().m_OPT_GroupConnect = 0;
+   s->core().m_config.m_GroupConnect = 0;
 
    // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
    // and the already accepted socket has successfully joined
    // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
 #if ENABLE_EXPERIMENTAL_BONDING
-   if (ls->m_pUDT->m_OPT_GroupConnect == 1 && s->m_GroupOf)
+   if (ls->m_pUDT->m_config.m_GroupConnect == 1 && s->m_GroupOf)
    {
        // Put a lock to protect the group against accidental deletion
        // in the meantime.
@@ -1146,7 +1146,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        if (s->m_GroupOf)
        {
            u = s->m_GroupOf->m_GroupID;
-           s->core().m_OPT_GroupConnect = 1; // should be derived from ls, but make sure
+           s->core().m_config.m_GroupConnect = 1; // should be derived from ls, but make sure
 
            // Mark the beginning of the connection at the moment
            // when the group ID is returned to the app caller
@@ -1494,14 +1494,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         }
 
         // Set it the groupconnect option, as all in-group sockets should have.
-        ns->m_pUDT->m_OPT_GroupConnect = 1;
+        ns->m_pUDT->m_config.m_GroupConnect = 1;
 
         // Every group member will have always nonblocking
         // (this implies also non-blocking connect/accept).
         // The group facility functions will block when necessary
         // using epoll_wait.
-        ns->m_pUDT->m_bSynRecving = false;
-        ns->m_pUDT->m_bSynSending = false;
+        ns->m_pUDT->m_config.m_bSynRecving = false;
+        ns->m_pUDT->m_config.m_bSynSending = false;
 
         HLOGC(aclog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
         // If this socket is not to block the current connect process,
@@ -1823,7 +1823,7 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
 
    if (s->m_Status == SRTS_INIT)
    {
-       if (s->m_pUDT->m_bRendezvous)
+       if (s->m_pUDT->m_config.m_bRendezvous)
            throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
 
        // If bind() was done first on this socket, then the
@@ -1953,7 +1953,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
 
-   bool synch_close_snd = s->m_pUDT->m_bSynSending;
+   const bool synch_close_snd = s->m_pUDT->m_config.m_bSynSending;
 
    SRTSOCKET u = s->m_SocketID;
 
@@ -2318,7 +2318,7 @@ int CUDTUnited::selectEx(
          {
             if (s->m_pUDT->m_bConnected
                && (s->m_pUDT->m_pSndBuffer->getCurrBufSize()
-                  < s->m_pUDT->m_iSndBufSize))
+                  < s->m_pUDT->m_config.m_iSndBufSize))
             {
                writefds->push_back(s->m_SocketID);
                ++ count;
@@ -2823,7 +2823,7 @@ void CUDTUnited::updateMux(
    // In such a case rely exclusively on that very socket and
    // use it the way as it is configured, of course, create also
    // always a new multiplexer for that very socket.
-   if (!udpsock && s->m_pUDT->m_bReuseAddr)
+   if (!udpsock && s->m_pUDT->m_config.m_bReuseAddr)
    {
       const int port = addr.hport();
 
@@ -2835,14 +2835,7 @@ void CUDTUnited::updateMux(
           // need to find an existing multiplexer that binds to the
           // given port in the same family as requested address.
           if ((i->second.m_iIPversion == addr.family())
-                  && (i->second.m_iMSS == s->m_pUDT->m_iMSS)
-                  &&  (i->second.m_iIpTTL == s->m_pUDT->m_iIpTTL)
-                  && (i->second.m_iIpToS == s->m_pUDT->m_iIpToS)
-#ifdef SRT_ENABLE_BINDTODEVICE
-                  && (i->second.m_BindToDevice == s->m_pUDT->m_BindToDevice)
-#endif
-                  && (i->second.m_iIpV6Only == s->m_pUDT->m_iIpV6Only)
-                  &&  i->second.m_bReusable)
+                  && i->second.m_mcfg == s->m_pUDT->m_config)
           {
             if (i->second.m_iPort == port)
             {
@@ -2862,30 +2855,15 @@ void CUDTUnited::updateMux(
 
    // a new multiplexer is needed
    CMultiplexer m;
-   m.m_iMSS = s->m_pUDT->m_iMSS;
+   m.m_mcfg = s->m_pUDT->m_config;
    m.m_iIPversion = addr.family();
-   m.m_iIpTTL = s->m_pUDT->m_iIpTTL;
-   m.m_iIpToS = s->m_pUDT->m_iIpToS;
-#ifdef SRT_ENABLE_BINDTODEVICE
-   m.m_BindToDevice = s->m_pUDT->m_BindToDevice;
-#endif
    m.m_iRefCount = 1;
-   m.m_iIpV6Only = s->m_pUDT->m_iIpV6Only;
-   m.m_bReusable = s->m_pUDT->m_bReuseAddr;
    m.m_iID = s->m_SocketID;
 
    try
    {
        m.m_pChannel = new CChannel();
-       m.m_pChannel->setIpTTL(s->m_pUDT->m_iIpTTL);
-       m.m_pChannel->setIpToS(s->m_pUDT->m_iIpToS);
-#ifdef SRT_ENABLE_BINDTODEVICE
-       m.m_pChannel->setBind(m.m_BindToDevice);
-#endif
-       m.m_pChannel->setSndBufSize(s->m_pUDT->m_iUDPSndBufSize);
-       m.m_pChannel->setRcvBufSize(s->m_pUDT->m_iUDPRcvBufSize);
-       if (s->m_pUDT->m_iIpV6Only != -1)
-           m.m_pChannel->setIpV6Only(s->m_pUDT->m_iIpV6Only);
+       m.m_pChannel->setConfig(m.m_mcfg);
 
        if (udpsock)
        {
@@ -3011,7 +2989,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
        if (!mux && fallback)
        {
            // It is allowed to reuse this multiplexer, but the socket must allow both IPv4 and IPv6
-           if (fallback->m_iIpV6Only == 0)
+           if (fallback->m_mcfg.m_iIpV6Only == 0)
            {
                HLOGC(smlog.Warn, log << "updateListenerMux: reusing multiplexer from different family");
                mux = fallback;

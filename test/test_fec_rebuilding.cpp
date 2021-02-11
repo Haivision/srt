@@ -34,7 +34,7 @@ protected:
             isn - 1, // It's passed in this form to PacketFilter constructor, it should increase it
             isn - 1, // XXX Probably this better be changed.
             plsize,
-            CUDT::DEF_BUFFER_SIZE
+            CSrtConfig::DEF_BUFFER_SIZE
         };
 
 

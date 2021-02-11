@@ -56,6 +56,7 @@ modified by
 #include "platform_sys.h"
 #include "udt.h"
 #include "packet.h"
+#include "socketconfig.h"
 #include "netinet_any.h"
 
 class CChannel
@@ -98,21 +99,6 @@ public:
 
    int getRcvBufSize();
 
-      /// Set the UDP sending buffer size.
-      /// @param [in] size expected UDP sending buffer size.
-
-   void setSndBufSize(int size);
-
-      /// Set the UDP receiving buffer size.
-      /// @param [in] size expected UDP receiving buffer size.
-
-   void setRcvBufSize(int size);
-
-      /// Set the IPV6ONLY option.
-      /// @param [in] IPV6ONLY value.
-
-   void setIpV6Only(int ipV6Only);
-
       /// Query the socket address that the channel is using.
       /// @param [out] addr pointer to store the returned socket address.
 
@@ -137,16 +123,7 @@ public:
 
    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
-      /// Set the IP TTL.
-      /// @param [in] ttl IP Time To Live.
-      /// @return none.
-
-   void setIpTTL(int ttl);
-
-      /// Set the IP Type of Service.
-      /// @param [in] tos IP Type of Service.
-
-   void setIpToS(int tos);
+   void setConfig(const CSrtMuxerConfig& config);
 
       /// Get the IP TTL.
       /// @param [in] ttl IP Time To Live.
@@ -160,7 +137,6 @@ public:
    int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-   void setBind(const std::string& name);
    bool getBind(char* dst, size_t len);
 #endif
 
@@ -176,14 +152,11 @@ private:
 private:
 
    UDPSOCKET m_iSocket;                 // socket descriptor
-   int m_iIpTTL;
-   int m_iIpToS;
-#ifdef SRT_ENABLE_BINDTODEVICE
-   std::string m_BindToDevice;
-#endif
-   int m_iSndBufSize;                   // UDP sending buffer size
-   int m_iRcvBufSize;                   // UDP receiving buffer size
-   int m_iIpV6Only;                     // IPV6_V6ONLY option (-1 if not set)
+
+   // Mutable because when querying original settings
+   // this comprises the cache for extracted values,
+   // although the object itself isn't considered modified.
+   mutable CSrtMuxerConfig m_mcfg; // Note: ReuseAddr is unused and ineffective.
    sockaddr_any m_BindAddr;
 };
 

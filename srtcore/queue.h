@@ -57,6 +57,7 @@ modified by
 #include "channel.h"
 #include "common.h"
 #include "packet.h"
+#include "socketconfig.h"
 #include "netinet_any.h"
 #include "utilities.h"
 #include <list>
@@ -539,15 +540,9 @@ struct CMultiplexer
 
    int m_iPort;         // The UDP port number of this multiplexer
    int m_iIPversion;    // Address family (AF_INET or AF_INET6)
-   int m_iIpTTL;
-   int m_iIpToS;
-#ifdef SRT_ENABLE_BINDTODEVICE
-   std::string m_BindToDevice;
-#endif
-   int m_iMSS;          // Maximum Segment Size
    int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
-   int m_iIpV6Only;     // IPV6_V6ONLY option
-   bool m_bReusable;    // if this one can be shared with others
+
+   CSrtMuxerConfig m_mcfg;
 
    int m_iID;           // multiplexer ID
 

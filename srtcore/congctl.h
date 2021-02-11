@@ -11,6 +11,7 @@
 #ifndef INC_SRT_CONGCTL_H
 #define INC_SRT_CONGCTL_H
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <utility>
@@ -55,13 +56,24 @@ public:
         bool operator()(NamePtr np) { return n == np.first; }
     };
 
+    static NamePtr* find(const std::string& name)
+    {
+        NamePtr* end = congctls+N_CONTROLLERS;
+        NamePtr* try_selector = std::find_if(congctls, end, IsName(name));
+        return try_selector != end ? try_selector : NULL;
+    }
+
+    static bool exists(const std::string& name)
+    {
+        return find(name);
+    }
+
     // You can call select() multiple times, until finally
     // the 'configure' method is called.
     bool select(const std::string& name)
     {
-        NamePtr* end = congctls+N_CONTROLLERS;
-        NamePtr* try_selector = std::find_if(congctls, end, IsName(name));
-        if (try_selector == end)
+        NamePtr* try_selector = find(name);
+        if (!try_selector)
             return false;
         selector = try_selector - congctls;
         return true;
@@ -117,6 +129,7 @@ public:
     };
 };
 
+class CPacket;
 
 class SrtCongestionControlBase
 {
