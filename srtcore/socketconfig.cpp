@@ -103,7 +103,7 @@ static struct SrtConfigSetter
 		DISPATCH(SRTO_MESSAGEAPI);
 		DISPATCH(SRTO_PAYLOADSIZE);
 		DISPATCH(SRTO_TRANSTYPE);
-#ifdef ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_EXPERIMENTAL_BONDING
 		DISPATCH(SRTO_GROUPCONNECT);
 #endif
 		DISPATCH(SRTO_KMREFRESHRATE);
@@ -112,7 +112,7 @@ static struct SrtConfigSetter
 		DISPATCH(SRTO_PEERIDLETIMEO);
 		DISPATCH(SRTO_IPV6ONLY);
 		DISPATCH(SRTO_PACKETFILTER);
-#ifdef ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_EXPERIMENTAL_BONDING
 		DISPATCH(SRTO_GROUPSTABTIMEO);
 #endif
 		DISPATCH(SRTO_RETRANSMITALGO);
@@ -131,7 +131,7 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return 0;
 }
 
-#ifdef ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_EXPERIMENTAL_BONDING
 bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
 {
     // Check first if this option is allowed to be set
