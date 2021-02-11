@@ -51,6 +51,7 @@ written by
 #ifndef INC_SRT_SOCKETCONFIG_H
 #define INC_SRT_SOCKETCONFIG_H
 
+#include "platform_sys.h"
 #ifdef SRT_ENABLE_BINDTODEVICE
 #include <linux/if.h>
 #endif

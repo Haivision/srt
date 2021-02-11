@@ -49,6 +49,7 @@ written by
 *****************************************************************************/
 #include <utility>
 
+#include "srt.h"
 #include "socketconfig.h"
 
 extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
