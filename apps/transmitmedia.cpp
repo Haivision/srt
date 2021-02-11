@@ -527,17 +527,20 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     const bool need_bw_report = transmit_bw_report && (counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && (counter % transmit_stats_report) == transmit_stats_report - 1;
 
-    if (need_bw_report || need_stats_report)
+    if ((need_bw_report || need_stats_report) && transmit_stats_writer != nullptr)
     {
-        CBytePerfMon perf;
-        srt_bstats(m_sock, &perf, need_stats_report && !transmit_total_stats);
-        if (transmit_stats_writer != nullptr) 
-        {
-            if (need_bw_report)
-                cerr << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth) << std::flush;
-            if (need_stats_report)
-                out_stats << transmit_stats_writer->WriteStats(m_sock, perf) << std::flush;
-        }
+        int flags = 0;
+        if (need_stats_report && !transmit_total_stats)
+            flags |= SRTM_F_CLEAR;
+
+        SrtStatsTables tables;
+        srt_stats(m_sock, &tables.clocal, &tables.ctotal,
+            &tables.metrics, SRT_VERSION_VALUE, flags);
+
+        if (need_bw_report)
+            cerr << transmit_stats_writer->WriteBandwidth(tables.metrics.mbpsBandwidth) << std::flush;
+        if (need_stats_report)
+            out_stats << transmit_stats_writer->WriteStats(m_sock, tables) << std::flush;
     }
     ++counter;
     return stat;

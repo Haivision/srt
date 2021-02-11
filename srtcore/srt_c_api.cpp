@@ -20,6 +20,7 @@ written by
 #include "srt.h"
 #include "common.h"
 #include "packet.h"
+#include "api.h"
 #include "core.h"
 #include "utilities.h"
 
@@ -408,6 +409,12 @@ int64_t srt_time_now()
 int64_t srt_connection_time(SRTSOCKET sock)
 {
     return CUDT::socketStartTime(sock);
+}
+
+int srt_stats(SRTSOCKET s, CStreamCounters* sc_local, CStreamCounters* sc_total,
+        CStatsMetrics* sm, uint32_t version, int flags)
+{
+    return CUDT::stats(s, sc_local, sc_total, sm, version, flags);
 }
 
 }

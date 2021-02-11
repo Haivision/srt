@@ -209,6 +209,16 @@ class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 
+// STATS.
+// As a trial: pretend that there existed an old
+// version that contained fields only up to specified.
+// In this version the new stats didn't actually exist,
+// so this is provided as a fake that they existed, but
+// only up to the field marked with V1. This is only to have
+// a model solution.
+#define SRT_STATS_VERSION_V1 0x010401
+
+
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
 // anyhow managed separately. After this is done, with a small help with
@@ -295,8 +305,16 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static int stats(SRTSOCKET u, CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+            CStatsMetrics* pw_sm, uint32_t version, int flags);
 #if ENABLE_EXPERIMENTAL_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static int groupsockstats(SRTSOCKET u,
+                              struct CStreamCounters * sc_local,
+                              struct CStreamCounters * sc_total,
+                              struct CStatsMetrics * sm,
+                              uint32_t version,
+                              int      flags);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
@@ -484,7 +502,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
     // For SRT_tsbpdLoop
-    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
@@ -702,6 +720,20 @@ private:
     /// @param instantaneous [in] flag to request instantaneous data 
     /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+
+    void stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+            CStatsMetrics* pw_sm, uint32_t version, int flags);
+
+    struct StatsInterimData
+    {
+        uint64_t byteSent;
+        uint64_t byteRecv;
+        time_point currtime;
+    };
+
+    void fillLocalStats(CStreamCounters* pw_sc, uint32_t version, int flags, const StatsInterimData& im);
+    void fillTotalStats(CStreamCounters* pw_sc, uint32_t version, int flags);
+    void fillMetrics(CStatsMetrics* pw_sm, uint32_t version, int flags, const StatsInterimData& im);
 
     /// Mark sequence contained in the given packet as not lost. This
     /// removes the loss record from both current receiver loss list and

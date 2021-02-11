@@ -1579,14 +1579,22 @@ SrtSource::SrtSource(string host, int port, std::string path, const map<string,s
 
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
 {
-    CBytePerfMon perf;
-    // clear only if stats report is to be read
-    srt_bstats(sock, &perf, clr);
+    if (!bw && !stats)
+        return;
+
+    int flags = 0;
+    if (clr)
+        flags |= SRTM_F_CLEAR;
+    // We take always average values of the buffer metrics.
+
+    SrtStatsTables tables;
+    srt_stats(sock, &tables.clocal, &tables.ctotal,
+            &tables.metrics, SRT_VERSION_VALUE, flags);
 
     if (bw)
-        cout << transmit_stats_writer->WriteBandwidth(perf.mbpsBandwidth);
+        cout << transmit_stats_writer->WriteBandwidth(tables.metrics.mbpsBandwidth);
     if (stats)
-        cout << transmit_stats_writer->WriteStats(sock, perf);
+        cout << transmit_stats_writer->WriteStats(sock, tables);
 }
 
 

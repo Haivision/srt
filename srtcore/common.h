@@ -1420,6 +1420,14 @@ struct PacketMetric
         bytes += mult * value;
     }
 
+    CPktByteStatCell read()
+    {
+        CPktByteStatCell cell;
+        cell.pkts = pkts;
+        cell.bytes = fullBytes();
+        return cell;
+    }
+
     uint64_t fullBytes();
 };
 

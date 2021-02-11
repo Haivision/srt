@@ -7705,6 +7705,299 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
+// NEW STATS STUFF.
+
+// Since this time, whenever there's an update of the patch
+// release that has added some extra stats, must be introduced
+// the "next" symbol of that kind. This is used only internally
+// to check if the API client is using the size defined by the
+// previous header version.
+
+// When doing a refactoring with the new minor release,
+// which is allowed to break backward ABI compatibility,
+// it is allowed to remove all those symbols, except the
+// last one (in order to preserve a model).
+
+void CUDT::stats(CStreamCounters* pw_sc_local, CStreamCounters* pw_sc_total,
+        CStatsMetrics* pw_sm, uint32_t version, int flags)
+{
+    if (!m_bConnected)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bBroken || m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    ScopedLock statsguard(m_StatsLock);
+
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
+    // Time is obtained at the moment of successful lock of the stats lock,
+    // which means that it represents the true time at which stats were read.
+    const StatsInterimData im = {
+        m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize),
+        m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize),
+        steady_clock::now()
+    };
+
+    if (pw_sc_local)
+        fillLocalStats((pw_sc_local), version, flags, im);
+
+    if (pw_sc_total)
+        fillTotalStats((pw_sc_total), version, flags);
+
+    if (pw_sm)
+    {
+        fillMetrics((pw_sm), version, flags, im);
+    }
+
+    if (IsSet(flags, SRTM_F_CLEAR))
+    {
+        m_stats.traceSndDrop           = 0;
+        m_stats.traceRcvDrop           = 0;
+        m_stats.traceSndBytesDrop      = 0;
+        m_stats.traceRcvBytesDrop      = 0;
+        m_stats.traceRcvUndecrypt      = 0;
+        m_stats.traceRcvBytesUndecrypt = 0;
+        m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
+        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
+        m_stats.traceSent = m_stats.traceRecv
+            = m_stats.traceSentUniq = m_stats.traceRecvUniq
+            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+        m_stats.sndDuration                                                       = 0;
+        m_stats.traceRcvRetrans                                                   = 0;
+        m_stats.traceRcvBelated                                                   = 0;
+        m_stats.traceRcvBytesLoss = 0;
+
+        m_stats.sndFilterExtra = 0;
+        m_stats.rcvFilterExtra = 0;
+
+        m_stats.rcvFilterSupply = 0;
+        m_stats.rcvFilterLoss   = 0;
+
+        m_stats.tsLastSampleTime = im.currtime;
+    }
+}
+
+void CUDT::fillLocalStats(CStreamCounters* perf, uint32_t version, int flags SRT_ATR_UNUSED, const CUDT::StatsInterimData& im)
+{
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
+    // Fill local stats
+    perf->snd.pkts  = m_stats.traceSent;
+    perf->snd.bytes = im.byteSent;
+
+    perf->rcv.pkts  = m_stats.traceRecv;
+    perf->rcv.bytes = im.byteRecv;
+
+    perf->sndLoss.pkts  = m_stats.traceSndLoss;
+    perf->sndLoss.bytes = 0; // not implemented
+
+    perf->rcvLoss.pkts  = m_stats.traceRcvLoss;
+    perf->rcvLoss.bytes = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
+
+    perf->sndRetrans.pkts  = m_stats.traceRetrans;
+    perf->sndRetrans.bytes = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
+
+    perf->rcvRetrans.pkts  = m_stats.traceRcvRetrans;
+    perf->rcvRetrans.bytes = 0; // not implemented
+
+    perf->sndDrop.pkts  = m_stats.traceSndDrop;
+    perf->sndDrop.bytes = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
+
+    perf->rcvDrop.pkts = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
+    perf->rcvDrop.bytes =
+        m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
+
+    perf->rcvUndecrypt.pkts  = m_stats.traceRcvUndecrypt;
+    perf->rcvUndecrypt.bytes = m_stats.traceRcvBytesUndecrypt;
+
+    perf->sndBelated.pkts  = 0; // not implemented
+    perf->sndBelated.bytes = 0; // not implemented
+
+    perf->rcvBelated.pkts  = m_stats.traceRcvBelated;
+    perf->rcvBelated.bytes = 0; // not implemented
+
+    perf->sndUnique.pkts  = m_stats.traceSentUniq;
+    perf->sndUnique.bytes = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
+
+    perf->rcvUnique.pkts  = m_stats.traceRecvUniq;
+    perf->rcvUnique.bytes = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
+
+    // End of V1
+    if (version <= SRT_STATS_VERSION_V1)
+        return;
+
+    // Fill extra over-V1 stats
+    perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
+    perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
+    perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
+    perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
+
+    // Place prospective V2 size check here.
+}
+
+void CUDT::fillTotalStats(CStreamCounters* perf, uint32_t version, int flags SRT_ATR_UNUSED)
+{
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
+    // Fill local stats
+    perf->snd.pkts  = m_stats.sentTotal;
+    perf->snd.bytes = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+
+    perf->rcv.pkts  = m_stats.recvTotal;
+    perf->rcv.bytes = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+
+    perf->sndLoss.pkts  = m_stats.sndLossTotal;
+    perf->sndLoss.bytes = 0; // not implemented
+
+    perf->rcvLoss.pkts  = m_stats.rcvLossTotal;
+    perf->rcvLoss.bytes = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
+
+    perf->sndRetrans.pkts  = m_stats.retransTotal;
+    perf->sndRetrans.bytes = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
+
+    perf->rcvRetrans.pkts  = 0; // not implemented: m_stats.rcvRetransTotal;
+    perf->rcvRetrans.bytes = 0; // not implemented
+
+    perf->sndDrop.pkts  = m_stats.sndDropTotal;
+    perf->sndDrop.bytes = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
+
+    perf->rcvDrop.pkts = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
+    perf->rcvDrop.bytes =
+        m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
+
+    perf->rcvUndecrypt.pkts  = m_stats.m_rcvUndecryptTotal;
+    perf->rcvUndecrypt.bytes = m_stats.m_rcvBytesUndecryptTotal;
+
+    perf->sndBelated.pkts  = 0; // not implemented
+    perf->sndBelated.bytes = 0; // not implemented
+
+    perf->rcvBelated.pkts  = 0; // not implemented m_stats.rcvBelatedTotal;
+    perf->rcvBelated.bytes = 0; // not implemented
+
+    perf->sndUnique.pkts  = m_stats.sentUniqTotal;
+    perf->sndUnique.bytes = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
+
+    perf->rcvUnique.pkts  = m_stats.recvUniqTotal;
+    perf->rcvUnique.bytes = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
+
+    // End of V1
+    if (version <= SRT_STATS_VERSION_V1)
+        return;
+
+    // Fill extra over-V1 stats
+    perf->pktSndFilterExtra  = m_stats.sndFilterExtraTotal;
+    perf->pktRcvFilterExtra  = m_stats.rcvFilterExtraTotal;
+    perf->pktRcvFilterSupply = m_stats.rcvFilterSupplyTotal;
+    perf->pktRcvFilterLoss   = m_stats.rcvFilterLossTotal;
+
+    // Place prospective V2 size check here.
+}
+
+void CUDT::fillMetrics(CStatsMetrics* perf, uint32_t version, int flags, const CUDT::StatsInterimData& im)
+{
+    const double interval = count_microseconds(im.currtime - m_stats.tsLastSampleTime);
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
+    // Fill metrics
+    perf->msTimeStamp          = count_milliseconds(im.currtime - m_stats.tsStartTime);
+    perf->mbpsSendRate = double(im.byteSent) * 8.0 / interval;
+    perf->mbpsRecvRate = double(im.byteRecv) * 8.0 / interval;
+
+    perf->sndACK           = m_stats.sentACK;
+    perf->sndNAK           = m_stats.sentNAK;
+    perf->rcvACK           = m_stats.recvACK;
+    perf->rcvNAK           = m_stats.recvNAK;
+    perf->usSndDuration        = m_stats.sndDuration;
+
+    perf->rcvAvgBelatedTime = m_stats.traceBelatedTime;
+
+    perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
+    perf->pktFlowWindow       = m_iFlowWindowSize;
+    perf->pktCongestionWindow = (int)m_dCongestionWindow;
+    perf->pktFlightSize       = getFlightSpan();
+    perf->msRTT               = (double)m_iRTT / 1000.0;
+
+    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth;
+
+    perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
+    perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
+
+    perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+    perf->msRcvTsbPdDelay = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
+    perf->byteMSS         = m_iMSS;
+
+    bool instantaneous = IsSet(flags, SRTM_F_INSTANT);
+
+    if (tryEnterCS(m_ConnectionLock))
+    {
+        if (m_pSndBuffer)
+        {
+            if (instantaneous)
+            {
+                /* Get instant SndBuf instead of moving average for application-based Algorithm
+                   (such as NAE) in need of fast reaction to network condition changes. */
+                perf->pktSndBuf = m_pSndBuffer->getCurrBufSize((perf->byteSndBuf), (perf->msSndBuf));
+            }
+            else
+            {
+                perf->pktSndBuf = m_pSndBuffer->getAvgBufSize((perf->byteSndBuf), (perf->msSndBuf));
+            }
+            perf->byteSndBuf += (perf->pktSndBuf * pktHdrSize);
+            //<
+            perf->byteAvailSndBuf = (m_iSndBufSize - perf->pktSndBuf) * m_iMSS;
+        }
+        else
+        {
+            perf->byteAvailSndBuf = 0;
+            perf->pktSndBuf  = 0;
+            perf->byteSndBuf = 0;
+            perf->msSndBuf   = 0;
+        }
+
+        if (m_pRcvBuffer)
+        {
+            perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_iMSS;
+            if (instantaneous) // no need for historical API for Rcv side
+            {
+                perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
+            }
+            else
+            {
+                perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
+            }
+        }
+        else
+        {
+            perf->byteAvailRcvBuf = 0;
+            perf->pktRcvBuf  = 0;
+            perf->byteRcvBuf = 0;
+            perf->msRcvBuf   = 0;
+        }
+
+        leaveCS(m_ConnectionLock);
+    }
+    else
+    {
+        perf->byteAvailSndBuf = 0;
+        perf->byteAvailRcvBuf = 0;
+        perf->pktSndBuf  = 0;
+        perf->byteSndBuf = 0;
+        perf->msSndBuf   = 0;
+        perf->byteRcvBuf = 0;
+        perf->msRcvBuf   = 0;
+    }
+
+    // End of V1
+    if (version <= SRT_STATS_VERSION_V1)
+        return;
+
+    // Fill extra over-V1 stats
+    perf->pktReorderDistance   = m_stats.traceReorderDistance;
+    perf->pktReorderTolerance  = m_iReorderTolerance;
+}
+
+
 bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,

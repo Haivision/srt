@@ -4150,6 +4150,32 @@ int CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous
    }
 }
 
+int CUDT::stats(SRTSOCKET u, struct CStreamCounters* sc_local, struct CStreamCounters* sc_total,
+        struct CStatsMetrics* sm, uint32_t version, int flags)
+{
+#if ENABLE_EXPERIMENTAL_BONDING
+    if (u & SRTGROUP_MASK)
+        return groupsockstats(u, (sc_local), (sc_total), (sm), version, flags);
+#endif
+
+   try
+   {
+      CUDT* udt = s_UDTUnited.locateSocket(u, s_UDTUnited.ERH_THROW)->m_pUDT;
+      udt->stats((sc_local), (sc_total), (sm), version, flags);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      return APIError(e);
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(aclog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      return APIError(MJ_UNKNOWN, MN_NONE, 0);
+   }
+}
+
 #if ENABLE_EXPERIMENTAL_BONDING
 int CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
 {
@@ -4157,6 +4183,33 @@ int CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
    {
       CUDTUnited::GroupKeeper k(s_UDTUnited, u, s_UDTUnited.ERH_THROW);
       k.group->bstatsSocket(perf, clear);
+      return 0;
+   }
+   catch (const CUDTException& e)
+   {
+      SetThreadLocalError(e);
+      return ERROR;
+   }
+   catch (const std::exception& ee)
+   {
+      LOGC(aclog.Fatal, log << "bstats: UNEXPECTED EXCEPTION: "
+         << typeid(ee).name() << ": " << ee.what());
+      SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+      return ERROR;
+   }
+}
+
+int CUDT::groupsockstats(SRTSOCKET               u,
+                         struct CStreamCounters* sc_local,
+                         struct CStreamCounters* sc_total,
+                         struct CStatsMetrics*   sm,
+                         uint32_t                version,
+                         int                     flags)
+{
+   try
+   {
+      CUDTUnited::GroupKeeper k(s_UDTUnited, u, s_UDTUnited.ERH_THROW);
+      k.group->statsSocket((sc_local), (sc_total), (sm), version, flags);
       return 0;
    }
    catch (const CUDTException& e)

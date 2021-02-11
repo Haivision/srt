@@ -9,6 +9,7 @@
  */
 
 #include <cstring>
+#include <cctype>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -417,6 +418,99 @@ struct SrtStatsTableInit
 #undef STAT
 #undef STATX
 
+vector<unique_ptr<SrtStatCell>> g_SrtStatsTableCells;
+
+static inline string Capit(string in)
+{
+    if (in.empty())
+        return in;
+
+    in[0] = std::toupper(in[0]);
+    return in;
+}
+
+static inline string Camel(string prefix, string name, string suffix = "")
+{
+    std::ostringstream out;
+    out << prefix << Capit(name) << Capit(suffix);
+    return out.str();
+}
+
+#define STATRAW(cat, shname, lgname, field) \
+    s.emplace_back(new SrtStatCell(cat, shname, lgname, [](std::ostream& out, const SrtStatsTables& t) { out << t.field; }))
+
+#define STATX(catsuf, shname, lgname, field) STATRAW(SSC_##catsuf, #shname, #lgname, field)
+
+#define MSTAT(catsuf, shname, name) STATX(catsuf, shname, name, metrics. name)
+
+#define LSTAT(catsuf, shname, name) STATX(catsuf, shname, name, clocal. name)
+#define TSTAT(catsuf, shname, name) STATX(catsuf, shname##Total, name##Total, clocal. name)
+
+#define LPSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("pkt", #shnamesuf), Camel("pkt", #name), clocal. name .pkts)
+#define LBSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("bytes", #shnamesuf), Camel("bytes", #name), clocal. name .bytes)
+#define TPSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("pkt", #shnamesuf, "total"), Camel("pkt", #name, "total"), ctotal. name .pkts)
+#define TBSTAT(catsuf, shnamesuf, name) STATRAW(SSC_##catsuf, Camel("bytes", #shnamesuf, "total"), Camel("bytes", #name, "total"), ctotal. name .bytes)
+
+
+#define XSTAT(catsuf, shnamesuf, name) \
+    LPSTAT(catsuf, shnamesuf, name); \
+    TPSTAT(catsuf, shnamesuf, name); \
+    LBSTAT(catsuf, shnamesuf, name); \
+    TBSTAT(catsuf, shnamesuf, name)
+
+struct SrtStatsCellsInit
+{
+    SrtStatsCellsInit(vector<unique_ptr<SrtStatCell>>& s)
+    {
+        STATX(GEN, time, Time, metrics.msTimeStamp);
+
+        // Data counters
+        XSTAT(SEND, , snd);
+        XSTAT(SEND, Loss, sndLoss);
+        XSTAT(SEND, Retrans, sndRetrans);
+        XSTAT(SEND, Drop, sndDrop);
+        XSTAT(SEND, Belated, sndBelated);
+        XSTAT(SEND, Unique, sndUnique);
+        LSTAT(SEND, filterExtra, pktSndFilterExtra);
+        TSTAT(SEND, filterExtra, pktSndFilterExtra);
+        MSTAT(SEND, mbpsSendRate, mbpsSendRate);
+        MSTAT(SEND, sndACK, sndACK);
+        MSTAT(SEND, sndNAK, sndNAK);
+        MSTAT(SEND, usSndDuration, usSndDuration);
+        MSTAT(SEND, usPktSndPeriod, usPktSndPeriod);
+        MSTAT(SEND, msSndTsbPdDelay, msSndTsbPdDelay);
+
+        XSTAT(RECV, , rcv);
+        XSTAT(RECV, Loss, rcvLoss);
+        XSTAT(RECV, Retrans, rcvRetrans);
+        XSTAT(RECV, Drop, rcvDrop);
+        XSTAT(RECV, Undecrypt, rcvUndecrypt);
+        XSTAT(RECV, Belated, rcvBelated);
+        XSTAT(RECV, Unique, rcvUnique);
+        LSTAT(RECV, filterExtra, pktRcvFilterExtra);
+        TSTAT(RECV, filterExtra, pktRcvFilterExtra);
+        LSTAT(RECV, filterSupply, pktRcvFilterSupply);
+        TSTAT(RECV, filterSupply, pktRcvFilterSupply);
+        LSTAT(RECV, filterLoss, pktRcvFilterLoss);
+        TSTAT(RECV, filterLoss, pktRcvFilterLoss);
+        MSTAT(RECV, mbpsRecvRate, mbpsRecvRate);
+        MSTAT(RECV, rcvACK, rcvACK);
+        MSTAT(RECV, rcvNAK, rcvNAK);
+        MSTAT(RECV, avgBelatedTime, rcvAvgBelatedTime);
+        MSTAT(RECV, msRcvTsbPdDelay, msRcvTsbPdDelay);
+
+        MSTAT(WINDOW, flow, pktFlowWindow);
+        MSTAT(WINDOW, congestion, pktCongestionWindow);
+        MSTAT(WINDOW, pktFlightSize, pktFlightSize);
+
+        MSTAT(LINK, msRTT, msRTT);
+        MSTAT(LINK, mbpsBandwidth, mbpsBandwidth);
+        MSTAT(LINK, mbpsMaxBW, mbpsMaxBW);
+        MSTAT(LINK, byteMSS, byteMSS);
+    }
+} g_SrtStatsCellsInit (g_SrtStatsTableCells);
+
+
 string srt_json_cat_names [] = {
     "",
     "window",
@@ -551,6 +645,82 @@ public:
         return output.str();
     }
 
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        std::ostringstream output;
+        static const string qt = R"(")";
+
+        string pretty_cr, pretty_tab;
+        if (Option("pretty"))
+        {
+            pretty_cr = "\n";
+            pretty_tab = "\t";
+        }
+
+        SrtStatCat cat = SSC_GEN;
+
+        // Do general manually
+        output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr;
+
+        // SID is displayed manually
+        output << pretty_tab << quotekey("sid") << sid;
+
+        // Extra Timepoint is also displayed manually
+#ifdef HAS_PUT_TIME
+        // NOTE: still assumed SSC_GEN category
+        output << "," << pretty_cr << pretty_tab
+            << quotekey("timepoint") << quote(print_timestamp());
+#endif
+
+        // Now continue with fields as specified in the table
+        for (auto& i: g_SrtStatsTableCells)
+        {
+            if (i->category == cat)
+            {
+                output << ","; // next item in same cat
+                output << pretty_cr;
+                output << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+            else
+            {
+                if (cat != SSC_GEN)
+                {
+                    // DO NOT close if general category, just
+                    // enter the depth.
+                    output << pretty_cr << pretty_tab << "}";
+                }
+                cat = i->category;
+                output << ",";
+                output << pretty_cr;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+
+                output << quotekey(srt_json_cat_names[cat]) << "{" << pretty_cr << pretty_tab;
+                if (cat != SSC_GEN)
+                    output << pretty_tab;
+            }
+
+            // Print the current field
+            output << quotekey(i->name);
+            output << qt;
+            i->PrintValue(output, t);
+            output << qt;
+        }
+
+        // Close the previous subcategory
+        if (cat != SSC_GEN)
+        {
+            output << pretty_cr << pretty_tab << "}" << pretty_cr;
+        }
+
+        // Close the general category entity
+        output << "}," << pretty_cr << endl;
+
+        return output.str();
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
@@ -611,6 +781,46 @@ public:
         return output.str();
     }
 
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        std::ostringstream output;
+
+        // Header
+        if (!first_line_printed)
+        {
+#ifdef HAS_PUT_TIME
+            output << "Timepoint,";
+#endif
+            output << "SocketID";
+
+            for (auto& i: g_SrtStatsTableCells)
+            {
+                output << "," << i->longname;
+            }
+            output << endl;
+            first_line_printed = true;
+        }
+
+        // Values
+#ifdef HAS_PUT_TIME
+        // HDR: Timepoint
+        output << print_timestamp() << ",";
+#endif // HAS_PUT_TIME
+
+        // HDR: Time,SocketID
+        output << sid;
+
+        // HDR: the loop of all values in g_SrtStatsTable
+        for (auto& i: g_SrtStatsTableCells)
+        {
+            output << ",";
+            i->PrintValue(output, t);
+        }
+
+        output << endl;
+        return output.str();
+    }
+
     string WriteBandwidth(double mbpsBandwidth) override
     {
         std::ostringstream output;
@@ -639,7 +849,28 @@ public:
         output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
         return output.str();
-    } 
+    }
+
+    string WriteStats(int sid, const SrtStatsTables& t) override
+    {
+        std::ostringstream output;
+
+        output << "======= SRT STATS: sid=" << sid << endl;
+        output << "PACKETS     SENT: " << setw(11) << t.clocal.snd.pkts            << "  RECEIVED:   "   << setw(11) << t.clocal.rcv.pkts              << endl;
+        output << "LOST PKT    SENT: " << setw(11) << t.clocal.sndLoss.pkts        << "  RECEIVED:   "   << setw(11) << t.clocal.rcvLoss.pkts          << endl;
+        output << "REXMIT      SENT: " << setw(11) << t.clocal.sndRetrans.pkts     << "  RECEIVED:   "   << setw(11) << t.clocal.rcvRetrans.pkts       << endl;
+        output << "DROP PKT    SENT: " << setw(11) << t.clocal.sndDrop.pkts        << "  RECEIVED:   "   << setw(11) << t.clocal.rcvDrop.pkts          << endl;
+        output << "FILTER EXTRA  TX: " << setw(11) << t.clocal.pktSndFilterExtra   << "        RX:   "   << setw(11) << t.clocal.pktRcvFilterExtra     << endl;
+        output << "FILTER RX  SUPPL: " << setw(11) << t.clocal.pktRcvFilterSupply  << "  RX  LOSS:   "   << setw(11) << t.clocal.pktRcvFilterLoss      << endl;
+        output << "RATE     SENDING: " << setw(11) << t.metrics.mbpsSendRate       << "  RECEIVING:  "   << setw(11) << t.metrics.mbpsRecvRate         << endl;
+        output << "BELATED RECEIVED: " << setw(11) << t.clocal.rcvBelated.pkts     << "  AVG TIME:   "   << setw(11) << t.metrics.rcvAvgBelatedTime    << endl;
+        output << "REORDER DISTANCE: " << setw(11) << t.metrics.pktReorderDistance << endl;
+        output << "WINDOW      FLOW: " << setw(11) << t.metrics.pktFlowWindow      << "  CONGESTION: "   << setw(11) << t.metrics.pktCongestionWindow  << "  FLIGHT: " << setw(11) << t.metrics.pktFlightSize << endl;
+        output << "LINK         RTT: " << setw(9)  << t.metrics.msRTT              << "ms  BANDWIDTH:  " << setw(7)  << t.metrics.mbpsBandwidth        << "Mb/s " << endl;
+        output << "BUFFERLEFT:  SND: " << setw(11) << t.metrics.byteAvailSndBuf    << "  RCV:        "   << setw(11) << t.metrics.byteAvailRcvBuf      << endl;
+
+        return output.str();
+    }
 
     string WriteBandwidth(double mbpsBandwidth) override 
     {
