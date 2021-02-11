@@ -2383,7 +2383,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " EXTRACTED EXTRA data with %" << mctrl.pktseq
                               << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(extrabuf, stat))
-                              << (CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo) > 0 ? " - TO STORE" : " - TO IGNORE"));
+                              << (CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo) > 1 ? " - TO STORE" : " - TO IGNORE"));
                 }
                 else
                 {
