@@ -34,6 +34,9 @@
 using namespace std;
 using namespace srt_logging;
 
+
+const char FECFilterBuiltin::defaultConfig [] = "fec,cols:1,layout:even,arq:onreq";
+
 FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr)
     : SrtPacketFilterBase(init)
     , m_fallback_level(SRT_ARQ_ONREQ)
@@ -2476,3 +2479,4 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 
     return colgx;
 }
+

@@ -462,7 +462,7 @@ extern const char* const srt_rejectreason_msg [] = {
     "Password required or unexpected",
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
-    "Packet Filter type collision",
+    "Packet Filter settings error",
     "Group settings collision",
     "Connection timeout"
 };

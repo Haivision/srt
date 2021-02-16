@@ -41,6 +41,44 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
     return true;
 }
 
+// Parameters are passed by value because they need to be potentially modicied inside.
+bool CheckFilterCompat(SrtFilterConfig agent, SrtFilterConfig peer)
+{
+    PacketFilter::Factory* fac = PacketFilter::find(agent.type);
+    if (!fac)
+        return false;
+
+    SrtFilterConfig defaults;
+    if (!ParseFilterConfig(fac->defaultConfig(), (defaults)))
+    {
+        return false;
+    }
+
+    for (map<string, string>::iterator x = defaults.parameters.begin(); x != defaults.parameters.end(); ++x)
+    {
+        if (!agent.parameters.count(x->first))
+            agent.parameters[x->first] = x->second;
+        if (!peer.parameters.count(x->first))
+            peer.parameters[x->first] = x->second;
+    }
+
+    for (map<string, string>::iterator x = agent.parameters.begin(); x != agent.parameters.end(); ++x)
+    {
+        if (peer.parameters.count(x->first) == 0)  // key not defined in peer
+            peer.parameters[x->first] = x->second; // override with a value from agent
+        else if (x->second != peer.parameters[x->first])
+        {
+            LOGC(cnlog.Error, log << "Packet Filter (" << defaults.type << "): collision on '" << x->second
+                    << "' parameter (agent:" << x->second << " peer:" << (peer.parameters[x->first]) << ")");
+            return false;
+        }
+    }
+
+    // Mandatory parameters will be checked when trying to create the filter object.
+
+    return true;
+}
+
 struct SortBySequence
 {
     bool operator()(const CUnit* u1, const CUnit* u2)
@@ -232,7 +270,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     m_parent = parent;
 
     SrtFilterConfig cfg;
-    if (!ParseFilterConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, (cfg)))
         return false;
 
     // Extract the "type" key from parameters, or use
