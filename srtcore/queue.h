@@ -156,11 +156,10 @@ struct CSNode
 
 class CSndUList
 {
-friend class CSndQueue;
 
 public:
-   CSndUList();
-   ~CSndUList();
+    CSndUList( srt::sync::CTimer* pTimer);
+    ~CSndUList();
 
 public:
 
@@ -191,6 +190,11 @@ public:
 
    srt::sync::steady_clock::time_point getNextProcTime();
 
+   bool empty_LOCKED()
+   {
+       return m_iLastEntry < 0;
+   }
+
 private:
 
    /// Doubles the size of the list.
@@ -217,12 +221,13 @@ private:
    int m_iArrayLength;			// physical length of the array
    int m_iLastEntry;			// position of last entry on the heap array
 
-   srt::sync::Mutex m_ListLock;
-
-   srt::sync::Mutex* m_pWindowLock;
-   srt::sync::Condition* m_pWindowCond;
-
+   srt::sync::CEvent m_ListEv;
    srt::sync::CTimer* m_pTimer;
+
+public: // ListEv forwarders
+   srt::sync::Mutex& mutex() { return m_ListEv.mutex(); }
+   void wait(srt::sync::UniqueLock& ul) { m_ListEv.wait(ul); }
+   void signal() { m_ListEv.lock_notify_one(); }
 
 private:
    CSndUList(const CSndUList&);
@@ -409,9 +414,6 @@ private:
    CSndUList* m_pSndUList;              // List of UDT instances for data sending
    CChannel* m_pChannel;                // The UDP channel for data sending
    srt::sync::CTimer* m_pTimer;         // Timing facility
-
-   srt::sync::Mutex m_WindowLock;
-   srt::sync::Condition m_WindowCond;
 
    volatile bool m_bClosing;            // closing the worker
 
