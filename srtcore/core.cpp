@@ -2788,7 +2788,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         }
         else
         {
-            if (!CheckFilterCompat(mycfg, cfg))
+            if (!CheckFilterCompat((mycfg), cfg))
                 return false;
         }
 

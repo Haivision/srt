@@ -859,12 +859,21 @@ and break quickly at any rise in packet loss.
 Set up the packet filter. The string must match appropriate syntax for packet
 filter setup.
 
-As there can only be one configuration for both parties, it is recommended that
-one party defines the full configuration while the other only defines the matching
-packet filter type (for example, one sets `fec,cols:10,rows:-5,layout:staircase`
-and the other just `fec`). Both parties can also set this option to the same value.
-The packet filter function will attempt to merge configuration definitions, but if
-the options specified are in conflict, the connection will be rejected.
+Empty value of this option means that for this connection party filter isn't
+required, but it will accept any filter settings if provided by the peer. If
+this option is changed in both parties simultaneously, the resulting
+configuration will be an integrated configuration from both parties, that is,
+parameters that are set only on one side will have the value defined by that
+side, and parameters not set in either side will be set as default. In case
+when you use two different packet filter types, or for the same parameter
+there's a different value specified, it is treated as conflict, and the
+connection will be rejected.
+
+In general it is recommended that one party defines the full configuration,
+while the other keeps this value empty.
+
+If you read this option after the connection is established, it should return
+you the full configuration that has been agreed upon by both parties.
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
