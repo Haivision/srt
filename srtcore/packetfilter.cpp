@@ -54,6 +54,28 @@ bool CheckFilterCompat(SrtFilterConfig agent, SrtFilterConfig peer)
         return false;
     }
 
+    set<string> keys;
+    // Extract all keys to identify also unspecified parameters on both sides
+    // Note that theoretically for FEC it could simply check for the "cols" parameter
+    // that is the only mandatory one, but this is a procedure for packet filters in
+    // general and every filter may define its own set of parameters and mandatory rules.
+    for (map<string, string>::iterator x = agent.parameters.begin(); x != agent.parameters.end(); ++x)
+    {
+        keys.insert(x->first);
+        if (peer.parameters.count(x->first) == 0)
+            peer.parameters[x->first] = x->second;
+    }
+    for (map<string, string>::iterator x = peer.parameters.begin(); x != peer.parameters.end(); ++x)
+    {
+        keys.insert(x->first);
+        if (agent.parameters.count(x->first) == 0)
+            agent.parameters[x->first] = x->second;
+    }
+
+    HLOGC(cnlog.Debug, log << "CheckFilterCompat: re-filled: AGENT:" << Printable(agent.parameters)
+            << " PEER:" << Printable(peer.parameters));
+
+    // Complete nonexistent keys with default values
     for (map<string, string>::iterator x = defaults.parameters.begin(); x != defaults.parameters.end(); ++x)
     {
         if (!agent.parameters.count(x->first))
@@ -62,14 +84,15 @@ bool CheckFilterCompat(SrtFilterConfig agent, SrtFilterConfig peer)
             peer.parameters[x->first] = x->second;
     }
 
-    for (map<string, string>::iterator x = agent.parameters.begin(); x != agent.parameters.end(); ++x)
+    for (set<string>::iterator x = keys.begin(); x != keys.end(); ++x)
     {
-        if (peer.parameters.count(x->first) == 0)  // key not defined in peer
-            peer.parameters[x->first] = x->second; // override with a value from agent
-        else if (x->second != peer.parameters[x->first])
+        // Note: operator[] will insert an element with default value
+        // if it doesn't exist. This will inject the empty string as value,
+        // which is acceptable.
+        if (agent.parameters[*x] != peer.parameters[*x])
         {
-            LOGC(cnlog.Error, log << "Packet Filter (" << defaults.type << "): collision on '" << x->second
-                    << "' parameter (agent:" << x->second << " peer:" << (peer.parameters[x->first]) << ")");
+            LOGC(cnlog.Error, log << "Packet Filter (" << defaults.type << "): collision on '" << (*x)
+                    << "' parameter (agent:" << agent.parameters[*x] << " peer:" << (peer.parameters[*x]) << ")");
             return false;
         }
     }
