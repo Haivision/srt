@@ -192,8 +192,7 @@ bool CHandShake::valid()
     if (m_iVersion < CUDT::HS_VERSION_UDT4
             || m_iISN < 0 || m_iISN >= CSeqNo::m_iMaxSeqNo
             || m_iMSS < 32
-            || m_iFlightFlagSize < 2
-            || m_iID >= CUDTUnited::MAX_SOCKET_VAL)
+            || m_iFlightFlagSize < 2)
         return false;
 
     return true;

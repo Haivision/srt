@@ -205,7 +205,11 @@ m_ClosedSockets()
 
    const double rand1_0 = double(rand())/RAND_MAX;
 
-   m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
+   // Motivation: in case when rand() returns the value equal to RAND_MAX,
+   // rand1_0 == 1, so the below formula will be
+   // 1 + (MAX_SOCKET_VAL-2) * 1 = 1 + MAX_SOCKET_VAL - 2 = MAX_SOCKET_VAL -1
+   // which is the highest allowed value for the socket.
+   m_SocketIDGenerator = 1 + int((MAX_SOCKET_VAL-2) * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
    // XXX An unlikely exception thrown from the below calls
