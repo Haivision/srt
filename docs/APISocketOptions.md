@@ -862,10 +862,13 @@ filter setup.
 Empty value of this option means that for this connection party filter isn't
 required, but it will accept any filter settings if provided by the peer. If
 this option is changed in both parties simultaneously, the resulting
-configuration will be an integrated configuration from both parties, that is,
-parameters that are set only on one side will have the value defined by that
-side, and parameters not set in either side will be set as default. In the
-following cases:
+configuration will be an integrated configuration from both parties, that is:
+
+* parameters provided by both parties are taken, if they are identical
+* parameters provided by only one party are taken as they are
+* parameters not specified by either party will have the default value
+
+In the following cases:
 
 * both sides define a different packet filter type
 * for the same key two different values were provided by both sides
