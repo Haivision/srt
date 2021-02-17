@@ -449,7 +449,6 @@ public:
    ~CRcvQueue();
 
 public:
-
    // XXX There's currently no way to access the socket ID set for
    // whatever the queue is currently working. Required to find
    // some way to do this, possibly by having a "reverse pointer".

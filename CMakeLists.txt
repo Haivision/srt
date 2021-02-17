@@ -20,6 +20,10 @@ if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
   set_version_variables(SRT_VERSION ${SRT_VERSION})
 else()
   cmake_policy(SET CMP0048 NEW)
+
+  # Required for Google Test in some versions, CHECK THAT LATER!
+  # cmake_policy(SET CMP0057 NEW)
+
   # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
   project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
