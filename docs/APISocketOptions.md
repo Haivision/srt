@@ -859,14 +859,14 @@ and break quickly at any rise in packet loss.
 Set up the packet filter. The string must match appropriate syntax for packet
 filter setup.
 
-Empty value of this option means that for this connection party filter isn't
+An empty value for this option means that for this connection the filter isn't
 required, but it will accept any filter settings if provided by the peer. If
-this option is changed in both parties simultaneously, the resulting
-configuration will be an integrated configuration from both parties, that is:
+this option is changed by both parties simultaneously, the result will be a
+configuration integrating parameters from both parties, that is:
 
-* parameters provided by both parties are taken, if they are identical
-* parameters provided by only one party are taken as they are
-* parameters not specified by either party will have the default value
+* parameters provided by both parties are accepted, if they are identical
+* parameters that are set only on one side will have the value defined by that side
+* parameters not set in either side will be set as default
 
 In the following cases:
 
