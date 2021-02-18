@@ -877,7 +877,19 @@ In the following cases:
 the connection will be rejected with `SRT_REJ_FILTER` code.
 
 In case of the builtin `fec` filter, the mandatory parameter is `cols`, all
-others have their default values.
+others have their default values. For example, the configuration specified
+as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`.
+
+Examples for the builtin `fec` filter:
+
+| Peer A               | Peer B      | Negotiated Config            | Result                   |
+|----------------------|-------------|------------------------------|--------------------------|
+| (no filter)          | (no filter) | (no filter)                  | OK                       |
+| fec                  | (no filter) | fec                          | missing `cols` parameter |
+| fec,cols:10          | fec         | fec,cols:10                  | OK                       |
+| FEC,cols:10          | FEC,cols:10 | FEC,cols:10                  | unknown filter 'FEC'     |
+| fec,layout:staircase | fec,cols:10 | fec,cols:10,layout:staircase | OK                       |
+| fec,cols:20          | fec,cols:10 | fec                          | parameter value conflict |
 
 In general it is recommended that one party defines the full configuration,
 while the other keeps this value empty.
