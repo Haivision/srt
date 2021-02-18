@@ -876,11 +876,11 @@ In the following cases:
 
 the connection will be rejected with `SRT_REJ_FILTER` code.
 
-In case of the builtin `fec` filter, the mandatory parameter is `cols`, all
+In case of the built-in `fec` filter, the mandatory parameter is `cols`, all
 others have their default values. For example, the configuration specified
 as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`.
 
-Examples for the builtin `fec` filter (in "negotiated config" the parameters
+Examples for the built-in `fec` filter (in "negotiated config" the parameters
 with default values are skipped):
 
 | Peer A               | Peer B      | Negotiated Config            | Result                   |
