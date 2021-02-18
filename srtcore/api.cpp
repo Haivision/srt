@@ -2776,6 +2776,16 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    // delete this one
    m_ClosedSockets.erase(i);
 
+   // XXX This below section can unlock m_GlobControlLock
+   // just for calling CUDT::closeInternal(), which is needed
+   // to avoid locking m_ConnectionLock after m_GlobControlLock,
+   // while m_ConnectionLock orders BEFORE m_GlobControlLock.
+   // This should be perfectly safe thing to do after the socket
+   // ID has been erased from m_ClosedSockets. No container access
+   // is done in this case.
+   //
+   // Report: P04-28
+
    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
    s->m_pUDT->closeInternal();
    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);

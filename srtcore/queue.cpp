@@ -327,6 +327,8 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     // thread has at least 1 second to finish the job before u is potentially
     // deleted. This "time-defined" problem should be eliminated through
     // another fix.
+    //
+    // Report: P04-08
 
     // pack a packet from the socket
     const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
