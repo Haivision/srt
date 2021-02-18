@@ -329,32 +329,26 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     }
 
     // Post-action, if applicable
-    if (IsSet(oflags, SRTO_POST_SPEC))
+    if (IsSet(oflags, SRTO_POST_SPEC) && m_bConnected)
     {
-        if (m_bConnected)
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
+        switch (optName)
         {
-            switch (optName)
-            {
-            case SRTO_MAXBW:
-                updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET));
-                break;
+        case SRTO_MAXBW:
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET));
+            break;
 
-            case SRTO_INPUTBW:
-                updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
-                break;
+        case SRTO_INPUTBW:
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
+            break;
 
-            case SRTO_OHEADBW:
-                updateCC(TEV_INIT, EventVariant(TEV_INIT_OHEADBW));
-                break;
+        case SRTO_OHEADBW:
+            updateCC(TEV_INIT, EventVariant(TEV_INIT_OHEADBW));
+            break;
 
-            case SRTO_LOSSMAXTTL:
-                m_iReorderTolerance = m_config.m_iMaxReorderTolerance;
+        case SRTO_LOSSMAXTTL:
+            m_iReorderTolerance = m_config.m_iMaxReorderTolerance;
 
-            default: break;
-            }
+        default: break;
         }
     }
 }
