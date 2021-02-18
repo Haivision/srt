@@ -326,9 +326,11 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     // dangerous in general, as when the Broken flag is not set, this
     // thread has at least 1 second to finish the job before u is potentially
     // deleted. This "time-defined" problem should be eliminated through
-    // another fix.
+    // another fix. Worth noting is that m_ListLock also doesn't currently
+    // prevent the socket from a premature deletion.
     //
-    // Report: P04-08
+    // Reports: P04-1.08, P04-1.29, P04-2.03, P04-2.28, P04-2.49,
+    //          P04-2.53, P04-2.54, P04-2.56
 
     // pack a packet from the socket
     const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));

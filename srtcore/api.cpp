@@ -2784,7 +2784,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    // ID has been erased from m_ClosedSockets. No container access
    // is done in this case.
    //
-   // Report: P04-28
+   // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
    s->m_pUDT->closeInternal();

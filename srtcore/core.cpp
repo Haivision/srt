@@ -905,6 +905,20 @@ void CUDT::setListenState()
     if (m_bListening)
         return;
 
+    // XXX likely the setListener() should be exempted
+    // from m_ConnectionLock because the already sanctioned order
+    // is m_LSLock, then m_ConnectionLock, while this below call
+    // locks m_LSLock.
+    //
+    // Likely LSLock guards only the m_pListener field, so
+    // m_ConnectionLock might not be required. Otherwise the
+    // m_ConnectionLock, if required, must be also applied again
+    // in setListener, or these functions should be merged into
+    // one again and m_LSLock should be acquired first.
+    //
+    // Reports: P04-2.27, P04-2.55, P04-2.60
+
+
     // if there is already another socket listening on the same port
     if (m_pRcvQueue->setListener(this) < 0)
         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
