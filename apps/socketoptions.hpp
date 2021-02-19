@@ -224,6 +224,7 @@ const SocketOption srt_options [] {
     { "ipttl", 0, SRTO_IPTTL, SocketOption::PRE, SocketOption::INT, nullptr},
     { "iptos", 0, SRTO_IPTOS, SocketOption::PRE, SocketOption::INT, nullptr},
     { "inputbw", 0, SRTO_INPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
+    { "mininputbw", 0, SRTO_MININPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
     { "oheadbw", 0, SRTO_OHEADBW, SocketOption::POST, SocketOption::INT, nullptr},
     { "latency", 0, SRTO_LATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "tsbpdmode", 0, SRTO_TSBPDMODE, SocketOption::PRE, SocketOption::BOOL, nullptr},
