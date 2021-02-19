@@ -465,7 +465,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     {
         // There's at least one socket in the group, so only
         // post-options are allowed.
-        if (!std::binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        if (!binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
         {
             LOGC(gmlog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -567,6 +567,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, m_llMaxBW);
     IM(SRTO_INPUTBW, m_llInputBW);
+    IM(SRTO_MININPUTBW, m_llMinInputBW);
     IM(SRTO_OHEADBW, m_iOverheadBW);
     IM(SRTO_IPTOS, m_iIpToS);
     IM(SRTO_IPTTL, m_iIpTTL);

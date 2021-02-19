@@ -225,6 +225,7 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_RCVTIMEO,
     SRTO_MAXBW,
     SRTO_INPUTBW,
+    SRTO_MININPUTBW,
     SRTO_OHEADBW,
     SRTO_SNDDROPDELAY,
     SRTO_CONNTIMEO,
@@ -263,6 +264,7 @@ struct SrtOptionAction
         flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
         flags[SRTO_LATENCY]            = SRTO_R_PRE;
         flags[SRTO_INPUTBW]            = 0 | SRTO_POST_SPEC;
+        flags[SRTO_MININPUTBW]         = 0 | SRTO_POST_SPEC;
         flags[SRTO_OHEADBW]            = 0 | SRTO_POST_SPEC;
         flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
         flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
@@ -305,7 +307,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     // Restriction check
-    int oflags = srt_options_action.flags[optName];
+    const int oflags = srt_options_action.flags[optName];
 
     ScopedLock cg (m_ConnectionLock);
     ScopedLock sendguard (m_SendLock);
@@ -321,7 +323,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // Option execution. If this returns -1, there's no such option.
-    int status = m_config.set(optName, optval, optlen);
+    const int status = m_config.set(optName, optval, optlen);
     if (status == -1)
     {
         LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
@@ -338,6 +340,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             break;
 
         case SRTO_INPUTBW:
+        case SRTO_MININPUTBW:
             updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
             break;
 
@@ -433,14 +436,25 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_MAXBW:
+        if (optlen < sizeof(m_config.m_llMaxBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         *(int64_t *)optval = m_config.m_llMaxBW;
         optlen             = sizeof(int64_t);
         break;
 
     case SRTO_INPUTBW:
+        if (optlen < sizeof(m_config.m_llInputBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
        *(int64_t*)optval = m_config.m_llInputBW;
-       optlen             = sizeof(int64_t);
+       optlen            = sizeof(int64_t);
        break;
+
+    case SRTO_MININPUTBW:
+        if (optlen < sizeof (m_config.m_llMinInputBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        *(int64_t*)optval = m_config.m_llMinInputBW;
+        optlen            = sizeof(int64_t);
+        break;
 
     case SRTO_OHEADBW:
         *(int32_t *)optval = m_config.m_iOverheadBW;
@@ -7085,7 +7099,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
             }
             else
             {
-                // No need to calculate input reate if the bandwidth is set
+                // No need to calculate input rate if the bandwidth is set
                 const bool disable_in_rate_calc = (bw != 0);
                 m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
             }
@@ -7116,8 +7130,8 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
-            if (inputbw != 0)
-                m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); // Bytes/sec
+            if (inputbw >= 0)
+                m_CongCtl->updateBandwidth(0, withOverhead(std::max(m_config.m_llMinInputBW, inputbw))); // Bytes/sec
         }
     }
 
