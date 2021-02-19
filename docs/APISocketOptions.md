@@ -211,6 +211,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          | 1.5.0 | pre      | `int32_t` | ms      | 80            | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    | 1.5.0 |          | `int32_t` | enum    |               |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post     | `int64_t` | B/s     | 0             | 0..      | RW  | GSD   |
+| [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0             | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre-bind | `int32_t` |         | (system)      | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                            | 1.0.5 | pre-bind | `int32_t` | hops    | (system)      | 1..255   | RW  | GSD   |
 | [`SRTO_IPV6ONLY`](#SRTO_IPV6ONLY)                      | 1.4.0 | pre-bind | `int32_t` |         | (system)      | -1..1    | RW  | GSD   |
@@ -501,15 +502,31 @@ context than inside the listener callback handler, the value is undefined.
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_INPUTBW`   | 1.0.5 | post     | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
 
-This option is effective only if `SRTO_MAXBW` is set to 0 (relative). It
-controls the maximum bandwidth together with `SRTO_OHEADBW` option according
+This option is effective only if [`SRTO_MAXBW`](#SRTO_MAXBW) is set to 0 (relative). It
+controls the maximum bandwidth together with [`SRTO_OHEADBW`](#SRTO_OHEADBW) option according
 to the formula: `MAXBW = INPUTBW * (100 + OHEADBW) / 100`. When this option
 is set to 0 (automatic) then the real INPUTBW value will be estimated from
 the rate of the input (cases when the application calls the `srt_send*`
-function) during transmission.
+function) during transmission. The minimum allowed estimate value is restricted
+by [`SRTO_MININPUTBW`](#SRTO_MININPUTBW), meaning `INPUTBW = MAX(INPUTBW_ESTIMATE; MININPUTBW)`.
 
 *Recommended: set this option to the anticipated bitrate of your live stream
 and keep the default 25% value for `SRTO_OHEADBW`*.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_MININPUTBW
+
+| OptName           | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
+| ----------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_MININPUTBW` | 1.4.3 | post     | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
+
+This option is effective only if both `SRTO_MAXBW` and `SRTO_INPUTBW` are set to 0.
+It controls the minimum allowed value of the input butrate estimate.
+
+See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 
 [Return to list](#list-of-options)
 
