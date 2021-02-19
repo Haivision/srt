@@ -2787,7 +2787,9 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+   leaveCS(m_GlobControlLock);
    s->m_pUDT->closeInternal();
+   enterCS(m_GlobControlLock);
    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
 

@@ -333,7 +333,10 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     //          P04-2.53, P04-2.54, P04-2.56
 
     // pack a packet from the socket
+    leaveCS(m_ListLock);
     const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
+    enterCS(m_ListLock);
+
 
     if (res_time.first <= 0)
         return -1;

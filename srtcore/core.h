@@ -544,7 +544,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal();
+    bool closeInternal() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -968,7 +968,7 @@ private: // Generation and processing of packets
     ///         The payload tells the size of the payload, packed in CPacket.
     ///         The timestamp is the full source/origin timestamp of the data.
     ///         If payload is <= 0, consider the timestamp value invalid.
-    std::pair<int, time_point> packData(CPacket& packet);
+    std::pair<int, time_point> packData(CPacket& packet) ATR_NOEXCEPT;
 
     int processData(CUnit* unit);
     void processClose();
