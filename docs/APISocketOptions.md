@@ -859,12 +859,45 @@ and break quickly at any rise in packet loss.
 Set up the packet filter. The string must match appropriate syntax for packet
 filter setup.
 
-As there can only be one configuration for both parties, it is recommended that
-one party defines the full configuration while the other only defines the matching
-packet filter type (for example, one sets `fec,cols:10,rows:-5,layout:staircase`
-and the other just `fec`). Both parties can also set this option to the same value.
-The packet filter function will attempt to merge configuration definitions, but if
-the options specified are in conflict, the connection will be rejected.
+An empty value for this option means that for this connection the filter isn't
+required, but it will accept any filter settings if provided by the peer. If
+this option is changed by both parties simultaneously, the result will be a
+configuration integrating parameters from both parties, that is:
+
+* parameters provided by both parties are accepted, if they are identical
+* parameters that are set only on one side will have the value defined by that side
+* parameters not set in either side will be set as default
+
+In the following cases:
+
+* both sides define a different packet filter type
+* for the same key two different values were provided by both sides
+* mandatory parameters weren't provided by either side
+
+the connection will be rejected with `SRT_REJ_FILTER` code.
+
+In case of the built-in `fec` filter, the mandatory parameter is `cols`, all
+others have their default values. For example, the configuration specified
+as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`.
+
+Examples for the built-in `fec` filter (in "negotiated config" the parameters
+with default values are skipped):
+
+| Peer A               | Peer B      | Negotiated Config            | Result                   |
+|----------------------|-------------|------------------------------|--------------------------|
+| (no filter)          | (no filter) | (no filter)                  | OK                       |
+| fec                  | (no filter) | fec                          | missing `cols` parameter |
+| fec,cols:10          | fec         | fec,cols:10                  | OK                       |
+| FEC,cols:10          | FEC,cols:10 | FEC,cols:10                  | unknown filter 'FEC'     |
+| fec,layout:staircase | fec,cols:10 | fec,cols:10,layout:staircase | OK                       |
+| fec,cols:20          | fec,cols:10 | fec                          | parameter value conflict |
+
+In general it is recommended that one party defines the full configuration,
+while the other keeps this value empty.
+
+If you read this option after the connection is established, it will return
+the full configuration that has been agreed upon by both parties (including
+default values).
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 

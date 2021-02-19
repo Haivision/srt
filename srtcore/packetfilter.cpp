@@ -41,6 +41,67 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
     return true;
 }
 
+// Parameters are passed by value because they need to be potentially modicied inside.
+bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
+{
+    PacketFilter::Factory* fac = PacketFilter::find(w_agent.type);
+    if (!fac)
+        return false;
+
+    SrtFilterConfig defaults;
+    if (!ParseFilterConfig(fac->defaultConfig(), (defaults)))
+    {
+        return false;
+    }
+
+    set<string> keys;
+    // Extract all keys to identify also unspecified parameters on both sides
+    // Note that theoretically for FEC it could simply check for the "cols" parameter
+    // that is the only mandatory one, but this is a procedure for packet filters in
+    // general and every filter may define its own set of parameters and mandatory rules.
+    for (map<string, string>::iterator x = w_agent.parameters.begin(); x != w_agent.parameters.end(); ++x)
+    {
+        keys.insert(x->first);
+        if (peer.parameters.count(x->first) == 0)
+            peer.parameters[x->first] = x->second;
+    }
+    for (map<string, string>::iterator x = peer.parameters.begin(); x != peer.parameters.end(); ++x)
+    {
+        keys.insert(x->first);
+        if (w_agent.parameters.count(x->first) == 0)
+            w_agent.parameters[x->first] = x->second;
+    }
+
+    HLOGC(cnlog.Debug, log << "CheckFilterCompat: re-filled: AGENT:" << Printable(w_agent.parameters)
+            << " PEER:" << Printable(peer.parameters));
+
+    // Complete nonexistent keys with default values
+    for (map<string, string>::iterator x = defaults.parameters.begin(); x != defaults.parameters.end(); ++x)
+    {
+        if (!w_agent.parameters.count(x->first))
+            w_agent.parameters[x->first] = x->second;
+        if (!peer.parameters.count(x->first))
+            peer.parameters[x->first] = x->second;
+    }
+
+    for (set<string>::iterator x = keys.begin(); x != keys.end(); ++x)
+    {
+        // Note: operator[] will insert an element with default value
+        // if it doesn't exist. This will inject the empty string as value,
+        // which is acceptable.
+        if (w_agent.parameters[*x] != peer.parameters[*x])
+        {
+            LOGC(cnlog.Error, log << "Packet Filter (" << defaults.type << "): collision on '" << (*x)
+                    << "' parameter (agent:" << w_agent.parameters[*x] << " peer:" << (peer.parameters[*x]) << ")");
+            return false;
+        }
+    }
+
+    // Mandatory parameters will be checked when trying to create the filter object.
+
+    return true;
+}
+
 struct SortBySequence
 {
     bool operator()(const CUnit* u1, const CUnit* u2)
@@ -232,7 +293,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     m_parent = parent;
 
     SrtFilterConfig cfg;
-    if (!ParseFilterConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, (cfg)))
         return false;
 
     // Extract the "type" key from parameters, or use
