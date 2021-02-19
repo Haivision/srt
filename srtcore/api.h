@@ -203,7 +203,7 @@ public:
    ~CUDTUnited();
 
    // Public constants
-   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
+   static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1;    // maximum value for a regular socket
 
 public:
 

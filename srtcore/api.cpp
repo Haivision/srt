@@ -205,7 +205,11 @@ m_ClosedSockets()
 
    const double rand1_0 = double(rand())/RAND_MAX;
 
-   m_SocketIDGenerator = 1 + int(MAX_SOCKET_VAL * rand1_0);
+   // Motivation: in case when rand() returns the value equal to RAND_MAX,
+   // rand1_0 == 1, so the below formula will be
+   // 1 + (MAX_SOCKET_VAL-1) * 1 = 1 + MAX_SOCKET_VAL - 1 = MAX_SOCKET_VAL
+   // which is the highest allowed value for the socket.
+   m_SocketIDGenerator = 1 + int((MAX_SOCKET_VAL-1) * rand1_0);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
    // XXX An unlikely exception thrown from the below calls
@@ -338,7 +342,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
     {
         // We have a rollover on the socket value, so
         // definitely we haven't made the Columbus mistake yet.
-        m_SocketIDGenerator = MAX_SOCKET_VAL-1;
+        m_SocketIDGenerator = MAX_SOCKET_VAL;
     }
 
     // Check all sockets if any of them has this value.
@@ -384,7 +388,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
                 // The socket value is in use.
                 --sockval;
                 if (sockval <= 0)
-                    sockval = MAX_SOCKET_VAL-1;
+                    sockval = MAX_SOCKET_VAL;
 
                 // Before continuing, check if we haven't rolled back to start again
                 // This is virtually impossible, so just make an RTI error.
