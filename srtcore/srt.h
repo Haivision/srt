@@ -222,6 +222,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PEERVERSION,         // Peer SRT Version (from SRT Handshake)
    SRTO_CONNTIMEO = 36,      // Connect timeout in msec. Caller default: 3000, rendezvous (x 10)
    SRTO_DRIFTTRACER = 37,    // Enable or disable drift tracer
+   SRTO_MININPUTBW = 38,     // Minimum estimate of input stream rate.
    // (some space left)
    SRTO_SNDKMSTATE = 40,     // (GET) the current state of the encryption at the peer side
    SRTO_RCVKMSTATE,          // (GET) the current state of the encryption at the agent side

@@ -247,8 +247,8 @@ struct CSrtConfig: CSrtMuxerConfig
     uint32_t m_uStabilityTimeout;
     int      m_iRetransmitAlgo;
 
-    int64_t m_llInputBW; // Input stream rate (bytes/sec)
-    // 0: use internally estimated input bandwidth
+    int64_t m_llInputBW;         // Input stream rate (bytes/sec). 0: use internally estimated input bandwidth
+    int64_t m_llMinInputBW;      // Minimum input stream rate estimate (bytes/sec)
     int  m_iOverheadBW;          // Percent above input stream rate (applies if m_llMaxBW == 0)
     bool m_bRcvNakReport;        // Enable Receiver Periodic NAK Reports
     int  m_iMaxReorderTolerance; //< Maximum allowed value for dynamic reorder tolerance
@@ -298,6 +298,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , m_uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
         , m_iRetransmitAlgo(0)
         , m_llInputBW(0)
+        , m_llMinInputBW(0)
         , m_iOverheadBW(25)
         , m_bRcvNakReport(true)
         , m_iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
@@ -559,7 +560,11 @@ struct CSrtConfigSetter<SRTO_MAXBW>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_llMaxBW = cast_optval<int64_t>(optval, optlen);
+        const int64_t val = cast_optval<int64_t>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.m_llMaxBW = val;
     }
 };
 
@@ -620,7 +625,21 @@ struct CSrtConfigSetter<SRTO_INPUTBW>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.m_llInputBW = cast_optval<int64_t>(optval, optlen);
+        const int64_t val = cast_optval<int64_t>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        co.m_llInputBW = val;
+    }
+};
+template<>
+struct CSrtConfigSetter<SRTO_MININPUTBW>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        const int64_t val = cast_optval<int64_t>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        co.m_llMinInputBW = val;
     }
 };
 template<>
@@ -628,7 +647,7 @@ struct CSrtConfigSetter<SRTO_OHEADBW>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int32_t val = cast_optval<int32_t>(optval, optlen);
+        const int32_t val = cast_optval<int32_t>(optval, optlen);
         if (val < 5 || val > 100)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         co.m_iOverheadBW = val;
