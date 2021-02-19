@@ -130,11 +130,37 @@ TEST(TestFEC, ConfigExchange)
 
     vector<string> exp_config_vector;
     Split(exp_config, ',', back_inserter(exp_config_vector));
+    sort(exp_config_vector.begin(), exp_config_vector.end());
 
     vector<string> current_config_vector;
     Split(fec_configback, ',', back_inserter(current_config_vector));
+    sort(current_config_vector.begin(), current_config_vector.end());
 
     EXPECT_EQ(current_config_vector, exp_config_vector);
+
+    srt_cleanup();
+}
+
+TEST(TestFEC, ConfigExchangeFaux)
+{
+    srt_startup();
+
+    CUDTSocket* s1;
+
+    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+
+    TestMockCUDT m1;
+    m1.core = &s1->core();
+
+    // Can't access the configuration storage without
+    // accessing the private fields, so let's use the official API
+
+    char fec_config1 [] = "fec,cols:20,rows:10";
+
+    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+
+    cout << "(NOTE: expecting a failure message)\n";
+    EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
     srt_cleanup();
 }
