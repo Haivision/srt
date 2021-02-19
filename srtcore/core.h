@@ -169,6 +169,7 @@ class CUDT
     friend class PacketFilter;
     friend class CUDTGroup;
     friend struct FByOldestActive; // this functional will use private fields
+    friend class TestMockCUDT;
 
     typedef srt::sync::steady_clock::time_point time_point;
     typedef srt::sync::steady_clock::duration duration;
@@ -413,7 +414,7 @@ public: // internal API
     void skipIncoming(int32_t seq);
 
     // For SRT_tsbpdLoop
-    CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
     std::set<int>& pollset() { return m_sPollID; }
 
     CSrtConfig m_config;

@@ -7,6 +7,9 @@
 #include "packetfilter.h"
 #include "packetfilter_api.h"
 
+// For direct imp access
+#include "api.h"
+
 using namespace std;
 
 class TestFECRebuilding: public testing::Test
@@ -86,6 +89,55 @@ protected:
     }
 };
 
+class TestMockCUDT
+{
+public:
+    CUDT* core;
+
+    bool checkApplyFilterConfig(const string& s)
+    {
+        return core->checkApplyFilterConfig(s);
+    }
+};
+
+TEST(TestFEC, ConfigExchange)
+{
+    srt_startup();
+
+    CUDTSocket* s1;
+
+    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+
+    TestMockCUDT m1;
+    m1.core = &s1->core();
+
+    // Can't access the configuration storage without
+    // accessing the private fields, so let's use the official API
+
+    char fec_config1 [] = "fec,cols:10,rows:10";
+
+    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+
+    EXPECT_TRUE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
+
+    char fec_configback[200];
+    int fec_configback_size = 200;
+    srt_getsockflag(sid1, SRTO_PACKETFILTER, fec_configback, &fec_configback_size);
+
+    // Order of parameters may differ, so store everything in a vector and sort it.
+
+    string exp_config = "fec,cols:10,rows:10,arq:never,layout:even";
+
+    vector<string> exp_config_vector;
+    Split(exp_config, ',', back_inserter(exp_config_vector));
+
+    vector<string> current_config_vector;
+    Split(fec_configback, ',', back_inserter(current_config_vector));
+
+    EXPECT_EQ(current_config_vector, exp_config_vector);
+
+    srt_cleanup();
+}
 
 TEST_F(TestFECRebuilding, Prepare)
 {
