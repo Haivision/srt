@@ -2723,6 +2723,19 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    CUDTSocket* const s = i->second;
 
+   // The socket may be in the trashcan now, but could
+   // still be under processing in the sender/receiver worker
+   // threads. If that's the case, SKIP IT THIS TIME. The
+   // socket will be checked next time the GC rollover starts.
+   CSNode* sn = s->m_pUDT->m_pSNode;
+   if (sn && sn->m_iHeapLoc != -1)
+       return;
+
+   CRNode* rn = s->m_pUDT->m_pRNode;
+   if (rn && rn->m_bOnList)
+       return;
+
+
 #if ENABLE_EXPERIMENTAL_BONDING
    if (s->m_GroupOf)
    {
