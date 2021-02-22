@@ -227,7 +227,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre      | `int32_t` | bytes   | 1500          | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre      | `bool`    |         |  *            |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post     | `int32_t` | %       | 25            | 5..100   | RW  | GSD   |
-| [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre      | `string`  |         | ""            | [512]    | W   | GSD   |
+| [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre      | `string`  |         | ""            | [512]    | RW  | GSD   |
 | [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                  | 0.0.0 | pre      | `string`  |         | ""            | [10..79] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                | 1.3.0 | pre      | `int32_t` | bytes   | \*            | \*       | W   | GSD   |
 | [`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN)                      | 0.0.0 | pre      | `int32_t` | bytes   | 0             | *        | RW  | GSD   |
@@ -854,7 +854,7 @@ and break quickly at any rise in packet loss.
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PACKETFILTER`  | 1.4.0 | pre      | `string`   |         |  ""      | [512]  | W   | GSD    |
+| `SRTO_PACKETFILTER`  | 1.4.0 | pre      | `string`   |         |  ""      | [512]  | RW  | GSD    |
 
 Set up the packet filter. The string must match appropriate syntax for packet
 filter setup.
@@ -868,20 +868,23 @@ configuration integrating parameters from both parties, that is:
 * parameters that are set only on one side will have the value defined by that side
 * parameters not set in either side will be set as default
 
-In the following cases:
+The connection will be rejected with `SRT_REJ_FILTER` code in the following cases:
 
 * both sides define a different packet filter type
 * for the same key two different values were provided by both sides
 * mandatory parameters weren't provided by either side
 
-the connection will be rejected with `SRT_REJ_FILTER` code.
-
 In case of the built-in `fec` filter, the mandatory parameter is `cols`, all
 others have their default values. For example, the configuration specified
-as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`.
+as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`. See how to
+[configure the FEC Filter](packet-filtering-and-fec.md#configuring-the-fec-filter).
 
-Examples for the built-in `fec` filter (in "negotiated config" the parameters
-with default values are skipped):
+Below in the table are examples for the built-in `fec` filter. Note simplifications:
+
+* In "negotiated config" the parameters with default values are skipped
+
+* The "Result" column contains OK if the connection is accepted, otherwise it's
+rejected with SRT_REJ_FILTER code.
 
 | Peer A               | Peer B      | Negotiated Config            | Result                   |
 |----------------------|-------------|------------------------------|--------------------------|
@@ -895,9 +898,9 @@ with default values are skipped):
 In general it is recommended that one party defines the full configuration,
 while the other keeps this value empty.
 
-If you read this option after the connection is established, it will return
-the full configuration that has been agreed upon by both parties (including
-default values).
+Reading this option after the connection is established will return the full
+configuration that has been agreed upon by both parties (including default
+values).
 
 For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
 
