@@ -113,10 +113,10 @@ public:
 //
 // We need then the following tests:
 //
-// 1. Setting the option with unknown filter
-// 2. Confrontation with conflicting parameters
-// 3. Confrontation with the result not having required `cols`.
-// 4. Successful confrontation
+// 1. Setting the option with unknown filter (ConfigExchangeFaux)
+// 2. Confrontation with conflicting parameters (ConfigExchangeFaux, RejectionConflict)
+// 3. Confrontation with the result not having required `cols`. (RejectionIncomplete, RejectionIncompleteEmpty)
+// 4. Successful confrontation (ConfigExchange, Connection)
 
 bool filterConfigSame(const string& config1, const string& config2)
 {
