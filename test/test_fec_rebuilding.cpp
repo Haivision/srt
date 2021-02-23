@@ -1,4 +1,6 @@
 #include <vector>
+#include <algorithm>
+#include <future>
 
 #include "gtest/gtest.h"
 #include "packet.h"
@@ -100,6 +102,35 @@ public:
     }
 };
 
+// For config exchange we have several possibilities here:
+//
+// 1. Unknown filter - should be rejected.
+//
+// 2. Confronting configurations:
+//
+// - any same parameters with different values are rejected
+// - resulting configuiration should have the `cols` value set
+//
+// We need then the following tests:
+//
+// 1. Setting the option with unknown filter
+// 2. Confrontation with conflicting parameters
+// 3. Confrontation with the result not having required `cols`.
+// 4. Successful confrontation
+
+bool filterConfigSame(const string& config1, const string& config2)
+{
+    vector<string> config1_vector;
+    Split(config1, ',', back_inserter(config1_vector));
+    sort(config1_vector.begin(), config1_vector.end());
+
+    vector<string> config2_vector;
+    Split(config2, ',', back_inserter(config2_vector));
+    sort(config2_vector.begin(), config2_vector.end());
+
+    return config1_vector == config2_vector;
+}
+
 TEST(TestFEC, ConfigExchange)
 {
     srt_startup();
@@ -128,16 +159,7 @@ TEST(TestFEC, ConfigExchange)
 
     string exp_config = "fec,cols:10,rows:10,arq:never,layout:even";
 
-    vector<string> exp_config_vector;
-    Split(exp_config, ',', back_inserter(exp_config_vector));
-    sort(exp_config_vector.begin(), exp_config_vector.end());
-
-    vector<string> current_config_vector;
-    Split(fec_configback, ',', back_inserter(current_config_vector));
-    sort(current_config_vector.begin(), current_config_vector.end());
-
-    EXPECT_EQ(current_config_vector, exp_config_vector);
-
+    EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
     srt_cleanup();
 }
 
@@ -148,6 +170,9 @@ TEST(TestFEC, ConfigExchangeFaux)
     CUDTSocket* s1;
 
     SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+
+    char fec_config_wrong [] = "FEC,Cols:20";
+    ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config_wrong, sizeof fec_config_wrong), -1);
 
     TestMockCUDT m1;
     m1.core = &s1->core();
@@ -161,6 +186,107 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
+
+    char fec_config2 [] = "fec,rows:20";
+    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
+
+    cout << "(NOTE: expecting a failure message)\n";
+    EXPECT_FALSE(m1.checkApplyFilterConfig("fec,layout:even"));
+
+    srt_cleanup();
+}
+
+TEST(TestFEC, Connection)
+{
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(l, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(l, 1);
+
+    char fec_config1 [] = "fec,cols:10,rows:10";
+    char fec_config2 [] = "fec,cols:10,arq:never";
+    char fec_config_final [] = "fec,cols:10,rows:10,arq:never,layout:even";
+
+    srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+    srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
+
+    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
+        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    SRTSOCKET a = srt_accept(l, (sockaddr*)& scl, &sclen);
+    EXPECT_NE(a, SRT_ERROR);
+    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    // Now that the connection is established, check negotiated config
+
+    char result_config1[200];
+    int result_config1_size = 200;
+    char result_config2[200];
+    int result_config2_size = 200;
+
+    srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
+    srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size);
+
+    string caller_config = result_config1;
+    string accept_config = result_config2;
+    EXPECT_EQ(caller_config, accept_config);
+
+    EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
+    EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
+
+    srt_cleanup();
+}
+
+TEST(TestFEC, Rejection)
+{
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(l, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(l, 1);
+
+    char fec_config1 [] = "fec,cols:10,rows:10";
+    char fec_config2 [] = "fec,cols:20,arq:never";
+
+    srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+    srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
+
+    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
+        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+
+    EXPECT_EQ(connect_res.get(), SRT_ERROR);
+    EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
+
+    bool no = false;
+    // Set non-blocking so that srt_accept can return
+    // immediately with failure. Just to make sure that
+    // the connection is not about to be established,
+    // also on the listener side.
+    srt_setsockflag(l, SRTO_RCVSYN, &no, sizeof no);
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
     srt_cleanup();
 }
