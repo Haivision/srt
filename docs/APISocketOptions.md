@@ -857,7 +857,10 @@ and break quickly at any rise in packet loss.
 | `SRTO_PACKETFILTER`  | 1.4.0 | pre      | `string`   |         |  ""      | [512]  | RW  | GSD    |
 
 Set up the packet filter. The string must match appropriate syntax for packet
-filter setup.
+filter setup. Note also that:
+
+* The configuration is case-sentitive (e.g. "FEC,Cols:20" is not valid).
+* Setting this option will fail if you use an unknown filter type.
 
 An empty value for this option means that for this connection the filter isn't
 required, but it will accept any filter settings if provided by the peer. If
@@ -876,24 +879,29 @@ The connection will be rejected with `SRT_REJ_FILTER` code in the following case
 
 In case of the built-in `fec` filter, the mandatory parameter is `cols`, all
 others have their default values. For example, the configuration specified
-as `fec,cols:10` is `fec,rows:1,cols:10,arq:onreq,layout:even`. See how to
+as `fec,cols:10` is `fec,cols:10,rows:1,arq:onreq,layout:even`. See how to
 [configure the FEC Filter](packet-filtering-and-fec.md#configuring-the-fec-filter).
 
-Below in the table are examples for the built-in `fec` filter. Note simplifications:
+Below in the table are examples for the built-in `fec` filter. Note that the
+negotiated config need not have parameters in the given order.
 
-* In "negotiated config" the parameters with default values are skipped
+Cases when negotiation succeeds:
 
-* The "Result" column contains OK if the connection is accepted, otherwise it's
-rejected with SRT_REJ_FILTER code.
+| Peer A               | Peer B              | Negotiated Config            
+|----------------------|---------------------|------------------------------------------------------
+| (no filter)          | (no filter)         | 
+| fec,cols:10          | fec                 | fec,cols:10,rows:1,arq:onreq,layout:even                  
+| fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even                  
+| fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase 
 
-| Peer A               | Peer B      | Negotiated Config            | Result                   |
-|----------------------|-------------|------------------------------|--------------------------|
-| (no filter)          | (no filter) | (no filter)                  | OK                       |
-| fec                  | (no filter) | fec                          | missing `cols` parameter |
-| fec,cols:10          | fec         | fec,cols:10                  | OK                       |
-| FEC,cols:10          | FEC,cols:10 | FEC,cols:10                  | unknown filter 'FEC'     |
-| fec,layout:staircase | fec,cols:10 | fec,cols:10,layout:staircase | OK                       |
-| fec,cols:20          | fec,cols:10 | fec                          | parameter value conflict |
+In these cases the configuration is rejected with SRT_REJ_FILTER code:
+
+| Peer A                | Peer B              | Error reason
+|-----------------------|---------------------|--------------------------
+| fec                   | (no filter)         | missing `cols` parameter 
+| fec,rows:20,arq:never | fec,layout:even     | missing `cols` parameter 
+| fec,cols:20           | fec,cols:10         | `cols` parameter value conflict 
+| fec,cols:20,rows:20   | fec,cols:20,rows:10 | `rows` parameter value conflict 
 
 In general it is recommended that one party defines the full configuration,
 while the other keeps this value empty.
