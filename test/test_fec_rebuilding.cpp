@@ -187,12 +187,6 @@ TEST(TestFEC, ConfigExchangeFaux)
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
-    char fec_config2 [] = "fec,rows:20";
-    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
-
-    cout << "(NOTE: expecting a failure message)\n";
-    EXPECT_FALSE(m1.checkApplyFilterConfig("fec,layout:even"));
-
     srt_cleanup();
 }
 
