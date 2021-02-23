@@ -5795,6 +5795,8 @@ bool CUDT::closeInternal()
     m_tsRcvPeerStartTime     = steady_clock::time_point();
 
     m_bOpened = false;
+    m_bConnected = false;
+    m_bConnecting = false;
 
     return true;
 }

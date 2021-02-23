@@ -190,8 +190,7 @@ m_bClosing(false),
 m_GCStopCond(),
 m_InitLock(),
 m_iInstanceCount(0),
-m_bGCStatus(false),
-m_ClosedSockets()
+m_bGCStatus(false)
 {
    // Socket ID MUST start from a random value
    // Note. Don't use CTimer here, because s_UDTUnited is a static instance of CUDTUnited
@@ -493,11 +492,16 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
 // [[using locked(m_GlobControlLock)]]
 void CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, bool lateremove)
 {
+    s->m_pUDT->m_bConnected = false;
+    s->m_pUDT->m_bConnecting = false;
+
     m_ClosedSockets[id] = s;
     if (!lateremove)
     {
         m_Sockets.erase(id);
     }
+
+    removeMux(s);
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
@@ -2791,20 +2795,26 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    removeMux(s);
    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
-
 }
 
 // decrease multiplexer reference count, and remove it if necessary
+// [[using locked(m_GlobControlLock)]]
 void CUDTUnited::removeMux(CUDTSocket* s)
 {
     int mid = s->m_iMuxID;
     if (mid == -1) // Ignore those already removed
+    {
+        HLOGC(smlog.Debug, log << "removeMux: @" << s->m_SocketID << " has no muxer, ok.");
         return;
+    }
 
     // In case when the socket isn't to be immediately deleted
     // the MuxID field must be updated in order to catch the above
     // condition when it's called for the same socket second time.
     s->m_iMuxID = -1;
+    s->m_pUDT->m_pRcvQueue = NULL;
+    s->m_pUDT->m_pSndQueue = NULL;
+
 
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);
@@ -2822,8 +2832,8 @@ void CUDTUnited::removeMux(CUDTSocket* s)
     if (mx.m_iRefCount <= 0)
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
-                << s->m_SocketID << " - deleting muxer bound to port "
-                << mx.m_pChannel->bindAddressAny().hport());
+                << s->m_SocketID << " - deleting muxer bound to "
+                << mx.m_pChannel->bindAddressAny().str());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
         // The queues must be silenced before closing the channel
@@ -2833,6 +2843,10 @@ void CUDTUnited::removeMux(CUDTSocket* s)
         mx.m_pRcvQueue->setClosing();
         mx.destroy();
         m_mMultiplexer.erase(m);
+    }
+    else
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.m_iRefCount << " users");
     }
 }
 
