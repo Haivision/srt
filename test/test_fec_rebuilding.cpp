@@ -243,7 +243,7 @@ TEST(TestFEC, Connection)
     srt_cleanup();
 }
 
-TEST(TestFEC, Rejection)
+TEST(TestFEC, RejectionConflict)
 {
     srt_startup();
 
@@ -261,6 +261,89 @@ TEST(TestFEC, Rejection)
 
     char fec_config1 [] = "fec,cols:10,rows:10";
     char fec_config2 [] = "fec,cols:20,arq:never";
+
+    srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+    srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
+
+    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
+        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+
+    EXPECT_EQ(connect_res.get(), SRT_ERROR);
+    EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
+
+    bool no = false;
+    // Set non-blocking so that srt_accept can return
+    // immediately with failure. Just to make sure that
+    // the connection is not about to be established,
+    // also on the listener side.
+    srt_setsockflag(l, SRTO_RCVSYN, &no, sizeof no);
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
+
+    srt_cleanup();
+}
+
+TEST(TestFEC, RejectionIncompleteEmpty)
+{
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(l, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(l, 1);
+
+    char fec_config1 [] = "fec,rows:10";
+
+    srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+
+    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
+        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+
+    EXPECT_EQ(connect_res.get(), SRT_ERROR);
+    EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
+
+    bool no = false;
+    // Set non-blocking so that srt_accept can return
+    // immediately with failure. Just to make sure that
+    // the connection is not about to be established,
+    // also on the listener side.
+    srt_setsockflag(l, SRTO_RCVSYN, &no, sizeof no);
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
+
+    srt_cleanup();
+}
+
+
+TEST(TestFEC, RejectionIncomplete)
+{
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(l, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(l, 1);
+
+    char fec_config1 [] = "fec,rows:10";
+    char fec_config2 [] = "fec,arq:never";
 
     srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
     srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
