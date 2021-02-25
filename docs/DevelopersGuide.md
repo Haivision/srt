@@ -88,11 +88,11 @@ to the target medium (UDP/SRT/`stdout`). See [srt-live-transmit.md](./srt-live-t
 The following conventions for the language standard are used in this project:
 
 1. The SRT library requires C++03 (also known as C++98) standard.
-2. The examples (to be enabled by `--enable-examples`) require either C++03 or C89 standard.
+2. The examples (to be enabled in cmake by `-DENABLE_EXAMPLES=1`) require either C++03 or C89 standard.
 3. The following require C++11 standard:
    * demo applications
-   * testing applications (to be enabled by `--enable-testing`)
-   * unit tests (to be enabled by `--enable-unittests`)
+   * testing applications (to be enabled in cmake by `-DENABLE_TESTING=1`)
+   * unit tests (to be enabled in cmake by `-DENABLE_UNITTESTS=1`)
 
 Note that C++11 standard will be enforced if you have enabled applications
 and haven't specified the C++ standard explicitly. When you have an old compiler
