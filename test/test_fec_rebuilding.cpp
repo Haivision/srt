@@ -102,21 +102,37 @@ public:
     }
 };
 
+// The expected whole procedure of connection using FEC is
+// expected to:
+//
+// 1. Successfully set the FEC option for correct filter type.
+//    - STOP ON FAILURE: unknown filter type (the table below, case D)
+// 2. Perform the connection and integrate configurations.
+//    - STOP on failed integration (the table below, cases A and B)
+// 3. Deliver on both sides identical configurations consisting
+//    of combined configurations and completed with default values.
+//    - Not possible if stopped before.
+//
+// Test coverage for the above cases:
+//
+// Success cases in all of the above: ConfigExchange, Connection
+// Failure cases:
+// 1. ConfigExchangeFaux - setting unknown filter type
+// 2. ConfigExchangeFaux, RejectionConflict, RejectionIncomplete, RejectionIncompleteEmpty
+//
 // For config exchange we have several possibilities here:
 //
-// 1. Unknown filter - should be rejected.
+// - any same parameters with different values are rejected (Case A)
+// - resulting configuiration should have the `cols` value set (Cases B)
 //
-// 2. Confronting configurations:
-//
-// - any same parameters with different values are rejected
-// - resulting configuiration should have the `cols` value set
-//
-// We need then the following tests:
-//
-// 1. Setting the option with unknown filter (ConfigExchangeFaux)
-// 2. Confrontation with conflicting parameters (ConfigExchangeFaux, RejectionConflict)
-// 3. Confrontation with the result not having required `cols`. (RejectionIncomplete, RejectionIncompleteEmpty)
-// 4. Successful confrontation (ConfigExchange, Connection)
+// Case |Party A            |  Party B           | Situation           | Test coverage
+//------|-------------------|--------------------|---------------------|---------------
+//  A   |fec,cols:10        | fec,cols:20        | Conflict            | ConfigExchangeFaux, RejectionConflict
+//  B1  |fec,rows:10        | fec,arq:never      | Missing `cols`      | RejectionIncomplete
+//  B2  |fec,rows:10        |                    | Missing `cols`      | RejectionIncompleteEmpty
+//  C   |fec,cols:10,rows:10| fec                | OK                  | ConfigExchange, Connection
+//  D   |FEC,Cols:10        | (unimportant)      | Option rejected     | ConfigExchangeFaux
+
 
 bool filterConfigSame(const string& config1, const string& config2)
 {
