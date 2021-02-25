@@ -601,7 +601,8 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 }
             }
 
-            HLOGC(ealog.Debug, log << "CEPoll::wait: REPORTED " << total << "/" << total_noticed
+            HLOGC(ealog.Debug, log << "CEPoll::wait: E" << eid << ": REPORTED X/R/S "
+                    << total << "/" << total_noticed << "/" << ed.numberWatch()
                     << debug_sockets.str());
 
             if ((lrfds || lwfds) && !ed.m_sLocals.empty())

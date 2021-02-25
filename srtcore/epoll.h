@@ -345,6 +345,12 @@ public:
 
        return SRT_INVALID_SOCK;
    }
+
+   // For debug purposes only
+   size_t numberWatch()
+   {
+       return m_USockWatchState.size();
+   }
 };
 
 class CEPoll
