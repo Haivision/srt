@@ -436,21 +436,21 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_MAXBW:
-        if (optlen < sizeof(m_config.m_llMaxBW))
+        if (size_t(optlen) < sizeof(m_config.m_llMaxBW))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         *(int64_t *)optval = m_config.m_llMaxBW;
         optlen             = sizeof(int64_t);
         break;
 
     case SRTO_INPUTBW:
-        if (optlen < sizeof(m_config.m_llInputBW))
+        if (size_t(optlen) < sizeof(m_config.m_llInputBW))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
        *(int64_t*)optval = m_config.m_llInputBW;
        optlen            = sizeof(int64_t);
        break;
 
     case SRTO_MININPUTBW:
-        if (optlen < sizeof (m_config.m_llMinInputBW))
+        if (size_t(optlen) < sizeof (m_config.m_llMinInputBW))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         *(int64_t*)optval = m_config.m_llMinInputBW;
         optlen            = sizeof(int64_t);
@@ -634,7 +634,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_CONNTIMEO:
-        *(int*)optval = count_milliseconds(m_config.m_tdConnTimeOut);
+        *(int*)optval = (int) count_milliseconds(m_config.m_tdConnTimeOut);
         optlen        = sizeof(int);
         break;
 
