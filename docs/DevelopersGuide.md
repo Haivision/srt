@@ -77,11 +77,35 @@ Please see the following document for `configure` usage: [BuildOptions.md](./Bui
 
 The build output is in the `_build` directory. The following applications can be found there.
 
-* `srt-live-transmit` — A sample application to transmit a live stream from source medium (UDP/SRT/`stdin`)
+* `srt-live-transmit` - A sample application to transmit a live stream from source medium (UDP/SRT/`stdin`)
 to the target medium (UDP/SRT/`stdout`). See [srt-live-transmit.md](./srt-live-transmit.md) for more info.
-* `srt-file-transmit` — A sample application to transmit files with SRT.
-* `srt-tunnel` — A sample application to set up an SRT tunnel for TCP traffic. See [srt-tunnel.md](./srt-tunnel.md) for more info.
+* `srt-file-transmit` - A sample application to transmit files with SRT.
+* `srt-tunnel` - A sample application to set up an SRT tunnel for TCP traffic. See [srt-tunnel.md](./srt-tunnel.md) for more info.
 * `tests-srt` - unit testing application.
+
+## Language standard requirements
+
+The following conventions for the language standard are used in this project:
+
+1. The SRT library requires C++03 (also known as C++98) standard.
+2. The examples (to be enabled in cmake by `-DENABLE_EXAMPLES=1`) require either C++03 or C89 standard.
+3. The following require C++11 standard:
+   * demo applications
+   * testing applications (to be enabled in cmake by `-DENABLE_TESTING=1`)
+   * unit tests (to be enabled in cmake by `-DENABLE_UNITTESTS=1`)
+
+Note that C++11 standard will be enforced if you have enabled applications
+and haven't specified the C++ standard explicitly. When you have an old compiler
+that does not support C++11 and you want to compile as many parts as possible,
+the simplest way is to use the following options (in cmake):
+
+```
+-DENABLE_APPS=0 -DUSE_CXX_STD=03 -DENABLE_EXAMPLES=1
+```
+
+Note also that there are several other options that, when enabled, may require
+that the SRT library be compiled using C++11 standard (`-DENABLE_STDCXX_SYNC=1`
+for example).
 
 ## Project Structure
 
