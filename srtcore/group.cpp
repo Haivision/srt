@@ -4154,6 +4154,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+    // At least one link has succeeded, update sending stats.
+    m_stats.sent.Update(len);
+
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.
 
