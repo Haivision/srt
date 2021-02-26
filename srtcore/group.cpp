@@ -304,6 +304,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iRcvTimeOut(-1)
     , m_tsStartTime()
     , m_tsRcvPeerStartTime()
+    , m_bNewRcvReady(false)
     , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
@@ -2160,6 +2161,9 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
 
     if (ready)
     {
+        // Inform the app-reading thread that this has been set to IN-true
+        // AFTER it has lifted m_GroupLock for a while when waiting.
+        m_bNewRcvReady = true;
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
     }
 }
@@ -2301,9 +2305,31 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         vector<CUDTSocket*> aliveMembers;
         recv_CollectAliveAndBroken(aliveMembers, broken);
 
+RepeatWaiting:
+        m_bNewRcvReady = false; // Keep to detect if TSBPD has set it read-ready
+                                // in the meantime when m_GroupLock was lifter for a while
         const vector<CUDTSocket*> ready_sockets = recv_WaitForReadReady(aliveMembers, broken);
         // m_GlobControlLock lifted, m_GroupLock still locked.
         // Now we can safely do this scoped way.
+
+        if (!m_bSynRecving && ready_sockets.empty())
+        {
+            if (!m_bNewRcvReady)
+            {
+                HLOGC(grlog.Debug, log << "group/rcv $" << m_GroupID << ": Not available AT THIS TIME, NOT READ-READY now.");
+                m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+            }
+            else
+            {
+                HLOGC(grlog.Debug, log << "group/rcv $" << m_GroupID << ": Not available AT THIS TIME, but TSBPD provided new one in the meantime.");
+
+                // It means that waiting has found nothing, but TSBPD has marked it ready just after
+                // we reacquired the lock; therefore THIS TIME waiting should succeed.
+                goto RepeatWaiting;
+            }
+
+            throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+        }
 
         // Ok, now we need to have some extra qualifications:
         // 1. If a socket has no registry yet, we read anyway, just

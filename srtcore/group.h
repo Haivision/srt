@@ -650,6 +650,7 @@ private:
     // this has been already set.
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
+    bool m_bNewRcvReady;
 
     struct ReadPos
     {
