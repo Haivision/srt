@@ -97,13 +97,15 @@ The following conventions for the language standard are used in this project:
 Note that C++11 standard will be enforced if you have enabled applications
 and haven't specified the C++ standard explicitly. When you have an old compiler
 that does not support C++11 and you want to compile as many parts as possible,
-the simplest way is to use the following options:
+the simplest way is to use the following options (in cmake):
 
 ```
-./configure --disable-apps --use-c++-std=03 --enable-examples
+-DENABLE_APPS=0 -DUSE_CXX_STD=03 -DENABLE_EXAMPLES=1
 ```
 
-Note also that there are several other options that, when enabled, may require that the SRT library be compiled using C++11 standard (`--enable-stdc++-sync` for example).
+Note also that there are several other options that, when enabled, may require
+that the SRT library be compiled using C++11 standard (`-DENABLE_STDCXX_SYNC=1`
+for example).
 
 ## Project Structure
 
