@@ -291,6 +291,20 @@ TEST(Bonding, CloseGroupAndSocket)
         }
     }
 
+    // Some basic checks for group stats
+    SRT_TRACEBSTATS stats;
+    EXPECT_EQ(srt_bstats(ss, &stats, true), SRT_SUCCESS);
+    EXPECT_EQ(stats.pktSent, 0);
+    EXPECT_EQ(stats.pktSentTotal, 0);
+    EXPECT_EQ(stats.pktSentUnique, 0);
+    EXPECT_EQ(stats.pktSentUniqueTotal, 0);
+    EXPECT_EQ(stats.pktRecv, 0);
+    EXPECT_EQ(stats.pktRecvTotal, 0);
+    EXPECT_EQ(stats.pktRecvUnique, 0);
+    EXPECT_EQ(stats.pktRecvUniqueTotal, 0);
+    EXPECT_EQ(stats.pktRcvDrop, 0);
+    EXPECT_EQ(stats.pktRcvDropTotal, 0);
+
     std::cout << "Starting thread for sending:\n";
     std::thread sender([ss] {
         char buf[1316];
