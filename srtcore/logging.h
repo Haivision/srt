@@ -122,6 +122,7 @@ struct LogConfig
         , loghandler_opaque()
         , flags()
     {
+        srt::sync::setupMutex(mutex, "LogConfig");
     }
 
     ~LogConfig()

@@ -263,6 +263,7 @@ CSndUList::CSndUList()
     , m_pTimer(NULL)
 {
     m_pHeap = new CSNode *[m_iArrayLength];
+    setupMutex(m_ListLock, "SndUList");
 }
 
 CSndUList::~CSndUList()
@@ -469,6 +470,7 @@ CSndQueue::CSndQueue()
     , m_WindowCond()
     , m_bClosing(false)
 {
+    setupMutex(m_WindowLock, "Window");
     setupCond(m_WindowCond, "Window");
 }
 
@@ -814,6 +816,7 @@ CRendezvousQueue::CRendezvousQueue()
     : m_lRendezvousID()
     , m_RIDVectorLock()
 {
+    setupMutex(m_RIDVectorLock, "RIDVectorLock");
 }
 
 CRendezvousQueue::~CRendezvousQueue()
@@ -1147,7 +1150,10 @@ CRcvQueue::CRcvQueue()
     , m_mBuffer()
     , m_BufferCond()
 {
-    setupCond(m_BufferCond, "QueueBuffer");
+    setupMutex(m_LSLock, "RcvQueue:LSLock");
+    setupMutex(m_IDLock, "RcvQueue:IDLock");
+    setupMutex(m_BufferLock, "RcvQueue:BufferLock");
+    setupCond(m_BufferCond, "RcvQueue:Buffer");
 }
 
 CRcvQueue::~CRcvQueue()

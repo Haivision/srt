@@ -7165,6 +7165,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
 void CUDT::initSynch()
 {
+    setupMutex(m_RcvTsbPdStartupLock, "TsbPdStartup");
     setupMutex(m_SendBlockLock, "SendBlock");
     setupCond(m_SendBlockCond, "SendBlock");
     setupCond(m_RecvDataCond, "RecvData");

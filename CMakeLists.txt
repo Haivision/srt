@@ -428,6 +428,10 @@ elseif (ENABLE_STDCXX_SYNC)
 	endif()
 endif()
 
+if (ENABLE_MUTEX_DB)
+	add_definitions(-DSRT_DEBUG_MUTEX_DB=1)
+endif()
+
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 
 if (ENABLE_SOCK_CLOEXEC)

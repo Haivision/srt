@@ -14,6 +14,10 @@
 //#define ENABLE_STDCXX_SYNC
 //#define ENABLE_CXX17
 
+#if SRT_DEBUG_MUTEX_DB
+#include <iostream>
+#endif
+
 #include <cstdlib>
 #include <limits>
 #ifdef ENABLE_STDCXX_SYNC
@@ -27,6 +31,23 @@
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
+
+#if SRT_DEBUG_MUTEX_DB
+// C++11 threads - not implemented stubs
+#if ENABLE_STDCXX_SYNC
+void display_mutex_db()
+{
+    std::cerr << "display_mutex_db: not implemented with C++11 threads\n";
+}
+std::string show_mutex_db()
+{
+    return "show_mutex_db: not implemented with C++11 threads";
+}
+#else
+void display_mutex_db();
+std::string show_mutex_db();
+#endif // C++11 or posix
+#endif // mutex db
 
 namespace srt
 {
@@ -297,6 +318,16 @@ public:
     // TODO: To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
 
+    // For debug-only purposes. Note that this need not
+    // be able to be compiled in every implementation
+    // even posix threads.
+#if SRT_DEBUG_MUTEX_DB
+    int owner_id() { return m_mutex.__data.__owner; }
+    std::string m_name;
+#endif
+
+    pthread_mutex_t* native_handle() { return &m_mutex; }
+
 private:
     pthread_mutex_t m_mutex;
 };
@@ -355,7 +386,11 @@ class InvertedLock
     }
 };
 
+#if SRT_DEBUG_MUTEX_DB
+inline void setupMutex(Mutex& m, const char* n) {m.m_name = n;}
+#else
 inline void setupMutex(Mutex&, const char*) {}
+#endif
 inline void releaseMutex(Mutex&) {}
 
 ////////////////////////////////////////////////////////////////////////////////

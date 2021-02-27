@@ -216,8 +216,10 @@ m_ClosedSockets()
    // might destroy the application before `main`. This shouldn't
    // be a problem in general.
    setupMutex(m_GlobControlLock, "GlobControl");
-   setupMutex(m_IDLock, "ID");
-   setupMutex(m_InitLock, "Init");
+   setupMutex(m_IDLock, "GlobID");
+   setupMutex(m_InitLock, "GlobInit");
+   setupMutex(m_MultiplexerLock, "GlobMultiplexer");
+   setupMutex(m_GCStopLock, "GCStop");
 
    m_pCache = new CCache<CInfoBlock>;
 }
@@ -3264,6 +3266,9 @@ void CUDTSocket::removeFromGroup(bool broken)
     CUDTGroup* g = m_GroupOf;
     if (g)
     {
+#if SRT_DEBUG_MUTEX_DB
+        LOGC(smlog.Note, log << "removeFromGroup: @" << m_SocketID << " MUTEX STATE: " << show_mutex_db());
+#endif
         // Reset group-related fields immediately. They won't be accessed
         // in the below calls, while the iterator will be invalidated for
         // a short moment between removal from the group container and the end,

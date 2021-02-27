@@ -9,6 +9,12 @@
  */
 #include "platform_sys.h"
 
+#if SRT_DEBUG_MUTEX_DB
+#include <iostream>
+#include <string>
+#include <sstream>
+#endif
+
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
@@ -193,6 +199,126 @@ srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
     return steady_clock::duration((1000000 * t_s) * s_clock_ticks_per_us);
 }
 
+#if SRT_DEBUG_MUTEX_DB
+
+struct MutexInfo
+{
+    pthread_mutex_t* mptr;
+    std::string name;
+};
+
+struct MutexDB
+{
+    std::vector<MutexInfo> mstack;
+
+    void display()
+    {
+        using namespace std;
+
+        for (vector<MutexInfo>::iterator m = mstack.begin();
+                m != mstack.end(); ++m)
+        {
+            cerr << m->name << "(" << m->mptr << ")" << endl;
+        }
+    }
+
+    std::string state()
+    {
+        using namespace std;
+        std::ostringstream out;
+        out << "{";
+
+        for (vector<MutexInfo>::iterator m = mstack.begin();
+                m != mstack.end(); ++m)
+        {
+            out << m->name << "(" << m->mptr << ")" << ";";
+        }
+        out << "}";
+        return out.str();
+    }
+};
+
+struct MutexDBHolder
+{
+    MutexDBHolder()
+    {
+        pthread_key_create(&m_ObjectKey, HolderObjectDestroy);
+    }
+
+    ~MutexDBHolder()
+    {
+        delete (MutexDB*)pthread_getspecific(m_ObjectKey);
+        pthread_key_delete(m_ObjectKey);
+    }
+
+    void set(const MutexDB& e)
+    {
+        MutexDB* cur = get();
+        SRT_ASSERT(cur != NULL);
+        *cur = e;
+    }
+
+    MutexDB* get()
+    {
+        if (!pthread_getspecific(m_ObjectKey))
+        {
+            MutexDB* ne = new MutexDB();
+            pthread_setspecific(m_ObjectKey, ne);
+            return ne;
+        }
+        return (MutexDB*)pthread_getspecific(m_ObjectKey);
+    }
+
+    void push(srt::sync::Mutex& m)
+    {
+        MutexDB* base = get();
+        MutexInfo info = { m.native_handle(), m.m_name };
+        base->mstack.push_back(info);
+    }
+
+    void pull(srt::sync::Mutex& m)
+    {
+        using namespace std;
+
+        MutexDB* base = get();
+
+        // Unlocking need not be in the same order as locking.
+        // Search for the mutex and remove it.
+        vector<MutexInfo>& vi = base->mstack;
+
+        for (vector<MutexInfo>::iterator v = vi.begin(); v != vi.end(); ++v)
+        {
+            if (v->mptr == m.native_handle())
+            {
+                vi.erase(v);
+                return;
+            }
+        }
+        // XXX DISPLAY ERROR - pulling a nonexistent mutex
+    }
+
+    static void HolderObjectDestroy(void* e)
+    {
+        delete (MutexDB*)e;
+    }
+
+private:
+    pthread_key_t m_ObjectKey;
+};
+
+static MutexDBHolder s_mutexDB;
+
+void display_mutex_db()
+{
+    s_mutexDB.get()->display();
+}
+
+std::string show_mutex_db()
+{
+    return s_mutexDB.get()->state();
+}
+#endif
+
 srt::sync::Mutex::Mutex()
 {
     const int err = pthread_mutex_init(&m_mutex, 0);
@@ -209,17 +335,31 @@ srt::sync::Mutex::~Mutex()
 
 int srt::sync::Mutex::lock()
 {
-    return pthread_mutex_lock(&m_mutex);
+    int ret = pthread_mutex_lock(&m_mutex);
+#if SRT_DEBUG_MUTEX_DB
+    s_mutexDB.push(*this);
+#endif
+    return ret;
 }
 
 int srt::sync::Mutex::unlock()
 {
-    return pthread_mutex_unlock(&m_mutex);
+    int ret = pthread_mutex_unlock(&m_mutex);
+#if SRT_DEBUG_MUTEX_DB
+    s_mutexDB.pull(*this);
+#endif
+    return ret;
 }
 
 bool srt::sync::Mutex::try_lock()
 {
-    return (pthread_mutex_trylock(&m_mutex) == 0);
+    bool val = (pthread_mutex_trylock(&m_mutex) == 0);
+#if SRT_DEBUG_MUTEX_DB
+    if (val)
+        s_mutexDB.push(*this);
+#endif
+
+    return val;
 }
 
 srt::sync::ScopedLock::ScopedLock(Mutex& m)
