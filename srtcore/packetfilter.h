@@ -16,9 +16,12 @@
 #include <string>
 
 #include "packet.h"
-#include "queue.h"
 #include "utilities.h"
 #include "packetfilter_api.h"
+
+class CUnitQueue;
+class CUnit;
+class CUDT;
 
 class PacketFilter
 {
@@ -41,11 +44,12 @@ public:
         // filter configurations from both parties. Possible values to return:
         // - an empty string (all parameters are mandatory)
         // - a form of: "<filter-name>,<param1>:<value1>,..."
-        virtual std::string defaultConfig() const { return ""; }
+        virtual std::string defaultConfig() const = 0;
+        virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const = 0;
         virtual ~Factory();
     };
 private:
-    friend bool ParseFilterConfig(std::string s, SrtFilterConfig& out);
+    friend bool ParseFilterConfig(std::string s, SrtFilterConfig& out, PacketFilter::Factory** ppf);
 
     template <class Target>
     class Creator: public Factory
@@ -58,6 +62,10 @@ private:
         // Import the extra size data
         virtual size_t ExtraSize() const ATR_OVERRIDE { return Target::EXTRA_SIZE; }
         virtual std::string defaultConfig() const ATR_OVERRIDE { return Target::defaultConfig; }
+        virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const ATR_OVERRIDE
+        {
+            return Target::verifyConfig(config, (w_errormsg));
+        }
 
     public:
         Creator() {}

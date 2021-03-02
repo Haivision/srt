@@ -267,6 +267,7 @@ public:
     virtual SRT_ARQLevel arqLevel() ATR_OVERRIDE { return m_fallback_level; }
 
     static const char defaultConfig [];
+    static bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg);
 };
 
 #endif

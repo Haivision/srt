@@ -125,13 +125,29 @@ public:
 // - any same parameters with different values are rejected (Case A)
 // - resulting configuiration should have the `cols` value set (Cases B)
 //
-// Case |Party A            |  Party B           | Situation           | Test coverage
-//------|-------------------|--------------------|---------------------|---------------
-//  A   |fec,cols:10        | fec,cols:20        | Conflict            | ConfigExchangeFaux, RejectionConflict
-//  B1  |fec,rows:10        | fec,arq:never      | Missing `cols`      | RejectionIncomplete
-//  B2  |fec,rows:10        |                    | Missing `cols`      | RejectionIncompleteEmpty
-//  C   |fec,cols:10,rows:10| fec                | OK                  | ConfigExchange, Connection
-//  D   |FEC,Cols:10        | (unimportant)      | Option rejected     | ConfigExchangeFaux
+// Case description:
+// A: Conflicting values on the same parameter (rejection)
+// B: Missing a mandatory parameter (rejection)
+// C: Successful setting and combining parameters
+// D: Unknown filter type (failed option)
+// E: Incorrect values of the parameters (failed option)
+// F: Unknown excessive parameters (failed option)
+//
+//
+// Case |Party A                 |  Party B           | Situation           | Test coverage
+//------|------------------------|--------------------|---------------------|---------------
+//  A   |fec,cols:10             | fec,cols:20        | Conflict            | ConfigExchangeFaux, RejectionConflict
+//  B1  |fec,rows:10             | fec,arq:never      | Missing `cols`      | RejectionIncomplete
+//  B2  |fec,rows:10             |                    | Missing `cols`      | RejectionIncompleteEmpty
+//  C1  |fec,cols:10,rows:10     | fec                | OK                  | ConfigExchange, Connection
+//  C2  |fec,cols:10,rows:10     | fec,rows:10,cols:10| OK                  | ConnectionReorder
+//  D   |FEC,Cols:10             | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  E1  |fec,cols:-10            | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  E2  |fec,cols:10,rows:0      | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  E3  |fec,cols:10,rows:-1     | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  E4  |fec,cols:10,layout:1    | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  E5  |fec,cols:10,arq:1       | (unimportant)      | Option rejected     | ConfigExchangeFaux
+//  F   |fec,cols:10,weight:2    | (unimportant)      | Option rejected     | ConfigExchangeFaux
 
 
 bool filterConfigSame(const string& config1, const string& config2)
@@ -173,7 +189,7 @@ TEST(TestFEC, ConfigExchange)
 
     // Order of parameters may differ, so store everything in a vector and sort it.
 
-    string exp_config = "fec,cols:10,rows:10,arq:never,layout:even";
+    string exp_config = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
     srt_cleanup();
@@ -187,8 +203,20 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
 
-    char fec_config_wrong [] = "FEC,Cols:20";
-    ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config_wrong, sizeof fec_config_wrong), -1);
+    const char* fec_config_wrong [] = {
+        "FEC,Cols:20", // D: unknown filter
+        "fec,cols:-10", // E1: invalid value for cols
+        "fec,cols:10,rows:0", // E2: invalid value for rows
+        "fec,cols:10,rows:-1", // E3: invalid value for rows
+        "fec,cols:10,layout:1", // E4: invalid value for layout
+        "fec,cols:10,arq:1", // E5: invalid value for arq
+        "fec,cols:10,weight:2" // F: invalid parameter name
+    };
+
+    for (auto badconfig: fec_config_wrong)
+    {
+        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, strlen(badconfig)), -1);
+    }
 
     TestMockCUDT m1;
     m1.core = &s1->core();
@@ -198,7 +226,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     char fec_config1 [] = "fec,cols:20,rows:10";
 
-    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
+    EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1), -1);
 
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
@@ -224,10 +252,63 @@ TEST(TestFEC, Connection)
 
     char fec_config1 [] = "fec,cols:10,rows:10";
     char fec_config2 [] = "fec,cols:10,arq:never";
-    char fec_config_final [] = "fec,cols:10,rows:10,arq:never,layout:even";
+    char fec_config_final [] = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
-    srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1);
-    srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1), -1);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2), -1);
+
+    auto connect_res = std::async(std::launch::async, [&s, &sa]() {
+        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+        });
+
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    SRTSOCKET a = srt_accept(l, (sockaddr*)& scl, &sclen);
+    EXPECT_NE(a, SRT_ERROR);
+    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    // Now that the connection is established, check negotiated config
+
+    char result_config1[200];
+    int result_config1_size = 200;
+    char result_config2[200];
+    int result_config2_size = 200;
+
+    srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
+    srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size);
+
+    string caller_config = result_config1;
+    string accept_config = result_config2;
+    EXPECT_EQ(caller_config, accept_config);
+
+    EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
+    EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
+
+    srt_cleanup();
+}
+
+TEST(TestFEC, ConnectionReorder)
+{
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(l, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(l, 1);
+
+    char fec_config1 [] = "fec,cols:10,rows:10";
+    char fec_config2 [] = "fec,rows:10,cols:10";
+    char fec_config_final [] = "fec,cols:10,rows:10,arq:onreq,layout:staircase";
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, sizeof fec_config1), -1);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, sizeof fec_config2), -1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));

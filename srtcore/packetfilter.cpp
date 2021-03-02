@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
+bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -35,10 +35,17 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
     if (!fac)
         return false;
 
+    if (ppf)
+        *ppf = fac;
     // Extract characteristic data
     w_config.extra_size = fac->ExtraSize();
 
     return true;
+}
+
+bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
+{
+    return ParseFilterConfig(s, (w_config), NULL);
 }
 
 // Parameters are passed by value because they need to be potentially modicied inside.
