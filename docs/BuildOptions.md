@@ -303,7 +303,12 @@ when it is expected to be revived.
 
 **`--use-c++-std=<standard>`**
 
+Enforce using particular C++ standard when compiling. When using this option
+remember that:
 
+* Allowed values are: 98, 03, 11, 14, 17 and 20
+* If you use 98/03 and `--enable-apps`, apps will be still using C++11
+* This option is only supported on GNU and Clang compilers (will be ignored on others)
 
 **`--use-gnustl`**
 

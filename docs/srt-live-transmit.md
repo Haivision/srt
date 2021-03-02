@@ -307,6 +307,7 @@ All other parameters are SRT socket options. The following have the following va
 | `linger`             | 0..              | `SRTO_LINGER`             | Link linger value |
 | `lossmaxttl`         | 0..              | `SRTO_LOSSMAXTTL`         | Packet reorder tolerance. |
 | `maxbw`              | 0..              | `SRTO_MAXBW`              | Bandwidth limit in bytes |
+| `mininputbw`         | 0..              | `SRTO_MININPUTBW`         | Minimum allowed estimate of `SRTO_INPUTBW` |
 | `messageapi`         | `bool`           | `SRTO_MESSAGEAPI`         | Enable SRT message mode. |
 | `minversion`         | maj.min.rev      | `SRTO_MINVERSION`         | Minimum SRT library version of a peer. |
 | `mss`                | 76..             | `SRTO_MSS`                | MTU size |

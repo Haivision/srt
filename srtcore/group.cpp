@@ -317,6 +317,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
 
+    m_stats.init();
+
     // Set this data immediately during creation before
     // two or more sockets start arguing about it.
     m_iLastSchedSeqNo = CUDT::generateISN();
@@ -465,7 +467,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     {
         // There's at least one socket in the group, so only
         // post-options are allowed.
-        if (!std::binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        if (!binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
         {
             LOGC(gmlog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -567,6 +569,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, m_llMaxBW);
     IM(SRTO_INPUTBW, m_llInputBW);
+    IM(SRTO_MININPUTBW, m_llMinInputBW);
     IM(SRTO_OHEADBW, m_iOverheadBW);
     IM(SRTO_IPTOS, m_iIpToS);
     IM(SRTO_IPTTL, m_iIpTTL);
@@ -4152,6 +4155,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
+
+    // At least one link has succeeded, update sending stats.
+    m_stats.sent.Update(len);
 
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.
