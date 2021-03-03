@@ -87,18 +87,6 @@ struct CSrtMuxerConfig
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
 
-    // Some shortcuts
-#define DEFINEP(psym)                                          \
-    char*       pc##psym() { return (char*) &i##psym; }        \
-    const char* pc##psym() const { return (char*) &i##psym; }
-
-    DEFINEP(UDPSndBufSize);
-    DEFINEP(UDPRcvBufSize);
-    DEFINEP(IpV6Only);
-    DEFINEP(IpTTL);
-    DEFINEP(IpToS);
-#undef DEFINEP
-
     bool operator==(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
