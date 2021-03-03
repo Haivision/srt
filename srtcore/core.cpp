@@ -3166,6 +3166,13 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
                 << " agent group=$" << gp->id() << " type" << gp->type());
             return -1;
         }
+        if (gp->streamid() != m_config.sStreamName.str())
+        {
+            LOGC(gmlog.Error,
+                 log << "HS: GROUP SID COLLISION: peer group=$" << peergroup << " SID=" << m_config.sStreamName.str()
+                     << " agent group=$" << gp->id() << " SID=" << gp->streamid());
+            return -1;
+        }
 
         HLOGC(gmlog.Debug, log << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
 
@@ -3192,6 +3199,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         }
 
         gp->set_peerid(peergroup);
+        gp->set_streamid(m_config.sStreamName.str());
         gp->deriveSettings(this);
 
         // This can only happen on a listener (it's only called on a site that is
