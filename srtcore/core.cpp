@@ -536,8 +536,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         }
 
         // Fallback: return from internal data
-        strcpy(((char*)optval), m_config.BindToDevice.c_str());
-        optlen = m_config.BindToDevice.size();
+        strcpy(((char*)optval), m_config.sBindToDevice.c_str());
+        optlen = m_config.sBindToDevice.size();
 #else
         LOGC(smlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -2506,7 +2506,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         // When encryption is not enabled at compile time, behave as if encryption wasn't set,
         // so accordingly to StrictEncryption flag.
 
-        if (m_config.m_bEnforcedEnc)
+        if (m_config.bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,

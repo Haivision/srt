@@ -82,7 +82,7 @@ struct CSrtMuxerConfig
     bool bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-    std::string strBindToDevice;
+    std::string sBindToDevice;
 #endif
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
@@ -107,7 +107,7 @@ struct CSrtMuxerConfig
             && CEQUAL(iIpV6Only)
             && CEQUAL(bReuseAddr)
 #ifdef SRT_ENABLE_BINDTODEVICE
-            && CEQUAL(strBindToDevice)
+            && CEQUAL(sBindToDevice)
 #endif
             && CEQUAL(iUDPSndBufSize)
             && CEQUAL(iUDPRcvBufSize);
@@ -603,7 +603,7 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        co.strBindToDevice = val;
+        co.sBindToDevice = val;
 #else
         (void)co; // prevent warning
         (void)optval;

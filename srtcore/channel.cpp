@@ -341,7 +341,7 @@ void CChannel::setUDPSockOpt()
       }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-      if (!m_mcfg.strBindToDevice.empty())
+      if (!m_mcfg.sBindToDevice.empty())
       {
           if (m_BindAddr.family() != AF_INET)
           {
@@ -350,7 +350,7 @@ void CChannel::setUDPSockOpt()
           }
 
           if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
-                      m_mcfg.strBindToDevice.c_str(), m_mcfg.strBindToDevice.size()))
+                      m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
           {
               char buf[255];
               const char* err = SysStrError(NET_ERROR, buf, 255);
