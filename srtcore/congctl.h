@@ -189,7 +189,7 @@ public:
 
     // Called when the settings concerning m_llMaxBW were changed.
     // Arg 1: value of CUDT::m_llMaxBW
-    // Arg 2: value calculated out of CUDT::m_llInputBW and CUDT::m_iOverheadBW.
+    // Arg 2: value calculated out of CUDT::m_config::llInputBW and CUDT::m_config::iOverheadBW.
     virtual void updateBandwidth(int64_t, int64_t) {}
 
     virtual bool needsQuickACK(const CPacket&)
