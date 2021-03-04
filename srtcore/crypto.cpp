@@ -584,8 +584,8 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UNUSED)
     // Set security-pending state, if a password was set.
     m_SndKmState = hasPassphrase() ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
 
-    m_KmPreAnnouncePkt = m_parent->m_config.m_uKmPreAnnouncePkt;
-    m_KmRefreshRatePkt = m_parent->m_config.m_uKmRefreshRatePkt;
+    m_KmPreAnnouncePkt = m_parent->m_config.uKmPreAnnouncePkt;
+    m_KmRefreshRatePkt = m_parent->m_config.uKmRefreshRatePkt;
 
     if ( side == HSD_INITIATOR )
     {

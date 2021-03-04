@@ -527,16 +527,16 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // the option is altered on the group.
 
     // SRTO_RCVSYN
-    m_bSynRecving = u->m_config.m_bSynRecving;
+    m_bSynRecving = u->m_config.bSynRecving;
 
     // SRTO_SNDSYN
-    m_bSynSending = u->m_config.m_bSynSending;
+    m_bSynSending = u->m_config.bSynSending;
 
     // SRTO_RCVTIMEO
-    m_iRcvTimeOut = u->m_config.m_iRcvTimeOut;
+    m_iRcvTimeOut = u->m_config.iRcvTimeOut;
 
     // SRTO_SNDTIMEO
-    m_iSndTimeOut = u->m_config.m_iSndTimeOut;
+    m_iSndTimeOut = u->m_config.iSndTimeOut;
 
     // Ok, this really is disgusting, but there's only one way
     // to properly do it. Would be nice to have some more universal
@@ -552,58 +552,58 @@ void CUDTGroup::deriveSettings(CUDT* u)
 #define IM(option, field) importOption(m_config, option, u->m_config.field)
 #define IMF(option, field) importOption(m_config, option, u->field)
 
-    IM(SRTO_MSS, m_iMSS);
-    IM(SRTO_FC, m_iFlightFlagSize);
+    IM(SRTO_MSS, iMSS);
+    IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_config.m_iSndBufSize * (u->m_config.m_iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_config.m_iRcvBufSize * (u->m_config.m_iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
 
-    IM(SRTO_LINGER, m_Linger);
-    IM(SRTO_UDP_SNDBUF, m_iUDPSndBufSize);
-    IM(SRTO_UDP_RCVBUF, m_iUDPRcvBufSize);
+    IM(SRTO_LINGER, Linger);
+    IM(SRTO_UDP_SNDBUF, iUDPSndBufSize);
+    IM(SRTO_UDP_RCVBUF, iUDPRcvBufSize);
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
-    IM(SRTO_CONNTIMEO, m_tdConnTimeOut);
-    IM(SRTO_DRIFTTRACER, m_bDriftTracer);
+    IM(SRTO_CONNTIMEO, tdConnTimeOut);
+    IM(SRTO_DRIFTTRACER, bDriftTracer);
     // Reuseaddr: true by default and should only be true.
-    IM(SRTO_MAXBW, m_llMaxBW);
-    IM(SRTO_INPUTBW, m_llInputBW);
-    IM(SRTO_MININPUTBW, m_llMinInputBW);
-    IM(SRTO_OHEADBW, m_iOverheadBW);
-    IM(SRTO_IPTOS, m_iIpToS);
-    IM(SRTO_IPTTL, m_iIpTTL);
-    IM(SRTO_TSBPDMODE, m_bTSBPD);
-    IM(SRTO_RCVLATENCY, m_iRcvLatency);
-    IM(SRTO_PEERLATENCY, m_iPeerLatency);
-    IM(SRTO_SNDDROPDELAY, m_iSndDropDelay);
-    IM(SRTO_PAYLOADSIZE, m_zExpPayloadSize);
+    IM(SRTO_MAXBW, llMaxBW);
+    IM(SRTO_INPUTBW, llInputBW);
+    IM(SRTO_MININPUTBW, llMinInputBW);
+    IM(SRTO_OHEADBW, iOverheadBW);
+    IM(SRTO_IPTOS, iIpToS);
+    IM(SRTO_IPTTL, iIpTTL);
+    IM(SRTO_TSBPDMODE, bTSBPD);
+    IM(SRTO_RCVLATENCY, iRcvLatency);
+    IM(SRTO_PEERLATENCY, iPeerLatency);
+    IM(SRTO_SNDDROPDELAY, iSndDropDelay);
+    IM(SRTO_PAYLOADSIZE, zExpPayloadSize);
     IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
 
-    importOption(m_config, SRTO_STREAMID, u->m_config.m_StreamName.str());
+    importOption(m_config, SRTO_STREAMID, u->m_config.sStreamName.str());
 
-    IM(SRTO_MESSAGEAPI, m_bMessageAPI);
-    IM(SRTO_NAKREPORT, m_bRcvNakReport);
-    IM(SRTO_MINVERSION, m_lMinimumPeerSrtVersion);
-    IM(SRTO_ENFORCEDENCRYPTION, m_bEnforcedEnc);
-    IM(SRTO_IPV6ONLY, m_iIpV6Only);
-    IM(SRTO_PEERIDLETIMEO, m_iPeerIdleTimeout);
-    IM(SRTO_GROUPSTABTIMEO, m_uStabilityTimeout);
+    IM(SRTO_MESSAGEAPI, bMessageAPI);
+    IM(SRTO_NAKREPORT, bRcvNakReport);
+    IM(SRTO_MINVERSION, uMinimumPeerSrtVersion);
+    IM(SRTO_ENFORCEDENCRYPTION, bEnforcedEnc);
+    IM(SRTO_IPV6ONLY, iIpV6Only);
+    IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout);
+    IM(SRTO_GROUPSTABTIMEO, uStabilityTimeout);
 
-    importOption(m_config, SRTO_PACKETFILTER, u->m_config.m_PacketFilterConfig.str());
+    importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
-    if (u->m_config.m_CryptoSecret.len)
+    if (u->m_config.CryptoSecret.len)
     {
-        string password((const char*)u->m_config.m_CryptoSecret.str, u->m_config.m_CryptoSecret.len);
+        string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
         m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), password.size()));
     }
 
-    IM(SRTO_KMREFRESHRATE, m_uKmRefreshRatePkt);
-    IM(SRTO_KMPREANNOUNCE, m_uKmPreAnnouncePkt);
+    IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
+    IM(SRTO_KMPREANNOUNCE, uKmPreAnnouncePkt);
 
     string cc = u->m_CongCtl.selected_name();
     if (cc != "live")

@@ -181,16 +181,16 @@ void CChannel::createSocket(int family)
 #endif
 #endif // ENABLE_SOCK_CLOEXEC
 
-    if ((m_mcfg.m_iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
+    if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
         int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY,
-                m_mcfg.pvIpV6Only(), sizeof(int));
+                (const char*) &m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
         if (res == -1)
         {
             int err = errno;
             char msg[160];
             LOGC(kmlog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = "
-                    << m_mcfg.m_iIpV6Only << ": " << SysStrError(err, msg, 159));
+                    << m_mcfg.iIpV6Only << ": " << SysStrError(err, msg, 159));
         }
     }
 
@@ -266,22 +266,22 @@ void CChannel::setUDPSockOpt()
    #if defined(BSD) || TARGET_OS_MAC
       // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
       int maxsize = 64000;
-      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, m_mcfg.pvUDPRcvBufSize(), sizeof(int)))
-         ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&maxsize, sizeof(int));
-      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, m_mcfg.pvUDPSndBufSize(), sizeof(int)))
-         ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&maxsize, sizeof(int));
+      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*) &m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
+         ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*) &maxsize, sizeof maxsize);
+      if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
+         ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*) &maxsize, sizeof maxsize);
    #else
       // for other systems, if requested is greated than maximum, the maximum value will be automactally used
-      if ((0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, m_mcfg.pvUDPRcvBufSize(), sizeof(int))) ||
-          (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, m_mcfg.pvUDPSndBufSize(), sizeof(int))))
+      if ((0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*) &m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize)) ||
+          (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*) &m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize)))
          throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
    #endif
 
-      if (m_mcfg.m_iIpTTL != -1)
+      if (m_mcfg.iIpTTL != -1)
       {
           if (m_BindAddr.family() == AF_INET)
           {
-              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, m_mcfg.pvIpTTL(), sizeof (int)))
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*) &m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
           else
@@ -291,7 +291,7 @@ void CChannel::setUDPSockOpt()
               // For specified IPv6 address, set IPV6_UNICAST_HOPS ONLY UNLESS it's an IPv4-mapped-IPv6
               if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
               {
-                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, m_mcfg.pvIpTTL(), sizeof (int)))
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*) &m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                   {
                       throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                   }
@@ -299,7 +299,7 @@ void CChannel::setUDPSockOpt()
               // For specified IPv6 address, set IP_TTL ONLY WHEN it's an IPv4-mapped-IPv6
               if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
               {
-                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, m_mcfg.pvIpTTL(), sizeof (int)))
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*) &m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                   {
                       throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                   }
@@ -307,11 +307,11 @@ void CChannel::setUDPSockOpt()
           }
       }
 
-      if (m_mcfg.m_iIpToS != -1)
+      if (m_mcfg.iIpToS != -1)
       {
           if (m_BindAddr.family() == AF_INET)
           {
-              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, m_mcfg.pvIpToS(), sizeof (int)))
+              if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*) &m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
           else
@@ -322,7 +322,7 @@ void CChannel::setUDPSockOpt()
               // For specified IPv6 address, set IPV6_TCLASS ONLY UNLESS it's an IPv4-mapped-IPv6
               if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
               {
-                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, m_mcfg.pvIpToS(), sizeof (int)))
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*) &m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                   {
                       throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                   }
@@ -332,7 +332,7 @@ void CChannel::setUDPSockOpt()
               // For specified IPv6 address, set IP_TOS ONLY WHEN it's an IPv4-mapped-IPv6
               if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
               {
-                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, m_mcfg.pvIpToS(), sizeof (int)))
+                  if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*) &m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                   {
                       throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                   }
@@ -341,7 +341,7 @@ void CChannel::setUDPSockOpt()
       }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-      if (!m_mcfg.m_BindToDevice.empty())
+      if (!m_mcfg.sBindToDevice.empty())
       {
           if (m_BindAddr.family() != AF_INET)
           {
@@ -350,7 +350,7 @@ void CChannel::setUDPSockOpt()
           }
 
           if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
-                      m_mcfg.m_BindToDevice.c_str(), m_mcfg.m_BindToDevice.size()))
+                      m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
           {
               char buf[255];
               const char* err = SysStrError(NET_ERROR, buf, 255);
@@ -397,16 +397,16 @@ void CChannel::close() const
 
 int CChannel::getSndBufSize()
 {
-   socklen_t size = sizeof(socklen_t);
-   ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, m_mcfg.pvUDPSndBufSize(), &size);
-   return m_mcfg.m_iUDPSndBufSize;
+   socklen_t size = (socklen_t) sizeof m_mcfg.iUDPSndBufSize;
+   ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*) &m_mcfg.iUDPSndBufSize, &size);
+   return m_mcfg.iUDPSndBufSize;
 }
 
 int CChannel::getRcvBufSize()
 {
-   socklen_t size = sizeof(socklen_t);
-   ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, m_mcfg.pvUDPRcvBufSize(), &size);
-   return m_mcfg.m_iUDPRcvBufSize;
+   socklen_t size = (socklen_t) sizeof m_mcfg.iUDPRcvBufSize;
+   ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*) &m_mcfg.iUDPRcvBufSize, &size);
+   return m_mcfg.iUDPRcvBufSize;
 }
 
 void CChannel::setConfig(const CSrtMuxerConfig& config)
@@ -419,14 +419,14 @@ int CChannel::getIpTTL() const
    if (m_iSocket == INVALID_SOCKET)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   socklen_t size = sizeof(int);
+   socklen_t size = (socklen_t) sizeof m_mcfg.iIpTTL;
    if (m_BindAddr.family() == AF_INET)
    {
-      ::getsockopt(m_iSocket, IPPROTO_IP, IP_TTL, m_mcfg.pvIpTTL(), &size);
+      ::getsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (char*) &m_mcfg.iIpTTL, &size);
    }
    else if (m_BindAddr.family() == AF_INET6)
    {
-      ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, m_mcfg.pvIpTTL(), &size);
+      ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (char*) &m_mcfg.iIpTTL, &size);
    }
    else
    {
@@ -434,7 +434,7 @@ int CChannel::getIpTTL() const
        LOGC(kmlog.Error, log << "IPE: CChannel::getIpTTL called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
-   return m_mcfg.m_iIpTTL;
+   return m_mcfg.iIpTTL;
 }
 
 int CChannel::getIpToS() const
@@ -442,15 +442,15 @@ int CChannel::getIpToS() const
    if (m_iSocket == INVALID_SOCKET)
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-   socklen_t size = sizeof(int);
+   socklen_t size = (socklen_t) sizeof m_mcfg.iIpToS;
    if (m_BindAddr.family() == AF_INET)
    {
-      ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, m_mcfg.pvIpToS(), &size);
+      ::getsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (char*) &m_mcfg.iIpToS, &size);
    }
    else if (m_BindAddr.family() == AF_INET6)
    {
 #ifdef IPV6_TCLASS
-      ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, m_mcfg.pvIpToS(), &size);
+      ::getsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (char*) &m_mcfg.iIpToS, &size);
 #endif
    }
    else
@@ -459,7 +459,7 @@ int CChannel::getIpToS() const
        LOGC(kmlog.Error, log << "IPE: CChannel::getIpToS called with unset family");
        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
-   return m_mcfg.m_iIpToS;
+   return m_mcfg.iIpToS;
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
