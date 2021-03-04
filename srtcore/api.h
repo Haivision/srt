@@ -224,7 +224,7 @@ public:
       /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket(CUDTSocket** pps = NULL);
+   SRTSOCKET newSocket(CUDTSocket** pps = NULL, SRTSOCKET forceid = SRT_INVALID_SOCK);
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;

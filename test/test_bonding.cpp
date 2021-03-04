@@ -12,8 +12,6 @@
 #include <unistd.h>
 #endif
 
-#if ENABLE_EXPERIMENTAL_BONDING
-
 #include "gtest/gtest.h"
 
 #include "srt.h"
@@ -335,5 +333,3 @@ TEST(Bonding, CloseGroupAndSocket)
 
     srt_cleanup();
 }
-
-#endif // ENABLE_EXPERIMENTAL_BONDING

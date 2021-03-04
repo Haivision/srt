@@ -95,6 +95,7 @@ protected:
     int srt_epoll = -1;
     SRT_EPOLL_T m_direction = SRT_EPOLL_OPT_NONE; //< Defines which of SND or RCV option variant should be used, also to set SRT_SENDER for output
     bool m_blocking_mode = true; //< enforces using SRTO_SNDSYN or SRTO_RCVSYN, depending on @a m_direction
+    SRTSOCKET m_forced_id = SRT_INVALID_SOCK;
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_direction
     bool m_tsbpdmode = true;
     int m_outgoing_port = 0;
