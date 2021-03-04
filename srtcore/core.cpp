@@ -288,6 +288,9 @@ struct SrtOptionAction
         flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
         flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
         flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
+#ifdef SRT_ENABLE_BINDTODEVICE
+        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
+#endif
 #if ENABLE_EXPERIMENTAL_BONDING
         flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
 #endif
