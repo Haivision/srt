@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 #include <deque>
+#include <iterator>
 
 #include "packetfilter.h"
 #include "core.h"
