@@ -301,7 +301,7 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
-    bool isOPT_TsbPd() const { return m_config.m_bTSBPD; }
+    bool isOPT_TsbPd() const { return m_config.bTSBPD; }
     int RTT() const { return m_iRTT; }
     int RTTVar() const { return m_iRTTVar; }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
@@ -314,13 +314,13 @@ public: // internal API
     int flowWindowSize() const { return m_iFlowWindowSize; }
     int32_t deliveryRate() const { return m_iDeliveryRate; }
     int bandwidth() const { return m_iBandwidth; }
-    int64_t maxBandwidth() const { return m_config.m_llMaxBW; }
-    int MSS() const { return m_config.m_iMSS; }
+    int64_t maxBandwidth() const { return m_config.llMaxBW; }
+    int MSS() const { return m_config.iMSS; }
 
     uint32_t peerLatency_us() const {return m_iPeerTsbPdDelay_ms * 1000; }
-    int peerIdleTimeout_ms() const { return m_config.m_iPeerIdleTimeout; }
+    int peerIdleTimeout_ms() const { return m_config.iPeerIdleTimeout; }
     size_t maxPayloadSize() const { return m_iMaxSRTPayloadSize; }
-    size_t OPT_PayloadSize() const { return m_config.m_zExpPayloadSize; }
+    size_t OPT_PayloadSize() const { return m_config.zExpPayloadSize; }
     int sndLossLength() { return m_pSndLossList->getLossLength(); }
     int32_t ISN() const { return m_iISN; }
     int32_t peerISN() const { return m_iPeerISN; }
@@ -368,7 +368,7 @@ public: // internal API
         const int ps = maxPayloadSize();
         if (len == 0) // wierd, can't use non-static data member as default argument!
             len = ps;
-        return m_config.m_bMessageAPI ? (len+ps-1)/ps : 1;
+        return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
     }
 
     int32_t makeTS(const time_point& from_time) const
@@ -423,7 +423,7 @@ public: // internal API
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
-    SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.m_bSynRecving);
+    SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
@@ -649,7 +649,7 @@ private:
 
     int64_t withOverhead(int64_t basebw)
     {
-        return (basebw * (100 + m_config.m_iOverheadBW))/100;
+        return (basebw * (100 + m_config.iOverheadBW))/100;
     }
 
     static double Bps2Mbps(int64_t basebw)
@@ -675,7 +675,7 @@ private:
 
     int sndBuffersLeft()
     {
-        return m_config.m_iSndBufSize - m_pSndBuffer->getCurrBufSize();
+        return m_config.iSndBufSize - m_pSndBuffer->getCurrBufSize();
     }
 
     time_point socketStartTime()
@@ -865,8 +865,8 @@ private: // Receiving related data
 
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
 
-    uint32_t m_lPeerSrtVersion;
-    uint32_t m_lPeerSrtFlags;
+    uint32_t m_uPeerSrtVersion;
+    uint32_t m_uPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead.

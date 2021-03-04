@@ -2556,4 +2556,3 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 
     return colgx;
 }
-
