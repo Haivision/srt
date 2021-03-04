@@ -163,13 +163,7 @@ public:
 
     bool set(const std::string& s)
     {
-        if (s.size() >= SIZE)
-            return false;
-
-        s.copy(stor, SIZE);
-        stor[SIZE] = 0;
-        len        = s.size();
-        return true;
+        return set(s.c_str(), s.size());
     }
 
     std::string str() const
