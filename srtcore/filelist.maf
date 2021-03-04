@@ -47,6 +47,7 @@ PROTECTED HEADERS
 platform_sys.h
 udt.h
 
+PRIVATE HEADERS
 api.h
 buffer.h
 cache.h

@@ -144,18 +144,15 @@ void CUDT::construct()
     m_RejectReason        = SRT_REJ_UNKNOWN;
     m_tsLastReqTime       = steady_clock::time_point();
     m_SrtHsSide           = HSD_DRAW;
-
-    m_uPeerSrtVersion        = 0; // not defined until connected.
-
-    m_iTsbPdDelay_ms     = 0;
-    m_iPeerTsbPdDelay_ms = 0;
-
-    m_bPeerTsbPd         = false;
-    m_iPeerTsbPdDelay_ms = 0;
-    m_bTsbPd             = false;
-    m_bTsbPdAckWakeup    = false;
-    m_bGroupTsbPd = false;
-    m_bPeerTLPktDrop     = false;
+    m_uPeerSrtVersion     = 0; // not defined until connected.
+    m_iTsbPdDelay_ms      = 0;
+    m_iPeerTsbPdDelay_ms  = 0;
+    m_bPeerTsbPd          = false;
+    m_iPeerTsbPdDelay_ms  = 0;
+    m_bTsbPd              = false;
+    m_bTsbPdAckWakeup     = false;
+    m_bGroupTsbPd         = false;
+    m_bPeerTLPktDrop      = false;
 
     // Initilize mutex and condition variables
     initSynch();
@@ -4328,9 +4325,9 @@ bool CUDT::applyResponseSettings() ATR_NOEXCEPT
     }
 
     // Re-configure according to the negotiated values.
-    m_config.iMSS      = m_ConnRes.m_iMSS;
+    m_config.iMSS        = m_ConnRes.m_iMSS;
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
-    int udpsize          = m_config.iMSS - CPacket::UDP_HDR_SIZE;
+    const int udpsize    = m_config.iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN           = m_ConnRes.m_iISN;
 

@@ -184,7 +184,7 @@ void CChannel::createSocket(int family)
     if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
         int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY,
-                (const char*) &m_mcfg.iIpV6Only, sizeof(int));
+                (const char*) &m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
         if (res == -1)
         {
             int err = errno;
@@ -397,14 +397,14 @@ void CChannel::close() const
 
 int CChannel::getSndBufSize()
 {
-    socklen_t size = (socklen_t) sizeof m_mcfg.iUDPSndBufSize;
+   socklen_t size = (socklen_t) sizeof m_mcfg.iUDPSndBufSize;
    ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*) &m_mcfg.iUDPSndBufSize, &size);
    return m_mcfg.iUDPSndBufSize;
 }
 
 int CChannel::getRcvBufSize()
 {
-    socklen_t size = (socklen_t) sizeof m_mcfg.iUDPRcvBufSize;
+   socklen_t size = (socklen_t) sizeof m_mcfg.iUDPRcvBufSize;
    ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*) &m_mcfg.iUDPRcvBufSize, &size);
    return m_mcfg.iUDPRcvBufSize;
 }

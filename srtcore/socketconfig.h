@@ -224,7 +224,7 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bTLPktDrop;    // Whether Agent WILL DO TLPKTDROP on Rx.
     int      iSndDropDelay; // Extra delay when deciding to snd-drop for TLPKTDROP, -1 to off
     bool     bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
-    int      iGroupConnect;     // 1 - allow group connections
+    int      iGroupConnect;    // 1 - allow group connections
     int      iPeerIdleTimeout; // Timeout for hearing anything from the peer.
     uint32_t uStabilityTimeout;
     int      iRetransmitAlgo;
