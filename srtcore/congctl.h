@@ -11,6 +11,7 @@
 #ifndef INC_SRT_CONGCTL_H
 #define INC_SRT_CONGCTL_H
 
+#include <algorithm>
 #include <map>
 #include <string>
 #include <utility>
@@ -55,13 +56,24 @@ public:
         bool operator()(NamePtr np) { return n == np.first; }
     };
 
+    static NamePtr* find(const std::string& name)
+    {
+        NamePtr* end = congctls+N_CONTROLLERS;
+        NamePtr* try_selector = std::find_if(congctls, end, IsName(name));
+        return try_selector != end ? try_selector : NULL;
+    }
+
+    static bool exists(const std::string& name)
+    {
+        return find(name);
+    }
+
     // You can call select() multiple times, until finally
     // the 'configure' method is called.
     bool select(const std::string& name)
     {
-        NamePtr* end = congctls+N_CONTROLLERS;
-        NamePtr* try_selector = std::find_if(congctls, end, IsName(name));
-        if (try_selector == end)
+        NamePtr* try_selector = find(name);
+        if (!try_selector)
             return false;
         selector = try_selector - congctls;
         return true;
@@ -117,6 +129,7 @@ public:
     };
 };
 
+class CPacket;
 
 class SrtCongestionControlBase
 {
@@ -175,8 +188,8 @@ public:
     virtual int ACKTimeout_us() const { return 0; }
 
     // Called when the settings concerning m_llMaxBW were changed.
-    // Arg 1: value of CUDT::m_llMaxBW
-    // Arg 2: value calculated out of CUDT::m_llInputBW and CUDT::m_iOverheadBW.
+    // Arg 1: value of CUDT's m_config.m_llMaxBW
+    // Arg 2: value calculated out of CUDT's m_config.llInputBW and m_config.iOverheadBW.
     virtual void updateBandwidth(int64_t, int64_t) {}
 
     virtual bool needsQuickACK(const CPacket&)

@@ -290,7 +290,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
-    , m_uOPT_StabilityTimeout(CUDT::COMM_DEF_STABILITY_TIMEOUT_US)
+    , m_uOPT_StabilityTimeout(CSrtConfig::COMM_DEF_STABILITY_TIMEOUT_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
@@ -316,6 +316,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     setupCond(m_RcvDataCond, "RcvData");
     m_RcvEID = m_pGlobal->m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_pGlobal->m_EPoll.create(&m_SndEpolld);
+
+    m_stats.init();
 
     // Set this data immediately during creation before
     // two or more sockets start arguing about it.
@@ -422,7 +424,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         const int val = cast_optval<int>(optval, optlen);
 
         // Search if you already have SRTO_PEERIDLETIMEO set
-        int                          idletmo = CUDT::COMM_RESPONSE_TIMEOUT_MS;
+        int                          idletmo = CSrtConfig::COMM_RESPONSE_TIMEOUT_MS;
         vector<ConfigItem>::iterator f =
             find_if(m_config.begin(), m_config.end(), ConfigItem::OfType(SRTO_PEERIDLETIMEO));
         if (f != m_config.end())
@@ -465,7 +467,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     {
         // There's at least one socket in the group, so only
         // post-options are allowed.
-        if (!std::binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        if (!binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
         {
             LOGC(gmlog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -525,16 +527,16 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // the option is altered on the group.
 
     // SRTO_RCVSYN
-    m_bSynRecving = u->m_bSynRecving;
+    m_bSynRecving = u->m_config.bSynRecving;
 
     // SRTO_SNDSYN
-    m_bSynSending = u->m_bSynSending;
+    m_bSynSending = u->m_config.bSynSending;
 
     // SRTO_RCVTIMEO
-    m_iRcvTimeOut = u->m_iRcvTimeOut;
+    m_iRcvTimeOut = u->m_config.iRcvTimeOut;
 
     // SRTO_SNDTIMEO
-    m_iSndTimeOut = u->m_iSndTimeOut;
+    m_iSndTimeOut = u->m_config.iSndTimeOut;
 
     // Ok, this really is disgusting, but there's only one way
     // to properly do it. Would be nice to have some more universal
@@ -547,56 +549,61 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // to be potentially replicated on the socket. So both pre
     // and post options apply.
 
-#define IM(option, field) importOption(m_config, option, u->field)
+#define IM(option, field) importOption(m_config, option, u->m_config.field)
+#define IMF(option, field) importOption(m_config, option, u->field)
 
-    IM(SRTO_MSS, m_iMSS);
-    IM(SRTO_FC, m_iFlightFlagSize);
+    IM(SRTO_MSS, iMSS);
+    IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_iSndBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_iRcvBufSize * (u->m_iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
 
-    IM(SRTO_LINGER, m_Linger);
-    IM(SRTO_UDP_SNDBUF, m_iUDPSndBufSize);
-    IM(SRTO_UDP_RCVBUF, m_iUDPRcvBufSize);
+    IM(SRTO_LINGER, Linger);
+    IM(SRTO_UDP_SNDBUF, iUDPSndBufSize);
+    IM(SRTO_UDP_RCVBUF, iUDPRcvBufSize);
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
-    IM(SRTO_CONNTIMEO, m_tdConnTimeOut);
-    IM(SRTO_DRIFTTRACER, m_bDriftTracer);
+    IM(SRTO_CONNTIMEO, tdConnTimeOut);
+    IM(SRTO_DRIFTTRACER, bDriftTracer);
     // Reuseaddr: true by default and should only be true.
-    IM(SRTO_MAXBW, m_llMaxBW);
-    IM(SRTO_INPUTBW, m_llInputBW);
-    IM(SRTO_OHEADBW, m_iOverheadBW);
-    IM(SRTO_IPTOS, m_iIpToS);
-    IM(SRTO_IPTTL, m_iIpTTL);
-    IM(SRTO_TSBPDMODE, m_bOPT_TsbPd);
-    IM(SRTO_RCVLATENCY, m_iOPT_TsbPdDelay);
-    IM(SRTO_PEERLATENCY, m_iOPT_PeerTsbPdDelay);
-    IM(SRTO_SNDDROPDELAY, m_iOPT_SndDropDelay);
-    IM(SRTO_PAYLOADSIZE, m_zOPT_ExpPayloadSize);
-    IM(SRTO_TLPKTDROP, m_bTLPktDrop);
-    IM(SRTO_STREAMID, m_sStreamName);
-    IM(SRTO_MESSAGEAPI, m_bMessageAPI);
-    IM(SRTO_NAKREPORT, m_bRcvNakReport);
-    IM(SRTO_MINVERSION, m_lMinimumPeerSrtVersion);
-    IM(SRTO_ENFORCEDENCRYPTION, m_bOPT_StrictEncryption);
-    IM(SRTO_IPV6ONLY, m_iIpV6Only);
-    IM(SRTO_PEERIDLETIMEO, m_iOPT_PeerIdleTimeout);
-    IM(SRTO_GROUPSTABTIMEO, m_uOPT_StabilityTimeout);
-    IM(SRTO_PACKETFILTER, m_OPT_PktFilterConfigString);
+    IM(SRTO_MAXBW, llMaxBW);
+    IM(SRTO_INPUTBW, llInputBW);
+    IM(SRTO_MININPUTBW, llMinInputBW);
+    IM(SRTO_OHEADBW, iOverheadBW);
+    IM(SRTO_IPTOS, iIpToS);
+    IM(SRTO_IPTTL, iIpTTL);
+    IM(SRTO_TSBPDMODE, bTSBPD);
+    IM(SRTO_RCVLATENCY, iRcvLatency);
+    IM(SRTO_PEERLATENCY, iPeerLatency);
+    IM(SRTO_SNDDROPDELAY, iSndDropDelay);
+    IM(SRTO_PAYLOADSIZE, zExpPayloadSize);
+    IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
+
+    importOption(m_config, SRTO_STREAMID, u->m_config.sStreamName.str());
+
+    IM(SRTO_MESSAGEAPI, bMessageAPI);
+    IM(SRTO_NAKREPORT, bRcvNakReport);
+    IM(SRTO_MINVERSION, uMinimumPeerSrtVersion);
+    IM(SRTO_ENFORCEDENCRYPTION, bEnforcedEnc);
+    IM(SRTO_IPV6ONLY, iIpV6Only);
+    IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout);
+    IM(SRTO_GROUPSTABTIMEO, uStabilityTimeout);
+
+    importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
-    if (u->m_CryptoSecret.len)
+    if (u->m_config.CryptoSecret.len)
     {
-        string password((const char*)u->m_CryptoSecret.str, u->m_CryptoSecret.len);
+        string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
         m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), password.size()));
     }
 
-    IM(SRTO_KMREFRESHRATE, m_uKmRefreshRatePkt);
-    IM(SRTO_KMPREANNOUNCE, m_uKmPreAnnouncePkt);
+    IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
+    IM(SRTO_KMPREANNOUNCE, uKmPreAnnouncePkt);
 
     string cc = u->m_CongCtl.selected_name();
     if (cc != "live")
@@ -609,6 +616,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // are assigned to configurable items.
 
 #undef IM
+#undef IMF
 }
 
 bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
@@ -674,7 +682,7 @@ inline int fillValue(void* optval, int len, V value)
 
 static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 {
-    static const linger def_linger = {1, CUDT::DEF_LINGER_S};
+    static const linger def_linger = {1, CSrtConfig::DEF_LINGER_S};
     switch (optname)
     {
     default:
@@ -692,7 +700,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(16);
 
     case SRTO_MSS:
-        RD(CUDT::DEF_MSS);
+        RD(CSrtConfig::DEF_MSS);
 
     case SRTO_SNDSYN:
         RD(true);
@@ -701,18 +709,18 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     case SRTO_ISN:
         RD(SRT_SEQNO_NONE);
     case SRTO_FC:
-        RD(CUDT::DEF_FLIGHT_SIZE);
+        RD(CSrtConfig::DEF_FLIGHT_SIZE);
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue((pw_optval), w_optlen, CUDT::DEF_BUFFER_SIZE * (CUDT::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
         break;
 
     case SRTO_LINGER:
         RD(def_linger);
     case SRTO_UDP_SNDBUF:
     case SRTO_UDP_RCVBUF:
-        RD(CUDT::DEF_UDP_BUFFER_SIZE);
+        RD(CSrtConfig::DEF_UDP_BUFFER_SIZE);
     case SRTO_RENDEZVOUS:
         RD(false);
     case SRTO_SNDTIMEO:
@@ -1231,6 +1239,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     vector<Sendstate> sendstates;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
     {
@@ -2370,21 +2380,22 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // by "more correct data" if found more appropriate later. But we have to
                 // copy these data anyway anywhere, even if they need to fall on the floor later.
                 int stat;
+                char extrabuf[SRT_LIVE_MAX_PLSIZE];
+                char* msgbuf = NULL;
                 if (output_size)
                 {
-                    // We have already the data, so this must fall on the floor
-                    char lostbuf[SRT_LIVE_MAX_PLSIZE];
-                    stat = ps->core().receiveMessage((lostbuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
+                    // We already have the target data in `buf`. Now reading extra data potentially redundant (to be ignored)
+                    // or AHEAD (to be buffered internally by the group)
+                    msgbuf = extrabuf;
+                    stat = ps->core().receiveMessage((extrabuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
-                          log << "group/recv: @" << id << " IGNORED data with %" << mctrl.pktseq << " #" << mctrl.msgno
-                              << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(lostbuf, stat)));
-                    if (stat > 0)
-                    {
-                        m_stats.recvDiscard.Update(stat);
-                    }
+                          log << "group/recv: @" << id << " EXTRACTED EXTRA data with %" << mctrl.pktseq
+                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(extrabuf, stat))
+                              << (CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo) > 1 ? " - TO STORE" : " - TO IGNORE"));
                 }
                 else
                 {
+                    msgbuf = buf;
                     stat = ps->core().receiveMessage((buf), len, (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " EXTRACTED data with %" << mctrl.pktseq << " #"
@@ -2449,7 +2460,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
                                   << " BEHIND base=%" << m_RcvBaseSeqNo << " - discarding");
                         // The sequence is recorded, the packet has to be discarded.
-                        // That's all.
+                        m_stats.recvDiscard.Update(stat);
                         continue;
                     }
 
@@ -2462,7 +2473,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                         HLOGC(grlog.Debug,
                               log << "@" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno << " AHEAD base=%"
                                   << m_RcvBaseSeqNo);
-                        p->packet.assign(buf, buf + stat);
+                        p->packet.assign(msgbuf, msgbuf + stat);
                         p->mctrl = mctrl;
                         break; // Don't read from that socket anymore.
                     }
@@ -2640,6 +2651,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (jump > 0)
                 {
                     m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
+                    LOGC(grlog.Warn,
+                         log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
+                             << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
                 }
 
                 m_RcvBaseSeqNo    = slowest_kangaroo->second.mctrl.pktseq;
@@ -2708,8 +2722,8 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         {
             // The very next packet. Return it.
             HLOGC(grlog.Debug,
-                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq << "#"
-                      << a.mctrl.msgno << " from @" << i->first << ")");
+                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
+                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
             out = &a;
         }
         else if (seqdiff < 1 && !a.packet.empty())
@@ -2975,6 +2989,111 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     }
 }
 
+#if SRT_DEBUG_BONDING_STATES
+class StabilityTracer
+{
+public:
+    StabilityTracer()
+    {
+    }
+
+    ~StabilityTracer()
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint32_t activation_period_us,
+               int64_t stability_tmo_us, const std::string& state, uint16_t weight)
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        create_file();
+        
+        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << u.id() << ",";
+        m_fout << weight << ",";
+        m_fout << u.peerLatency_us() << ",";
+        m_fout << u.RTT() << ",";
+        m_fout << u.RTTVar() << ",";
+        m_fout << stability_tmo_us << ",";
+        m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
+        m_fout << state << ",";
+        m_fout << (srt::sync::is_zero(u.freshActivationStart()) ? -1 : (count_microseconds(currtime - u.freshActivationStart()))) << ",";
+        m_fout << activation_period_us << "\n";
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        //srt::sync::ScopedLock lck(m_mtx);
+        m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation,usActivationPeriod\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout)
+            return;
+
+        std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos) {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "stability_trace_" + str_tnow + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex m_mtx;
+    std::ofstream m_fout;
+};
+
+StabilityTracer s_stab_trace;
+#endif
+
+/// TODO: Remove 'weight' parameter? Only needed for logging.
+/// @retval  1 - link is identified as stable
+/// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
+/// @retval -1 - link is identified as unstable
+static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight ATR_UNUSED)
+{
+    const uint32_t latency_us = u.peerLatency_us();
+    const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
+    const int64_t initial_stabtout_us  = max<int64_t>(min_stability_us, latency_us);
+    const int64_t activation_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
+
+    // RTT and RTTVar values are still being refined during activation period,
+    // therefore the dymanic timeout should not be used in activation phase.
+    const bool is_activation_phase = !is_zero(u.freshActivationStart())
+        && (count_microseconds(currtime - u.freshActivationStart()) <= activation_period_us);
+
+    const int64_t stability_tout_us = is_activation_phase
+        ? initial_stabtout_us // activation phase
+        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.RTT() + 4 * u.RTTVar()), latency_us);
+    
+    const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
+    const steady_clock::duration td_response = currtime - last_rsp;
+    if (count_microseconds(td_response) > stability_tout_us)
+    {
+#if SRT_DEBUG_BONDING_STATES
+        s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION-UNSTABLE" : "UNSTABLE", weight);
+#endif
+        return -1;
+    }
+
+    // u.lastRspTime() > currtime is alwats true due to the very first check above in this function
+#if SRT_DEBUG_BONDING_STATES
+    s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION" : "STABLE", weight);
+#endif
+    return is_activation_phase ? 0 : 1;
+}
+
+
 // [[using locked(this->m_GroupLock)]]
 bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point currtime)
 {
@@ -2991,8 +3110,6 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
     // negative value is relatively easy, while introducing a mutex would only add a
     // deadlock risk and performance degradation.
 
-    bool is_stable = true;
-
     HLOGC(gslog.Debug,
           log << "grp/sendBackup: CHECK STABLE: @" << d->id
               << ": TIMEDIFF {response= " << FormatDuration<DUNIT_MS>(currtime - u.m_tsLastRspTime)
@@ -3002,89 +3119,33 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
               << (!is_zero(u.m_tsUnstableSince) ? FormatDuration<DUNIT_MS>(currtime - u.m_tsUnstableSince) : "NEVER")
               << "}");
 
-    if (currtime > u.m_tsLastRspTime)
+    const int is_stable = sendBackup_CheckRunningLinkStable(u, currtime, d->weight);
+
+    if (is_stable >= 0)
     {
-        // The last response predates the start of this function, look at the difference
-        const steady_clock::duration td_responsive = currtime - u.m_tsLastRspTime;
-        bool check_stability = true;
-
-        if (!is_zero(u.m_tsFreshActivation) && u.m_tsFreshActivation < currtime)
-        {
-            // The link is temporary-activated. Calculate then since the activation time.
-
-            // Check the last received ACK time first. This time is initialized with 'now'
-            // at the CUDT::open call, so you can't count on the trap zero time here, but
-            // it's still possible to check if activation time predates the ACK time. Things
-            // are here in the following possible order:
-            //
-            // - ACK time (old because defined at open)
-            // - Response time (old because the time of received handshake or keepalive counts)
-            // ... long time nothing ...
-            // - Activation time.
-            //
-            // If we have this situation, we have to wait for at least one ACK that is
-            // newer than activation time. However, if in this situation we have a fresh
-            // response, that is:
-            //
-            // - ACK time
-            // ...
-            // - Activation time
-            // - Response time (because a Keepalive had a caprice to come accidentally after sending)
-            //
-            // We still wait for a situation that there's at least one ACK that is newer than activation.
-
-            // As we DO have activation time, we need to check if there's at least
-            // one ACK newer than activation, that is, td_acked < td_active
-            if (u.m_tsLastRspAckTime < u.m_tsFreshActivation)
-            {
-                check_stability = false;
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: link @" << d->id
-                          << " activated after ACK, "
-                             "not checking for stability");
-            }
-            else
-            {
-                u.m_tsFreshActivation = steady_clock::time_point();
-            }
-        }
-
-        if (check_stability && count_microseconds(td_responsive) > m_uOPT_StabilityTimeout)
-        {
-            if (is_zero(u.m_tsUnstableSince))
-            {
-                HLOGC(gslog.Debug,
-                      log << "grp/sendBackup: socket NEW UNSTABLE: @" << d->id << " last heard "
-                          << FormatDuration(td_responsive) << " > " << m_uOPT_StabilityTimeout
-                          << " (stability timeout)");
-                // The link seems to have missed two ACKs already.
-                // Qualify this link as unstable
-                // Notify that it has been seen so since now
-                u.m_tsUnstableSince = currtime;
-            }
-
-            is_stable = false;
-        }
-    }
-
-    if (is_stable)
-    {
-        // If stability is ok, but unstable-since was set before, reset it.
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link STABLE: @" << d->id
                   << (!is_zero(u.m_tsUnstableSince) ? " - RESTORED" : " - CONTINUED")
                   << ", state RUNNING - will send a payload");
 
         u.m_tsUnstableSince = steady_clock::time_point();
+
+        // For some cases
+        if (is_stable > 0)
+            u.m_tsFreshActivation = steady_clock::time_point();
     }
     else
     {
         HLOGC(gslog.Debug,
               log << "grp/sendBackup: link UNSTABLE for " << FormatDuration(currtime - u.m_tsUnstableSince) << " : @"
                   << d->id << " - will send a payload");
+        if (is_zero(u.m_tsUnstableSince))
+        {
+            u.m_tsUnstableSince = currtime;
+        }
     }
 
-    return is_stable;
+    return is_stable >= 0;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -3806,13 +3867,10 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(vector<gli_t>& w_parallel)
             continue;
         }
         CUDT&                  ce = d->ps->core();
-        steady_clock::duration td(0);
-        if (!is_zero(ce.m_tsFreshActivation) &&
-            count_microseconds(td = currtime - ce.m_tsFreshActivation) < ce.m_uOPT_StabilityTimeout)
+        if (!is_zero(ce.m_tsFreshActivation) && sendBackup_CheckRunningLinkStable(ce, currtime, d->weight) != 1)
         {
             HLOGC(gslog.Debug,
-                  log << "... not silencing @" << d->id << ": too early: " << FormatDuration(td) << " < "
-                      << ce.m_uOPT_StabilityTimeout << "(stability timeout)");
+                    log << "... not silencing @" << d->id << ": too early");
             continue;
         }
 
@@ -3912,6 +3970,8 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // Maximum weight of active links.
     uint16_t maxActiveWeight = 0;
+    if (w_mc.srctime == 0)
+        w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
     // We believe that we need to send the payload over every activeLinks link anyway.
     for (vector<gli_t>::iterator snd = activeLinks.begin(); snd != activeLinks.end(); ++snd)
@@ -4095,6 +4155,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
+
+    // At least one link has succeeded, update sending stats.
+    m_stats.sent.Update(len);
 
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.

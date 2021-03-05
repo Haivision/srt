@@ -449,7 +449,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             }
             Verb() << "Sending buffer still: bytes=" << bytes << " blocks="
                 << blocks;
-            this_thread::sleep_for(chrono::milliseconds(250));
+            srt::sync::this_thread::sleep_for(srt::sync::milliseconds_from(250));
         }
     }
 

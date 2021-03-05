@@ -21,6 +21,7 @@ queue.cpp
 congctl.cpp
 srt_c_api.cpp
 window.cpp
+socketconfig.cpp
 srt_compat.c
 strerror_defs.cpp
 sync.cpp
@@ -64,6 +65,7 @@ packet.h
 sync.h
 queue.h
 congctl.h
+socketconfig.h
 srt_compat.h
 threadname.h
 utilities.h

@@ -1024,7 +1024,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 
             // This queue is used only in case of Async mode (rendezvous or caller-listener).
             // Synchronous connection requests are handled in startConnect() completely.
-            if (!i->m_pUDT->m_bSynRecving)
+            if (!i->m_pUDT->m_config.bSynRecving)
             {
                 IF_HEAVY_LOGGING(++debug_nupd);
 
@@ -1536,7 +1536,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
 
     // asynchronous connect: call connect here
     // otherwise wait for the UDT socket to retrieve this packet
-    if (!u->m_bSynRecving)
+    if (!u->m_config.bSynRecving)
     {
         HLOGC(cnlog.Debug, log << "AsyncOrRND: packet RESOLVED TO @" << id << " -- continuing as ASYNC CONNECT");
         // This is practically same as processConnectResponse, just this applies

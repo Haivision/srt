@@ -49,7 +49,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     out << setfill('0') << setw(2) << hours << ":"
         << setfill('0') << setw(2) << minutes << ":"
         << setfill('0') << setw(2) << seconds << "."
-        << setfill('0') << setw(decimals) << timestamp.time_since_epoch().count() << " [STDY]";
+        << setfill('0') << setw(decimals) << (timestamp - seconds_from(total_sec)).time_since_epoch().count() << " [STDY]";
     return out.str();
 }
 

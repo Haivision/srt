@@ -15,6 +15,7 @@
 //#define ENABLE_CXX17
 
 #include <cstdlib>
+#include <limits>
 #ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
@@ -178,21 +179,8 @@ public: // Assignment operators
     inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
-#if HAVE_FULL_CXX11
     static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(numeric_limits<uint64_t>::min()); }
     static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(numeric_limits<uint64_t>::max()); }
-#else
-#ifndef UINT64_MAX
-#define UNDEF_UINT64_MAX
-#define UINT64_MAX 0xffffffffffffffffULL
-#endif
-    static inline TimePoint min() { return TimePoint(0); }
-    static inline TimePoint max() { return TimePoint(UINT64_MAX); }
-
-#ifdef UNDEF_UINT64_MAX
-#undef UINT64_MAX
-#endif
-#endif
 
 public:
     Duration<Clock> time_since_epoch() const;
