@@ -151,8 +151,11 @@ void srt::sync::CEvent::lock_wait()
     return wait(lock);
 }
 
+// This function requires the unlockable scoped lock
+// that is the same as the builtin lock.
 void srt::sync::CEvent::wait(UniqueLock& lock)
 {
+    SRT_ASSERT(lock.mutex() == &m_lock);
     return m_cond.wait(lock);
 }
 

@@ -574,6 +574,9 @@ public:
 
     void notify_all();
 
+    void lock_notify_one() { CSync::lock_signal(m_cond, m_lock); }
+    void lock_notify_all() { CSync::lock_broadcast(m_cond, m_lock); }
+
 private:
     Mutex      m_lock;
     Condition  m_cond;

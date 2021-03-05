@@ -1633,7 +1633,6 @@ bool CUDT::createSrtHandshake(
     if (have_group)
     {
         // NOTE: See information about mutex ordering in api.h
-        ScopedLock grd (m_parent->m_ControlLock); // Required to make sure 
         ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
         if (!m_parent->m_GroupOf)
         {
@@ -5627,8 +5626,9 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-// [[using maybe_locked(m_GlobControlLock, if called from GC)]]
-bool CUDT::closeInternal()
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool CUDT::closeInternal() ATR_NOEXCEPT
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -8614,7 +8614,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
     return 0;
 }
 
-std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
+std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet) ATR_NOEXCEPT
 {
     int payload = 0;
     bool probe = false;

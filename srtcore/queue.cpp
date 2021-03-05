@@ -253,14 +253,11 @@ void CUnitQueue::makeUnitGood(CUnit *unit)
     ++m_iCount;
 }
 
-CSndUList::CSndUList()
+CSndUList::CSndUList(srt::sync::CTimer* pTimer)
     : m_pHeap(NULL)
     , m_iArrayLength(512)
     , m_iLastEntry(-1)
-    , m_ListLock()
-    , m_pWindowLock(NULL)
-    , m_pWindowCond(NULL)
-    , m_pTimer(NULL)
+    , m_pTimer(pTimer)
 {
     m_pHeap = new CSNode *[m_iArrayLength];
 }
@@ -272,7 +269,7 @@ CSndUList::~CSndUList()
 
 void CSndUList::update(const CUDT* u, EReschedule reschedule)
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard (m_ListEv.mutex());
 
     CSNode* n = u->m_pSNode;
 
@@ -298,7 +295,7 @@ void CSndUList::update(const CUDT* u, EReschedule reschedule)
 
 int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard (m_ListEv.mutex());
 
     if (-1 == m_iLastEntry)
         return -1;
@@ -321,8 +318,22 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     if (!u->m_bConnected || u->m_bBroken)
         return -1;
 
+    // XXX This likely should be exempted from lock on m_ListLock,
+    // as inside it makes a lock on m_ConnectionLock. This shouldn't be
+    // dangerous in general, as when the Broken flag is not set, this
+    // thread has at least 1 second to finish the job before u is potentially
+    // deleted. This "time-defined" problem should be eliminated through
+    // another fix. Worth noting is that m_ListLock also doesn't currently
+    // prevent the socket from a premature deletion.
+    //
+    // Reports: P04-1.08, P04-1.29, P04-2.03, P04-2.28, P04-2.49,
+    //          P04-2.53, P04-2.54, P04-2.56
+
     // pack a packet from the socket
+    leaveCS(m_ListEv.mutex());
     const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
+    enterCS(m_ListEv.mutex());
+
 
     if (res_time.first <= 0)
         return -1;
@@ -339,14 +350,14 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 
 void CSndUList::remove(const CUDT *u)
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard (m_ListEv.mutex());
 
     remove_(u);
 }
 
 steady_clock::time_point CSndUList::getNextProcTime()
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard (m_ListEv.mutex());
 
     if (-1 == m_iLastEntry)
         return steady_clock::time_point();
@@ -354,6 +365,7 @@ steady_clock::time_point CSndUList::getNextProcTime()
     return m_pHeap[0]->m_tsTimeStamp;
 }
 
+// [[using locked m_ListEv.mutex()]
 void CSndUList::realloc_()
 {
     CSNode **temp = NULL;
@@ -373,6 +385,7 @@ void CSndUList::realloc_()
     m_pHeap = temp;
 }
 
+// [[using locked m_ListEv.mutex()]
 void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 {
     // increase the heap array size if necessary
@@ -382,6 +395,7 @@ void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
     insert_norealloc_(ts, u);
 }
 
+// [[using locked m_ListEv.mutex()]
 void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
 {
     CSNode *n = u->m_pSNode;
@@ -418,7 +432,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
     {
-        CSync::lock_signal(*m_pWindowCond, *m_pWindowLock);
+        m_ListEv.notify_one();
     }
 }
 
@@ -466,10 +480,8 @@ CSndQueue::CSndQueue()
     : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_WindowCond()
     , m_bClosing(false)
 {
-    setupCond(m_WindowCond, "Window");
 }
 
 CSndQueue::~CSndQueue()
@@ -481,14 +493,13 @@ CSndQueue::~CSndQueue()
         m_pTimer->interrupt();
     }
 
-    CSync::lock_signal(m_WindowCond, m_WindowLock);
+    m_pSndUList->signal();
 
     if (m_WorkerThread.joinable())
     {
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-    releaseCond(m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -501,10 +512,7 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 {
     m_pChannel                 = c;
     m_pTimer                   = t;
-    m_pSndUList                = new CSndUList;
-    m_pSndUList->m_pWindowLock = &m_WindowLock;
-    m_pSndUList->m_pWindowCond = &m_WindowCond;
-    m_pSndUList->m_pTimer      = m_pTimer;
+    m_pSndUList                = new CSndUList(m_pTimer);
 
 #if ENABLE_LOGGING
     ++m_counter;
@@ -555,14 +563,14 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            UniqueLock windlock (self->m_WindowLock);
-            CSync windsync  (self->m_WindowCond, windlock);
+            UniqueLock windlock (self->m_pSndUList->mutex());
 
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
-            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
+            // NOTE: CSndUList::empty_LOCKED requires lock on CSndUList::mutex()
+            if (!self->m_bClosing && self->m_pSndUList->empty_LOCKED())
             {
-                windsync.wait();
+                self->m_pSndUList->wait(windlock);
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
                 self->m_WorkerStats.lCondWait++;
