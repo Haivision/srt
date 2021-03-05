@@ -321,8 +321,22 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     if (!u->m_bConnected || u->m_bBroken)
         return -1;
 
+    // XXX This likely should be exempted from lock on m_ListLock,
+    // as inside it makes a lock on m_ConnectionLock. This shouldn't be
+    // dangerous in general, as when the Broken flag is not set, this
+    // thread has at least 1 second to finish the job before u is potentially
+    // deleted. This "time-defined" problem should be eliminated through
+    // another fix. Worth noting is that m_ListLock also doesn't currently
+    // prevent the socket from a premature deletion.
+    //
+    // Reports: P04-1.08, P04-1.29, P04-2.03, P04-2.28, P04-2.49,
+    //          P04-2.53, P04-2.54, P04-2.56
+
     // pack a packet from the socket
+    leaveCS(m_ListLock);
     const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
+    enterCS(m_ListLock);
+
 
     if (res_time.first <= 0)
         return -1;

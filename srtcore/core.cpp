@@ -913,6 +913,20 @@ void CUDT::setListenState()
     if (m_bListening)
         return;
 
+    // XXX likely the setListener() should be exempted
+    // from m_ConnectionLock because the already sanctioned order
+    // is m_LSLock, then m_ConnectionLock, while this below call
+    // locks m_LSLock.
+    //
+    // Likely LSLock guards only the m_pListener field, so
+    // m_ConnectionLock might not be required. Otherwise the
+    // m_ConnectionLock, if required, must be also applied again
+    // in setListener, or these functions should be merged into
+    // one again and m_LSLock should be acquired first.
+    //
+    // Reports: P04-2.27, P04-2.55, P04-2.60
+
+
     // if there is already another socket listening on the same port
     if (m_pRcvQueue->setListener(this) < 0)
         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
@@ -5627,8 +5641,9 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-// [[using maybe_locked(m_GlobControlLock, if called from GC)]]
-bool CUDT::closeInternal()
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool CUDT::closeInternal() ATR_NOEXCEPT
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -8614,7 +8629,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
     return 0;
 }
 
-std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
+std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet) ATR_NOEXCEPT
 {
     int payload = 0;
     bool probe = false;
