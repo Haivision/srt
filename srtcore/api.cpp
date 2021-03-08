@@ -1605,11 +1605,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 break;
             }
 
-            if (was_empty)
-            {
-                g.syncWithSocket(ns->core(), HSD_INITIATOR);
-            }
-
             HLOGC(aclog.Debug, log << "groupConnect: @" << sid << " connection successful, setting group OPEN (was "
                     << (g.m_bOpened ? "ALREADY" : "NOT") << "), will " << (block_new_opened ? "" : "NOT ")
                     << "block the connect call, status:" << SockStatusStr(st));
@@ -1911,6 +1906,12 @@ void CUDTUnited::deleteGroup(CUDTGroup* g)
     using srt_logging::gmlog;
 
     srt::sync::ScopedLock cg (m_GlobControlLock);
+    return deleteGroup_LOCKED(g);
+}
+
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
+{
     SRT_ASSERT(g->groupEmpty());
 
     // After that the group is no longer findable by GroupKeeper
