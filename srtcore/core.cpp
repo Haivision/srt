@@ -6006,11 +6006,12 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             // from the API call directly. This should be extra verified, if that
             // changes in the future.
             //
-            // What's important is that the lock on GroupLock cannot be applied
-            // here, both because it might be applied already, and because the
-            // locks on the later lock ordered mutexes are already set.
             if (m_parent->m_GroupOf)
             {
+                // What's important is that the lock on GroupLock cannot be applied
+                // here, both because it might be applied already, that is, according
+                // to the condition defined at this function's header, it is applied
+                // under this condition. Hence ackMessage can be defined as 100% locked.
                 m_parent->m_GroupOf->ackMessage(first_msgno);
             }
 #endif
@@ -7728,6 +7729,14 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         if (m_parent->m_GroupOf)
         {
             HLOGC(xtlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+
+            // Guard access to m_iSndAckedMsgNo field
+            // Note: This can't be done inside CUDTGroup::ackMessage
+            // because this function is also called from CUDT::checkNeedDrop
+            // called from CUDT::sendmsg2 called from CUDTGroup::send, which
+            // applies the lock on m_GroupLock already.
+            ScopedLock glk (*m_parent->m_GroupOf->exp_groupLock());
+
             // NOTE: ackMessage also accepts and ignores the trap representation
             // which is SRT_MSGNO_CONTROL.
             m_parent->m_GroupOf->ackMessage(msgno_at_last_acked_seq);

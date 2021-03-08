@@ -4216,6 +4216,7 @@ int32_t CUDTGroup::addMessageToBuffer(const char* buf, size_t len, SRT_MSGCTRL& 
         // Very first packet, just set the msgno.
         m_iSndAckedMsgNo  = w_mc.msgno;
         m_iSndOldestMsgNo = w_mc.msgno;
+        HLOGC(gslog.Debug, log << "addMessageToBuffer: initial message no #" << w_mc.msgno);
     }
     else if (m_iSndOldestMsgNo != m_iSndAckedMsgNo)
     {
@@ -4241,6 +4242,8 @@ int32_t CUDTGroup::addMessageToBuffer(const char* buf, size_t len, SRT_MSGCTRL& 
 
         // Position at offset is not included
         m_iSndOldestMsgNo = m_iSndAckedMsgNo;
+        HLOGC(gslog.Debug,
+              log << "addMessageToBuffer: ... after: oldest #" << m_iSndOldestMsgNo);
     }
 
     m_SenderBuffer.resize(m_SenderBuffer.size() + 1);
@@ -4338,6 +4341,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     return stat;
 }
 
+// [[using locked(CUDTGroup::m_GroupLock)]];
 void CUDTGroup::ackMessage(int32_t msgno)
 {
     // The message id could not be identified, skip.
