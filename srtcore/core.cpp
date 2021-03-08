@@ -7728,7 +7728,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         ScopedLock glock (s_UDTUnited.m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
-            HLOGC(xtlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+            HLOGC(inlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
 
             // Guard access to m_iSndAckedMsgNo field
             // Note: This can't be done inside CUDTGroup::ackMessage
