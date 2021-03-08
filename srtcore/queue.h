@@ -54,7 +54,6 @@ modified by
 #ifndef INC_SRT_QUEUE_H
 #define INC_SRT_QUEUE_H
 
-#include "channel.h"
 #include "common.h"
 #include "packet.h"
 #include "socketconfig.h"
@@ -66,6 +65,7 @@ modified by
 #include <vector>
 
 class CUDT;
+class CChannel;
 
 struct CUnit
 {
@@ -393,8 +393,8 @@ public:
    bool getBind(char* dst, size_t len) const;
 #endif
 
-   int ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
-   int sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
+   int ioctlQuery(int type) const;
+   int sockoptQuery(int level, int type) const;
 
    void setClosing()
    {

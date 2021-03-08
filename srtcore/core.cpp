@@ -2648,6 +2648,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 
                 if (!checkApplyFilterConfig(fltcfg))
                 {
+                    m_RejectReason = SRT_REJ_FILTER;
                     LOGC(cnlog.Error, log << "PEER'S FILTER CONFIG [" << fltcfg << "] has been rejected");
                     return false;
                 }
@@ -2755,7 +2756,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 bool CUDT::checkApplyFilterConfig(const std::string &confstr)
 {
     SrtFilterConfig cfg;
-    if (!ParseFilterConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, (cfg)))
         return false;
 
     // Now extract the type, if present, and
@@ -2775,7 +2776,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         }
 
         SrtFilterConfig mycfg;
-        if (!ParseFilterConfig(thisconf, mycfg))
+        if (!ParseFilterConfig(thisconf, (mycfg)))
             return false;
 
         // Check only if both have set a filter of the same type.
@@ -2795,12 +2796,8 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         }
         else
         {
-            // On a listener, only apply those that you haven't set
-            for (map<string, string>::iterator x = cfg.parameters.begin(); x != cfg.parameters.end(); ++x)
-            {
-                if (!mycfg.parameters.count(x->first))
-                    mycfg.parameters[x->first] = x->second;
-            }
+            if (!CheckFilterCompat((mycfg), cfg))
+                return false;
         }
 
         HLOGC(cnlog.Debug,
@@ -5495,10 +5492,20 @@ SRT_REJECT_REASON CUDT::setupCC()
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
         HLOGC(pflog.Debug, log << "filter: Configuring: " << m_config.sPacketFilterConfig.c_str());
-        if (!m_PacketFilter.configure(this, &(m_pRcvQueue->m_UnitQueue), m_config.sPacketFilterConfig.str()))
+        bool status = true;
+        try
         {
-            return SRT_REJ_FILTER;
+            // The filter configurer is build the way that allows to quit immediately
+            // exit by exception, but the exception is meant for the filter only.
+            status = m_PacketFilter.configure(this, &(m_pRcvQueue->m_UnitQueue), m_config.sPacketFilterConfig.str());
         }
+        catch (CUDTException& )
+        {
+            status = false;
+        }
+
+        if (!status)
+            return SRT_REJ_FILTER;
 
         m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }

@@ -16,32 +16,40 @@
 #include <string>
 
 #include "packet.h"
-#include "queue.h"
 #include "utilities.h"
 #include "packetfilter_api.h"
+
+class CUnitQueue;
+class CUnit;
+class CUDT;
 
 class PacketFilter
 {
     friend class SrtPacketFilterBase;
 
 public:
-
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
 
     typedef SrtPacketFilterBase* filter_create_t(const SrtFilterInitializer& init, std::vector<SrtPacket>&, const std::string& config);
 
-private:
-    friend bool ParseFilterConfig(std::string s, SrtFilterConfig& out);
     class Factory
     {
     public:
         virtual SrtPacketFilterBase* Create(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr) = 0;
 
         // Characteristic data
-        virtual size_t ExtraSize() = 0;
+        virtual size_t ExtraSize() const = 0;
 
+        // Represent default parameters. This is for completing and comparing
+        // filter configurations from both parties. Possible values to return:
+        // - an empty string (all parameters are mandatory)
+        // - a form of: "<filter-name>,<param1>:<value1>,..."
+        virtual std::string defaultConfig() const = 0;
+        virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const = 0;
         virtual ~Factory();
     };
+private:
+    friend bool ParseFilterConfig(std::string s, SrtFilterConfig& out, PacketFilter::Factory** ppf);
 
     template <class Target>
     class Creator: public Factory
@@ -52,7 +60,12 @@ private:
         { return new Target(init, provided, confstr); }
 
         // Import the extra size data
-        virtual size_t ExtraSize() ATR_OVERRIDE { return Target::EXTRA_SIZE; }
+        virtual size_t ExtraSize() const ATR_OVERRIDE { return Target::EXTRA_SIZE; }
+        virtual std::string defaultConfig() const ATR_OVERRIDE { return Target::defaultConfig; }
+        virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const ATR_OVERRIDE
+        {
+            return Target::verifyConfig(config, (w_errormsg));
+        }
 
     public:
         Creator() {}
@@ -192,6 +205,7 @@ protected:
     std::vector<SrtPacket> m_provided;
 };
 
+bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer);
 
 inline void PacketFilter::feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
 inline SRT_ARQLevel PacketFilter::arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }

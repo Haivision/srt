@@ -719,16 +719,19 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         bool blocking_snd = false, blocking_rcv = false;
         int dropdelay = 0;
         int size_int = sizeof (int), size_int64 = sizeof (int64_t), size_bool = sizeof (bool);
+        char packetfilter[100] = "";
+        int packetfilter_size = 100;
 
         srt_getsockflag(m_sock, SRTO_MAXBW, &bandwidth, &size_int64);
         srt_getsockflag(m_sock, SRTO_RCVLATENCY, &latency, &size_int);
         srt_getsockflag(m_sock, SRTO_RCVSYN, &blocking_rcv, &size_bool);
         srt_getsockflag(m_sock, SRTO_SNDSYN, &blocking_snd, &size_bool);
         srt_getsockflag(m_sock, SRTO_SNDDROPDELAY, &dropdelay, &size_int);
+        srt_getsockflag(m_sock, SRTO_PACKETFILTER, (packetfilter), (&packetfilter_size));
 
         Verb() << "OPTIONS: maxbw=" << bandwidth << " rcvlatency=" << latency << boolalpha
             << " blocking{rcv=" << blocking_rcv << " snd=" << blocking_snd
-            << "} snddropdelay=" << dropdelay;
+            << "} snddropdelay=" << dropdelay << " packetfilter=" << packetfilter;
     }
 
     if (!m_blocking_mode)

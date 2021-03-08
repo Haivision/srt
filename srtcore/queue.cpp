@@ -493,6 +493,9 @@ CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
+int CSndQueue::ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
+int CSndQueue::sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
+
 #if ENABLE_LOGGING
     int CSndQueue::m_counter = 0;
 #endif
