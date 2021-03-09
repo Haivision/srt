@@ -808,6 +808,12 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
     return 0;
 }
 
+bool CEPoll::empty(CEPollDesc& d)
+{
+    ScopedLock lg (m_EPollLock);
+    return d.watch_empty();
+}
+
 int CEPoll::release(const int eid)
 {
    ScopedLock pg(m_EPollLock);

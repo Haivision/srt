@@ -42,13 +42,14 @@ general syntax:
 ```
 The parts of this syntax are separated by commas. The first part is the name of 
 the filter. This is followed by one or more key:value pairs, the interpretation 
-of which depends on the filter type.
+of which depends on the filter type. Note that all keys and values are
+case-sensitive.
 
 You can try this out using the `SRTO_PACKETFILTER` option, or the
 `packetfilter` parameter in an SRT URI in the applications.
 
 The packet filter framework is open for extensions so that users may register
-their own filters. SRT provides also one builtin filter named "fec". This
+their own filters. SRT provides also one built-in filter named "fec". This
 filter implements the FEC mechanism, as described in SMPTE 2022-1-2007.
 
 ![SRT packet filter mechanism](/docs/images/packet-filter-mechanism.png)
@@ -56,7 +57,7 @@ filter implements the FEC mechanism, as described in SMPTE 2022-1-2007.
 On the input side, filtering occurs at the moment when a packet is extracted 
 from the send buffer. A filter may then do two things:
 
-* alter the packet before inserting it into the SRT channel (the builtin "fec"
+* alter the packet before inserting it into the SRT channel (the built-in "fec"
   filter doesn't do it, though)
 
 * insert another packet (such as an FEC control packet) into the channel ahead
