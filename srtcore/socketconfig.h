@@ -61,6 +61,7 @@ written by
 #include "packet.h"
 #include "handshake.h"
 #include "logger_defs.h"
+#include "packetfilter.h"
 
 // SRT Version constants
 #define SRT_VERSION_UNK     0
@@ -1068,12 +1069,19 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
-        if (!ParseFilterConfig(arg, fc))
+        PacketFilter::Factory* fax = 0;
+        if (!ParseFilterConfig(arg, (fc), (&fax)))
         {
             LOGC(aclog.Error,
-                    log << "SRTO_FILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "
+                    log << "SRTO_PACKETFILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "
                     "FILTERTYPE ("
                     << fc.type << ") must be installed (or builtin)");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+        std::string error;
+        if (!fax->verifyConfig(fc, (error)))
+        {
+            LOGC(aclog.Error, log << "SRTO_PACKETFILTER: Incorrect config: " << error);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 

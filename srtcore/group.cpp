@@ -1387,7 +1387,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // at the connecting stage.
         CEPoll::fmap_t sready;
 
-        if (m_SndEpolld->watch_empty())
+        if (m_pGlobal->m_EPoll.empty(*m_SndEpolld))
         {
             // Sanity check - weird pending reported.
             LOGC(gslog.Error,
@@ -3486,7 +3486,7 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets
     // at the connecting stage.
     CEPoll::fmap_t sready;
 
-    if (m_SndEpolld->watch_empty())
+    if (m_pGlobal->m_EPoll.empty(*m_SndEpolld))
     {
         // Sanity check - weird pending reported.
         LOGC(gslog.Error, log << "grp/send*: IPE: reported pending sockets, but EID is empty - wiping pending!");
@@ -3494,10 +3494,6 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets
     }
     else
     {
-        // Some sockets could have been closed in the meantime.
-        if (m_SndEpolld->watch_empty())
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
         {
             InvertedLock ug(m_GroupLock);
             m_pGlobal->m_EPoll.swait(
@@ -3509,6 +3505,11 @@ void CUDTGroup::send_CheckPendingSockets(const vector<SRTSOCKET>& pendingSockets
             HLOGC(gslog.Debug, log << "grp/send...: GROUP CLOSED, ABANDONING");
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
+
+        // Some sockets could have been closed in the meantime.
+        if (m_pGlobal->m_EPoll.empty(*m_SndEpolld))
+            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
 
         HLOGC(gslog.Debug, log << "grp/send*: RDY: " << DisplayEpollResults(sready));
 
@@ -3633,7 +3634,7 @@ void CUDTGroup::sendBackup_RetryWaitBlocked(const vector<gli_t>& unstableLinks,
     m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
     m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
 
-    if (m_SndEpolld->watch_empty())
+    if (m_pGlobal->m_EPoll.empty(*m_SndEpolld))
     {
         // wipeme wiped, pending sockets checked, it can only mean that
         // all sockets are broken.
@@ -3669,7 +3670,7 @@ void CUDTGroup::sendBackup_RetryWaitBlocked(const vector<gli_t>& unstableLinks,
 RetryWaitBlocked:
     {
         // Some sockets could have been closed in the meantime.
-        if (m_SndEpolld->watch_empty())
+        if (m_pGlobal->m_EPoll.empty(*m_SndEpolld))
         {
             HLOGC(gslog.Debug, log << "grp/sendBackup: no more sockets available for sending - group broken");
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);

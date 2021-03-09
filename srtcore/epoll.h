@@ -60,7 +60,7 @@ modified by
 #include "udt.h"
 
 
-struct CEPollDesc
+class CEPollDesc
 {
    const int m_iID;                                // epoll ID
 
@@ -143,8 +143,6 @@ struct CEPollDesc
 std::string DisplayEpollWatch();
 #endif
 
-private:
-
    /// Sockets that are subscribed for events in this eid.
    ewatch_t m_USockWatchState;
 
@@ -159,7 +157,10 @@ private:
 
    enotice_t::iterator nullNotice() { return m_USockEventNotice.end(); }
 
-public:
+   // Only CEPoll class should have access to it.
+   // Guarding private access to the class is not necessary
+   // within the epoll module.
+   friend class CEPoll;
 
    CEPollDesc(int id, int localID)
        : m_iID(id)
@@ -422,6 +423,9 @@ public: // for CUDTUnited API
    /// @retval -1 error occurred
    /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
+
+   /// Empty subscription check - for internal use only.
+   bool empty(CEPollDesc& d);
 
    /// Reports which events are ready on the given socket.
    /// @param mp socket event map retirned by `swait`
