@@ -211,7 +211,6 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          | 1.5.0 | pre      | `int32_t` | ms      | 80            | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    | 1.5.0 |          | `int32_t` | enum    |               |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post     | `int64_t` | B/s     | 0             | 0..      | RW  | GSD   |
-| [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0             | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre-bind | `int32_t` |         | (system)      | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                            | 1.0.5 | pre-bind | `int32_t` | hops    | (system)      | 1..255   | RW  | GSD   |
 | [`SRTO_IPV6ONLY`](#SRTO_IPV6ONLY)                      | 1.4.0 | pre-bind | `int32_t` |         | (system)      | -1..1    | RW  | GSD   |
@@ -224,6 +223,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre      | `int32_t` | packets | 0             | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                            |       | post     | `int64_t` | B/s     | -1            | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre      | `bool`    |         | true          |          | W   | GSD   |
+| [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0             | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre      | `int32_t` | version | 0             | *        | W   | GSD   |
 | [`SRTO_MSS`](#SRTO_MSS)                                |       | pre      | `int32_t` | bytes   | 1500          | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre      | `bool`    |         |  *            |          | RW  | GSD+  |
@@ -524,7 +524,7 @@ and keep the default 25% value for `SRTO_OHEADBW`*.
 | `SRTO_MININPUTBW` | 1.4.3 | post     | `int64_t`  | B/s    | 0        | 0..    | RW  | GSD    |
 
 This option is effective only if both `SRTO_MAXBW` and `SRTO_INPUTBW` are set to 0.
-It controls the minimum allowed value of the input butrate estimate.
+It controls the minimum allowed value of the input bitrate estimate.
 
 See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 
