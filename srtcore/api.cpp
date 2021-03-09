@@ -432,7 +432,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
     return sockval;
 }
 
-SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
+SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps, SRTSOCKET forceid)
 {
    // XXX consider using some replacement of std::unique_ptr
    // so that exceptions will clean up the object without the
@@ -450,14 +450,25 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
-   try
+   if (forceid == SRT_INVALID_SOCK)
    {
-      ns->m_SocketID = generateSocketID();
+       try
+       {
+           ns->m_SocketID = generateSocketID();
+       }
+       catch (...)
+       {
+           delete ns;
+           throw;
+       }
    }
-   catch (...)
+   else
    {
-       delete ns;
-       throw;
+#if ENABLE_EXPERIMENTAL_BONDING
+       if (IsSet(forceid, SRTGROUP_MASK))
+           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
+       ns->m_SocketID = forceid;
    }
    ns->m_Status = SRTS_INIT;
    ns->m_ListenSocket = 0;
@@ -3107,14 +3118,14 @@ int CUDT::cleanup()
    return s_UDTUnited.cleanup();
 }
 
-SRTSOCKET CUDT::socket()
+SRTSOCKET CUDT::socket(SRTSOCKET forceid)
 {
    if (!s_UDTUnited.m_bGCStatus)
       s_UDTUnited.startup();
 
    try
    {
-      return s_UDTUnited.newSocket();
+      return s_UDTUnited.newSocket(NULL, forceid);
    }
    catch (const CUDTException& e)
    {
@@ -3151,15 +3162,15 @@ CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-CUDTGroup& CUDT::newGroup(const int type)
+CUDTGroup& CUDT::newGroup(const int type, const SRTSOCKET forceid)
 {
-    const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
+    const SRTSOCKET id = (forceid == SRT_INVALID_SOCK) ? s_UDTUnited.generateSocketID(true): forceid;
 
     // Now map the group
     return s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
-SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
+SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt, const SRTSOCKET forceid)
 {
     // Doing the same lazy-startup as with srt_create_socket()
     if (!s_UDTUnited.m_bGCStatus)
@@ -3168,7 +3179,7 @@ SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
     try
     {
         srt::sync::ScopedLock globlock (s_UDTUnited.m_GlobControlLock);
-        return newGroup(gt).id();
+        return newGroup(gt, forceid).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
         // unlikely because the other thread would need some handle to

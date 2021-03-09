@@ -24,6 +24,42 @@ Written by
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
+struct PeerGroupType
+{
+    SRTSOCKET groupid;
+    uint32_t  appid;
+    sockaddr_any addr;
+
+    PeerGroupType(uint32_t gid, uint32_t aid, const sockaddr_any& a)
+        : groupid(gid)
+        , appid(aid)
+        , addr(a)
+    {
+    }
+
+    PeerGroupType(): groupid(SRT_INVALID_SOCK), appid(0) {}
+
+    bool empty() { return groupid == SRT_INVALID_SOCK; }
+
+    bool operator==(const PeerGroupType& oth) const
+    {
+        return
+            groupid == oth.groupid &&
+            appid == oth.appid &&
+            addr.equal_address(oth.addr);
+    }
+    bool operator!=(const PeerGroupType& oth) const { return !(*this == oth); }
+};
+
+template <class T_STREAM>
+inline T_STREAM& operator<<(T_STREAM& sout, const PeerGroupType& in)
+{
+    return (
+            sout << in.groupid << '.' << in.appid << '/'
+                 << in.addr.str()
+           );
+}
+
 class CUDTGroup
 {
     friend class CUDTUnited;
@@ -412,7 +448,7 @@ private:
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
-    SRTSOCKET m_PeerGroupID;
+    PeerGroupType m_PeerGroupID;
     struct GroupContainer
     {
         std::list<SocketData>        m_List;
@@ -817,7 +853,7 @@ public:
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, PeerGroupType, peerid, m_PeerGroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, bool, managed, m_selfManaged);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);

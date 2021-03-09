@@ -282,7 +282,6 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
 CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_pGlobal(&CUDT::s_UDTUnited)
     , m_GroupID(-1)
-    , m_PeerGroupID(-1)
     , m_selfManaged(true)
     , m_bSyncOnMsgNo(false)
     , m_type(gtype)
@@ -989,7 +988,7 @@ void CUDTGroup::close()
         // removing themselves from the group when closing because they
         // are unaware of being group members.
         m_Group.clear();
-        m_PeerGroupID = -1;
+        m_PeerGroupID = PeerGroupType();
 
         set<int> epollid;
         {

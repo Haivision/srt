@@ -24,6 +24,14 @@
 #else
 #include <pthread.h>
 #endif
+
+// For getProcessID()
+#ifdef _WIN32
+#include <processthreadsapi.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
@@ -809,6 +817,20 @@ void SetThreadLocalError(const CUDTException& e);
 /// Get thread local error
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
+
+// This is something that can't be really portable, but
+// actually the version should be split into Windows and POSIX-compliant.
+inline uint32_t getProcessID()
+{
+#ifdef _WIN32
+    // This returns DWORD, which by definition
+    // is unsigned 32-bit integer.
+    return GetCurrentProcessId();
+#else
+    // Assume non-Windows platforms are POSIX-compliant.
+    return getpid();
+#endif
+}
 
 } // namespace sync
 } // namespace srt

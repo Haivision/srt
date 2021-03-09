@@ -1244,7 +1244,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
         | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
-    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
+    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword, srt::sync::getProcessID() };
     memcpy((space), storedata, sizeof storedata);
 
     const size_t ra_size = Size(storedata);
@@ -2835,7 +2835,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
 }
 
 #if ENABLE_EXPERIMENTAL_BONDING
-bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
+bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
     // `data_size` isn't checked because we believe it's checked earlier.
     // Also this code doesn't predict to get any other format than the official one,
@@ -2845,6 +2845,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     // We are granted these two fields do exist
     SRTSOCKET grpid = groupdata[GRPD_GROUPID];
     uint32_t gd = groupdata[GRPD_GROUPDATA];
+
+    uint32_t appid = 0;
+    if (data_size > GRPD_E_SIZE_V1)
+        appid = groupdata[GRPD_APPID];
 
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
     int link_weight = SrtHSRequest::HS_GROUP_WEIGHT::unwrap(gd);
@@ -2896,6 +2900,8 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         return false;
     }
 
+    PeerGroupType incoming_peer (grpid, appid, m_PeerAddr);
+
     ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
 
     if (m_SrtHsSide == HSD_INITIATOR)
@@ -2926,12 +2932,12 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        SRTSOCKET peer = pg->peerid();
-        if (peer == -1)
+        PeerGroupType peer = pg->peerid();
+        if (peer.empty())
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
-            pg->set_peerid(grpid);
+            pg->set_peerid(incoming_peer);
             HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
         }
         // Otherwise the peer id must be the same as existing, otherwise
@@ -2939,7 +2945,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // (Note that the peer group is peer-specific, and peer id numbers
         // may repeat among sockets connected to groups established on
         // different peers).
-        else if (pg->peerid() != grpid)
+        else if (pg->peerid() != incoming_peer)
         {
             LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
                     << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
@@ -2958,7 +2964,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // and its group ID will be added to the HS extensions as mirror group
         // ID to the peer.
 
-        SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags);
+        SRTSOCKET lgid = makeMePeerOf(incoming_peer, gtp, link_flags);
         if (!lgid)
             return true; // already done
 
@@ -2998,7 +3004,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
+SRTSOCKET CUDT::makeMePeerOf(PeerGroupType peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
 {
     // Note: This function will lock pg->m_GroupLock!
 
