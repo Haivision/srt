@@ -53,7 +53,8 @@ SocketData prepareSocketData(CUDTSocket* s)
         false,
         false,
         false,
-        0 // weight
+        0, // weight
+        0  // pktSndDropTotal
     };
     return sd;
 }

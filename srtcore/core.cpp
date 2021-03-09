@@ -82,6 +82,7 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
+using namespace srt;
 
 CUDTUnited CUDT::s_UDTUnited;
 
@@ -950,12 +951,13 @@ void CUDT::open()
     m_tsLastRspAckTime                     = currtime;
     m_tsLastSndTime                        = currtime;
 
-    m_iReXmitCount   = 1;
-    m_tsUnstableSince = steady_clock::time_point();
+    m_tsUnstableSince   = steady_clock::time_point();
     m_tsFreshActivation = steady_clock::time_point();
+    m_tsWarySince       = steady_clock::time_point();
+
+    m_iReXmitCount   = 1;
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
-
     m_tsNextSendTime = steady_clock::time_point();
     m_tdSendTimeDiff = microseconds_from(0);
 

@@ -29,6 +29,7 @@ window.cpp
 
 SOURCES - ENABLE_EXPERIMENTAL_BONDING
 group.cpp
+group_backup.cpp
 group_common.cpp
 
 SOURCES - !ENABLE_STDCXX_SYNC
@@ -49,7 +50,6 @@ PROTECTED HEADERS
 platform_sys.h
 udt.h
 
-PRIVATE HEADERS
 api.h
 buffer.h
 cache.h
@@ -74,6 +74,7 @@ tsbpd_time.h
 utilities.h
 window.h
 
-PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
+PROTECTED HEADERS - ENABLE_EXPERIMENTAL_BONDING
 group.h
+group_backup.h
 group_common.h

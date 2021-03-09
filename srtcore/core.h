@@ -908,7 +908,7 @@ private: // synchronization: mutexes and conditions
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
     srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-    srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
+    mutable srt::sync::Mutex m_StatsLock;        // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();
@@ -1090,8 +1090,10 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
-    time_point m_tsFreshActivation; // time of fresh activation of the link, or 0 if past the activation phase or idle
-    time_point m_tsUnstableSince;   // time since unexpected ACK delay experienced, or 0 if link seems healthy
+    // TODO: shouldn't these three time points be a member of a group data?
+    time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
+    time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
+    time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
