@@ -1244,10 +1244,21 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
         | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
-    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword, srt::sync::getProcessID() };
-    memcpy((space), storedata, sizeof storedata);
+    uint32_t peerapp = m_parent->m_GroupOf->peerid().appid;
+    uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword, srt::sync::getProcessID() };
 
-    const size_t ra_size = Size(storedata);
+    bool respond_to_old = m_SrtHsSide == HSD_RESPONDER && peerapp == 0;
+
+    size_t ra_size =
+        respond_to_old
+        ? GRPD_E_SIZE_V1  // backward-compatible
+        : GRPD_E_SIZE;
+
+    size_t memsize = ra_size * GRPD_FIELD_SIZE;
+    memcpy((space), storedata, memsize);
+
+    HLOGC(cnlog.Debug, log << "fillHsExtGroup: size=" << ra_size << " peerappid=" << peerapp);
+
     *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_GROUP) | HS_CMDSPEC_SIZE::wrap(ra_size);
 
     return ra_size;
@@ -2654,7 +2665,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
             }
 #if ENABLE_EXPERIMENTAL_BONDING
-            else if ( cmd == SRT_CMD_GROUP )
+            else if (cmd == SRT_CMD_GROUP)
             {
                 // Note that this will fire in both cases:
                 // - When receiving HS request from the Initiator, which belongs to a group, and agent must
@@ -2663,7 +2674,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD_E_SIZE] = {};
-                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE || blocklen > GRPD_E_SIZE)
+                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
