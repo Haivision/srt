@@ -56,11 +56,7 @@ modified by
 
 #include <deque>
 #include <sstream>
-#include <atomic>
-namespace srt { namespace sync { template <class Under> using atomic = std::atomic<Under>; } }
-
 #include "srt.h"
-//#include "atomic.h"
 #include "common.h"
 #include "list.h"
 #include "buffer.h"

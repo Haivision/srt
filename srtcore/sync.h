@@ -157,6 +157,11 @@ public:
     {
     }
 
+    TimePoint(const Duration<Clock>& duration_since_epoch)
+        : m_timestamp(duration_since_epoch.count())
+    {
+    }
+
     ~TimePoint() {}
 
 public: // Relational operators
@@ -235,7 +240,8 @@ public:
     {
         int64_t val = dur.load();
         typedef typename Clock::duration duration_type;
-        return TimePoint<Clock>(duration_type(val));
+        typedef typename Clock::time_point time_point_type;
+        return time_point_type(duration_type(val));
     }
 
     void store(const TimePoint<Clock>& d)
