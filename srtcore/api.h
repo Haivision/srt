@@ -224,7 +224,7 @@ public:
       /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
       /// @return The new UDT socket ID, or INVALID_SOCK.
 
-   SRTSOCKET newSocket(CUDTSocket** pps = NULL);
+   SRTSOCKET newSocket(CUDTSocket** pps = NULL, SRTSOCKET forceid = SRT_INVALID_SOCK);
 
       /// Create a new UDT connection.
       /// @param [in] listen the listening UDT socket;
@@ -307,7 +307,7 @@ public:
    void deleteGroup(CUDTGroup* g);
 
    // [[using locked(m_GlobControlLock)]]
-   CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
+   CUDTGroup* findPeerGroup_LOCKED(PeerGroupType peergroup)
    {
        for (groups_t::iterator i = m_Groups.begin();
                i != m_Groups.end(); ++i)

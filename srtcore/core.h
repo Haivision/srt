@@ -124,6 +124,8 @@ enum GroupDataItem
     GRPD_GROUPID,
     GRPD_GROUPDATA,
 
+    GRPD_APPID, GRPD_E_SIZE_V1  = GRPD_APPID, // size in previous version
+
     GRPD_E_SIZE
 };
 
@@ -141,6 +143,7 @@ enum SeqPairItems
 
 #if ENABLE_EXPERIMENTAL_BONDING
 class CUDTGroup;
+struct PeerGroupType;
 #endif
 
 // Extended SRT Congestion control class - only an incomplete definition required
@@ -185,9 +188,9 @@ private: // constructor and desctructor
 public: //API
     static int startup();
     static int cleanup();
-    static SRTSOCKET socket();
+    static SRTSOCKET socket(SRTSOCKET forceid = SRT_INVALID_SOCK);
 #if ENABLE_EXPERIMENTAL_BONDING
-    static SRTSOCKET createGroup(SRT_GROUP_TYPE);
+    static SRTSOCKET createGroup(SRT_GROUP_TYPE, const SRTSOCKET forceid = SRT_INVALID_SOCK);
     static int addSocketToGroup(SRTSOCKET socket, SRTSOCKET group);
     static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
@@ -512,11 +515,11 @@ private:
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
 #if ENABLE_EXPERIMENTAL_BONDING
-    static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
+    static CUDTGroup& newGroup(const int, SRTSOCKET forceid = SRT_INVALID_SOCK); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
+    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(PeerGroupType peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
     void synchronizeWithGroup(CUDTGroup* grp);
 #endif
 
