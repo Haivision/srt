@@ -754,7 +754,7 @@ private:
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {
-#if defined(_WIN32) && defined(PTW32_VERSION)
+#if defined(_WIN32) && (defined(PTW32_VERSION) || defined (__PTW32_VERSION))
     // This is a version specific for pthread-win32 implementation
     // Here pthread_t type is a structure that is not convertible
     // to a number at all.
