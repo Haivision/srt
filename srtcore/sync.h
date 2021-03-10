@@ -21,8 +21,10 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #else
 #include <pthread.h>
+#include "atomic.h"
 #endif
 #include "utilities.h"
 
@@ -198,6 +200,50 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 }
 
 #endif // ENABLE_STDCXX_SYNC
+
+template <class Clock>
+class AtomicDuration
+{
+    atomic<int64_t> dur;
+public:
+
+    typedef typename Clock::duration duration_t;
+
+    AtomicDuration() ATR_NOEXCEPT : dur(0) {}
+
+    Duration<Clock> load()
+    {
+        int64_t val = dur.load();
+        return Duration<Clock>(val);
+    }
+
+    void store(const duration_t& d)
+    {
+        dur.store(d.count());
+    }
+};
+
+template <class Clock>
+class AtomicClock
+{
+    atomic<uint64_t> dur;
+public:
+
+    AtomicClock() ATR_NOEXCEPT : dur(0) {}
+
+    TimePoint<Clock> load() const
+    {
+        int64_t val = dur.load();
+        typedef typename Clock::duration duration_type;
+        return TimePoint<Clock>(duration_type(val));
+    }
+
+    void store(const TimePoint<Clock>& d)
+    {
+        dur.store(uint64_t(d.time_since_epoch().count()));
+    }
+};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //

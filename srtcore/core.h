@@ -56,8 +56,11 @@ modified by
 
 #include <deque>
 #include <sstream>
+#include <atomic>
+namespace srt { namespace sync { template <class Under> using atomic = std::atomic<Under>; } }
 
 #include "srt.h"
+//#include "atomic.h"
 #include "common.h"
 #include "list.h"
 #include "buffer.h"
@@ -173,6 +176,8 @@ class CUDT
 
     typedef srt::sync::steady_clock::time_point time_point;
     typedef srt::sync::steady_clock::duration duration;
+    typedef srt::sync::AtomicClock<srt::sync::steady_clock> atomic_time_point;
+    typedef srt::sync::AtomicDuration<srt::sync::steady_clock> atomic_duration;
 
 private: // constructor and desctructor
     void construct();
@@ -307,7 +312,7 @@ public: // internal API
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
-    srt::sync::steady_clock::time_point lastRspTime() const { return m_tsLastRspTime; }
+    srt::sync::steady_clock::time_point lastRspTime() const { return m_tsLastRspTime.load(); }
     srt::sync::steady_clock::time_point freshActivationStart() const { return m_tsFreshActivation; }
 
     int32_t rcvSeqNo() const { return m_iRcvCurrSeqNo; }
@@ -764,14 +769,13 @@ private: // Sending related data
     volatile double m_dCongestionWindow;         // congestion window size
 
 private: // Timers
-    /*volatile*/ time_point m_tsNextACKTime;    // Next ACK time, in CPU clock cycles, same below
-    /*volatile*/ time_point m_tsNextNAKTime;    // Next NAK time
-
-    /*volatile*/ duration   m_tdACKInterval;    // ACK interval
-    /*volatile*/ duration   m_tdNAKInterval;    // NAK interval
-    /*volatile*/ time_point m_tsLastRspTime;    // time stamp of last response from the peer
-    /*volatile*/ time_point m_tsLastRspAckTime; // time stamp of last ACK from the peer
-    /*volatile*/ time_point m_tsLastSndTime;    // time stamp of last data/ctrl sent (in system ticks)
+    atomic_time_point m_tsNextACKTime;    // Next ACK time, in CPU clock cycles, same below
+    atomic_time_point m_tsNextNAKTime;    // Next NAK time
+    duration   m_tdACKInterval;    // ACK interval
+    duration   m_tdNAKInterval;    // NAK interval
+    atomic_time_point m_tsLastRspTime;    // time stamp of last response from the peer
+    time_point m_tsLastRspAckTime; // time stamp of last ACK from the peer
+    atomic_time_point m_tsLastSndTime;    // time stamp of last data/ctrl sent (in system ticks)
     time_point m_tsLastWarningTime;             // Last time that a warning message is sent
     time_point m_tsLastReqTime;                 // last time when a connection request is sent
     time_point m_tsRcvPeerStartTime;

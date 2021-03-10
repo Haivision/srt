@@ -880,11 +880,11 @@ void CUDT::open()
     m_tdNAKInterval = m_tdMinNakInterval;
 
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime                        = currtime;
-    m_tsNextACKTime                        = currtime + m_tdACKInterval;
-    m_tsNextNAKTime                        = currtime + m_tdNAKInterval;
-    m_tsLastRspAckTime                     = currtime;
-    m_tsLastSndTime                        = currtime;
+    m_tsLastRspTime.store(currtime);
+    m_tsNextACKTime.store(currtime + m_tdACKInterval);
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
+    m_tsLastRspAckTime = currtime;
+    m_tsLastSndTime.store(currtime);
 
     m_iReXmitCount   = 1;
     m_tsUnstableSince = steady_clock::time_point();
@@ -5524,11 +5524,11 @@ SRT_REJECT_REASON CUDT::setupCC()
 
     // Update timers
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime          = currtime;
-    m_tsNextACKTime          = currtime + m_tdACKInterval;
-    m_tsNextNAKTime          = currtime + m_tdNAKInterval;
-    m_tsLastRspAckTime       = currtime;
-    m_tsLastSndTime          = currtime;
+    m_tsLastRspTime.store(currtime);
+    m_tsNextACKTime.store(currtime + m_tdACKInterval);
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
+    m_tsLastRspAckTime = currtime;
+    m_tsLastSndTime.store(currtime);
 
     HLOGC(rslog.Debug,
           log << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
@@ -6644,6 +6644,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         // delay the EXP timer to avoid mis-fired timeout
+        // XXX Lock ???  ScopedLock ack_lock(m_RecvAckLock);
         m_tsLastRspAckTime = steady_clock::now();
         m_iReXmitCount   = 1;
     }
@@ -7434,7 +7435,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
     // Fix keepalive
     if (nbsent)
-        m_tsLastSndTime = steady_clock::now();
+        m_tsLastSndTime.store(steady_clock::now());
 }
 
 int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
@@ -8107,7 +8108,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime = currtime;
+    m_tsLastRspTime.store(currtime);
     bool using_rexmit_flag = m_bPeerRexmitFlag;
 
     HLOGC(inlog.Debug,
@@ -8293,7 +8294,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
                 const int nbsent      = m_pSndQueue->sendto(m_PeerAddr, response);
                 if (nbsent)
                 {
-                    m_tsLastSndTime = steady_clock::now();
+                    m_tsLastSndTime.store(steady_clock::now());
                 }
             }
         }
@@ -8843,7 +8844,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
 #endif
 
     // Fix keepalive
-    m_tsLastSndTime = enter_time;
+    m_tsLastSndTime.store(enter_time);
 
     considerLegacySrtHandshake(steady_clock::time_point());
 
@@ -9020,7 +9021,7 @@ int CUDT::processData(CUnit* in_unit)
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
-    m_tsLastRspTime = steady_clock::now();
+    m_tsLastRspTime.store(steady_clock::now());
 
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
@@ -9470,7 +9471,7 @@ int CUDT::processData(CUnit* in_unit)
             // a given period).
             if (m_CongCtl->needsQuickACK(packet))
             {
-                m_tsNextACKTime = steady_clock::now();
+                m_tsNextACKTime.store(steady_clock::now());
             }
         }
 
@@ -10361,7 +10362,7 @@ void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
 int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 {
     int because_decision = BECAUSE_NO_REASON;
-    if (currtime > m_tsNextACKTime  // ACK time has come
+    if (currtime > m_tsNextACKTime.load()  // ACK time has come
                                   // OR the number of sent packets since last ACK has reached
                                   // the congctl-defined value of ACK Interval
                                   // (note that none of the builtin congctls defines ACK Interval)
@@ -10373,7 +10374,7 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
         const steady_clock::duration ack_interval = m_CongCtl->ACKTimeout_us() > 0
             ? microseconds_from(m_CongCtl->ACKTimeout_us())
             : m_tdACKInterval;
-        m_tsNextACKTime = currtime + ack_interval;
+        m_tsNextACKTime.store(currtime + ack_interval);
 
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
@@ -10425,14 +10426,14 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
 
     if (loss_len > 0)
     {
-        if (currtime <= m_tsNextNAKTime)
+        if (currtime <= m_tsNextNAKTime.load())
             return BECAUSE_NO_REASON; // wait for next NAK time
 
         sendCtrl(UMSG_LOSSREPORT);
         debug_decision = BECAUSE_NAKREPORT;
     }
 
-    m_tsNextNAKTime = currtime + m_tdNAKInterval;
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
     return debug_decision;
 }
 
@@ -10468,7 +10469,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     steady_clock::time_point next_exp_time;
     if (m_CongCtl->RTO())
     {
-        next_exp_time = m_tsLastRspTime + microseconds_from(m_CongCtl->RTO());
+        next_exp_time = m_tsLastRspTime.load() + microseconds_from(m_CongCtl->RTO());
     }
     else
     {
@@ -10476,7 +10477,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
             microseconds_from(m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US);
         if (exp_timeout < (m_iEXPCount * m_tdMinExpInterval))
             exp_timeout = m_iEXPCount * m_tdMinExpInterval;
-        next_exp_time = m_tsLastRspTime + exp_timeout;
+        next_exp_time = m_tsLastRspTime.load() + exp_timeout;
     }
 
     if (currtime <= next_exp_time)
@@ -10486,8 +10487,9 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     const int PEER_IDLE_TMO_US = m_config.iPeerIdleTimeout * 1000;
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
+    time_point last_rsp_time = m_tsLastRspTime.load();
     if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
-        (currtime - m_tsLastRspTime > microseconds_from(PEER_IDLE_TMO_US)))
+        (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US)))
     {
         //
         // Connection is broken.
@@ -10495,7 +10497,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // Application will detect this when it calls any UDT methods next time.
         //
         HLOGC(xtlog.Debug,
-              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - m_tsLastRspTime) << "ms");
+              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - last_rsp_time) << "ms");
         m_bClosing       = true;
         m_bBroken        = true;
         m_iBrokenCounter = 30;
@@ -10511,7 +10513,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
 
     HLOGC(xtlog.Debug,
           log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP) << " elapsed="
-              << (count_microseconds(currtime - m_tsLastRspTime)) << "/" << (+PEER_IDLE_TMO_US) << "us");
+              << (count_microseconds(currtime - last_rsp_time)) << "/" << (+PEER_IDLE_TMO_US) << "us");
 
     ++m_iEXPCount;
 
@@ -10632,7 +10634,7 @@ void CUDT::checkTimers()
     // Check if FAST or LATE packet retransmission is required
     checkRexmitTimer(currtime);
 
-    if (currtime > m_tsLastSndTime + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
+    if (currtime > m_tsLastSndTime.load() + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
     {
         sendCtrl(UMSG_KEEPALIVE);
 #if ENABLE_EXPERIMENTAL_BONDING
