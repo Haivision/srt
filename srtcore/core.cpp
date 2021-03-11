@@ -6006,11 +6006,12 @@ void CUDT::checkNeedDrop(bool& w_bCongestion)
             // from the API call directly. This should be extra verified, if that
             // changes in the future.
             //
-            // What's important is that the lock on GroupLock cannot be applied
-            // here, both because it might be applied already, and because the
-            // locks on the later lock ordered mutexes are already set.
             if (m_parent->m_GroupOf)
             {
+                // What's important is that the lock on GroupLock cannot be applied
+                // here, both because it might be applied already, that is, according
+                // to the condition defined at this function's header, it is applied
+                // under this condition. Hence ackMessage can be defined as 100% locked.
                 m_parent->m_GroupOf->ackMessage(first_msgno);
             }
 #endif
@@ -7554,13 +7555,27 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         }
         else
         {
-            if (m_config.bSynRecving)
             {
-                // signal a waiting "recv" call if there is any data available
-                CSync::lock_signal(m_RecvDataCond, m_RecvLock);
+                UniqueLock rdlock (m_RecvLock);
+                CSync      rdcond (m_RecvDataCond, rdlock);
+                if (m_config.bSynRecving)
+                {
+                    // signal a waiting "recv" call if there is any data available
+                    rdcond.signal_locked(rdlock);
+                }
+                // acknowledge any waiting epolls to read
+                // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
+                // 1. user call receive/receivemessage(about line number:6482)
+                // 2. after read/receive, if rcvbuffer is empty, will set SRT_EPOLL_IN event to false
+                // 3. but if we do not do some lock work here, will cause some sync problems between threads:
+                //      (1) user thread: call receive/receivemessage
+                //      (2) user thread: read data
+                //      (3) user thread: no data in rcvbuffer, set SRT_EPOLL_IN event to false
+                //      (4) receive thread: receive data and set SRT_EPOLL_IN to true
+                //      (5) user thread: set SRT_EPOLL_IN to false
+                // 4. so , m_RecvLock must be used here to protect epoll event
+                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
             }
-            // acknowledge any waiting epolls to read
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
 #if ENABLE_EXPERIMENTAL_BONDING
             if (m_parent->m_GroupOf)
             {
@@ -7727,7 +7742,15 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         ScopedLock glock (s_UDTUnited.m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
-            HLOGC(xtlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+            HLOGC(inlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+
+            // Guard access to m_iSndAckedMsgNo field
+            // Note: This can't be done inside CUDTGroup::ackMessage
+            // because this function is also called from CUDT::checkNeedDrop
+            // called from CUDT::sendmsg2 called from CUDTGroup::send, which
+            // applies the lock on m_GroupLock already.
+            ScopedLock glk (*m_parent->m_GroupOf->exp_groupLock());
+
             // NOTE: ackMessage also accepts and ignores the trap representation
             // which is SRT_MSGNO_CONTROL.
             m_parent->m_GroupOf->ackMessage(msgno_at_last_acked_seq);
