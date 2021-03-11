@@ -871,7 +871,6 @@ void CUDT::open()
     m_iRTT    = 10 * COMM_SYN_INTERVAL_US;
     m_iRTTVar = m_iRTT >> 1;
 
-
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
     m_tdMinExpInterval = milliseconds_from(300);
@@ -4417,6 +4416,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
+        m_iRTTVar    = m_iRTT >> 1;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
@@ -5315,6 +5315,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
+        m_iRTTVar    = m_iRTT >> 1;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
