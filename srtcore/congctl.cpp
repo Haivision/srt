@@ -59,7 +59,7 @@ void SrtCongestion::Check()
 class LiveCC: public SrtCongestionControlBase
 {
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    size_t   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
 
     // NAKREPORT stuff.
@@ -166,7 +166,7 @@ private:
     void updatePktSndPeriod()
     {
         // packet = payload + header
-        const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
+        const double pktsize = (double) m_zSndAvgPayloadSize.load() + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
                 << " by avg pktsize=" << m_zSndAvgPayloadSize

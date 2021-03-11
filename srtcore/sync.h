@@ -210,21 +210,32 @@ template <class Clock>
 class AtomicDuration
 {
     atomic<int64_t> dur;
+    typedef typename Clock::duration duration_type;
+    typedef typename Clock::time_point time_point_type;
 public:
-
-    typedef typename Clock::duration duration_t;
 
     AtomicDuration() ATR_NOEXCEPT : dur(0) {}
 
-    Duration<Clock> load()
+    duration_type load()
     {
         int64_t val = dur.load();
-        return Duration<Clock>(val);
+        return duration_type(val);
     }
 
-    void store(const duration_t& d)
+    void store(const duration_type& d)
     {
         dur.store(d.count());
+    }
+
+    AtomicDuration<Clock>& operator=(const duration_type& s)
+    {
+        dur = s.count();
+        return *this;
+    }
+
+    operator duration_type() const
+    {
+        return duration_type(dur);
     }
 };
 
@@ -232,21 +243,32 @@ template <class Clock>
 class AtomicClock
 {
     atomic<uint64_t> dur;
+    typedef typename Clock::duration duration_type;
+    typedef typename Clock::time_point time_point_type;
 public:
 
     AtomicClock() ATR_NOEXCEPT : dur(0) {}
 
-    TimePoint<Clock> load() const
+    time_point_type load() const
     {
         int64_t val = dur.load();
-        typedef typename Clock::duration duration_type;
-        typedef typename Clock::time_point time_point_type;
         return time_point_type(duration_type(val));
     }
 
-    void store(const TimePoint<Clock>& d)
+    void store(const time_point_type& d)
     {
         dur.store(uint64_t(d.time_since_epoch().count()));
+    }
+
+    AtomicClock& operator=(const time_point_type& s)
+    {
+        dur = s.time_since_epoch().count();
+        return *this;
+    }
+
+    operator time_point_type() const
+    {
+        return time_point_type(duration_type(dur.load()));
     }
 };
 

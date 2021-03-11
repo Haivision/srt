@@ -100,7 +100,7 @@ public:
 
    void construct();
 
-   SRT_SOCKSTATUS m_Status;                  //< current socket state
+   srt::sync::atomic<SRT_SOCKSTATUS> m_Status;                  //< current socket state
 
    /// Time when the socket is closed.
    /// When the socket is closed, it is not removed immediately from the list

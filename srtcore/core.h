@@ -303,8 +303,8 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool isOPT_TsbPd() const { return m_config.bTSBPD; }
-    int RTT() const { return m_iRTT; }
-    int RTTVar() const { return m_iRTTVar; }
+    int RTT() const { return m_iRTT.load(); }
+    int RTTVar() const { return m_iRTTVar.load(); }
     int32_t sndSeqNo() const { return m_iSndCurrSeqNo; }
     int32_t schedSeqNo() const { return m_iSndNextSeqNo; }
     bool overrideSndSeqNo(int32_t seq);
@@ -728,23 +728,23 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
-    volatile bool m_bListening;                  // If the UDT entit is listening to connection
-    volatile bool m_bConnecting;                 // The short phase when connect() is called but not yet completed
-    volatile bool m_bConnected;                  // Whether the connection is on or off
-    volatile bool m_bClosing;                    // If the UDT entity is closing
-    volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
-    volatile bool m_bBroken;                     // If the connection has been broken
-    volatile bool m_bPeerHealth;                 // If the peer status is normal
-    volatile int m_RejectReason;
+    srt::sync::atomic<bool> m_bListening;                  // If the UDT entit is listening to connection
+    srt::sync::atomic<bool> m_bConnecting;                 // The short phase when connect() is called but not yet completed
+    srt::sync::atomic<bool> m_bConnected;                  // Whether the connection is on or off
+    srt::sync::atomic<bool> m_bClosing;                    // If the UDT entity is closing
+    srt::sync::atomic<bool> m_bShutdown;                   // If the peer side has shutdown the connection
+    srt::sync::atomic<bool> m_bBroken;                     // If the connection has been broken
+    srt::sync::atomic<bool> m_bPeerHealth;                 // If the peer status is normal
+    srt::sync::atomic<int> m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
-    int m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
+    srt::sync::atomic<int> m_iBrokenCounter;                        // a counter (number of GC checks) to let the GC tag this socket as disconnected
 
     int m_iEXPCount;                             // Expiration counter
-    int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
-    int m_iRTT;                                  // RTT, in microseconds
-    int m_iRTTVar;                               // RTT variance
-    int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
-    int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
+    srt::sync::atomic<int> m_iBandwidth;                            // Estimated bandwidth, number of packets per second
+    srt::sync::atomic<int> m_iRTT;                                  // RTT, in microseconds
+    srt::sync::atomic<int> m_iRTTVar;                               // RTT variance
+    srt::sync::atomic<int> m_iDeliveryRate;                         // Packet arrival rate at the receiver side
+    srt::sync::atomic<int> m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
 
 
     CHandShake m_ConnReq;                        // connection request
@@ -757,12 +757,12 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 
-    /*volatile*/ duration m_tdSendInterval;      // Inter-packet time, in CPU clock cycles
+    atomic_duration m_tdSendInterval;      // Inter-packet time, in CPU clock cycles
 
-    /*volatile*/ duration m_tdSendTimeDiff;      // aggregate difference in inter-packet sending time
+    atomic_duration m_tdSendTimeDiff;      // aggregate difference in inter-packet sending time
 
-    volatile int m_iFlowWindowSize;              // Flow control window size
-    volatile double m_dCongestionWindow;         // congestion window size
+    srt::sync::atomic<int> m_iFlowWindowSize;              // Flow control window size
+    double m_dCongestionWindow;         // congestion window size
 
 private: // Timers
     atomic_time_point m_tsNextACKTime;    // Next ACK time, in CPU clock cycles, same below
@@ -773,7 +773,7 @@ private: // Timers
     time_point m_tsLastRspAckTime; // time stamp of last ACK from the peer
     atomic_time_point m_tsLastSndTime;    // time stamp of last data/ctrl sent (in system ticks)
     time_point m_tsLastWarningTime;             // Last time that a warning message is sent
-    time_point m_tsLastReqTime;                 // last time when a connection request is sent
+    atomic_time_point m_tsLastReqTime;                 // last time when a connection request is sent
     time_point m_tsRcvPeerStartTime;
     time_point m_tsLingerExpiration;            // Linger expiration time (for GC to close a socket with data in sending buffer)
     time_point m_tsLastAckTime;                 // Timestamp of last ACK
@@ -785,8 +785,8 @@ private: // Timers
 
     time_point m_tsNextSendTime;     // scheduled time of next packet sending
 
-    volatile int32_t m_iSndLastFullAck;          // Last full ACK received
-    volatile int32_t m_iSndLastAck;              // Last ACK received
+    srt::sync::atomic<int32_t> m_iSndLastFullAck;          // Last full ACK received
+    srt::sync::atomic<int32_t> m_iSndLastAck;              // Last ACK received
 
     // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
     // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
@@ -796,9 +796,9 @@ private: // Timers
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
-    volatile int32_t m_iSndLastDataAck;          // The real last ACK that updates the sender buffer and loss list
-    volatile int32_t m_iSndCurrSeqNo;            // The largest sequence number that HAS BEEN SENT
-    volatile int32_t m_iSndNextSeqNo;            // The sequence number predicted to be placed at the currently scheduled packet
+    srt::sync::atomic<int32_t> m_iSndLastDataAck;          // The real last ACK that updates the sender buffer and loss list
+    srt::sync::atomic<int32_t> m_iSndCurrSeqNo;            // The largest sequence number that HAS BEEN SENT
+    srt::sync::atomic<int32_t> m_iSndNextSeqNo;            // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData

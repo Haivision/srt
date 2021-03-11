@@ -3110,7 +3110,7 @@ bool CUDTGroup::sendBackup_CheckRunningStability(const gli_t d, const time_point
     // negative value is relatively easy, while introducing a mutex would only add a
     // deadlock risk and performance degradation.
 
-    time_point last_rsp_time = u.m_tsLastRspTime.load();
+    IF_HEAVY_LOGGING(time_point last_rsp_time = u.m_tsLastRspTime.load());
 
     HLOGC(gslog.Debug,
           log << "grp/sendBackup: CHECK STABLE: @" << d->id

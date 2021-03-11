@@ -142,7 +142,7 @@ void CUDT::construct()
     // XXX m_iBrokenCounter should be still set to some default!
     m_bPeerHealth         = true;
     m_RejectReason        = SRT_REJ_UNKNOWN;
-    m_tsLastReqTime       = steady_clock::time_point();
+    m_tsLastReqTime.store(steady_clock::time_point());
     m_SrtHsSide           = HSD_DRAW;
     m_uPeerSrtVersion     = 0; // not defined until connected.
     m_iTsbPdDelay_ms      = 0;
@@ -3373,7 +3373,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     while (!m_bClosing)
     {
-        const steady_clock::duration tdiff = steady_clock::now() - m_tsLastReqTime;
+        const steady_clock::duration tdiff = steady_clock::now() - m_tsLastReqTime.load();
         // avoid sending too many requests, at most 1 request per 250ms
 
         // SHORT VERSION:
@@ -6948,8 +6948,8 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     double interval           = count_microseconds(currtime - m_stats.tsLastSampleTime);
     perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-    perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
-    perf->pktFlowWindow       = m_iFlowWindowSize;
+    perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval.load());
+    perf->pktFlowWindow       = m_iFlowWindowSize.load();
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
     perf->pktFlightSize       = getFlightSpan();
     perf->msRTT               = (double)m_iRTT / 1000.0;
@@ -6961,7 +6961,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
                       : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
                                              : 0;
 
-    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth;
+    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth.load();
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
@@ -7783,7 +7783,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
             ScopedLock ack_lock(m_RecvAckLock);
-            m_iFlowWindowSize -= CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
+            m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
 
             // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
@@ -7903,9 +7903,11 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // XXX These ^^^ commented-out were blocked in UDT;
     // the current RTT calculations are exactly the same as in UDT4.
     const int rtt = ackdata[ACKD_RTT];
+    const int avg_rtt = m_iRTT.load();
+    const int avg_rtt_var = m_iRTTVar.load();
 
-    m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-    m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+    m_iRTTVar = avg_iir<4>(avg_rtt_var, abs(rtt - avg_rtt));
+    m_iRTT = avg_iir<8>(avg_rtt, rtt);
 
     /* Version-dependent fields:
      * Original UDT (total size: ACKD_TOTAL_SIZE_SMALL):
@@ -7937,9 +7939,9 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         else
             bytesps = pktps * m_iMaxSRTPayloadSize;
 
-        m_iBandwidth        = avg_iir<8>(m_iBandwidth, bandwidth);
-        m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate, pktps);
-        m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate, bytesps);
+        m_iBandwidth        = avg_iir<8>(m_iBandwidth.load(), bandwidth);
+        m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate.load(), pktps);
+        m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate.load(), bytesps);
         // XXX not sure if ACKD_XMRATE is of any use. This is simply
         // calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
 
@@ -8137,8 +8139,11 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         //   sendCtrl(UMSG_CGWARNING);
 
         // RTT EWMA
-        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-        m_iRTT = avg_iir<8>(m_iRTT, rtt);
+        const int avg_rtt = m_iRTT.load();
+        const int avg_rtt_var = m_iRTTVar.load();
+
+        m_iRTTVar = avg_iir<4>(avg_rtt_var, abs(rtt - avg_rtt));
+        m_iRTT = avg_iir<8>(avg_rtt, rtt);
 
         updateCC(TEV_ACKACK, EventVariant(ack));
 
@@ -8179,7 +8184,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
-        m_tdSendInterval = (m_tdSendInterval * 1125) / 1000;
+        m_tdSendInterval = (m_tdSendInterval.load() * 1125) / 1000;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
@@ -8635,7 +8640,9 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     const steady_clock::time_point enter_time = steady_clock::now();
 
     if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
-        m_tdSendTimeDiff += enter_time - m_tsNextSendTime;
+    {
+        m_tdSendTimeDiff = m_tdSendTimeDiff.load() + (enter_time - m_tsNextSendTime);
+    }
 
     string reason = "reXmit";
 
@@ -8761,7 +8768,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             else
             {
                 m_tsNextSendTime = steady_clock::time_point();
-                m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+                m_tdSendTimeDiff = steady_clock::duration();
                 return std::make_pair(0, enter_time);
             }
         }
@@ -8770,7 +8777,7 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
             HLOGC(qslog.Debug, log << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
                 << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
             m_tsNextSendTime = steady_clock::time_point();
-            m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+            m_tdSendTimeDiff = steady_clock::duration();
             return std::make_pair(0, enter_time);
         }
 
@@ -8883,18 +8890,24 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     else
     {
 #if USE_BUSY_WAITING
-        m_tsNextSendTime = enter_time + m_tdSendInterval;
+        m_tsNextSendTime = enter_time + m_tdSendInterval.load();
 #else
-        if (m_tdSendTimeDiff >= m_tdSendInterval)
+        const duration sendint = m_tdSendInterval;
+        const duration sendbrw = m_tdSendTimeDiff;
+
+        if (sendbrw >= sendint)
         {
             // Send immidiately
             m_tsNextSendTime = enter_time;
-            m_tdSendTimeDiff -= m_tdSendInterval;
+
+            // ATOMIC NOTE: this is the only thread that
+            // modifies this field
+            m_tdSendTimeDiff = sendbrw - sendint;
         }
         else
         {
-            m_tsNextSendTime = enter_time + (m_tdSendInterval - m_tdSendTimeDiff);
-            m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+            m_tsNextSendTime = enter_time + (sendint - sendbrw);
+            m_tdSendTimeDiff = duration();
         }
 #endif
     }
@@ -10305,7 +10318,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
                 HLOGC(cnlog.Debug,
                         log << "processConnectRequest: rejecting due to problems in createSrtHandshake.");
                 result = -1; // enforce fallthrough for the below condition!
-                hs.m_iReqType = URQFailure(m_RejectReason == SRT_REJ_UNKNOWN ? SRT_REJ_IPE : m_RejectReason);
+                hs.m_iReqType = URQFailure(m_RejectReason == SRT_REJ_UNKNOWN ? int(SRT_REJ_IPE) : m_RejectReason.load());
             }
             else
             {
@@ -10710,16 +10723,17 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
             // Bound to one call because this requires locking
             pg->updateFailedLink();
         }
+
+        // Sockets that never succeeded to connect must be deleted
+        // explicitly, otherwise they will never be deleted.
+        if (pending_broken)
+        {
+            // XXX This somehow can cause a deadlock, even without GlobControlLock
+            // s_UDTUnited.close(m_parent);
+            m_parent->setBrokenClosed();
+        }
     }
 
-    // Sockets that never succeeded to connect must be deleted
-    // explicitly, otherwise they will never be deleted.
-    if (pending_broken)
-    {
-        // XXX This somehow can cause a deadlock
-        // s_UDTUnited.close(m_parent);
-        m_parent->setBrokenClosed();
-    }
 #endif
 }
 

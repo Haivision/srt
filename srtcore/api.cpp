@@ -2630,13 +2630,17 @@ void CUDTUnited::checkBrokenSockets()
             // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
             // this function is called (isRcvDataReady also checks if the
             // available data is "ready to play").
-            && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable()
-            && (s->m_pUDT->m_iBrokenCounter -- > 0))
+            && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable())
          {
-            // HLOGF(smlog.Debug, "STILL KEEPING socket (still have data):
-            // %d\n", i->first);
-            // if there is still data in the receiver buffer, wait longer
-            continue;
+             const int bc = s->m_pUDT->m_iBrokenCounter.load();
+             if (bc > 0)
+             {
+                 // HLOGF(smlog.Debug, "STILL KEEPING socket (still have data):
+                 // %d\n", i->first);
+                 // if there is still data in the receiver buffer, wait longer
+                 s->m_pUDT->m_iBrokenCounter.store(bc - 1);
+                 continue;
+             }
          }
 
 #if ENABLE_EXPERIMENTAL_BONDING
