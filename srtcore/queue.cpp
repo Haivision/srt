@@ -431,7 +431,7 @@ void CSndUList::remove_(const CUDT* u)
         // remove the node from heap
         m_pHeap[n->m_iHeapLoc] = m_pHeap[m_iLastEntry];
         m_iLastEntry--;
-        m_pHeap[n->m_iHeapLoc]->m_iHeapLoc = n->m_iHeapLoc;
+        m_pHeap[n->m_iHeapLoc]->m_iHeapLoc = n->m_iHeapLoc.load();
 
         int q = n->m_iHeapLoc;
         int p = q * 2 + 1;

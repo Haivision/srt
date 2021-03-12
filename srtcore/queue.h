@@ -151,7 +151,7 @@ struct CSNode
    CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
    srt::sync::steady_clock::time_point m_tsTimeStamp;
 
-   int m_iHeapLoc;		// location on the heap, -1 means not on the heap
+   srt::sync::atomic<int> m_iHeapLoc;		// location on the heap, -1 means not on the heap
 };
 
 class CSndUList
@@ -237,7 +237,7 @@ struct CRNode
    CRNode* m_pPrev;             // previous link
    CRNode* m_pNext;             // next link
 
-   bool m_bOnList;              // if the node is already on the list
+   srt::sync::atomic<bool> m_bOnList;              // if the node is already on the list
 };
 
 class CRcvUList
