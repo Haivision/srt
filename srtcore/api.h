@@ -413,7 +413,7 @@ private:
    CCache<CInfoBlock>* m_pCache;			// UDT network information cache
 
 private:
-   volatile bool m_bClosing;
+   srt::sync::atomic<bool> m_bClosing;
    srt::sync::Mutex m_GCStopLock;
    srt::sync::Condition m_GCStopCond;
 
