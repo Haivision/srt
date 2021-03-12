@@ -20,7 +20,7 @@
 #include "packetfilter_api.h"
 
 class CUnitQueue;
-class CUnit;
+struct CUnit;
 class CUDT;
 
 class PacketFilter
