@@ -760,6 +760,7 @@ private: // Sending related data
 
     /*volatile*/ duration m_tdSendTimeDiff;      // aggregate difference in inter-packet sending time
 
+    // [[guarded_by(m_RecvAckLock)]]
     volatile int m_iFlowWindowSize;              // Flow control window size
     volatile double m_dCongestionWindow;         // congestion window size
 
@@ -769,6 +770,8 @@ private: // Timers
 
     /*volatile*/ duration   m_tdACKInterval;    // ACK interval
     /*volatile*/ duration   m_tdNAKInterval;    // NAK interval
+
+    // [[guarded_by(m_RecvAckLock)]]
     /*volatile*/ time_point m_tsLastRspTime;    // time stamp of last response from the peer
     /*volatile*/ time_point m_tsLastRspAckTime; // time stamp of last ACK from the peer
     /*volatile*/ time_point m_tsLastSndTime;    // time stamp of last data/ctrl sent (in system ticks)
@@ -786,6 +789,7 @@ private: // Timers
     time_point m_tsNextSendTime;     // scheduled time of next packet sending
 
     volatile int32_t m_iSndLastFullAck;          // Last full ACK received
+    // [[guarded_by(m_RecvAckLock)]]
     volatile int32_t m_iSndLastAck;              // Last ACK received
 
     // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
@@ -840,6 +844,8 @@ private: // Timers
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
     bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
+
+    // [[guarded_by(m_RecvAckLock)]]
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
