@@ -116,7 +116,7 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 13;
+static const size_t SRT_SOCKOPT_NPOST = 12;
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
