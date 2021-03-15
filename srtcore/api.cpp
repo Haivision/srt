@@ -1419,13 +1419,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
-            data.token = targets[tii].token;
+            ns->core().m_iConnToken = targets[tii].token;
         }
         else
         {
             // Otherwise generate and write back the token
-            data.token = CUDTGroup::genToken();
-            targets[tii].token = data.token;
+            int token = CUDTGroup::genToken();
+            ns->core().m_iConnToken = token;
+            targets[tii].token = token;
         }
 
         {

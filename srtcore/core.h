@@ -750,6 +750,7 @@ private:
     CHandShake m_ConnRes;                        // connection response
     CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
+    int m_iConnToken;                            // Connection token, identifies app-declared connection identity. -1 if unused.
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
