@@ -202,7 +202,7 @@ The following table lists SRT socket options in alphabetical order. Option detai
 | :----------------------------------------------------- | :---: | :------: | :-------: | :-----: | :-----------: | :------: |:---:|:-----:|
 | [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)              | 1.4.2 | pre-bind | `string`  |         |               |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                  | 1.3.0 | pre      | `string`  |         | "live"        | *        | W   | S     |
-| [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                    | 1.1.2 | post     | `int32_t` | ms      | 3000          | 0..      | W   | GSD+  |
+| [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                    | 1.1.2 | pre      | `int32_t` | ms      | 3000          | 0..      | W   | GSD+  |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                | 1.4.2 | post     | `bool`    |         | true          |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)  | 1.3.2 | pre      | `bool`    |         | true          |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                            |       |          | `int32_t` | flags   |               |          | R   | S     |
@@ -311,7 +311,7 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 
 | OptName            | Since | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_CONNTIMEO`   | 1.1.2 | post     | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
+| `SRTO_CONNTIMEO`   | 1.1.2 | pre      | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
 
 Connect timeout. This option applies to the caller and rendezvous connection
 modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
