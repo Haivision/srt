@@ -1189,6 +1189,16 @@ endif()
 
 
 if (ENABLE_UNITTESTS AND ENABLE_CXX11)
+
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		message(STATUS "VERSION < 3.10 -- adding test using the old method")
+		set (USE_OLD_ADD_METHOD 1)
+	else()
+		message(STATUS "VERSION > 3.10 -- using NEW POLICY for in_list operator")
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+	endif()
+
+
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	find_package(GTest 1.8)
@@ -1217,13 +1227,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+	if (USE_OLD_ADD_METHOD)
 		add_test(
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
 	else()
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 		gtest_add_tests(
 			test-srt
 			""
