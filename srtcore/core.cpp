@@ -2571,7 +2571,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // Un-swap on big endian machines
                 ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
 
-                m_config.sStreamName.set(target, bytelen);
+                m_config.sStreamName.set(target, strlen(target));
                 HLOGC(cnlog.Debug,
                       log << "CONNECTOR'S REQUESTED SID [" << m_config.sStreamName.c_str() << "] (bytelen=" << bytelen
                           << " blocklen=" << blocklen << ")");
