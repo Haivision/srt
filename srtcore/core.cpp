@@ -7157,14 +7157,19 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
-        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+        int64_t sendint = m_CongCtl->pktSndPeriod_us();
+        double cgwin = m_CongCtl->cgWindowSize();
+
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << std::setprecision(3) << m_dCongestionWindow);
+              log << CONID() << "updateCC: updating values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
+                  << "tk (" << sendint << "us) cgwindow="
+                  << std::setprecision(3) << cgwin);
 #endif
+
+        ScopedLock lkc (m_ConnectionLock);
+        m_tdSendInterval    = microseconds_from(sendint);
+        m_dCongestionWindow = cgwin;
     }
 
     HLOGC(rslog.Debug, log << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
