@@ -7162,9 +7162,8 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updating values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << sendint << "us) cgwindow="
-                  << std::setprecision(3) << cgwin);
+              log << CONID() << "updateCC: updating values from congctl: interval=" << sendint
+                  << " us, cgwindow=" << std::setprecision(3) << cgwin);
 #endif
 
         ScopedLock lkc (m_ConnectionLock);
