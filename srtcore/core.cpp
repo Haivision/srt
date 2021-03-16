@@ -114,6 +114,105 @@ const int       UDT::ERROR        = CUDT::ERROR;
         2[15..0]:   TsbPD delay     [0..60000] msec
 */
 
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
+    SRTO_SNDSYN,
+    SRTO_RCVSYN,
+    SRTO_LINGER,
+    SRTO_SNDTIMEO,
+    SRTO_RCVTIMEO,
+    SRTO_MAXBW,
+    SRTO_INPUTBW,
+    SRTO_MININPUTBW,
+    SRTO_OHEADBW,
+    SRTO_SNDDROPDELAY,
+    SRTO_CONNTIMEO,
+    SRTO_DRIFTTRACER,
+    SRTO_LOSSMAXTTL
+};
+
+static const int32_t
+    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
+    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
+    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
+
+struct SrtOptionAction
+{
+    int flags[SRTO_E_SIZE];
+    std::map<SRT_SOCKOPT, std::string> private_default;
+    SrtOptionAction()
+    {
+        // Set everything to 0 to clear all flags
+        // When an option isn't present here, it means that:
+        // * it is not settable, or
+        // * the option is POST (non-restricted)
+        // * it has no post-actions
+        // The post-action may be defined independently on restrictions.
+        memset(flags, 0, sizeof flags);
+
+        flags[SRTO_MSS]                = SRTO_R_PREBIND;
+        flags[SRTO_FC]                 = SRTO_R_PRE;
+        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
+        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
+        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
+        flags[SRTO_SENDER]             = SRTO_R_PRE;
+        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
+        flags[SRTO_LATENCY]            = SRTO_R_PRE;
+        flags[SRTO_INPUTBW]            = 0 | SRTO_POST_SPEC;
+        flags[SRTO_MININPUTBW]         = 0 | SRTO_POST_SPEC;
+        flags[SRTO_OHEADBW]            = 0 | SRTO_POST_SPEC;
+        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
+        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
+        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
+        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
+        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
+        flags[SRTO_SNDDROPDELAY]       = SRTO_R_PRE;
+        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
+        flags[SRTO_VERSION]            = SRTO_R_PRE;
+        flags[SRTO_LOSSMAXTTL]         = 0 | SRTO_POST_SPEC;
+        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
+        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
+        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
+        flags[SRTO_STREAMID]           = SRTO_R_PRE;
+        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
+        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
+        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
+        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
+        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
+        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
+        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
+        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
+        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
+#ifdef SRT_ENABLE_BINDTODEVICE
+        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
+#endif
+#if ENABLE_EXPERIMENTAL_BONDING
+        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
+#endif
+        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
+        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+
+        // For "private" options (not derived from the listener
+        // socket by an accepted socket) provide below private_default
+        // to which these options will be reset after blindly
+        // copying the option object from the listener socket.
+        // Note that this option cannot have runtime-dependent
+        // default value, like options affected by SRTO_TRANSTYPE.
+
+        // Options may be of different types, but this value should be only
+        // used as a source of the value. For example, in case of int64_t you'd
+        // have to place here a string of 8 characters. It should be copied
+        // always in the hardware order, as this is what will be directly
+        // passed to a setting function.
+        private_default[SRTO_STREAMID] = string();
+    }
+}
+srt_options_action;
+
+
 void CUDT::construct()
 {
     m_pSndBuffer           = NULL;
@@ -233,104 +332,6 @@ CUDT::~CUDT()
     delete m_pSNode;
     delete m_pRNode;
 }
-
-extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
-    SRTO_SNDSYN,
-    SRTO_RCVSYN,
-    SRTO_LINGER,
-    SRTO_SNDTIMEO,
-    SRTO_RCVTIMEO,
-    SRTO_MAXBW,
-    SRTO_INPUTBW,
-    SRTO_MININPUTBW,
-    SRTO_OHEADBW,
-    SRTO_SNDDROPDELAY,
-    SRTO_CONNTIMEO,
-    SRTO_DRIFTTRACER,
-    SRTO_LOSSMAXTTL
-};
-
-static const int32_t
-    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
-    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
-    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
-
-struct SrtOptionAction
-{
-    int flags[SRTO_E_SIZE];
-    std::map<SRT_SOCKOPT, std::string> private_default;
-    SrtOptionAction()
-    {
-        // Set everything to 0 to clear all flags
-        // When an option isn't present here, it means that:
-        // * it is not settable, or
-        // * the option is POST (non-restricted)
-        // * it has no post-actions
-        // The post-action may be defined independently on restrictions.
-        memset(flags, 0, sizeof flags);
-
-        flags[SRTO_MSS]                = SRTO_R_PREBIND;
-        flags[SRTO_FC]                 = SRTO_R_PRE;
-        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
-        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
-        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
-        flags[SRTO_SENDER]             = SRTO_R_PRE;
-        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
-        flags[SRTO_LATENCY]            = SRTO_R_PRE;
-        flags[SRTO_INPUTBW]            = 0 | SRTO_POST_SPEC;
-        flags[SRTO_MININPUTBW]         = 0 | SRTO_POST_SPEC;
-        flags[SRTO_OHEADBW]            = 0 | SRTO_POST_SPEC;
-        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
-        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
-        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
-        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
-        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
-        flags[SRTO_SNDDROPDELAY]       = SRTO_R_PRE;
-        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
-        flags[SRTO_VERSION]            = SRTO_R_PRE;
-        flags[SRTO_LOSSMAXTTL]         = 0 | SRTO_POST_SPEC;
-        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
-        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
-        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
-        flags[SRTO_STREAMID]           = SRTO_R_PRE;
-        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
-        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
-        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
-        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
-        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
-        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
-        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
-        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
-        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
-#ifdef SRT_ENABLE_BINDTODEVICE
-        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
-#endif
-#if ENABLE_EXPERIMENTAL_BONDING
-        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
-#endif
-        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
-        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
-
-        // For "private" options (not derived from the listener
-        // socket by an accepted socket) provide below private_default
-        // to which these options will be reset after blindly
-        // copying the option object from the listener socket.
-        // Note that this option cannot have runtime-dependent
-        // default value, like options affected by SRTO_TRANSTYPE.
-
-        // Options may be of different types, but this value should be only
-        // used as a source of the value. For example, in case of int64_t you'd
-        // have to place here a string of 8 characters. It should be copied
-        // always in the hardware order, as this is what will be directly
-        // passed to a setting function.
-        private_default[SRTO_STREAMID] = string();
-    }
-}
-srt_options_action;
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
