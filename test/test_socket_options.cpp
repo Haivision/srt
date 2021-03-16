@@ -319,26 +319,26 @@ TEST_F(TestSocketOptions, StreamIDEven)
 }
 
 
-TEST_F(TestSocketOptions, StreamIDCloseFull)
+TEST_F(TestSocketOptions, StreamIDAlmostFull)
 {
     // 12 characters = 4*3, that is, aligned to 4
-    string sid_closefull;
+    string sid_amost_full;
     for (size_t i = 0; i < CSrtConfig::MAX_SID_LENGTH-2; ++i)
-        sid_closefull += 'x';
+        sid_amost_full += 'x';
 
     // Just to manipulate the last ones.
-    size_t size = sid_closefull.size();
-    sid_closefull[size-2] = 'y';
-    sid_closefull[size-1] = 'z';
+    size_t size = sid_amost_full.size();
+    sid_amost_full[size-2] = 'y';
+    sid_amost_full[size-1] = 'z';
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_closefull.c_str(), sid_closefull.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_amost_full.c_str(), sid_amost_full.size()), SRT_SUCCESS);
 
     char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
     int buffer_len = sizeof buffer;
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
-    EXPECT_EQ(std::string(buffer), sid_closefull);
-    EXPECT_EQ(buffer_len, sid_closefull.size());
-    EXPECT_EQ(strlen(buffer), sid_closefull.size());
+    EXPECT_EQ(std::string(buffer), sid_amost_full);
+    EXPECT_EQ(buffer_len, sid_amost_full.size());
+    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
 
     StartListener();
     const SRTSOCKET accepted_sock = EstablishConnection();
@@ -348,9 +348,9 @@ TEST_F(TestSocketOptions, StreamIDCloseFull)
         buffer[i] = 'a';
     buffer_len = (int)(sizeof buffer);
     EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
-    EXPECT_EQ(buffer_len, sid_closefull.size());
-    EXPECT_EQ(strlen(buffer), sid_closefull.size());
-    EXPECT_EQ(buffer[sid_closefull.size()-1], 'z');
+    EXPECT_EQ(buffer_len, sid_amost_full.size());
+    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
+    EXPECT_EQ(buffer[sid_amost_full.size()-1], 'z');
 
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
