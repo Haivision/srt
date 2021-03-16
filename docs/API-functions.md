@@ -582,7 +582,7 @@ internal use only.
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
-| [`SRT_ESCLOSED`](#srt_esclosed)   | The `lsn` socket has been closed while the function was blocking the call.  including when the socket was closed just at the <br/> moment when a connection was made (i.e., the socket got closed during processing)   |
+| [`SRT_ESCLOSED`](#srt_esclosed)   | The `lsn` socket has been closed while the function was blocking the call. Including when the socket was closed just at the <br/> moment when a connection was made (i.e., the socket got closed during processing)   |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
