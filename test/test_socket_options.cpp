@@ -390,3 +390,29 @@ TEST_F(TestSocketOptions, StreamIDFull)
 
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
+
+TEST_F(TestSocketOptions, StreamIDLenListener)
+{
+    string stream_id_13 = "something1234";
+
+    EXPECT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_STREAMID, stream_id_13.c_str(), stream_id_13.size()), SRT_SUCCESS);
+
+    char buffer[648];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_listen_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (SRTSOCKET sock : { m_caller_sock, accepted_sock })
+    {
+        for (size_t i = 0; i < sizeof buffer; ++i)
+            buffer[i] = 'a';
+        buffer_len = (int)(sizeof buffer);
+        EXPECT_EQ(srt_getsockopt(sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+        EXPECT_EQ(buffer_len, 0) << (sock == accepted_sock ? "ACCEPTED" : "LISTENER");
+    }
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}

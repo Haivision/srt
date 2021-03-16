@@ -192,6 +192,26 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     // into a separate class for easier copying.
 
     m_config            = ancestor.m_config;
+    // Reset values that shall not be derived to default ones.
+    // These declarations should be consistent with SRTO_R_PRIVATE flag.
+    for (size_t i = 0; i < Size(srt_options_action.flags); ++i)
+    {
+        string* pdef = map_getp(srt_options_action.private_default, SRT_SOCKOPT(i));
+        if (pdef)
+        {
+            try
+            {
+                // Ignore errors here - this is a development-time granted
+                // value, not user-provided value.
+                m_config.set(SRT_SOCKOPT(i), pdef->data(), pdef->size());
+            }
+            catch (...)
+            {
+                LOGC(gglog.Error, log << "IPE: failed to set a declared default option!");
+            }
+        }
+    }
+
     m_SrtHsSide         = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
     m_bTLPktDrop        = ancestor.m_bTLPktDrop;
     m_iReorderTolerance = m_config.iMaxReorderTolerance;  // Initialize with maximum value
@@ -231,13 +251,14 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
 };
 
 static const int32_t
-    SRTO_R_PREBIND = BIT(0),
-    SRTO_R_PRE = BIT(1),
-    SRTO_POST_SPEC = BIT(2);
+    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
+    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
+    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
 
 struct SrtOptionAction
 {
     int flags[SRTO_E_SIZE];
+    std::map<SRT_SOCKOPT, std::string> private_default;
     SrtOptionAction()
     {
         // Set everything to 0 to clear all flags
@@ -293,6 +314,20 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+
+        // For "private" options (not derived from the listener
+        // socket by an accepted socket) provide below private_default
+        // to which these options will be reset after blindly
+        // copying the option object from the listener socket.
+        // Note that this option cannot have runtime-dependent
+        // default value, like options affected by SRTO_TRANSTYPE.
+
+        // Options may be of different types, but this value should be only
+        // used as a source of the value. For example, in case of int64_t you'd
+        // have to place here a string of 8 characters. It should be copied
+        // always in the hardware order, as this is what will be directly
+        // passed to a setting function.
+        private_default[SRTO_STREAMID] = string();
     }
 }
 srt_options_action;
