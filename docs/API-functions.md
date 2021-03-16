@@ -555,7 +555,7 @@ information through [`srt_group_data`](#srt_group_data) or the data filled by
 
 If the `lsn` listener socket is configured for blocking mode
 ([`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) set to true, default),
-the call will block until the incoming connection is ready, otherwise the
+the call will block until the incoming connection is ready. Otherwise, the
 call always returns immediately. The `SRT_EPOLL_IN` epoll event should be
 checked on the `lsn` socket prior to calling this function in that case.
 
@@ -582,7 +582,7 @@ internal use only.
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
-| [`SRT_ESCLOSED`](#srt_esclosed)   | The `lsn` socket has been closed while the function was blocking the call, including when the socket was closed just at the <br/> moment when a connection was made and the socket got closed during processing   |
+| [`SRT_ESCLOSED`](#srt_esclosed)   | The `lsn` socket has been closed while the function was blocking the call.  including when the socket was closed just at the <br/> moment when a connection was made (i.e., the socket got closed during processing)   |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
@@ -750,15 +750,14 @@ Connects a socket or a group to a remote party with a specified address and port
 
 **NOTES:**  
 
-1. The socket used here may be [bound by `srt_bind`](#srt_bind) from upside (or
-binding and connection can be done in one function,
-[`srt_connect_bind`](#srt_connect_bind)) so that it uses a predefined network
-interface or local outgoing port. This is optional in case of caller-listener
-arrangement, but obligatory for rendezvous arrangement.  If not used, the
-binding will be done automatically to `INADDR_ANY` (which binds on all
+1. The socket used here may be [bound by `srt_bind`](#srt_bind) before connecting, 
+or binding and connection can be done in one function ([`srt_connect_bind`](#srt_connect_bind)), 
+such that it uses a predefined network interface or local outgoing port. This is optional 
+in the case of a caller-listener arrangement, but obligatory for a rendezvous arrangement.  
+If not used, the binding will be done automatically to `INADDR_ANY` (which binds on all
 interfaces) and port 0 (which makes the system assign the port automatically).
 
-2. This function is used for both connecting to the listening peer in caller-listener
+2. This function is used for both connecting to the listening peer in a caller-listener
 arrangement, and calling the peer in rendezvous mode. For the latter, the
 [`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) flag must be set
 to true prior to calling this function, and binding, as described in #1,
@@ -770,7 +769,7 @@ automatically for every call of this function.
 
 4. If you want to connect a group to multiple links at once and use blocking
 mode, you might want to use [`srt_connect_group`](#srt_connect_group) instead.
-This function also allows you use additional settings, available only for groups.
+This function also allows you to use additional settings, available only for groups.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
@@ -791,22 +790,22 @@ This function also allows you use additional settings, available only for groups
 
 If the `u` socket is configured for blocking mode (when
 [`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) is set to true, default),
-the call will block until the connection succeeds or fails. The "early" errors:
+the call will block until the connection succeeds or fails. The "early" errors 
 [`SRT_EINVSOCK`](#srt_einvsock), [`SRT_ERDVUNBOUND`](#srt_erdvunbound) and
 [`SRT_ECONNSOCK`](#srt_econnsock) are reported in both modes immediately. Other
 errors are "late" failures and can only be reported in blocking mode. 
 
-In non-blocking mode, the successful connection can be recognized by the
-`SRT_EPOLL_OUT` epoll event flag and the "late" failure by the `SRT_EPOLL_ERR`
-flag (NOTE: the socket state in case of a failed connection remains
-`SRTS_CONNECTING` in that case).
+In non-blocking mode, a successful connection can be recognized by the
+`SRT_EPOLL_OUT` epoll event flag and a "late" failure by the `SRT_EPOLL_ERR`
+flag. Note that the socket state in the case of a failed connection remains
+`SRTS_CONNECTING` in that case.
 
-In case of "late" failures you can additionally call
-[`srt_getrejectreason`](#srt_getrejectreason) to get the detailed error
+In the case of "late" failures you can additionally call
+[`srt_getrejectreason`](#srt_getrejectreason) to get detailed error
 information. Note that in blocking mode only for the `SRT_ECONNREJ` error
-this function may return you any additional information. In non-blocking
-mode the detailed "late" failure cannot be distinguished and therefore it
-can be also obtained from this function.
+this function may return any additional information. In non-blocking
+mode a detailed "late" failure cannot be distinguished, and therefore it
+can also be obtained from this function.
 
 
 
