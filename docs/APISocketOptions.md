@@ -1443,8 +1443,8 @@ in this connection both peers are known to one another and both have equivalent
 roles in the connection.
 
 - **IMPORTANT**: This option is not derived by the accepted socket from the listener
-socket and setting it on a listener socket (see `srt_listen` function) doesn't
-influence on anything.
+socket, and setting it on a listener socket (see `srt_listen` function) doesn't
+influence anything.
 
 [Return to list](#list-of-options)
 
