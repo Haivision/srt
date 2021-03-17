@@ -29,6 +29,7 @@
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
+#include "core.h"
 #include "udt.h"
 #include "logging.h"
 #include "utilities.h"
@@ -232,6 +233,10 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 Error("With //group, the group 'type' must be specified.");
             }
 
+            auto* is = map_getp(par, "forceid");
+            if (is)
+                m_forced_id = stoi(*is);
+
             vector<string> parts;
             Split(m_group_type, '/', back_inserter(parts));
             if (parts.size() == 0 || parts.size() > 2)
@@ -355,6 +360,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
             par.erase("type");
             par.erase("nodes");
+            par.erase("forceid");
 
             // For a group-connect specification, it's
             // always the caller mode.
@@ -463,6 +469,12 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             par["minversion"] = Sprint(version);
             Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
         }
+    }
+
+    if (par.count("forceid"))
+    {
+        m_forced_id = stoi(par["forceid"]);
+        par.erase("forceid");
     }
 
     // Assign the others here.
@@ -890,7 +902,11 @@ void SrtCommon::OpenClient(string host, int port)
 
 void SrtCommon::PrepareClient()
 {
-    m_sock = srt_create_socket();
+    if (m_forced_id != SRT_INVALID_SOCK)
+        m_sock = CUDT::socket(m_forced_id);
+    else
+        m_sock = srt_create_socket();
+
     if (m_sock == SRT_ERROR)
         Error("srt_create_socket");
 
@@ -966,7 +982,11 @@ void SrtCommon::OpenGroupClient()
         Error("With //group, type='" + m_group_type + "' undefined");
     }
 
-    m_sock = srt_create_group(type);
+    if (m_forced_id != SRT_INVALID_SOCK)
+        m_sock = CUDT::createGroup(type, m_forced_id);
+    else
+        m_sock = srt_create_group(type);
+
     if (m_sock == -1)
         Error("srt_create_group");
 
