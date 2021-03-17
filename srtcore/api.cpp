@@ -190,8 +190,7 @@ m_bClosing(false),
 m_GCStopCond(),
 m_InitLock(),
 m_iInstanceCount(0),
-m_bGCStatus(false),
-m_ClosedSockets()
+m_bGCStatus(false)
 {
    // Socket ID MUST start from a random value
    // Note. Don't use CTimer here, because s_UDTUnited is a static instance of CUDTUnited
@@ -488,6 +487,21 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps)
         *pps = ns;
 
    return ns->m_SocketID;
+}
+
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, bool lateremove)
+{
+    s->m_pUDT->m_bConnected = false;
+    s->m_pUDT->m_bConnecting = false;
+
+    m_ClosedSockets[id] = s;
+    if (!lateremove)
+    {
+        m_Sockets.erase(id);
+    }
+
+    removeMux(s);
 }
 
 int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, const CPacket& hspkt,
@@ -847,8 +861,7 @@ ERR_ROLLBACK:
               ns->removeFromGroup(true);
           }
 #endif
-          m_Sockets.erase(id);
-          m_ClosedSockets[id] = ns;
+          swipeSocket_LOCKED(id, ns);
       }
 
       return -1;
@@ -2024,8 +2037,7 @@ int CUDTUnited::close(CUDTSocket* s)
        }
 #endif
 
-       m_Sockets.erase(s->m_SocketID);
-       m_ClosedSockets[s->m_SocketID] = s;
+       swipeSocket_LOCKED(s->m_SocketID, s);
        HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
        CGlobEvent::triggerEvent();
@@ -2653,7 +2665,9 @@ void CUDTUnited::checkBrokenSockets()
          //close broken connections and start removal timer
          s->setClosed();
          tbc.push_back(i->first);
-         m_ClosedSockets[i->first] = s;
+
+         // NOTE: removal from m_SocketID POSTPONED.
+         swipeSocket_LOCKED(i->first, s, true);
 
          // remove from listener's queue
          sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
@@ -2731,9 +2745,6 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
        s->removeFromGroup(true);
    }
 #endif
-   // decrease multiplexer reference count, and remove it if necessary
-   const int mid = s->m_iMuxID;
-
    {
       ScopedLock cg(s->m_AcceptLock);
 
@@ -2755,8 +2766,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          CUDTSocket* as = si->second;
 
          as->breakSocket_LOCKED();
-         m_ClosedSockets[*q] = as;
-         m_Sockets.erase(*q);
+         swipeSocket_LOCKED(*q, as);
       }
    }
 
@@ -2783,40 +2793,62 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
    s->m_pUDT->closeInternal();
+   removeMux(s);
    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
    delete s;
+}
 
-   if (mid == -1)
-       return;
+// decrease multiplexer reference count, and remove it if necessary
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::removeMux(CUDTSocket* s)
+{
+    int mid = s->m_iMuxID;
+    if (mid == -1) // Ignore those already removed
+    {
+        HLOGC(smlog.Debug, log << "removeMux: @" << s->m_SocketID << " has no muxer, ok.");
+        return;
+    }
 
-   map<int, CMultiplexer>::iterator m;
-   m = m_mMultiplexer.find(mid);
-   if (m == m_mMultiplexer.end())
-   {
-      LOGC(smlog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
-      return;
-   }
+    // In case when the socket isn't to be immediately deleted
+    // the MuxID field must be updated in order to catch the above
+    // condition when it's called for the same socket second time.
+    s->m_iMuxID = -1;
+    s->m_pUDT->m_pRcvQueue = NULL;
+    s->m_pUDT->m_pSndQueue = NULL;
 
-   CMultiplexer& mx = m->second;
 
-   mx.m_iRefCount --;
-   // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
-   //    u, mx.m_iRefCount);
-   if (0 == mx.m_iRefCount)
-   {
-       HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
-           << u << " - deleting muxer bound to port "
-           << mx.m_pChannel->bindAddressAny().hport());
-      // The channel has no access to the queues and
-      // it looks like the multiplexer is the master of all of them.
-      // The queues must be silenced before closing the channel
-      // because this will cause error to be returned in any operation
-      // being currently done in the queues, if any.
-      mx.m_pSndQueue->setClosing();
-      mx.m_pRcvQueue->setClosing();
-      mx.destroy();
-      m_mMultiplexer.erase(m);
-   }
+    map<int, CMultiplexer>::iterator m;
+    m = m_mMultiplexer.find(mid);
+    if (m == m_mMultiplexer.end())
+    {
+        LOGC(smlog.Fatal, log << "IPE: For socket @" << s->m_SocketID << " MUXER id=" << mid << " NOT FOUND!");
+        return;
+    }
+
+    CMultiplexer& mx = m->second;
+
+    mx.m_iRefCount --;
+    // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
+    //    u, mx.m_iRefCount);
+    if (mx.m_iRefCount <= 0)
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
+                << s->m_SocketID << " - deleting muxer bound to "
+                << mx.m_pChannel->bindAddressAny().str());
+        // The channel has no access to the queues and
+        // it looks like the multiplexer is the master of all of them.
+        // The queues must be silenced before closing the channel
+        // because this will cause error to be returned in any operation
+        // being currently done in the queues, if any.
+        mx.m_pSndQueue->setClosing();
+        mx.m_pRcvQueue->setClosing();
+        mx.destroy();
+        m_mMultiplexer.erase(m);
+    }
+    else
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.m_iRefCount << " users");
+    }
 }
 
 void CUDTUnited::updateMux(
@@ -3052,7 +3084,11 @@ void* CUDTUnited::garbageCollect(void* p)
                s->removeFromGroup(false);
            }
 #endif
-           self->m_ClosedSockets[i->first] = s;
+
+           // NOTE: not removing the socket from m_Sockets.
+           // This is a loop over m_Sockets and after this loop ends,
+           // this whole container will be cleared.
+           self->swipeSocket_LOCKED(i->first, s, true);
 
            // remove from listener's queue
            sockets_t::iterator ls = self->m_Sockets.find(
