@@ -141,7 +141,7 @@ public:
 
     bool set(const char* s, size_t length)
     {
-        if (length >= SIZE)
+        if (length > SIZE)
             return false;
 
         memcpy(stor, s, length);
