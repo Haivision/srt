@@ -188,9 +188,9 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
         EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
 
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - chrono_ts_start).count();
-        // Confidence interval border : +/-10 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 100) << "Timeout was: " << delta_ms;
-        EXPECT_GE(delta_ms, connection_timeout_ms - 100) << "Timeout was: " << delta_ms;
+        // Confidence interval border : +/-200 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 200) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 200) << "Timeout was: " << delta_ms;
 
         const int error_code = srt_getlasterror(nullptr);
         EXPECT_EQ(error_code, SRT_ENOSERVER);
