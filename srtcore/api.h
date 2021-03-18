@@ -305,6 +305,7 @@ public:
    }
 
    void deleteGroup(CUDTGroup* g);
+   void deleteGroup_LOCKED(CUDTGroup* g);
 
    // [[using locked(m_GlobControlLock)]]
    CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)

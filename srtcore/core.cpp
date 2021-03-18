@@ -114,6 +114,106 @@ const int       UDT::ERROR        = CUDT::ERROR;
         2[15..0]:   TsbPD delay     [0..60000] msec
 */
 
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
+    SRTO_SNDSYN,
+    SRTO_RCVSYN,
+    SRTO_LINGER,
+    SRTO_SNDTIMEO,
+    SRTO_RCVTIMEO,
+    SRTO_MAXBW,
+    SRTO_INPUTBW,
+    SRTO_MININPUTBW,
+    SRTO_OHEADBW,
+    SRTO_SNDDROPDELAY,
+    SRTO_CONNTIMEO,
+    SRTO_DRIFTTRACER,
+    SRTO_LOSSMAXTTL
+};
+
+static const int32_t
+    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
+    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
+    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
+
+struct SrtOptionAction
+{
+    int flags[SRTO_E_SIZE];
+    std::map<SRT_SOCKOPT, std::string> private_default;
+    SrtOptionAction()
+    {
+        // Set everything to 0 to clear all flags
+        // When an option isn't present here, it means that:
+        // * it is not settable, or
+        // * the option is POST (non-restricted)
+        // * it has no post-actions
+        // The post-action may be defined independently on restrictions.
+        memset(flags, 0, sizeof flags);
+
+        flags[SRTO_MSS]                = SRTO_R_PREBIND;
+        flags[SRTO_FC]                 = SRTO_R_PRE;
+        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
+        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
+        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
+        flags[SRTO_SENDER]             = SRTO_R_PRE;
+        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
+        flags[SRTO_LATENCY]            = SRTO_R_PRE;
+        flags[SRTO_INPUTBW]            = 0 | SRTO_POST_SPEC;
+        flags[SRTO_MININPUTBW]         = 0 | SRTO_POST_SPEC;
+        flags[SRTO_OHEADBW]            = 0 | SRTO_POST_SPEC;
+        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
+        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
+        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
+        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
+        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
+        flags[SRTO_SNDDROPDELAY]       = SRTO_R_PRE;
+        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
+        flags[SRTO_VERSION]            = SRTO_R_PRE;
+        flags[SRTO_CONNTIMEO]          = SRTO_R_PRE;
+        flags[SRTO_LOSSMAXTTL]         = 0 | SRTO_POST_SPEC;
+        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
+        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
+        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
+        flags[SRTO_STREAMID]           = SRTO_R_PRE;
+        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
+        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
+        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
+        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
+        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
+        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
+        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
+        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
+        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
+#ifdef SRT_ENABLE_BINDTODEVICE
+        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
+#endif
+#if ENABLE_EXPERIMENTAL_BONDING
+        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
+#endif
+        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
+        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+
+        // For "private" options (not derived from the listener
+        // socket by an accepted socket) provide below private_default
+        // to which these options will be reset after blindly
+        // copying the option object from the listener socket.
+        // Note that this option cannot have runtime-dependent
+        // default value, like options affected by SRTO_TRANSTYPE.
+
+        // Options may be of different types, but this value should be only
+        // used as a source of the value. For example, in case of int64_t you'd
+        // have to place here a string of 8 characters. It should be copied
+        // always in the hardware order, as this is what will be directly
+        // passed to a setting function.
+        private_default[SRTO_STREAMID] = string();
+    }
+}
+srt_options_action;
+
+
 void CUDT::construct()
 {
     m_pSndBuffer           = NULL;
@@ -192,6 +292,26 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     // into a separate class for easier copying.
 
     m_config            = ancestor.m_config;
+    // Reset values that shall not be derived to default ones.
+    // These declarations should be consistent with SRTO_R_PRIVATE flag.
+    for (size_t i = 0; i < Size(srt_options_action.flags); ++i)
+    {
+        string* pdef = map_getp(srt_options_action.private_default, SRT_SOCKOPT(i));
+        if (pdef)
+        {
+            try
+            {
+                // Ignore errors here - this is a development-time granted
+                // value, not user-provided value.
+                m_config.set(SRT_SOCKOPT(i), pdef->data(), pdef->size());
+            }
+            catch (...)
+            {
+                LOGC(gglog.Error, log << "IPE: failed to set a declared default option!");
+            }
+        }
+    }
+
     m_SrtHsSide         = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
     m_bTLPktDrop        = ancestor.m_bTLPktDrop;
     m_iReorderTolerance = m_config.iMaxReorderTolerance;  // Initialize with maximum value
@@ -213,89 +333,6 @@ CUDT::~CUDT()
     delete m_pSNode;
     delete m_pRNode;
 }
-
-extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
-    SRTO_SNDSYN,
-    SRTO_RCVSYN,
-    SRTO_LINGER,
-    SRTO_SNDTIMEO,
-    SRTO_RCVTIMEO,
-    SRTO_MAXBW,
-    SRTO_INPUTBW,
-    SRTO_MININPUTBW,
-    SRTO_OHEADBW,
-    SRTO_SNDDROPDELAY,
-    SRTO_DRIFTTRACER,
-    SRTO_LOSSMAXTTL
-};
-
-static const int32_t
-    SRTO_R_PREBIND = BIT(0),
-    SRTO_R_PRE = BIT(1),
-    SRTO_POST_SPEC = BIT(2);
-
-struct SrtOptionAction
-{
-    int flags[SRTO_E_SIZE];
-    SrtOptionAction()
-    {
-        // Set everything to 0 to clear all flags
-        // When an option isn't present here, it means that:
-        // * it is not settable, or
-        // * the option is POST (non-restricted)
-        // * it has no post-actions
-        // The post-action may be defined independently on restrictions.
-        memset(flags, 0, sizeof flags);
-
-        flags[SRTO_MSS]                = SRTO_R_PREBIND;
-        flags[SRTO_FC]                 = SRTO_R_PRE;
-        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
-        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
-        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
-        flags[SRTO_SENDER]             = SRTO_R_PRE;
-        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
-        flags[SRTO_LATENCY]            = SRTO_R_PRE;
-        flags[SRTO_INPUTBW]            = 0 | SRTO_POST_SPEC;
-        flags[SRTO_MININPUTBW]         = 0 | SRTO_POST_SPEC;
-        flags[SRTO_OHEADBW]            = 0 | SRTO_POST_SPEC;
-        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
-        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
-        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
-        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
-        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
-        flags[SRTO_SNDDROPDELAY]       = SRTO_R_PRE;
-        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
-        flags[SRTO_VERSION]            = SRTO_R_PRE;
-        flags[SRTO_CONNTIMEO]          = SRTO_R_PRE;
-        flags[SRTO_LOSSMAXTTL]         = 0 | SRTO_POST_SPEC;
-        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
-        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
-        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
-        flags[SRTO_STREAMID]           = SRTO_R_PRE;
-        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
-        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
-        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
-        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
-        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
-        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
-        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
-        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
-        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
-#ifdef SRT_ENABLE_BINDTODEVICE
-        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
-#endif
-#if ENABLE_EXPERIMENTAL_BONDING
-        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
-#endif
-        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
-        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
-    }
-}
-srt_options_action;
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
@@ -870,7 +907,6 @@ void CUDT::open()
 
     m_iRTT    = 10 * COMM_SYN_INTERVAL_US;
     m_iRTTVar = m_iRTT >> 1;
-
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -2571,7 +2607,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // Un-swap on big endian machines
                 ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
 
-                m_config.sStreamName.set(target, bytelen);
+                m_config.sStreamName.set(target, strlen(target));
                 HLOGC(cnlog.Debug,
                       log << "CONNECTOR'S REQUESTED SID [" << m_config.sStreamName.c_str() << "] (bytelen=" << bytelen
                           << " blocklen=" << blocklen << ")");
@@ -2663,7 +2699,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD_E_SIZE] = {};
-                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE || blocklen > GRPD_E_SIZE)
+                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
@@ -2918,6 +2954,9 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
+        // Group existence is guarded, so we can now lock the group as well.
+        ScopedLock gl(*pg->exp_groupLock());
+
         // Now we know the group exists, but it might still be closed
         if (pg->closing())
         {
@@ -2932,14 +2971,19 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
             pg->set_peerid(grpid);
-            HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
+            HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid() << ", copying characteristic data");
+
+            // The call to syncWithSocket is copying
+            // some interesting data from the first connected
+            // socket. This should be only done for the first successful connection.
+            pg->syncWithSocket(*this, HSD_INITIATOR);
         }
         // Otherwise the peer id must be the same as existing, otherwise
         // this group is considered already bound to another peer group.
         // (Note that the peer group is peer-specific, and peer id numbers
         // may repeat among sockets connected to groups established on
         // different peers).
-        else if (pg->peerid() != grpid)
+        else if (peer != grpid)
         {
             LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
                     << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
@@ -3041,7 +3085,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         if (!gp->applyFlags(link_flags, m_SrtHsSide))
         {
             // Wrong settings. Must reject. Delete group.
-            s_UDTUnited.deleteGroup(gp);
+            s_UDTUnited.deleteGroup_LOCKED(gp);
             return -1;
         }
 
@@ -4417,6 +4461,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
+        m_iRTTVar    = m_iRTT >> 1;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
@@ -5315,6 +5360,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
+        m_iRTTVar    = m_iRTT >> 1;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
