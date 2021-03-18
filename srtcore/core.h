@@ -897,6 +897,7 @@ private:
 
 private: // synchronization: mutexes and conditions
     srt::sync::Mutex m_ConnectionLock;           // used to synchronize connection operation
+    srt::sync::Mutex m_UpdateLock;               // used to synchronize connection-runtime data
 
     srt::sync::Condition m_SendBlockCond;        // used to block "send" call
     srt::sync::Mutex m_SendBlockLock;            // lock associated to m_SendBlockCond
