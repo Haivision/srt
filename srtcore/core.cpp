@@ -7054,6 +7054,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
+// [using maybe_locked(m_ConnectionLock, evt == TEV_INIT)]
 bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
@@ -7149,9 +7150,16 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
     // Now execute a congctl-defined action for that event.
     EmitSignal(evt, arg);
 
+    if (evt == TEV_INIT)
+    {
+        // With TEV_INIT, also initialize these fields, just DO NOT LOCK m_ConnectionLock,
+        // BECAUSE IN THIS CASE IT'S LOCKED ALREADY.
+        m_tdSendInterval    = microseconds_from(m_CongCtl->pktSndPeriod_us());
+        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+    }
     // This should be done with every event except ACKACK and SEND/RECEIVE
     // After any action was done by the congctl, update the congestion window and sending interval.
-    if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
+    else if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
     {
         // This part comes from original UDT.
         // NOTE: THESE things come from CCC class:
