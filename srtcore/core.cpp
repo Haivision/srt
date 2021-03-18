@@ -125,7 +125,6 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_MININPUTBW,
     SRTO_OHEADBW,
     SRTO_SNDDROPDELAY,
-    SRTO_CONNTIMEO,
     SRTO_DRIFTTRACER,
     SRTO_LOSSMAXTTL
 };
@@ -172,6 +171,7 @@ struct SrtOptionAction
         flags[SRTO_SNDDROPDELAY]       = SRTO_R_PRE;
         flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
         flags[SRTO_VERSION]            = SRTO_R_PRE;
+        flags[SRTO_CONNTIMEO]          = SRTO_R_PRE;
         flags[SRTO_LOSSMAXTTL]         = 0 | SRTO_POST_SPEC;
         flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
         flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
