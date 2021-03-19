@@ -8202,11 +8202,23 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
         const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
 
+        if (rtt == -1)
+        {
+            LOGC(inlog.Error,
+                 log << CONID() << "IPE: The record about ACK is not found, "
+                     << "RTT estimate at the receiver side can not be calculated "
+                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                     << ", oldest ACK record: " << "not yet available" << ", RTT (EWMA): " << m_iRTT << ")");
+            break;
+        }
+
         if (rtt <= 0)
         {
             LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK node overwritten when acknowledging " << ctrlpkt.getAckSeqNo()
-                     << " (ack extracted: " << ack << ")");
+                 log << CONID() << "IPE: RTT estimate obtained by the receiver is negative or zero, "
+                     << "there may have been a time shift "
+                     << "(current time: " << FormatTime(currtime) << ", the time of sending ACK: " << "not yet available"
+                     << ", RTT estimate: " << rtt << "). The usage of monotonic clocks is recommended. ");
             break;
         }
 
