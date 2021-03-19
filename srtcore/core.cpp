@@ -8198,7 +8198,10 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
     {
         int32_t ack = 0;
+
+        // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
         const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
+
         if (rtt <= 0)
         {
             LOGC(inlog.Error,
@@ -8207,10 +8210,10 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             break;
         }
 
-        // if increasing delay detected...
+        // If increasing delay is detected
         //   sendCtrl(UMSG_CGWARNING);
 
-        // RTT EWMA
+        // Calculate RTT (EWMA) on the receiver side
         m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
         m_iRTT = avg_iir<8>(m_iRTT, rtt);
 
@@ -8240,7 +8243,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 #endif
         }
 
-        // update last ACK that has been received by the sender
+        // Update last ACK that has been received by the sender
         if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
             m_iRcvLastAckAck = ack;
 
