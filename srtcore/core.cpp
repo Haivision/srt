@@ -571,7 +571,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_TLPKTDROP:
         *(bool *)optval = m_bTLPktDrop;
-        optlen             = sizeof(bool);
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_SNDDROPDELAY:
