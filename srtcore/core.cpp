@@ -6464,7 +6464,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
         }
 
-        if (!m_pRcvBuffer->isRcvDataReady())
+        if (!(ScopedLock (m_RcvBufferLock), m_pRcvBuffer->isRcvDataReady()))
         {
             // read is not available any more
             s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
@@ -6515,7 +6515,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
 
-        if (!m_pRcvBuffer->isRcvDataReady())
+        if (!(ScopedLock (m_RcvBufferLock), m_pRcvBuffer->isRcvDataReady()))
         {
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
