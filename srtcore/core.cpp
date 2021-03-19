@@ -8200,7 +8200,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         int32_t ack = 0;
 
         // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
-        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
+        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, currtime);
 
         if (rtt == -1)
         {
