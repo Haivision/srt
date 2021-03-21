@@ -81,6 +81,8 @@ mutexes for which the locking order must be preserved.
 
  - CUDT::m_ConnectionLock
 
+        - CUDT::m_UpdateLock(T)
+
         - CRendezvousQueue::m_RIDVectorLock
 
  - CUDTUnited::m_GlobControlLock

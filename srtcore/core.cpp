@@ -6993,10 +6993,13 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     double interval           = count_microseconds(currtime - m_stats.tsLastSampleTime);
     perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
     perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-    perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
-    perf->pktFlowWindow       = m_iFlowWindowSize;
-    perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = getFlightSpan();
+    {
+        ScopedLock ulk (m_UpdateLock);
+        perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
+        perf->pktFlowWindow       = m_iFlowWindowSize;
+        perf->pktCongestionWindow = (int)m_dCongestionWindow;
+        perf->pktFlightSize       = getFlightSpan();
+    }
     perf->msRTT               = (double)m_iRTT / 1000.0;
     perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
     perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
@@ -7201,6 +7204,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
+        ScopedLock ulk (m_UpdateLock);
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
         m_dCongestionWindow = m_CongCtl->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
@@ -8742,8 +8746,13 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
         // If no loss, and no packetfilter control packet, pack a new packet.
 
         // Check the congestion/flow window limit
-        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
-        const int flightspan = getFlightSpan();
+        int cwnd, flightspan;
+        {
+            ScopedLock ulk (m_UpdateLock);
+            cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+            flightspan = getFlightSpan();
+        }
+
         if (cwnd > flightspan)
         {
             // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
