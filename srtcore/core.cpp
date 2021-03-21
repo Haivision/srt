@@ -7098,6 +7098,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
+// [using maybe_locked(m_ConnectionLock, evt == TEV_INIT)]
 bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
@@ -7193,22 +7194,33 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
     // Now execute a congctl-defined action for that event.
     EmitSignal(evt, arg);
 
+    if (evt == TEV_INIT)
+    {
+        // With TEV_INIT, also initialize these fields, just DO NOT LOCK m_ConnectionLock,
+        // BECAUSE IN THIS CASE IT'S LOCKED ALREADY.
+        m_tdSendInterval    = microseconds_from(m_CongCtl->pktSndPeriod_us());
+        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+    }
     // This should be done with every event except ACKACK and SEND/RECEIVE
     // After any action was done by the congctl, update the congestion window and sending interval.
-    if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
+    else if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
     {
         // This part comes from original UDT.
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
-        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+        int64_t sendint = m_CongCtl->pktSndPeriod_us();
+        double cgwin = m_CongCtl->cgWindowSize();
+
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << std::setprecision(3) << m_dCongestionWindow);
+              log << CONID() << "updateCC: updating values from congctl: interval=" << sendint
+                  << " us, cgwindow=" << std::setprecision(3) << cgwin);
 #endif
+
+        ScopedLock lkc (m_ConnectionLock);
+        m_tdSendInterval    = microseconds_from(sendint);
+        m_dCongestionWindow = cgwin;
     }
 
     HLOGC(rslog.Debug, log << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
