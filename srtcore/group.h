@@ -637,9 +637,9 @@ private:
     bool               m_bTLPktDrop;
     int64_t            m_iTsbPdDelay_us;
     int                m_RcvEID;
-    struct CEPollDesc* m_RcvEpolld;
+    class CEPollDesc*  m_RcvEpolld;
     int                m_SndEID;
-    struct CEPollDesc* m_SndEpolld;
+    class CEPollDesc*  m_SndEpolld;
 
     int m_iSndTimeOut; // sending timeout in milliseconds
     int m_iRcvTimeOut; // receiving timeout in milliseconds
