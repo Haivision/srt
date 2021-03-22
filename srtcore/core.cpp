@@ -1366,7 +1366,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 // pkt must be set the buffer and configured for UMSG_HANDSHAKE.
 // Note that this function replaces also serialization for the HSv4.
 
-// [[using locked(m_ConnectionLock)]]
+// [[using maybe_locked(m_ConnectionLock)]]
 bool CUDT::createSrtHandshake(
         int             srths_cmd,
         int             srtkm_cmd,
@@ -3858,7 +3858,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
     return CONN_ACCEPT;
 }
 
-// [[using locked(m_ConnectionLock)]]
+// [[using maybe_locked(m_ConnectionLock)]]
 EConnectStatus CUDT::processRendezvous(
     const CPacket& response, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
