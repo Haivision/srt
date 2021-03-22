@@ -449,7 +449,7 @@ private:
     bool           m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
-    int            m_iBusy;
+    srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {

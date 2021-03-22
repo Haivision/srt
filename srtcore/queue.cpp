@@ -242,15 +242,17 @@ void CUnitQueue::makeUnitFree(CUnit *unit)
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
     unit->m_iFlag = CUnit::FREE;
+
     --m_iCount;
 }
 
 void CUnitQueue::makeUnitGood(CUnit *unit)
 {
+    ++m_iCount;
+
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
     unit->m_iFlag = CUnit::GOOD;
-    ++m_iCount;
 }
 
 CSndUList::CSndUList()

@@ -136,7 +136,7 @@ private:
    CUnit* m_pAvailUnit; // recent available unit
 
    int m_iSize;         // total size of the unit queue, in number of packets
-   int m_iCount;        // total number of valid (occupied) packets in the queue
+   srt::sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
 
    int m_iMSS;          // unit buffer size
    int m_iIPversion;    // IP version
