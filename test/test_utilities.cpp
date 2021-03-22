@@ -211,3 +211,63 @@ TEST(CircularBuffer, Overall)
     IF_HEAVY_LOGGING(cerr << "DONE.\n");
 }
 
+TEST(ConfigString, Setting)
+{
+    using namespace std;
+
+    static const auto STRSIZE = 20;
+    StringStorage<STRSIZE> s;
+
+    EXPECT_TRUE(s.empty());
+    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.str(), std::string());
+
+    char example_ac1[] = "example_long";
+    char example_ac2[] = "short";
+    char example_ac3[] = "example_longer";
+    char example_acx[] = "example_long_excessively";
+    char example_ace[] = "";
+
+    // According to the standard, this array gets automatically
+    // the number of characters + 1 for terminating 0. Get sizeof()-1
+    // to get the number of characters.
+
+    EXPECT_TRUE(s.set(example_ac1, sizeof (example_ac1)-1));
+    EXPECT_EQ(s.size(), sizeof (example_ac1)-1);
+    EXPECT_FALSE(s.empty());
+
+    EXPECT_TRUE(s.set(example_ac2, sizeof (example_ac2)-1));
+    EXPECT_EQ(s.size(), sizeof (example_ac2)-1);
+
+    EXPECT_TRUE(s.set(example_ac3, sizeof (example_ac3)-1));
+    EXPECT_EQ(s.size(), sizeof (example_ac3)-1);
+
+    EXPECT_FALSE(s.set(example_acx, sizeof (example_acx)-1));
+    EXPECT_EQ(s.size(), sizeof (example_ac3)-1);
+
+    EXPECT_TRUE(s.set(example_ace, sizeof (example_ace)-1));
+    EXPECT_EQ(s.size(), 0);
+
+    string example_s1 = "example_long";
+    string example_s2 = "short";
+    string example_s3 = "example_longer";
+    string example_sx = "example_long_excessively";
+    string example_se = "";
+
+    EXPECT_TRUE(s.set(example_s1));
+    EXPECT_EQ(s.size(), example_s1.size());
+    EXPECT_FALSE(s.empty());
+
+    EXPECT_TRUE(s.set(example_s2));
+    EXPECT_EQ(s.size(), example_s2.size());
+
+    EXPECT_TRUE(s.set(example_s3));
+    EXPECT_EQ(s.size(), example_s3.size());
+
+    EXPECT_FALSE(s.set(example_sx));
+    EXPECT_EQ(s.size(), example_s3.size());
+
+    EXPECT_TRUE(s.set(example_se));
+    EXPECT_EQ(s.size(), 0);
+    EXPECT_TRUE(s.empty());
+}

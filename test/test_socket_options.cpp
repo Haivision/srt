@@ -14,6 +14,8 @@
 #include <future>
 #include <thread>
 
+// SRT includes
+#include <socketconfig.h>
 #include "srt.h"
 
 using namespace std;
@@ -246,3 +248,171 @@ TEST_F(TestSocketOptions, MinInputBWRuntime)
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
 
+TEST_F(TestSocketOptions, StreamIDWrongLen)
+{
+    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
+    for (size_t i = 0; i < sizeof buffer; ++i)
+        buffer[i] = 'a' + i % 25;
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, buffer, CSrtConfig::MAX_SID_LENGTH+1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+}
+
+// Try to set/get a 13-character string in SRTO_STREAMID.
+// This tests checks that the StreamID is set to the correct size
+// while it is transmitted as 16 characters in the Stream ID HS extension.
+TEST_F(TestSocketOptions, StreamIDOdd)
+{
+    // 13 characters, that is, 3*4+1
+    string sid_odd = "something1234";
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), sid_odd.size()), SRT_SUCCESS);
+
+    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(std::string(buffer), sid_odd);
+    EXPECT_EQ(buffer_len, sid_odd.size());
+    EXPECT_EQ(strlen(buffer), sid_odd.size());
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (size_t i = 0; i < sizeof buffer; ++i)
+        buffer[i] = 'a';
+    buffer_len = (int)(sizeof buffer);
+    EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(buffer_len, sid_odd.size());
+    EXPECT_EQ(strlen(buffer), sid_odd.size());
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}
+
+
+TEST_F(TestSocketOptions, StreamIDEven)
+{
+    // 12 characters = 4*3, that is, aligned to 4
+    string sid_even = "123412341234";
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_even.c_str(), sid_even.size()), SRT_SUCCESS);
+
+    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(std::string(buffer), sid_even);
+    EXPECT_EQ(buffer_len, sid_even.size());
+    EXPECT_EQ(strlen(buffer), sid_even.size());
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (size_t i = 0; i < sizeof buffer; ++i)
+        buffer[i] = 'a';
+    buffer_len = (int)(sizeof buffer);
+    EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(buffer_len, sid_even.size());
+    EXPECT_EQ(strlen(buffer), sid_even.size());
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}
+
+
+TEST_F(TestSocketOptions, StreamIDAlmostFull)
+{
+    // 12 characters = 4*3, that is, aligned to 4
+    string sid_amost_full;
+    for (size_t i = 0; i < CSrtConfig::MAX_SID_LENGTH-2; ++i)
+        sid_amost_full += 'x';
+
+    // Just to manipulate the last ones.
+    size_t size = sid_amost_full.size();
+    sid_amost_full[size-2] = 'y';
+    sid_amost_full[size-1] = 'z';
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_amost_full.c_str(), sid_amost_full.size()), SRT_SUCCESS);
+
+    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(std::string(buffer), sid_amost_full);
+    EXPECT_EQ(buffer_len, sid_amost_full.size());
+    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (size_t i = 0; i < sizeof buffer; ++i)
+        buffer[i] = 'a';
+    buffer_len = (int)(sizeof buffer);
+    EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(buffer_len, sid_amost_full.size());
+    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
+    EXPECT_EQ(buffer[sid_amost_full.size()-1], 'z');
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}
+
+TEST_F(TestSocketOptions, StreamIDFull)
+{
+    // 12 characters = 4*3, that is, aligned to 4
+    string sid_full;
+    for (size_t i = 0; i < CSrtConfig::MAX_SID_LENGTH; ++i)
+        sid_full += 'x';
+
+    // Just to manipulate the last ones.
+    size_t size = sid_full.size();
+    sid_full[size-2] = 'y';
+    sid_full[size-1] = 'z';
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_full.c_str(), sid_full.size()), SRT_SUCCESS);
+
+    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(std::string(buffer), sid_full);
+    EXPECT_EQ(buffer_len, sid_full.size());
+    EXPECT_EQ(strlen(buffer), sid_full.size());
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (size_t i = 0; i < sizeof buffer; ++i)
+        buffer[i] = 'a';
+    buffer_len = (int)(sizeof buffer);
+    EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(buffer_len, sid_full.size());
+    EXPECT_EQ(strlen(buffer), sid_full.size());
+    EXPECT_EQ(buffer[sid_full.size()-1], 'z');
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}
+
+TEST_F(TestSocketOptions, StreamIDLenListener)
+{
+    string stream_id_13 = "something1234";
+
+    EXPECT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_STREAMID, stream_id_13.c_str(), stream_id_13.size()), SRT_SUCCESS);
+
+    char buffer[648];
+    int buffer_len = sizeof buffer;
+    EXPECT_EQ(srt_getsockopt(m_listen_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+
+    StartListener();
+    const SRTSOCKET accepted_sock = EstablishConnection();
+
+    // Check accepted socket inherits values
+    for (SRTSOCKET sock : { m_caller_sock, accepted_sock })
+    {
+        for (size_t i = 0; i < sizeof buffer; ++i)
+            buffer[i] = 'a';
+        buffer_len = (int)(sizeof buffer);
+        EXPECT_EQ(srt_getsockopt(sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+        EXPECT_EQ(buffer_len, 0) << (sock == accepted_sock ? "ACCEPTED" : "LISTENER");
+    }
+
+    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
+}

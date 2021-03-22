@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 #include <deque>
+#include <iterator>
 
 #include "packetfilter.h"
 #include "core.h"
@@ -34,6 +35,93 @@
 using namespace std;
 using namespace srt_logging;
 
+
+const char FECFilterBuiltin::defaultConfig [] = "fec,rows:1,layout:staircase,arq:onreq";
+
+struct StringKeys
+{
+    string operator()(const pair<const string, const string> item)
+    {
+        return item.first;
+    }
+};
+
+bool FECFilterBuiltin::verifyConfig(const SrtFilterConfig& cfg, string& w_error)
+{
+    string arspec = map_get(cfg.parameters, "layout");
+
+    if (arspec != "" && arspec != "even" && arspec != "staircase")
+    {
+        w_error = "value for 'layout' must be 'even' or 'staircase'";
+        return false;
+    }
+
+    string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
+
+    int out_rows = 1;
+
+    if (colspec != "")
+    {
+        int out_cols = atoi(colspec.c_str());
+        if (out_cols < 2)
+        {
+            w_error = "at least 'cols' must be specified and > 1";
+            return false;
+        }
+    }
+
+    if (rowspec != "")
+    {
+        out_rows = atoi(rowspec.c_str());
+        if (out_rows >= -1 && out_rows < 1)
+        {
+            w_error = "'rows' must be >=1 or negative < -1";
+            return false;
+        }
+    }
+
+    // Extra interpret level, if found, default never.
+    // Check only those that are managed.
+    string level = map_get(cfg.parameters, "arq");
+    if (level != "")
+    {
+        static const char* const levelnames [] = {"never", "onreq", "always"};
+        size_t i = 0;
+        for (i = 0; i < Size(levelnames); ++i)
+        {
+            if (strcmp(level.c_str(), levelnames[i]) == 0)
+                break;
+        }
+
+        if (i == Size(levelnames))
+        {
+            w_error = "'arq' value '" + level + "' invalid. Allowed: never, onreq, always";
+            return false;
+        }
+    }
+
+    set<string> keys;
+    transform(cfg.parameters.begin(), cfg.parameters.end(), inserter(keys, keys.begin()), StringKeys());
+
+    // Delete all default parameters
+    SrtFilterConfig defconf;
+    ParseFilterConfig(defaultConfig, (defconf));
+    for (map<string,string>::const_iterator i = defconf.parameters.begin();
+            i != defconf.parameters.end(); ++i)
+        keys.erase(i->first);
+
+    // Delete mandatory parameters
+    keys.erase("cols");
+
+    if (!keys.empty())
+    {
+        w_error = "Extra parameters. Allowed only: cols, rows, layout, arq";
+        return false;
+    }
+
+    return true;
+}
+
 FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr)
     : SrtPacketFilterBase(init)
     , m_fallback_level(SRT_ARQ_ONREQ)
@@ -42,6 +130,13 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 {
     if (!ParseFilterConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    string ermsg;
+    if (!verifyConfig(cfg, (ermsg)))
+    {
+        LOGC(pflog.Error, log << "IPE: Filter config failed: " << ermsg);
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
 
     // Configuration supported:
     // - row only (number_rows == 1)
@@ -57,33 +152,23 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     string shorter = arspec.size() > 5 ? arspec.substr(0, 5) : arspec;
     if (shorter == "even")
         m_arrangement_staircase = false;
-    else if (shorter != "" && shorter != "stair")
-    {
-        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: value for 'layout' must be 'even' or 'staircase'");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
 
     string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
 
-    int out_rows = 1;
-    int out_cols = atoi(colspec.c_str());
-
-    if (colspec == "" || out_cols < 2)
+    if (colspec == "")
     {
-        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: at least 'cols' must be specified and > 1");
+        LOGC(pflog.Error, log << "FEC filter config: parameter 'cols' is mandatory");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
+
+    int out_rows = 1;
+    int out_cols = atoi(colspec.c_str());
 
     m_number_cols = out_cols;
 
     if (rowspec != "")
     {
         out_rows = atoi(rowspec.c_str());
-        if (out_rows >= -1 && out_rows < 1)
-        {
-            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'rows' must be >=1 or negative < -1");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
     }
 
     if (out_rows < 0)
@@ -113,20 +198,16 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
                 break;
             }
         }
+    }
 
-        if (lv == -1)
-        {
-            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'arq': value '" << level << "' unknown");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
+    if (lv != -1)
+    {
         m_fallback_level = SRT_ARQLevel(lv);
     }
     else
     {
         m_fallback_level = SRT_ARQ_ONREQ;
     }
-
 
     // Required to store in the header when rebuilding
     rcv.id = socketID();

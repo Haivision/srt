@@ -168,7 +168,7 @@ bool CUDTSocket::readReady()
 bool CUDTSocket::writeReady()
 {
     return (m_pUDT->m_bConnected
-                && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_config.m_iSndBufSize))
+                && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_config.iSndBufSize))
         || broken();
 }
 
@@ -531,7 +531,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
 
          w_hs.m_iISN = ns->m_pUDT->m_iISN;
          w_hs.m_iMSS = ns->m_pUDT->MSS();
-         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_config.m_iFlightFlagSize;
+         w_hs.m_iFlightFlagSize = ns->m_pUDT->m_config.iFlightFlagSize;
          w_hs.m_iReqType = URQ_CONCLUSION;
          w_hs.m_iID = ns->m_SocketID;
 
@@ -1004,7 +1004,7 @@ int CUDTUnited::listen(const SRTSOCKET u, int backlog)
    // [[using assert(s->m_Status == OPENED)]];
 
    // listen is not supported in rendezvous connection setup
-   if (s->m_pUDT->m_config.m_bRendezvous)
+   if (s->m_pUDT->m_config.bRendezvous)
       throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
    s->m_uiBackLog = backlog;
@@ -1077,7 +1077,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
 
    // no "accept" in rendezvous connection setup
-   if (ls->m_pUDT->m_config.m_bRendezvous)
+   if (ls->m_pUDT->m_config.bRendezvous)
    {
        LOGC(cnlog.Fatal, log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
        // This problem should never happen because `srt_listen` function should have
@@ -1107,7 +1107,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
            ls->m_QueuedSockets.erase(b);
            accepted = true;
        }
-       else if (!ls->m_pUDT->m_config.m_bSynRecving)
+       else if (!ls->m_pUDT->m_config.bSynRecving)
        {
            accepted = true;
        }
@@ -1122,7 +1122,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    if (u == CUDT::INVALID_SOCK)
    {
       // non-blocking receiving, no connection available
-      if (!ls->m_pUDT->m_config.m_bSynRecving)
+      if (!ls->m_pUDT->m_config.bSynRecving)
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
 
       // listening socket is closed
@@ -1134,13 +1134,13 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
 
    // Set properly the SRTO_GROUPCONNECT flag
-   s->core().m_config.m_GroupConnect = 0;
+   s->core().m_config.iGroupConnect = 0;
 
    // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
    // and the already accepted socket has successfully joined
    // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
 #if ENABLE_EXPERIMENTAL_BONDING
-   if (ls->m_pUDT->m_config.m_GroupConnect == 1 && s->m_GroupOf)
+   if (ls->m_pUDT->m_config.iGroupConnect == 1 && s->m_GroupOf)
    {
        // Put a lock to protect the group against accidental deletion
        // in the meantime.
@@ -1150,7 +1150,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        if (s->m_GroupOf)
        {
            u = s->m_GroupOf->m_GroupID;
-           s->core().m_config.m_GroupConnect = 1; // should be derived from ls, but make sure
+           s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
 
            // Mark the beginning of the connection at the moment
            // when the group ID is returned to the app caller
@@ -1498,14 +1498,14 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         }
 
         // Set it the groupconnect option, as all in-group sockets should have.
-        ns->m_pUDT->m_config.m_GroupConnect = 1;
+        ns->m_pUDT->m_config.iGroupConnect = 1;
 
         // Every group member will have always nonblocking
         // (this implies also non-blocking connect/accept).
         // The group facility functions will block when necessary
         // using epoll_wait.
-        ns->m_pUDT->m_config.m_bSynRecving = false;
-        ns->m_pUDT->m_config.m_bSynSending = false;
+        ns->m_pUDT->m_config.bSynRecving = false;
+        ns->m_pUDT->m_config.bSynSending = false;
 
         HLOGC(aclog.Debug, log << "groupConnect: NOTIFIED AS PENDING @" << sid << " both read and write");
         // If this socket is not to block the current connect process,
@@ -1603,11 +1603,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 f->rcvstate = SRT_GST_PENDING;
                 retval = -1;
                 break;
-            }
-
-            if (was_empty)
-            {
-                g.syncWithSocket(ns->core(), HSD_INITIATOR);
             }
 
             HLOGC(aclog.Debug, log << "groupConnect: @" << sid << " connection successful, setting group OPEN (was "
@@ -1827,7 +1822,7 @@ int CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_
 
    if (s->m_Status == SRTS_INIT)
    {
-       if (s->m_pUDT->m_config.m_bRendezvous)
+       if (s->m_pUDT->m_config.bRendezvous)
            throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
 
        // If bind() was done first on this socket, then the
@@ -1911,6 +1906,12 @@ void CUDTUnited::deleteGroup(CUDTGroup* g)
     using srt_logging::gmlog;
 
     srt::sync::ScopedLock cg (m_GlobControlLock);
+    return deleteGroup_LOCKED(g);
+}
+
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
+{
     SRT_ASSERT(g->groupEmpty());
 
     // After that the group is no longer findable by GroupKeeper
@@ -1957,7 +1958,7 @@ int CUDTUnited::close(CUDTSocket* s)
 
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");
 
-   const bool synch_close_snd = s->m_pUDT->m_config.m_bSynSending;
+   const bool synch_close_snd = s->m_pUDT->m_config.bSynSending;
 
    SRTSOCKET u = s->m_SocketID;
 
@@ -2322,7 +2323,7 @@ int CUDTUnited::selectEx(
          {
             if (s->m_pUDT->m_bConnected
                && (s->m_pUDT->m_pSndBuffer->getCurrBufSize()
-                  < s->m_pUDT->m_config.m_iSndBufSize))
+                  < s->m_pUDT->m_config.iSndBufSize))
             {
                writefds->push_back(s->m_SocketID);
                ++ count;
@@ -2827,7 +2828,7 @@ void CUDTUnited::updateMux(
    // In such a case rely exclusively on that very socket and
    // use it the way as it is configured, of course, create also
    // always a new multiplexer for that very socket.
-   if (!udpsock && s->m_pUDT->m_config.m_bReuseAddr)
+   if (!udpsock && s->m_pUDT->m_config.bReuseAddr)
    {
       const int port = addr.hport();
 
@@ -2993,7 +2994,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
        if (!mux && fallback)
        {
            // It is allowed to reuse this multiplexer, but the socket must allow both IPv4 and IPv6
-           if (fallback->m_mcfg.m_iIpV6Only == 0)
+           if (fallback->m_mcfg.iIpV6Only == 0)
            {
                HLOGC(smlog.Warn, log << "updateListenerMux: reusing multiplexer from different family");
                mux = fallback;
