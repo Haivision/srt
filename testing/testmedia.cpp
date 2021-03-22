@@ -2900,6 +2900,12 @@ public:
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (::setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            Error(SysError(), "Setting timeout for UDP");
+
     }
 
     MediaPacket Read(size_t chunk) override
@@ -2907,13 +2913,20 @@ public:
         bytevector data(chunk);
         sockaddr_any sa(sadr.family());
         int64_t srctime = 0;
+AGAIN:
         int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
+        int err = SysError();
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
+        {
+            if (!::transmit_int_state && err == SysAGAIN)
+                goto AGAIN;
+
             Error(SysError(), "UDP Read/recvfrom");
+        }
 
         if (stat < 1)
         {
