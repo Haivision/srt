@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <chrono>
+#include <thread>
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -11,6 +12,7 @@ typedef int SOCKET;
 
 #include"platform_sys.h"
 #include "srt.h"
+#include "netinet_any.h"
 
 using namespace std;
 
@@ -203,6 +205,120 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     }
 
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+}
+
+// Copy from apputil.cpp to avoid extra linkage
+static sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family)
+{
+    // Handle empty name.
+    // If family is specified, empty string resolves to ANY of that family.
+    // If not, it resolves to IPv4 ANY (to specify IPv6 any, use [::]).
+    if (name == "")
+    {
+        sockaddr_any result(pref_family == AF_INET6 ? pref_family : AF_INET);
+        result.hport(port);
+        return result;
+    }
+
+    bool first6 = pref_family != AF_INET;
+    int families[2] = {AF_INET6, AF_INET};
+    if (!first6)
+    {
+        families[0] = AF_INET;
+        families[1] = AF_INET6;
+    }
+
+    for (int i = 0; i < 2; ++i)
+    {
+        int family = families[i];
+        sockaddr_any result (family);
+
+        // Try to resolve the name by pton first
+        if (inet_pton(family, name.c_str(), result.get_addr()) == 1)
+        {
+            result.hport(port); // same addr location in ipv4 and ipv6
+            return result;
+        }
+    }
+
+    // If not, try to resolve by getaddrinfo
+    // This time, use the exact value of pref_family
+
+    sockaddr_any result;
+    addrinfo fo = {
+        0,
+        pref_family,
+        0, 0,
+        0, 0,
+        NULL, NULL
+    };
+
+    addrinfo* val = nullptr;
+    int erc = getaddrinfo(name.c_str(), nullptr, &fo, &val);
+    if (erc == 0)
+    {
+        result.set(val->ai_addr);
+        result.len = result.size();
+        result.hport(port); // same addr location in ipv4 and ipv6
+    }
+    freeaddrinfo(val);
+
+    return result;
+}
+
+TEST(TestConnection, AcceptAPI)
+{
+    using namespace std::chrono;
+
+    const SRTSOCKET caller_sock = srt_create_socket();
+    const SRTSOCKET listener_sock = srt_create_socket();
+
+    const int eidl = srt_epoll_create();
+    const int eidc = srt_epoll_create();
+    const int ev_conn = /*SRT_EPOLL_OUT |*/ SRT_EPOLL_ERR;
+    srt_epoll_add_usock(eidc, caller_sock, &ev_conn);
+    const int ev_acp = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+    srt_epoll_add_usock(eidl, listener_sock, &ev_acp);
+
+    sockaddr_any sa = CreateAddr("localhost", 5555, AF_INET);
+
+    ASSERT_NE(srt_bind(listener_sock, sa.get(), sa.size()), -1);
+    ASSERT_NE(srt_listen(listener_sock, 1), -1);
+
+    // Set non-blocking mode so that you can wait for readiness
+    bool no = false;
+    srt_setsockflag(caller_sock, SRTO_RCVSYN, &no, sizeof no);
+    srt_setsockflag(listener_sock, SRTO_RCVSYN, &no, sizeof no);
+
+    srt_connect(caller_sock, sa.get(), sa.size());
+
+    SRT_EPOLL_EVENT ready[2];
+    int nready = srt_epoll_uwait(eidl, ready, 2, 1000); // Wait 1s
+    EXPECT_EQ(nready, 1);
+    EXPECT_EQ(ready[0].fd, listener_sock);
+    // EXPECT_EQ(ready[0].events, SRT_EPOLL_IN);
+
+    // Now call the accept function incorrectly
+    int size = 0;
+    sockaddr_storage saf;
+
+    EXPECT_EQ(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+
+    std::this_thread::sleep_for(seconds(1));
+
+    // Ended up with error, but now you should also expect error on the caller side.
+
+    // Wait 10s until you get a connection broken.
+    nready = srt_epoll_uwait(eidc, ready, 2, 5000);
+    EXPECT_EQ(nready, 1);
+    if (nready == 1)
+    {
+        // Do extra checks only if you know that this was returned.
+        EXPECT_EQ(ready[0].fd, caller_sock);
+        EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, SRT_EPOLL_ERR);
+    }
+    srt_close(caller_sock);
+    srt_close(listener_sock);
 }
 
 

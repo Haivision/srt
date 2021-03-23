@@ -1065,16 +1065,25 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
    if (pw_addr && !pw_addrlen)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: incorrect address parameters specified");
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+   }
 
    CUDTSocket* ls = locateSocket(listen);
 
    if (ls == NULL)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: invalid listener socket value: " << listen);
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+   }
 
    // the "listen" socket must be in LISTENING status
    if (ls->m_Status != SRTS_LISTENING)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not set listen state (forgot srt_listen?)");
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+   }
 
    // no "accept" in rendezvous connection setup
    if (ls->m_pUDT->m_config.bRendezvous)
@@ -1123,15 +1132,22 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    {
       // non-blocking receiving, no connection available
       if (!ls->m_pUDT->m_config.bSynRecving)
+      {
+         LOGC(cnlog.Error, log << "srt_accept: no pending connection available at the moment");
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+      }
 
+      LOGC(cnlog.Error, log << "srt_accept: listener socket @" << listen << " is closed");
       // listening socket is closed
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
 
    CUDTSocket* s = locateSocket(u);
    if (s == NULL)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: pending connection has unexpectedly closed");
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+   }
 
    // Set properly the SRTO_GROUPCONNECT flag
    s->core().m_config.iGroupConnect = 0;
@@ -1164,14 +1180,22 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 #endif
 
    ScopedLock cg(s->m_ControlLock);
-   
+
    if (pw_addr != NULL && pw_addrlen != NULL)
    {
       // Check if the length of the buffer to fill the name in
       // was large enough.
       const int len = s->m_PeerAddr.size();
       if (*pw_addrlen < len)
+      {
+          // Set the socket broken flag, as it has been already removed
+          // from the queue, but it cannot be returned here. Closing may
+          // raise questions about locking order, so just set flags so that
+          // it will be later removed by gc.
+          s->m_Status = SRTS_BROKEN;
+          s->core().m_bBroken = true;
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+      }
 
       memcpy((pw_addr), &s->m_PeerAddr, len);
       *pw_addrlen = len;
