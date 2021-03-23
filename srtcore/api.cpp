@@ -3695,6 +3695,11 @@ int CUDT::sendmsg(
 int CUDT::sendmsg2(
    SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 {
+   // pktseq and msgno values are not allowed to be specified.
+   // The documentation however allows them unspecified, so they
+   // will be forcefully reset.
+   w_m.pktseq = srt_msgctrl_default.pktseq;
+   w_m.msgno = srt_msgctrl_default.msgno;
    try
    {
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -3704,13 +3709,6 @@ int CUDT::sendmsg2(
            return k.group->send(buf, len, (w_m));
        }
 #endif
-       if (w_m.pktseq != srt_msgctrl_default.pktseq
-               || w_m.msgno != srt_msgctrl_default.msgno)
-       {
-           LOGC(aclog.Error, log << "srt_sendmsg2: pktseq and msgno fields shall remain default on input");
-           return APIError(MJ_NOTSUP, MN_INVAL);
-       }
-
        return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().sendmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
