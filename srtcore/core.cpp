@@ -1668,7 +1668,6 @@ bool CUDT::createSrtHandshake(
     if (have_group)
     {
         // NOTE: See information about mutex ordering in api.h
-        ScopedLock grd (m_parent->m_ControlLock); // Required to make sure 
         ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
         if (!m_parent->m_GroupOf)
         {
