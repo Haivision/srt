@@ -995,20 +995,6 @@ SRT_API int64_t srt_time_now(void);
 
 SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
-enum SRT_SYNC_CLOCK_TYPE
-{
-    SRT_SYNC_CLOCK_TYPE_STDCXX_STEADY      = 0, // C++11 std::chrono::steady_clock
-    SRT_SYNC_CLOCK_TYPE_GETTIME_MONOTONIC  = 1, // clock_gettime with CLOCK_MONOTONIC
-    SRT_SYNC_CLOCK_TYPE_WINQPC             = 2,
-    SRT_SYNC_CLOCK_TYPE_MACH_ABSTIME       = 3,
-    SRT_SYNC_CLOCK_TYPE_POSIX_GETTIMEOFDAY = 4,
-    SRT_SYNC_CLOCK_TYPE_AMD64_RDTSC        = 5,
-    SRT_SYNC_CLOCK_TYPE_IA32_RDTSC         = 6,
-    SRT_SYNC_CLOCK_TYPE_IA64_ITC           = 7
-};
-
-SRT_API int srt_clock_type();
-
 #ifdef __cplusplus
 }
 #endif
