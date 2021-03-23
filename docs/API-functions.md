@@ -2492,7 +2492,7 @@ the sending to a stream with a handler function that will receive them.
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
----  
+---
   
 ### srt_setlogflags
 
@@ -2513,6 +2513,9 @@ The following flags are available, as collected in the `logging_api.h` public he
 - `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
 - `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
 
 
 ## Time Access
@@ -2578,7 +2581,6 @@ although it's highly recommended to use one of the above monotonic clocks,
 as system clock is vulnerable to time modifications during transmission.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
   
@@ -2624,9 +2626,11 @@ and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
   
----  
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
   
-  ## Diagnostics
+## Diagnostics
 
 General notes concerning the `getlasterror` diagnostic functions: when an API
 function ends up with error, this error information is stored in a thread-local
@@ -3221,7 +3225,7 @@ The operation timed out. This can happen if you have a timeout set by an option
 extra argument ([`srt_epoll_wait`](#srt_epoll_wait) or [`srt_accept_bond`](#srt_accept_bond)) 
 and the function call was blocking, but the required timeout time has passed.
 
-  
+
 #### `SRT_ECONGEST`
 
 **NOTE**: This error is used only in an experimental version that requires
