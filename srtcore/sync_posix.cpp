@@ -12,7 +12,6 @@
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
-#include "sync.h"
 #include "utilities.h"
 #include "udt.h"
 #include "srt.h"
@@ -40,7 +39,7 @@ namespace sync
 
 void rdtsc(uint64_t& x)
 {
-#if SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_IA32_RDTSC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA32_RDTSC
     uint32_t lval, hval;
     // asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
     // asm volatile ("xor %eax, %eax; cpuid");
@@ -48,32 +47,32 @@ void rdtsc(uint64_t& x)
     // asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
     x = hval;
     x = (x << 32) | lval;
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_IA64_ITC
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA64_ITC
     asm("mov %0=ar.itc" : "=r"(x)::"memory");
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_AMD64_RDTSC
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_AMD64_RDTSC
     uint32_t lval, hval;
     asm("rdtsc" : "=a"(lval), "=d"(hval));
     x = hval;
     x = (x << 32) | lval;
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_WINQPC
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
     // This function should not fail, because we checked the QPC
     // when calling to QueryPerformanceFrequency. If it failed,
     // the m_bUseMicroSecond was set to true.
     QueryPerformanceCounter((LARGE_INTEGER*)&x);
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_MACH_ABSTIME
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
     x = mach_absolute_time();
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     // get_cpu_frequency() returns 1 us accuracy in this case
     timespec tm;
     clock_gettime(CLOCK_MONOTONIC, &tm);
     x = tm.tv_sec * uint64_t(1000000) + (tm.tv_nsec / 1000);
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
     // use system call to read time clock for other archs
     timeval t;
     gettimeofday(&t, 0);
     x = t.tv_sec * uint64_t(1000000) + t.tv_usec;
 #else
-#error Wrong SRT_SYNC_CLOCK_TYPE
+#error Wrong SRT_SYNC_CLOCK
 #endif
 }
 
@@ -81,7 +80,7 @@ int64_t get_cpu_frequency()
 {
     int64_t frequency = 1; // 1 tick per microsecond.
 
-#if SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_WINQPC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
     LARGE_INTEGER ccf; // in counts per second
     if (QueryPerformanceFrequency(&ccf))
     {
@@ -93,12 +92,12 @@ int64_t get_cpu_frequency()
         LOGC(inlog.Error, log << "IPE: QueryPerformanceFrequency failed with " << GetLastError());
     }
 
-#elif SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_MACH_ABSTIME
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
     mach_timebase_info_data_t info;
     mach_timebase_info(&info);
     frequency = info.denom * int64_t(1000) / info.numer;
 
-#elif SRT_SYNC_CLOCK_TYPE >= SRT_SYNC_CLOCK_AMD64_RDTSC && SRT_SYNC_CLOCK_TYPE <= SRT_SYNC_CLOCK_IA64_ITC
+#elif SRT_SYNC_CLOCK >= SRT_SYNC_CLOCK_AMD64_RDTSC && SRT_SYNC_CLOCK <= SRT_SYNC_CLOCK_IA64_ITC
     // SRT_SYNC_CLOCK_AMD64_RDTSC or SRT_SYNC_CLOCK_IA32_RDTSC or SRT_SYNC_CLOCK_IA64_ITC
     uint64_t t1, t2;
 
@@ -289,7 +288,7 @@ Condition::~Condition() {}
 void Condition::init()
 {
     pthread_condattr_t* attr = NULL;
-#if SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
     pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
@@ -313,7 +312,7 @@ void Condition::wait(UniqueLock& lock)
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     timespec timeout;
-#if SRT_SYNC_CLOCK_TYPE == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     clock_gettime(CLOCK_MONOTONIC, &timeout);
     const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
 #else

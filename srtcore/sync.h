@@ -12,15 +12,14 @@
 #define INC_SRT_SYNC_H
 
 // Possible internal clock types
-#define SRT_SYNC_STDCXX_STEADY 1
-#define SRT_SYNC_CLOCK_WINQPC 2
-#define SRT_SYNC_CLOCK_GETTIME_MONOTONIC 3
-#define SRT_SYNC_CLOCK_MACH_ABSTIME 4
-#define SRT_SYNC_CLOCK_AMD64_RDTSC 5
-#define SRT_SYNC_CLOCK_IA32_RDTSC 6
-#define SRT_SYNC_CLOCK_IA64_ITC 7
-#define SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY 8 // Fallback case
-
+#define SRT_SYNC_CLOCK_STDCXX_STEADY      0 // C++11 std::chrono::steady_clock
+#define SRT_SYNC_CLOCK_GETTIME_MONOTONIC  1 // clock_gettime with CLOCK_MONOTONIC
+#define SRT_SYNC_CLOCK_WINQPC             2
+#define SRT_SYNC_CLOCK_MACH_ABSTIME       3
+#define SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY 4
+#define SRT_SYNC_CLOCK_AMD64_RDTSC        5
+#define SRT_SYNC_CLOCK_IA32_RDTSC         6
+#define SRT_SYNC_CLOCK_IA64_ITC           7
 
 #include <cstdlib>
 #include <limits>
@@ -29,25 +28,33 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_STDCXX_STEADY
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
+#define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
 
 // Defile clock type to use
 #ifdef IA32
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_IA32_RDTSC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA32_RDTSC
+#define SRT_SYNC_CLOCK_STR "IA32_RDTSC"
 #elif defined(IA64)
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_IA64_ITC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA64_ITC
+#define SRT_SYNC_CLOCK_STR "IA64_ITC"
 #elif defined(AMD64)
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_AMD64_RDTSC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_AMD64_RDTSC
+#define SRT_SYNC_CLOCK_STR "AMD64_RDTSC"
 #elif defined(_WIN32)
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_WINQPC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_WINQPC
+#define SRT_SYNC_CLOCK_STR "WINQPC"
 #elif TARGET_OS_MAC
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_MACH_ABSTIME
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
+#define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
 #elif defined(ENABLE_MONOTONIC_CLOCK)
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
 #else
-#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
 #endif
 
 #endif // ENABLE_STDCXX_SYNC
@@ -801,7 +808,7 @@ namespace this_thread
 #if !defined(_WIN32)
         usleep(count_microseconds(t)); // microseconds
 #else
-        Sleep(count_milliseconds(t));
+        Sleep((DWORD) count_milliseconds(t));
 #endif
     }
 }
