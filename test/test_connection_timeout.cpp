@@ -277,7 +277,7 @@ TEST(TestConnectionAPI, Accept)
 
     const int eidl = srt_epoll_create();
     const int eidc = srt_epoll_create();
-    const int ev_conn = /*SRT_EPOLL_OUT |*/ SRT_EPOLL_ERR;
+    const int ev_conn = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     srt_epoll_add_usock(eidc, caller_sock, &ev_conn);
     const int ev_acp = SRT_EPOLL_IN | SRT_EPOLL_ERR;
     srt_epoll_add_usock(eidl, listener_sock, &ev_acp);
@@ -308,6 +308,10 @@ TEST(TestConnectionAPI, Accept)
 
     std::this_thread::sleep_for(seconds(1));
 
+    // Set correctly
+    size = sizeof (sockaddr_in6);
+    EXPECT_NE(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+
     // Ended up with error, but now you should also expect error on the caller side.
 
     // Wait 10s until you get a connection broken.
@@ -317,7 +321,7 @@ TEST(TestConnectionAPI, Accept)
     {
         // Do extra checks only if you know that this was returned.
         EXPECT_EQ(ready[0].fd, caller_sock);
-        EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, SRT_EPOLL_ERR);
+        EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, 0);
     }
     srt_close(caller_sock);
     srt_close(listener_sock);

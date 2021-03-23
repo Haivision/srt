@@ -778,7 +778,7 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       enterCS(ls->m_AcceptLock);
       try
       {
-         ls->m_QueuedSockets.insert(ns->m_SocketID);
+         ls->m_QueuedSockets[ns->m_SocketID] = ns->m_PeerAddr;
       }
       catch (...)
       {
@@ -1102,8 +1102,22 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
        }
        else if (ls->m_QueuedSockets.size() > 0)
        {
-           set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
-           u = *b;
+           map<SRTSOCKET, sockaddr_any>::iterator b = ls->m_QueuedSockets.begin();
+
+           if (pw_addr != NULL && pw_addrlen != NULL)
+           {
+               // Check if the length of the buffer to fill the name in
+               // was large enough.
+               const int len = b->second.size();
+               if (*pw_addrlen < len)
+               {
+                   // In case when the address cannot be rewritten,
+                   // DO NOT accept, but leave the socket in the queue.
+                   throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+               }
+           }
+
+           u = b->first;
            ls->m_QueuedSockets.erase(b);
            accepted = true;
        }
@@ -1167,22 +1181,8 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    
    if (pw_addr != NULL && pw_addrlen != NULL)
    {
-      // Check if the length of the buffer to fill the name in
-      // was large enough.
-      const int len = s->m_PeerAddr.size();
-      if (*pw_addrlen < len)
-      {
-          // Set the socket broken flag, as it has been already removed
-          // from the queue, but it cannot be returned here. Closing may
-          // raise questions about locking order, so just set flags so that
-          // it will be later removed by gc.
-          s->m_Status = SRTS_BROKEN;
-          s->core().m_bBroken = true;
-          throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-      }
-
-      memcpy((pw_addr), &s->m_PeerAddr, len);
-      *pw_addrlen = len;
+      memcpy((pw_addr), s->m_PeerAddr.get(), s->m_PeerAddr.size());
+      *pw_addrlen = s->m_PeerAddr.size();
    }
 
    return u;
@@ -2747,14 +2747,14 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
       // if it is a listener, close all un-accepted sockets in its queue
       // and remove them later
-      for (set<SRTSOCKET>::iterator q = s->m_QueuedSockets.begin();
+      for (map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.begin();
          q != s->m_QueuedSockets.end(); ++ q)
       {
-         sockets_t::iterator si = m_Sockets.find(*q);
+         sockets_t::iterator si = m_Sockets.find(q->first);
          if (si == m_Sockets.end())
          {
             // gone in the meantime
-            LOGC(smlog.Error, log << "removeSocket: IPE? socket @" << (*q)
+            LOGC(smlog.Error, log << "removeSocket: IPE? socket @" << (q->first)
                     << " being queued for listener socket @" << s->m_SocketID
                     << " is GONE in the meantime ???");
             continue;
@@ -2763,8 +2763,8 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
          CUDTSocket* as = si->second;
 
          as->breakSocket_LOCKED();
-         m_ClosedSockets[*q] = as;
-         m_Sockets.erase(*q);
+         m_ClosedSockets[q->first] = as;
+         m_Sockets.erase(q->first);
       }
    }
 
