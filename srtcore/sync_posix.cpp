@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
+#include "sync.h"
 #include "utilities.h"
 #include "udt.h"
 #include "srt.h"
