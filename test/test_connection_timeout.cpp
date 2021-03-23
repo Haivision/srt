@@ -266,9 +266,11 @@ static sockaddr_any CreateAddr(const string& name, unsigned short port, int pref
     return result;
 }
 
-TEST(TestConnection, AcceptAPI)
+TEST(TestConnectionAPI, Accept)
 {
     using namespace std::chrono;
+
+    srt_startup();
 
     const SRTSOCKET caller_sock = srt_create_socket();
     const SRTSOCKET listener_sock = srt_create_socket();
@@ -319,6 +321,8 @@ TEST(TestConnection, AcceptAPI)
     }
     srt_close(caller_sock);
     srt_close(listener_sock);
+
+    srt_cleanup();
 }
 
 
