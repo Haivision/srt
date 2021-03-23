@@ -3704,6 +3704,7 @@ int CUDT::sendmsg2(
            return k.group->send(buf, len, (w_m));
        }
 #endif
+
        return s_UDTUnited.locateSocket(u, CUDTUnited::ERH_THROW)->core().sendmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)

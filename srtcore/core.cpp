@@ -6288,7 +6288,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
                              steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
-#ifdef ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_EXPERIMENTAL_BONDING
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
