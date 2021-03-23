@@ -68,8 +68,10 @@ inline void SysCleanupNetwork() {}
 
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
+const int SysAGAIN = WSAEWOULDBLOCK;
 #else
 inline int SysError() { return errno; }
+const int SysAGAIN = EAGAIN;
 #endif
 
 sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
