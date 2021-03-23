@@ -6288,18 +6288,26 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
                              steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
+#ifdef ENABLE_EXPERIMENTAL_BONDING
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
-        if (w_mctrl.pktseq != SRT_SEQNO_NONE && m_iSndNextSeqNo != SRT_SEQNO_NONE)
+        if (m_parent->m_GroupOf)
         {
-            if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+            // NOTE: it's assumed that if this is a group member, then
+            // an attempt to call srt_sendmsg2 has been rejected, and so
+            // the pktseq field has been set by the internal group sender function.
+            if (w_mctrl.pktseq != SRT_SEQNO_NONE && m_iSndNextSeqNo != SRT_SEQNO_NONE)
             {
-                HLOGC(aslog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
-                        << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
-                return size;
+                if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+                {
+                    HLOGC(aslog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
+                            << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
+                    return size;
+                }
             }
         }
+#endif
 
         // Set this predicted next sequence to the control information.
         // It's the sequence of the FIRST (!) packet from all packets used to send

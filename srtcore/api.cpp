@@ -3695,11 +3695,6 @@ int CUDT::sendmsg(
 int CUDT::sendmsg2(
    SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 {
-   // pktseq and msgno values are not allowed to be specified.
-   // The documentation however allows them unspecified, so they
-   // will be forcefully reset.
-   w_m.pktseq = srt_msgctrl_default.pktseq;
-   w_m.msgno = srt_msgctrl_default.msgno;
    try
    {
 #if ENABLE_EXPERIMENTAL_BONDING
