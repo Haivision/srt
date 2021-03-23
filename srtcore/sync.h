@@ -11,8 +11,16 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
-//#define ENABLE_STDCXX_SYNC
-//#define ENABLE_CXX17
+// Possible internal clock types
+#define SRT_SYNC_STDCXX_STEADY 1
+#define SRT_SYNC_CLOCK_WINQPC 2
+#define SRT_SYNC_CLOCK_GETTIME_MONOTONIC 3
+#define SRT_SYNC_CLOCK_MACH_ABSTIME 4
+#define SRT_SYNC_CLOCK_AMD64_RDTSC 5
+#define SRT_SYNC_CLOCK_IA32_RDTSC 6
+#define SRT_SYNC_CLOCK_IA64_ITC 7
+#define SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY 8 // Fallback case
+
 
 #include <cstdlib>
 #include <limits>
@@ -21,9 +29,29 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_STDCXX_STEADY
 #else
 #include <pthread.h>
+
+// Defile clock type to use
+#ifdef IA32
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_IA32_RDTSC
+#elif defined(IA64)
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_IA64_ITC
+#elif defined(AMD64)
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_AMD64_RDTSC
+#elif defined(_WIN32)
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_WINQPC
+#elif TARGET_OS_MAC
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_MACH_ABSTIME
+#elif defined(ENABLE_MONOTONIC_CLOCK)
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#else
+#define SRT_SYNC_CLOCK_TYPE SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
 #endif
+
+#endif // ENABLE_STDCXX_SYNC
+
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
