@@ -809,7 +809,7 @@ void CUDT::clearData()
     // XXX use some constant for this 16
     m_iDeliveryRate     = 16;
     m_iByteDeliveryRate = 16 * m_iMaxSRTPayloadSize;
-    m_iAckSeqNo         = 0;
+    m_iAckJournal         = 0;
     m_tsLastAckTime     = steady_clock::now();
 
     // trace information
@@ -7679,7 +7679,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // than sequence number (it's a "journal" for ACK request-response,
         // and starts from 0, unlike sequence, which starts from a random
         // number), but still the numbers are from exactly the same domain.
-        m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
+        m_iAckJournal = CAckNo::incack(m_iAckJournal);
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
@@ -7711,12 +7711,12 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             }
             // ELSE: leave the buffer with ...UDTBASE size.
 
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ctrlsz);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ctrlsz);
             m_tsLastAckTime = steady_clock::now();
         }
         else
         {
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
 
         ctrlpkt.m_iID = m_PeerID;
@@ -7724,7 +7724,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
         DebugAck("sendCtrl(UMSG_ACK): " + CONID(), local_prevack, ack);
 
-        m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
+        m_ACKWindow.store(m_iAckJournal, m_iRcvLastAck);
 
         enterCS(m_StatsLock);
         ++m_stats.sentACK;
@@ -8198,13 +8198,21 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
     {
         int32_t ack = 0;
-        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
-        if (rtt <= 0)
+        int rtt = 0;
+        ACKWindow::Status astat = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), (ack), (rtt));
+        if (astat != ACKWindow::OK)
         {
-            LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK node overwritten when acknowledging " << ctrlpkt.getAckSeqNo()
-                     << " (ack extracted: " << ack << ")");
-            break;
+            if (astat != ACKWindow::OLD) // ignore old - can't measure, but that's not a problem
+            {
+                // For WIPED and ROGUE report this by an error log; this is an unwanted situation.
+                LOGC(inlog.Error,
+                        log << CONID() << "IPE/EPE: ACK node overwritten when acknowledging "
+                        << ctrlpkt.getAckSeqNo()
+                        << (astat == ACKWindow::WIPED ? ": No such node recorded when ACKing"
+                            : ": ROGUE journal value"));
+            }
+
+            break; // Do not measure RTT because the previous node cannot be found.
         }
 
         // if increasing delay detected...

@@ -7,6 +7,7 @@
 #define SRT_TEST_CIRCULAR_BUFFER
 #include "api.h"
 #include "common.h"
+#include "window.h"
 
 using namespace std;
 
@@ -270,4 +271,125 @@ TEST(ConfigString, Setting)
     EXPECT_TRUE(s.set(example_se));
     EXPECT_EQ(s.size(), 0);
     EXPECT_TRUE(s.empty());
+}
+
+struct AckData
+{
+    int32_t journal;
+    int32_t ackseq;
+};
+
+static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, const std::string& casename)
+{
+    typedef CACKWindow<10> ackwindow_t;
+    ackwindow_t ackwindow;
+
+    int b4 = data[0].journal - initpos;
+
+    for (size_t i = 0; i < initpos; ++i)
+    {
+        ackwindow.store(b4, 0);
+        ++b4;
+    }
+
+    for (auto& n: data)
+        ackwindow.store(n.journal, n.ackseq);
+
+    // Now remove those initial ones
+    int32_t dummy1, dummy2;
+    ackwindow.acknowledge(data[0].journal-1, (dummy1), (dummy2));
+
+    ASSERT_EQ(ackwindow.first().iJournal, data[0].journal) << " (" << casename << ")";
+    ASSERT_EQ(ackwindow.last().iJournal, data[4].journal) << " (" << casename << ")";
+    ASSERT_EQ(ackwindow.size(), 5) << " (" << casename << ")";
+
+    int iack = 0;
+    int td =0;
+
+    // Remove oldest node. Should go ok.
+    ACKWindow::Status stat = ackwindow.acknowledge(data[0].journal, (iack), (td));
+    EXPECT_EQ(iack, data[0].ackseq) << " (" << casename << ")";
+    EXPECT_EQ(stat, ACKWindow::OK) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.size(), 4) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.first().iJournal, data[1].journal) << " (" << casename << ")";
+
+    // Now remove the node +2
+    stat = ackwindow.acknowledge(data[2].journal, (iack), (td));
+    EXPECT_EQ(iack, data[2].ackseq) << " (" << casename << ")";
+    EXPECT_EQ(stat, ACKWindow::OK) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.first().iJournal, data[3].journal) << " (" << casename << ")";
+
+    // Now remove too old node
+    stat = ackwindow.acknowledge(data[1].journal, (iack), (td));
+    EXPECT_EQ(stat, ACKWindow::OLD) << "(" << casename << ")";
+    // Like above - no changes were expected
+    EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.first().iJournal, data[3].journal) << " (" << casename << ")";
+
+    // And remove the node that wasn't inserted
+    int32_t wrongnode = data[4].journal+1;
+    stat = ackwindow.acknowledge(wrongnode, (iack), (td));
+    EXPECT_EQ(stat, ACKWindow::ROGUE);
+    // Like above - no changes were expected
+    EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
+    EXPECT_EQ(ackwindow.first().iJournal, data[3].journal) << " (" << casename << ")";
+
+    // Now insert one value that jumps over. It's not exactly
+    // possible in the normal SRT runtime, but the reaction should be
+    // prepared just in case.
+    ackwindow.store(data[4].journal+2, data[4].ackseq);
+    // Now a search of data[4].journal+1 should fail appropriately.
+    stat = ackwindow.acknowledge(data[4].journal+1, (iack), (td));
+    EXPECT_EQ(stat, ACKWindow::WIPED);
+}
+
+TEST(ACKWindow, API)
+{
+
+    // We have a situation with circular buffer with circular
+    // numbers with two different cirtulations. We need then
+    // permutations of 4 special plus 1 regular, in total:
+    //
+    // 1. Regular numbers in a regular range
+    // 2. Regular numbers in a split range
+    // 3. Number overflow in a regular range.
+    // 4. Number ovewflow in a split range in lower part
+    // 5. Number overflow in a split range in upper part
+
+    int32_t seq0 = CSeqNo::m_iSeqNoTH;
+
+    int32_t basej = 100;
+    std::array<AckData, 5> regular = {
+        AckData {basej + 0, seq0},
+        AckData {basej + 1, seq0 + 10},
+        AckData {basej + 2, seq0 + 20},
+        AckData {basej + 3, seq0 + 30},
+        AckData {basej + 4, seq0 + 40}
+    };
+
+    // 1.
+    TestAckWindow(regular, 0, "regular/0");
+
+    // 2.
+    TestAckWindow(regular, 7, "regular/7");
+
+    basej = CSeqNo::m_iMaxSeqNo-2;
+
+    std::array<AckData, 5> overflow = {
+        AckData {basej + 0, seq0},
+        AckData {basej + 1, seq0 + 10},
+        AckData {basej + 2, seq0 + 20},
+        AckData {basej + 3, seq0 + 30},
+        AckData {basej + 4, seq0 + 40}
+    };
+
+    // 3.
+    TestAckWindow(overflow, 0, "overflow/0");
+
+    // 4.
+    TestAckWindow(overflow, 3, "overflow/3");
+
+    // 5.
+    TestAckWindow(overflow, 7, "overflow/7");
 }
