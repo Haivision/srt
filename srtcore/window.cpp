@@ -177,7 +177,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
     // As long as none of the above did abnormal termination by early return,
     // pos contains our required node.
     w_ack = r_aSeq[found].iAckSeq;
-    w_timediff = count_microseconds(steady_clock::now() - r_aSeq[found].tsTimeStamp);
+    w_timediff = count_microseconds(now - r_aSeq[found].tsTimeStamp);
 
     int inext = found + 1;
     if (inext == r_iHead)
