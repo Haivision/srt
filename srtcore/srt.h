@@ -1007,7 +1007,7 @@ enum SRT_SYNC_CLOCK_TYPE
     SRT_SYNC_CLOCK_TYPE_IA64_ITC           = 7
 };
 
-SRT_API int srt_clock_type();
+SRT_API int srt_clock_type(void);
 
 #ifdef __cplusplus
 }
