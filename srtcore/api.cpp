@@ -287,6 +287,8 @@ int CUDTUnited::startup()
 
    m_bGCStatus = true;
 
+   HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
+
    return 0;
 }
 
