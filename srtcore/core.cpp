@@ -8139,8 +8139,20 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
             {
                 // Normal, currently expected version.
-                data[ACKD_RCVRATE] = rcvRate; // bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER101;
+                data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER143;
+            }
+            else if (m_uPeerSrtVersion >= SrtVersion(1, 4, 3) && m_bPeerTLPktDrop && m_bPeerTsbPd)
+            {
+                enterCS(m_StatsLock);
+                const int64_t dropTotal = m_stats.rcvr.dropped.total.count();
+                leaveCS(m_StatsLock);
+                // Normal, currently expected version.
+                data[ACKD_RCVRATE] = rcvRate;                   // bytes/sec
+
+                // TODO: only include this field if dropTotal was updated
+                data[ACKD_RCVDROP_TOTAL] = (unsigned)dropTotal; // truncation is allowed and must be handled by ACK-receiver
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER143;
             }
             // ELSE: leave the buffer with ...UDTBASE size.
 
@@ -8492,6 +8504,20 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         m_iBandwidth        = avg_iir<8>(m_iBandwidth.load(), bandwidth);
         m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate.load(), pktps);
         m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate.load(), bytesps);
+
+        // TODO: or maybe == ?
+        if (acksize >= ACKD_TOTAL_SIZE_VER143)
+        {
+            const unsigned uRcvDropTotal = ackdata[ACKD_RCVDROP_TOTAL];
+            enterCS(m_StatsLock);
+            const int64_t prevTotalDrop = m_stats.sndr.droppedRcv.total.count();
+            const int64_t delta = uRcvDropTotal - prevTotalDrop;
+            // TODO: handle possible uint32_t overflow here
+            m_stats.sndr.droppedRcv.count(delta);
+            leaveCS(m_StatsLock);
+        }
+        // XXX not sure if ACKD_XMRATE is of any use. This is simply
+        // calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
 
         // Update Estimated Bandwidth and packet delivery rate
         // m_iRcvRate = m_iDeliveryRate;

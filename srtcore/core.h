@@ -111,6 +111,8 @@ enum AckDataItem
     // Only in SRT v1.0.2.
     ACKD_XMRATE_VER102_ONLY     = 7,
     ACKD_TOTAL_SIZE_VER102_ONLY = 8,  // Packet length = 32.
+    ACKD_RCVDROP_TOTAL          = 7,
+    ACKD_TOTAL_SIZE_VER143      = 8, // 32
 
     ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102_ONLY  // The maximum known ACK length is 32 bytes.
 };

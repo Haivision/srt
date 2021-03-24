@@ -131,6 +131,7 @@ struct Sender
     Metric<BytesPackets> sentRetrans; // The number of data packets retransmitted by the sender.
     Metric<Packets> lost; // The number of packets reported lost (including repeated reports) to the sender in NAKs.
     Metric<BytesPackets> dropped; // The number of data packets dropped by the sender.
+    Metric<Packets> droppedRcv; // The number of data packets reported dropped by the receiver via ACK (v1.6.0+).
 
     Metric<Packets> sentFilterExtra; // The number of packets generate by the packet filter and sent by the sender.
     
@@ -144,6 +145,7 @@ struct Sender
         sentRetrans.reset();
         lost.reset();
         dropped.reset();
+        droppedRcv.reset();
         recvdAck.reset();
         recvdNak.reset();
         sentFilterExtra.reset();
@@ -156,6 +158,7 @@ struct Sender
         sentRetrans.resetTrace();
         lost.resetTrace();
         dropped.resetTrace();
+        droppedRcv.resetTrace();
         recvdAck.resetTrace();
         recvdNak.resetTrace();
         sentFilterExtra.resetTrace();
