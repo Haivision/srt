@@ -17,6 +17,7 @@
 #include "logging_api.h"
 #include "udt.h"
 #include "netinet_any.h"
+#include <common.h>
 
 TEST(Bonding, SRTConnectGroup)
 {
@@ -427,8 +428,15 @@ TEST(Bonding, DeadLinkUpdate)
     cout << "Group accepted. Receiving...\n";
     char buf[1316] = "";
     const int nrecv = srt_recv(acp, buf, 1316);
+    int syserr, err;
+    err = srt_getlasterror(&syserr);
 
     cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
+    if (nrecv == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
 
     ASSERT_NE(nrecv, -1);
 
