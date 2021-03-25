@@ -1187,15 +1187,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
       // was large enough.
       const int len = s->m_PeerAddr.size();
       if (*pw_addrlen < len)
-      {
-          // Set the socket broken flag, as it has been already removed
-          // from the queue, but it cannot be returned here. Closing may
-          // raise questions about locking order, so just set flags so that
-          // it will be later removed by gc.
-          s->m_Status = SRTS_BROKEN;
-          s->core().m_bBroken = true;
           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-      }
 
       memcpy((pw_addr), &s->m_PeerAddr, len);
       *pw_addrlen = len;
