@@ -8204,21 +8204,27 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
         if (rtt == -1)
         {
-            LOGC(inlog.Error,
-                 log << CONID() << "IPE: The record about ACK is not found, "
-                     << "RTT estimate at the receiver side can not be calculated "
+            if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+            {
+                LOGC(inlog.Warn,
+                 log << CONID() << "ACKACK out of order, skipping RTT calculation "
                      << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                     << ", oldest ACK record: " << "not yet available" << ", RTT (EWMA): " << m_iRTT << ")");
+                     << ", RTT (EWMA): " << m_iRTT << ")");
+                break;
+            }
+
+            LOGC(inlog.Error,
+                 log << CONID() << "IPE: ACK record not found, RTT estimate impossible "
+                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                     << ", RTT (EWMA): " << m_iRTT << ")");
             break;
         }
 
         if (rtt <= 0)
         {
             LOGC(inlog.Error,
-                 log << CONID() << "IPE: RTT estimate obtained by the receiver is negative or zero, "
-                     << "there may have been a time shift "
-                     << "(current time: " << FormatTime(currtime) << ", the time of sending ACK: " << "not yet available"
-                     << ", RTT estimate: " << rtt << "). The usage of monotonic clocks is recommended. ");
+                 log << CONID() << "IPE: invalid RTT estimate " << rtt 
+                     << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
             break;
         }
 

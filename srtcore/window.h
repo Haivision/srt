@@ -326,7 +326,7 @@ public:
 
 private:
    int m_aPktWindow[ASIZE];                                 // Packet information window (inter-packet time)
-   int m_aBytesWindow[ASIZE];                               // 
+   int m_aBytesWindow[ASIZE];
    int m_iPktWindowPtr;                                     // Position pointer of the packet info. window
    mutable srt::sync::Mutex m_lockPktWindow;                // Used to synchronize access to the packet window
 
@@ -337,10 +337,10 @@ private:
    int m_iLastSentTime;                                     // Last packet sending time
    int m_iMinPktSndInt;                                     // Minimum packet sending interval
 
-   srt::sync::steady_clock::time_point m_tsLastArrTime;      // last packet arrival time
-   srt::sync::steady_clock::time_point m_tsCurrArrTime;      // Current packet arrival time
-   srt::sync::steady_clock::time_point m_tsProbeTime;        // Arrival time of the first probing packet
-   int32_t m_Probe1Sequence;                                 // Sequence number for which the arrival time was notified
+   srt::sync::steady_clock::time_point m_tsLastArrTime;     // Last packet arrival time
+   srt::sync::steady_clock::time_point m_tsCurrArrTime;     // Current packet arrival time
+   srt::sync::steady_clock::time_point m_tsProbeTime;       // Arrival time of the first probing packet
+   int32_t m_Probe1Sequence;                                // Sequence number for which the arrival time was notified
 
 private:
    CPktTimeWindow(const CPktTimeWindow&);
