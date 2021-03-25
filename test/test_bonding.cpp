@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <future>
@@ -12,11 +11,11 @@
 #include <unistd.h>
 #endif
 
-#if ENABLE_EXPERIMENTAL_BONDING
-
 #include "gtest/gtest.h"
 
 #include "srt.h"
+#include "logging_api.h"
+#include "udt.h"
 #include "netinet_any.h"
 
 TEST(Bonding, SRTConnectGroup)
@@ -336,4 +335,110 @@ TEST(Bonding, CloseGroupAndSocket)
     srt_cleanup();
 }
 
-#endif // ENABLE_EXPERIMENTAL_BONDING
+void SetLongSilenceTolerant(const SRTSOCKET s)
+{
+    int longtime = 100000;
+
+    srt_setsockflag(s, SRTO_CONNTIMEO, &longtime, sizeof longtime);
+    srt_setsockflag(s, SRTO_PEERIDLETIMEO, &longtime, sizeof longtime);
+}
+
+TEST(Bonding, DeadLinkUpdate)
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    srt_startup();
+
+    {
+        using namespace srt;
+        using namespace srt_logging;
+
+        setloglevel(LogLevel::debug);
+        set<LogFA> fas = { SRT_LOGFA_GRP_RECV };
+        resetlogfa(fas);
+    }
+
+
+    SRTSOCKET listener = srt_create_socket();
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BACKUP);
+
+    SetLongSilenceTolerant(listener);
+    SetLongSilenceTolerant(group);
+
+    sockaddr_any sa(AF_INET);
+
+    inet_pton(AF_INET, "127.0.0.1", sa.get_addr());
+
+    sa.hport(5555);
+
+    int allow_groups = 1;
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &allow_groups, sizeof allow_groups);
+    char srcbuf [] = "1234ABCD";
+
+    thread td = thread([&]() {
+            cout << "[T] Connecting 1...\n";
+            const SRTSOCKET member1 = srt_connect(group, sa.get(), sa.size());
+            // Now wait 3s
+            cout << "[T] Link 1 established. Wait 3s...\n";
+            this_thread::sleep_for(seconds(3));
+
+            cout << "[T] Connecting 2...\n";
+            // Make a second connection
+            srt_connect(group, sa.get(), sa.size());
+
+            cout << "[T] Link 2 established. Wait 3s...\n";
+            // Again wait 3s
+            this_thread::sleep_for(seconds(3));
+
+            cout << "[T] Killing link 1...\n";
+            // Now close the first connection
+            srt_close(member1);
+
+            // Now send the data and see if they are received
+            cout << "[T] Sending: size=" << (sizeof srcbuf) << " Content: '" << srcbuf << "'...\n";
+            int nsent = srt_send(group, srcbuf, sizeof srcbuf);
+            ASSERT_NE(nsent, -1);
+
+            cout << "[T] Wait 3s...\n";
+            // Again wait 3s
+            this_thread::sleep_for(seconds(3));
+
+            cout << "[T] Killing the group and exitting.\n";
+            // And close
+        srt_close(group);
+    });
+
+    cout << "Accepting...\n";
+    const SRTSOCKET acp = srt_accept(listener, NULL, NULL);
+
+    ASSERT_EQ(acp & SRTGROUP_MASK, SRTGROUP_MASK);
+
+    // Close and set up the listener again.
+    srt_close(listener);
+    listener = srt_create_socket();
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &allow_groups, sizeof allow_groups);
+
+    cout << "Group accepted. Receiving...\n";
+    char buf[1316] = "";
+    const int nrecv = srt_recv(acp, buf, 1316);
+
+    cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
+
+    ASSERT_NE(nrecv, -1);
+
+    EXPECT_EQ(strcmp(srcbuf, buf), 0);
+
+    cout << "Closing.\n";
+    srt_close(acp);
+    srt_close(listener);
+
+    td.join();
+
+    srt_cleanup();
+}
+
