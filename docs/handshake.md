@@ -1540,7 +1540,7 @@ application should set it on a Caller socket using the `SRTO_STREAMID` option.
 Upon connection, the accepted socket on the Listener side will have exactly the
 same value set, and it can be retrieved using the same option. For more details
 about the prospective use of this option, please refer to the
-[API description document](API.md) and [SRT Access Control guidelines](AccessControl.md).
+[SRT API Socket Options](API/API-socket-options.md) and [SRT Access Control guidelines](AccessControl.md).
 
 
 [Return to top of page](#srt-handshake)

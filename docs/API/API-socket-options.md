@@ -3,14 +3,9 @@
 There is a general method of setting options on a socket in the SRT C API, similar
 to the system `setsockopt/getsockopt` functions.
 
-**NOTE**: This document replaces the socket option description originally
-in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
-
-**Sections:**
-
-- [Types used in socket options](#types-used-in-socket-options)
-- [Getting and setting options](#getting-and-setting-options)
-- [List of options](#list-of-options)
+- [Types Used in Socket Options](#types-used-in-socket-options)
+- [Getting and Setting Options](#getting-and-setting-options)
+- [List of Options](#list-of-options)
 
 ## Types used in socket options
 
@@ -45,7 +40,7 @@ Used by `SRTO_TRANSTYPE` option:
 - `SRTT_LIVE`: Live mode.
 - `SRTT_FILE`: File mode.
 
-See [Transmission types](./API.md#transmission-types) for details.
+See [Transmission Types](API/API.md#transmission-types) for details.
 
 #### `SRT_KM_STATE`
 
@@ -775,7 +770,7 @@ complete (not all packets received or there was a packet loss) it will not be
 copied to the application's buffer. Messages that are sent later, but were
 earlier reassembled by the receiver, will be delivered once ready, if the
 `inorder` flag was set to false.
-See [`srt_sendmsg`](https://github.com/Haivision/srt/blob/master/docs/API.md#sending-and-receiving)).
+See [`srt_sendmsg`](API/API.md#sending-and-receiving)).
   
 As a comparison to the standard system protocols, the Stream API does
 transmission similar to TCP, whereas the Message API functions like the

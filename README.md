@@ -41,7 +41,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * [Contributing](CONTRIBUTING.md)
 * [Developer's Guide](docs/DevelopersGuide.md)
 * [SRT Encryption](docs/encryption.md)
-* [API](docs/API.md)
+* [API](docs/API/API.md)
 * [Reporting problems](docs/reporting.md)
 
 ## Requirements
