@@ -448,7 +448,6 @@ private:
     bool           m_selfManaged;
     bool           m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
-    CUDTSocket*    m_listener; // A "group" can only have one listener.
     int            m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -814,6 +813,7 @@ public:
     void synchronizeDrift(CUDT* cu, duration udrift, time_point newtimebase);
 
     void updateLatestRcv(CUDTSocket*);
+    void subscribeUpdate();
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);

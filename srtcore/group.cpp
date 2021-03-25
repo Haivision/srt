@@ -286,7 +286,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_selfManaged(true)
     , m_bSyncOnMsgNo(false)
     , m_type(gtype)
-    , m_listener()
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
@@ -4660,6 +4659,31 @@ void CUDTGroup::updateFailedLink()
     {
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
     }
+}
+
+void CUDTGroup::subscribeUpdate()
+{
+    // In the beginning, subscribe the EIDs for yourself's UPDATE event.
+    // This event will be raised every time a new socket is added to the
+    // group, except the first one that makes the group open.
+
+    int update_mode = SRT_EPOLL_UPDATE;
+
+    // Subscribe both sending and receiving EID.
+    // Both sending and receiving can be blocked indefinitely
+    // (although for receiving it's more dangerous) as well as
+    // we cannot define from upside that a group created by a
+    // caller cannot then receive member connections from some
+    // listener (there's no problem with reusing a group extracted
+    // by `srt_groupof()` and make a connection to this group
+    // that was previously created by having been created by the
+    // accepted socket).
+    CUDT::s_UDTUnited.epoll_add_group_INTERNAL(m_RcvEID, *this, &update_mode);
+    CUDT::s_UDTUnited.epoll_add_group_INTERNAL(m_SndEID, *this, &update_mode);
+    // NOTE: this function theoretically may throw an exception,
+    // but that's only in case of invalid parameters. It doesn't
+    // need catching exceptions, as long as paramteres are surely
+    // verified before the call.
 }
 
 #if ENABLE_HEAVY_LOGGING

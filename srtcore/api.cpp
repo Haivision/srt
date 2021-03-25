@@ -729,29 +729,6 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
                g->m_bConnected = true;
            }
 
-           // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
-           // but groupwise connections could be accepted from multiple listeners for the same group!
-           // m_listener MUST BE A CONTAINER, NOT POINTER!!!
-           // ALSO: Maybe checking "the same listener" is not necessary as subscruption may be done
-           // multiple times anyway?
-           if (!g->m_listener)
-           {
-               // Newly created group from the listener, which hasn't yet
-               // the listener set.
-               g->m_listener = ls;
-
-               // Listen on both first connected socket and continued sockets.
-               // This might help with jump-over situations, and in regular continued
-               // sockets the IN event won't be reported anyway.
-               int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
-               epoll_add_usock_INTERNAL(g->m_RcvEID, ls, &listener_modes);
-
-               // This listening should be done always when a first connected socket
-               // appears as accepted off the listener. This is for the sake of swait() calls
-               // inside the group receiving and sending functions so that they get
-               // interrupted when a new socket is connected.
-           }
-
            // Add also per-direction subscription for the about-to-be-accepted socket.
            // Both first accepted socket that makes the group-accept and every next
            // socket that adds a new link.
@@ -812,6 +789,15 @@ int CUDTUnited::newConnection(const SRTSOCKET listen, const sockaddr_any& peer, 
       // acknowledge INTERNAL users waiting for new connections on the listening socket
       // that are reported when a new socket is connected within an already connected group.
       m_EPoll.update_events(listen, ls->m_pUDT->m_sPollID, SRT_EPOLL_UPDATE, true);
+#if ENABLE_EXPERIMENTAL_BONDING
+      // Note that the code in this current IF branch can only be executed in case
+      // of group members. Otherwise should_submit_to_accept will be always true.
+      if (ns->m_GroupOf)
+      {
+          HLOGC(gmlog.Debug, log << "GROUP UPDATE $" << ns->m_GroupOf->id() << " per connected socket @" << ns->m_SocketID);
+          m_EPoll.update_events(ns->m_GroupOf->id(), ns->m_GroupOf->m_sPollID, SRT_EPOLL_UPDATE, true);
+      }
+#endif
       CGlobEvent::triggerEvent();
    }
 
@@ -2360,8 +2346,7 @@ int CUDTUnited::epoll_add_usock(
    if (u & SRTGROUP_MASK)
    {
        GroupKeeper k (*this, u, ERH_THROW);
-       ret = m_EPoll.update_usock(eid, u, events);
-       k.group->addEPoll(eid);
+       ret = epoll_add_group_INTERNAL(eid, *k.group, events);
        return 0;
    }
 #endif
@@ -2378,6 +2363,15 @@ int CUDTUnited::epoll_add_usock(
 
    return ret;
 }
+
+#if ENABLE_EXPERIMENTAL_BONDING
+int CUDTUnited::epoll_add_group_INTERNAL(const int eid, CUDTGroup& rg, const int* events)
+{
+    int ret = m_EPoll.update_usock(eid, rg.id(), events);
+    rg.addEPoll(eid);
+    return ret;
+}
+#endif
 
 // NOTE: WILL LOCK (serially):
 // - CEPoll::m_EPollLock
@@ -3159,7 +3153,9 @@ CUDTGroup& CUDT::newGroup(const int type)
     const SRTSOCKET id = s_UDTUnited.generateSocketID(true);
 
     // Now map the group
-    return s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
+    CUDTGroup& rg = s_UDTUnited.addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
+    rg.subscribeUpdate();
+    return rg;
 }
 
 SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)

@@ -350,14 +350,15 @@ TEST(Bonding, DeadLinkUpdate)
 
     srt_startup();
 
+    /* logging enabled, for development
     {
         using namespace srt;
         using namespace srt_logging;
 
         setloglevel(LogLevel::debug);
-        set<LogFA> fas = { SRT_LOGFA_GRP_RECV };
+        set<LogFA> fas = { SRT_LOGFA_GRP_RECV, SRT_LOGFA_GRP_MGMT };
         resetlogfa(fas);
-    }
+    }*/
 
 
     SRTSOCKET listener = srt_create_socket();

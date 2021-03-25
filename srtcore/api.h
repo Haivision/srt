@@ -270,6 +270,9 @@ public:
    int epoll_clear_usocks(int eid);
    int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
    int epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
+#if ENABLE_EXPERIMENTAL_BONDING
+   int epoll_add_group_INTERNAL(const int eid, CUDTGroup& rg, const int* events);
+#endif
    int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
    int epoll_remove_usock(const int eid, const SRTSOCKET u);
    template <class EntityType>
