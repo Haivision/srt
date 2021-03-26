@@ -23,7 +23,7 @@ The following API functions can be used to retrieve statistics on an SRT socket:
 * `int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear)`
 * `int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
 
-Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
+Refer to the documentation of the [SRT API Functions](API/API-functions.md) for usage instructions.
 
 ### Summary Table
 
@@ -729,7 +729,7 @@ SRT group statistics are implemented for SRT Connection Bonding feature and avai
 
 - [Introduction in SRT Connection Bonding feature](https://github.com/Haivision/srt/blob/master/docs/bonding-intro.md),
 - [The concept of socket groups](https://github.com/Haivision/srt/blob/master/docs/socket-groups.md). Here you will also find the information regarding `srt-test-live`  application for testing Connection Bonding,
-- Check also [SRT API](API/API.md) and [API functions](https://github.com/Haivision/srt/blob/master/docs/API-functions.md) documentation for Connection Bonding related updates,
+- Check also [SRT API](API/API.md) and [SRT API Functions](API/API-functions.md) documentation for Connection Bonding related updates,
 - Code examples: simple [client](https://github.com/Haivision/srt/blob/master/examples/test-c-client-bonding.c) and [server](https://github.com/Haivision/srt/blob/master/examples/test-c-server-bonding.c) implementation.
 
 `srt_bistats(SRTSOCKET u, ...)`  function can be used with a socket group ID as a first argument to get statistics for a group. Most values of the `SRT_TRACEBSTATS` will be filled with zeros except for the fields listed in [Summary Table](#group-summary-table) below. Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
