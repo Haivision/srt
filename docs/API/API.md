@@ -700,4 +700,4 @@ for Buffer API.
 
 For more information, see [SRT API Socket Options](API-socket-options.md).
 
-[Return to top](#srt-api)
+[Return to Top of Page](#srt-api)
