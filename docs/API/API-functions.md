@@ -1658,7 +1658,11 @@ readable form, where x = ("%d", (version>>16) & 0xff), etc.
 
 ## Helper Data Types for Transmission
 
-  
+**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
+sections of the RFC additionally. The current section is going to be reworked accordingly.
+
 ### SRT_MSGCTRL
 
 The [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure:
@@ -1747,6 +1751,11 @@ to be mutable, as they use some fields to output values.
 
 
 ## Transmission
+
+**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
+sections of the RFC additionally. The current section is going to be reworked accordingly.
 
 * [srt_send, srt_sendmsg, srt_sendmsg2](#srt_send-srt_sendmsg-srt_sendmsg2)
 * [srt_recv, srt_recvmsg, srt_recvmsg2](#srt_recv-srt_recvmsg-srt_recvmsg2)
@@ -2637,7 +2646,7 @@ performed as long as you call this diagnostic function just after the failed
 function has returned. In any other situation the information provided by the
 diagnostic function is undefined.
 
-**NOTE**: There is a list of [Error Codes](#error-codes) at the bottom of this document.
+**NOTE**: There is a list of [Rejection Reasons](#rejection-reasons) and [Error Codes](#error-codes) at the bottom of this section.
 
 
 * [srt_getlasterror_str](#srt_getlasterror_str)
@@ -2783,10 +2792,11 @@ used for the connection, the function should also be called when the
 a numeric code, which can be translated into a message by 
 [`srt_rejectreason_str`](#srt_rejectreason_str).
 
-  
+---
+
 ### Rejection Reasons
 
-  
+
 #### SRT_REJ_UNKNOWN
 
 A fallback value for cases when there was no connection rejected.
@@ -2915,8 +2925,8 @@ the application.
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
-  
-  
+---
+
 ### Error Codes
 
 All functions that return the status via `int` value return -1 (designated as 
