@@ -166,8 +166,8 @@
 | [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)           | Rendezvous cookie collision                                                                                    |
 | [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)           | Both parties have defined a passprhase for connection and they differ                                          |
 | [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)             | Only one connection party has set up a password                                                                |
-| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)         | The value for [`SRTO_MESSAGEAPI`](./API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
-| [SRT_REJ_FILTER](#SRT_REJ_FILTER)                 | The [`SRTO_PACKETFILTER`](./API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
+| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)         | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
+| [SRT_REJ_FILTER](#SRT_REJ_FILTER)                 | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
 | [SRT_REJ_GROUP](#SRT_REJ_GROUP)                   | The group type or some group settings are incompatible for both connection parties                             |
 | [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)               | The connection wasn't rejected, but it timed out                                                               |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
@@ -215,7 +215,7 @@
 [`SRT_EASYNCSND`](#srt_easyncsnd)                   | Sending operation is not ready to perform                                                                      |
 [`SRT_EASYNCRCV`](#srt_easyncrcv)                   | Receiving operation is not ready to perform                                                                    |
 [`SRT_ETIMEOUT`](#srt_etimeout)                     | The operation timed out                                                                                        |
-[`SRT_ECONGEST`](#srt_econgest)                     | With [`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) and [`SRTO_TLPKTDROP`](../docs/APISocketOptions.md#SRTO_TLPKTDROP) set to true, <br/> some packets were dropped by sender                    |
+[`SRT_ECONGEST`](#srt_econgest)                     | With [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) set to true, <br/> some packets were dropped by sender                    |
 [`SRT_EPEERERR`](#srt_epeererr)                     | Receiver peer is writing to a file that the agent is sending                                                   |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
@@ -303,9 +303,9 @@ is decided at the call of [`srt_connect`](#srt_connect) or [`srt_bind`](#srt_bin
 using `SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading,
 as the message mode has nothing to do with UDP datagrams and it's rather
 similar to the SCTP protocol). In SRT these two modes are available by setting
-[`SRTO_TRANSTYPE`](../docs/APISocketOptions.md#SRTO_TRANSTYPE). The default is `SRTT_LIVE`. If, however, you set
-[`SRTO_TRANSTYPE`](../docs/APISocketOptions.md#SRTO_TRANSTYPE) to `SRTT_FILE` for file mode, you can then leave the
-[`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) option as false (default), which corresponds to "stream" mode
+[`SRTO_TRANSTYPE`](API-socket-options.md#SRTO_TRANSTYPE). The default is `SRTT_LIVE`. If, however, you set
+[`SRTO_TRANSTYPE`](API-socket-options.md#SRTO_TRANSTYPE) to `SRTT_FILE` for file mode, you can then leave the
+[`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) option as false (default), which corresponds to "stream" mode
 (TCP-like), or set it to true, which corresponds to "message" mode (SCTP-like).
 
 

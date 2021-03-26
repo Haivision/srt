@@ -35,9 +35,6 @@ as examples of how data are read and written in SRT.
   - [Transmission method: Buffer](#transmission-method-buffer)
   - [Transmission method: Message](#transmission-method-message)
 
-**NOTE**: The socket option descriptions originally contained in this document
-have been moved to [APISocketOptions.md](https://github.com/Haivision/srt/blob/master/docs/APISocketOptions.md).
-
 ## Setup and teardown
 
 Before any part of the SRT C API can be used, the user should call the `srt_startup()`
@@ -253,7 +250,7 @@ forwarding SRT streams. It permits pulling and pushing of the sender's original
 time stamp, converted to local time and drift adjusted. The `srctime` parameter
 is the number of usec (since epoch) in local SRT clock time. If the connection
 is not between SRT peers or if **Timestamp-Based Packet Delivery mode (TSBPDMODE)**
-is not enabled (see [APISocketOptions.md](https://github.com/Haivision/srt/blob/master/docs/APISocketOptions.md)),
+is not enabled (see [SRT API Socket Options](API-socket-options.md)),
 the extracted `srctime` will be 0. Passing `srctime = 0` in `sendmsg` is like using
 the API without `srctime` and the local send time will be used (if TSBPDMODE is
 enabled and receiver supports it).
@@ -296,7 +293,7 @@ nb = srt_recvmsg2(u, buf, nb, &mc);
 ### Transmission types available in SRT
 
 Mode settings determine how the sender and receiver functions work. The main
-[socket options](APISocketOptions.md) that control it are:
+[socket options](API-socket-options.md) that control it are:
 
 - `SRTO_TRANSTYPE`. Sets several parameters in accordance with the selected
 mode:
@@ -529,7 +526,7 @@ either `FASTREXMIT` or `LATEREXMIT`. This will be explained below.
 
 ### Transmission method: Live
 
-Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [parameters](APISocketOptions.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [parameters](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = true
 - `SRTO_RCVLATENCY` = 120
@@ -563,7 +560,7 @@ Otherwise the behavior is undefined and might be surprisingly disappointing.
 The reading function will always return only a payload that was
 sent, and it will HANGUP until the time to play has come for this
 packet (if TSBPD mode is on) or when it is available without gaps of
-lost packets (if TSBPD mode is off - see [`SRTO_TSBPDMODE`](APISocketOptions.md#SRTO_TSBPDMODE)).
+lost packets (if TSBPD mode is off - see [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)).
 
 You may wish to tweak some of the parameters below:
 
@@ -606,7 +603,7 @@ NAKREPORT method is considered so effective that FASTREXMIT isn't necessary.
 
 ### Transmission method: Buffer
 
-Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [parameters](APISocketOptions.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [parameters](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = false
 - `SRTO_RCVLATENCY` = 0
@@ -708,7 +705,7 @@ Note that you can use any of the sending and receiving functions for sending and
 receiving messages, except `sendfile/recvfile`, which are dedicated exclusively
 for Buffer API.
 
-For more information, see [APISocketOptions.md](APISocketOptions.md).
+For more information, see [SRT API Socket Options](API-socket-options.md).
 
 [Return to top](#srt-api)
  
