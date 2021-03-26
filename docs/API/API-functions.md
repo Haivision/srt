@@ -2006,7 +2006,7 @@ Reports the current statistics
 * `instantaneous`: 1 if the statistics should use instant data, not moving averages
 
 `SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
-of the fields please refer to the document [statistics.md](statistics.md).
+of the fields please refer to [SRT Statistics](statistics.md).
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -2627,7 +2627,7 @@ Get connection time in microseconds elapsed since epoch using SRT internal clock
 (steady or monotonic clock). The connection time represents the time when SRT socket 
 was open to establish a connection. Milliseconds elapsed since connection start time 
 can be determined using [**Performance tracking**](#Performance-tracking) functions 
-and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics.md)).
+and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [SRT Statistics](statistics.md)).
 
 |      Returns                  |                                                                             |
 |:----------------------------- |:--------------------------------------------------------------------------- |

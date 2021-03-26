@@ -40,7 +40,7 @@ Used by `SRTO_TRANSTYPE` option:
 - `SRTT_LIVE`: Live mode.
 - `SRTT_FILE`: File mode.
 
-See [Transmission Types](API/API.md#transmission-types) for details.
+See [Transmission Types](API.md#transmission-types) for details.
 
 #### `SRT_KM_STATE`
 
@@ -770,7 +770,7 @@ complete (not all packets received or there was a packet loss) it will not be
 copied to the application's buffer. Messages that are sent later, but were
 earlier reassembled by the receiver, will be delivered once ready, if the
 `inorder` flag was set to false.
-See [`srt_sendmsg`](API/API.md#sending-and-receiving)).
+See [`srt_sendmsg`](API.md#sending-and-receiving)).
   
 As a comparison to the standard system protocols, the Stream API does
 transmission similar to TCP, whereas the Message API functions like the
