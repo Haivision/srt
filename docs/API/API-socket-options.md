@@ -1,4 +1,4 @@
-# SRT Socket Options
+# SRT API Socket Options
 
 There is a general method of setting options on a socket in the SRT C API, similar
 to the system `setsockopt/getsockopt` functions.
@@ -7,7 +7,7 @@ to the system `setsockopt/getsockopt` functions.
 - [Getting and Setting Options](#getting-and-setting-options)
 - [List of Options](#list-of-options)
 
-## Types used in socket options
+## Types Used in Socket Options
 
 Possible types of socket options are:
 
@@ -15,7 +15,7 @@ Possible types of socket options are:
 does not change size on 64-bit systems. For clarity, options use this fixed size 
 integer. In some cases the value is expressed using an enumeration type (see below).
 
-- `int64_t` - Some options need the parameter specified as 64-bit integer
+- `int64_t` - Some options need the parameter specified as 64-bit integer.
 
 - `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
 for C++). When *setting* an option, passing the value through an `int` type is
@@ -31,7 +31,7 @@ read should specify the maximum length of that array.
 
 - `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
-### Enumeration types used in options
+### Enumeration Types Used in Options
 
 #### `SRT_TRANSTYPE`
 
@@ -80,7 +80,7 @@ one party has set a password, in which case the KM state is as follows:
 | Party with no password:  | `SRT_KM_S_NOSECRET`  | `SRT_KM_S_UNSECURED` |
 | Party with password:     | `SRT_KM_S_UNSECURED` | `SRT_KM_S_NOSECRET`  |
 
-## Getting and setting options
+## Getting and Setting Options
 
 Legacy version:
 
@@ -189,9 +189,9 @@ The + marker can only coexist with GS. Possible specifications are:
       `srt_create_config`. Note that this setting may override the setting derived
       from the group.
 
-## List of options
+## List of Options
 
-The following table lists SRT socket options in alphabetical order. Option details are given further below.
+The following table lists SRT API socket options in alphabetical order. Option details are given further below.
 
 | Option Name                                            | Since | Restrict | Type      | Units   | Default       | Range    | Dir |Entity |
 | :----------------------------------------------------- | :---: | :------: | :-------: | :-----: | :-----------: | :------: |:---:|:-----:|
