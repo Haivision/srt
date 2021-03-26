@@ -1663,6 +1663,8 @@ readable form, where x = ("%d", (version>>16) & 0xff), etc.
 
 ## Helper Data Types for Transmission
 
+* [SRT_MSGCTRL](#SRT_MSGCTRL)
+
 **NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
 Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
 and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
@@ -1762,14 +1764,15 @@ to be mutable, as they use some fields to output values.
 
 ## Transmission
 
+* [srt_send, srt_sendmsg, srt_sendmsg2](#srt_send-srt_sendmsg-srt_sendmsg2)
+* [srt_recv, srt_recvmsg, srt_recvmsg2](#srt_recv-srt_recvmsg-srt_recvmsg2)
+* [srt_sendfile, srt_recvfile](#srt_sendfile-srt_recvfile)
+
 **NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
 Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
 and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
 sections of the RFC additionally. The current section is going to be reworked accordingly.
 
-* [srt_send, srt_sendmsg, srt_sendmsg2](#srt_send-srt_sendmsg-srt_sendmsg2)
-* [srt_recv, srt_recvmsg, srt_recvmsg2](#srt_recv-srt_recvmsg-srt_recvmsg2)
-* [srt_sendfile, srt_recvfile](#srt_sendfile-srt_recvfile)
 
 ### srt_send
 ### srt_sendmsg
@@ -1968,7 +1971,9 @@ You need to pass them to the [`srt_sendfile`](#srt_sendfile) or
 
 ## Performance Tracking
 
-**Sequence Numbers** 
+* [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
+
+**Sequence Numbers:** 
 The sequence numbers used in SRT are 32-bit "circular numbers" with the most significant 
 bit not included. For example 0x7FFFFFFF shifted forward by 3 becomes 2. As far as 
 any comparison is concerned, it can be thought of as a "distance" which is an integer
@@ -1980,7 +1985,6 @@ Hence, the distance counting procedure always assumes that the sequence number a
 the required range already, so for a numbers like 0x7FFFFFF0 and 0x10, for which the 
 "numeric difference" would be 0x7FFFFFE0, the "distance" is 0x20.
 
-* [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
 
 ### srt_bstats
 ### srt_bistats
@@ -2646,6 +2650,14 @@ and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics
 
 ## Diagnostics
 
+* [srt_getlasterror_str](#srt_getlasterror_str)
+* [srt_getlasterror](#srt_getlasterror)
+* [srt_strerror](#srt_strerror)
+* [srt_clearlasterror](#srt_clearlasterror)
+* [srt_getrejectreason](#srt_getrejectreason)
+* [srt_rejectreason_str](#srt_rejectreason_str)
+* [srt_setrejectreason](#srt_setrejectreason)
+
 General notes concerning the `getlasterror` diagnostic functions: when an API
 function ends up with error, this error information is stored in a thread-local
 storage. This means that you'll get the error of the operation that was last
@@ -2655,13 +2667,6 @@ diagnostic function is undefined.
 
 **NOTE**: There are lists of rejection reasons and error codes at the bottom of this section.
 
-* [srt_getlasterror_str](#srt_getlasterror_str)
-* [srt_getlasterror](#srt_getlasterror)
-* [srt_strerror](#srt_strerror)
-* [srt_clearlasterror](#srt_clearlasterror)
-* [srt_getrejectreason](#srt_getrejectreason)
-* [srt_rejectreason_str](#srt_rejectreason_str)
-* [srt_setrejectreason](#srt_setrejectreason)
 
 ### srt_getlasterror
 
