@@ -1513,7 +1513,7 @@ The following options are allowed to be set on the member socket:
 * [srt_setsockopt, srt_setsockflag](#srt_setsockopt-srt_setsockflag)
 * [srt_getversion](#srt_getversion)
 
-**NOTE**: For more information, see [Getting and Setting Options](API-socket-options.md#getting-and-setting-options)
+**NOTE**: For more information, see [Getting and Setting Options](API-socket-options.md#getting-and-setting-options).
 
 ### srt_getpeername
 ```
@@ -2386,8 +2386,8 @@ the general output array is not empty.
 
 |      Returns                  |                                                                            |
 |:----------------------------- |:-------------------------------------------------------------------------- |
-|                               | This function returns the state of the flags at the time before the call.  |
-|        -1                     | Special value in case when an error occurred.                              |
+|                               | This function returns the state of the flags at the time before the call  |
+|        -1                     | Special value in case when an error occurred                              |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                        |                                                                   |
@@ -2409,8 +2409,8 @@ Deletes the epoll container.
 
 |      Returns                  |                                                                |
 |:----------------------------- |:-------------------------------------------------------------- |
-|                               | The number (\>0) of ready sockets, of whatever kind (if any).  |
-|        -1                     | Error                           .                              |
+|                               | The number (\>0) of ready sockets, of whatever kind (if any)  |
+|        -1                     | Error                                                         |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                        |                                                                   |
@@ -2627,7 +2627,7 @@ and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics
 
 |      Returns                  |                                                                             |
 |:----------------------------- |:--------------------------------------------------------------------------- |
-|                               | Connection time in microseconds elapsed since epoch of SRT internal clock.  |
+|                               | Connection time in microseconds elapsed since epoch of SRT internal clock  |
 |        -1                     | Error                                                                       |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
@@ -2964,8 +2964,6 @@ the timeout reason.
 Connection has been rejected. Additional reject reason can be obtained through
 [`srt_getrejectreason`](#srt_getrejectreason) (see above).
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
 #### SRT_ESOCKFAIL
 
@@ -3001,8 +2999,6 @@ General connection failure of unknown details.
 
 The socket was properly connected, but the connection has been broken.
 This specialization is reported from the transmission functions.
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
   
 #### SRT_ENOCONN
@@ -3062,7 +3058,7 @@ Write permission was denied when trying to write to a file.
 #### SRT_EINVOP
 
 Invalid operation performed for the current state of a socket. This mainly
-concerns performing `srt_bind*` operations on a socket that is already bound.  
+concerns performing `srt_bind*` operations on a socket that is already bound.
 Once a socket has been been bound, it cannot be bound again.
 
   
