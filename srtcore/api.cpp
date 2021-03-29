@@ -1066,7 +1066,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 {
    if (pw_addr && !pw_addrlen)
    {
-      LOGC(cnlog.Error, log << "srt_accept: incorrect address parameters specified");
+      LOGC(cnlog.Error, log << "srt_accept: provided address, but address length parameter is missing");
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
    }
 
@@ -1074,14 +1074,14 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 
    if (ls == NULL)
    {
-      LOGC(cnlog.Error, log << "srt_accept: invalid listener socket value: " << listen);
+      LOGC(cnlog.Error, log << "srt_accept: invalid listener socket ID value: " << listen);
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
    }
 
    // the "listen" socket must be in LISTENING status
    if (ls->m_Status != SRTS_LISTENING)
    {
-      LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not set listen state (forgot srt_listen?)");
+      LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
    }
 
@@ -1137,7 +1137,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
       }
 
-      LOGC(cnlog.Error, log << "srt_accept: listener socket @" << listen << " is closed");
+      LOGC(cnlog.Error, log << "srt_accept: listener socket @" << listen << " is already closed");
       // listening socket is closed
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
