@@ -347,7 +347,6 @@ static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, co
 
 TEST(ACKWindow, API)
 {
-
     // We have a situation with circular buffer with circular
     // numbers with two different cirtulations. We need then
     // permutations of 4 special plus 1 regular, in total:
