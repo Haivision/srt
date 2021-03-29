@@ -6,7 +6,7 @@ One type of information that can be interchanged when a connection is being
 established in SRT is "Stream ID", which can be used in a caller-listener
 connection layout. This is a string of maximum 512 characters set on the caller
 side. It can be retrieved at the listener side on the newly accepted socket
-through a socket option (see `SRTO_STREAMID` in [API.md](API.md)).
+through a socket option (see `SRTO_STREAMID` in [SRT API Socket Options](API/API-socket-options.md)).
 
 As of SRT version 1.3.3 a callback can be registered on the listener socket for
 an application to make decisions on incoming caller connections. This callback,
