@@ -8136,12 +8136,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 data[ACKD_XMRATE_VER102_ONLY] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102_ONLY;
             }
-            else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
-            {
-                // Normal, currently expected version.
-                data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER143;
-            }
             else if (m_uPeerSrtVersion >= SrtVersion(1, 4, 3) && m_bPeerTLPktDrop && m_bPeerTsbPd)
             {
                 enterCS(m_StatsLock);
@@ -8149,10 +8143,16 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 leaveCS(m_StatsLock);
                 // Normal, currently expected version.
                 data[ACKD_RCVRATE] = rcvRate;                   // bytes/sec
-
+                
                 // TODO: only include this field if dropTotal was updated
                 data[ACKD_RCVDROP_TOTAL] = (unsigned)dropTotal; // truncation is allowed and must be handled by ACK-receiver
                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER143;
+            }
+            else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
+            {
+                // Normal, currently expected version.
+                data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER101;
             }
             // ELSE: leave the buffer with ...UDTBASE size.
 
