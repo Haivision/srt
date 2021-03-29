@@ -33,16 +33,15 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 
 ### Guides
 
-* [Why SRT Was Created](docs/why-srt-was-created.md)
-* [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
-* SRT Cookbook: [website](https://srtlab.github.io/srt-cookbook), [GitHub](https://github.com/SRTLab/srt-cookbook)
-* SRT RFC: [Latest IETF Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00), [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html), [GitHub Repo](https://github.com/Haivision/srt-rfc)
+* [SRT API Documents](docs/API/)
 * [Using the `srt-live-transmit` App](docs/srt-live-transmit.md)
-* [Contributing](CONTRIBUTING.md)
 * [Developer's Guide](docs/DevelopersGuide.md)
-* [SRT Encryption](docs/encryption.md)
-* [API](docs/API/)
+* [Contributing](CONTRIBUTING.md)
 * [Reporting problems](docs/reporting.md)
+* SRT RFC: [Latest IETF Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00), [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html), [GitHub Repo](https://github.com/Haivision/srt-rfc)
+* SRT CookBook: [Website](https://srtlab.github.io/srt-cookbook), [GitHub Repo](https://github.com/SRTLab/srt-cookbook)
+* [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
+* [Why SRT Was Created](docs/why-srt-was-created.md)
 
 ## Requirements
 
