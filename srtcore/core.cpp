@@ -8214,7 +8214,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
             }
 
             LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK record not found, RTT estimate impossible "
+                 log << CONID() << "IPE: ACK record not found, can't estimate RTT "
                      << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
                      << ", RTT (EWMA): " << m_iRTT << ")");
             break;
