@@ -8264,7 +8264,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_KEEPALIVE: // 001 - Keep-alive
 
         handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
+        // to check timestamp carryover
+        m_pRcvBuffer->getTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
