@@ -8198,19 +8198,40 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
     {
         int32_t ack = 0;
-        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
-        if (rtt <= 0)
+
+        // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
+        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, currtime);
+
+        if (rtt == -1)
         {
+            if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+            {
+                LOGC(inlog.Warn,
+                 log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                     << ", RTT (EWMA): " << m_iRTT << ")");
+                break;
+            }
+
             LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK node overwritten when acknowledging " << ctrlpkt.getAckSeqNo()
-                     << " (ack extracted: " << ack << ")");
+                 log << CONID() << "IPE: ACK record not found, can't estimate RTT "
+                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                     << ", RTT (EWMA): " << m_iRTT << ")");
             break;
         }
 
-        // if increasing delay detected...
+        if (rtt <= 0)
+        {
+            LOGC(inlog.Error,
+                 log << CONID() << "IPE: invalid RTT estimate " << rtt 
+                     << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+            break;
+        }
+
+        // If increasing delay is detected
         //   sendCtrl(UMSG_CGWARNING);
 
-        // RTT EWMA
+        // Calculate RTT (EWMA) on the receiver side
         m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
         m_iRTT = avg_iir<8>(m_iRTT, rtt);
 
@@ -8240,7 +8261,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 #endif
         }
 
-        // update last ACK that has been received by the sender
+        // Update last ACK that has been received by the sender
         if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
             m_iRcvLastAckAck = ack;
 
