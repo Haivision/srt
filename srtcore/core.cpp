@@ -829,8 +829,10 @@ void CUDT::clearData()
         m_stats.traceBelatedTime                                                  = 0.0;
         m_stats.traceRcvBelated                                                   = 0;
 
+        m_stats.sndRcvDropTotal = 0;
         m_stats.sndDropTotal = 0;
         m_stats.traceSndDrop = 0;
+        m_stats.traceSndRcvDrop = 0;
         m_stats.rcvDropTotal = 0;
         m_stats.traceRcvDrop = 0;
 
@@ -7079,6 +7081,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     if (clear)
     {
         m_stats.traceSndDrop           = 0;
+        m_stats.traceSndRcvDrop        = 0;
         m_stats.traceRcvDrop           = 0;
         m_stats.traceSndBytesDrop      = 0;
         m_stats.traceRcvBytesDrop      = 0;
@@ -7703,10 +7706,22 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
             }
+            else if (m_uPeerSrtVersion >= SrtVersion(1, 4, 3) && m_bPeerTLPktDrop && m_bPeerTsbPd)
+            {
+                enterCS(m_StatsLock);
+                const int64_t dropTotal = m_stats.rcvDropTotal;
+                leaveCS(m_StatsLock);
+                // Normal, currently expected version.
+                data[ACKD_RCVRATE] = rcvRate;                   // bytes/sec
+                
+                // TODO: only include this field if dropTotal was updated
+                data[ACKD_RCVDROP_TOTAL] = (unsigned)dropTotal; // truncation is allowed and must be handled by ACK-receiver
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER143;
+            }
             else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
             {
                 // Normal, currently expected version.
-                data[ACKD_RCVRATE] = rcvRate; // bytes/sec
+                data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
                 ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER101;
             }
             // ELSE: leave the buffer with ...UDTBASE size.
@@ -8014,6 +8029,18 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         m_iBandwidth        = avg_iir<8>(m_iBandwidth, bandwidth);
         m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate, pktps);
         m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate, bytesps);
+
+        // TODO: or maybe == ?
+        if (acksize >= ACKD_TOTAL_SIZE_VER143)
+        {
+            const unsigned uRcvDropTotal = ackdata[ACKD_RCVDROP_TOTAL];
+            enterCS(m_StatsLock);
+            const int64_t prevTotalDrop = m_stats.sndRcvDropTotal;
+            // TODO: handle possible uint32_t overflow here
+            m_stats.sndRcvDropTotal = uRcvDropTotal;
+            m_stats.traceSndRcvDrop += uRcvDropTotal - prevTotalDrop;
+            leaveCS(m_StatsLock);
+        }
         // XXX not sure if ACKD_XMRATE is of any use. This is simply
         // calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
 

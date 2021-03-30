@@ -110,6 +110,10 @@ enum AckDataItem
                      // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
 
     ACKD_TOTAL_SIZE_VER102 = 8, // 32
+
+    ACKD_RCVDROP_TOTAL = 7,
+    ACKD_TOTAL_SIZE_VER143 = 8, // 32
+
 // FEATURE BLOCKED. Probably not to be restored.
 //  ACKD_ACKBITMAP = 8,
     ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102 // length = 32 (or more)
@@ -1003,6 +1007,7 @@ private: // Trace
         int sentNAKTotal;                   // total number of sent NAK packets
         int recvNAKTotal;                   // total number of received NAK packets
         int sndDropTotal;
+        int64_t sndRcvDropTotal;            // total number of packets dropped by the receiver, and known to the sender (via ACK packets)
         int rcvDropTotal;
         uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
         uint64_t bytesSentUniqTotal;        // total number of bytes sent,  including retransmissions
@@ -1035,6 +1040,7 @@ private: // Trace
         int sentNAK;                        // number of NAKs sent in the last trace interval
         int recvNAK;                        // number of NAKs received in the last trace interval
         int traceSndDrop;
+        int traceSndRcvDrop;                // number of packets dropped by the receiver, and known to the sender (via ACK packets)
         int traceRcvDrop;
         int traceRcvRetrans;
         int traceReorderDistance;
