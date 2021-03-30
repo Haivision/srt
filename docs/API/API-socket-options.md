@@ -1,18 +1,13 @@
-# SRT Socket Options
+# SRT API Socket Options
 
 There is a general method of setting options on a socket in the SRT C API, similar
 to the system `setsockopt/getsockopt` functions.
 
-**NOTE**: This document replaces the socket option description originally
-in [api.md](https://github.com/Haivision/srt/blob/master/docs/API.md)
+- [Types Used in Socket Options](#types-used-in-socket-options)
+- [Getting and Setting Options](#getting-and-setting-options)
+- [List of Options](#list-of-options)
 
-**Sections:**
-
-- [Types used in socket options](#types-used-in-socket-options)
-- [Getting and setting options](#getting-and-setting-options)
-- [List of options](#list-of-options)
-
-## Types used in socket options
+## Types Used in Socket Options
 
 Possible types of socket options are:
 
@@ -20,7 +15,7 @@ Possible types of socket options are:
 does not change size on 64-bit systems. For clarity, options use this fixed size 
 integer. In some cases the value is expressed using an enumeration type (see below).
 
-- `int64_t` - Some options need the parameter specified as 64-bit integer
+- `int64_t` - Some options need the parameter specified as 64-bit integer.
 
 - `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
 for C++). When *setting* an option, passing the value through an `int` type is
@@ -36,7 +31,7 @@ read should specify the maximum length of that array.
 
 - `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
-### Enumeration types used in options
+### Enumeration Types Used in Options
 
 #### `SRT_TRANSTYPE`
 
@@ -45,7 +40,7 @@ Used by `SRTO_TRANSTYPE` option:
 - `SRTT_LIVE`: Live mode.
 - `SRTT_FILE`: File mode.
 
-See [Transmission types](./API.md#transmission-types) for details.
+See [Transmission Types](API.md#transmission-types) for details.
 
 #### `SRT_KM_STATE`
 
@@ -85,7 +80,7 @@ one party has set a password, in which case the KM state is as follows:
 | Party with no password:  | `SRT_KM_S_NOSECRET`  | `SRT_KM_S_UNSECURED` |
 | Party with password:     | `SRT_KM_S_UNSECURED` | `SRT_KM_S_NOSECRET`  |
 
-## Getting and setting options
+## Getting and Setting Options
 
 Legacy version:
 
@@ -194,9 +189,9 @@ The + marker can only coexist with GS. Possible specifications are:
       `srt_create_config`. Note that this setting may override the setting derived
       from the group.
 
-## List of options
+## List of Options
 
-The following table lists SRT socket options in alphabetical order. Option details are given further below.
+The following table lists SRT API socket options in alphabetical order. Option details are given further below.
 
 | Option Name                                            | Since | Restrict | Type      | Units   | Default       | Range    | Dir |Entity |
 | :----------------------------------------------------- | :---: | :------: | :-------: | :-----: | :-----------: | :------: |:---:|:-----:|
@@ -775,7 +770,7 @@ complete (not all packets received or there was a packet loss) it will not be
 copied to the application's buffer. Messages that are sent later, but were
 earlier reassembled by the receiver, will be delivered once ready, if the
 `inorder` flag was set to false.
-See [`srt_sendmsg`](https://github.com/Haivision/srt/blob/master/docs/API.md#sending-and-receiving)).
+See [`srt_sendmsg`](API.md#sending-and-receiving)).
   
 As a comparison to the standard system protocols, the Stream API does
 transmission similar to TCP, whereas the Message API functions like the
@@ -1432,7 +1427,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET 
 on the socket used for `srt_connect`, and GET on the socket retrieved from 
 `srt_accept`. This string can be used completely free-form. However, it's highly 
-recommended to follow the [SRT Access Control guidlines](AccessControl.md).
+recommended to follow the [SRT Access Control guidlines](../AccessControl.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.
