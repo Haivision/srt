@@ -185,7 +185,7 @@ struct CSrtConfig: CSrtMuxerConfig
     static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80 * 1000;
 
     // Mimimum recv flight flag size is 32 packets
-    static const int    DEF_MAX_FLIGHT_PKT = 32;
+    static const int    DEF_MIN_FLIGHT_PKT = 32;
     static const size_t MAX_SID_LENGTH     = 512;
     static const size_t MAX_PFILTER_LENGTH = 64;
     static const size_t MAX_CONG_LENGTH    = 16;
@@ -418,7 +418,7 @@ struct CSrtConfigSetter<SRTO_FC>
         if (fc < 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
-        co.iFlightFlagSize = std::min(fc, +co.DEF_MAX_FLIGHT_PKT);
+        co.iFlightFlagSize = std::max(fc, +co.DEF_MIN_FLIGHT_PKT);
     }
 };
 
@@ -447,11 +447,10 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         // Mimimum recv buffer size is 32 packets
         const int mssin_size = co.iMSS - CPacket::UDP_HDR_SIZE;
 
-        // XXX This magic 32 deserves some constant
-        if (val > mssin_size * co.DEF_MAX_FLIGHT_PKT)
+        if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
             co.iRcvBufSize = val / mssin_size;
         else
-            co.iRcvBufSize = co.DEF_MAX_FLIGHT_PKT;
+            co.iRcvBufSize = co.DEF_MIN_FLIGHT_PKT;
 
         // recv buffer MUST not be greater than FC size
         if (co.iRcvBufSize > co.iFlightFlagSize)

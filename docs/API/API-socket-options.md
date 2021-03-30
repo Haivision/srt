@@ -394,7 +394,7 @@ Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_FC`         |       | pre      | `int32_t` | pkts   | 25600    | 32..   | RW  | GSD    |
 
-Flight Flag Size (maximum number of bytes that can be sent without
+Flight Flag Size (maximum number of packets that can be sent without
 being acknowledged)
 
 [Return to list](#list-of-options)
