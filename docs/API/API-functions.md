@@ -942,12 +942,6 @@ resolved. When all links fail, you will only get a general error code for the
 group. This mechanism allows you to get individual errors for particular member
 connection failures.
 
-You can also use this mechanism as an alternative method for a single-socket
-connection in non-blocking mode to trigger an action when the connection
-process is finished. It is recommended, however, that you use this callback
-only to collect failure information, as the call will happen in one of the
-internal SRT threads.
-
 **Arguments**:
 
 * [`u`](#u): Socket or group that will be used for connecting and for which the hook is installed
