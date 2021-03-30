@@ -418,7 +418,7 @@ struct CSrtConfigSetter<SRTO_FC>
         if (fc < 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
 
-        co.iFlightFlagSize = std::min(fc, +co.DEF_MAX_FLIGHT_PKT);
+        co.iFlightFlagSize = std::max(fc, +co.DEF_MAX_FLIGHT_PKT);
     }
 };
 
