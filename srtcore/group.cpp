@@ -4193,7 +4193,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // is performed, and this one will result in none-write-ready, this will
         // be fixed just after returning from this function.
 
-        ready_again = ready_again | d->ps->writeReady();
+        ready_again = ready_again || d->ps->writeReady();
     }
     w_mc.grpdata_size = i;
 
