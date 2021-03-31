@@ -61,7 +61,6 @@ public:
     {
         SRTSOCKET      id;
         CUDTSocket*    ps;
-        int            token;
         SRT_SOCKSTATUS laststatus;
         GroupState     sndstate;
         GroupState     rcvstate;

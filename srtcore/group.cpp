@@ -263,7 +263,6 @@ CUDTGroup::SocketData CUDTGroup::prepareData(CUDTSocket* s)
     SocketData sd = {
         s->m_SocketID,
         s,
-        -1,
         SRTS_INIT,
         SRT_GST_BROKEN,
         SRT_GST_BROKEN,
@@ -1808,7 +1807,7 @@ void CUDTGroup::copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUP
     memcpy((&w_target.peeraddr), &source.peer, source.peer.size());
 
     w_target.sockstate = source.laststatus;
-    w_target.token = source.token;
+    w_target.token = source.ps->core().m_iConnToken;
 
     // In the internal structure the member state
     // is one per direction. From the user perspective
