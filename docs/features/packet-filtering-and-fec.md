@@ -52,7 +52,7 @@ The packet filter framework is open for extensions so that users may register
 their own filters. SRT provides also one built-in filter named "fec". This
 filter implements the FEC mechanism, as described in SMPTE 2022-1-2007.
 
-![SRT packet filter mechanism](/docs/images/packet-filter-mechanism.png)
+![SRT packet filter mechanism](images/packet-filter-mechanism.png)
 
 On the input side, filtering occurs at the moment when a packet is extracted 
 from the send buffer. A filter may then do two things:
@@ -235,7 +235,7 @@ The rows begin with sequences numbers 500, 510, 520, 530 and 540. But the column
 begin in staggered fashion, separated by an interval of R+1. The colours represent 
 consecutive FEC groups (note the "staircase" pattern): 
 
-![5R x 10C Staircase Pattern](/docs/images/staircase-pattern-5rx10c.png)
+![5R x 10C Staircase Pattern](images/staircase-pattern-5rx10c.png)
 
 Here is a representation of a series of packets transmitted starting from 
 packet 537 (H = horizontal position; V = vertical position):
@@ -304,7 +304,7 @@ the example below, it is likely that the entire missing sequence from 572 to
 groups (once these are rebuilt, it becomes possible to rebuild packets 572 and
 582 via row FEC):
 
-![Rebuild Missing Sequence](/docs/images/rebuild-missing-sequence.png)
+![Rebuild Missing Sequence](images/rebuild-missing-sequence.png)
 
 Although in a case of even arrangement you still may have a good luck of
 having a long loss exactly at the border of two column series, the staircase
