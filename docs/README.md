@@ -9,7 +9,6 @@
 
 TODO:
 
-- Same columns width for the table
 - gstreamer.md ?
 - links
 - api - renaming?
@@ -45,15 +44,15 @@ TODO:
 
 ## Features
 
-| Folder Name                   | File Name                                                    | Description                                                  | Refer as                                       |
-| ----------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------- |
-| [features](features/)         | [access-control.md](features/access-control.md)              | Access Control (Stream ID) guidelines.                       | SRT Access Control<br />(Stream ID) Guidelines |
-| [features](features/)         | [bonding-intro.md](features/bonding-intro.md)                | Introduction to Connection Bonding. Description<br />of group (bonded) connections. | SRT Connection Bonding                         |
-| [features](features/)         | [encryption.md](features/encryption.md)                      | Description of SRT encryption mechanism. This<br />document might be outdated, please consult<br />[Section 6. Encryption](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-6) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally. | SRT Encryption                                 |
-| [features](features/)         | [handshake.md](features/handshake.md)                        | Description of SRT handshake mechanism. This<br />document might be outdated, please consult<br />[Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-3.2.1) and<br />[Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the<br />[SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally. | SRT Handshake                                  |
-| [features](features/)         | [live-streaming.md](features/live-streaming.md)              | Guidelines for live streaming with SRT. See also<br />best practices and configuration tips in<br />[Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00). | Live Streaming<br />Guidelines                 |
-| [features](features/)         | [packet-filtering-and-fec.md](features/packet-filtering-and-fec.md) | Description of SRT packet filtering mechanism,<br />including FEC. | SRT Packet<br />Filtering & FEC                |
-| [features](features/)         | [socket-groups.md](features/socket-groups.md)                | Description of socket groups in SRT<br />(Connection Bonding). | SRT Socket Groups                              |
+|          Folder Name          | File Name                                                    | Description                                                  | Refer as                                       |
+| :---------------------------: | ------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------- |
+|     [features](features/)     | [access-control.md](features/access-control.md)              | Access Control (Stream ID) guidelines.                       | SRT Access Control<br />(Stream ID) Guidelines |
+|     [features](features/)     | [bonding-intro.md](features/bonding-intro.md)                | Introduction to Connection Bonding. Description<br />of group (bonded) connections. | SRT Connection Bonding                         |
+|     [features](features/)     | [encryption.md](features/encryption.md)                      | Description of SRT encryption mechanism. This<br />document might be outdated, please consult<br />[Section 6. Encryption](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-6) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally. | SRT Encryption                                 |
+|     [features](features/)     | [handshake.md](features/handshake.md)                        | Description of SRT handshake mechanism. This<br />document might be outdated, please consult<br />[Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-3.2.1) and<br />[Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the<br />[SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally. | SRT Handshake                                  |
+|     [features](features/)     | [live-streaming.md](features/live-streaming.md)              | Guidelines for live streaming with SRT. See also<br />best practices and configuration tips in<br />[Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00). | Live Streaming<br />Guidelines                 |
+|     [features](features/)     | [packet-filtering-and-fec.md](features/packet-filtering-and-fec.md) | Description of SRT packet filtering mechanism,<br />including FEC. | SRT Packet<br />Filtering & FEC                |
+|     [features](features/)     | [socket-groups.md](features/socket-groups.md)                | Description of socket groups in SRT<br />(Connection Bonding). | SRT Socket Groups                              |
 | <img width=100px height=1px/> | <img width=200px height=1px/>                                | <img width=500px height=1px/>                                | <img width=200px height=1px/>                  |
 
 ## Sample Applications
@@ -67,7 +66,7 @@ TODO:
 
 ## Miscellaneous
 
-| Folder Name                   | File Name                                             | Description                                                  | Refer as                      |
-| ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------ | ----------------------------- |
-| [misc](misc/)                 | [why-srt-was-created.md](misc/why-srt-was-created.md) | Background and history of SRT. See also<br />[Section 1. Introduction](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00). | Why SRT Was Created           |
+|          Folder Name          | File Name                                             | Description                                                  | Refer as                      |
+| :---------------------------: | ----------------------------------------------------- | ------------------------------------------------------------ | ----------------------------- |
+|         [misc](misc/)         | [why-srt-was-created.md](misc/why-srt-was-created.md) | Background and history of SRT. See also<br />[Section 1. Introduction](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00). | Why SRT Was Created           |
 | <img width=100px height=1px/> | <img width=200px height=1px/>                         | <img width=500px height=1px/>                                | <img width=200px height=1px/> |
