@@ -1,4 +1,4 @@
-# SRT Access Control Guidelines
+# SRT Access Control (Stream ID) Guidelines
 
 ## Motivation
 
@@ -121,7 +121,7 @@ to the caller.
 This specifies that the file is expected to be transmitted from the caller to
 the listener and its name is `results.csv`.
 
-### Rejection codes
+### Rejection Codes
 
 The listener callback handler is also able to decide about rejecting the
 incoming connection. In a normal situation, the rejection code is predefined
