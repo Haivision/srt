@@ -107,8 +107,6 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
-    static SocketData prepareData(CUDTSocket* s);
-
     SocketData* add(SocketData data);
 
     struct HaveID

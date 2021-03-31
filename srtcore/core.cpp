@@ -79,6 +79,7 @@ modified by
 #endif
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
@@ -3130,7 +3131,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         return 0;
     }
 
-    s->m_GroupMemberData = gp->add(gp->prepareData(s));
+    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
     s->m_GroupOf = gp;
 
     // Record the remote address in the group data.
