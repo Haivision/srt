@@ -1,11 +1,11 @@
 # Documentation Overview
 
-- [SRT API Documents](#srt-api-documents)
+<!-- - [SRT API Documents](#srt-api-documents)
 - [Build Instructions](#build-instructions)
 - [Development Documents](#development-documents)
 - [Features](#features)
 - [Sample Applications](#sample-applications)
-- [Miscellaneous](#miscellaneous)
+- [Miscellaneous](#miscellaneous) -->
 
 TODO:
 
@@ -38,9 +38,9 @@ TODO:
 
 | Folder Name                   | File Name                                        | Description                                                  | Refer as                      |
 | :---------------------------- | ------------------------------------------------ | ------------------------------------------------------------ | ----------------------------- |
-| [dev](dev/)                   | [developers-guide.md](dev/developers-guide.md)   | Development setup, project structure, coding rules, submitting issues & PRs, etc. | SRT Developer's Guide         |
-| [dev](dev/)                   | [low-level-info.md](dev/low-level-info.md)       | Low level information for the SRT project (only mutex locking). | Low Level Info                |
-| [dev](dev/)                   | [making-srt-better.md](dev/making-srt-better.md) | Guidelines for problem reporting, collecting debug logs and pcaps. | Making SRT Better             |
+| [dev](dev/)                   | [developers-guide.md](dev/developers-guide.md)   | Development setup, project structure, coding rules,<br />submitting issues & PRs, etc. | SRT Developer's Guide         |
+| [dev](dev/)                   | [low-level-info.md](dev/low-level-info.md)       | Low level information for the SRT project (only<br />mutex locking). | Low Level Info                |
+| [dev](dev/)                   | [making-srt-better.md](dev/making-srt-better.md) | Guidelines for problem reporting, collecting debug logs<br />and pcaps. | Making SRT Better             |
 | <img width=100px height=1px/> | <img width=200px height=1px/>                    | <img width=500px height=1px/>                                | <img width=200px height=1px/> |
 
 ## Features
