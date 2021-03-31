@@ -19,6 +19,7 @@ Written by
 #include "srt.h"
 #include "common.h"
 #include "packet.h"
+#include "group_common.h"
 
 #if ENABLE_HEAVY_LOGGING
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
@@ -31,6 +32,7 @@ class CUDTGroup
     typedef srt::sync::steady_clock::time_point time_point;
     typedef srt::sync::steady_clock::duration   duration;
     typedef srt::sync::steady_clock             steady_clock;
+    typedef srt::groups::SocketData             SocketData;
 
 public:
     typedef SRT_MEMBERSTATUS GroupState;
@@ -56,26 +58,6 @@ public:
 
     static int32_t s_tokenGen;
     static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
-
-    struct SocketData
-    {
-        SRTSOCKET      id;
-        CUDTSocket*    ps;
-        int            token;
-        SRT_SOCKSTATUS laststatus;
-        GroupState     sndstate;
-        GroupState     rcvstate;
-        int            sndresult;
-        int            rcvresult;
-        sockaddr_any   agent;
-        sockaddr_any   peer;
-        bool           ready_read;
-        bool           ready_write;
-        bool           ready_error;
-
-        // Configuration
-        uint16_t weight;
-    };
 
     struct ConfigItem
     {

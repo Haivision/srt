@@ -3228,7 +3228,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Check if the socket already is in the group
-    CUDTGroup::SocketData* f;
+    srt::groups::SocketData* f;
     if (g->contains(socket, (f)))
     {
         // XXX This is internal error. Report it, but continue

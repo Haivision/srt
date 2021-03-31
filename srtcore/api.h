@@ -117,8 +117,8 @@ public:
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-   CUDTGroup* m_GroupOf;                     //< Group this socket is a member of, or NULL if it isn't
+   srt::groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+   CUDTGroup* m_GroupOf;                       //< Group this socket is a member of, or NULL if it isn't
 #endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
