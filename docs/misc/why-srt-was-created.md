@@ -15,14 +15,14 @@ Having had a history with UDT for data transmission, I remembered its packet los
 We started testing sending low latency live streams back and forth between Germany and Montreal and it worked! However, we didn't get the latency down to a level we had hoped to achieve. The problem we faced turned out to be timing related (as always in media ...).
 
 What happened was this:
-![Bad Signal](images/SRT_Transmission_Bad_Signal.png)
+![Bad Signal](images/srt-transmission-bad-signal.png)
 
 The characteristics of the original stream on the source network got completely changed by the transmission over the public internet. The reasons are delay, jitter, packet loss and its recovery on the dirty network. The signal on the receiver side had completely different characteristics, which led to problems with decoding, as the audio and video decoders didn't get the packets at the expected times. This can be handled by buffering, but that's not what you want in low latency setups.
 
 The solution was to come up with a mechanism that recreates the signal characteristics on the receiver side. That way we were able to dramatically reduce the buffering. This functionality is part of the SRT protocol itself, so once the data comes out of the SRT protocol on the receiver side, the stream characteristics have been properly recovered.
 
 The result is a happy decoder:
-![Good Signal](images/SRT_History_Good_Signal.png)
+![Good Signal](images/srt-history-good-signal.png)
 
 We publicly showed SRT (Secure Reliable Transport) the first time at IBC 2013, where we were the only ones to show an HEVC encoded live stream, camera to glass, from a hotel suite outside the exhibition directly onto the show floor, using the network provided by the RAI. Everybody who has been at such a show before knows how bad these networks can get. And the network was bad. So bad that we expected the whole demo to fall apart, having pulled the first trial version of SRT directly from the labs. The excitement was huge, when we realized that the transmission still worked fine!
 
