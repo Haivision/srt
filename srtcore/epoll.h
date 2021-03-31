@@ -425,7 +425,7 @@ public: // for CUDTUnited API
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
    /// Empty subscription check - for internal use only.
-   bool empty(CEPollDesc& d);
+   bool empty(const CEPollDesc& d) const;
 
    /// Reports which events are ready on the given socket.
    /// @param mp socket event map retirned by `swait`
@@ -486,7 +486,7 @@ private:
    srt::sync::Mutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   srt::sync::Mutex m_EPollLock;
+   mutable srt::sync::Mutex m_EPollLock;
 };
 
 #if ENABLE_HEAVY_LOGGING
