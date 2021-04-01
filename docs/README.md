@@ -19,13 +19,13 @@
 
 ## Build Instructions
 
-|            Folder             | File Name                                  | Description                                             | Refer as                      |
-| :---------------------------: | ------------------------------------------ | ------------------------------------------------------- | ----------------------------- |
-|        [build](build/)        | [build-android.md](build/build-android.md) | SRT build instructions for Android.                     | Building SRT for Android      |
-|        [build](build/)        | [build-iOS.md](build/build-iOS.md)         | SRT build instructions for iOS.                         | Building SRT for iOS          |
-|        [build](build/)        | [build-options.md](build/build-options.md) | Description of CMake build system and configure script. | SRT Build Options             |
-|        [build](build/)        | [build-win.md](build/build-win.md)         | SRT build instructions for Windows.                     | Building SRT for Windows      |
-| <img width=100px height=1px/> | <img width=200px height=1px/>              | <img width=500px height=1px/>                           | <img width=200px height=1px/> |
+|            Folder             | File Name                                  | Description                                                  | Refer as                      |
+| :---------------------------: | ------------------------------------------ | ------------------------------------------------------------ | ----------------------------- |
+|        [build](build/)        | [build-android.md](build/build-android.md) | SRT build instructions for Android.                          | Building SRT for Android      |
+|        [build](build/)        | [build-iOS.md](build/build-iOS.md)         | SRT build instructions for iOS.                              | Building SRT for iOS          |
+|        [build](build/)        | [build-options.md](build/build-options.md) | Description of CMake build system, configure script, and<br />build options. | SRT Build Options             |
+|        [build](build/)        | [build-win.md](build/build-win.md)         | SRT build instructions for Windows.                          | Building SRT for Windows      |
+| <img width=100px height=1px/> | <img width=200px height=1px/>              | <img width=500px height=1px/>                                | <img width=200px height=1px/> |
 
 ## Development Documents
 
@@ -46,17 +46,17 @@
 |     [features](features/)     | [handshake.md](features/handshake.md)                        | Description of SRT handshake mechanism. This<br />document might be outdated, please consult<br />[Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-3.2.1) and<br />[Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the<br />[SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally. | SRT Handshake                                  |
 |     [features](features/)     | [live-streaming.md](features/live-streaming.md)              | Guidelines for live streaming with SRT. See also<br />best practices and configuration tips in<br />[Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00). | Live Streaming<br />Guidelines                 |
 |     [features](features/)     | [packet-filtering-and-fec.md](features/packet-filtering-and-fec.md) | Description of SRT packet filtering mechanism,<br />including FEC. | SRT Packet<br />Filtering & FEC                |
-|     [features](features/)     | [socket-groups.md](features/socket-groups.md)                | Description of socket groups in SRT<br />(Connection Bonding). | SRT Socket Groups                              |
+|     [features](features/)     | [socket-groups.md](features/socket-groups.md)                | Description of socket groups in SRT<br />(Connection Bonding). Here you will<br />also find the information regarding<br />the `srt-test-live` application for<br />testing Connection Bonding. | SRT Socket Groups                              |
 | <img width=100px height=1px/> | <img width=200px height=1px/>                                | <img width=500px height=1px/>                                | <img width=200px height=1px/>                  |
 
 ## Sample Applications
 
-|            Folder             | File Name                                         | Description                                                 | Refer as                               |
-| :---------------------------: | ------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------- |
-|         [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md) | How to use the universal data transport tool.               | Using the<br />`srt-live-transmit` App |
-|         [apps](apps/)         | [srt-multiplex.md](apps/srt-multiplex.md)         | Description of sample program for sending multiple streams. | Using the<br />`srt-multiplex` App     |
-|         [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)               | How to use the tunnelling application.                      | Using the<br />`srt-tunnel` App        |
-| <img width=100px height=1px/> | <img width=200px height=1px/>                     | <img width=500px height=1px/>                               | <img width=200px height=1px/>          |
+|            Folder             | File Name                                         | Description                                                  | Refer as                               |
+| :---------------------------: | ------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------- |
+|         [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md) | A sample application to transmit a live stream from source medium (UDP/SRT/`stdin`) to the target medium (UDP/SRT/`stdout`). | Using the<br />`srt-live-transmit` App |
+|         [apps](apps/)         | [srt-multiplex.md](apps/srt-multiplex.md)         | Description of sample program for sending multiple streams.  | Using the<br />`srt-multiplex` App     |
+|         [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)               | A sample application to set up an SRT tunnel for TCP traffic. | Using the<br />`srt-tunnel` App        |
+| <img width=100px height=1px/> | <img width=200px height=1px/>                     | <img width=500px height=1px/>                                | <img width=200px height=1px/>          |
 
 ## Miscellaneous
 

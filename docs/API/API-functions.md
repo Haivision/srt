@@ -1507,7 +1507,7 @@ The following options are allowed to be set on the member socket:
 * [srt_setsockopt, srt_setsockflag](#srt_setsockopt-srt_setsockflag)
 * [srt_getversion](#srt_getversion)
 
-**NOTE**: For more information, see [Getting and Setting Options](API-socket-options.md#getting-and-setting-options).
+**NOTE**: For more information, see [SRT API Socket Options, Getting and Setting Options](API-socket-options.md#getting-and-setting-options).
 
 ### srt_getpeername
 ```
@@ -1732,8 +1732,8 @@ call [`srt_sendmsg2`](#srt_sendmsg) or [`srt_recvmsg2`](#srt_recvmsg2) function
 for a group, you should pass an array here so that you can retrieve the status of 
 particular member sockets. If you pass an array that is too small, your `grpdata_size` 
 field will be rewritten with the current number of members, but without filling in 
-the array. For details, see the (Bonding introduction)[../bonding-intro.md] and 
-(Socket Groups)[../socket-groups.md] documents.
+the array. For details, see the [SRT Connection Bonding](../features/bonding-intro.md) and 
+[SRT Socket Groups](../features/socket-groups.md) documents.
 
 **Helpers for [`SRT_MSGCTRL`](#SRT_MSGCTRL):**
 

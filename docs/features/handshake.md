@@ -1335,7 +1335,7 @@ account to calculate the time threshold for `TLPKTDROP`.
 
 `KMREQ` and `KMRSP` contain the KMX (key material exchange) message used for
 encryption. The most important part of this message is the
-AES-wrapped key (see the [Encryption documentation](encryption.md) for
+AES-wrapped key (see [SRT Encryption](encryption.md) for
 details). If the encryption process on the Responder side was successful,
 the response contains the same message for confirmation. Otherwise it's
 one single 32-bit value that contains the value of `SRT_KMSTATE` type,
@@ -1542,8 +1542,4 @@ application should set it on a Caller socket using the `SRTO_STREAMID` option.
 Upon connection, the accepted socket on the Listener side will have exactly the
 same value set, and it can be retrieved using the same option. For more details
 about the prospective use of this option, please refer to the
-[SRT API Socket Options](API/API-socket-options.md) and [SRT Access Control guidelines](AccessControl.md).
-
-
-[Return to top of page](#srt-handshake)
-
+[SRT API Socket Options](../API/API-socket-options.md) and [SRT Access Control (Stream ID) Guidlines](access-control.md).
