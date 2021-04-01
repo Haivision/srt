@@ -655,7 +655,7 @@ private:
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
     /// The function polls alive member sockets and retrieves a list of read-ready.
-    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
     ///
     /// @returns list of read-ready sockets
