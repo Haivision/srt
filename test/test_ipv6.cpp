@@ -4,6 +4,7 @@
 #include "srt.h"
 #include "netinet_any.h"
 
+#undef _S
 inline std::string operator "" _S(const char* src, std::size_t)
 {
     return std::string(src);
