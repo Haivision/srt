@@ -411,9 +411,9 @@ public:
    bool isRcvDataReady(time_point& w_tsbpdtime, int32_t& w_curpktseq, int32_t seqdistance);
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-   void debugTraceJitter(int64_t);
+   void debugTraceJitter(time_point t);
 #else
-   void debugTraceJitter(int64_t) {}
+   void debugTraceJitter(time_point) {}
 #endif   /* SRT_DEBUG_TSBPD_OUTJITTER */
 
    bool isRcvDataReady();
