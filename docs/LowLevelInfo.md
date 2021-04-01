@@ -2,9 +2,9 @@
 
 ## Introduction
 
-This documnent will contain loose information for various topis referring to
+This document will contain loose information for various topics referring to
 the SRT source code describing some cross-source analysis that would be
-unobvious for a source code reviewer. It's not a complete documentation of
+non-obvious for a source code reviewer. It's not a complete documentation of
 anything, rather a collection of various kind of information retrieved during
 development and even reverse engineering.
 
