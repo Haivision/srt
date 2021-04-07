@@ -708,6 +708,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int *)optval = (int) m_config.zExpPayloadSize;
         break;
 
+    case SRTO_KMREFRESHRATE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmRefreshRatePkt;
+        break;
+
+    case SRTO_KMPREANNOUNCE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmPreAnnouncePkt;
+        break;
+
 #if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPCONNECT:
         optlen         = sizeof (int);
