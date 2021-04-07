@@ -414,11 +414,15 @@ struct CSrtConfigSetter<SRTO_FC>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int fc = cast_optval<int>(optval, optlen);
-        if (fc < 1)
+        using namespace srt_logging;
+        const int fc = cast_optval<int>(optval, optlen);
+        if (fc < co.DEF_MIN_FLIGHT_PKT)
+        {
+            LOGC(kmlog.Error, log << "SRTO_FC: minimum allowed value is 32 (provided: " << fc << ")");
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
 
-        co.iFlightFlagSize = std::max(fc, +co.DEF_MIN_FLIGHT_PKT);
+        co.iFlightFlagSize = fc;
     }
 };
 
