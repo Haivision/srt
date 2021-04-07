@@ -36,6 +36,19 @@
 
 using namespace std;
 
+// Fixes Android build on NDK r16b and earlier.
+#if defined(__ANDROID__) && (__ANDROID__ == 1)
+   #include <android/ndk-version.h>
+   #if !defined(__NDK_MAJOR__) || (__NDK_MAJOR__ <= 16)
+      struct ip_mreq_sourceFIXED {
+        struct in_addr imr_multiaddr;
+        struct in_addr imr_interface;
+        struct in_addr imr_sourceaddr;
+      };
+      #define ip_mreq_source ip_mreq_sourceFIXED
+   #endif
+#endif
+
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
