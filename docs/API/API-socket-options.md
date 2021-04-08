@@ -394,8 +394,34 @@ Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_FC`         |       | pre      | `int32_t` | pkts   | 25600    | 32..   | RW  | GSD    |
 
-Flight Flag Size (maximum number of packets that can be sent without
-being acknowledged)
+Flow Control limits the maximum number of packets "in flight" - payload (data) packets that were sent
+but reception is not yet acknowledged with an ACK control packet.
+It also includes data packets already received, but that can't be acknowledged due to loss of preceding data packet(s).
+In other words, if a data packet with sequence number `A` was lost, then acknowledgement of the following `SRTO_FC` packets
+is blocked until packet `A` is either successfully retransmitted or dropped by the
+[Too-Late Packet Drop mechanism](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.6).
+Thus the sender will have  `SRTO_FC` packets in flight, and will not be allowed to send further data packets.
+Therefore, when establishing the value of `SRTO_FC`, it is recommend taking into consideration possible delays due to packet loss and retransmission.
+
+There is a restriction that the receiver buffer size ([SRTO_RCVBUF](#SRTO_RCVBUF)) must not be greater than `SRTO_FC`
+([#700](https://github.com/Haivision/srt/issues/700)).
+Therefore, it is recommended to set the value of `SRTO_FC` first, and then the value of `SRTO_RCVBUF`.
+
+The default flow control window size is 25600 packets. It is approximately:
+- 270 Mbits of payload in the default live streaming configuration with an SRT payload size of 1316 bytes;
+- 300 Mbits of payload with an SRT payload size of 1456 bytes.
+
+The minimum number of packets in flight should be (assuming max payload size):  
+`FCmin = bps / 8 × RTTsec / (MSS - 44)`,  
+where
+- `bps` - is the payload bitrate of the stream in bits per second;
+- `RTTsec` - RTT of the network connection in seconds;
+- `MSS` - Maximum segment size (aka MTU), see [SRTO_MSS](#SRTO_MSS);
+- 44 - size of headers (20 bytes IPv4 + 8 bytes of UDP + 16 bytes of SRT packet header).
+
+To avoid blocking the sending of further packets in case of packet loss, the recommended flow control window is  
+`FC = bps / 8 × (RTTsec + latency_sec) / (MSS - 44)`,  
+where `latency_sec` is the receiver buffering delay ([SRTO_RCVLATENCY](#SRTO_RCVLATENCY)) **in seconds**.
 
 [Return to list](#list-of-options)
 
