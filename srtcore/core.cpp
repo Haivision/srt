@@ -579,13 +579,13 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_SENDER:
-        *(int32_t *)optval = m_config.bDataSender;
-        optlen             = sizeof(int32_t);
+        *(bool *)optval = m_config.bDataSender;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_TSBPDMODE:
-        *(int32_t *)optval = m_config.bTSBPD;
-        optlen             = sizeof(int32_t);
+        *(bool *)optval = m_config.bTSBPD;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_LATENCY:
@@ -676,8 +676,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_DRIFTTRACER:
-        *(int*)optval = m_config.bDriftTracer;
-        optlen        = sizeof(int);
+        *(bool*)optval = m_config.bDriftTracer;
+        optlen         = sizeof(bool);
         break;
 
     case SRTO_MINVERSION:
@@ -721,8 +721,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 #endif
 
     case SRTO_ENFORCEDENCRYPTION:
-        optlen             = sizeof(int32_t); // also with TSBPDMODE and SENDER
-        *(int32_t *)optval = m_config.bEnforcedEnc;
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bEnforcedEnc;
         break;
 
     case SRTO_IPV6ONLY:
