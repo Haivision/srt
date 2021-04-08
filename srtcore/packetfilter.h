@@ -210,4 +210,6 @@ bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer);
 inline void PacketFilter::feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
 inline SRT_ARQLevel PacketFilter::arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
 
+bool ParseFilterConfig(std::string s, SrtFilterConfig& out, PacketFilter::Factory** ppf);
+
 #endif
