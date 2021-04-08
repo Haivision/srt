@@ -34,8 +34,6 @@
 #include "srt_compat.h"
 #include "verbose.hpp"
 
-using namespace std;
-
 // Fixes Android build on NDK r16b and earlier.
 #if defined(__ANDROID__) && (__ANDROID__ == 1)
    #include <android/ndk-version.h>
@@ -48,6 +46,8 @@ using namespace std;
       #define ip_mreq_source ip_mreq_sourceFIXED
    #endif
 #endif
+
+using namespace std;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;

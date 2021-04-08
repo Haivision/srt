@@ -40,6 +40,19 @@
 #include "srt_compat.h"
 #include "verbose.hpp"
 
+// Fixes Android build on NDK r16b and earlier.
+#if defined(__ANDROID__) && (__ANDROID__ == 1)
+   #include <android/ndk-version.h>
+   #if !defined(__NDK_MAJOR__) || (__NDK_MAJOR__ <= 16)
+      struct ip_mreq_sourceFIXED {
+        struct in_addr imr_multiaddr;
+        struct in_addr imr_interface;
+        struct in_addr imr_sourceaddr;
+      };
+      #define ip_mreq_source ip_mreq_sourceFIXED
+   #endif
+#endif
+
 using namespace std;
 
 using srt_logging::KmStateStr;
