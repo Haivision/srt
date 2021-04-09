@@ -973,6 +973,10 @@ private: // Generation and processing of packets
     /// @param ctrlpkt incoming shutdown packet
     void processCtrlShutdown(const CPacket& ctrlpkt);
 
+    /// @brief Process incoming user defined control packet
+    /// @param ctrlpkt incoming user defined packet
+    void processCtrlUserDefined(const CPacket& ctrlpkt);
+
     /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
     void updateSndLossListOnACK(int32_t ackdata_seqno);
