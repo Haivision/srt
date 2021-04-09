@@ -8412,6 +8412,36 @@ void CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
     completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
 }
 
+void CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
+{
+    HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
+        << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+        << ", value=" << ctrlpkt.getExtendedType());
+
+    // This has currently two roles in SRT:
+    // - HSv4 (legacy) handshake
+    // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
+    const bool understood = processSrtMsg(&ctrlpkt);
+    // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
+    // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
+    // the handshake version, but the reason of calling this function.
+    //
+    // Fortunately, the only messages taken into account in this function
+    // are HSREQ and HSRSP, which should *never* be interchanged when both
+    // parties are HSv5.
+    if (understood)
+    {
+        if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+        {
+            updateAfterSrtHandshake(HS_VERSION_UDT4);
+        }
+    }
+    else
+    {
+        updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+    }
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
@@ -8469,39 +8499,12 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // currently only this error is signalled from the peer side
         // if recvfile() failes (e.g., due to disk fail), blcoked sendfile/send should return immediately
         // giving the app a chance to fix the issue
-
         m_bPeerHealth = false;
 
         break;
 
     case UMSG_EXT: // 0x7FFF - reserved and user defined messages
-        HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
-                << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
-                << ", value=" << ctrlpkt.getExtendedType());
-        {
-            // This has currently two roles in SRT:
-            // - HSv4 (legacy) handshake
-            // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-            bool understood = processSrtMsg(&ctrlpkt);
-            // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
-            // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
-            // the handshake version, but the reason of calling this function.
-            //
-            // Fortunately, the only messages taken into account in this function
-            // are HSREQ and HSRSP, which should *never* be interchanged when both
-            // parties are HSv5.
-            if (understood)
-            {
-                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
-                {
-                    updateAfterSrtHandshake(HS_VERSION_UDT4);
-                }
-            }
-            else
-            {
-                updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
-            }
-        }
+        processCtrlUserDefined(ctrlpkt);
         break;
 
     default:
