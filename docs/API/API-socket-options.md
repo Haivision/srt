@@ -796,7 +796,7 @@ complete (not all packets received or there was a packet loss) it will not be
 copied to the application's buffer. Messages that are sent later, but were
 earlier reassembled by the receiver, will be delivered once ready, if the
 `inorder` flag was set to false.
-See [`srt_sendmsg`](API.md#sending-and-receiving)).
+See [`srt_sendmsg`](API.md#sending-and-receiving).
   
 As a comparison to the standard system protocols, the Stream API does
 transmission similar to TCP, whereas the Message API functions like the
@@ -920,7 +920,7 @@ The connection will be rejected with `SRT_REJ_FILTER` code in the following case
 In case of the built-in `fec` filter, the mandatory parameter is `cols`, all
 others have their default values. For example, the configuration specified
 as `fec,cols:10` is `fec,cols:10,rows:1,arq:onreq,layout:even`. See how to
-[configure the FEC Filter](packet-filtering-and-fec.md#configuring-the-fec-filter).
+configure the FEC filter in [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md#configuring-the-fec-filter).
 
 Below in the table are examples for the built-in `fec` filter. Note that the
 negotiated config need not have parameters in the given order.
@@ -950,7 +950,7 @@ Reading this option after the connection is established will return the full
 configuration that has been agreed upon by both parties (including default
 values).
 
-For details, see [Packet Filtering & FEC](packet-filtering-and-fec.md).
+For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md).
 
 [Return to list](#list-of-options)
 
@@ -1455,7 +1455,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET 
 on the socket used for `srt_connect`, and GET on the socket retrieved from 
 `srt_accept`. This string can be used completely free-form. However, it's highly 
-recommended to follow the [SRT Access Control guidlines](../AccessControl.md).
+recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.

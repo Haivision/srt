@@ -70,7 +70,7 @@ modified by
 #endif
 
 // Please refer to structure and locking information provided in the
-// LowLevelInfo.md document.
+// docs/dev/low-level-info.md document.
 
 class CUDT;
 

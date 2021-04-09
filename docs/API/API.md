@@ -281,7 +281,7 @@ nb = srt_recvmsg2(u, buf, nb, &mc);
 ### Transmission Types Available in SRT
 
 Mode settings determine how the sender and receiver functions work. The main
-[socket options](API-socket-options.md) that control it are:
+SRT [socket options](API-socket-options.md) that control it are:
 
 - `SRTO_TRANSTYPE`. Sets several parameters in accordance with the selected
 mode:
@@ -519,7 +519,7 @@ either `FASTREXMIT` or `LATEREXMIT`. This will be explained below.
 
 ### Transmission Method: Live
 
-Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [parameters](API-socket-options.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [socket options](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = true
 - `SRTO_RCVLATENCY` = 120
@@ -596,7 +596,7 @@ NAKREPORT method is considered so effective that FASTREXMIT isn't necessary.
 
 ### Transmission Method: Buffer
 
-Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [parameters](API-socket-options.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [socket options](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = false
 - `SRTO_RCVLATENCY` = 0

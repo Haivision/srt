@@ -52,7 +52,7 @@ The packet filter framework is open for extensions so that users may register
 their own filters. SRT provides also one built-in filter named "fec". This
 filter implements the FEC mechanism, as described in SMPTE 2022-1-2007.
 
-![SRT packet filter mechanism](/docs/images/packet-filter-mechanism.png)
+![SRT packet filter mechanism](images/packet-filter-mechanism.png)
 
 On the input side, filtering occurs at the moment when a packet is extracted 
 from the send buffer. A filter may then do two things:
@@ -99,12 +99,12 @@ a number of columns in one series)
     * **even**: block aligned (default) - columns are arranged in a solid matrix; 
     the first sequence numbers (SNbase) are all contained in one row:
 
-    ![Block-aligned Example](/docs/images/block-aligned.png)
+    ![Block-aligned Example](images/block-aligned.png)
 
     * **staircase**: non-block aligned - column starting points are staggered; 
     the first sequence numbers (SNbase) have an offset equivalent to R+1:
 
-    ![Non-block-aligned Example](/docs/images/non-block-aligned.png)
+    ![Non-block-aligned Example](images/non-block-aligned.png)
 
 
 * **arq**: Optional use of the Automatic Repeat Request (ARQ) protocol. The 
@@ -235,7 +235,7 @@ The rows begin with sequences numbers 500, 510, 520, 530 and 540. But the column
 begin in staggered fashion, separated by an interval of R+1. The colours represent 
 consecutive FEC groups (note the "staircase" pattern): 
 
-![5R x 10C Staircase Pattern](/docs/images/staircase-pattern-5rx10c.png)
+![5R x 10C Staircase Pattern](images/staircase-pattern-5rx10c.png)
 
 Here is a representation of a series of packets transmitted starting from 
 packet 537 (H = horizontal position; V = vertical position):
@@ -304,7 +304,7 @@ the example below, it is likely that the entire missing sequence from 572 to
 groups (once these are rebuilt, it becomes possible to rebuild packets 572 and
 582 via row FEC):
 
-![Rebuild Missing Sequence](/docs/images/rebuild-missing-sequence.png)
+![Rebuild Missing Sequence](images/rebuild-missing-sequence.png)
 
 Although in a case of even arrangement you still may have a good luck of
 having a long loss exactly at the border of two column series, the staircase
@@ -649,7 +649,7 @@ by deleting the entire matrix. In the figure below, with a matrix size of 5 rows
 by 10 columns, the green region of column and row groups (series 0) is deleted 
 once a packet (#550 or later)  from the red region (series 1) arrives.
 
-![Block Aligned 5R x 10C](/docs/images/block-aligned-5rx10c.png)
+![Block Aligned 5R x 10C](images/block-aligned-5rx10c.png)
 
 
 For non block-aligned (staircase) FEC arrangements, a series has a more complex 
@@ -659,7 +659,7 @@ In the figure below (also a matrix size of 5 rows by 10 columns), we can define
 packet #500 as base0 - the very first sequence number in a group that is still 
 active. Red then represents series 0, blue series 1, and white series 2:
 
-![Non-block Aligned 5R x 10C](/docs/images/non-block-aligned-5rx10c.png)
+![Non-block Aligned 5R x 10C](images/non-block-aligned-5rx10c.png)
 
 
 In a staircase arrangement, the minimum distance between base0 and the first 
@@ -677,7 +677,7 @@ group - that is, all rows whose first packet falls in the sequence from #500 to
 #540. In the figure below, deletion of series 0 corresponds to columns with a 
 red background and rows with a red border:
 
-![Non-block Aligned 5R x 10C Deleted Packets](/docs/images/non-block-aligned-5rx10c-deleted-packets.png)
+![Non-block Aligned 5R x 10C Deleted Packets](images/non-block-aligned-5rx10c-deleted-packets.png)
 
 
 After the red series 0 is deleted, packet #550 becomes the new base0, packets in 
