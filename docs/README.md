@@ -19,13 +19,13 @@
 
 ## Build Instructions
 
-|            Folder             | File Name                                  | Description                                                  | Refer as                      |
-| :---------------------------: | ------------------------------------------ | ------------------------------------------------------------ | ----------------------------- |
-|        [build](build/)        | [build-android.md](build/build-android.md) | SRT build instructions for Android.                          | Building SRT for Android      |
-|        [build](build/)        | [build-iOS.md](build/build-iOS.md)         | SRT build instructions for iOS.                              | Building SRT for iOS          |
-|        [build](build/)        | [build-options.md](build/build-options.md) | Description of CMake build system, configure script, and<br />build options. | SRT Build Options             |
-|        [build](build/)        | [build-win.md](build/build-win.md)         | SRT build instructions for Windows.                          | Building SRT for Windows      |
-| <img width=100px height=1px/> | <img width=200px height=1px/>              | <img width=500px height=1px/>                                | <img width=200px height=1px/> |
+| Document Title                | Description                                                  | Folder                        | File Name                                  |
+| ----------------------------- | ------------------------------------------------------------ | :---------------------------- | ------------------------------------------ |
+| Building SRT for Android      | SRT build instructions for Android.                          | [build](build/)               | [build-android.md](build/build-android.md) |
+| Building SRT for iOS          | SRT build instructions for iOS.                              | [build](build/)               | [build-iOS.md](build/build-iOS.md)         |
+| SRT Build Options             | Description of CMake build system, configure script, and<br />build options. | [build](build/)               | [build-options.md](build/build-options.md) |
+| Building SRT for Windows      | SRT build instructions for Windows.                          | [build](build/)               | [build-win.md](build/build-win.md)         |
+| <img width=200px height=1px/> | <img width=500px height=1px/>                                | <img width=100px height=1px/> | <img width=200px height=1px/>              |
 
 ## Development Documents
 
