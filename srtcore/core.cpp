@@ -8409,7 +8409,7 @@ void CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     }
 }
 
-void CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
+void CUDT::processCtrlShutdown()
 {
     m_bShutdown = true;
     m_bClosing = true;
@@ -8496,7 +8496,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        processCtrlShutdown(ctrlpkt);
+        processCtrlShutdown();
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request

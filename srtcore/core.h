@@ -970,9 +970,7 @@ private: // Generation and processing of packets
     void processCtrlDropReq(const CPacket& ctrlpkt);
 
     /// @brief Process incoming shutdown control packet
-    /// @param ctrlpkt incoming shutdown packet
-    void processCtrlShutdown(const CPacket& ctrlpkt);
-
+    void processCtrlShutdown();
     /// @brief Process incoming user defined control packet
     /// @param ctrlpkt incoming user defined packet
     void processCtrlUserDefined(const CPacket& ctrlpkt);
