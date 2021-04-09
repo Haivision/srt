@@ -8399,6 +8399,19 @@ void CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     }
 }
 
+void CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
+{
+    m_bShutdown = true;
+    m_bClosing = true;
+    m_bBroken = true;
+    m_iBrokenCounter = 60;
+
+    // This does the same as it would happen on connection timeout,
+    // just we know about this state prematurely thanks to this message.
+    updateBrokenConnection();
+    completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
@@ -8443,15 +8456,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        m_bShutdown      = true;
-        m_bClosing       = true;
-        m_bBroken        = true;
-        m_iBrokenCounter = 60;
-
-        // This does the same as it would happen on connection timeout,
-        // just we know about this state prematurely thanks to this message.
-        updateBrokenConnection();
-        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+        processCtrlShutdown(ctrlpkt);
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
