@@ -87,7 +87,7 @@ inline T CountIIR(T base, T newval, double factor)
     return base+T(diff*factor);
 }
 
-// XXX Probably a better rework for that can be done - this can be
+// TODO: Probably a better rework for that can be done - this can be
 // turned into a serializable structure, just like it's for CHandShake.
 enum AckDataItem
 {
@@ -97,22 +97,23 @@ enum AckDataItem
     ACKD_BUFFERLEFT = 3,
     ACKD_TOTAL_SIZE_SMALL = 4,
 
-    // Extra fields existing in UDT (not always sent)
-
-    ACKD_RCVSPEED = 4,   // length would be 16
+    // Extra fields existing in UDT (not always sent).
+    ACKD_RCVSPEED = 4,  // length = 16
     ACKD_BANDWIDTH = 5,
-    ACKD_TOTAL_SIZE_UDTBASE = 6, // length = 24
-    // Extra stats for SRT
-
+    ACKD_TOTAL_SIZE_UDTBASE = 6,  // length = 24
+    
+    // Extra stats for SRT.
     ACKD_RCVRATE = 6,
-    ACKD_TOTAL_SIZE_VER101 = 7, // length = 28
-    ACKD_XMRATE = 7, // XXX This is a weird compat stuff. Version 1.1.3 defines it as ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
-                     // XXX NOTE: field number 7 may be used for something in future, need to confirm destruction of all !compat 1.0.2 version
+    ACKD_TOTAL_SIZE_VER101 = 7,  // length = 28
+    // XXX This is a weird compat stuff. Version 1.1.3 defines it as
+    // ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
+    // XXX NOTE: field number 7 may be used for something in future,
+    // need to confirm destruction of all !compat 1.0.2 version.
+    ACKD_XMRATE = 7,
 
-    ACKD_TOTAL_SIZE_VER102 = 8, // 32
-// FEATURE BLOCKED. Probably not to be restored.
-//  ACKD_ACKBITMAP = 8,
-    ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102 // length = 32 (or more)
+    ACKD_TOTAL_SIZE_VER102 = 8,  // length = 32
+    // ACKD_ACKBITMAP = 8,  // Feature blocked, probably not to be restored.
+    ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102  // length = 32 (or more)
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
@@ -267,14 +268,15 @@ public: // internal API
 
     // Parameters
     //
-    // Note: use notation with X*1000*1000*... instead of million zeros in a row
-    static const int        COMM_RESPONSE_MAX_EXP                   = 16;
-    static const int        SRT_TLPKTDROP_MINTHRESHOLD_MS           = 1000;
-    static const uint64_t   COMM_KEEPALIVE_PERIOD_US                = 1*1000*1000;
-    static const int32_t    COMM_SYN_INTERVAL_US                    = 10*1000;
-    static const int        COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS   = 3000;
-    static const uint16_t   MAX_WEIGHT                              = 32767;
-    static const size_t     ACK_WND_SIZE                            = 1024;
+    // NOTE: Use notation with X*1000*1000*... instead of
+    // million zeros in a row.
+    static const int       COMM_RESPONSE_MAX_EXP                  = 16;
+    static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS          = 1000;
+    static const uint64_t  COMM_KEEPALIVE_PERIOD_US               = 1*1000*1000;
+    static const int32_t   COMM_SYN_INTERVAL_US                   = 10*1000;
+    static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS  = 3000;
+    static const uint16_t  MAX_WEIGHT                             = 32767;
+    static const size_t    ACK_WND_SIZE                           = 1024;
 
     int handshakeVersion()
     {
@@ -744,7 +746,6 @@ private:
     int m_iRTTVar;                               // RTT variance
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
-
 
     CHandShake m_ConnReq;                        // Connection request
     CHandShake m_ConnRes;                        // Connection response
