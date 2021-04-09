@@ -708,6 +708,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int *)optval = (int) m_config.zExpPayloadSize;
         break;
 
+    case SRTO_KMREFRESHRATE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmRefreshRatePkt;
+        break;
+
+    case SRTO_KMPREANNOUNCE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmPreAnnouncePkt;
+        break;
+
 #if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPCONNECT:
         optlen         = sizeof (int);
@@ -8399,7 +8409,7 @@ void CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     }
 }
 
-void CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
+void CUDT::processCtrlShutdown()
 {
     m_bShutdown = true;
     m_bClosing = true;
@@ -8486,7 +8496,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        processCtrlShutdown(ctrlpkt);
+        processCtrlShutdown();
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
