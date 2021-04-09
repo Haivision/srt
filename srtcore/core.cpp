@@ -8360,6 +8360,45 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
     }
 }
 
+void CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
+{
+    {
+        const bool using_rexmit_flag = m_bPeerRexmitFlag;
+        UniqueLock rlock(m_RecvLock);
+        m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+        // When the drop request was received, it means that there are
+        // packets for which there will never be ACK sent; if the TSBPD thread
+        // is currently in the ACK-waiting state, it may never exit.
+        if (m_bTsbPd)
+        {
+            HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
+            CSync cc(m_RcvTsbPdCond, rlock);
+            cc.signal_locked(rlock);
+        }
+    }
+
+    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
+
+    dropFromLossLists(dropdata[0], dropdata[1]);
+
+    // move forward with current recv seq no.
+    // SYMBOLIC:
+    // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
+    //   && dropdata[1] >% m_iRcvCurrSeqNo )
+    if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
+        && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
+        m_iRcvCurrSeqNo = dropdata[1];
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
+    }
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
@@ -8416,44 +8455,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
-        {
-            const bool using_rexmit_flag = m_bPeerRexmitFlag;
-            UniqueLock rlock(m_RecvLock);
-            m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-            // When the drop request was received, it means that there are
-            // packets for which there will never be ACK sent; if the TSBPD thread
-            // is currently in the ACK-waiting state, it may never exit.
-            if (m_bTsbPd)
-            {
-                HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-                CSync cc(m_RcvTsbPdCond, rlock);
-                cc.signal_locked(rlock);
-            }
-        }
-
-        {
-            int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;
-
-            dropFromLossLists(dropdata[0], dropdata[1]);
-
-            // move forward with current recv seq no.
-            // SYMBOLIC:
-            // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
-            //   && dropdata[1] >% m_iRcvCurrSeqNo )
-            if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
-                    && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
-                m_iRcvCurrSeqNo = dropdata[1];
-            }
-            else
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
-            }
-        }
-
+        processCtrlDropReq(ctrlpkt);
         break;
 
     case UMSG_PEERERROR: // 1000 - An error has happened to the peer side
