@@ -8249,6 +8249,117 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     leaveCS(m_StatsLock);
 }
 
+void CUDT::processCtrlHS(const CPacket& ctrlpkt)
+{
+    CHandShake req;
+    req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
+
+    HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
+
+    if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
+        || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
+    {
+        // The peer side has not received the handshake message, so it keeps querying
+        // resend the handshake packet
+
+        // This condition embraces cases when:
+        // - this is normal accept() and URQ_INDUCTION was received
+        // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
+        // or CONCLUSION)
+        // - this is any of URQ_ERROR_* - well...
+        CHandShake initdata;
+        initdata.m_iISN = m_iISN;
+        initdata.m_iMSS = m_config.iMSS;
+        initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
+
+        // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
+        // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
+        initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
+        initdata.m_iID = m_SocketID;
+
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
+        bool     have_hsreq = false;
+        if (req.m_iVersion > HS_VERSION_UDT4)
+        {
+            initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
+            const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            if (hs_flags != 0) // has SRT extensions
+            {
+                HLOGC(inlog.Debug,
+                    log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
+                    << " WITH SRT ext");
+                have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
+                if (!have_hsreq)
+                {
+                    initdata.m_iVersion = 0;
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    initdata.m_iReqType = URQFailure(m_RejectReason);
+                }
+                else
+                {
+                    // Extensions are added only in case of CONCLUSION (not AGREEMENT).
+                    // Actually what is expected here is that this may either process the
+                    // belated-repeated handshake from a caller (and then it's CONCLUSION,
+                    // and should be added with HSRSP/KMRSP), or it's a belated handshake
+                    // of Rendezvous when it has already considered itself connected.
+                    // Sanity check - according to the rules, there should be no such situation
+                    if (m_config.bRendezvous && m_SrtHsSide == HSD_RESPONDER)
+                    {
+                        LOGC(inlog.Error,
+                            log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
+                            "handshake phase.");
+                    }
+
+                    // The 'extension' flag will be set from this variable; set it to false
+                    // in case when the AGREEMENT response is to be sent.
+                    have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                    HLOGC(inlog.Debug,
+                        log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
+                        << " kmdatasize=" << kmdatasize);
+                }
+            }
+            else
+            {
+                HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
+            }
+        }
+        else
+        {
+            initdata.m_iVersion = HS_VERSION_UDT4;
+            kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
+        }
+
+        initdata.m_extension = have_hsreq;
+
+        HLOGC(inlog.Debug,
+            log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
+            << (have_hsreq ? " WITH SRT HS response extensions" : ""));
+
+        CPacket response;
+        response.setControl(UMSG_HANDSHAKE);
+        response.allocate(m_iMaxSRTPayloadSize);
+
+        // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
+        // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
+        if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
+            (response), (initdata)))
+        {
+            response.m_iID = m_PeerID;
+            setPacketTS(response, steady_clock::now());
+            const int nbsent = m_pSndQueue->sendto(m_PeerAddr, response);
+            if (nbsent)
+            {
+                m_tsLastSndTime = steady_clock::now();
+            }
+        }
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
+    }
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
@@ -8289,117 +8400,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
-    {
-        CHandShake req;
-        req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
-        HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
-
-        if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
-            || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
-        {
-            // The peer side has not received the handshake message, so it keeps querying
-            // resend the handshake packet
-
-            // This condition embraces cases when:
-            // - this is normal accept() and URQ_INDUCTION was received
-            // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
-            // or CONCLUSION)
-            // - this is any of URQ_ERROR_* - well...
-            CHandShake initdata;
-            initdata.m_iISN            = m_iISN;
-            initdata.m_iMSS            = m_config.iMSS;
-            initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
-
-            // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
-            // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
-            initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
-            initdata.m_iID      = m_SocketID;
-
-            uint32_t kmdata[SRTDATA_MAXSIZE];
-            size_t   kmdatasize = SRTDATA_MAXSIZE;
-            bool     have_hsreq = false;
-            if (req.m_iVersion > HS_VERSION_UDT4)
-            {
-                initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-                int hs_flags        = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-                if (hs_flags != 0) // has SRT extensions
-                {
-                    HLOGC(inlog.Debug,
-                          log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
-                              << " WITH SRT ext");
-                    have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
-                    if (!have_hsreq)
-                    {
-                        initdata.m_iVersion = 0;
-                        m_RejectReason      = SRT_REJ_ROGUE;
-                        initdata.m_iReqType = URQFailure(m_RejectReason);
-                    }
-                    else
-                    {
-                        // Extensions are added only in case of CONCLUSION (not AGREEMENT).
-                        // Actually what is expected here is that this may either process the
-                        // belated-repeated handshake from a caller (and then it's CONCLUSION,
-                        // and should be added with HSRSP/KMRSP), or it's a belated handshake
-                        // of Rendezvous when it has already considered itself connected.
-                        // Sanity check - according to the rules, there should be no such situation
-                        if (m_config.bRendezvous && m_SrtHsSide == HSD_RESPONDER)
-                        {
-                            LOGC(inlog.Error,
-                                 log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
-                                        "handshake phase.");
-                        }
-
-                        // The 'extension' flag will be set from this variable; set it to false
-                        // in case when the AGREEMENT response is to be sent.
-                        have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
-                        HLOGC(inlog.Debug,
-                              log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                                  << " kmdatasize=" << kmdatasize);
-                    }
-                }
-                else
-                {
-                    HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
-                }
-            }
-            else
-            {
-                initdata.m_iVersion = HS_VERSION_UDT4;
-                kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
-            }
-
-            initdata.m_extension = have_hsreq;
-
-            HLOGC(inlog.Debug,
-                  log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                      << (have_hsreq ? " WITH SRT HS response extensions" : ""));
-
-            CPacket response;
-            response.setControl(UMSG_HANDSHAKE);
-            response.allocate(m_iMaxSRTPayloadSize);
-
-            // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
-            // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
-            if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
-                        (response), (initdata)))
-            {
-                response.m_iID        = m_PeerID;
-                setPacketTS(response, steady_clock::now());
-                const int nbsent      = m_pSndQueue->sendto(m_PeerAddr, response);
-                if (nbsent)
-                {
-                    m_tsLastSndTime = steady_clock::now();
-                }
-            }
-        }
-        else
-        {
-            HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
-        }
-
+        processCtrlHS(ctrlpkt);
         break;
-    }
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
         m_bShutdown      = true;

@@ -948,18 +948,22 @@ private: // Generation and processing of packets
     void processCtrl(const CPacket& ctrlpkt);
     
     /// @brief Process incoming control ACK packet.
-    /// @param ctrlpkt incoming packet
+    /// @param ctrlpkt incoming ACK packet
     /// @param currtime current clock time
     void processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
 
     /// @brief Process incoming control ACKACK packet.
-    /// @param ctrlpkt incoming packet
+    /// @param ctrlpkt incoming ACKACK packet
     /// @param tsArrival time when packet has arrived (used to calculate RTT)
     void processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
 
     /// @brief Process incoming loss report (NAK) packet.
     /// @param ctrlpkt incoming NAK packet
     void processCtrlLossReport(const CPacket& ctrlpkt);
+
+    /// @brief Process incoming handshake control packet
+    /// @param ctrlpkt incoming HS packet
+    void processCtrlHS(const CPacket& ctrlpkt);
 
     /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
