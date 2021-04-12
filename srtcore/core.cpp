@@ -8007,7 +8007,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
      *   ACKD_BANDWIDTH
      * SRT extension since v1.0.1:
      *   ACKD_RCVRATE
-     * SRT extension since v1.0.2:
+     * SRT extension in v1.0.2 only:
      *   ACKD_XMRATE_VER102_ONLY
      */
 
@@ -8029,8 +8029,6 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         m_iBandwidth        = avg_iir<8>(m_iBandwidth, bandwidth);
         m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate, pktps);
         m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate, bytesps);
-        // TODO: Not sure if ACKD_XMRATE_VER102_ONLY is of any use. This is
-        // simply calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
 
         // Update Estimated Bandwidth and packet delivery rate
         // m_iRcvRate = m_iDeliveryRate;
