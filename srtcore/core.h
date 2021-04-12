@@ -76,7 +76,7 @@ modified by
 #include <haicrypt.h>
 
 
-// XXX Utility function - to be moved to utilities.h?
+// TODO: Utility function - to be moved to utilities.h?
 template <class T>
 inline T CountIIR(T base, T newval, double factor)
 {
@@ -88,32 +88,29 @@ inline T CountIIR(T base, T newval, double factor)
 }
 
 // TODO: Probably a better rework for that can be done - this can be
-// turned into a serializable structure, just like it's for CHandShake.
+// turned into a serializable structure, just like it's done for CHandShake.
 enum AckDataItem
 {
-    ACKD_RCVLASTACK = 0,
-    ACKD_RTT = 1,
-    ACKD_RTTVAR = 2,
-    ACKD_BUFFERLEFT = 3,
-    ACKD_TOTAL_SIZE_SMALL = 4,
+    ACKD_RCVLASTACK       = 0,
+    ACKD_RTT              = 1,
+    ACKD_RTTVAR           = 2,
+    ACKD_BUFFERLEFT       = 3,
+    ACKD_TOTAL_SIZE_SMALL = 4,  // Size of the Small ACK, packet length = 16.
 
-    // Extra fields existing in UDT (not always sent).
-    ACKD_RCVSPEED = 4,  // length = 16
-    ACKD_BANDWIDTH = 5,
-    ACKD_TOTAL_SIZE_UDTBASE = 6,  // length = 24
-    
-    // Extra stats for SRT.
-    ACKD_RCVRATE = 6,
-    ACKD_TOTAL_SIZE_VER101 = 7,  // length = 28
-    // XXX This is a weird compat stuff. Version 1.1.3 defines it as
-    // ACKD_BANDWIDTH*m_iMaxSRTPayloadSize when set. Never got.
-    // XXX NOTE: field number 7 may be used for something in future,
-    // need to confirm destruction of all !compat 1.0.2 version.
-    ACKD_XMRATE = 7,
+    // Extra fields for Full ACK.
+    ACKD_RCVSPEED           = 4,
+    ACKD_BANDWIDTH          = 5,
+    ACKD_TOTAL_SIZE_UDTBASE = 6,  // Packet length = 24.
 
-    ACKD_TOTAL_SIZE_VER102 = 8,  // length = 32
-    // ACKD_ACKBITMAP = 8,  // Feature blocked, probably not to be restored.
-    ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102  // length = 32 (or more)
+    // Extra stats since SRT v1.0.1.
+    ACKD_RCVRATE           = 6,
+    ACKD_TOTAL_SIZE_VER101 = 7,  // Packet length = 28.
+
+    // Only in SRT v1.0.2.
+    ACKD_XMRATE_VER102_ONLY     = 7,
+    ACKD_TOTAL_SIZE_VER102_ONLY = 8,  // Packet length = 32.
+
+    ACKD_TOTAL_SIZE = ACKD_TOTAL_SIZE_VER102_ONLY  // The maximum known ACK length is 32 bytes.
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
