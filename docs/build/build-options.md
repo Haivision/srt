@@ -10,10 +10,10 @@ interpreter) that can make operating with the options easier.
 The `cmake` build system was tested on the following platforms:
 
  - Linux (various flavors)
- - macOS (see this [separate document](build_iOS.md))
+ - macOS (see [Building SRT for iOS](build-iOS.md))
  - Windows with MinGW
- - Windows with Microsoft Visual Studio (see this [separate document](build-win.md))
- - Android (see this [separate document](Android/Compiling.md))
+ - Windows with Microsoft Visual Studio (see [Building SRT for Windows](build-win.md))
+ - Android (see [Building SRT for Android](build-android.md))
  - Cygwin (only for testing)
 
 The `configure` script wasn't tested on Windows (other than on Cygwin).

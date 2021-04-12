@@ -79,6 +79,7 @@ modified by
 #endif
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
@@ -705,6 +706,16 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
         *(int *)optval = (int) m_config.zExpPayloadSize;
+        break;
+
+    case SRTO_KMREFRESHRATE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmRefreshRatePkt;
+        break;
+
+    case SRTO_KMPREANNOUNCE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmPreAnnouncePkt;
         break;
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -3020,7 +3031,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
+        srt::groups::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3119,7 +3130,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    CUDTGroup::SocketData* f;
+    srt::groups::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3130,7 +3141,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         return 0;
     }
 
-    s->m_GroupMemberData = gp->add(gp->prepareData(s));
+    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
     s->m_GroupOf = gp;
 
     // Record the remote address in the group data.
@@ -4550,7 +4561,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
+            srt::groups::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -8033,6 +8044,77 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     leaveCS(m_StatsLock);
 }
 
+void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
+{
+    int32_t ack = 0;
+
+    // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
+    const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, tsArrival);
+
+    if (rtt == -1)
+    {
+        if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+        {
+            LOGC(inlog.Warn,
+                log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                << ", RTT (EWMA): " << m_iRTT << ")");
+            return;
+        }
+
+        LOGC(inlog.Error,
+            log << CONID() << "IPE: ACK record not found, can't estimate RTT "
+            << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+            << ", RTT (EWMA): " << m_iRTT << ")");
+        return;
+    }
+
+    if (rtt <= 0)
+    {
+        LOGC(inlog.Error,
+            log << CONID() << "IPE: invalid RTT estimate " << rtt
+            << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+        return;
+    }
+
+    // If increasing delay is detected
+    //   sendCtrl(UMSG_CGWARNING);
+
+    // Calculate RTT (EWMA) on the receiver side
+    m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+    m_iRTT = avg_iir<8>(m_iRTT, rtt);
+
+    updateCC(TEV_ACKACK, EventVariant(ack));
+
+    // This function will put a lock on m_RecvLock by itself, as needed.
+    // It must be done inside because this function reads the current time
+    // and if waiting for the lock has caused a delay, the time will be
+    // inaccurate. Additionally it won't lock if TSBPD mode is off, and
+    // won't update anything. Note that if you set TSBPD mode and use
+    // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
+    if (m_config.bDriftTracer)
+    {
+        steady_clock::duration udrift(0);
+        steady_clock::time_point newtimebase;
+        const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+            (udrift), (newtimebase));
+#if ENABLE_EXPERIMENTAL_BONDING
+        if (drift_updated && m_parent->m_GroupOf)
+        {
+            ScopedLock glock(s_UDTUnited.m_GlobControlLock);
+            if (m_parent->m_GroupOf)
+            {
+                m_parent->m_GroupOf->synchronizeDrift(this, udrift, newtimebase);
+            }
+        }
+#endif
+    }
+
+    // Update last ACK that has been received by the sender
+    if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
+        m_iRcvLastAckAck = ack;
+}
+
 void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 {
     const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
@@ -8177,13 +8259,205 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     leaveCS(m_StatsLock);
 }
 
+void CUDT::processCtrlHS(const CPacket& ctrlpkt)
+{
+    CHandShake req;
+    req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
+
+    HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
+
+    if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
+        || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
+    {
+        // The peer side has not received the handshake message, so it keeps querying
+        // resend the handshake packet
+
+        // This condition embraces cases when:
+        // - this is normal accept() and URQ_INDUCTION was received
+        // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
+        // or CONCLUSION)
+        // - this is any of URQ_ERROR_* - well...
+        CHandShake initdata;
+        initdata.m_iISN = m_iISN;
+        initdata.m_iMSS = m_config.iMSS;
+        initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
+
+        // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
+        // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
+        initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
+        initdata.m_iID = m_SocketID;
+
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
+        bool     have_hsreq = false;
+        if (req.m_iVersion > HS_VERSION_UDT4)
+        {
+            initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
+            const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            if (hs_flags != 0) // has SRT extensions
+            {
+                HLOGC(inlog.Debug,
+                    log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
+                    << " WITH SRT ext");
+                have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
+                if (!have_hsreq)
+                {
+                    initdata.m_iVersion = 0;
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    initdata.m_iReqType = URQFailure(m_RejectReason);
+                }
+                else
+                {
+                    // Extensions are added only in case of CONCLUSION (not AGREEMENT).
+                    // Actually what is expected here is that this may either process the
+                    // belated-repeated handshake from a caller (and then it's CONCLUSION,
+                    // and should be added with HSRSP/KMRSP), or it's a belated handshake
+                    // of Rendezvous when it has already considered itself connected.
+                    // Sanity check - according to the rules, there should be no such situation
+                    if (m_config.bRendezvous && m_SrtHsSide == HSD_RESPONDER)
+                    {
+                        LOGC(inlog.Error,
+                            log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
+                            "handshake phase.");
+                    }
+
+                    // The 'extension' flag will be set from this variable; set it to false
+                    // in case when the AGREEMENT response is to be sent.
+                    have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                    HLOGC(inlog.Debug,
+                        log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
+                        << " kmdatasize=" << kmdatasize);
+                }
+            }
+            else
+            {
+                HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
+            }
+        }
+        else
+        {
+            initdata.m_iVersion = HS_VERSION_UDT4;
+            kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
+        }
+
+        initdata.m_extension = have_hsreq;
+
+        HLOGC(inlog.Debug,
+            log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
+            << (have_hsreq ? " WITH SRT HS response extensions" : ""));
+
+        CPacket response;
+        response.setControl(UMSG_HANDSHAKE);
+        response.allocate(m_iMaxSRTPayloadSize);
+
+        // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
+        // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
+        if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
+            (response), (initdata)))
+        {
+            response.m_iID = m_PeerID;
+            setPacketTS(response, steady_clock::now());
+            const int nbsent = m_pSndQueue->sendto(m_PeerAddr, response);
+            if (nbsent)
+            {
+                m_tsLastSndTime = steady_clock::now();
+            }
+        }
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
+    }
+}
+
+void CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
+{
+    {
+        const bool using_rexmit_flag = m_bPeerRexmitFlag;
+        UniqueLock rlock(m_RecvLock);
+        m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+        // When the drop request was received, it means that there are
+        // packets for which there will never be ACK sent; if the TSBPD thread
+        // is currently in the ACK-waiting state, it may never exit.
+        if (m_bTsbPd)
+        {
+            HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
+            CSync cc(m_RcvTsbPdCond, rlock);
+            cc.signal_locked(rlock);
+        }
+    }
+
+    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
+
+    dropFromLossLists(dropdata[0], dropdata[1]);
+
+    // move forward with current recv seq no.
+    // SYMBOLIC:
+    // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
+    //   && dropdata[1] >% m_iRcvCurrSeqNo )
+    if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
+        && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
+        m_iRcvCurrSeqNo = dropdata[1];
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
+    }
+}
+
+void CUDT::processCtrlShutdown()
+{
+    m_bShutdown = true;
+    m_bClosing = true;
+    m_bBroken = true;
+    m_iBrokenCounter = 60;
+
+    // This does the same as it would happen on connection timeout,
+    // just we know about this state prematurely thanks to this message.
+    updateBrokenConnection();
+    completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+}
+
+void CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
+{
+    HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
+        << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+        << ", value=" << ctrlpkt.getExtendedType());
+
+    // This has currently two roles in SRT:
+    // - HSv4 (legacy) handshake
+    // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
+    const bool understood = processSrtMsg(&ctrlpkt);
+    // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
+    // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
+    // the handshake version, but the reason of calling this function.
+    //
+    // Fortunately, the only messages taken into account in this function
+    // are HSREQ and HSRSP, which should *never* be interchanged when both
+    // parties are HSv5.
+    if (understood)
+    {
+        if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+        {
+            updateAfterSrtHandshake(HS_VERSION_UDT4);
+        }
+    }
+    else
+    {
+        updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+    }
+}
+
 void CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
     m_tsLastRspTime = currtime;
-    bool using_rexmit_flag = m_bPeerRexmitFlag;
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
@@ -8196,77 +8470,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
-    {
-        int32_t ack = 0;
-
-        // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
-        const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, currtime);
-
-        if (rtt == -1)
-        {
-            if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
-            {
-                LOGC(inlog.Warn,
-                 log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                     << ", RTT (EWMA): " << m_iRTT << ")");
-                break;
-            }
-
-            LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK record not found, can't estimate RTT "
-                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                     << ", RTT (EWMA): " << m_iRTT << ")");
-            break;
-        }
-
-        if (rtt <= 0)
-        {
-            LOGC(inlog.Error,
-                 log << CONID() << "IPE: invalid RTT estimate " << rtt 
-                     << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
-            break;
-        }
-
-        // If increasing delay is detected
-        //   sendCtrl(UMSG_CGWARNING);
-
-        // Calculate RTT (EWMA) on the receiver side
-        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-        m_iRTT = avg_iir<8>(m_iRTT, rtt);
-
-        updateCC(TEV_ACKACK, EventVariant(ack));
-
-        // This function will put a lock on m_RecvLock by itself, as needed.
-        // It must be done inside because this function reads the current time
-        // and if waiting for the lock has caused a delay, the time will be
-        // inaccurate. Additionally it won't lock if TSBPD mode is off, and
-        // won't update anything. Note that if you set TSBPD mode and use
-        // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-        if (m_config.bDriftTracer)
-        {
-            steady_clock::duration udrift(0);
-            steady_clock::time_point newtimebase;
-            const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
-                    (udrift), (newtimebase));
-#if ENABLE_EXPERIMENTAL_BONDING
-            if (drift_updated && m_parent->m_GroupOf)
-            {
-                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-                if (m_parent->m_GroupOf)
-                {
-                    m_parent->m_GroupOf->synchronizeDrift(this, udrift, newtimebase);
-                }
-            }
-#endif
-        }
-
-        // Update last ACK that has been received by the sender
-        if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
-            m_iRcvLastAckAck = ack;
-
+        processCtrlAckAck(ctrlpkt, currtime);
         break;
-    }
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
         processCtrlLossReport(ctrlpkt);
@@ -8283,174 +8488,19 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
-
         handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
-    {
-        CHandShake req;
-        req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
-        HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
-
-        if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
-            || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
-        {
-            // The peer side has not received the handshake message, so it keeps querying
-            // resend the handshake packet
-
-            // This condition embraces cases when:
-            // - this is normal accept() and URQ_INDUCTION was received
-            // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
-            // or CONCLUSION)
-            // - this is any of URQ_ERROR_* - well...
-            CHandShake initdata;
-            initdata.m_iISN            = m_iISN;
-            initdata.m_iMSS            = m_config.iMSS;
-            initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
-
-            // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
-            // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
-            initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
-            initdata.m_iID      = m_SocketID;
-
-            uint32_t kmdata[SRTDATA_MAXSIZE];
-            size_t   kmdatasize = SRTDATA_MAXSIZE;
-            bool     have_hsreq = false;
-            if (req.m_iVersion > HS_VERSION_UDT4)
-            {
-                initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-                int hs_flags        = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-                if (hs_flags != 0) // has SRT extensions
-                {
-                    HLOGC(inlog.Debug,
-                          log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
-                              << " WITH SRT ext");
-                    have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
-                    if (!have_hsreq)
-                    {
-                        initdata.m_iVersion = 0;
-                        m_RejectReason      = SRT_REJ_ROGUE;
-                        initdata.m_iReqType = URQFailure(m_RejectReason);
-                    }
-                    else
-                    {
-                        // Extensions are added only in case of CONCLUSION (not AGREEMENT).
-                        // Actually what is expected here is that this may either process the
-                        // belated-repeated handshake from a caller (and then it's CONCLUSION,
-                        // and should be added with HSRSP/KMRSP), or it's a belated handshake
-                        // of Rendezvous when it has already considered itself connected.
-                        // Sanity check - according to the rules, there should be no such situation
-                        if (m_config.bRendezvous && m_SrtHsSide == HSD_RESPONDER)
-                        {
-                            LOGC(inlog.Error,
-                                 log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
-                                        "handshake phase.");
-                        }
-
-                        // The 'extension' flag will be set from this variable; set it to false
-                        // in case when the AGREEMENT response is to be sent.
-                        have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
-                        HLOGC(inlog.Debug,
-                              log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                                  << " kmdatasize=" << kmdatasize);
-                    }
-                }
-                else
-                {
-                    HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
-                }
-            }
-            else
-            {
-                initdata.m_iVersion = HS_VERSION_UDT4;
-                kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
-            }
-
-            initdata.m_extension = have_hsreq;
-
-            HLOGC(inlog.Debug,
-                  log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                      << (have_hsreq ? " WITH SRT HS response extensions" : ""));
-
-            CPacket response;
-            response.setControl(UMSG_HANDSHAKE);
-            response.allocate(m_iMaxSRTPayloadSize);
-
-            // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
-            // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
-            if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
-                        (response), (initdata)))
-            {
-                response.m_iID        = m_PeerID;
-                setPacketTS(response, steady_clock::now());
-                const int nbsent      = m_pSndQueue->sendto(m_PeerAddr, response);
-                if (nbsent)
-                {
-                    m_tsLastSndTime = steady_clock::now();
-                }
-            }
-        }
-        else
-        {
-            HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
-        }
-
+        processCtrlHS(ctrlpkt);
         break;
-    }
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        m_bShutdown      = true;
-        m_bClosing       = true;
-        m_bBroken        = true;
-        m_iBrokenCounter = 60;
-
-        // This does the same as it would happen on connection timeout,
-        // just we know about this state prematurely thanks to this message.
-        updateBrokenConnection();
-        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+        processCtrlShutdown();
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
-        {
-            UniqueLock rlock(m_RecvLock);
-            m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-            // When the drop request was received, it means that there are
-            // packets for which there will never be ACK sent; if the TSBPD thread
-            // is currently in the ACK-waiting state, it may never exit.
-            if (m_bTsbPd)
-            {
-                HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-                CSync cc(m_RcvTsbPdCond, rlock);
-                cc.signal_locked(rlock);
-            }
-        }
-
-        {
-            int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;
-
-            dropFromLossLists(dropdata[0], dropdata[1]);
-
-            // move forward with current recv seq no.
-            // SYMBOLIC:
-            // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
-            //   && dropdata[1] >% m_iRcvCurrSeqNo )
-            if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
-                    && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
-                m_iRcvCurrSeqNo = dropdata[1];
-            }
-            else
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
-            }
-        }
-
+        processCtrlDropReq(ctrlpkt);
         break;
 
     case UMSG_PEERERROR: // 1000 - An error has happened to the peer side
@@ -8459,39 +8509,12 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // currently only this error is signalled from the peer side
         // if recvfile() failes (e.g., due to disk fail), blcoked sendfile/send should return immediately
         // giving the app a chance to fix the issue
-
         m_bPeerHealth = false;
 
         break;
 
     case UMSG_EXT: // 0x7FFF - reserved and user defined messages
-        HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
-                << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
-                << ", value=" << ctrlpkt.getExtendedType());
-        {
-            // This has currently two roles in SRT:
-            // - HSv4 (legacy) handshake
-            // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-            bool understood = processSrtMsg(&ctrlpkt);
-            // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
-            // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
-            // the handshake version, but the reason of calling this function.
-            //
-            // Fortunately, the only messages taken into account in this function
-            // are HSREQ and HSRSP, which should *never* be interchanged when both
-            // parties are HSv5.
-            if (understood)
-            {
-                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
-                {
-                    updateAfterSrtHandshake(HS_VERSION_UDT4);
-                }
-            }
-            else
-            {
-                updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
-            }
-        }
+        processCtrlUserDefined(ctrlpkt);
         break;
 
     default:
@@ -9294,7 +9317,7 @@ int CUDT::processData(CUnit* in_unit)
     if (m_parent->m_GroupOf)
     {
         ScopedLock protect_group_existence (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
+        srt::groups::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -9793,7 +9816,7 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
 
     if (self->m_parent->m_GroupOf)
     {
-        CUDTGroup::SocketData* gi = self->m_parent->m_GroupMemberData;
+        srt::groups::SocketData* gi = self->m_parent->m_GroupMemberData;
         if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
         {
             HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");

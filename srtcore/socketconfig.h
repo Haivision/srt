@@ -414,11 +414,15 @@ struct CSrtConfigSetter<SRTO_FC>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int fc = cast_optval<int>(optval, optlen);
-        if (fc < 1)
+        using namespace srt_logging;
+        const int fc = cast_optval<int>(optval, optlen);
+        if (fc < co.DEF_MIN_FLIGHT_PKT)
+        {
+            LOGC(kmlog.Error, log << "SRTO_FC: minimum allowed value is 32 (provided: " << fc << ")");
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
 
-        co.iFlightFlagSize = std::max(fc, +co.DEF_MIN_FLIGHT_PKT);
+        co.iFlightFlagSize = fc;
     }
 };
 
@@ -998,14 +1002,28 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
     {
         using namespace srt_logging;
 
-        // If you first change the KMREFRESHRATE, KMPREANNOUNCE
-        // will be set to the maximum allowed value
-        co.uKmRefreshRatePkt = cast_optval<int>(optval, optlen);
-        if (co.uKmPreAnnouncePkt == 0 || co.uKmPreAnnouncePkt > (co.uKmRefreshRatePkt - 1) / 2)
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
         {
-            co.uKmPreAnnouncePkt = (co.uKmRefreshRatePkt - 1) / 2;
+            LOGC(aclog.Error,
+                log << "SRTO_KMREFRESHRATE=" << val << " can't be negative");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        // Changing the KMREFRESHRATE sets KMPREANNOUNCE to the maximum allowed value
+        co.uKmRefreshRatePkt = (unsigned) val;
+
+        if (co.uKmPreAnnouncePkt == 0 && co.uKmRefreshRatePkt == 0)
+            return; // Both values are default
+
+        const unsigned km_preanno = co.uKmPreAnnouncePkt == 0 ? HAICRYPT_DEF_KM_PRE_ANNOUNCE : co.uKmPreAnnouncePkt;
+        const unsigned km_refresh = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
+
+        if (co.uKmPreAnnouncePkt == 0 || km_preanno > (km_refresh - 1) / 2)
+        {
+            co.uKmPreAnnouncePkt = (km_refresh - 1) / 2;
             LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << std::hex << co.uKmRefreshRatePkt << ": setting SRTO_KMPREANNOUNCE=0x"
+                 log << "SRTO_KMREFRESHRATE=0x" << std::hex << km_refresh << ": setting SRTO_KMPREANNOUNCE=0x"
                      << std::hex << co.uKmPreAnnouncePkt);
         }
     }
@@ -1019,11 +1037,19 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
         using namespace srt_logging;
 
         const int val = cast_optval<int>(optval, optlen);
-        const int kmref = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
-        if (val > (kmref - 1) / 2)
+        if (val < 0)
         {
             LOGC(aclog.Error,
-                    log << "SRTO_KMPREANNOUNCE=0x" << std::hex << val << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
+                log << "SRTO_KMPREANNOUNCE=" << val << " can't be negative");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        const unsigned km_preanno = val == 0 ? HAICRYPT_DEF_KM_PRE_ANNOUNCE : val;
+        const unsigned kmref = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
+        if (km_preanno > (kmref - 1) / 2)
+        {
+            LOGC(aclog.Error,
+                    log << "SRTO_KMPREANNOUNCE=0x" << std::hex << km_preanno << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
                     << " - OPTION REJECTED.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }

@@ -66,21 +66,21 @@ cmake .. -DENABLE_UNITTESTS=ON
 cmake --build ./
 ```
 
-**Note.** If you're using Windows, please refer to [Windows Build Instructions](./build-win.md).
+**Note.** If you are using Windows, please refer to [Building SRT for Windows](../build/build-win.md) instructions.
 
-**Note.** Please see the following document for the build options: [BuildOptions.md](./BuildOptions.md).
+**Note.** Please see the following document for the build options: [SRT Build Options](../build/build-options.md).
 To see the full list of make options run `cmake .. -LAH` from the `_build` folder.
 
 **Note.** There is an alternative `configure` script provided. It is **NOT** an alternative Autotools build, but a convenience script.
 It processes the usual format of `--long-options` and calls `cmake` with appropriate options in the end. This script is dependent on "tcl" package.
-Please see the following document for `configure` usage: [BuildOptions.md](./BuildOptions.md).
+Please see the following document for `configure` usage: [SRT Build Options](../build/build-options.md).
 
 The build output is in the `_build` directory. The following applications can be found there.
 
 * `srt-live-transmit` - A sample application to transmit a live stream from source medium (UDP/SRT/`stdin`)
-to the target medium (UDP/SRT/`stdout`). See [srt-live-transmit.md](./srt-live-transmit.md) for more info.
+to the target medium (UDP/SRT/`stdout`). See [Using the `srt-live-transmit` App](../apps/srt-live-transmit.md) for more info.
 * `srt-file-transmit` - A sample application to transmit files with SRT.
-* `srt-tunnel` - A sample application to set up an SRT tunnel for TCP traffic. See [srt-tunnel.md](./srt-tunnel.md) for more info.
+* `srt-tunnel` - A sample application to set up an SRT tunnel for TCP traffic. See [Using the `srt-tunnel` App](../apps/srt-tunnel.md) for more info.
 * `tests-srt` - unit testing application.
 
 ## Language standard requirements
@@ -111,7 +111,7 @@ for example).
 
 The SRT installation has the following folders:
 
-* apps - the folder contains [srt-live-transmit](./srt-live-transmit.md), `srt-file-transmit` and `srt-tunnel` sample applications.
+* apps - the folder contains [srt-live-transmit](../apps/srt-live-transmit.md), `srt-file-transmit` and [srt-tunnel](../apps/srt-tunnel.md) sample applications.
 * *common - holds some platform-dependent code.
 * *docs - contains all the documentation in the GitHub Markdown format.
 * *examples - example applications (use `-DENABLE_EXAMPLES=ON` CMake build option to include in the build)

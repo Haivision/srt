@@ -1417,7 +1417,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        CUDTGroup::SocketData data = g.prepareData(ns);
+        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -3228,7 +3228,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Check if the socket already is in the group
-    CUDTGroup::SocketData* f;
+    srt::groups::SocketData* f;
     if (g->contains(socket, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3237,7 +3237,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         s->m_GroupOf = g;
         return 0;
     }
-    s->m_GroupMemberData = g->add(g->prepareData(s));
+    s->m_GroupMemberData = g->add(srt::groups::prepareSocketData(s));
     s->m_GroupOf = g;
 
     return 0;

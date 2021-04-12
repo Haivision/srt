@@ -943,13 +943,39 @@ private: // Generation and processing of packets
     ///
     /// @returns the nmber of packets sent.
     int  sendCtrlAck(CPacket& ctrlpkt, int size);
+    void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 
     void processCtrl(const CPacket& ctrlpkt);
-    void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
-    void processCtrlAck(const CPacket& ctrlpkt, const time_point &currtime);
+    
+    /// @brief Process incoming control ACK packet.
+    /// @param ctrlpkt incoming ACK packet
+    /// @param currtime current clock time
+    void processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
+
+    /// @brief Process incoming control ACKACK packet.
+    /// @param ctrlpkt incoming ACKACK packet
+    /// @param tsArrival time when packet has arrived (used to calculate RTT)
+    void processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
+
+    /// @brief Process incoming loss report (NAK) packet.
+    /// @param ctrlpkt incoming NAK packet
     void processCtrlLossReport(const CPacket& ctrlpkt);
 
-    ///
+    /// @brief Process incoming handshake control packet
+    /// @param ctrlpkt incoming HS packet
+    void processCtrlHS(const CPacket& ctrlpkt);
+
+    /// @brief Process incoming drop request control packet
+    /// @param ctrlpkt incoming drop request packet
+    void processCtrlDropReq(const CPacket& ctrlpkt);
+
+    /// @brief Process incoming shutdown control packet
+    void processCtrlShutdown();
+    /// @brief Process incoming user defined control packet
+    /// @param ctrlpkt incoming user defined packet
+    void processCtrlUserDefined(const CPacket& ctrlpkt);
+
+    /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
     void updateSndLossListOnACK(int32_t ackdata_seqno);
 

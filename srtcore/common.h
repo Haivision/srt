@@ -78,12 +78,17 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-
 #ifdef _DEBUG
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
 #else
 #define SRT_ASSERT(cond)
+#endif
+
+#if HAVE_FULL_CXX11
+#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+#define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
 #include <exception>
