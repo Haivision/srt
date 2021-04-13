@@ -2064,15 +2064,15 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl, int upto)
 }
 
 #ifdef SRT_DEBUG_TSBPD_OUTJITTER
-void CRcvBuffer::debugTraceJitter(int64_t rplaytime)
+void CRcvBuffer::debugTraceJitter(time_point playtime)
 {
-    uint64_t now = CTimer::getTime();
-    if ((now - rplaytime) / 10 < 10)
-        m_ulPdHisto[0][(now - rplaytime) / 10]++;
-    else if ((now - rplaytime) / 100 < 10)
-        m_ulPdHisto[1][(now - rplaytime) / 100]++;
-    else if ((now - rplaytime) / 1000 < 10)
-        m_ulPdHisto[2][(now - rplaytime) / 1000]++;
+    uint64_t ms = count_microseconds(steady_clock::now() - playtime);
+    if (ms / 10 < 10)
+        m_ulPdHisto[0][ms / 10]++;
+    else if (ms / 100 < 10)
+        m_ulPdHisto[1][ms / 100]++;
+    else if (ms / 1000 < 10)
+        m_ulPdHisto[2][ms / 1000]++;
     else
         m_ulPdHisto[3][1]++;
 }
@@ -2105,7 +2105,7 @@ bool CRcvBuffer::accessMsg(int& w_p, int& w_q, bool& w_passack, int64_t& w_playt
             // so in one "unit".
             w_p = w_q = m_iStartPos;
 
-            debugTraceJitter(w_playtime);
+            debugTraceJitter(play_time);
         }
     }
     else
