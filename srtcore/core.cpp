@@ -221,7 +221,9 @@ void CUDT::construct()
     m_pSndLossList         = NULL;
     m_pRcvLossList         = NULL;
     m_iReorderTolerance    = 0;
-    m_iConsecEarlyDelivery = 0; // how many times so far the packet considered lost has been received before TTL expires
+    // How many times so far the packet considered lost has been received
+    // before TTL expires.
+    m_iConsecEarlyDelivery   = 0; 
     m_iConsecOrderedDelivery = 0;
 
     m_pSndQueue = NULL;
@@ -229,7 +231,8 @@ void CUDT::construct()
     m_pSNode    = NULL;
     m_pRNode    = NULL;
 
-    m_iSndHsRetryCnt      = SRT_MAX_HSRETRY + 1; // Will be reset to 0 for HSv5, this value is important for HSv4
+    // Will be reset to 0 for HSv5, this value is important for HSv4.
+    m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
 
     // Initial status
     m_bOpened             = false;
@@ -239,12 +242,12 @@ void CUDT::construct()
     m_bClosing            = false;
     m_bShutdown           = false;
     m_bBroken             = false;
-    // XXX m_iBrokenCounter should be still set to some default!
+    // TODO: m_iBrokenCounter should be still set to some default.
     m_bPeerHealth         = true;
     m_RejectReason        = SRT_REJ_UNKNOWN;
     m_tsLastReqTime       = steady_clock::time_point();
     m_SrtHsSide           = HSD_DRAW;
-    m_uPeerSrtVersion     = 0; // not defined until connected.
+    m_uPeerSrtVersion     = 0;  // Not defined until connected.
     m_iTsbPdDelay_ms      = 0;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
@@ -254,10 +257,10 @@ void CUDT::construct()
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
 
-    // Initilize mutex and condition variables
+    // Initilize mutex and condition variables.
     initSynch();
 
-    // XXX: Unblock, when the callback is implemented
+    // TODO: Uncomment when the callback is implemented.
     // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
 }
 
@@ -5433,17 +5436,18 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // And of course, it is connected.
     m_bConnected = true;
 
-    // register this socket for receiving data packets
+    // Register this socket for receiving data packets.
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
     // Save the handshake in m_ConnRes in case when needs repeating.
     m_ConnRes = w_hs;
 
-    // send the response to the peer, see listen() for more discussions about this
-    // XXX Here create CONCLUSION RESPONSE with:
+    // Send the response to the peer, see listen() for more discussions
+    // about this.
+    // TODO: Here create CONCLUSION RESPONSE with:
     // - just the UDT handshake, if HS_VERSION_UDT4,
-    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP
+    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP.
     size_t size = m_iMaxSRTPayloadSize;
     // Allocate the maximum possible memory for an SRT payload.
     // This is a maximum you can send once.
@@ -7711,8 +7715,8 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             if (m_uPeerSrtVersion == SrtVersion(1, 0, 2))
             {
                 data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
-                data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
+                data[ACKD_XMRATE_VER102_ONLY] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102_ONLY;
             }
             else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
             {
@@ -8001,10 +8005,10 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
      * Additional UDT fields, not always attached:
      *   ACKD_RCVSPEED
      *   ACKD_BANDWIDTH
-     * SRT extension version 1.0.2 (bstats):
+     * SRT extension since v1.0.1:
      *   ACKD_RCVRATE
-     * SRT extension version 1.0.4:
-     *   ACKD_XMRATE
+     * SRT extension in v1.0.2 only:
+     *   ACKD_XMRATE_VER102_ONLY
      */
 
     if (acksize > ACKD_TOTAL_SIZE_SMALL)
@@ -8014,7 +8018,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         int bandwidth = ackdata[ACKD_BANDWIDTH];
         int bytesps;
 
-        /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE]) and delivery rate (pcData[ACKD_RCVRATE]) in
+        /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE_VER102_ONLY]) and delivery rate (pcData[ACKD_RCVRATE]) in
          * bytes/sec instead of pkts/sec */
         /* SRT v1.0.3 Bytes-based stats: only delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
         if (acksize > ACKD_TOTAL_SIZE_UDTBASE)
@@ -8025,8 +8029,6 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         m_iBandwidth        = avg_iir<8>(m_iBandwidth, bandwidth);
         m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate, pktps);
         m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate, bytesps);
-        // XXX not sure if ACKD_XMRATE is of any use. This is simply
-        // calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
 
         // Update Estimated Bandwidth and packet delivery rate
         // m_iRcvRate = m_iDeliveryRate;
