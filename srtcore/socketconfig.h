@@ -390,39 +390,6 @@ inline bool cast_optval(const void* optval, int optlen)
     return false;
 }
 
-/// @brief Sets optval and optlen to the value provided and its type size
-/// @tparam T value type (int, bool, etc.)
-/// @param[in,out] optval will be set to the value provided
-/// @param[in,out] optlen the length of the optval, will be set according to type T
-/// @param[in] value The value to be set in optval 
-template <typename T>
-inline void cast_set_optval(void* optval, int& optlen, const T& value)
-{
-    *reinterpret_cast<T*>(optval) = value;
-    optlen = sizeof(T);
-}
-
-template <>
-inline void cast_set_optval(void* optval, int& optlen, const bool& value)
-{
-    using namespace srt_logging;
-    if (optlen == 0 || optlen == sizeof(bool))
-    {
-        *reinterpret_cast<bool*>(optval) = value;
-        optlen = sizeof(bool);
-    }
-    else if (optlen >= sizeof(int))
-    {
-        *reinterpret_cast<int*>(optval) = value;
-        optlen = sizeof(int);
-    }
-    else
-    {
-        LOGC(kmlog.Error, log << "Wrong optlen provided: expecting 0,1 (bool) or 4 (int)");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-}
-
 template<>
 struct CSrtConfigSetter<SRTO_MSS>
 {

@@ -405,11 +405,13 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_SNDSYN:
-        cast_set_optval(optval, optlen, m_config.bSynSending);
+        *(bool *)optval = m_config.bSynSending;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_RCVSYN:
-        cast_set_optval(optval, optlen, m_config.bSynRecving);
+        *(bool *)optval = m_config.bSynRecving;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_ISN:
@@ -451,7 +453,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_RENDEZVOUS:
-        cast_set_optval(optval, optlen, m_config.bRendezvous);
+        *(bool *)optval = m_config.bRendezvous;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_SNDTIMEO:
@@ -465,7 +468,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_REUSEADDR:
-        cast_set_optval(optval, optlen, m_config.bReuseAddr);
+        *(bool *)optval = m_config.bReuseAddr;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_MAXBW:
@@ -575,11 +579,13 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_SENDER:
-        cast_set_optval(optval, optlen, m_config.bDataSender);
+        *(bool *)optval = m_config.bDataSender;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_TSBPDMODE:
-        cast_set_optval(optval, optlen, m_config.bTSBPD);
+        *(bool *)optval = m_config.bTSBPD;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_LATENCY:
@@ -601,8 +607,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_TLPKTDROP:
-        // TODO: Why not m_config.bTLPktDrop until connected?
-        cast_set_optval(optval, optlen, m_bTLPktDrop);
+        *(bool *)optval = m_bTLPktDrop;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_SNDDROPDELAY:
@@ -650,7 +656,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_NAKREPORT:
-        cast_set_optval(optval, optlen, m_config.bRcvNakReport);
+        *(bool *)optval = m_config.bRcvNakReport;
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_VERSION:
@@ -669,7 +676,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_DRIFTTRACER:
-        cast_set_optval(optval, optlen, m_config.bDriftTracer);
+        *(bool*)optval = m_config.bDriftTracer;
+        optlen         = sizeof(bool);
         break;
 
     case SRTO_MINVERSION:
@@ -691,7 +699,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_MESSAGEAPI:
-        cast_set_optval(optval, optlen, m_config.bMessageAPI);
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bMessageAPI;
         break;
 
     case SRTO_PAYLOADSIZE:
@@ -712,7 +721,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 #endif
 
     case SRTO_ENFORCEDENCRYPTION:
-        cast_set_optval(optval, optlen, m_config.bEnforcedEnc);
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bEnforcedEnc;
         break;
 
     case SRTO_IPV6ONLY:
