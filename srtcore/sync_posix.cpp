@@ -77,7 +77,7 @@ void rdtsc(uint64_t& x)
 #endif
 }
 
-int64_t get_cpu_frequency()
+static int64_t get_cpu_frequency()
 {
     int64_t frequency = 1; // 1 tick per microsecond.
 
@@ -123,9 +123,9 @@ static int count_subsecond_precision(int64_t ticks_per_us)
     return signs;
 }
 
-const int64_t s_clock_ticks_per_us = get_cpu_frequency();
+static const int64_t s_clock_ticks_per_us = get_cpu_frequency();
 
-const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_per_us);
+static const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_per_us);
 
 int clockSubsecondPrecision() { return s_clock_subsecond_precision; }
 
