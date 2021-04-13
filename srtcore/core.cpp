@@ -2027,9 +2027,7 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
         return SRT_CMD_REJECT;
     }
 
-#if HAVE_CXX11
-    static_assert(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
-#endif
+    SRT_STATIC_ASSERT(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
     if (bytelen < (SRT_HS_E_SIZE * sizeof(uint32_t)))
     {
         // Handshake extension message includes VERSION, FLAGS and LATENCY
