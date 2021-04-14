@@ -210,8 +210,9 @@ struct SrtOptionAction
         // passed to a setting function.
         private_default[SRTO_STREAMID] = string();
     }
-}
-srt_options_action;
+};
+
+static const SrtOptionAction s_srt_option_action;
 
 
 void CUDT::construct()
@@ -297,9 +298,9 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
     m_config            = ancestor.m_config;
     // Reset values that shall not be derived to default ones.
     // These declarations should be consistent with SRTO_R_PRIVATE flag.
-    for (size_t i = 0; i < Size(srt_options_action.flags); ++i)
+    for (size_t i = 0; i < Size(s_srt_option_action.flags); ++i)
     {
-        string* pdef = map_getp(srt_options_action.private_default, SRT_SOCKOPT(i));
+        const string* pdef = map_getp(s_srt_option_action.private_default, SRT_SOCKOPT(i));
         if (pdef)
         {
             try
@@ -342,12 +343,12 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    // Match check (confirm optName as index for srt_options_action)
+    // Match check (confirm optName as index for s_srt_option_action)
     if (int(optName) < 0 || int(optName) >= int(SRTO_E_SIZE))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     // Restriction check
-    const int oflags = srt_options_action.flags[optName];
+    const int oflags = s_srt_option_action.flags[optName];
 
     ScopedLock cg (m_ConnectionLock);
     ScopedLock sendguard (m_SendLock);
