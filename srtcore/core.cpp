@@ -697,6 +697,9 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_CONGESTION:
+        if (size_t(optlen) < m_config.sCongestion.size() + 1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
         strcpy((char *)optval, m_config.sCongestion.c_str());
         optlen = (int) m_config.sCongestion.size();
         break;
