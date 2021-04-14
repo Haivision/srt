@@ -277,10 +277,10 @@ public:
     bool GetEnforcedEncryption(PEER_TYPE peer_type)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        int value = -1;
-        int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
-        return value ? true : false;
+        bool optval;
+        int  optlen = sizeof optval;
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_SUCCESS);
+        return optval ? true : false;
     }
 
 
@@ -503,8 +503,8 @@ private:
 
     int       m_pollid          = 0;
 
-    const int s_yes = 1;
-    const int s_no  = 0;
+    const bool s_yes = true;
+    const bool s_no  = false;
 
     const bool          m_is_tracing = false;
     static const char*  m_km_state[];
