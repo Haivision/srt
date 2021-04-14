@@ -356,7 +356,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     if (IsSet(oflags, SRTO_R_PREBIND) && m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-    if (IsSet(oflags, SRTO_R_PRE) && (m_bConnected || m_bConnecting))
+    if (IsSet(oflags, SRTO_R_PRE) && (m_bConnected || m_bConnecting || m_bListening))
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // Option execution. If this returns -1, there's no such option.
