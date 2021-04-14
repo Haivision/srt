@@ -267,13 +267,15 @@ public: // internal API
     //
     // NOTE: Use notation with X*1000*1000*... instead of
     // million zeros in a row.
-    static const int       COMM_RESPONSE_MAX_EXP                  = 16;
-    static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS          = 1000;
-    static const uint64_t  COMM_KEEPALIVE_PERIOD_US               = 1*1000*1000;
-    static const int32_t   COMM_SYN_INTERVAL_US                   = 10*1000;
-    static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS  = 3000;
-    static const uint16_t  MAX_WEIGHT                             = 32767;
-    static const size_t    ACK_WND_SIZE                           = 1024;
+    static const int       COMM_RESPONSE_MAX_EXP                 = 16;
+    static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS         = 1000;
+    static const uint64_t  COMM_KEEPALIVE_PERIOD_US              = 1*1000*1000;
+    static const int32_t   COMM_SYN_INTERVAL_US                  = 10*1000;
+    static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS = 3000;
+    static const uint16_t  MAX_WEIGHT                            = 32767;
+    static const size_t    ACK_WND_SIZE                          = 1024;
+    static const int       INITIAL_RTT                           = 10 * COMM_SYN_INTERVAL_US;
+    static const int       INITIAL_RTTVAR                        = INITIAL_RTT / 2;
 
     int handshakeVersion()
     {
@@ -741,6 +743,7 @@ private:
     int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
     int m_iRTT;                                  // RTT, in microseconds
     int m_iRTTVar;                               // RTT variance
+    bool m_bIsSmoothedRTTReset;                  // If smoothed RTT has been reset after initialization
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
 

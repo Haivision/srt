@@ -241,7 +241,6 @@ void CUDT::construct()
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
 
-    // Initial status
     m_bOpened             = false;
     m_bListening          = false;
     m_bConnecting         = false;
@@ -932,8 +931,10 @@ void CUDT::open()
     m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
     m_pRNode->m_bOnList                   = false;
 
-    m_iRTT    = 10 * COMM_SYN_INTERVAL_US;
-    m_iRTTVar = m_iRTT >> 1;
+    // Set initial values of smoothed RTT and RTT variance.
+    m_iRTT                = INITIAL_RTT;
+    m_iRTTVar             = INITIAL_RTTVAR;
+    m_bIsSmoothedRTTReset = false;
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -7998,15 +7999,30 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
     // This check covers fields up to ACKD_BUFFERLEFT.
 
-    // Update RTT
-    // m_iRTT = ackdata[ACKD_RTT];
-    // m_iRTTVar = ackdata[ACKD_RTTVAR];
-    // XXX These ^^^ commented-out were blocked in UDT;
-    // the current RTT calculations are exactly the same as in UDT4.
-    const int rtt = ackdata[ACKD_RTT];
+    // Extract RTT estimate and RTTVar from the ACK.
+    const int rtt    = ackdata[ACKD_RTT];
+    const int rttvar = ackdata[ACKD_RTTVAR];
 
-    m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-    m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+    // Update the values of smoothed RTT and the variation in RTT samples
+    // on subsequent RTT estimates extracted from the ACK packets
+    // (during transmission).
+    if (m_bIsSmoothedRTTReset)
+    {
+        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+        m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+    }
+    // Reset the value of smoothed RTT to the first real RTT estimate extracted
+    // from an ACK after initialization (at the beginning of a transmission).
+    // In case of resumed connection over the same network, the very first RTT
+    // value sent within an ACK will be taken from cache and equal to previous
+    // connection's final smoothed RTT value. The reception of such a value
+    // will also trigger the smoothed RTT reset at the sender side.
+    else if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
+    {
+        m_iRTT                = rtt;
+        m_iRTTVar             = rtt / 2;
+        m_bIsSmoothedRTTReset = true;
+    }
 
     /* Version-dependent fields:
      * Original UDT (total size: ACKD_TOTAL_SIZE_SMALL):
@@ -8062,7 +8078,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
 {
     int32_t ack = 0;
 
-    // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair
+    // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
     const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, tsArrival);
 
     if (rtt == -1)
@@ -8091,12 +8107,27 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
         return;
     }
 
-    // If increasing delay is detected
+    // If increasing delay is detected.
     //   sendCtrl(UMSG_CGWARNING);
 
-    // Calculate RTT (EWMA) on the receiver side
-    m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-    m_iRTT = avg_iir<8>(m_iRTT, rtt);
+    // Update the values of smoothed RTT and the variation in RTT samples
+    // on subsequent RTT samples (during transmission).
+    if (m_bIsSmoothedRTTReset)
+    {
+        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+        m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+    }
+    // Reset the value of smoothed RTT on the first RTT sample after initialization
+    // (at the beginning of a transmission).
+    // In case of resumed connection over the same network, the initial RTT
+    // value will be taken from cache and equal to previous connection's
+    // final smoothed RTT value.
+    else
+    {
+        m_iRTT                = rtt;
+        m_iRTTVar             = rtt / 2;
+        m_bIsSmoothedRTTReset = true;
+    }
 
     updateCC(TEV_ACKACK, EventVariant(ack));
 
