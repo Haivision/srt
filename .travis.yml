@@ -88,9 +88,9 @@ script:
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*";
-        source ./scripts/collect-gcov.sh;
       fi
     - if (( "$RUN_CODECOV" )); then
+        source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);
       fi
     - if (( "$RUN_SONARCUBE" )); then
