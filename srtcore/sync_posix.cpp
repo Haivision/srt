@@ -38,7 +38,7 @@ namespace srt
 namespace sync
 {
 
-void rdtsc(uint64_t& x)
+static void rdtsc(uint64_t& x)
 {
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA32_RDTSC
     uint32_t lval, hval;
@@ -123,9 +123,9 @@ static int count_subsecond_precision(int64_t ticks_per_us)
     return signs;
 }
 
-static const int64_t s_clock_ticks_per_us = get_cpu_frequency();
+const int64_t s_clock_ticks_per_us = get_cpu_frequency();
 
-static const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_per_us);
+const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_per_us);
 
 int clockSubsecondPrecision() { return s_clock_subsecond_precision; }
 
