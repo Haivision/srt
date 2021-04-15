@@ -1907,7 +1907,7 @@ private:
 
     void create_file()
     {
-        if (m_fout)
+        if (m_fout.is_open())
             return;
 
         std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
@@ -8199,9 +8199,6 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     // final smoothed RTT value.
     else
     {
-#if SRT_DEBUG_RTT
-        s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
-#endif
         m_iRTT                = rtt;
         m_iRTTVar             = rtt / 2;
         m_bIsSmoothedRTTReset = true;
