@@ -1633,7 +1633,7 @@ are then derived by the member sockets.
 | <img width=240px height=1px/>   | <img width=710px height=1px/>                 |
 
 **NOTE*: Various other errors may result from problems when setting a
-specific option (see option description in [API-socket-options.md](#API-socket-options.md) for details).
+specific option (see option description in [API-socket-options.md](./API-socket-options.md) for details).
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
