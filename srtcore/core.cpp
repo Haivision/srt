@@ -610,7 +610,11 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_TLPKTDROP:
-        *(bool *)optval = m_bTLPktDrop;
+        if (m_bConnected)
+            *(bool *)optval = m_bTLPktDrop;
+        else
+            *(bool *)optval = m_config.bTLPktDrop;
+
         optlen          = sizeof(bool);
         break;
 
