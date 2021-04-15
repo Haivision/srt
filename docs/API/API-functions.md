@@ -1573,12 +1573,12 @@ The first version ([`srt_getsockopt`](#srt_getsockopt)) follows the BSD socket
 API convention, although the "level" parameter is ignored. The second version
 ([`srt_getsockflag`](#srt_getsockflag)) omits the "level" parameter completely.
 
-Options correspond to various data types (see [API-socket-options.md](#API-socket-options.md)).
-A variable `oprval` of the appropriate data type has to be passed.
-The integer value of `optlen` should originally contain the size of `optval` type provided;
+Options correspond to various data types (see [API-socket-options.md](./API-socket-options.md)).
+A variable `optval` of the appropriate data type has to be passed.
+The integer value of `optlen` should originally contain the size of the `optval` type provided;
 on return, it will be set to the size of the value returned.
-For most options, it will be the size of an integer. Some option, however, use `bool`, `int64_t`, `string` etc. types
-(see [API-socket-options.md](#API-socket-options.md)).
+For most options, it will be the size of an integer. Some options, however, use types `bool`, `int64_t`, `C string`, etc.
+(see [API-socket-options.md](./API-socket-options.md#sockopt_types)).
 
 The application is responsible for allocating sufficient memory space pointed by `optval`.
 
