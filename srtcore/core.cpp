@@ -1890,6 +1890,7 @@ public:
         create_file();
         
         m_fout << srt::sync::FormatTimeSys(currtime) << ",";
+        m_fout << srt::sync::FormatTime(currtime) << ",";
         m_fout << event << ",";
         m_fout << rtt_sample_us << ",";
         m_fout << is_smoothed_rtt_reset << ",";
@@ -1902,7 +1903,7 @@ private:
     void print_header()
     {
         //srt::sync::ScopedLock lck(m_mtx);
-        m_fout << "Timepoint,Event,usRTTSample,IsSmoothedRttReset, usSmoothedRtt,usRttVar\n";
+        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,IsSmoothedRttReset, usSmoothedRtt,usRttVar\n";
     }
 
     void create_file()
