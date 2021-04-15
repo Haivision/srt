@@ -1889,7 +1889,7 @@ public:
         srt::sync::ScopedLock lck(m_mtx);
         create_file();
         
-        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << srt::sync::FormatTimeSys(currtime) << ",";
         m_fout << event << ",";
         m_fout << rtt_sample_us << ",";
         m_fout << is_smoothed_rtt_reset << ",";
@@ -1915,7 +1915,7 @@ private:
         while (str_tnow.find(':') != std::string::npos) {
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
         }
-        const std::string fname = "rtt_trace_" + str_tnow + ".csv";
+        const std::string fname = "rtt_trace_" + str_tnow + "_" + SRT_SYNC_CLOCK_STR + ".csv";
         m_fout.open(fname, std::ofstream::out);
         if (!m_fout)
             std::cerr << "IPE: Failed to open " << fname << "!!!\n";
@@ -4553,6 +4553,10 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         m_iBandwidth = ib.m_iBandwidth;
     }
 
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Connect", -1, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+#endif
+
     SRT_REJECT_REASON rr = setupCC();
     if (rr != SRT_REJ_UNKNOWN)
     {
@@ -5451,6 +5455,10 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         m_iRTTVar    = m_iRTT >> 1;
         m_iBandwidth = ib.m_iBandwidth;
     }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Accept", -1, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+#endif
 
     m_PeerAddr = peer;
 
@@ -8191,13 +8199,16 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     // final smoothed RTT value.
     else
     {
+#if SRT_DEBUG_RTT
+        s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+#endif
         m_iRTT                = rtt;
         m_iRTTVar             = rtt / 2;
         m_bIsSmoothedRTTReset = true;
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(tsArrival, "ACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
 #endif
 
     updateCC(TEV_ACKACK, EventVariant(ack));
