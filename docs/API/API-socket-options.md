@@ -122,13 +122,14 @@ of SRT ever created and put into use.
 2. **Restrict**: Defines restrictions on setting the option. The field is empty if the option
 is not settable (see **Dir** column):
 
-	- `pre-bind`: The option cannot be altered on a socket that is already bound (by calling
+    - `pre-bind`: The option cannot be altered on a socket that is already bound (by calling
 `srt_bind()` or any other function doing this, including automatic binding when trying to
-connect, as well as accepted sockets).
+connect, as well as accepted sockets). In other words, once an SRT socket has transitioned from
+`SRTS_INIT` to `SRTS_OPENED` socket state.
 
-    - `pre`: Like pre-bind, but only for a connected socket (including an accepted socket). If
-an option was set on a listener socket, it will be set the same on a socket returned by
-`srt_accept()`.
+    - `pre`: The option cannot be altered on a socket that is in `SRTS_LISTENING`, `SRTS_CONNECTING`
+or `SRTS_CONNECTED` state. If an option was set on a listener socket, it will be inherited
+by a socket returned by `srt_accept()` (except for `SRTO_STREAMID`).
 
     - `post`: The option is unrestricted and can be altered at any time, including when the
 socket is connected, as well as on an accepted socket. The setting of this flag on a listening 
