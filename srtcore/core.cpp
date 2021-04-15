@@ -1868,6 +1868,69 @@ void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
     }
 }
 
+#if SRT_DEBUG_RTT
+class RttTracer
+{
+public:
+    RttTracer()
+    {
+    }
+
+    ~RttTracer()
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    void trace(const srt::sync::steady_clock::time_point& currtime,
+               const std::string& event, int rtt_sample_us,
+               bool is_smoothed_rtt_reset, int smoothed_rtt, int rttvar)
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        create_file();
+        
+        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << event << ",";
+        m_fout << rtt_sample_us << ",";
+        m_fout << is_smoothed_rtt_reset << ",";
+        m_fout << smoothed_rtt << ",";
+        m_fout << rttvar << "\n";
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        //srt::sync::ScopedLock lck(m_mtx);
+        m_fout << "Timepoint,Event,usRTTSample,IsSmoothedRttReset, usSmoothedRtt,usRttVar\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout)
+            return;
+
+        std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos) {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "rtt_trace_" + str_tnow + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex m_mtx;
+    std::ofstream m_fout;
+};
+
+RttTracer s_rtt_trace;
+#endif
+
 
 bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
@@ -3262,8 +3325,8 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
         }
     }
 }
-
 #endif
+
 void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     ScopedLock cg (m_ConnectionLock);
@@ -8024,6 +8087,10 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         m_bIsSmoothedRTTReset = true;
     }
 
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(currtime, "ACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+#endif
+
     /* Version-dependent fields:
      * Original UDT (total size: ACKD_TOTAL_SIZE_SMALL):
      *   ACKD_RCVLASTACK
@@ -8128,6 +8195,10 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
         m_iRTTVar             = rtt / 2;
         m_bIsSmoothedRTTReset = true;
     }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(tsArrival, "ACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+#endif
 
     updateCC(TEV_ACKACK, EventVariant(ack));
 
