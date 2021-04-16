@@ -664,8 +664,12 @@ struct CSrtConfigSetter<SRTO_LATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency     = cast_optval<int>(optval, optlen);
-        co.iPeerLatency = cast_optval<int>(optval);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency  = val;
+        co.iPeerLatency = val;
     }
 };
 template<>
@@ -673,7 +677,11 @@ struct CSrtConfigSetter<SRTO_RCVLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency = val;
     }
 };
 template<>
@@ -681,7 +689,11 @@ struct CSrtConfigSetter<SRTO_PEERLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerLatency = val;
     }
 };
 template<>
