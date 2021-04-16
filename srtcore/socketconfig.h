@@ -898,8 +898,13 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         using namespace srt_logging;
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+        {
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
-        if (*(int *)optval > SRT_LIVE_MAX_PLSIZE)
+        if (val > SRT_LIVE_MAX_PLSIZE)
         {
             LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -919,7 +924,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
 
             size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (co.zExpPayloadSize > efc_max_payload_size)
+            if (val > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
                      log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
@@ -928,7 +933,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
         }
 
-        co.zExpPayloadSize = cast_optval<int>(optval, optlen);
+        co.zExpPayloadSize = val;
     }
 };
 
