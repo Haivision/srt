@@ -502,7 +502,11 @@ struct CSrtConfigSetter<SRTO_SNDTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iSndTimeOut = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndTimeOut = val;
     }
 };
 
