@@ -7,31 +7,32 @@ to the system `setsockopt/getsockopt` functions.
 - [Getting and Setting Options](#getting-and-setting-options)
 - [List of Options](#list-of-options)
 
-## Types Used in Socket Options
+## Types Used in Socket Options <a name="sockopt_types"></a>
 
 Possible types of socket options are:
 
-- `int32_t` - This type can usually be treated as an `int` equivalent since it 
-does not change size on 64-bit systems. For clarity, options use this fixed size 
-integer. In some cases the value is expressed using an enumeration type (see below).
+- `int32_t` - a 32-bit integer. On most systems similar to `int`.
+In some cases the value is expressed using an enumeration type
+(see [Enumeration types...](#enumeration_types) section below).
 
-- `int64_t` - Some options need the parameter specified as 64-bit integer.
+- `int64_t` - a 64-bit integer.
 
-- `bool` - Requires the use of a boolean type (`<stdbool.h>` for C, or built-in
+- `bool` - a Boolean type (`<stdbool.h>` for C, or built-in
 for C++). When *setting* an option, passing the value through an `int` type is
-also properly recognized. When *getting* an option, however, you should use the
-`bool` type, although you can risk passing a variable of `int` type initialized
-with 0 and then checking if the resulting value is equal to 0 (just don't compare
-the result with 1).
+also properly recognized. When *getting* an option, however, the`bool` type
+should be used. It is also possible to pass a variable of `int` type initialized
+with 0 and then comparing the resulting value with 0 (just don't compare
+the result with 1 or `true`).
 
-- `string` - When *setting* an option, pass the character array pointer as value
-and the string length as length. When *getting*, pass an array of sufficient size
-(as specified in the size variable). Every option with this type that can be
-read should specify the maximum length of that array.
+- `string` - a C string. When *setting* an option, a `const char*` character array pointer
+is expected to be passed in `optval` and the array length in `optlen` **without the terminating NULL character**.
+When *getting*, an array is expected to be passed in `optval` with a
+sufficient size **with an extra space for the terminating NULL character** provided in `optlen`.
+The return value of `optlen` does not count the terminating NULL character.
 
 - `linger` - Linger structure. Used exclusively with `SRTO_LINGER`.
 
-### Enumeration Types Used in Options
+### Enumeration Types Used in Options <a name="enumeration_types"></a>
 
 #### `SRT_TRANSTYPE`
 
@@ -216,12 +217,12 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_KMSTATE`](#SRTO_KMSTATE)                        | 1.0.2 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                        | 1.0.2 | pre      | `int32_t` | ms      | 120 \*            | 0..      | RW  | GSD   |
 | [`SRTO_LINGER`](#SRTO_LINGER)                          |       | post     | `linger`  | s       | on, 180           | 0..      | RW  | GSD   |
-| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre      | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
+| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                            |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre      | `int32_t` | version | 0x010000          | \*       | RW  | GSD   |
-| [`SRTO_MSS`](#SRTO_MSS)                                |       | pre      | `int32_t` | bytes   | 1500              | 76..     | RW  | GSD   |
+| [`SRTO_MSS`](#SRTO_MSS)                                |       | pre-bind | `int32_t` | bytes   | 1500              | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre      | `bool`    |         |  \*               |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post     | `int32_t` | %       | 25                | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre      | `string`  |         | ""                | [512]    | RW  | GSD   |
@@ -733,7 +734,7 @@ Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/sock
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_LOSSMAXTTL`    | 1.2.0 | pre      | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
+| `SRTO_LOSSMAXTTL`    | 1.2.0 | post     | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
 
 The value up to which the *Reorder Tolerance* may grow. The *Reorder Tolerance*
 is the number of packets that must follow the experienced "gap" in sequence numbers
@@ -833,7 +834,7 @@ The default value is 0x010000 (SRT v1.0.0).
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MSS`           |       | pre      | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
+| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
 
 Maximum Segment Size. Used for buffer allocation and rate calculation using
 packet counter assuming fully filled packets. Each party can set its own MSS
