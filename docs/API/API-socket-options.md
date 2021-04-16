@@ -216,7 +216,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_KMSTATE`](#SRTO_KMSTATE)                        | 1.0.2 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                        | 1.0.2 | pre      | `int32_t` | ms      | 120 *             | 0..      | RW  | GSD   |
 | [`SRTO_LINGER`](#SRTO_LINGER)                          |       | post     | `linger`  | s       | on, 180           | 0..      | RW  | GSD   |
-| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre      | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
+| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                            |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
@@ -733,7 +733,7 @@ Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/sock
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_LOSSMAXTTL`    | 1.2.0 | pre      | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
+| `SRTO_LOSSMAXTTL`    | 1.2.0 | post     | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
 
 The value up to which the *Reorder Tolerance* may grow. The *Reorder Tolerance*
 is the number of packets that must follow the experienced "gap" in sequence numbers
