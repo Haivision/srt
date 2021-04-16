@@ -294,6 +294,14 @@ int CUDTUnited::startup()
 
 int CUDTUnited::cleanup()
 {
+   // IMPORTANT!!!
+   // In this function there must be NO LOGGING AT ALL.  This function may
+   // potentially be called from within the global program destructor, and
+   // therefore some of the facilities used by the logging system - including
+   // the default std::cerr object bound to it by default, but also a different
+   // stream that the user's app has bound to it, and which got destroyed
+   // together with already exited main() - may be already deleted when
+   // executing this procedure.
    ScopedLock gcinit(m_InitLock);
 
    if (--m_iInstanceCount > 0)
@@ -303,7 +311,6 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   HLOGC(inlog.Debug, log << "GarbageCollector: thread EXIT");
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
