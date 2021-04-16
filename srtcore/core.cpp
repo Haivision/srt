@@ -1883,8 +1883,9 @@ public:
     }
 
     void trace(const srt::sync::steady_clock::time_point& currtime,
-               const std::string& event, int rtt_sample_us,
-               bool is_smoothed_rtt_reset, int smoothed_rtt, int rttvar)
+               const std::string& event, int rtt_sample, int rttvar_sample,
+               bool is_smoothed_rtt_reset, int64_t recvTotal,
+               int smoothed_rtt, int rttvar)
     {
         srt::sync::ScopedLock lck(m_mtx);
         create_file();
@@ -1892,8 +1893,10 @@ public:
         m_fout << srt::sync::FormatTimeSys(currtime) << ",";
         m_fout << srt::sync::FormatTime(currtime) << ",";
         m_fout << event << ",";
-        m_fout << rtt_sample_us << ",";
+        m_fout << rtt_sample << ",";
+        m_fout << rttvar_sample << ",";
         m_fout << is_smoothed_rtt_reset << ",";
+        m_fout << recvTotal << ",";
         m_fout << smoothed_rtt << ",";
         m_fout << rttvar << "\n";
         m_fout.flush();
@@ -1903,7 +1906,7 @@ private:
     void print_header()
     {
         //srt::sync::ScopedLock lck(m_mtx);
-        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,IsSmoothedRttReset, usSmoothedRtt,usRttVar\n";
+        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,usRTTVarSample,IsSmoothedRTTReset,pktsRecvTotal,usSmoothedRTT,usRTTVar\n";
     }
 
     void create_file()
@@ -4555,7 +4558,8 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(steady_clock::now(), "Connect", -1, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(steady_clock::now(), "Connect", -1, -1,
+                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
 #endif
 
     SRT_REJECT_REASON rr = setupCC();
@@ -5458,7 +5462,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(steady_clock::now(), "Accept", -1, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(steady_clock::now(), "Accept", -1, -1,
+                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
 #endif
 
     m_PeerAddr = peer;
@@ -8080,8 +8085,24 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // (during transmission).
     if (m_bIsSmoothedRTTReset)
     {
-        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-        m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+        // In the case of bidirectional transmission, apply double smoothing
+        // at the sender side. rtt extracted from the ACK packet is smoothed
+        // RTT obtained at the receiver side.
+        // TODO: The case of bidirectional transmission requires further
+        // improvements and testing. Double smoothing is applied here to be
+        // consistent with the previous behavior.
+        if (m_stats.recvTotal != 0)
+        {
+            m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+            m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+        }
+        // In the case of unidirectional transmission, extract the values of
+        // smoothed RTT and RTT variance from the ACK packet.
+        else
+        {
+            m_iRTT    = rtt;
+            m_iRTTVar = rttvar;
+        }
     }
     // Reset the value of smoothed RTT to the first real RTT estimate extracted
     // from an ACK after initialization (at the beginning of a transmission).
@@ -8097,7 +8118,8 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(currtime, "ACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(currtime, "ACK", rtt, rttvar, m_bIsSmoothedRTTReset,
+                      m_stats.recvTotal, m_iRTT, m_iRTTVar);
 #endif
 
     /* Version-dependent fields:
@@ -8206,7 +8228,8 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_bIsSmoothedRTTReset, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_iRTTVar,
+                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
 #endif
 
     updateCC(TEV_ACKACK, EventVariant(ack));
