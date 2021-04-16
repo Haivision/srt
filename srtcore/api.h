@@ -125,7 +125,7 @@ public:
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<SRTSOCKET> m_QueuedSockets;    //< set of connections waiting for accept()
+   std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets;    //< set of connections waiting for accept()
 
    srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
    srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
