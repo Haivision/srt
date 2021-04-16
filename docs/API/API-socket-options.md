@@ -216,12 +216,12 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_KMSTATE`](#SRTO_KMSTATE)                        | 1.0.2 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                        | 1.0.2 | pre      | `int32_t` | ms      | 120 *             | 0..      | RW  | GSD   |
 | [`SRTO_LINGER`](#SRTO_LINGER)                          |       | post     | `linger`  | s       | on, 180           | 0..      | RW  | GSD   |
-| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | pre      | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
+| [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                  | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                            |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                  | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                  | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                  | 1.3.0 | pre      | `int32_t` | version | 0x010000          | *        | RW  | GSD   |
-| [`SRTO_MSS`](#SRTO_MSS)                                |       | pre      | `int32_t` | bytes   | 1500              | 76..     | RW  | GSD   |
+| [`SRTO_MSS`](#SRTO_MSS)                                |       | pre-bind | `int32_t` | bytes   | 1500              | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                    | 1.1.0 | pre      | `bool`    |         |  *                |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                        | 1.0.5 | post     | `int32_t` | %       | 25                | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)              | 1.4.0 | pre      | `string`  |         | ""                | [512]    | RW  | GSD   |
@@ -733,7 +733,7 @@ Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/sock
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_LOSSMAXTTL`    | 1.2.0 | pre      | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
+| `SRTO_LOSSMAXTTL`    | 1.2.0 | post     | `int32_t`  | packets | 0        | 0..    | RW  | GSD+   |
 
 The value up to which the *Reorder Tolerance* may grow. The *Reorder Tolerance*
 is the number of packets that must follow the experienced "gap" in sequence numbers
@@ -833,7 +833,7 @@ The default value is 0x010000 (SRT v1.0.0).
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MSS`           |       | pre      | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
+| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
 
 Maximum Segment Size. Used for buffer allocation and rate calculation using
 packet counter assuming fully filled packets. Each party can set its own MSS
