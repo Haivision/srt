@@ -205,7 +205,10 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             isoption = true;
             // If a[0] isn't NUL - because it is dash - then
             // we can safely check a[1].
-            if (a[1] && isdigit(a[1]))
+            // An expression starting with a dash is not
+            // an option marker if it is a single dash or
+            // a negative number.
+            if (!a[1] || isdigit(a[1]))
                 isoption = false;
         }
 
