@@ -1558,24 +1558,29 @@ port number after it has been autoselected.
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
-  
+
 ### srt_getsockopt
 ### srt_getsockflag
-```
+
+```c++
 int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, void* optval, int* optlen);
 int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 ```
 
-Gets the value of the given socket option (from a socket or a group). 
+Gets the value of the given socket option (from a socket or a group).
 
-The first version ([`srt_getsockopt`](#srt_getsockopt)) respects the BSD socket 
-API convention, although the "level" parameter is ignored. The second version 
+The first version ([`srt_getsockopt`](#srt_getsockopt)) follows the BSD socket
+API convention, although the "level" parameter is ignored. The second version
 ([`srt_getsockflag`](#srt_getsockflag)) omits the "level" parameter completely.
 
-Options correspond to various data types, so you need to know what data type is 
-assigned to a particular option, and to pass a variable of the appropriate data 
-type. Specifications are provided in the `apps/socketoptions.hpp` file at the 
-`srt_options` object declaration.
+Options correspond to various data types (see [API-socket-options.md](./API-socket-options.md)).
+A variable `optval` of the appropriate data type has to be passed.
+The integer value of `optlen` should originally contain the size of the `optval` type provided;
+on return, it will be set to the size of the value returned.
+For most options, it will be the size of an integer. Some options, however, use types `bool`, `int64_t`, `C string`, etc.
+(see [API-socket-options.md](./API-socket-options.md#sockopt_types)).
+
+The application is responsible for allocating sufficient memory space as defined and pointed to by `optval`.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
@@ -1586,7 +1591,7 @@ type. Specifications are provided in the `apps/socketoptions.hpp` file at the
 |:-------------------------------- |:---------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock)  | Socket [`u`](#u) indicates no valid socket ID  |
 | [`SRT_EINVOP`](#srt_einvop)      | Option `opt` indicates no valid option         |
-| <img width=240px height=1px/>    | <img width=710px height=1px/>                      |
+| <img width=240px height=1px/>    | <img width=710px height=1px/>                  |
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1595,19 +1600,19 @@ type. Specifications are provided in the `apps/socketoptions.hpp` file at the
 ### srt_setsockopt
 ### srt_setsockflag
 
-```
+```c++
 int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, const void* optval, int optlen);
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 ```
 
-Sets a value for a socket option in the socket or group. 
+Sets a value for a socket option in the socket or group.
 
-The first version ([`srt_setsockopt`](#srt_setsockopt)) respects the BSD socket 
-API convention, although the "level" parameter is ignored. The second version 
+The first version ([`srt_setsockopt`](#srt_setsockopt)) follows the BSD socket
+API convention, although the "level" parameter is ignored. The second version
 ([`srt_setsockflag`](#srt_setsockflag)) omits the "level" parameter completely.
 
-Options correspond to various data types, so you need to know what data type is 
-assigned to a particular option, and to pass a variable of the appropriate data 
+Options correspond to various data types, so you need to know what data type is
+assigned to a particular option, and to pass a variable of the appropriate data
 type with the option value to be set.
 
 Please note that some of the options can only be set on sockets or only on
@@ -1619,14 +1624,16 @@ are then derived by the member sockets.
 | `SRT_ERROR`                   | (-1) in case of error, otherwise 0              |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                   |
 
-|       Errors                    |                                               |
-|:------------------------------- |:--------------------------------------------- |
-| [`SRT_EINVSOCK`](#srt_einvsock) | Socket [`u`](#u) indicates no valid socket ID |
-| [`SRT_EINVOP`](#srt_einvop)     | Option `opt` indicates no valid option        |
+|       Errors                        |                                               |
+|:----------------------------------- |:--------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)     | Socket [`u`](#u) indicates no valid socket ID |
+| [`SRT_EINVPARAM`](#srt_einvparam)   | Option `opt` indicates no valid option        |
+| [`SRT_EBOUNDSOCK`](#srt_eboundsock) | Tried to set an option with PRE_BIND restriction on a bound socket. |
+| [`SRT_ECONNSOCK`](#srt_econnsock)   | Tried to set an option with PRE_BIND or PRE restriction on a socket in connecting/listening/connected state. |
 | <img width=240px height=1px/>   | <img width=710px height=1px/>                 |
 
-**NOTE*: Various other errors may result from problems when setting a 
-specific option (see option description for details).
+**NOTE*: Various other errors may result from problems when setting a
+specific option (see option description in [API-socket-options.md](./API-socket-options.md) for details).
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
