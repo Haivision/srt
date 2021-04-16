@@ -693,9 +693,11 @@ struct CSrtConfigSetter<SRTO_SNDDROPDELAY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        // Surprise: you may be connected to alter this option.
-        // The application may manipulate this option on sender while transmitting.
-        co.iSndDropDelay = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndDropDelay = val;
     }
 };
 template<>
