@@ -803,8 +803,12 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
         using namespace srt::sync;
-        co.tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
+        co.tdConnTimeOut = milliseconds_from(val);
     }
 };
 
