@@ -8228,8 +8228,8 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, m_iRTTVar,
-                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
+    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, -1, m_bIsSmoothedRTTReset,
+                      -1, m_iRTT, m_iRTTVar);
 #endif
 
     updateCC(TEV_ACKACK, EventVariant(ack));
