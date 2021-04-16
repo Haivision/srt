@@ -1099,7 +1099,11 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerIdleTimeout = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerIdleTimeout = val;
     }
 };
 
