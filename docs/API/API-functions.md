@@ -1580,7 +1580,7 @@ on return, it will be set to the size of the value returned.
 For most options, it will be the size of an integer. Some options, however, use types `bool`, `int64_t`, `C string`, etc.
 (see [API-socket-options.md](./API-socket-options.md#sockopt_types)).
 
-The application is responsible for allocating sufficient memory space pointed by `optval`.
+The application is responsible for allocating sufficient memory space as defined and pointed to by `optval`.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
