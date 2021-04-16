@@ -515,6 +515,10 @@ struct CSrtConfigSetter<SRTO_RCVTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
         co.iRcvTimeOut = cast_optval<int>(optval, optlen);
     }
 };
