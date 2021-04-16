@@ -4553,7 +4553,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
-        m_iRTTVar    = m_iRTT >> 1;
+        m_iRTTVar    = ib.m_iRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
@@ -5457,7 +5457,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     if (m_pCache->lookup(&ib) >= 0)
     {
         m_iRTT       = ib.m_iRTT;
-        m_iRTTVar    = m_iRTT >> 1;
+        m_iRTTVar    = ib.m_iRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
@@ -5928,6 +5928,11 @@ bool CUDT::closeInternal()
         ib.m_iRTT       = m_iRTT;
         ib.m_iBandwidth = m_iBandwidth;
         m_pCache->update(&ib);
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
+                      m_bIsSmoothedRTTReset, -1, m_iRTT, -1);
+#endif
 
         m_bConnected = false;
     }
