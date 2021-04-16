@@ -172,7 +172,7 @@ const OptionTestEntry g_test_matrix_options[] =
     { SRTO_DRIFTTRACER,    "SRTO_DRIFTTRACER",  RestrictionType::POST,   sizeof(bool),            false,       true,     true,        false,     {} },
     { SRTO_ENFORCEDENCRYPTION, "SRTO_ENFORCEDENCRYPTION", RestrictionType::PRE, sizeof(bool),     false,       true,     true,        false,     {} },
     //SRTO_EVENT
-    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {31} },
+    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31} },
     //SRTO_GROUPCONNECT
     //SRTO_GROUPSTABTIMEO
     //SRTO_GROUPTYPE
@@ -186,35 +186,35 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_KMSTATE
     { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1} },
     //SRTO_LINGER
-    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
+    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
     //SRTO_MAXBW
     { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
     //SRTO_MININPUTBW
     { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
-    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PRE,     sizeof(int),                76,  INT32_MAX,     1500,        1400,    {-1, 0, 75} },
+    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,  INT32_MAX,     1500,        1400,    {-1, 0, 75} },
     { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
     { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101} },
     //SRTO_PACKETFILTER
     //SRTO_PASSPHRASE
-    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {} },
+    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {-1, 1500} },
     //SRTO_PBKEYLEN
     //SRTO_PEERIDLETIMEO
-    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {} },
-    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {} },
+    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1} },
+    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1} },
     //SRTO_PEERVERSION
-    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {} },
+    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
     //SRTO_RCVDATA
     //SRTO_RCVKMSTATE
-    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {} },
+    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1} },
     //SRTO_RCVSYN
     { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2} },
     //SRTO_RENDEZVOUS
     //SRTO_RETRANSMITALGO
     //SRTO_REUSEADDR
     //SRTO_SENDER
-    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {} },
+    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
     //SRTO_SNDDATA
-    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {} },
+    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2} },
     //SRTO_SNDKMSTATE
     //SRTO_SNDSYN
     { SRTO_SNDTIMEO,          "SRTO_SNDTIMEO", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, -1, 1400, {-2} },
@@ -536,17 +536,17 @@ TEST_F(TestSocketOptions, RestrictionBind)
 
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckSetNonDefaultValue<bool>(entry, m_caller_sock, expected_res, test_desc))
+            EXPECT_TRUE(CheckSetNonDefaultValue<bool>(entry, m_listen_sock, expected_res, test_desc))
                 << "Sock state : " << g_socket_state[srt_getsockstate(m_listen_sock)];
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckSetNonDefaultValue<int>(entry, m_caller_sock, expected_res, test_desc))
+            EXPECT_TRUE(CheckSetNonDefaultValue<int>(entry, m_listen_sock, expected_res, test_desc))
                 << "Sock state : " << g_socket_state[srt_getsockstate(m_listen_sock)];
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckSetNonDefaultValue<int64_t>(entry, m_caller_sock, expected_res, test_desc))
+            EXPECT_TRUE(CheckSetNonDefaultValue<int64_t>(entry, m_listen_sock, expected_res, test_desc))
                 << "Sock state : " << g_socket_state[srt_getsockstate(m_listen_sock)];
         }
         else
@@ -663,7 +663,7 @@ TEST_F(TestSocketOptions, TLPktDropInherits)
 TEST_F(TestSocketOptions, Latency)
 {
     const int latency_a    = 140;
-    const int latency_b    = 160;
+    const int latency_b    = 100;
     const int latency_dflt = 120;
 
     int optval;
@@ -681,7 +681,7 @@ TEST_F(TestSocketOptions, Latency)
 
     // Check caller socket
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_RCVLATENCY, &optval, &optlen), SRT_SUCCESS);
-    EXPECT_EQ(optval, latency_b);
+    EXPECT_EQ(optval, latency_dflt);
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_PEERLATENCY, &optval, &optlen), SRT_SUCCESS);
     EXPECT_EQ(optval, latency_a);
 
