@@ -8099,8 +8099,13 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         // consistent with the previous behavior.
         if (m_stats.recvTotal != 0)
         {
-            m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-            m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+            // Ignore initial values which might arrive after smoothed RTT
+            // has been reset.
+            if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
+            {
+                m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
+                m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+            }
         }
         // In the case of unidirectional transmission, extract the values of
         // smoothed RTT and RTT variance from the ACK packet.
