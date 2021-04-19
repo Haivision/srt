@@ -502,7 +502,11 @@ struct CSrtConfigSetter<SRTO_SNDTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iSndTimeOut = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndTimeOut = val;
     }
 };
 
@@ -511,7 +515,11 @@ struct CSrtConfigSetter<SRTO_RCVTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvTimeOut = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvTimeOut = val;
     }
 };
 
@@ -660,8 +668,12 @@ struct CSrtConfigSetter<SRTO_LATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency     = cast_optval<int>(optval, optlen);
-        co.iPeerLatency = cast_optval<int>(optval);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency  = val;
+        co.iPeerLatency = val;
     }
 };
 template<>
@@ -669,7 +681,11 @@ struct CSrtConfigSetter<SRTO_RCVLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency = val;
     }
 };
 template<>
@@ -677,7 +693,11 @@ struct CSrtConfigSetter<SRTO_PEERLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerLatency = val;
     }
 };
 template<>
@@ -693,9 +713,11 @@ struct CSrtConfigSetter<SRTO_SNDDROPDELAY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        // Surprise: you may be connected to alter this option.
-        // The application may manipulate this option on sender while transmitting.
-        co.iSndDropDelay = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndDropDelay = val;
     }
 };
 template<>
@@ -803,8 +825,12 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
         using namespace srt::sync;
-        co.tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
+        co.tdConnTimeOut = milliseconds_from(val);
     }
 };
 
@@ -894,8 +920,13 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         using namespace srt_logging;
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+        {
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
-        if (*(int *)optval > SRT_LIVE_MAX_PLSIZE)
+        if (val > SRT_LIVE_MAX_PLSIZE)
         {
             LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -915,7 +946,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
 
             size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (co.zExpPayloadSize > efc_max_payload_size)
+            if (val > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
                      log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
@@ -924,7 +955,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
         }
 
-        co.zExpPayloadSize = cast_optval<int>(optval, optlen);
+        co.zExpPayloadSize = val;
     }
 };
 
@@ -1072,7 +1103,11 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerIdleTimeout = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerIdleTimeout = val;
     }
 };
 
