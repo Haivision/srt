@@ -1905,8 +1905,9 @@ public:
 private:
     void print_header()
     {
-        //srt::sync::ScopedLock lck(m_mtx);
-        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,usRTTVarSample,IsSmoothedRTTReset,pktsRecvTotal,usSmoothedRTT,usRTTVar\n";
+        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,"
+                  "usRTTVarSample,IsSmoothedRTTReset,pktsRecvTotal,"
+                  "usSmoothedRTT,usRTTVar\n";
     }
 
     void create_file()
