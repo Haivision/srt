@@ -19,17 +19,110 @@ using namespace srt::sync;
 namespace srt
 {
 
+#if SRT_DEBUG_TRACE_DRIFT
+class drift_logger
+{
+    using steady_clock = srt::sync::steady_clock;
+
+public:
+    drift_logger() {}
+
+    ~drift_logger()
+    {
+        ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    void trace(unsigned                                     ackack_timestamp,
+               int                                          rtt_us,
+               int64_t                                      drift_sample,
+               int64_t                                      drift,
+               int64_t                                      overdrift,
+               const std::chrono::steady_clock::time_point& tsbpd_base)
+    {
+        using namespace srt::sync;
+        ScopedLock lck(m_mtx);
+        create_file();
+
+        // std::string str_tnow = srt::sync::FormatTime(steady_clock::now());
+        // str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [STDY]' part
+
+        std::string str_tbase = srt::sync::FormatTime(tsbpd_base);
+        str_tbase.resize(str_tbase.size() - 7); // remove trailing ' [STDY]' part
+
+        // m_fout << str_tnow << ",";
+        m_fout << count_microseconds(steady_clock::now() - m_start_time) << ",";
+        m_fout << ackack_timestamp << ",";
+        m_fout << rtt_us << ",";
+        m_fout << drift_sample << ",";
+        m_fout << drift << ",";
+        m_fout << overdrift << ",";
+        m_fout << str_tbase << "\n";
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        m_fout << "usElapsedStd,usAckAckTimestampStd,";
+        m_fout << "usRTTStd,usDriftSampleStd,usDriftStd,usOverdriftStd,TSBPDBase\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout.is_open())
+            return;
+
+        m_start_time         = srt::sync::steady_clock::now();
+        std::string str_tnow = srt::sync::FormatTimeSys(m_start_time);
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos)
+        {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "drift_trace_" + str_tnow + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex                    m_mtx;
+    std::ofstream                       m_fout;
+    srt::sync::steady_clock::time_point m_start_time;
+};
+
+drift_logger g_drift_logger;
+
+#endif // SRT_DEBUG_TRACE_DRIFT
+
 bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
+                                int                       usRTTSample,
                                 steady_clock::duration&   w_udrift,
                                 steady_clock::time_point& w_newtimebase)
 {
     if (!m_bTsbPdMode)
         return false;
-    
+
     const time_point tsNow = steady_clock::now();
 
     ScopedLock lck(m_mtxRW);
-    const steady_clock::duration tdDrift = tsNow - getPktTsbPdBaseTime(usPktTimestamp);
+
+    // Remember the first RTT sample measured. Ideally we need RTT0 - the one from the handshaking phase,
+    // because TSBPD base is initialized there. But HS-based RTT is not yet implemented.
+    // Take the first one assuming it is close to RTT0.
+    if (m_iFirstRTT == -1)
+    {
+        m_iFirstRTT = usRTTSample;
+    }
+
+    // A change in network delay has to be taken into account. The only way to get some estimation of it
+    // is to estimate RTT change and assume that the change of the one way network delay is
+    // approximated by the half of the RTT change.
+    const duration tdRTTDelta = microseconds_from((usRTTSample - m_iFirstRTT) / 2);
+    const steady_clock::duration tdDrift = tsNow - getPktTsbPdBaseTime(usPktTimestamp) - tdRTTDelta;
 
     const bool updated = m_DriftTracer.update(count_microseconds(tdDrift));
 
@@ -53,6 +146,14 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
     w_udrift      = tdDrift;
     w_newtimebase = m_tsTsbPdTimeBase;
 
+#if SRT_DEBUG_TRACE_DRIFT
+    g_drift_logger.trace(usPktTimestamp,
+                         usRTTSample,
+                         count_microseconds(tdDrift),
+                         m_DriftTracer.drift(),
+                         m_DriftTracer.overdrift(),
+                         m_tsTsbPdTimeBase);
+#endif
     return updated;
 }
 
@@ -67,7 +168,7 @@ void CTsbpdTime::setTsbPdMode(const steady_clock::time_point& timebase, bool wra
     //
     // This function is called in the HSREQ reception handler only.
     m_tsTsbPdTimeBase = timebase;
-    m_tdTsbPdDelay    = delay;
+    m_tdTsbPdDelay = delay;
 }
 
 void CTsbpdTime::applyGroupTime(const steady_clock::time_point& timebase,

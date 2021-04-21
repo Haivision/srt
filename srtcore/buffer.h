@@ -414,6 +414,7 @@ public:
     /// @param [out] w_udrift current drift value
     /// @param [out] w_newtimebase current TSBPD base time
     bool addRcvTsbPdDriftSample(uint32_t          timestamp,
+                                int               rtt,
                                 duration&         w_udrift,
                                 time_point&       w_newtimebase);
 

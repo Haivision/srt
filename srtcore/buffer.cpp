@@ -1833,10 +1833,11 @@ void CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const
 }
 
 bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t                  timestamp_us,
+                                        int                       rtt,
                                         steady_clock::duration&   w_udrift,
                                         steady_clock::time_point& w_newtimebase)
 {
-    return m_tsbpd.addDriftSample(timestamp_us, w_udrift, w_newtimebase);
+    return m_tsbpd.addDriftSample(timestamp_us, rtt, w_udrift, w_newtimebase);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
