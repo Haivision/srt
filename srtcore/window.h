@@ -218,7 +218,7 @@ public:
        m_tsCurrArrTime = srt::sync::steady_clock::now();
 
        // record the packet interval between the current and the last one
-       m_aPktWindow[m_iPktWindowPtr] = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
+       m_aPktWindow[m_iPktWindowPtr] = (int) srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
        m_aBytesWindow[m_iPktWindowPtr] = pktsz;
 
        // the window is logically circular

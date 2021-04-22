@@ -1768,8 +1768,8 @@ steady_clock::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t timestamp_us)
         {
             carryover = int64_t(CPacket::MAX_TIMESTAMP) + 1;
         }
-        //
-        else if ((timestamp_us >= TSBPD_WRAP_PERIOD) && (timestamp_us <= (TSBPD_WRAP_PERIOD * 2)))
+        // timestamp_us >= TSBPD_WRAP_PERIOD
+        else if (timestamp_us <= (TSBPD_WRAP_PERIOD * 2))
         {
             /* Exiting wrap check period (if for packet delivery head) */
             m_bTsbPdWrapCheck = false;

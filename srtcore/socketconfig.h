@@ -146,7 +146,7 @@ public:
 
         memcpy(stor, s, length);
         stor[length] = 0;
-        len          = length;
+        len          = (int) length;
         return true;
     }
 
@@ -945,8 +945,8 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (val > efc_max_payload_size)
+            const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+            if (size_t(val) > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
                      log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
