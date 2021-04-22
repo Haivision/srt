@@ -147,8 +147,8 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
     // time when the connection process is done, until the first reading/writing happens.
     ScopedLock cg(m_GroupLock);
 
-    SRTSOCKET mpeer;
-    steady_clock::time_point start_time;
+    IF_LOGGING(SRTSOCKET mpeer);
+    IF_LOGGING(steady_clock::time_point start_time);
 
     bool found = false;
 
@@ -159,8 +159,8 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
             // Found it. Get the socket's peer's ID and this socket's
             // Start Time. Once it's delivered, this can be used to calculate
             // the Master-to-Slave start time difference.
-            mpeer = gi->ps->m_PeerID;
-            start_time    = gi->ps->core().socketStartTime();
+            IF_LOGGING(mpeer = gi->ps->m_PeerID);
+            IF_LOGGING(start_time = gi->ps->core().socketStartTime());
             HLOGC(gmlog.Debug,
                   log << "getMasterData: found RUNNING master @" << gi->id << " - reporting master's peer $" << mpeer
                       << " starting at " << FormatTime(start_time));
@@ -185,8 +185,8 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
             // Found it. Get the socket's peer's ID and this socket's
             // Start Time. Once it's delivered, this can be used to calculate
             // the Master-to-Slave start time difference.
-            mpeer = gi->ps->core().m_PeerID;
-            start_time    = gi->ps->core().socketStartTime();
+            IF_LOGGING(mpeer = gi->ps->core().m_PeerID);
+            IF_LOGGING(start_time    = gi->ps->core().socketStartTime());
             HLOGC(gmlog.Debug,
                     log << "getMasterData: found IDLE/PENDING master @" << gi->id << " - reporting master's peer $" << mpeer
                     << " starting at " << FormatTime(start_time));
@@ -203,7 +203,7 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
     {
         // The returned master_st is the master's start time. Calculate the
         // differene time.
-        steady_clock::duration master_tdiff = m_tsStartTime - start_time;
+        IF_LOGGING(steady_clock::duration master_tdiff = m_tsStartTime - start_time);
         LOGC(cnlog.Debug, log << CONID() << "FOUND GROUP MASTER LINK: peer=$" << mpeer
                 << " - start time diff: " << FormatDuration<DUNIT_S>(master_tdiff));
     }

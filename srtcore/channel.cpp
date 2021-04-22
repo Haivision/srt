@@ -183,8 +183,9 @@ void CChannel::createSocket(int family)
 
     if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
-        int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY,
+        const int res ATR_UNUSED = ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY,
                 (const char*) &m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
+#if ENABLE_LOGGING
         if (res == -1)
         {
             int err = errno;
@@ -192,6 +193,7 @@ void CChannel::createSocket(int family)
             LOGC(kmlog.Error, log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = "
                     << m_mcfg.iIpV6Only << ": " << SysStrError(err, msg, 159));
         }
+#endif // ENABLE_LOGGING
     }
 
 }
@@ -352,9 +354,11 @@ void CChannel::setUDPSockOpt()
           if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
                       m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
           {
+#if ENABLE_LOGGING
               char buf[255];
               const char* err = SysStrError(NET_ERROR, buf, 255);
               LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
+#endif // ENABLE_LOGGING
               throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
           }
       }

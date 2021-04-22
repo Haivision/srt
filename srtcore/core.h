@@ -364,7 +364,7 @@ public: // internal API
 
     int minSndSize(int len = 0) const
     {
-        const int ps = maxPayloadSize();
+        const int ps = (int) maxPayloadSize();
         if (len == 0) // wierd, can't use non-static data member as default argument!
             len = ps;
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
@@ -379,7 +379,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_tsStartTime,
         // otherwise it may go unnoticed with clock skew.
-        return srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
+        return (int32_t) srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
     }
 
     void setPacketTS(CPacket& p, const time_point& local_time)
@@ -400,17 +400,9 @@ public: // internal API
     {
         using namespace srt::sync;
         // Random Initial Sequence Number (normal mode)
-        srand(count_microseconds(steady_clock::now().time_since_epoch()));
+        srand((unsigned) count_microseconds(steady_clock::now().time_since_epoch()));
         return (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
     }
-
-    // XXX See CUDT::tsbpd() to see how to implement it. This should
-    // do the same as TLPKTDROP feature when skipping packets that are agreed
-    // to be lost. Note that this is predicted to be called with TSBPD off.
-    // This is to be exposed for the application so that it can require this
-    // sequence to be skipped, if that packet has been otherwise arrived through
-    // a different channel.
-    void skipIncoming(int32_t seq);
 
     // For SRT_tsbpdLoop
     static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
@@ -669,7 +661,7 @@ private:
 
     int sndSpaceLeft()
     {
-        return sndBuffersLeft() * maxPayloadSize();
+        return static_cast<int>(sndBuffersLeft() * maxPayloadSize());
     }
 
     int sndBuffersLeft()
