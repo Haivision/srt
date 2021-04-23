@@ -12,7 +12,7 @@ See issue [#700](https://github.com/Haivision/srt/issues/700).
 The default flow control window size is 25600 packets. It is approximately:
 
 - **270 Mbits** of payload in the default live streaming configuration with an SRT payload size of **1316 bytes**;
-- **300 Mbits** of payload with an SRT payload size of **1456 bytes**.
+- **300 Mbits** of payload in the default file transfer configuration with an SRT payload size of **1456 bytes**.
 
 The default receiver buffer size is 8192 packets. It is approximately: 
 - **86 Mbits** of payload with the effective SRT payload size of **1316 bytes**.
