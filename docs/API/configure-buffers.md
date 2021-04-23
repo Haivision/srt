@@ -2,11 +2,11 @@
 
 ## Receiver Buffer Size
 
-The receiver buffer can be configured with `SRTO_RCVBUF` socket option.
+The receiver buffer can be configured with the `SRTO_RCVBUF` socket option.
 Buffer size in bytes is expected to be passed in the `optval` argument of the `srt_setsockopt(..)` function.
 However, internally the value will be converted into the number of packets stored in the receiver buffer.
 
-The allowed value of `SRTO_RCVBUF` is also limited by the value of the  flow control window size `SRTO_FC` socket option.
+The allowed value of `SRTO_RCVBUF` is also limited by the value of the flow control window size `SRTO_FC` socket option.
 See issue [#700](https://github.com/Haivision/srt/issues/700).
 
 The default flow control window size is 25600 packets. It is approximately:
@@ -20,8 +20,8 @@ The default receiver buffer size is 8192 packets. It is approximately:
 ### Setting Receiver Buffer Size
 
 As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
-Setting `SRTO_RCVBUF` option value using `srt_setsockopt(..)` function converts internally the provided size in bytes to size in packets
-using the configured value of `SRTO_MSS` option to estimate the maximum possible payload of a packet.
+When the`SRTO_RCVBUF` option value is set using the`srt_setsockopt(..)` the function internally converts the provided size in bytes to the corresponding size in packets
+using the configured value of the `SRTO_MSS` option to estimate the maximum possible payload of a packet.
 
 The following function returns the buffer size in packets:
 
@@ -37,32 +37,34 @@ int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
 }
 ```
 
-If `SRTO_RCVBUF` in packets exceeds `SRTO_FC`, then it is silently set to the value in bytes corresponding to `SRTO_FC`.
+If the value of `SRTO_RCVBUF` in packets exceeds `SRTO_FC`, then it is silently set to the value in bytes corresponding to `SRTO_FC`.
 Therefore, to set higher values of `SRTO_RCVBUF` the value of `SRTO_FC` must be increased first.
 
-### Calculating Target Size In Packets
+### Calculating Target Size in Packets
 
-The minimum size of the receiver buffer in packets can be calculated  
+The minimum size of the receiver buffer in packets can be calculated as follows:
 
-pktsRBufSize = bps / 8 × (RTTsec + latency_sec) / bytePayloadSize,  
+`pktsRBufSize = bps / 8 × (RTTsec + latency_sec) / bytePayloadSize`
 
 where
 
-- `bps` - is the payload bitrate of the stream in bits per second;
-- `RTTsec` - RTT of the network connection in seconds;
+- `bps` is the payload bitrate of the stream in bits per second;
+- `RTTsec` is the RTT of the network connection in seconds;
 
-- `bytePayloadSize` - expected size of the payload of SRT data packet.
+- `bytePayloadSize` is the expected size of the payload of the SRT data packet.
 
-If the whole remainder of the MTU is expected to be used,  
+If the whole remainder of the MTU is expected to be used, payload size is calculated as follows: 
 
-bytePayloadSize = MSS - 44
+`bytePayloadSize = MSS - 44`
 
-- 44 - size of **IPv4** headers: 
+where
+
+- 44 is the size in bytes of an **IPv4** header: 
    - 20 bytes **IPv4** 
    - 8 bytes of UDP
-   - 16 bytes of SRT packet header).
+   - 16 bytes of SRT packet header.
 
-- `MSS` - Maximum segment size (aka MTU), see `SRTO_MSS`.
+- `MSS` is the Maximum Segment Size (aka MTU); see `SRTO_MSS`.
 
 ### Calculating Target Size to Set
 
@@ -70,16 +72,17 @@ To determine the value to pass in `srt_setsockopt(..)` with `SRTO_RCVBUF`
 the size in packets `pktsRBufSize` must be converted to the size in bytes
 assuming the internal conversion of the `srt_setsockopt(..)` function.
 
-The target size of the payload stored by the receiver buffer would be  
+The target size of the payload stored by the receiver buffer would be: 
 
-SRTO_RCVBUF = pktsRBufSize × (SRTO_MSS - UDPHDR_SIZE)  
+`SRTO_RCVBUF = pktsRBufSize × (SRTO_MSS - UDPHDR_SIZE)`  
 
 where
-- `UDPHDR_SIZE = 28` (20 bytes IPv4, 8 bytes of UDP);
+
+- `UDPHDR_SIZE` = 28 (20 bytes IPv4, 8 bytes of UDP)
 - `SRTO_MSS` is the corresponding socket option value at the moment of setting `SRTO_RCVBUF`.
 
 
-### To Summ up
+### Summing Up
 
 
 ```c++
@@ -106,7 +109,6 @@ srt_setsockopt(sock, 0, SRTO_RCVBUF, (void*) &optval, optlen);
 
 
 ```
-
 
 
 
