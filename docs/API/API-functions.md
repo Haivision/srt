@@ -2650,16 +2650,16 @@ Get the type of clock used internally by SRT to be used only for informtational 
 Using any time source except for [`srt_time_now()`](#srt_time_now) and [`srt_connection_time(SRTSOCKET)`](#srt_connection_time)
 to timestamp packets submitted to SRT is not recommended and must be done with awareness and at your own risk.
 
-| Returns | `SRT_SYNC_CLOCK_TYPE`                    | Description                                |
-| :------ | :--------------------------------------- | :------------------------------------------|
-| 0       | `SRT_SYNC_CLOCK_TYPE_STDCXX_STEADY`      | C++11 `std::chrono::steady_clock`          |
-| 1       | `SRT_SYNC_CLOCK_TYPE_GETTIME_MONOTONIC`  | `clock_gettime` with `CLOCK_MONOTONIC`     |
-| 2       | `SRT_SYNC_CLOCK_TYPE_WINQPC`             | Windows `QueryPerformanceCounter(..)`      |
-| 3       | `SRT_SYNC_CLOCK_TYPE_MACH_ABSTIME`       | `mach_absolute_time()`                     |
-| 4       | `SRT_SYNC_CLOCK_TYPE_POSIX_GETTIMEOFDAY` | POSIX `gettimeofday(..)`                   |
-| 5       | `SRT_SYNC_CLOCK_TYPE_AMD64_RDTSC`        | `asm("rdtsc" ..)`                          |
-| 6       | `SRT_SYNC_CLOCK_TYPE_IA32_RDTSC`         | `asm volatile("rdtsc" ..)`                 |
-| 7       | `SRT_SYNC_CLOCK_TYPE_IA64_ITC`           | `asm("mov %0=ar.itc" ..)`                  |
+| Returns | Clock Type                          | Description                                |
+| :------ | :---------------------------------- | :------------------------------------------|
+| 0       | `SRT_SYNC_CLOCK_STDCXX_STEADY`      | C++11 `std::chrono::steady_clock`          |
+| 1       | `SRT_SYNC_CLOCK_GETTIME_MONOTONIC`  | `clock_gettime` with `CLOCK_MONOTONIC`     |
+| 2       | `SRT_SYNC_CLOCK_WINQPC`             | Windows `QueryPerformanceCounter(..)`      |
+| 3       | `SRT_SYNC_CLOCK_MACH_ABSTIME`       | `mach_absolute_time()`                     |
+| 4       | `SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY` | POSIX `gettimeofday(..)`                   |
+| 5       | `SRT_SYNC_CLOCK_AMD64_RDTSC`        | `asm("rdtsc" ..)`                          |
+| 6       | `SRT_SYNC_CLOCK_IA32_RDTSC`         | `asm volatile("rdtsc" ..)`                 |
+| 7       | `SRT_SYNC_CLOCK_IA64_ITC`           | `asm("mov %0=ar.itc" ..)`                  |
 
 |       Errors                      |                                                            |
 |:--------------------------------- |:---------------------------------------------------------- |
