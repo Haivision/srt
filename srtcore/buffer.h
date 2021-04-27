@@ -462,7 +462,6 @@ private:
     bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
 
 public:
-
     int64_t getDrift() const { return m_tsbpd.drift(); }
 
 public:
