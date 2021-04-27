@@ -11,16 +11,6 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
-// Possible internal clock types
-#define SRT_SYNC_CLOCK_STDCXX_STEADY      0 // C++11 std::chrono::steady_clock
-#define SRT_SYNC_CLOCK_GETTIME_MONOTONIC  1 // clock_gettime with CLOCK_MONOTONIC
-#define SRT_SYNC_CLOCK_WINQPC             2
-#define SRT_SYNC_CLOCK_MACH_ABSTIME       3
-#define SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY 4
-#define SRT_SYNC_CLOCK_AMD64_RDTSC        5
-#define SRT_SYNC_CLOCK_IA32_RDTSC         6
-#define SRT_SYNC_CLOCK_IA64_ITC           7
-
 #include <cstdlib>
 #include <limits>
 #ifdef ENABLE_STDCXX_SYNC
