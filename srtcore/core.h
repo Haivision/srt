@@ -267,13 +267,15 @@ public: // internal API
     //
     // NOTE: Use notation with X*1000*1000*... instead of
     // million zeros in a row.
-    static const int       COMM_RESPONSE_MAX_EXP                  = 16;
-    static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS          = 1000;
-    static const uint64_t  COMM_KEEPALIVE_PERIOD_US               = 1*1000*1000;
-    static const int32_t   COMM_SYN_INTERVAL_US                   = 10*1000;
-    static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS  = 3000;
-    static const uint16_t  MAX_WEIGHT                             = 32767;
-    static const size_t    ACK_WND_SIZE                           = 1024;
+    static const int       COMM_RESPONSE_MAX_EXP                 = 16;
+    static const int       SRT_TLPKTDROP_MINTHRESHOLD_MS         = 1000;
+    static const uint64_t  COMM_KEEPALIVE_PERIOD_US              = 1*1000*1000;
+    static const int32_t   COMM_SYN_INTERVAL_US                  = 10*1000;
+    static const int       COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS = 3000;
+    static const uint16_t  MAX_WEIGHT                            = 32767;
+    static const size_t    ACK_WND_SIZE                          = 1024;
+    static const int       INITIAL_RTT                           = 10 * COMM_SYN_INTERVAL_US;
+    static const int       INITIAL_RTTVAR                        = INITIAL_RTT / 2;
 
     int handshakeVersion()
     {
@@ -731,8 +733,14 @@ private:
 
     int m_iEXPCount;                             // Expiration counter
     int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
-    int m_iRTT;                                  // RTT, in microseconds
-    int m_iRTTVar;                               // RTT variance
+    int m_iRTT;                                  // Smoothed RTT (an exponentially-weighted moving average (EWMA)
+                                                 // of an endpoint's RTT samples), in microseconds
+    int m_iRTTVar;                               // The variation in the RTT samples (RTT variance), in microseconds
+    bool m_bIsFirstRTTReceived;                  // True if the first RTT sample was obtained from the ACK/ACKACK pair
+                                                 // at the receiver side or received by the sender from an ACK packet.
+                                                 // It's used to reset the initial value of smoothed RTT (m_iRTT)
+                                                 // at the beginning of transmission (including the one taken from
+                                                 // cache). False by default.
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
 
