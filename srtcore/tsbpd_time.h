@@ -114,7 +114,7 @@ private:
     duration   m_tdTsbPdDelay;    //< Negotiated buffering delay.
 
     /// @brief Local time base for TsbPd.
-    /// @note m_tsTsbPdTimeBase is chencged in the following cases:
+    /// @note m_tsTsbPdTimeBase is changed in the following cases:
     /// 1. Initialized upon SRT_CMD_HSREQ packet as the difference with the current time:
     ///    = (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception.
     /// 2. Shifted forward on timestamp overflow (@c CTsbpdTime::updateTsbPdTimeBase), when overflow
@@ -131,12 +131,18 @@ private:
     /// with buffering delay applied.
     time_point m_tsTsbPdTimeBase;
 
-    bool                  m_bTsbPdWrapCheck;                  //< true: check packet time stamp wrap around (overflow).
-    static const uint32_t TSBPD_WRAP_PERIOD = (30 * 1000000); //< 30 seconds (in usec) for timestamp wrapping period.
+    /// @note Packet timestamps wrap around every 01h11m35s (32-bit in usec).
+    /// A wrap check period starts 30 seconds (TSBPD_WRAP_PERIOD) before the wrap point.
+    /// During the wrap check period, packet timestamps smaller than 30 seconds
+    /// are considered to have been wrapped around.
+    /// The wrap check period ends 30 seconds after the wrap point,
+    /// after which the TSBPD base time is adjusted.
+    bool                  m_bTsbPdWrapCheck;                  // true: check packet time stamp wrap around (overflow).
+    static const uint32_t TSBPD_WRAP_PERIOD = (30 * 1000000); // 30 seconds (in usec) for timestamp wrapping period.
 
     /// Maximum clock drift (microseconds) above which TsbPD base time is already adjusted.
     static const int TSBPD_DRIFT_MAX_VALUE = 5000;
-    /// Number of samples (ACKACK packets) to perform drift caclulation and compensation.
+    /// Number of samples (ACKACK packets) to perform drift calculation and compensation.
     static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
     DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 

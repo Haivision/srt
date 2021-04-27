@@ -62,18 +62,12 @@ void CTsbpdTime::setTsbPdMode(const steady_clock::time_point& timebase, bool wra
     m_bTsbPdWrapCheck = wrap;
 
     // Timebase passed here comes is calculated as:
-    // >>> CTimer::getTime() - ctrlpkt->m_iTimeStamp
-    // where ctrlpkt is the packet with SRT_CMD_HSREQ message.
+    // Tnow - hspkt.m_iTimeStamp
+    // where hspkt is the packet with SRT_CMD_HSREQ message.
     //
     // This function is called in the HSREQ reception handler only.
     m_tsTsbPdTimeBase = timebase;
-    // XXX Seems like this may not work correctly.
-    // At least this solution this way won't work with application-supplied
-    // timestamps. For that case the timestamps should be taken exclusively
-    // from the data packets because in case of application-supplied timestamps
-    // they come from completely different server and undergo different rules
-    // of network latency and drift.
-    m_tdTsbPdDelay = delay;
+    m_tdTsbPdDelay    = delay;
 }
 
 void CTsbpdTime::applyGroupTime(const steady_clock::time_point& timebase,
@@ -81,14 +75,14 @@ void CTsbpdTime::applyGroupTime(const steady_clock::time_point& timebase,
                                 uint32_t                        delay,
                                 const steady_clock::duration&   udrift)
 {
-    // Same as setRcvTsbPdMode, but predicted to be used for group members.
+    // Same as setTsbPdMode, but predicted to be used for group members.
     // This synchronizes the time from the INTERNAL TIMEBASE of an existing
     // socket's internal timebase. This is required because the initial time
     // base stays always the same, whereas the internal timebase undergoes
     // adjustment as the 32-bit timestamps in the sockets wrap. The socket
     // newly added to the group must get EXACTLY the same internal timebase
     // or otherwise the TsbPd time calculation will ship different results
-    // on different sockets.
+    // on different member sockets.
 
     m_bTsbPdMode = true;
 
@@ -133,30 +127,6 @@ CTsbpdTime::time_point CTsbpdTime::getPktTsbPdBaseTime(uint32_t usPktTimestamp) 
 
 void CTsbpdTime::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
-    // Packet timestamps wrap around every 01h11m35s (32-bit in usec)
-    // When added to the peer start time (base time),
-    // wrapped around timestamps don't provide a valid local packet delevery time.
-    //
-    // A wrap check period starts 30 seconds before the wrap point.
-    // In this period, timestamps smaller than 30 seconds are considered to have wrapped around (then adjusted).
-    // The wrap check period ends 30 seconds after the wrap point, afterwhich time base has been adjusted.
-
-    // This function should generally return the timebase for the given timestamp.
-    // It's assumed that the timestamp, for which this function is being called,
-    // is received as monotonic clock. This function then traces the changes in the
-    // timestamps passed as argument and catches the moment when the 64-bit timebase
-    // should be increased by a "segment length" (MAX_TIMESTAMP+1).
-
-    // The checks will be provided for the following split:
-    // [INITIAL30][FOLLOWING30]....[LAST30] <-- == CPacket::MAX_TIMESTAMP
-    //
-    // The following actions should be taken:
-    // 1. Check if this is [LAST30]. If so, ENTER TSBPD-wrap-check state
-    // 2. Then, it should turn into [INITIAL30] at some point. If so, use carryover MAX+1.
-    // 3. Then it should switch to [FOLLOWING30]. If this is detected,
-    //    - EXIT TSBPD-wrap-check state
-    //    - save the carryover as the current time base.
-
     if (m_bTsbPdWrapCheck)
     {
         // Wrap check period.
