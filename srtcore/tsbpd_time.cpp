@@ -25,24 +25,7 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
 {
     if (!m_bTsbPdMode)
         return false;
-
-    // Clock drift correction.
-    // TsbPD time slowly drift over long period depleting receiver buffer or raising buffering latency
-    // Re-evaluate the time adjustment value using a receiver control packet (ACK-ACK).
-    // ACK-ACK timestamp is ~RTT/2 ago (in sender's time base).
-    // Data packet have origin time stamp which is older when retransmitted so not suitable for this.
-    //
-    // Every TSBPD_DRIFT_MAX_SAMPLES packets, the average drift is calculated
-    // if -TSBPD_DRIFT_MAX_VALUE < avgTsbPdDrift < TSBPD_DRIFT_MAX_VALUE uSec, pass drift value to RcvBuffer to adjust
-    // delevery time. if outside this range, adjust this->TsbPdTimeOffset and RcvBuffer->TsbPdTimeBase by
-    // +-TSBPD_DRIFT_MAX_VALUE uSec to maintain TsbPdDrift values in reasonable range (-5ms .. +5ms).
-    ///
-
-    // Note important thing: this function is being called _EXCLUSIVELY_ in the handler
-    // of UMSG_ACKACK command reception. This means that the timestamp used here comes
-    // from the CONTROL domain, not DATA domain (timestamps from DATA domain may be
-    // either schedule time or a time supplied by the application).
-
+    
     const time_point tsNow = steady_clock::now();
 
     ScopedLock lck(m_mtxRW);
