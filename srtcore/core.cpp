@@ -8123,7 +8123,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         }
     }
     // Reset the value of smoothed RTT to the first real RTT estimate extracted
-    // from an ACK after initialization (at the beginning of a transmission).
+    // from an ACK after initialization (at the beginning of transmission).
     // In case of resumed connection over the same network, the very first RTT
     // value sent within an ACK will be taken from cache and equal to previous
     // connection's final smoothed RTT value. The reception of such a value
@@ -8234,7 +8234,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
         m_iRTT    = avg_iir<8>(m_iRTT, rtt);
     }
     // Reset the value of smoothed RTT on the first RTT sample after initialization
-    // (at the beginning of a transmission).
+    // (at the beginning of transmission).
     // In case of resumed connection over the same network, the initial RTT
     // value will be taken from cache and equal to previous connection's
     // final smoothed RTT value.
