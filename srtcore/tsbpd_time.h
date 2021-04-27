@@ -18,7 +18,9 @@
 namespace srt
 {
 
-/// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic for receiver.
+/// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic.
+/// Used by the receiver to calculate delivery time of data packets.
+/// See SRT RFC Section "Timestamp-Based Packet Delivery".
 class CTsbpdTime
 {
     typedef srt::sync::steady_clock  steady_clock;
@@ -117,10 +119,10 @@ private:
     /// @note m_tsTsbPdTimeBase is changed in the following cases:
     /// 1. Initialized upon SRT_CMD_HSREQ packet as the difference with the current time:
     ///    = (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception.
-    /// 2. Shifted forward on timestamp overflow (@c CTsbpdTime::updateTsbPdTimeBase), when overflow
+    /// 2. Shifted forward on timestamp overflow (@see CTsbpdTime::updateTsbPdTimeBase), when overflow
     ///    of the timestamp field value of a data packet is detected.
     ///    += CPacket::MAX_TIMESTAMP + 1
-    /// 3. Clock drift (@c CTsbpdTime::addDriftSample, executed exclusively
+    /// 3. Clock drift (@see CTsbpdTime::addDriftSample, executed exclusively
     ///    from ACKACK handler). This is updated with (positive or negative) TSBPD_DRIFT_MAX_VALUE
     ///    once the value of average drift exceeds this value in whatever direction.
     ///    += (+/-)TSBPD_DRIFT_MAX_VALUE
