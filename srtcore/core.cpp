@@ -934,7 +934,7 @@ void CUDT::open()
     // Set initial values of smoothed RTT and RTT variance.
     m_iRTT                = INITIAL_RTT;
     m_iRTTVar             = INITIAL_RTTVAR;
-    m_bIsSmoothedRTTReset = false;
+    m_bIsFirstRTTReceived = false;
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -4560,7 +4560,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Connect", -1, -1,
-                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
+                      m_bIsFirstRTTReceived, -1, m_iRTT, m_iRTTVar);
 #endif
 
     SRT_REJECT_REASON rr = setupCC();
@@ -5464,7 +5464,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Accept", -1, -1,
-                      m_bIsSmoothedRTTReset, -1, m_iRTT, m_iRTTVar);
+                      m_bIsFirstRTTReceived, -1, m_iRTT, m_iRTTVar);
 #endif
 
     m_PeerAddr = peer;
@@ -5932,7 +5932,7 @@ bool CUDT::closeInternal()
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
-                      m_bIsSmoothedRTTReset, -1, m_iRTT, -1);
+                      m_bIsFirstRTTReceived, -1, m_iRTT, -1);
 #endif
 
         m_bConnected = false;
@@ -8082,35 +8082,42 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
     // This check covers fields up to ACKD_BUFFERLEFT.
 
-    // Extract RTT estimate and RTTVar from the ACK.
+    // Extract RTT estimate and RTTVar from the ACK packet.
     const int rtt    = ackdata[ACKD_RTT];
     const int rttvar = ackdata[ACKD_RTTVAR];
 
     // Update the values of smoothed RTT and the variation in RTT samples
     // on subsequent RTT estimates extracted from the ACK packets
     // (during transmission).
-    if (m_bIsSmoothedRTTReset)
+    if (m_bIsFirstRTTReceived)
     {
-        // In the case of bidirectional transmission, apply double smoothing
-        // at the sender side. rtt extracted from the ACK packet is smoothed
-        // RTT obtained at the receiver side.
-        // TODO: The case of bidirectional transmission requires further
-        // improvements and testing. Double smoothing is applied here to be
-        // consistent with the previous behavior.
-        if (m_stats.recvTotal != 0)
+        // Suppose transmission is bidirectional if sender is also receiving
+        // data packets.
+        enterCS(m_StatsLock);
+        const bool bPktsReceived = m_stats.recvTotal != 0;
+        leaveCS(m_StatsLock);
+
+        if (bPktsReceived)  // Transmission is bidirectional.
         {
-            // Ignore initial values which might arrive after smoothed RTT
-            // has been reset.
+            // RTT value extracted from the ACK packet (rtt) is already smoothed
+            // RTT obtained at the receiver side. Apply EWMA anyway for the second
+            // time on the sender side. Ignore initial values which might arrive
+            // after the smoothed RTT on the sender side has been
+            // reset to the very first RTT sample received from the receiver.
+            // TODO: The case of bidirectional transmission requires further
+            // improvements and testing. Double smoothing is applied here to be
+            // consistent with the previous behavior.
+
             if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
             {
                 m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
                 m_iRTT    = avg_iir<8>(m_iRTT, rtt);
             }
         }
-        // In the case of unidirectional transmission, extract the values of
-        // smoothed RTT and RTT variance from the ACK packet.
-        else
+        else  // Transmission is unidirectional.
         {
+            // Simply take the values of smoothed RTT and RTT variance from
+            // the ACK packet.
             m_iRTT    = rtt;
             m_iRTTVar = rttvar;
         }
@@ -8124,12 +8131,12 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     else if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
     {
         m_iRTT                = rtt;
-        m_iRTTVar             = rtt / 2;
-        m_bIsSmoothedRTTReset = true;
+        m_iRTTVar             = rttvar;
+        m_bIsFirstRTTReceived = true;
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(currtime, "ACK", rtt, rttvar, m_bIsSmoothedRTTReset,
+    s_rtt_trace.trace(currtime, "ACK", rtt, rttvar, m_bIsFirstRTTReceived,
                       m_stats.recvTotal, m_iRTT, m_iRTTVar);
 #endif
 
@@ -8221,7 +8228,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
 
     // Update the values of smoothed RTT and the variation in RTT samples
     // on subsequent RTT samples (during transmission).
-    if (m_bIsSmoothedRTTReset)
+    if (m_bIsFirstRTTReceived)
     {
         m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
         m_iRTT    = avg_iir<8>(m_iRTT, rtt);
@@ -8235,11 +8242,11 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     {
         m_iRTT                = rtt;
         m_iRTTVar             = rtt / 2;
-        m_bIsSmoothedRTTReset = true;
+        m_bIsFirstRTTReceived = true;
     }
 
 #if SRT_DEBUG_RTT
-    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, -1, m_bIsSmoothedRTTReset,
+    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, -1, m_bIsFirstRTTReceived,
                       -1, m_iRTT, m_iRTTVar);
 #endif
 

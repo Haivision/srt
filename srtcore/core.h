@@ -741,9 +741,13 @@ private:
 
     int m_iEXPCount;                             // Expiration counter
     int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
-    int m_iRTT;                                  // RTT, in microseconds
-    int m_iRTTVar;                               // RTT variance
-    bool m_bIsSmoothedRTTReset;                  // If smoothed RTT has been reset after initialization
+    int m_iRTT;                                  // Smoothed RTT (an exponentially-weighted moving average (EWMA)
+                                                 // of an endpoint's RTT samples), in microseconds
+    int m_iRTTVar;                               // The variation in the RTT samples (RTT variance), in microseconds
+    bool m_bIsFirstRTTReceived;                  // This variable is used to determine whether the first RTT sample were obtained
+                                                 // from the ACK/ACKACK pair at the receiver side or received by the sender from
+                                                 // an ACK packet. It's used to reset the value of smoothed RTT (m_iRTT) after 
+                                                 // initialization at the beginning of a transmission. False by default.
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
     int m_iByteDeliveryRate;                     // Byte arrival rate at the receiver side
 
