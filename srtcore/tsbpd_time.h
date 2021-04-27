@@ -18,7 +18,7 @@
 namespace srt
 {
 
-/// @brief TSBPD time conversion logic for receiver.
+/// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic for receiver.
 class CTsbpdTime
 {
     typedef srt::sync::steady_clock  steady_clock;
@@ -35,9 +35,9 @@ public:
     }
 
     /// Set TimeStamp-Based Packet Delivery Mode (receiver).
-    /// @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay.
-    /// @param [in] wrap Is in wrapping period.
-    /// @param [in] delay aggreed TsbPD delay (buffering latency).
+    /// @param [in] timebase local time base (uSec) of packet time stamps including buffering delay.
+    /// @param [in] wrap wrapping period.
+    /// @param [in] delay negotiated TsbPD delay (buffering latency).
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
 
     /// @brief Check if TSBPD logic is enabled.
@@ -48,7 +48,7 @@ public:
     /// @param timebase TSBPD base time.
     /// @param wrp wrap period (enabled or not).
     /// @param delay TSBPD delay.
-    /// @param udrift Clock drift.
+    /// @param udrift clock drift.
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 
     /// @brief Apply new clock state (TSBPD base and drift) derived from other members of a socket group.
@@ -89,7 +89,7 @@ public:
     /// @returns TSBPD base time for a provided packet timestamp.
     time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;
 
-    /// @brief Handle timetamp of data packet to handle 32-bit integer carryover is about to happen.
+    /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be
     /// shifted accordingly to correctly handle new packets with timestamps starting from zero.
     /// @param usPktTimestamp timestamp field value of a data packet.
