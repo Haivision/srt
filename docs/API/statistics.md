@@ -539,21 +539,10 @@ at that moment.
 
 #### msRTT
 
-Calculated Round trip time (RTT), in milliseconds. Sender and Receiver. \
-The value is calculated by the receiver based on the incoming ACKACK control packets
-(used by sender to acknowledge ACKs from receiver).
+Smoothed round-trip time (SRTT), an exponentially-weighted moving average (EWMA) of an endpoint's RTT samples, in milliseconds.
+Available both for sender and receiver.
 
-The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
-values, one from agent to peer, and one from peer to agent. Note that **the 
-measurement method is different than in TCP**. SRT measures only the "reverse
-RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
-message until receiving the sender's `UMSG_ACKACK` response message (with the
-same journal). This happens to be a little different from the "forward RTT"
-measured in TCP, which is the time between sending a data packet of a particular 
-sequence number and receiving `UMSG_ACK` with a sequence number that is later 
-by 1. Forward RTT isn't being measured or reported in SRT, although some
-research works have shown that these values, even though they should be the same,
-happen to differ; "reverse RTT" seems to be more optimistic.
+See [Section 4.10. Round-Trip Time Estimation](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.10) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and [[RFC6298] Paxson, V., Allman, M., Chu, J., and M. Sargent, "Computing TCP's Retransmission Timer"](https://datatracker.ietf.org/doc/html/rfc6298) for more details.
 
 #### mbpsBandwidth
 

@@ -302,7 +302,7 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
-    int         RTT()                           const { return m_iSRTT; }
+    int         SRTT()                          const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
