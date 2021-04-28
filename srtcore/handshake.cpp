@@ -52,6 +52,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 
 #include "udt.h"
+#include "api.h"
 #include "core.h"
 #include "handshake.h"
 #include "utilities.h"
@@ -185,6 +186,17 @@ string CHandShake::RdvStateStr(CHandShake::RendezvousState s)
     return "invalid";
 }
 #endif
+
+bool CHandShake::valid()
+{
+    if (m_iVersion < CUDT::HS_VERSION_UDT4
+            || m_iISN < 0 || m_iISN >= CSeqNo::m_iMaxSeqNo
+            || m_iMSS < 32
+            || m_iFlightFlagSize < 2)
+        return false;
+
+    return true;
+}
 
 string CHandShake::show()
 {

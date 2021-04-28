@@ -49,6 +49,7 @@ using srt_logging::MemberStatusStr;
 #endif
 
 volatile bool transmit_throw_on_interrupt = false;
+volatile bool transmit_int_state = false;
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -530,8 +531,15 @@ void SrtCommon::AcceptNewClient()
 
         int len = 2;
         SRTSOCKET ready[2];
-        if (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, -1, 0, 0, 0, 0) == -1)
+        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == -1)
+        {
+            if (::transmit_int_state)
+                Error("srt_epoll_wait for srt_accept: interrupt");
+
+            if (srt_getlasterror(NULL) == SRT_ETIMEOUT)
+                continue;
             Error("srt_epoll_wait(srt_conn_epoll)");
+        }
 
         Verb() << "[EPOLL: " << len << " sockets] " << VerbNoEOL;
     }
@@ -711,16 +719,19 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         bool blocking_snd = false, blocking_rcv = false;
         int dropdelay = 0;
         int size_int = sizeof (int), size_int64 = sizeof (int64_t), size_bool = sizeof (bool);
+        char packetfilter[100] = "";
+        int packetfilter_size = 100;
 
         srt_getsockflag(m_sock, SRTO_MAXBW, &bandwidth, &size_int64);
         srt_getsockflag(m_sock, SRTO_RCVLATENCY, &latency, &size_int);
         srt_getsockflag(m_sock, SRTO_RCVSYN, &blocking_rcv, &size_bool);
         srt_getsockflag(m_sock, SRTO_SNDSYN, &blocking_snd, &size_bool);
         srt_getsockflag(m_sock, SRTO_SNDDROPDELAY, &dropdelay, &size_int);
+        srt_getsockflag(m_sock, SRTO_PACKETFILTER, (packetfilter), (&packetfilter_size));
 
         Verb() << "OPTIONS: maxbw=" << bandwidth << " rcvlatency=" << latency << boolalpha
             << " blocking{rcv=" << blocking_rcv << " snd=" << blocking_snd
-            << "} snddropdelay=" << dropdelay;
+            << "} snddropdelay=" << dropdelay << " packetfilter=" << packetfilter;
     }
 
     if (!m_blocking_mode)
@@ -785,6 +796,11 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
         if (m_timeout)
             result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &m_timeout, sizeof m_timeout);
+        else
+        {
+            int timeout = 1000;
+            result = srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &timeout, sizeof timeout);
+        }
         if (result == -1)
             return result;
     }
@@ -1148,6 +1164,15 @@ Connect_Again:
                     NULL, NULL,
                     NULL, NULL) != -1)
         {
+            Verb() << "[C]" << VerbNoEOL;
+            for (int i = 0; i < len1; ++i)
+                Verb() << " " << ready_conn[i] << VerbNoEOL;
+            Verb() << "[E]" << VerbNoEOL;
+            for (int i = 0; i < len2; ++i)
+                Verb() << " " << ready_err[i] << VerbNoEOL;
+
+            Verb() << "";
+
             // We are waiting for one entity to be ready so it's either
             // in one or the other
             if (find(ready_err, ready_err+len2, m_sock) != ready_err+len2)
@@ -1174,8 +1199,7 @@ Connect_Again:
                         --transmit_retry_connect;
 
 
-                    Verb() << "...all links timeout, retrying in 250ms (" << transmit_retry_connect << ")...";
-                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                    Verb() << "...all links timeout, retrying NOW (" << transmit_retry_connect << ")...";
                     goto Connect_Again;
                 }
 
@@ -2266,15 +2290,25 @@ MediaPacket SrtSource::Read(size_t chunk)
         }
 #endif
 
+        if (::transmit_int_state)
+            Error("srt_recvmsg2: interrupted");
+
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
-        if (stat == SRT_ERROR)
+        if (stat != SRT_ERROR)
         {
+            ready = true;
+        }
+        else
+        {
+            int syserr = 0;
+            int err = srt_getlasterror(&syserr);
+
             if (!m_blocking_mode)
             {
                 // EAGAIN for SRT READING
-                if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                if (err == SRT_EASYNCRCV)
                 {
 Epoll_again:
                     Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
@@ -2288,6 +2322,7 @@ Epoll_again:
                         // If the event was SRT_EPOLL_UPDATE, report it, and still wait.
 
                         bool any_read_ready = false;
+                        vector<int> errored;
                         for (int i = 0; i < len; ++i)
                         {
                             if (sready[i].events & SRT_EPOLL_UPDATE)
@@ -2297,17 +2332,32 @@ Epoll_again:
 
                             if (sready[i].events & SRT_EPOLL_IN)
                                 any_read_ready = true;
+
+                            if (sready[i].events & SRT_EPOLL_ERR)
+                            {
+                                errored.push_back(sready[i].fd);
+                            }
                         }
 
                         if (!any_read_ready)
                         {
-                            Verb() << " ... [NOT READ READY - AGAIN]";
+                            Verb() << " ... [NOT READ READY - AGAIN (" << errored.size() << " errored: " << Printable(errored) << ")]";
                             goto Epoll_again;
                         }
 
                         continue;
                     }
                     // If was -1, then passthru.
+                }
+            }
+            else
+            {
+                // In blocking mode it uses a minimum of 1s timeout,
+                // and continues only if interrupt not requested.
+                if (!::transmit_int_state && (err == SRT_EASYNCRCV || err == SRT_ETIMEOUT))
+                {
+                    ready = false;
+                    continue;
                 }
             }
             Error("srt_recvmsg2");
@@ -2850,6 +2900,11 @@ public:
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (::setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+            Error(SysError(), "Setting timeout for UDP");
     }
 
     MediaPacket Read(size_t chunk) override
@@ -2857,13 +2912,20 @@ public:
         bytevector data(chunk);
         sockaddr_any sa(sadr.family());
         int64_t srctime = 0;
+AGAIN:
         int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
+        int err = SysError();
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
+        {
+            if (!::transmit_int_state && err == SysAGAIN)
+                goto AGAIN;
+
             Error(SysError(), "UDP Read/recvfrom");
+        }
 
         if (stat < 1)
         {

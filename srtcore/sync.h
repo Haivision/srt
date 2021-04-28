@@ -11,18 +11,44 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
-//#define ENABLE_STDCXX_SYNC
-//#define ENABLE_CXX17
-
 #include <cstdlib>
+#include <limits>
 #ifdef ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
+#define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
+
+// Defile clock type to use
+#ifdef IA32
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA32_RDTSC
+#define SRT_SYNC_CLOCK_STR "IA32_RDTSC"
+#elif defined(IA64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA64_ITC
+#define SRT_SYNC_CLOCK_STR "IA64_ITC"
+#elif defined(AMD64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_AMD64_RDTSC
+#define SRT_SYNC_CLOCK_STR "AMD64_RDTSC"
+#elif defined(_WIN32)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_WINQPC
+#define SRT_SYNC_CLOCK_STR "WINQPC"
+#elif TARGET_OS_MAC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
+#define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
+#elif defined(ENABLE_MONOTONIC_CLOCK)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
+#else
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
 #endif
+
+#endif // ENABLE_STDCXX_SYNC
+
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
@@ -178,21 +204,8 @@ public: // Assignment operators
     inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
-#if HAVE_FULL_CXX11
     static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(numeric_limits<uint64_t>::min()); }
     static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(numeric_limits<uint64_t>::max()); }
-#else
-#ifndef UINT64_MAX
-#define UNDEF_UINT64_MAX
-#define UINT64_MAX 0xffffffffffffffffULL
-#endif
-    static inline TimePoint min() { return TimePoint(0); }
-    static inline TimePoint max() { return TimePoint(UINT64_MAX); }
-
-#ifdef UNDEF_UINT64_MAX
-#undef UINT64_MAX
-#endif
-#endif
 
 public:
     Duration<Clock> time_since_epoch() const;
@@ -216,6 +229,11 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 // Duration and timepoint conversions
 //
 ///////////////////////////////////////////////////////////////////////////////
+
+/// Function return number of decimals in a subsecond precision.
+/// E.g. for a microsecond accuracy of steady_clock the return would be 6.
+/// For a nanosecond accuracy of the steady_clock the return value would be 9.
+int clockSubsecondPrecision();
 
 #if ENABLE_STDCXX_SYNC
 
@@ -348,15 +366,6 @@ class InvertedLock
     Mutex *m_pMutex;
 
   public:
-    InvertedLock(Mutex *m)
-        : m_pMutex(m)
-    {
-        if (!m_pMutex)
-            return;
-
-        leaveCS(*m_pMutex);
-    }
-
     InvertedLock(Mutex& m)
         : m_pMutex(&m)
     {
@@ -484,26 +493,20 @@ public:
     /// Block the call until either @a timestamp time achieved
     /// or the conditional is signaled.
     /// @param [in] delay Maximum time to wait since the moment of the call
-    /// @retval true Resumed due to getting a CV signal
-    /// @retval false Resumed due to being past @a timestamp
+    /// @retval false if the relative timeout specified by rel_time expired,
+    /// @retval true if condition is signaled or spurious wake up.
     bool wait_for(const steady_clock::duration& delay)
     {
         return m_cond->wait_for(*m_locker, delay);
     }
 
-    // Wait until the given time is achieved. This actually
-    // refers to wait_for for the time remaining to achieve
-    // given time.
+    // Wait until the given time is achieved.
+    /// @param [in] exptime The target time to wait until.
+    /// @retval false if the target wait time is reached.
+    /// @retval true if condition is signal or spurious wake up.
     bool wait_until(const steady_clock::time_point& exptime)
     {
-        // This will work regardless as to which clock is in use. The time
-        // should be specified as steady_clock::time_point, so there's no
-        // question of the timer base.
-        steady_clock::time_point now = steady_clock::now();
-        if (now >= exptime)
-            return false; // timeout
-
-        return wait_for(exptime - now);
+        return m_cond->wait_until(*m_locker, exptime);
     }
 
     // Static ad-hoc version
@@ -635,7 +638,7 @@ private:
 
 
 /// Print steady clock timepoint in a human readable way.
-/// days HH:MM::SS.us [STD]
+/// days HH:MM:SS.us [STD]
 /// Example: 1D 02:12:56.123456
 ///
 /// @param [in] steady clock timepoint
@@ -643,7 +646,7 @@ private:
 std::string FormatTime(const steady_clock::time_point& time);
 
 /// Print steady clock timepoint relative to the current system time
-/// Date HH:MM::SS.us [SYS]
+/// Date HH:MM:SS.us [SYS]
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
@@ -776,7 +779,7 @@ private:
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {
-#if defined(_WIN32) && defined(PTW32_VERSION)
+#if defined(_WIN32) && (defined(PTW32_VERSION) || defined (__PTW32_VERSION))
     // This is a version specific for pthread-win32 implementation
     // Here pthread_t type is a structure that is not convertible
     // to a number at all.
@@ -795,7 +798,7 @@ namespace this_thread
 #if !defined(_WIN32)
         usleep(count_microseconds(t)); // microseconds
 #else
-        Sleep(count_milliseconds(t));
+        Sleep((DWORD) count_milliseconds(t));
 #endif
     }
 }

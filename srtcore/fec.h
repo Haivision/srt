@@ -183,21 +183,43 @@ private:
 
     // Receiving
     void CheckLargeDrop(int32_t seqno);
-    int ExtendRows(int rowx);
-    int ExtendColumns(int colgx);
-    void MarkCellReceived(int32_t seq);
-    bool HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
-    bool HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
+    size_t ExtendRows(size_t rowx);
+    size_t ExtendColumns(size_t colgx);
+
+    enum ECellReceived
+    {
+        CELL_RECEIVED, //< mark cell for a received packet (no matter current value)
+        CELL_EXTEND,  //< just make sure there's a place for a packet, set false if not
+        CELL_REMOVE  //< even if a packet was marked true, remove the cell existence confirmation
+    };
+    void MarkCellReceived(int32_t seq, ECellReceived recv = CELL_RECEIVED);
+
+    enum EHangStatus
+    {
+        HANG_NOTDONE,
+        HANG_SUCCESS,
+        HANG_PAST,
+        HANG_CRAZY
+    };
+
+    friend bool operator <(FECFilterBuiltin::EHangStatus a, FECFilterBuiltin::EHangStatus b)
+    {
+        return int(a) < int(b);
+    }
+
+    EHangStatus HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
+    EHangStatus HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
     void ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
+    void EmergencyShrink(size_t n_series);
 
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
-    int RcvGetRowGroupIndex(int32_t seq);
-    int RcvGetColumnGroupIndex(int32_t seq);
+    int RcvGetRowGroupIndex(int32_t seq, EHangStatus& w_status);
+    int RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status);
     void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) const;
     bool IsLost(int32_t seq) const;
 
@@ -243,6 +265,9 @@ public:
     static const size_t EXTRA_SIZE = 4;
 
     virtual SRT_ARQLevel arqLevel() ATR_OVERRIDE { return m_fallback_level; }
+
+    static const char defaultConfig [];
+    static bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg);
 };
 
 #endif

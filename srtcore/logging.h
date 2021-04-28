@@ -66,6 +66,8 @@ written by
 // Usage: LOGP(gglog.Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
 
+#define IF_LOGGING(instr) instr
+
 #if ENABLE_HEAVY_LOGGING
 
 #define HLOGC LOGC
@@ -95,6 +97,7 @@ written by
 #define HLOGP(...)
 
 #define IF_HEAVY_LOGGING(instr) (void)0
+#define IF_LOGGING(instr) (void)0
 
 #endif
 

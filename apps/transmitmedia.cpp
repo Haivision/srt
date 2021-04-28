@@ -302,7 +302,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
     SrtConfigurePost(sock, m_options);
 
-    for (auto o: srt_options)
+    for (const auto &o: srt_options)
     {
         if ( o.binding == SocketOption::POST && m_options.count(o.name) )
         {
@@ -1012,6 +1012,9 @@ class UdpTarget: public Target, public UdpCommon
 public:
     UdpTarget(string host, int port, const map<string,string>& attr )
     {
+        if (host.empty())
+            cerr << "\nWARN Host for UDP target is not provided. Will send to localhost:" << port << ".\n";
+
         Setup(host, port, attr);
         if (adapter != "")
         {

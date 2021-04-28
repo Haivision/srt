@@ -1,4 +1,4 @@
-name: cxx11_win
+name: cxx11
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: macos-cxx11
+    name: macos
     runs-on: macos-latest
 
     steps:

@@ -101,14 +101,11 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
 volatile bool timer_state = false;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
-    int_state = true;
-    if ( transmit_throw_on_interrupt )
-        throw ForcedExit("Requested exception interrupt");
+    transmit_int_state = true;
 }
 
 std::string g_interrupt_reason;
@@ -116,7 +113,7 @@ std::string g_interrupt_reason;
 void OnAlarm_Interrupt(int)
 {
     cerr << "\n---------- INTERRUPT ON TIMEOUT: hang on " << g_interrupt_reason << "!\n";
-    int_state = false; // JIC
+    transmit_int_state = true; // JIC
     timer_state = true;
     throw AlarmExit("Watchdog bites hangup");
 }
@@ -419,6 +416,8 @@ int main( int argc, char** argv )
     if ( !SysInitializeNetwork() )
         throw std::runtime_error("Can't initialize network!");
 
+    srt_startup();
+
     // Symmetrically, this does a cleanup; put into a local destructor to ensure that
     // it's called regardless of how this function returns.
     struct NetworkCleanup
@@ -426,6 +425,7 @@ int main( int argc, char** argv )
         ~NetworkCleanup()
         {
             SysCleanupNetwork();
+            srt_cleanup();
         }
     } cleanupobj;
 
@@ -687,13 +687,26 @@ int main( int argc, char** argv )
 #endif
     }
 
-    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    string pfextra;
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf), (pfextra));
     if (statspf == SRTSTATS_PROFMAT_INVALID)
     {
         cerr << "Invalid stats print format\n";
         return 1;
     }
     transmit_stats_writer = SrtStatsWriterFactory(statspf);
+    if (pfextra != "")
+    {
+        vector<string> options;
+        Split(pfextra, ',', back_inserter(options));
+        for (auto& i: options)
+        {
+            vector<string> klv;
+            Split(i, '=', back_inserter(klv));
+            klv.resize(2);
+            transmit_stats_writer->Option(klv[0], klv[1]);
+        }
+    }
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
@@ -822,7 +835,7 @@ int main( int argc, char** argv )
     }
     catch(std::exception& x)
     {
-        if (::int_state)
+        if (::transmit_int_state)
         {
             // The application was terminated by SIGINT or SIGTERM.
             // Don't print anything, just exit gently like ffmpeg.
@@ -926,7 +939,7 @@ int main( int argc, char** argv )
 
             Verb() << "sent";
 
-            if ( int_state )
+            if (::transmit_int_state)
             {
                 Verror() << "\n (interrupted on request)";
                 break;
@@ -972,7 +985,7 @@ int main( int argc, char** argv )
         {
             Verror() << "Exit on timeout.";
         }
-        else if (::int_state)
+        else if (::transmit_int_state)
         {
             Verror() << "Exit on interrupt.";
             // Do nothing.

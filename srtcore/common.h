@@ -78,12 +78,17 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-
 #ifdef _DEBUG
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
 #else
 #define SRT_ASSERT(cond)
+#endif
+
+#if HAVE_FULL_CXX11
+#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+#define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
 #include <exception>
@@ -94,7 +99,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class SRT_API CUDTException: public std::exception
+class CUDTException: public std::exception
 {
 public:
 
@@ -110,7 +115,7 @@ public:
         return getErrorMessage();
     }
 
-    const std::string& getErrorString() const;
+    std::string getErrorString() const;
 
     /// Get the system errno for the exception.
     /// @return errno.
@@ -317,7 +322,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        CPacket* packet;
+        const CPacket* packet;
         int32_t ack;
         struct
         {
@@ -328,36 +333,36 @@ struct EventVariant
         EInitEvent init;
     } u;
 
-    EventVariant()
-    {
-        type = UNDEFINED;
-        memset(&u, 0, sizeof u);
-    }
 
     template<Type t>
     struct VariantFor;
 
-    template <Type tp, typename Arg>
-    void Assign(Arg arg)
-    {
-        type = tp;
-        (u.*(VariantFor<tp>::field())) = arg;
-        //(u.*field) = arg;
-    }
-
-    void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(int32_t  arg) { Assign<ACK>(arg); };
-    void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
-    void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-
-    template <class T>
-    EventVariant(const T arg)
+    explicit EventVariant(const CPacket* arg)
     {
-        *this = arg;
+        type = PACKET;
+        u.packet = arg;
+    }
+
+    explicit EventVariant(int32_t arg)
+    {
+        type = ACK;
+        u.ack = arg;
+    }
+
+    explicit EventVariant(ECheckTimerStage arg)
+    {
+        type = STAGE;
+        u.stage = arg;
+    }
+
+    explicit EventVariant(EInitEvent arg)
+    {
+        type = INIT;
+        u.init = arg;
     }
 
     const int32_t* get_ptr() const
@@ -422,10 +427,10 @@ class EventArgType;
 
 
 // The 'type' field wouldn't be even necessary if we
-
+// use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef CPacket* type;
+    typedef const CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
@@ -771,7 +776,7 @@ public:
         return right < *this;
     }
 
-    bool operator=(const this_t& right) const
+    bool operator==(const this_t& right) const
     {
         return number == right.number;
     }
@@ -835,7 +840,7 @@ struct CIPAddress
 {
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family, const sockaddr_any& peer);
+   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
    static std::string show(const struct sockaddr* adr);
 };
 
@@ -1416,7 +1421,7 @@ struct PacketMetric
 
     void update(size_t mult, uint64_t value)
     {
-        pkts += mult;
+        pkts += (uint32_t) mult;
         bytes += mult * value;
     }
 

@@ -285,20 +285,20 @@ inline std::string RequestTypeStr(UDTRequestType) { return ""; }
 class CHandShake
 {
 public:
-   CHandShake();
+    CHandShake();
 
-   int store_to(char* buf, size_t& size);
-   int load_from(const char* buf, size_t size);
+    int store_to(char* buf, size_t& size);
+    int load_from(const char* buf, size_t size);
 
 public:
-   // This is the size of SERIALIZED handshake.
-   // Might be defined as simply sizeof(CHandShake), but the
-   // enum values would have to be forced as int32_t, which is only
-   // available in C++11. Theoretically they are all 32-bit, but
-   // such a statement is not reliable and not portable.
-   static const size_t m_iContentSize = 48;	// Size of hand shake data
+    // This is the size of SERIALIZED handshake.
+    // Might be defined as simply sizeof(CHandShake), but the
+    // enum values would have to be forced as int32_t, which is only
+    // available in C++11. Theoretically they are all 32-bit, but
+    // such a statement is not reliable and not portable.
+    static const size_t m_iContentSize = 48;	// Size of hand shake data
 
-   // Extension flags
+    // Extension flags
 
     static const int32_t HS_EXT_HSREQ = BIT(0);
     static const int32_t HS_EXT_KMREQ = BIT(1);
@@ -310,50 +310,51 @@ public:
     int32_t flags() { return m_iType; }
 
 public:
-   int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
-   int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
-   int32_t m_iISN;              // random initial sequence number
-   int32_t m_iMSS;              // maximum segment size
-   int32_t m_iFlightFlagSize;   // flow control window size
-   UDTRequestType m_iReqType;   // handshake stage
-   int32_t m_iID;		// socket ID
-   int32_t m_iCookie;		// cookie
-   uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
+    int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
+    int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
+    int32_t m_iISN;              // random initial sequence number
+    int32_t m_iMSS;              // maximum segment size
+    int32_t m_iFlightFlagSize;   // flow control window size
+    UDTRequestType m_iReqType;   // handshake stage
+    int32_t m_iID;		// socket ID
+    int32_t m_iCookie;		// cookie
+    uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
 
-   bool m_extension;
+    bool m_extension;
 
-   std::string show();
+    bool valid();
+    std::string show();
 
-// The rendezvous state machine used in HSv5 only (in HSv4 everything is happening the old way).
-//
-// The WAVING state is the very initial state of the rendezvous connection and restored after the
-// connection is closed.
-// The ATTENTION and FINE are two alternative states that are transited to from WAVING. The possible
-// situations are:
-// - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
-// - "parallel arrangement" both parties transit to ATTENTION
-//
-// Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
-// URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
-// time, on machines with exactly the same performance and all things preceding the message sending
-// have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
-// the clients have started at different times, the one who started first sends a message and the
-// system of the receiver buffers this message even before the client binds the port for enough long
-// time so that it outlasts also the possible second, repeated waveahand.
-enum RendezvousState
-{
-    RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.
-    RDV_WAVING,     //< Initial state for rendezvous. No contact seen from the peer.
-    RDV_ATTENTION,  //< When received URQ_WAVEAHAND. [WAVING]:URQ_WAVEAHAND  --> [ATTENTION].
-    RDV_FINE,       //< When received URQ_CONCLUSION. [WAVING]:URQ_CONCLUSION --> [FINE].
-    RDV_INITIATED,  //< When received URQ_CONCLUSION+HSREQ extension in ATTENTION state. 
-    RDV_CONNECTED   //< Final connected state. [ATTENTION]:URQ_CONCLUSION --> [CONNECTED] <-- [FINE]:URQ_AGREEMENT.
-};
+    // The rendezvous state machine used in HSv5 only (in HSv4 everything is happening the old way).
+    //
+    // The WAVING state is the very initial state of the rendezvous connection and restored after the
+    // connection is closed.
+    // The ATTENTION and FINE are two alternative states that are transited to from WAVING. The possible
+    // situations are:
+    // - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
+    // - "parallel arrangement" both parties transit to ATTENTION
+    //
+    // Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
+    // URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
+    // time, on machines with exactly the same performance and all things preceding the message sending
+    // have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
+    // the clients have started at different times, the one who started first sends a message and the
+    // system of the receiver buffers this message even before the client binds the port for enough long
+    // time so that it outlasts also the possible second, repeated waveahand.
+    enum RendezvousState
+    {
+        RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.
+        RDV_WAVING,     //< Initial state for rendezvous. No contact seen from the peer.
+        RDV_ATTENTION,  //< When received URQ_WAVEAHAND. [WAVING]:URQ_WAVEAHAND  --> [ATTENTION].
+        RDV_FINE,       //< When received URQ_CONCLUSION. [WAVING]:URQ_CONCLUSION --> [FINE].
+        RDV_INITIATED,  //< When received URQ_CONCLUSION+HSREQ extension in ATTENTION state. 
+        RDV_CONNECTED   //< Final connected state. [ATTENTION]:URQ_CONCLUSION --> [CONNECTED] <-- [FINE]:URQ_AGREEMENT.
+    };
 
 #if ENABLE_LOGGING
-static std::string RdvStateStr(RendezvousState s);
+    static std::string RdvStateStr(RendezvousState s);
 #else
-static std::string RdvStateStr(RendezvousState) { return ""; }
+    static std::string RdvStateStr(RendezvousState) { return ""; }
 #endif
 
 };

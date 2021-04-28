@@ -899,14 +899,14 @@ struct MapProxy
     }
 };
 
+/// Print some hash-based stamp of the first 16 bytes in the buffer
 inline std::string BufferStamp(const char* mem, size_t size)
 {
     using namespace std;
     char spread[16];
 
-    int n = 16-size;
-    if (n > 0)
-        memset((spread + 16 - n), 0, n);
+    if (size < 16)
+        memset((spread + size), 0, 16 - size);
     memcpy((spread), mem, min(size_t(16), size));
 
     // Now prepare 4 cells for uint32_t.
@@ -924,9 +924,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-
     ostringstream os;
-
     os << hex << uppercase << setfill('0') << setw(8) << sum;
 
     return os.str();
