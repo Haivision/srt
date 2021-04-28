@@ -379,6 +379,7 @@ void CPacket::toNL()
     for (int j = 0; j < 4; ++j)
     {
         *p = htonl(*p);
+        *p = ~*p;
         ++p;
     }
 }
@@ -389,6 +390,7 @@ void CPacket::toHL()
     uint32_t* p = m_nHeader;
     for (int k = 0; k < 4; ++k)
     {
+        *p = ~*p;
         *p = ntohl(*p);
         ++p;
     }
