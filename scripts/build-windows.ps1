@@ -88,11 +88,11 @@ if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) {
         Start-Process $cmakeMsiFile -Wait
         Remove-Item $cmakeMsiFile
         Write-Output "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
-        exit
+        throw
     }
     else{
         Write-Output "Quitting because cmake is required"     
-        exit
+        throw
     }
 }
 
@@ -100,7 +100,7 @@ if ( $CXX11 -eq "OFF" ) {
     # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
     if ( $VS_VERSION -gt 2015 ) { 
         Write-Output "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
-        exit
+        throw
     }
     if ( $DEVENV_PLATFORM -eq 'Win32' ) { 
         nuget install cinegy.pthreads-win32-$VS_VERSION -version 2.9.1.24 -OutputDirectory ../_packages
@@ -143,7 +143,8 @@ Invoke-Expression "& $execVar"
 
 # check build ran OK, exit if cmake failed
 if( $LASTEXITCODE -ne 0 ) {
-    return $LASTEXITCODE
+    Write-Output "Non-zero exit code from cmake: $LASTEXITCODE"
+    throw
 }
 
 $ErrorActionPreference = "Stop"
@@ -161,13 +162,13 @@ if ( $null -eq $msBuildPath ) {
         $vsWherePath = Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue
         if ( $null -eq $vsWherePath ) {
             Write-Output "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
-            exit
+            throw
         }
     }    
     $msBuildPath = & $vsWherePath -products * -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
 	if ( $null -eq $msBuildPath ) { 
 		Write-Output "vswhere.exe cannot find msbuild for the specified Visual Studio version - please check the installation"
-		exit
+		throw
 	}
 }
 
