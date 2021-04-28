@@ -17,7 +17,8 @@ param (
     [Parameter()][String]$STATIC_LINK_SSL = "OFF",
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
-    [Parameter()][String]$UNIT_TESTS = "OFF"
+    [Parameter()][String]$UNIT_TESTS = "OFF",
+    [Parameter()][String]$BUILD_DIR = "_build"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
@@ -65,7 +66,7 @@ if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERAT
 if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64'; $MSBUILDVER = "12.0"; }
 
 # clear any previous build and create & enter the build directory
-$buildDir = Join-Path "$projectRoot" "_build"
+$buildDir = Join-Path "$projectRoot" "$BUILD_DIR"
 Write-Output "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
 Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
