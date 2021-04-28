@@ -164,7 +164,11 @@ if ( $null -eq $msBuildPath ) {
             exit
         }
     }    
-    $msBuildPath = & $vsWherePath -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+    $msBuildPath = & $vsWherePath -products * -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+	if ( $null -eq $msBuildPath ) { 
+		Write-Output "vswhere.exe cannot find msbuild for the specified Visual Studio version - please check the installation"
+		exit
+	}
 }
 
 & $msBuildPath SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
