@@ -55,40 +55,40 @@ public:
 
     /// @brief Apply new clock state (TSBPD base and drift) derived from other members of a socket group.
     /// @param timebase TSBPD base time.
-    /// @param wrp the state of wrapping period (enabled or disabled).
-    /// @param udrift Clock drift.
+    /// @param wrp state of the wrapping period (enabled or disabled).
+    /// @param udrift clock drift.
     void applyGroupDrift(const time_point& timebase, bool wrp, const duration& udrift);
 
     /// @brief Add new drift sample from an ACK-ACKACK pair.
-    /// ACKACK pakcets are sent immideatly (except for UDP buffering).
+    /// ACKACK packets are sent immediately (except for UDP buffering).
     /// 
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
-    /// @param [out] w_udrift Current clock drift value
-    /// @param [out] w_newtimebase Current TSBPD base time
+    /// @param [out] w_udrift Current clock drift value.
+    /// @param [out] w_newtimebase Current TSBPD base time.
     /// 
-    /// @return true if TSBPD base time was changed, false otherwise.
+    /// @return true if TSBPD base time has changed, false otherwise.
     bool addDriftSample(uint32_t                  pktTimestamp,
                         steady_clock::duration&   w_udrift,
                         steady_clock::time_point& w_newtimebase);
 
     /// @brief Get packet TSBPD time with buffering delay.
-    /// The target time when to deliver the packet to an upstream application.
+    /// The target time for delivering the packet to an upstream application.
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
-    /// @returns Packet TSBPD base time with buffering delay.
+    /// @return Packet TSBPD base time with buffering delay.
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const;
 
     /// @brief Get packet TSBPD base time without buffering delay.
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
-    /// @returns Packet TSBPD base time without buffering delay.
+    /// @return Packet TSBPD base time without buffering delay.
     time_point getPktTsbPdBaseTime(uint32_t usPktTimestamp) const;
 
     /// @brief Get TSBPD base time considering possible carryover
     /// when packet timestamp is overflown and continues from 0.
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
-    /// @returns TSBPD base time for a provided packet timestamp.
+    /// @return TSBPD base time for a provided packet timestamp.
     time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;
 
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
@@ -124,12 +124,12 @@ private:
     ///    += CPacket::MAX_TIMESTAMP + 1
     /// 3. Clock drift (@see CTsbpdTime::addDriftSample, executed exclusively
     ///    from ACKACK handler). This is updated with (positive or negative) TSBPD_DRIFT_MAX_VALUE
-    ///    once the value of average drift exceeds this value in whatever direction.
+    ///    once the value of average drift exceeds this value in either direction.
     ///    += (+/-)TSBPD_DRIFT_MAX_VALUE
     ///
     /// @note The TSBPD base time is expected to hold the following condition:
     /// (PACKET_TIMESTAMP + m_tsTsbPdTimeBase + drift) == NOW.
-    /// Then it can be used to estimate the origin time af a data packet, and calculate its delivery time
+    /// Then it can be used to estimate the origin time of a data packet, and calculate its delivery time
     /// with buffering delay applied.
     time_point m_tsTsbPdTimeBase;
 
@@ -139,12 +139,12 @@ private:
     /// are considered to have been wrapped around.
     /// The wrap check period ends 30 seconds after the wrap point,
     /// after which the TSBPD base time is adjusted.
-    bool                  m_bTsbPdWrapCheck;                  // true: check packet time stamp wrap around (overflow).
+    bool                  m_bTsbPdWrapCheck;                  // true: check packet time stamp wraparound (overflow).
     static const uint32_t TSBPD_WRAP_PERIOD = (30 * 1000000); // 30 seconds (in usec) for timestamp wrapping period.
 
     /// Maximum clock drift (microseconds) above which TsbPD base time is already adjusted.
     static const int TSBPD_DRIFT_MAX_VALUE = 5000;
-    /// Number of samples (ACKACK packets) to perform drift calculation and compensation.
+    /// Number of samples (ACKACK packets) on which to perform drift calculation and compensation.
     static const int TSBPD_DRIFT_MAX_SAMPLES = 1000;
     DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 
