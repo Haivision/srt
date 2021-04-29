@@ -8262,7 +8262,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     {
         steady_clock::duration udrift(0);
         steady_clock::time_point newtimebase;
-        const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
+        const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(),
             (udrift), (newtimebase));
 #if ENABLE_EXPERIMENTAL_BONDING
         if (drift_updated && m_parent->m_GroupOf)

@@ -48,7 +48,7 @@ bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
     if (!master)
         return false;
 
-    w_wp = master->m_pRcvBuffer->getInternalTimeBase((w_tb), (w_dr));
+    master->m_pRcvBuffer->getInternalTimeBase((w_tb), (w_wp), (w_dr));
 
     // Sanity check
     if (is_zero(w_tb))
@@ -2734,7 +2734,8 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
 
         steady_clock::time_point this_timebase;
         steady_clock::duration   this_udrift(0);
-        bool wrp = gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase((this_timebase), (this_udrift));
+        bool wrp = false;
+        gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase((this_timebase), (wrp), (this_udrift));
 
         udrift                                   = std::min(udrift, this_udrift);
         steady_clock::time_point new_newtimebase = std::min(newtimebase, this_timebase);

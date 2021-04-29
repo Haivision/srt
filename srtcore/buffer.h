@@ -56,8 +56,8 @@ modified by
 #include "udt.h"
 #include "list.h"
 #include "queue.h"
+#include "tsbpd_time.h"
 #include "utilities.h"
-#include <fstream>
 
 // The notation used for "circular numbers" in comments:
 // The "cicrular numbers" are numbers that when increased up to the
@@ -392,14 +392,13 @@ public:
     /// Set TimeStamp-Based Packet Delivery Rx Mode
     /// @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
     /// @param [in] delay aggreed TsbPD delay
-    /// @return 0
-    int setRcvTsbPdMode(const time_point& timebase, const duration& delay);
+    void setRcvTsbPdMode(const time_point& timebase, const duration& delay);
 
     /// Add packet timestamp for drift caclculation and compensation
     /// @param [in] timestamp packet time stamp
-    /// @param [ref] lock Mutex that should be locked for the operation
+    /// @param [out] w_udrift current drift value
+    /// @param [out] w_newtimebase current TSBPD base time
     bool addRcvTsbPdDriftSample(uint32_t          timestamp,
-                                srt::sync::Mutex& mutex_to_lock,
                                 duration&         w_udrift,
                                 time_point&       w_newtimebase);
 
@@ -463,19 +462,12 @@ private:
     bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
 
 public:
-    /// Get packet delivery local time base (adjusted for wrap around)
-    /// (Exposed as used publicly in logs)
-    /// @param [in] timestamp packet timestamp (relative to peer StartTime), wrapping around every ~72 min
-    /// @return local delivery time (usec)
-    time_point getTsbPdTimeBase(uint32_t timestamp_us);
-
-    int64_t getDrift() const { return m_DriftTracer.drift(); }
+    int64_t getDrift() const { return m_tsbpd.drift(); }
 
 public:
     int32_t getTopMsgno() const;
 
-    // @return Wrap check value
-    bool getInternalTimeBase(time_point& w_tb, duration& w_udrift);
+    void getInternalTimeBase(time_point& w_tb, bool& w_wrp, duration& w_udrift);
 
     void       applyGroupTime(const time_point& timebase, bool wrapcheck, uint32_t delay, const duration& udrift);
     void       applyGroupDrift(const time_point& timebase, bool wrapcheck, const duration& udrift);
@@ -540,41 +532,9 @@ private:
     int              m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
     unsigned         m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 
-    bool       m_bTsbPdMode;      // true: apply TimeStamp-Based Rx Mode
-    duration   m_tdTsbPdDelay;    // aggreed delay
-    time_point m_tsTsbPdTimeBase; // localtime base for TsbPd mode
-    // Note: m_tsTsbPdTimeBase cumulates values from:
-    // 1. Initial SRT_CMD_HSREQ packet returned value diff to current time:
-    //    == (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception
-    // 2. Timestamp overflow (@c CRcvBuffer::getTsbPdTimeBase), when overflow on packet detected
-    //    += CPacket::MAX_TIMESTAMP+1 (it's a hex round value, usually 0x1*e8).
-    // 3. Time drift (CRcvBuffer::addRcvTsbPdDriftSample, executed exclusively
-    //    from UMSG_ACKACK handler). This is updated with (positive or negative) TSBPD_DRIFT_MAX_VALUE
-    //    once the value of average drift exceeds this value in whatever direction.
-    //    += (+/-)CRcvBuffer::TSBPD_DRIFT_MAX_VALUE
-    //
-    // XXX Application-supplied timestamps won't work therefore. This requires separate
-    // calculation of all these things above.
+    srt::CTsbpdTime  m_tsbpd;
 
-    bool                  m_bTsbPdWrapCheck;                  // true: check packet time stamp wrap around
-    static const uint32_t TSBPD_WRAP_PERIOD = (30 * 1000000); // 30 seconds (in usec)
-
-    /// Max drift (usec) above which TsbPD Time Offset is adjusted
-    static const int TSBPD_DRIFT_MAX_VALUE = 5000;
-    /// Number of samples (UMSG_ACKACK packets) to perform drift caclulation and compensation
-    static const int                                            TSBPD_DRIFT_MAX_SAMPLES = 1000;
-    DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
-    AvgBufSize                                                  m_mavg;
-#ifdef SRT_DEBUG_TSBPD_DRIFT
-    int              m_TsbPdDriftHisto100us[22];  // Histogram of 100us TsbPD drift (-1.0 .. +1.0 ms in 0.1ms increment)
-    int              m_TsbPdDriftHisto1ms[22];    // Histogram of TsbPD drift (-10.0 .. +10.0 ms, in 1.0 ms increment)
-    int              m_iTsbPdDriftNbSamples  = 0; // Number of samples in sum and histogram
-    static const int TSBPD_DRIFT_PRT_SAMPLES = 200; // Number of samples (UMSG_ACKACK packets) to print hostogram
-#endif                                              /* SRT_DEBUG_TSBPD_DRIFT */
-
-#ifdef SRT_DEBUG_TSBPD_OUTJITTER
-    unsigned long m_ulPdHisto[4][10];
-#endif /* SRT_DEBUG_TSBPD_OUTJITTER */
+    AvgBufSize       m_mavg;
 
 private:
     CRcvBuffer();
