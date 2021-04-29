@@ -31,7 +31,7 @@ int main(int argc, char** argv)
 {
     int ss, st;
     struct sockaddr_in sa;
-    int yes = 1;
+    const int no = 0;
     const char message [] = "This message should be sent to the other side";
 
     if (argc != 3) {
@@ -66,8 +66,8 @@ int main(int argc, char** argv)
     }
 
     printf("srt setsockflag\n");
-    if (SRT_ERROR == srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes)
-        || SRT_ERROR == srt_setsockflag(ss, SRTO_SNDSYN, &yes, sizeof yes))
+    if (SRT_ERROR == srt_setsockflag(ss, SRTO_RCVSYN, &no, sizeof no)
+        || SRT_ERROR == srt_setsockflag(ss, SRTO_SNDSYN, &no, sizeof no))
     {
         fprintf(stderr, "SRTO_SNDSYN or SRTO_RCVSYN: %s\n", srt_getlasterror_str());
         return 1;
