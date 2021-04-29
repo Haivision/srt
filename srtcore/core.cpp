@@ -932,7 +932,7 @@ void CUDT::open()
     m_pRNode->m_bOnList                   = false;
 
     // Set initial values of smoothed RTT and RTT variance.
-    m_iRTT                = INITIAL_RTT;
+    m_iSRTT               = INITIAL_RTT;
     m_iRTTVar             = INITIAL_RTTVAR;
     m_bIsFirstRTTReceived = false;
 
@@ -3707,7 +3707,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
           log << "startConnect: END. Parameters:"
                  " mss="
               << m_config.iMSS << " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize()
-              << " cwnd-size=" << m_CongCtl->cgWindowSize() << " rtt=" << m_iRTT << " bw=" << m_iBandwidth);
+              << " cwnd-size=" << m_CongCtl->cgWindowSize() << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
 }
 
 // Asynchronous connection
@@ -4553,14 +4553,14 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
-        m_iRTT       = ib.m_iRTT;
-        m_iRTTVar    = ib.m_iRTT / 2;
+        m_iSRTT      = ib.m_iSRTT;
+        m_iRTTVar    = ib.m_iSRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Connect", -1, -1,
-                      m_bIsFirstRTTReceived, -1, m_iRTT, m_iRTTVar);
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, m_iRTTVar);
 #endif
 
     SRT_REJECT_REASON rr = setupCC();
@@ -5457,14 +5457,14 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     CInfoBlock::convert(peer, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
-        m_iRTT       = ib.m_iRTT;
-        m_iRTTVar    = ib.m_iRTT / 2;
+        m_iSRTT      = ib.m_iSRTT;
+        m_iRTTVar    = ib.m_iSRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Accept", -1, -1,
-                      m_bIsFirstRTTReceived, -1, m_iRTT, m_iRTTVar);
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, m_iRTTVar);
 #endif
 
     m_PeerAddr = peer;
@@ -5683,7 +5683,7 @@ SRT_REJECT_REASON CUDT::setupCC()
     HLOGC(rslog.Debug,
           log << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
               << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
-              << " rtt=" << m_iRTT << " bw=" << m_iBandwidth);
+              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
 
     if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
     {
@@ -5749,7 +5749,7 @@ void CUDT::checkSndTimers(Whether2RegenKm regen)
     {
         HLOGC(cnlog.Debug, log << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
         // Legacy method for HSREQ, only if initiator.
-        considerLegacySrtHandshake(m_tsSndHsLastTime + microseconds_from(m_iRTT * 3 / 2));
+        considerLegacySrtHandshake(m_tsSndHsLastTime + microseconds_from(m_iSRTT * 3 / 2));
     }
     else
     {
@@ -5926,13 +5926,13 @@ bool CUDT::closeInternal()
         CInfoBlock ib;
         ib.m_iIPversion = m_PeerAddr.family();
         CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-        ib.m_iRTT       = m_iRTT;
+        ib.m_iSRTT      = m_iSRTT;
         ib.m_iBandwidth = m_iBandwidth;
         m_pCache->update(&ib);
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
-                      m_bIsFirstRTTReceived, -1, m_iRTT, -1);
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, -1);
 #endif
 
         m_bConnected = false;
@@ -7115,7 +7115,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     perf->pktFlowWindow       = m_iFlowWindowSize;
     perf->pktCongestionWindow = (int)m_dCongestionWindow;
     perf->pktFlightSize       = getFlightSpan();
-    perf->msRTT               = (double)m_iRTT / 1000.0;
+    perf->msRTT               = (double)m_iSRTT / 1000.0;
     perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
     perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
     perf->byteMSS             = m_config.iMSS;
@@ -7529,7 +7529,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         }
 
         // update next NAK time, which should wait enough time for the retansmission, but not too long
-        m_tdNAKInterval = microseconds_from(m_iRTT + 4 * m_iRTTVar);
+        m_tdNAKInterval = microseconds_from(m_iSRTT + 4 * m_iRTTVar);
 
         // Fix the NAKreport period according to the congctl
         m_tdNAKInterval =
@@ -7761,7 +7761,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     {
         // If the ACK was just sent already AND elapsed time did not exceed RTT,
         if ((steady_clock::now() - m_tsLastAckTime) <
-            (microseconds_from(m_iRTT + 4 * m_iRTTVar)))
+            (microseconds_from(m_iSRTT + 4 * m_iRTTVar)))
         {
             HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): ACK %" << ack << " just sent - too early to repeat");
             return nbsent;
@@ -7792,7 +7792,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // number), but still the numbers are from exactly the same domain.
         m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
-        data[ACKD_RTT] = m_iRTT;
+        data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
         data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
@@ -8110,15 +8110,15 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
 
             if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
             {
-                m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-                m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+                m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iSRTT));
+                m_iSRTT   = avg_iir<8>(m_iSRTT, rtt);
             }
         }
         else  // Transmission is unidirectional.
         {
             // Simply take the values of smoothed RTT and RTT variance from
             // the ACK packet.
-            m_iRTT    = rtt;
+            m_iSRTT   = rtt;
             m_iRTTVar = rttvar;
         }
     }
@@ -8130,14 +8130,14 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // will also trigger the smoothed RTT reset at the sender side.
     else if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
     {
-        m_iRTT                = rtt;
+        m_iSRTT               = rtt;
         m_iRTTVar             = rttvar;
         m_bIsFirstRTTReceived = true;
     }
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(currtime, "ACK", rtt, rttvar, m_bIsFirstRTTReceived,
-                      m_stats.recvTotal, m_iRTT, m_iRTTVar);
+                      m_stats.recvTotal, m_iSRTT, m_iRTTVar);
 #endif
 
     /* Version-dependent fields:
@@ -8204,14 +8204,14 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
             LOGC(inlog.Warn,
                 log << CONID() << "ACKACK out of order, skipping RTT calculation "
                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                << ", RTT (EWMA): " << m_iRTT << ")");
+                << ", RTT (EWMA): " << m_iSRTT << ")");
             return;
         }
 
         LOGC(inlog.Error,
             log << CONID() << "IPE: ACK record not found, can't estimate RTT "
             << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-            << ", RTT (EWMA): " << m_iRTT << ")");
+            << ", RTT (EWMA): " << m_iSRTT << ")");
         return;
     }
 
@@ -8230,8 +8230,8 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     // on subsequent RTT samples (during transmission).
     if (m_bIsFirstRTTReceived)
     {
-        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-        m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iSRTT));
+        m_iSRTT   = avg_iir<8>(m_iSRTT, rtt);
     }
     // Reset the value of smoothed RTT on the first RTT sample after initialization
     // (at the beginning of transmission).
@@ -8240,14 +8240,14 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     // final smoothed RTT value.
     else
     {
-        m_iRTT                = rtt;
+        m_iSRTT               = rtt;
         m_iRTTVar             = rtt / 2;
         m_bIsFirstRTTReceived = true;
     }
 
 #if SRT_DEBUG_RTT
     s_rtt_trace.trace(tsArrival, "ACKACK", rtt, -1, m_bIsFirstRTTReceived,
-                      -1, m_iRTT, m_iRTTVar);
+                      -1, m_iSRTT, m_iRTTVar);
 #endif
 
     updateCC(TEV_ACKACK, EventVariant(ack));
@@ -8725,7 +8725,7 @@ void CUDT::updateSrtSndSettings()
     {
         /* We are TsbPd sender */
         // XXX Check what happened here.
-        // m_iPeerTsbPdDelay_ms = m_CongCtl->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
+        // m_iPeerTsbPdDelay_ms = m_CongCtl->getSndPeerTsbPdDelay();// + ((m_iSRTT + (4 * m_iRTTVar)) / 1000);
         /*
          * For sender to apply Too-Late Packet Drop
          * option (m_bTLPktDrop) must be enabled and receiving peer shall support it
@@ -8802,7 +8802,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
     const steady_clock::time_point time_now = steady_clock::now();
-    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT - 4 * m_iRTTVar);
+    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iSRTT - 4 * m_iRTTVar);
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
@@ -8841,7 +8841,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             {
                 HLOGC(qrlog.Debug, log << CONID() << "REXMIT: ignoring seqno "
                     << w_packet.m_iSeqNo << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
-                    << " RTT=" << m_iRTT << " RTTVar=" << m_iRTTVar
+                    << " RTT=" << m_iSRTT << " RTTVar=" << m_iRTTVar
                     << " now=" << FormatTime(time_now));
                 continue;
             }
@@ -10758,7 +10758,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     else
     {
         steady_clock::duration exp_timeout =
-            microseconds_from(m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US);
+            microseconds_from(m_iEXPCount * (m_iSRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US);
         if (exp_timeout < (m_iEXPCount * m_tdMinExpInterval))
             exp_timeout = m_iEXPCount * m_tdMinExpInterval;
         next_exp_time = m_tsLastRspTime + exp_timeout;
@@ -10834,7 +10834,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
      * in the sender's buffer will be added to loss list and retransmitted.
      */
 
-    const uint64_t rtt_syn = (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
+    const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
     const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
 
     if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))

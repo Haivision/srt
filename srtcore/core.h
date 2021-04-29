@@ -302,7 +302,7 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
-    int         RTT()                           const { return m_iRTT; }
+    int         SRTT()                          const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
@@ -733,12 +733,12 @@ private:
 
     int m_iEXPCount;                             // Expiration counter
     int m_iBandwidth;                            // Estimated bandwidth, number of packets per second
-    int m_iRTT;                                  // Smoothed RTT (an exponentially-weighted moving average (EWMA)
+    int m_iSRTT;                                 // Smoothed RTT (an exponentially-weighted moving average (EWMA)
                                                  // of an endpoint's RTT samples), in microseconds
     int m_iRTTVar;                               // The variation in the RTT samples (RTT variance), in microseconds
     bool m_bIsFirstRTTReceived;                  // True if the first RTT sample was obtained from the ACK/ACKACK pair
                                                  // at the receiver side or received by the sender from an ACK packet.
-                                                 // It's used to reset the initial value of smoothed RTT (m_iRTT)
+                                                 // It's used to reset the initial value of smoothed RTT (m_iSRTT)
                                                  // at the beginning of transmission (including the one taken from
                                                  // cache). False by default.
     int m_iDeliveryRate;                         // Packet arrival rate at the receiver side
