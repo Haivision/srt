@@ -552,7 +552,7 @@ public:
         }
 
         // Close the general category entity
-        output << "}," << pretty_cr << endl;
+        output << "}" << pretty_cr << endl;
 
         return output.str();
     }
