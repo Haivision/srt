@@ -1172,7 +1172,7 @@ Values defined in enum [`SRT_KM_STATE`](#srt_km_state).
 The latency value in the receiving direction of the socket.
 This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
 
-**Default value**: 120 ms (depicted as 0) in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
+**Default value**: 120 ms in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
 The latency value defines the **minimum** receiver buffering delay before delivering an SRT data packet
 from a receiving SRT socket to a receiving application. The provided value is used in the connection establishment (handshake exchange) stage
