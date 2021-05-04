@@ -3091,43 +3091,6 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
     }
 }
 
-/// TODO: Remove 'weight' parameter? Only needed for logging.
-/// @retval  1 - link is identified as stable
-/// @retval  0 - link state remains unchanged (too early to identify, still in activation phase)
-/// @retval -1 - link is identified as unstable
-static int sendBackup_CheckRunningLinkStable(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint16_t weight ATR_UNUSED)
-{
-    const uint32_t latency_us = u.peerLatency_us();
-    const int32_t min_stability_us     = 60000; // Minimum Link Stability Timeout: 60ms.
-    const int64_t initial_stabtout_us  = max<int64_t>(min_stability_us, latency_us);
-    const int64_t activation_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
-
-    // RTT and RTTVar values are still being refined during activation period,
-    // therefore the dymanic timeout should not be used in activation phase.
-    const bool is_activation_phase = !is_zero(u.freshActivationStart())
-        && (count_microseconds(currtime - u.freshActivationStart()) <= activation_period_us);
-
-    const int64_t stability_tout_us = is_activation_phase
-        ? initial_stabtout_us // activation phase
-        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.SRTT() + 4 * u.RTTVar()), latency_us);
-    
-    const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
-    const steady_clock::duration td_response = currtime - last_rsp;
-    if (count_microseconds(td_response) > stability_tout_us)
-    {
-#if SRT_DEBUG_BONDING_STATES
-        s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION-UNSTABLE" : "UNSTABLE", weight);
-#endif
-        return -1;
-    }
-
-    // u.lastRspTime() > currtime is alwats true due to the very first check above in this function
-#if SRT_DEBUG_BONDING_STATES
-    s_stab_trace.trace(u, currtime, activation_period_us, stability_tout_us, is_activation_phase ? "ACTIVATION" : "STABLE", weight);
-#endif
-    return is_activation_phase ? 0 : 1;
-}
-
 // [[using locked(this->m_GroupLock)]]
 CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_t d, const time_point currtime)
 {
@@ -3551,12 +3514,15 @@ void CUDTGroup::sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, 
         if (unstable_for_ms < sock.peerIdleTimeout_ms())
             continue;
 
-        LOGC(gslog.Warn, log << "grp/send*: Socket @" << member->socketID << " is unstable for " << unstable_for_ms 
-            << "ms - qualifying as broken.");
+        // Requesting this socket to be broken with the next CUDT::checkExpTimer() call.
+        sock.breakAsUnstable();
 
-        w_sendBackupCtx.updateMemberState(member->pSocketData, BKUPST_BROKEN);
-        if (member->pSocketData->ps)
-            sendBackup_AssignBackupState(member->pSocketData->ps->core(), BKUPST_BROKEN, currtime);
+        LOGC(gslog.Warn, log << "grp/send*: Socket @" << member->socketID << " is unstable for " << unstable_for_ms 
+            << "ms - requesting breakage.");
+
+        //w_sendBackupCtx.updateMemberState(member->pSocketData, BKUPST_BROKEN);
+        //if (member->pSocketData->ps)
+        //    sendBackup_AssignBackupState(member->pSocketData->ps->core(), BKUPST_BROKEN, currtime);
     }
 }
 

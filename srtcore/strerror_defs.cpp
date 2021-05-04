@@ -39,6 +39,7 @@ const char* strerror_msgs_connection [] = {
     "", // MN_NONE = 0
     "Connection was broken", // MN_CONNLOST = 1
     "Connection does not exist", // MN_NOCONN = 2
+    "Connection broken as unstable", // MN_UNSTABLE = 3
     ""
 };
 

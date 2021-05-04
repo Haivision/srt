@@ -449,6 +449,7 @@ enum CodeMinor
     // MJ_CONNECTION
     MN_CONNLOST        =  1,
     MN_NOCONN          =  2,
+    MN_UNSTABLE        =  3,
     // MJ_SYSTEMRES
     MN_THREAD          =  1,
     MN_MEMORY          =  2,
@@ -501,6 +502,7 @@ typedef enum SRT_ERRNO
     SRT_ECONNFAIL       = MJ(CONNECTION),
     SRT_ECONNLOST       = MN(CONNECTION, CONNLOST),
     SRT_ENOCONN         = MN(CONNECTION, NOCONN),
+    SRT_ECONNUNSTABLE   = MN(CONNECTION, UNSTABLE),
 
     SRT_ERESOURCE       = MJ(SYSTEMRES),
     SRT_ETHREAD         = MN(SYSTEMRES, THREAD),

@@ -82,7 +82,6 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
-using namespace srt;
 
 CUDTUnited CUDT::s_UDTUnited;
 
@@ -249,6 +248,7 @@ void CUDT::construct()
     m_bClosing            = false;
     m_bShutdown           = false;
     m_bBroken             = false;
+    m_bBreakAsUnstable    = false;
     // TODO: m_iBrokenCounter should be still set to some default.
     m_bPeerHealth         = true;
     m_RejectReason        = SRT_REJ_UNKNOWN;
@@ -10780,15 +10780,15 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         next_exp_time = m_tsLastRspTime + exp_timeout;
     }
 
-    if (currtime <= next_exp_time)
+    if (currtime <= next_exp_time && !m_bBreakAsUnstable)
         return false;
 
     // ms -> us
     const int PEER_IDLE_TMO_US = m_config.iPeerIdleTimeout * 1000;
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
-    if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
-        (currtime - m_tsLastRspTime > microseconds_from(PEER_IDLE_TMO_US)))
+    if (m_bBreakAsUnstable || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
+        (currtime - m_tsLastRspTime > microseconds_from(PEER_IDLE_TMO_US))))
     {
         //
         // Connection is broken.
@@ -10805,7 +10805,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
         updateBrokenConnection();
-        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+        completeBrokenConnectionDependencies(m_bBreakAsUnstable ? SRT_ECONNUNSTABLE : SRT_ECONNLOST); // LOCKS!
 
         return true;
     }

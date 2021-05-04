@@ -420,6 +420,9 @@ public: // internal API
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
+    /// @brief  Request a socket to be broken due to too long instability (normally by a group).
+    void breakAsUnstable() { m_bBreakAsUnstable = true; }
+
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
@@ -726,6 +729,7 @@ private:
     volatile bool m_bClosing;                    // If the UDT entity is closing
     volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
     volatile bool m_bBroken;                     // If the connection has been broken
+    volatile bool m_bBreakAsUnstable;            // A flag indicating that the socket should become broken because it has been unstable for too long.
     volatile bool m_bPeerHealth;                 // If the peer status is normal
     volatile int m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
