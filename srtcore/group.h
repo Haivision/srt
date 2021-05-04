@@ -257,7 +257,6 @@ private:
     /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
     bool sendBackup_CheckSendStatus(const time_point&   currtime,
                                     const int           stat,
-                                    const int           erc,
                                     const int32_t       lastseq,
                                     const int32_t       pktseq,
                                     CUDT&               w_u,

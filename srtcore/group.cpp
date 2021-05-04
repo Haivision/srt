@@ -3200,7 +3200,6 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
 // [[using locked(this->m_GroupLock)]]
 bool CUDTGroup::sendBackup_CheckSendStatus(const steady_clock::time_point& currtime ATR_UNUSED,
                                            const int                       stat,
-                                           const int                       erc,
                                            const int32_t                   lastseq,
                                            const int32_t                   pktseq,
                                            CUDT&                           w_u,
@@ -3980,7 +3979,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     uint16_t maxActiveWeight = 0; // Maximum weight of active links.
     // The number of bytes sent or -1 for error
     int group_send_result = sendBackup_SendOverActive(buf, len, w_mc, currtime, (curseq), (nsuccessful), (maxActiveWeight), (sendBackupCtx), (cx));
-    bool none_succeeded = (group_send_result <= 0);
+    bool none_succeeded = (nsuccessful == 0);
 
     // Save current payload in group's sender buffer.
     sendBackup_Buffering(buf, len, (curseq), (w_mc));
@@ -4142,8 +4141,6 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
     if (w_mc.srctime == 0)
         w_mc.srctime = count_microseconds(currtime.time_since_epoch());
 
-    // TODO: return none_succeeded value
-    bool none_succeeded = true; // pre-assume all sending calls have failed
     SRT_ASSERT(w_nsuccessful == 0);
     SRT_ASSERT(w_maxActiveWeight == 0);
 
@@ -4180,19 +4177,14 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         const bool send_succeeded = sendBackup_CheckSendStatus(
             currtime,
             sndresult,
-            erc,
             lastseq,
             w_mc.pktseq,
             (u),
             (w_curseq),
             (group_send_result));
 
-        const bool is_unstable = !is_zero(u.m_tsUnstableSince);
-        const bool is_activation_phase = !is_zero(u.m_tsFreshActivation);
-
         if (send_succeeded)
         {
-            none_succeeded = false;
             ++w_nsuccessful;
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
         }
