@@ -380,6 +380,10 @@ This should be the exact command used as a C compiler, possibly with
 version suffix, e.g. `clang-1.7.0`. If this option is used together
 with `--with-compiler-prefix`, its prefix will be added in front.
 
+**`--with-srt-name=<prefix>`**
+
+Overrides srt library name adding custom `<prefix>`
+
 **`--with-extralibs=<library-list>`**
 
 This is an option required for unusual situations when a platform-specific
