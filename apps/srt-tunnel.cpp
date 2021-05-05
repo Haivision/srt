@@ -1115,21 +1115,21 @@ int main( int argc, char** argv )
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
+    srt::setloglevel(lev);
     if (logfa == "")
     {
-        UDT::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(SRT_LOGFA_APP);
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
         set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
-        UDT::resetlogfa(fas);
+        srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            UDT::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(SRT_LOGFA_APP);
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);

@@ -434,7 +434,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
