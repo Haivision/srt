@@ -182,8 +182,8 @@ public:
    // Instrumentally used by select() and also required for non-blocking
    // mode check in groups
    bool readReady();
-   bool writeReady();
-   bool broken();
+   bool writeReady() const;
+   bool broken() const;
 
 private:
    CUDTSocket(const CUDTSocket&);

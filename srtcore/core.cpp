@@ -3115,7 +3115,7 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false;
         }
 
-        srt::groups::SocketData* f = m_parent->m_GroupMemberData;
+        groups::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3214,7 +3214,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    srt::groups::SocketData* f;
+    groups::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -4664,7 +4664,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            srt::groups::SocketData* gi       = m_parent->m_GroupMemberData;
+            groups::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -9497,7 +9497,7 @@ int CUDT::processData(CUnit* in_unit)
     if (m_parent->m_GroupOf)
     {
         ScopedLock protect_group_existence (s_UDTUnited.m_GlobControlLock);
-        srt::groups::SocketData* gi = m_parent->m_GroupMemberData;
+        groups::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -9996,7 +9996,7 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
 
     if (self->m_parent->m_GroupOf)
     {
-        srt::groups::SocketData* gi = self->m_parent->m_GroupMemberData;
+        groups::SocketData* gi = self->m_parent->m_GroupMemberData;
         if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
         {
             HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
