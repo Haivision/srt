@@ -165,14 +165,14 @@ bool CUDTSocket::readReady()
     return broken();
 }
 
-bool CUDTSocket::writeReady()
+bool CUDTSocket::writeReady() const
 {
     return (m_pUDT->m_bConnected
                 && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_config.iSndBufSize))
         || broken();
 }
 
-bool CUDTSocket::broken()
+bool CUDTSocket::broken() const
 {
     return m_pUDT->m_bBroken || !m_pUDT->m_bConnected;
 }

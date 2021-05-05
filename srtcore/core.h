@@ -1046,7 +1046,7 @@ private: // Trace
 
         int64_t m_sndDurationTotal;         // total real time for sending
 
-        time_point tsLastSampleTime;            // last performance sample time
+        time_point tsLastSampleTime;        // last performance sample time
         int64_t traceSent;                  // number of packets sent in the last trace interval
         int64_t traceSentUniq;              // number of original packets sent in the last trace interval
         int64_t traceRecv;                  // number of packets received in the last trace interval
