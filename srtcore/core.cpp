@@ -9642,7 +9642,7 @@ int CUDT::processData(CUnit* in_unit)
                     {
                         ss << ", timespan ";
                         ss << count_milliseconds(bufstate.tsEnd - bufstate.tsStart);
-                        ss << " ms. ";
+                        ss << " ms.";
                     }
 
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet: insert offset " << offset
@@ -9650,7 +9650,7 @@ int CUDT::processData(CUnit* in_unit)
                         << " (pkt.seq=" << rpkt.m_iSeqNo
                         << ", ack.seq=" << m_iRcvLastSkipAck
                         << "). " << ss.str()
-                        << SRT_SYNC_CLOCK_STR
+                        << ". " SRT_SYNC_CLOCK_STR
                         << " drift=" << m_pRcvBuffer->getDrift()
                     );
 #endif
