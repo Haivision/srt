@@ -1726,15 +1726,15 @@ CRcvBuffer::ReadingState CRcvBuffer::debugGetReadingState() const
 {
     ReadingState readstate;
 
-    readstate.numAcknowledged = 0;
-    readstate.numUnacknowledged = m_iMaxPos;
+    readstate.iNumAcknowledged = 0;
+    readstate.iNumUnacknowledged = m_iMaxPos;
 
     if ((NULL != m_pUnit[m_iStartPos]) && (m_pUnit[m_iStartPos]->m_iFlag == CUnit::GOOD))
     {
         if (m_tsbpd.isEnabled())
             readstate.tsStart = m_tsbpd.getPktTsbPdTime(m_pUnit[m_iStartPos]->m_Packet.getMsgTimeStamp());
 
-        readstate.numAcknowledged = m_iLastAckPos > m_iStartPos
+        readstate.iNumAcknowledged = m_iLastAckPos > m_iStartPos
             ? m_iLastAckPos - m_iStartPos
             : m_iLastAckPos + (m_iSize - m_iStartPos);
     }
@@ -1761,6 +1761,33 @@ CRcvBuffer::ReadingState CRcvBuffer::debugGetReadingState() const
     }
 
     return readstate;
+}
+
+string CRcvBuffer::strFullnessState(const time_point& tsNow) const
+{
+    const ReadingState bufstate = debugGetReadingState();
+    stringstream ss;
+
+    ss << "Packets ACKed: " << bufstate.iNumAcknowledged;
+    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsLastAck))
+    {
+        ss << " (TSBPD ready in ";
+        ss << count_milliseconds(bufstate.tsStart - tsNow);
+        ss << " : ";
+        ss << count_milliseconds(bufstate.tsLastAck - tsNow);
+        ss << " ms)";
+    }
+
+    ss << ", not ACKed: " << bufstate.iNumUnacknowledged;
+    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsEnd))
+    {
+        ss << ", timespan ";
+        ss << count_milliseconds(bufstate.tsEnd - bufstate.tsStart);
+        ss << " ms";
+    }
+
+    ss << ". " SRT_SYNC_CLOCK_STR " drift " << getDrift() / 1000 << " ms.";
+    return ss.str();
 }
 
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)

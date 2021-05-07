@@ -9622,38 +9622,12 @@ int CUDT::processData(CUnit* in_unit)
                 }
                 else
                 {
-#if ENABLE_LOGGING
-                    const time_point curtime = steady_clock::now();
-                    const CRcvBuffer::ReadingState bufstate = m_pRcvBuffer->debugGetReadingState();
-                    stringstream ss;
-
-                    ss << "Packets ACKed: " << bufstate.numAcknowledged;
-                    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsLastAck))
-                    {
-                        ss << " (TSBPD ready in ";
-                        ss << count_milliseconds(bufstate.tsStart - curtime);
-                        ss << " : ";
-                        ss << count_milliseconds(bufstate.tsLastAck - curtime);
-                        ss << " ms)";
-                    }
-
-                    ss << ", not ACKed: " << bufstate.numUnacknowledged;
-                    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsEnd))
-                    {
-                        ss << ", timespan ";
-                        ss << count_milliseconds(bufstate.tsEnd - bufstate.tsStart);
-                        ss << " ms";
-                    }
-
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet: insert offset " << offset
                         << ", space avail " << avail_bufsize
                         << " (pkt.seq=" << rpkt.m_iSeqNo
                         << ", ack.seq=" << m_iRcvLastSkipAck
-                        << "). " << ss.str()
-                        << ". " SRT_SYNC_CLOCK_STR
-                        << " drift=" << m_pRcvBuffer->getDrift()
+                        << "). " << m_pRcvBuffer->strFullnessState(steady_clock::now())
                     );
-#endif
 
                     return -1;
                 }

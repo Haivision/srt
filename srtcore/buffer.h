@@ -348,17 +348,20 @@ public:
     /// @return size (bytes) of payload size
     unsigned getRcvAvgPayloadSize() const;
 
-
     struct ReadingState
     {
         time_point tsStart;
         time_point tsLastAck;
         time_point tsEnd;
-        int numAcknowledged;
-        int numUnacknowledged;
+        int iNumAcknowledged;
+        int iNumUnacknowledged;
     };
 
     ReadingState debugGetReadingState() const;
+
+    /// Form a string of the current buffer fullness state.
+    /// number of packets acknowledged, TSBPD readiness, etc.
+    std::string strFullnessState(const time_point& tsNow) const;
 
     /// Mark the message to be dropped from the message list.
     /// @param [in] msgno message number.
@@ -474,6 +477,7 @@ private:
     bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
 
 public:
+    /// @brief Get clock drift in microseconds.
     int64_t getDrift() const { return m_tsbpd.drift(); }
 
 public:
