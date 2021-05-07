@@ -40,7 +40,7 @@
 
 | Document Title                                               |            Folder             | File Name                                                    | Description                                                  |
 | :----------------------------------------------------------- | :---------------------------- | :----------------------------------------------------------- | :----------------------------------------------------------- |
-| [SRT Access Control](features/access-control.md)<br />[(Stream ID) Guidelines](features/access-control.md) |     [features](features/)     | [access-control.md](features/access-control.md)              | Access Control (Stream ID) guidelines.                       |
+| [SRT Access Control<br /> (Stream ID) Guidelines](features/access-control.md) |     [features](features/)     | [access-control.md](features/access-control.md)              | Access Control (Stream ID) guidelines.                       |
 | [SRT Connection Bonding](features/bonding-intro.md)          |     [features](features/)     | [bonding-intro.md](features/bonding-intro.md)                | Introduction to Connection Bonding. Description<br />of group (bonded) connections. |
 | [SRT Socket Groups](features/socket-groups.md)               |     [features](features/)     | [socket-groups.md](features/socket-groups.md)                | Description of socket groups in SRT (Connection<br />Bonding). Here you will also find the information<br />regarding the `srt-test-live` application for testing<br />Connection Bonding. |
 | [SRT Connection Bonding: Main/Backup][main-backup]           |     [features](features/)     | [bonding-main-backup.md][main-backup]                        | SRT Main/Backup Connection Bonding.                          |
