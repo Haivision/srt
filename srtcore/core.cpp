@@ -9642,7 +9642,7 @@ int CUDT::processData(CUnit* in_unit)
                     {
                         ss << ", timespan ";
                         ss << count_milliseconds(bufstate.tsEnd - bufstate.tsStart);
-                        ss << " ms.";
+                        ss << " ms";
                     }
 
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet: insert offset " << offset
