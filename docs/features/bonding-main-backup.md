@@ -1,5 +1,10 @@
 # SRT Main Backup Connection Bonding.
 
+I. [Introduction](#i-introduction)  
+II. [Mode Overview](#ii-mode-overview)  
+III. [Sender Logic](#iii-sender-logic)  
+IV. [Sending Algorithm](#iV-sending-algorithm)  
+
 ## I. Introduction
 
 The main goal of the *SRT Main/Backup Switching* is to save Contribution Bandwidth by using only one (main) link at a time, while keeping the stream alive if the main link gets broken.
