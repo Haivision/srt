@@ -348,6 +348,18 @@ public:
     /// @return size (bytes) of payload size
     unsigned getRcvAvgPayloadSize() const;
 
+
+    struct ReadingState
+    {
+        time_point tsStart;
+        time_point tsLastAck;
+        time_point tsEnd;
+        int numAcknowledged;
+        int numUnacknowledged;
+    };
+
+    ReadingState debugGetReadingState() const;
+
     /// Mark the message to be dropped from the message list.
     /// @param [in] msgno message number.
     /// @param [in] using_rexmit_flag whether the MSGNO field uses rexmit flag (if not, one more bit is part of the
