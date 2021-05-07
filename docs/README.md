@@ -46,17 +46,17 @@
 | [SRT Connection Bonding: Main/Backup][main-backup]           |     [features](features/)     | [bonding-main-backup.md][main-backup]                        | SRT Main/Backup Connection Bonding.                          |
 | [SRT Encryption](features/encryption.md)                     |     [features](features/)     | [encryption.md](features/encryption.md)                      | Description of SRT encryption mechanism. This<br />document might be outdated, please consult<br />[Section 6. Encryption][srt-rfc-sec-6] of the [SRT RFC][srt-rfc] additionally. |
 | [SRT Handshake](features/handshake.md)                       |     [features](features/)     | [handshake.md](features/handshake.md)                        | Description of SRT handshake mechanism. This<br />document might be outdated, please consult<br />[Section 3.2.1 Handshake][srt-rfc-sec-3-2-1] and<br />[Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the<br />[SRT RFC][srt-rfc] additionally. |
-| [Live Streaming <br /> Guidelines](features/live-streaming.md) |     [features](features/)     | [live-streaming.md](features/live-streaming.md)              | Guidelines for live streaming with SRT. See also<br />best practices and configuration tips in<br />[Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC][srt-rfc]. |
-| [SRT Packet](features/packet-filtering-and-fec.md)<br />[Filtering & FEC](features/packet-filtering-and-fec.md) |     [features](features/)     | [packet-filtering-and-fec.md](features/packet-filtering-and-fec.md) | Description of SRT packet filtering mechanism,<br />including FEC. |
+| [Live Streaming <br /> Guidelines](features/live-streaming.md) |   [features](features/)     | [live-streaming.md](features/live-streaming.md)              | Guidelines for live streaming with SRT. See also<br />best practices and configuration tips in<br />[Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC][srt-rfc]. |
+| [SRT Packet <br /> Filtering & FEC][packet-filter]           |     [features](features/)     | [packet-filtering-and-fec.md][packet-filter]                 | Description of SRT packet filtering mechanism,<br />including FEC. |
 | <img width=200px height=1px/>                                | <img width=100px height=1px/> | <img width=200px height=1px/>                                | <img width=500px height=1px/>                                |
 
 ## Sample Applications
 
 | Document Title                                               |            Folder             | File Name                                         | Description                                                  |
 | :----------------------------------------------------------- | :---------------------------- | :------------------------------------------------ | :----------------------------------------------------------- |
-| [Using the](apps/srt-live-transmit.md)<br />[`srt-live-transmit` App](apps/srt-live-transmit.md) |         [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md) | A sample application to transmit a live stream from<br />source medium (UDP/SRT/`stdin`) to the target medium<br />(UDP/SRT/`stdout`). |
-| [Using the](apps/srt-multiplex.md)<br />[`srt-multiplex` App](apps/srt-multiplex.md) |         [apps](apps/)         | [srt-multiplex.md](apps/srt-multiplex.md)         | Description of sample program for sending multiple streams.  |
-| [Using the](apps/srt-tunnel.md)<br />[`srt-tunnel` App](apps/srt-tunnel.md) |         [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)               | A sample application to set up an SRT tunnel for TCP traffic. |
+| [Using the<br /> `srt-live-transmit` App](apps/srt-live-transmit.md) | [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md) | A sample application to transmit a live stream from<br />source medium (UDP/SRT/`stdin`) to the target medium<br />(UDP/SRT/`stdout`). |
+| [Using the<br /> `srt-multiplex` App](apps/srt-multiplex.md) |         [apps](apps/)         | [srt-multiplex.md](apps/srt-multiplex.md)         | Description of sample program for sending multiple streams.  |
+| [Using the<br /> `srt-tunnel` App](apps/srt-tunnel.md)       |         [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)               | A sample application to set up an SRT tunnel for TCP traffic. |
 | <img width=200px height=1px/>                                | <img width=100px height=1px/> | <img width=200px height=1px/>                     | <img width=500px height=1px/>                                |
 
 ## Miscellaneous
@@ -73,3 +73,4 @@
 [srt-rfc-sec-6]: https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-6
 
 [main-backup]: features/bonding-main-backup.md
+[packet-filter]: features/packet-filtering-and-fec.md
