@@ -1,4 +1,4 @@
-# SRT Main Backup Connection Bonding.
+# SRT Connection Bonding: Main/Backup
 
 I. [Introduction](#i-introduction)  
 II. [Mode Overview](#ii-mode-overview)  
