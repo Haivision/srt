@@ -993,7 +993,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // File transfer mode:
             // - tsbpd: off
             // - latency: 0
-            // - linger: 2 minutes (180s)
+            // - linger: on
             // - congctl: file (original UDT congestion control)
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
             co.bTSBPD          = false;
