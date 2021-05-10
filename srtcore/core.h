@@ -1094,7 +1094,6 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
-    // TODO: shouldn't these three time points be a member of a group data?
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response

@@ -235,28 +235,37 @@ private:
     void sendBackup_AssignBackupState(CUDT& socket, BackupMemberState state, const steady_clock::time_point& currtime);
 
     /// Qualify the state of the active link: fresh, stable, unstable, wary.
-    /// TODO: add SRT_DEBUG_BONDING_STATES tracing
     /// @retval active backup member state: fresh, stable, unstable, wary.
     BackupMemberState sendBackup_QualifyActiveState(const gli_t d, const time_point currtime);
 
     BackupMemberState sendBackup_QualifyIfStandBy(const gli_t d);
 
-    /// [out] maxActiveWeight
+    /// Sends the same payload over all active members.
+    /// @param[in] buf payload
+    /// @param[in] len payload length in bytes
+    /// @param[in,out] w_mc message control
+    /// @param[in] currtime current time
+    /// @param[in] currseq current packet sequence number
+    /// @param[out] w_nsuccessful number of members with successfull sending.
+    /// @param[in,out] maxActiveWeight
+    /// @param[in,out] sendBackupCtx context
+    /// @param[in,out] w_cx error
+    /// @return group send result: -1 if sending over all members has failed; number of bytes sent overwise.
     int sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& w_mc, const steady_clock::time_point& currtime, int32_t& w_curseq,
         size_t& w_nsuccessful, uint16_t& w_maxActiveWeight, SendBackupCtx& w_sendBackupCtx, CUDTException& w_cx);
     
     /// Check link sending status
     /// @param[in]  currtime       Current time (logging only)
-    /// @param[in]  stat           Result of sending over the socket
+    /// @param[in]  send_status    Result of sending over the socket
     /// @param[in]  lastseq        Last sent sequence number before the current sending operation
     /// @param[in]  pktseq         Packet sequence number currently tried to be sent
     /// @param[out] w_u            CUDT unit of the current member (to allow calling overrideSndSeqNo)
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
-    /// @param[out] w_final_stat   Status to be reported by this function eventually
+    /// @param[out] w_final_stat   w_final_stat = send_status if sending succeded.
     ///
     /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
     bool sendBackup_CheckSendStatus(const time_point&   currtime,
-                                    const int           stat,
+                                    const int           send_status,
                                     const int32_t       lastseq,
                                     const int32_t       pktseq,
                                     CUDT&               w_u,
@@ -276,13 +285,13 @@ private:
         const steady_clock::time_point& currtime);
 
     /// Check if pending sockets are to be qualified as broken.
-    /// THis qualification later results in removing the socket from a group and closing it.
+    /// This qualification later results in removing the socket from a group and closing it.
     /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
     void sendBackup_CheckPendingSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 
     /// Check if unstable sockets are to be qualified as broken.
     /// The main reason for such qualification is if a socket is unstable for too long.
-    /// THis qualification later results in removing the socket from a group and closing it.
+    /// This qualification later results in removing the socket from a group and closing it.
     /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
     void sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 

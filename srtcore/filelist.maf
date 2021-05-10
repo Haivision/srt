@@ -50,6 +50,7 @@ PROTECTED HEADERS
 platform_sys.h
 udt.h
 
+PRIVATE HEADERS
 api.h
 buffer.h
 cache.h
@@ -74,7 +75,7 @@ tsbpd_time.h
 utilities.h
 window.h
 
-PROTECTED HEADERS - ENABLE_EXPERIMENTAL_BONDING
+PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
 group.h
 group_backup.h
 group_common.h

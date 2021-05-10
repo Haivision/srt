@@ -10805,7 +10805,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
         updateBrokenConnection();
-        completeBrokenConnectionDependencies(m_bBreakAsUnstable ? SRT_ECONNUNSTABLE : SRT_ECONNLOST); // LOCKS!
+        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
 
         return true;
     }

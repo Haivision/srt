@@ -637,7 +637,7 @@ inline int Value<std::string>::fill(void* optval, int len, std::string value)
     if (size_t(len) < value.size())
         return 0;
     memcpy(optval, value.c_str(), value.size());
-    return value.size();
+    return (int) value.size();
 }
 
 template <class V>
@@ -2997,7 +2997,6 @@ void CUDTGroup::sendBackup_QualifyMemberStates(SendBackupCtx& w_sendBackupCtx, c
 
         if (d->sndstate == SRT_GST_RUNNING)
         {
-            // TODO: Qualify active state: fresh, stable, unstable, wary
             const BackupMemberState active_state = sendBackup_QualifyActiveState(d, currtime);
             sendBackup_AssignBackupState(d->ps->core(), active_state, currtime);
             w_sendBackupCtx.recordMemberState(&(*d), active_state);
@@ -3162,61 +3161,60 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
 
 // [[using locked(this->m_GroupLock)]]
 bool CUDTGroup::sendBackup_CheckSendStatus(const steady_clock::time_point& currtime ATR_UNUSED,
-                                           const int                       stat,
+                                           const int                       send_status,
                                            const int32_t                   lastseq,
                                            const int32_t                   pktseq,
                                            CUDT&                           w_u,
                                            int32_t&                        w_curseq,
                                            int&                            w_final_stat)
 {
+    if (send_status == -1)
+        return false; // Sending failed.
+
+
     bool send_succeeded = false;
-
-    // sending over this socket has succeeded
-    if (stat != -1)
+    if (w_curseq == SRT_SEQNO_NONE)
     {
-        if (w_curseq == SRT_SEQNO_NONE)
-        {
-            w_curseq = pktseq;
-        }
-        else if (w_curseq != lastseq)
-        {
-            // We believe that all running links use the same seq.
-            // But we can do some sanity check.
-            LOGC(gslog.Error,
-                 log << "grp/sendBackup: @" << w_u.m_SocketID << ": IPE: another running link seq discrepancy: %"
-                     << lastseq << " vs. previous %" << w_curseq << " - fixing");
-
-            // Override must be done with a sequence number greater by one.
-
-            // Example:
-            //
-            // Link 1 before sending: curr=1114, next=1115
-            // After sending it reports pktseq=1115
-            //
-            // Link 2 before sending: curr=1110, next=1111 (->lastseq before sending)
-            // THIS CHECK done after sending:
-            //  -- w_curseq(1115) != lastseq(1111)
-            //
-            // NOW: Link 1 after sending is:
-            // curr=1115, next=1116
-            //
-            // The value of w_curseq here = 1115, while overrideSndSeqNo
-            // calls setInitialSndSeq(seq), which sets:
-            // - curr = seq - 1
-            // - next = seq
-            //
-            // So, in order to set curr=1115, next=1116
-            // this must set to 1115+1.
-
-            w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
-        }
-
-        // State it as succeeded, though. We don't know if the link
-        // is broken until we get the connection broken confirmation,
-        // and the instability state may wear off next time.
-        send_succeeded = true;
-        w_final_stat   = stat;
+        w_curseq = pktseq;
     }
+    else if (w_curseq != lastseq)
+    {
+        // We believe that all active links use the same seq.
+        // But we can do some sanity check.
+        LOGC(gslog.Error,
+                log << "grp/sendBackup: @" << w_u.m_SocketID << ": IPE: another running link seq discrepancy: %"
+                    << lastseq << " vs. previous %" << w_curseq << " - fixing");
+
+        // Override must be done with a sequence number greater by one.
+
+        // Example:
+        //
+        // Link 1 before sending: curr=1114, next=1115
+        // After sending it reports pktseq=1115
+        //
+        // Link 2 before sending: curr=1110, next=1111 (->lastseq before sending)
+        // THIS CHECK done after sending:
+        //  -- w_curseq(1115) != lastseq(1111)
+        //
+        // NOW: Link 1 after sending is:
+        // curr=1115, next=1116
+        //
+        // The value of w_curseq here = 1115, while overrideSndSeqNo
+        // calls setInitialSndSeq(seq), which sets:
+        // - curr = seq - 1
+        // - next = seq
+        //
+        // So, in order to set curr=1115, next=1116
+        // this must set to 1115+1.
+
+        w_u.overrideSndSeqNo(CSeqNo::incseq(w_curseq));
+    }
+
+    // State it as succeeded, though. We don't know if the link
+    // is broken until we get the connection broken confirmation,
+    // and the instability state may wear off next time.
+    send_succeeded = true;
+    w_final_stat   = send_status;
 
     return send_succeeded;
 }
@@ -3599,9 +3597,6 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     }
 
     // TODO: all broken members are to be removed from the context now???
-
-    //HLOGC(gslog.Debug, log << "grp/send...: - wiped " << w_wipeme.size() << " broken sockets");
-
 }
 
 struct FByOldestActive
@@ -3943,7 +3938,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     SRT_ATR_UNUSED CUDTException cx(MJ_SUCCESS, MN_NONE, 0); // TODO: Delete then?
     uint16_t maxActiveWeight = 0; // Maximum weight of active links.
-    // The number of bytes sent or -1 for error
+    // The number of bytes sent or -1 for error will be stored in group_send_result
     int group_send_result = sendBackup_SendOverActive(buf, len, w_mc, currtime, (curseq), (nsuccessful), (maxActiveWeight), (sendBackupCtx), (cx));
     bool none_succeeded = (nsuccessful == 0);
 
@@ -3987,8 +3982,6 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     sendBackup_SilenceRedundantLinks((sendBackupCtx), currtime);
     // (closing condition checked inside this call)
 
-    //LOGC(gslog.Debug, log << "grp/sendBackup: links after silence: " << sendBackupCtx.printMembers());
-
     if (none_succeeded)
     {
         HLOGC(gslog.Debug, log << "grp/sendBackup: all links broken (none succeeded to send a payload)");
@@ -4010,7 +4003,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Note that list::size() is linear time, however this shouldn't matter,
     // as with the increased number of links in the redundancy group the
     // impossibility of using that many of them grows exponentally.
-    size_t grpsize = m_Group.size();
+    const size_t grpsize = m_Group.size();
 
     if (w_mc.grpdata_size < grpsize)
     {
@@ -4110,7 +4103,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
     SRT_ASSERT(w_nsuccessful == 0);
     SRT_ASSERT(w_maxActiveWeight == 0);
 
-    int group_send_result = SRT_ERROR; // TODO: return
+    int group_send_result = SRT_ERROR;
 
     // TODO: implement iterator over active links
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
@@ -4370,7 +4363,8 @@ int CUDTGroup::configure(const char* str)
             }
 
             break;*/
-
+    case SRT_GTYPE_BROADCAST:
+    case SRT_GTYPE_BACKUP:
     default:
         if (config == "")
         {
