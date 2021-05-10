@@ -140,16 +140,18 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
     git clone https://github.com/microsoft/vcpkg
-    .\vcpkg\bootstrap-vcpkg.bat
+    Set-Location .\vcpkg
+    .\bootstrap-vcpkg.bat
 
     if($DEVENV_PLATFORM -EQ "x64"){
-        .\vcpkg\vcpkg install install openssl:x64-windows
+        .\vcpkg install install openssl:x64-windows
     }
     else{        
-        .\vcpkg\vcpkg install openssl
+        .\vcpkg install openssl
     }
     
-    .\vcpkg\vcpkg integrate install
+    .\vcpkg integrate install
+    Set-Location ..
     $cmakeFlags += "-DCMAKE_TOOLCHAIN_FILE=$buildDir\vcpkg\scripts\buildsystems\vcpkg.cmake"
 }
 
