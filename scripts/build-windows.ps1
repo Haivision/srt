@@ -6,7 +6,7 @@
 #
 # By default produces a VS2019 64-bit Release binary using C++11 threads, without
 # encryption or unit tests enabled, but including test apps.
-# Before enabling any encryption options, please install OpenSSL (or customize)
+# Before enabling any encryption options, install OpenSSL or set VCKPG flag to build
 ################################################################################
 
 param (
@@ -18,7 +18,8 @@ param (
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
     [Parameter()][String]$UNIT_TESTS = "OFF",
-    [Parameter()][String]$BUILD_DIR = "_build"
+    [Parameter()][String]$BUILD_DIR = "_build",
+    [Parameter()][String]$VCPKG_OPENSSL = "OFF"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
@@ -119,13 +120,38 @@ if ( $STATIC_LINK_SSL -eq "ON" ) {
     }
 }
 
+if ( $VCPKG_OPENSSL -eq "ON" ) {
+    if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
+        # requesting VCPKG to provide OpenSSL requires encryption support
+        Write-Output "VCPKG compilation of OpenSSL requested, will force encryption feature ON"
+        $ENABLE_ENCRYPTION = "ON"
+    }
+}
+
+
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
                 "-DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL " + 
-                "-DENABLE_UNITTESTS=$UNIT_TESTS"
+                "-DENABLE_UNITTESTS=$UNIT_TESTS "
+
+# if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
+if ( $VCPKG_OPENSSL -eq 'ON' ) {    
+    git clone https://github.com/microsoft/vcpkg
+    .\vcpkg\bootstrap-vcpkg.bat
+
+    if($DEVENV_PLATFORM -EQ "x64"){
+        .\vcpkg\vcpkg install install openssl:x64-windows
+    }
+    else{        
+        .\vcpkg\vcpkg install openssl
+    }
+    
+    .\vcpkg\vcpkg integrate install
+    $cmakeFlags += "-DCMAKE_TOOLCHAIN_FILE=$buildDir\vcpkg\scripts\buildsystems\vcpkg.cmake"
+}
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
 if ( $VS_VERSION -eq '2019' ) {    
