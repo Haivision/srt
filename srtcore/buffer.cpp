@@ -1722,6 +1722,75 @@ unsigned CRcvBuffer::getRcvAvgPayloadSize() const
     return m_uAvgPayloadSz;
 }
 
+CRcvBuffer::ReadingState CRcvBuffer::debugGetReadingState() const
+{
+    ReadingState readstate;
+
+    readstate.iNumAcknowledged = 0;
+    readstate.iNumUnacknowledged = m_iMaxPos;
+
+    if ((NULL != m_pUnit[m_iStartPos]) && (m_pUnit[m_iStartPos]->m_iFlag == CUnit::GOOD))
+    {
+        if (m_tsbpd.isEnabled())
+            readstate.tsStart = m_tsbpd.getPktTsbPdTime(m_pUnit[m_iStartPos]->m_Packet.getMsgTimeStamp());
+
+        readstate.iNumAcknowledged = m_iLastAckPos > m_iStartPos
+            ? m_iLastAckPos - m_iStartPos
+            : m_iLastAckPos + (m_iSize - m_iStartPos);
+    }
+
+    // All further stats are valid if TSBPD is enabled.
+    if (!m_tsbpd.isEnabled())
+        return readstate;
+
+    // m_iLastAckPos points to the first unacknowledged packet
+    const int iLastAckPos = (m_iLastAckPos - 1) % m_iSize;
+    if (m_iLastAckPos != m_iStartPos && (NULL != m_pUnit[iLastAckPos]) && (m_pUnit[iLastAckPos]->m_iFlag == CUnit::GOOD))
+    {
+        readstate.tsLastAck = m_tsbpd.getPktTsbPdTime(m_pUnit[iLastAckPos]->m_Packet.getMsgTimeStamp());
+    }
+
+    const int iEndPos = (m_iLastAckPos + m_iMaxPos - 1) % m_iSize;
+    if (m_iMaxPos == 0)
+    {
+        readstate.tsEnd = readstate.tsLastAck;
+    }
+    else if ((NULL != m_pUnit[iEndPos]) && (m_pUnit[iEndPos]->m_iFlag == CUnit::GOOD))
+    {
+        readstate.tsEnd = m_tsbpd.getPktTsbPdTime(m_pUnit[iEndPos]->m_Packet.getMsgTimeStamp());
+    }
+
+    return readstate;
+}
+
+string CRcvBuffer::strFullnessState(const time_point& tsNow) const
+{
+    const ReadingState bufstate = debugGetReadingState();
+    stringstream ss;
+
+    ss << "Space avail " << getAvailBufSize() << "/" << m_iSize;
+    ss << " pkts. Packets ACKed: " << bufstate.iNumAcknowledged;
+    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsLastAck))
+    {
+        ss << " (TSBPD ready in ";
+        ss << count_milliseconds(bufstate.tsStart - tsNow);
+        ss << " : ";
+        ss << count_milliseconds(bufstate.tsLastAck - tsNow);
+        ss << " ms)";
+    }
+
+    ss << ", not ACKed: " << bufstate.iNumUnacknowledged;
+    if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsEnd))
+    {
+        ss << ", timespan ";
+        ss << count_milliseconds(bufstate.tsEnd - bufstate.tsStart);
+        ss << " ms";
+    }
+
+    ss << ". " SRT_SYNC_CLOCK_STR " drift " << getDrift() / 1000 << " ms.";
+    return ss.str();
+}
+
 void CRcvBuffer::dropMsg(int32_t msgno, bool using_rexmit_flag)
 {
     for (int i = m_iStartPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shiftFwd(i))
