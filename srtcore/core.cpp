@@ -9622,11 +9622,9 @@ int CUDT::processData(CUnit* in_unit)
                 }
                 else
                 {
-                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet: insert offset " << offset
-                        << ", space avail " << avail_bufsize
-                        << " (pkt.seq=" << rpkt.m_iSeqNo
-                        << ", ack.seq=" << m_iRcvLastSkipAck
-                        << "). " << m_pRcvBuffer->strFullnessState(steady_clock::now())
+                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
+                        << ", insert offset " << offset << ". "
+                        << m_pRcvBuffer->strFullnessState(steady_clock::now())
                     );
 
                     return -1;

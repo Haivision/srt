@@ -1768,7 +1768,8 @@ string CRcvBuffer::strFullnessState(const time_point& tsNow) const
     const ReadingState bufstate = debugGetReadingState();
     stringstream ss;
 
-    ss << "Packets ACKed: " << bufstate.iNumAcknowledged;
+    ss << "Space avail " << getAvailBufSize() << "/" << m_iSize;
+    ss << ". Packets ACKed: " << bufstate.iNumAcknowledged;
     if (!is_zero(bufstate.tsStart) && !is_zero(bufstate.tsLastAck))
     {
         ss << " (TSBPD ready in ";
