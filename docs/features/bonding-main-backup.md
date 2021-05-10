@@ -9,7 +9,7 @@ IV. [Sending Algorithm](#iV-sending-algorithm)
 
 *SRT Main/Backup Switching* saves contribution bandwidth by using only one (main) link at a time, while keeping a stream alive if the main link gets broken.
 
-This feature is useful for broadcasting where the traffic costs for a main link are relatively low, and the main link is reasonably reliable. To make sure a transmission doesn’t fail, two backup connections are on stand-by. These backup connections ensure reliability, but the traffic costs may be high. To save costs, the backup links are only activated when the main link fails or doesn’t achieve the required throughput.
+This feature is useful for broadcasting where the traffic costs for a main link are relatively low, and the main link is reasonably reliable. To make sure a transmission doesn’t fail, one or several backup connections are on stand-by. These backup connections ensure reliability, but the traffic costs may be high. To save costs, the backup links are only activated when the main link fails or doesn’t achieve the required throughput.
 
 The goal of SRT's main/backup bonding mode is to identify a potential link break before it is finally confirmed, thus providing a time window to seamlessly switch to one of the backup links.
 

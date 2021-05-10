@@ -1,12 +1,5 @@
 # Documentation Overview
 
-<!-- - [SRT API Documents](#srt-api-documents)
-  - [Build Instructions](#build-instructions)
-  - [Development Documents](#development-documents)
-  - [Features](#features)
-  - [Sample Applications](#sample-applications)
-  - [Miscellaneous](#miscellaneous) -->
-
 ## SRT API Documents
 
 | Document Title                                      |            Folder             | File Name                                          | Description                                          |
