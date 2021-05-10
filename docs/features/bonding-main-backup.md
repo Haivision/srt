@@ -97,10 +97,11 @@ Comparing two members, the one is ordered before, for which one of the following
    5. **SRT_GST_BROKEN**
    6. **SRT_GST_IDLE** (**stand by**)
    7. **SRT_GST_PENDING**
-3. By connection start time (older connection comes first).
-4. By the Socket ID (lower value first).
+3. By the Socket ID (lower value first).
 
 For example, an unstable member with a higher weight is ordered before a stable member with lower weight.
+
+**Potential Improvement**: Order by connection start time (older connection comes first) before comparing socket IDs.
 
 ### Member Activation
 
