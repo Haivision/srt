@@ -154,7 +154,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     
     .\vcpkg integrate install
     Pop-Location
-    $cmakeFlags += "-DCMAKE_TOOLCHAIN_FILE=$buildDir\vcpkg\scripts\buildsystems\vcpkg.cmake"
+    $cmakeFlags += "-DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
 }
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
