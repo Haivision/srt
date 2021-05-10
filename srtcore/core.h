@@ -420,6 +420,9 @@ public: // internal API
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
+    /// @brief  Request a socket to be broken due to too long instability (normally by a group).
+    void breakAsUnstable() { m_bBreakAsUnstable = true; }
+
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
 
@@ -726,6 +729,7 @@ private:
     volatile bool m_bClosing;                    // If the UDT entity is closing
     volatile bool m_bShutdown;                   // If the peer side has shutdown the connection
     volatile bool m_bBroken;                     // If the connection has been broken
+    volatile bool m_bBreakAsUnstable;            // A flag indicating that the socket should become broken because it has been unstable for too long.
     volatile bool m_bPeerHealth;                 // If the peer status is normal
     volatile int m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
@@ -908,7 +912,7 @@ private: // synchronization: mutexes and conditions
 
     srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
     srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-    srt::sync::Mutex m_StatsLock;                // used to synchronize access to trace statistics
+    mutable srt::sync::Mutex m_StatsLock;        // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();
@@ -1090,8 +1094,9 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
-    time_point m_tsFreshActivation; // time of fresh activation of the link, or 0 if past the activation phase or idle
-    time_point m_tsUnstableSince;   // time since unexpected ACK delay experienced, or 0 if link seems healthy
+    time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
+    time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
+    time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
     
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,

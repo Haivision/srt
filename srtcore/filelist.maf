@@ -29,6 +29,7 @@ window.cpp
 
 SOURCES - ENABLE_EXPERIMENTAL_BONDING
 group.cpp
+group_backup.cpp
 group_common.cpp
 
 SOURCES - !ENABLE_STDCXX_SYNC
@@ -76,4 +77,5 @@ window.h
 
 PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
 group.h
+group_backup.h
 group_common.h
