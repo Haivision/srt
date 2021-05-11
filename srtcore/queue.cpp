@@ -815,7 +815,7 @@ void CHash::remove(int32_t id)
 //
 CRendezvousQueue::CRendezvousQueue()
     : m_lRendezvousID()
-    , m_RIDVectorLock()
+    , m_RIDListLock()
 {
 }
 
@@ -827,7 +827,7 @@ CRendezvousQueue::~CRendezvousQueue()
 void CRendezvousQueue::insert(
     const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const steady_clock::time_point& ttl)
 {
-    ScopedLock vg(m_RIDVectorLock);
+    ScopedLock vg(m_RIDListLock);
 
     CRL r;
     r.m_iID        = id;
@@ -843,7 +843,7 @@ void CRendezvousQueue::insert(
 
 void CRendezvousQueue::remove(const SRTSOCKET &id)
 {
-    ScopedLock lkv (m_RIDVectorLock);
+    ScopedLock lkv (m_RIDListLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
@@ -855,12 +855,12 @@ void CRendezvousQueue::remove(const SRTSOCKET &id)
     }
 }
 
-CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id)
+CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id) const
 {
-    ScopedLock     vg(m_RIDVectorLock);
+    ScopedLock     vg(m_RIDListLock);
 
     // TODO: optimize search
-    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
+    for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
@@ -915,7 +915,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 #endif
 
     {
-        ScopedLock vg(m_RIDVectorLock);
+        ScopedLock vg(m_RIDListLock);
 
         if (m_lRendezvousID.empty())
             return;
@@ -1004,7 +1004,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 }
 
                 // The call to completeBrokenConnectionDependencies() cannot happen here
-                // under the lock of m_RIDVectorLock as it risks a deadlock. Collect it
+                // under the lock of m_RIDListLock as it risks a deadlock. Collect it
                 // to update later.
                 LinkStatusInfo fi = {i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1};
                 ufailed.push_back(fi);
@@ -1026,7 +1026,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             {
                 IF_HEAVY_LOGGING(++debug_nupd);
 
-                // Collect them so that they can be updated out of m_RIDVectorLock.
+                // Collect them so that they can be updated out of m_RIDListLock.
                 LinkStatusInfo fi = { i->m_pUDT, i->m_iID, SRT_SUCCESS, i->m_PeerAddr, -1};
                 uprocess.push_back(fi);
                 // NOTE: safe loop, the incrementation was done before the loop body,
@@ -1117,7 +1117,7 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     {
         // Now, additionally for every failed link reset the TTL so that
         // they are set expired right now.
-        ScopedLock vg(m_RIDVectorLock);
+        ScopedLock vg(m_RIDListLock);
         for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
         {
             if (find_if(ufailed.begin(), ufailed.end(), LinkStatusInfo::HasID(i->m_iID)) != ufailed.end())
