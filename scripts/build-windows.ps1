@@ -134,7 +134,6 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
-                "-DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL " + 
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
