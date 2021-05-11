@@ -146,10 +146,20 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     .\bootstrap-vcpkg.bat
 
     if($DEVENV_PLATFORM -EQ "x64"){
-        .\vcpkg install openssl:x64-windows
+        if($STATIC_LINK_SSL -EQ "ON"){
+            .\vcpkg install openssl:x64-windows-static
+        }
+        else{
+            .\vcpkg install openssl:x64-windows
+        }        
     }
     else{        
-        .\vcpkg install openssl
+        if($STATIC_LINK_SSL -EQ "ON"){
+            .\vcpkg install openssl:x86-windows-static
+        }
+        else{
+            .\vcpkg install openssl:x86-windows
+        }
     }
     
     .\vcpkg integrate install
