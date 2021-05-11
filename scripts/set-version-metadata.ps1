@@ -29,11 +29,11 @@ if($Env:APPVEYOR){
 }
 if($Env:TEAMCITY_VERSION){
 	#make TeamCity update with this new version number
-	Write-Host "##teamcity[buildNumber '$majorVer.$minorVer.$patchVer.$buildNum']"
-	Write-Host "##teamcity[setParameter name='MajorVersion' value='$majorVer']"
-	Write-Host "##teamcity[setParameter name='MinorVersion' value='$minorVer']"
-	Write-Host "##teamcity[setParameter name='PatchVersion' value='$patchVer']"
-	Write-Host "##teamcity[setParameter name='BuildVersion' value='$buildNum']"
+	Write-Output "##teamcity[buildNumber '$majorVer.$minorVer.$patchVer.$buildNum']"
+	Write-Output "##teamcity[setParameter name='MajorVersion' value='$majorVer']"
+	Write-Output "##teamcity[setParameter name='MinorVersion' value='$minorVer']"
+	Write-Output "##teamcity[setParameter name='PatchVersion' value='$patchVer']"
+	Write-Output "##teamcity[setParameter name='BuildVersion' value='$buildNum']"
 	$FileDescriptionBranchCommitValue = "$majorVer.$minorVer.$patchVer.$buildNum - ($($Env:BUILD_VCS_NUMBER.substring(0,8)))"
 }
 
