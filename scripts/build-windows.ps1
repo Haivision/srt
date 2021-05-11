@@ -98,6 +98,7 @@ if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) {
     }
 }
 
+# get pthreads from nuget if CXX11 is not enabled
 if ( $CXX11 -eq "OFF" ) {
     # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
     if ( $VS_VERSION -gt 2015 ) { 
@@ -112,6 +113,7 @@ if ( $CXX11 -eq "OFF" ) {
     }
 }
 
+# check to see if static SSL linking was requested, and enable encryption if not already ON
 if ( $STATIC_LINK_SSL -eq "ON" ) {
     if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
         # requesting a static link implicitly requires encryption support
@@ -120,6 +122,7 @@ if ( $STATIC_LINK_SSL -eq "ON" ) {
     }
 }
 
+# check to see if VCPKG is marked to provide OpenSSL, and enable encryption if not already ON
 if ( $VCPKG_OPENSSL -eq "ON" ) {
     if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
         # requesting VCPKG to provide OpenSSL requires encryption support
@@ -127,7 +130,6 @@ if ( $VCPKG_OPENSSL -eq "ON" ) {
         $ENABLE_ENCRYPTION = "ON"
     }
 }
-
 
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
@@ -147,6 +149,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     if($DEVENV_PLATFORM -EQ "x64"){
         if($STATIC_LINK_SSL -EQ "ON"){
             .\vcpkg install openssl:x64-windows-static
+            $cmakeFlags += " -DVCPKG_TARGET_TRIPLET=x64-windows-static"
         }
         else{
             .\vcpkg install openssl:x64-windows
@@ -155,6 +158,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     else{        
         if($STATIC_LINK_SSL -EQ "ON"){
             .\vcpkg install openssl:x86-windows-static
+            $cmakeFlags += " -DVCPKG_TARGET_TRIPLET=x86-windows-static"
         }
         else{
             .\vcpkg install openssl:x86-windows
