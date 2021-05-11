@@ -23,7 +23,7 @@ The following API functions can be used to retrieve statistics on an SRT socket:
 * `int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear)`
 * `int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous)`
 
-Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
+Refer to the documentation of the [SRT API Functions](API-functions.md) for usage instructions.
 
 ### Summary Table
 
@@ -134,19 +134,19 @@ The time elapsed, in milliseconds, since the SRT socket has been created (after 
 
 The total number of sent DATA packets, including retransmitted packets ([pktRetransTotal](#pktRetransTotal)). Available for sender.
 
-If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts sent packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic counts sent packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
 #### pktRecvTotal
 
 The total number of received DATA packets, including retransmitted packets ([pktRcvRetransTotal](#pktRcvRetransTotal)). Available for receiver.
 
-If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
 #### pktSentUniqueTotal 
 
 The total number of *unique* DATA packets sent by the SRT sender. Available for sender. 
 
-This value contains only *unique* *original* DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](https://cac-word-edit.officeapps.live.com/we/API.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
+This value contains only *unique* *original* DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
 
 This value corresponds to the number of original DATA packets sent by the SRT sender. It counts every packet sent over the network for the first time, and can be calculated as follows: `pktSentUniqueTotal = pktSentTotal – pktRetransTotal`, or by `pktSentUniqueTotal = pktSentTotal – pktRetransTotal - pktSndFilterExtraTotal` if the  `SRTO_PACKETFILTER` socket option is enabled. The original DATA packets are sent only once.
 
@@ -158,11 +158,11 @@ Unique means "first arrived" DATA packets. There is no difference whether a pack
 
 This statistic doesn't count
 
-- duplicate packets (retransmitted or sent several times by defective hardware/software), 
+- duplicate packets (retransmitted or sent several times by defective hardware/software),
 - arrived too late packets (retransmitted or original packets arrived out of order) that were already dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
 - arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
-DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
+DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
 #### pktSndLossTotal
 
@@ -224,11 +224,11 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 The total number of _dropped_ by the SRT sender DATA packets that have no chance to be delivered in time (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for sender.
 
-Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [SRT API Socket Options](API-socket-options.md).
 
 The delay before TLPKTDROP mechanism is triggered is calculated as follows 
 `SRTO_PEERLATENCY + SRTO_SNDDROPDELAY + 2 * interval between sending ACKs`,
-where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds an extra to `SRTO_PEERLATENCY` delay, the default `interval between sending ACKs` is 10 milliseconds. The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds. Refer to `SRTO_PEERLATENCY`, `SRTO_SNDDROPDELAY` socket options in [API.md](API.md).
+where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds an extra to `SRTO_PEERLATENCY` delay, the default `interval between sending ACKs` is 10 milliseconds. The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds. Refer to `SRTO_PEERLATENCY`, `SRTO_SNDDROPDELAY` socket options in [SRT API Socket Options](API-socket-options.md).
 
 #### pktRcvDropTotal
 
@@ -238,7 +238,7 @@ This statistic counts
 - arrived too late packets (retransmitted or original packets arrived out of order),
 - arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
 
-Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [API.md](API.md).
+Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [SRT API Socket Options](API-socket-options.md).
 
 #### pktRcvUndecryptTotal
 
@@ -246,31 +246,31 @@ The total number of packets that failed to be decrypted at the receiver side. Av
 
 #### pktSndFilterExtraTotal
 
-The total number of packet filter control packets generated by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for sender.
+The total number of packet filter control packets generated by the packet filter (refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md)). Available for sender.
 
 Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 #### pktRcvFilterExtraTotal
 
-The total number of packet filter control packets received by the packet filter (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of packet filter control packets received by the packet filter (refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md)). Available for receiver.
 
 Packet filter control packets contain only control information necessary for the packet filter. The type of these packets is DATA.
 
-If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 #### pktRcvFilterSupplyTotal
 
-The total number of lost DATA packets recovered by the packet filter at the receiver side (e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of lost DATA packets recovered by the packet filter at the receiver side (e.g., FEC rebuilt packets; refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md)). Available for receiver.
 
-If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 #### pktRcvFilterLossTotal
 
-The total number of lost DATA packets **not** recovered by the packet filter at the receiver side (refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md)). Available for receiver.
+The total number of lost DATA packets **not** recovered by the packet filter at the receiver side (refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md)). Available for receiver.
 
-If the `SRTO_PACKETFILTER` socket option is disabled (refer to [API.md](API.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
+If the `SRTO_PACKETFILTER` socket option is disabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic is equal to 0. Introduced in SRT v1.4.0.
 
 #### byteSentTotal
 
@@ -363,25 +363,25 @@ Same as [pktRecvNAKTotal](#pktRecvNAKTotal), but for a specified interval.
 
 Same as [pktSndFilterExtraTotal](#pktSndFilterExtraTotal), but for a specified interval.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md).
 
 #### pktRcvFilterExtra
 
 Same as [pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal), but for a specified interval.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md).
 
 #### pktRcvFilterSupply
 
 Same as [pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal), but for a specified interval.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md).
 
 #### pktRcvFilterLoss
 
 Same as [pktRcvFilterLossTotal](#pktRcvFilterLossTotal), but for a specified interval.
 
-Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](packet-filtering-and-fec.md).
+Introduced in v1.4.0. Refer to [SRT Packet Filtering & FEC](../features/packet-filtering-and-fec.md).
 
 #### mbpsSendRate
 
@@ -539,21 +539,10 @@ at that moment.
 
 #### msRTT
 
-Calculated Round trip time (RTT), in milliseconds. Sender and Receiver. \
-The value is calculated by the receiver based on the incoming ACKACK control packets
-(used by sender to acknowledge ACKs from receiver).
+Smoothed round-trip time (SRTT), an exponentially-weighted moving average (EWMA) of an endpoint's RTT samples, in milliseconds.
+Available both for sender and receiver.
 
-The RTT (Round-Trip time) is the sum of two STT (Single-Trip time) 
-values, one from agent to peer, and one from peer to agent. Note that **the 
-measurement method is different than in TCP**. SRT measures only the "reverse
-RTT", that is, the time measured at the receiver between sending a `UMSG_ACK`
-message until receiving the sender's `UMSG_ACKACK` response message (with the
-same journal). This happens to be a little different from the "forward RTT"
-measured in TCP, which is the time between sending a data packet of a particular 
-sequence number and receiving `UMSG_ACK` with a sequence number that is later 
-by 1. Forward RTT isn't being measured or reported in SRT, although some
-research works have shown that these values, even though they should be the same,
-happen to differ; "reverse RTT" seems to be more optimistic.
+See [Section 4.10. Round-Trip Time Estimation](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.10) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and [[RFC6298] Paxson, V., Allman, M., Chu, J., and M. Sargent, "Computing TCP's Retransmission Timer"](https://datatracker.ietf.org/doc/html/rfc6298) for more details.
 
 #### mbpsBandwidth
 
@@ -592,7 +581,7 @@ conditions a nonzero value might be be provided by a congestion
 control module, although none of the built-in congestion control modules 
 currently use it.
 
-Refer to `SRTO_MAXBW` and `SRTO_INPUTBW` in [API.md](API.md).
+Refer to `SRTO_MAXBW` and `SRTO_INPUTBW` in [SRT API Socket Options](API-socket-options.md).
 
 #### byteMSS
 
@@ -602,7 +591,7 @@ Should not exceed the size of the maximum transmission unit (MTU), in bytes. Sen
 The default size of the UDP packet used for transport,
 including all possible headers (Ethernet, IP and UDP), is 1500 bytes.
 
-Refer to `SRTO_MSS` in [API.md](API.md).
+Refer to `SRTO_MSS` in [SRT API Socket Options](API-socket-options.md).
 
 #### pktSndBuf
 
@@ -727,12 +716,12 @@ that is received late.
 
 SRT group statistics are implemented for SRT Connection Bonding feature and available since SRT v1.5.0. Check the following documentation and code examples for details:
 
-- [Introduction in SRT Connection Bonding feature](https://github.com/Haivision/srt/blob/master/docs/bonding-intro.md),
-- [The concept of socket groups](https://github.com/Haivision/srt/blob/master/docs/socket-groups.md). Here you will also find the information regarding `srt-test-live`  application for testing Connection Bonding,
-- Check also [API](https://github.com/Haivision/srt/blob/master/docs/API.md) and [API functions](https://github.com/Haivision/srt/blob/master/docs/API-functions.md) documentation for Connection Bonding related updates,
+- Introduction in [SRT Connection Bonding](../features/bonding-intro.md),
+- The concept of [SRT Socket Groups](../features/socket-groups.md). Here you will also find the information regarding the `srt-test-live` application for testing Connection Bonding,
+- Check also [SRT API](API.md) and [SRT API Functions](API-functions.md) documentation for Connection Bonding related updates,
 - Code examples: simple [client](https://github.com/Haivision/srt/blob/master/examples/test-c-client-bonding.c) and [server](https://github.com/Haivision/srt/blob/master/examples/test-c-server-bonding.c) implementation.
 
-`srt_bistats(SRTSOCKET u, ...)`  function can be used with a socket group ID as a first argument to get statistics for a group. Most values of the `SRT_TRACEBSTATS` will be filled with zeros except for the fields listed in [Summary Table](#group-summary-table) below. Refer to the documentation of the [API functions](API-functions.md) for usage instructions.
+`srt_bistats(SRTSOCKET u, ...)`  function can be used with a socket group ID as a first argument to get statistics for a group. Most values of the `SRT_TRACEBSTATS` will be filled with zeros except for the fields listed in [Summary Table](#group-summary-table) below. Refer to the documentation of the [SRT API Functions](API-functions.md) for usage instructions.
 
 ### Summary Table <a name="group-summary-table"></a>
 
@@ -768,7 +757,7 @@ This value counts every *original* DATA packet sent over the network for the fir
 
 This statistic does not count retransmitted DATA packets that are individual per socket connection within the group. See the corresponding [pktRetransTotal](#pktRetransTotal) socket statistic.
 
-If the `SRTO_PACKETFILTER` socket option is enabled (refer to [API.md](API.md)), this statistic does not count packet filter control packets that are individual per socket connection within the group. See the corresponding [pktSndFilterExtraTotal](#pktSndFilterExtraTotal) socket statistic.
+If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic does not count packet filter control packets that are individual per socket connection within the group. See the corresponding [pktSndFilterExtraTotal](#pktSndFilterExtraTotal) socket statistic.
 
 #### pktRecvUniqueTotal <a name="group-pktRecvUniqueTotal"></a>
 

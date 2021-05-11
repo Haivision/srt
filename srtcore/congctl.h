@@ -146,7 +146,7 @@ protected:
     //int m_iMSS;              // NOT REQUIRED. Use m_parent->MSS() instead.
     //int32_t m_iSndCurrSeqNo; // NOT REQUIRED. Use m_parent->sndSeqNo().
     //int m_iRcvRate;          // NOT REQUIRED. Use m_parent->deliveryRate() instead.
-    //int m_RTT;               // NOT REQUIRED. Use m_parent->RTT() instead.
+    //int m_RTT;               // NOT REQUIRED. Use m_parent->SRTT() instead.
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
     // Constructor in protected section so that this class is semi-abstract.

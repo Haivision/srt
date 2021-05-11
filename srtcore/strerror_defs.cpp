@@ -119,26 +119,21 @@ const char** strerror_array_major [] = {
     strerror_msgs_again, // MJ_AGAIN = 6
     strerror_msgs_peererror, // MJ_PEERERROR = 7
     NULL
-
 };
 
+#define SRT_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
 
-
-size_t strerror_array_sizes [] = {
-    1,
-    6,
-    3,
-    4,
-    5,
-    15,
-    5,
-    1,
+const size_t strerror_array_sizes[] = {
+    SRT_ARRAY_SIZE(strerror_msgs_success) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_setup) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_connection) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_systemres) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_filesystem) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_notsup) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_again) - 1,
+    SRT_ARRAY_SIZE(strerror_msgs_peererror) - 1,
     0
-
 };
-
-
-
 
 const char* strerror_get_message(size_t major, size_t minor)
 {

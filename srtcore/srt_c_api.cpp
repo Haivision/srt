@@ -410,4 +410,9 @@ int64_t srt_connection_time(SRTSOCKET sock)
     return CUDT::socketStartTime(sock);
 }
 
+int srt_clock_type()
+{
+    return SRT_SYNC_CLOCK;
+}
+
 }

@@ -165,14 +165,14 @@ bool CUDTSocket::readReady()
     return broken();
 }
 
-bool CUDTSocket::writeReady()
+bool CUDTSocket::writeReady() const
 {
     return (m_pUDT->m_bConnected
                 && (m_pUDT->m_pSndBuffer->getCurrBufSize() < m_pUDT->m_config.iSndBufSize))
         || broken();
 }
 
-bool CUDTSocket::broken()
+bool CUDTSocket::broken() const
 {
     return m_pUDT->m_bBroken || !m_pUDT->m_bConnected;
 }
@@ -287,11 +287,21 @@ int CUDTUnited::startup()
 
    m_bGCStatus = true;
 
+   HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
+
    return 0;
 }
 
 int CUDTUnited::cleanup()
 {
+   // IMPORTANT!!!
+   // In this function there must be NO LOGGING AT ALL.  This function may
+   // potentially be called from within the global program destructor, and
+   // therefore some of the facilities used by the logging system - including
+   // the default std::cerr object bound to it by default, but also a different
+   // stream that the user's app has bound to it, and which got destroyed
+   // together with already exited main() - may be already deleted when
+   // executing this procedure.
    ScopedLock gcinit(m_InitLock);
 
    if (--m_iInstanceCount > 0)
@@ -301,7 +311,6 @@ int CUDTUnited::cleanup()
       return 0;
 
    m_bClosing = true;
-   HLOGC(inlog.Debug, log << "GarbageCollector: thread EXIT");
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
@@ -1065,16 +1074,25 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners [], int lsize, int64
 SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_addrlen)
 {
    if (pw_addr && !pw_addrlen)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: provided address, but address length parameter is missing");
       throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+   }
 
    CUDTSocket* ls = locateSocket(listen);
 
    if (ls == NULL)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: invalid listener socket ID value: " << listen);
       throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+   }
 
    // the "listen" socket must be in LISTENING status
    if (ls->m_Status != SRTS_LISTENING)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
       throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+   }
 
    // no "accept" in rendezvous connection setup
    if (ls->m_pUDT->m_config.bRendezvous)
@@ -1123,15 +1141,22 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
    {
       // non-blocking receiving, no connection available
       if (!ls->m_pUDT->m_config.bSynRecving)
+      {
+         LOGC(cnlog.Error, log << "srt_accept: no pending connection available at the moment");
          throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+      }
 
+      LOGC(cnlog.Error, log << "srt_accept: listener socket @" << listen << " is already closed");
       // listening socket is closed
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
    }
 
    CUDTSocket* s = locateSocket(u);
    if (s == NULL)
+   {
+      LOGC(cnlog.Error, log << "srt_accept: pending connection has unexpectedly closed");
       throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+   }
 
    // Set properly the SRTO_GROUPCONNECT flag
    s->core().m_config.iGroupConnect = 0;
@@ -1164,7 +1189,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 #endif
 
    ScopedLock cg(s->m_ControlLock);
-   
+
    if (pw_addr != NULL && pw_addrlen != NULL)
    {
       // Check if the length of the buffer to fill the name in
@@ -1415,7 +1440,7 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        CUDTGroup::SocketData data = g.prepareData(ns);
+        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -1603,11 +1628,6 @@ int CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, int ar
                 f->rcvstate = SRT_GST_PENDING;
                 retval = -1;
                 break;
-            }
-
-            if (was_empty)
-            {
-                g.syncWithSocket(ns->core(), HSD_INITIATOR);
             }
 
             HLOGC(aclog.Debug, log << "groupConnect: @" << sid << " connection successful, setting group OPEN (was "
@@ -1911,6 +1931,12 @@ void CUDTUnited::deleteGroup(CUDTGroup* g)
     using srt_logging::gmlog;
 
     srt::sync::ScopedLock cg (m_GlobControlLock);
+    return deleteGroup_LOCKED(g);
+}
+
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
+{
     SRT_ASSERT(g->groupEmpty());
 
     // After that the group is no longer findable by GroupKeeper
@@ -3225,7 +3251,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Check if the socket already is in the group
-    CUDTGroup::SocketData* f;
+    srt::groups::SocketData* f;
     if (g->contains(socket, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3234,7 +3260,7 @@ int CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         s->m_GroupOf = g;
         return 0;
     }
-    s->m_GroupMemberData = g->add(g->prepareData(s));
+    s->m_GroupMemberData = g->add(srt::groups::prepareSocketData(s));
     s->m_GroupOf = g;
 
     return 0;

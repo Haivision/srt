@@ -290,7 +290,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
         PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
-        PrintOptionHelp(o_loglevel,  "<level=error>", "log level {fatal,error,info,note,warning}");
+        PrintOptionHelp(o_loglevel,  "<level=warn>", "log level {fatal,error,warn,note,info,debug}");
         PrintOptionHelp(o_logfa,     "<fas>", "log functional area (see '-h logging' for more info)");
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
@@ -345,7 +345,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats   = OptionPresent(params, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
+    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
     cfg.log_internal = OptionPresent(params, o_log_internal);
     cfg.logfile      = Option<OutString>(params, o_logfile);
@@ -434,7 +434,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 

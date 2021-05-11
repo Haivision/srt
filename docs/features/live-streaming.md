@@ -1,15 +1,14 @@
 
-Live streaming with SRT - guidelines
-====================================
+## Live Streaming with SRT - Guidelines
+
+**NOTE:** See also best practices and configuration tips in [Section 7.1 Live Streaming](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-7.1) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00).
 
 SRT is primarily created for live streaming. Before you use it, you must keep
 in mind that Live Streaming is a process with its own rules, of which SRT
 fulfills only and exclusively the transmission part. The Live Streaming process
 consists of more parts.
 
-
-Transmitting MPEG TS binary protocol over SRT
-=============================================
+## Transmitting MPEG TS binary protocol over SRT
 
 MPEG-TS is the most important protocol commonly sent over internet using
 SRT, and the main reason for initiating this project. 
@@ -30,9 +29,7 @@ an extra header (this is an option that people often try with RTP) - note that
 
 However, the transmission must still satisfy the Live Streaming Requirements.
 
-
-Live Streaming Requirements
-===========================
+## Live Streaming Requirements
 
 The MPEG-TS stream, as a good example, consists of Frames. Each
 Frame is a portion of data assigned to a particular stream (usually you have
@@ -92,9 +89,7 @@ requirement for a live stream is that data must be transmitted with exactly the 
 **average** speed as they are output by a video player. More precisely, the data must 
 be produced at exactly the same speed as they will be consumed by the video player.
 
-
-Live Streaming Process
-======================
+## Live Streaming Process
 
 Now that you know how Live Streaming turns a bunch of MPEG-TS encoded video and audio 
 frames into a network live stream, let's complete the definition of live streaming 

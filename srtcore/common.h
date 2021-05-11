@@ -78,12 +78,17 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-
 #ifdef _DEBUG
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
 #else
 #define SRT_ASSERT(cond)
+#endif
+
+#if HAVE_FULL_CXX11
+#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+#define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
 #include <exception>
@@ -279,7 +284,7 @@ enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
     TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
-    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::RTT().
+    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::SRTT().
     TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent

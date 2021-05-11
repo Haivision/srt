@@ -1009,11 +1009,6 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
                 LinkStatusInfo fi = {i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1};
                 ufailed.push_back(fi);
 
-                /*
-                 * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
-                 * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
-                 * and may crash here on next pass.
-                 */
                 // i_next was preincremented, but this is guaranteed to point to
                 // the element next to erased one.
                 i_next = m_lRendezvousID.erase(i);
@@ -1100,7 +1095,13 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
     for (vector<LinkStatusInfo>::iterator i = ufailed.begin(); i != ufailed.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        /*
+         * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
+         * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
+         * and may crash on next pass.
+         */
         i->u->m_bConnecting = false;
+        remove(i->u->m_SocketID);
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member
