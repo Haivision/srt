@@ -135,7 +135,7 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
                 "-DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL " + 
-                "-DENABLE_UNITTESTS=$UNIT_TESTS "
+                "-DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
@@ -154,7 +154,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     
     .\vcpkg integrate install
     Pop-Location
-    $cmakeFlags += "-DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
+    $cmakeFlags += " -DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
 }
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
