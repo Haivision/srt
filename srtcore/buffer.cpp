@@ -791,6 +791,8 @@ void CSndBuffer::increase()
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#if (!ENABLE_NEW_RCVBUFFER)
+
 /*
  *   RcvBuffer (circular buffer):
  *
@@ -2290,3 +2292,5 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 
     return found;
 }
+
+#endif // !ENABLE_NEW_RCVBUFFER

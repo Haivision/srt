@@ -60,6 +60,7 @@ modified by
 #include "common.h"
 #include "list.h"
 #include "buffer.h"
+#include "buffer_rcv.h"
 #include "window.h"
 #include "packet.h"
 #include "channel.h"
@@ -415,7 +416,11 @@ public: // internal API
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
+#if ENABLE_NEW_RCVBUFFER
+    SRTU_PROPERTY_RO(srt::CRcvBufferNew*, rcvBuffer, m_pRcvBuffer);
+#else
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
+#endif
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
@@ -846,12 +851,16 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
-    CRcvBuffer* m_pRcvBuffer;                    // Receiver buffer
-    CRcvLossList* m_pRcvLossList;                // Receiver loss list
-    std::deque<CRcvFreshLoss> m_FreshLoss;       // Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
-    int m_iReorderTolerance;                     // Current value of dynamic reorder tolerance
-    int m_iConsecEarlyDelivery;                  // Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
-    int m_iConsecOrderedDelivery;                // Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
+#if ENABLE_NEW_RCVBUFFER
+    srt::CRcvBufferNew* m_pRcvBuffer;            //< Receiver buffer
+#else
+    CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
+#endif
+    CRcvLossList* m_pRcvLossList;                //< Receiver loss list
+    std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+    int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
+    int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
+    int m_iConsecOrderedDelivery;                //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
 
     CACKWindow<ACK_WND_SIZE> m_ACKWindow;        // ACK history window
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
