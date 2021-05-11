@@ -790,8 +790,13 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING9 $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
