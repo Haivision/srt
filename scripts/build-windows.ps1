@@ -142,14 +142,14 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
     Push-Location $projectRoot
     Write-Output "Cloning VCPKG into: $(Get-Location)"
-    if (Test-Path -Path $Folder) {
+    if (Test-Path -Path ".\vcpkg") {
         Set-Location .\vcpkg
         git pull
     } else {
         git clone https://github.com/microsoft/vcpkg
         Set-Location .\vcpkg
     }
-    
+
     .\bootstrap-vcpkg.bat
 
     if($DEVENV_PLATFORM -EQ "x64"){
