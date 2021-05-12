@@ -10850,7 +10850,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
      */
 
     const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
-    const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
+    const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US + count_microseconds(m_tdSendInterval));
 
     if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))
         return;
