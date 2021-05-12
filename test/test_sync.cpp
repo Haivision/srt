@@ -157,6 +157,27 @@ TEST(SyncDuration, OperatorMultIntEq)
     EXPECT_EQ(count_milliseconds(a), 7000);
 }
 
+TEST(SyncRandom, GenRandomInt)
+{
+    vector<int> mn(64);
+
+    for (int i = 0; i < 2048; ++i)
+    {
+        const int rand_val = genRandomInt(0, 63);
+        ASSERT_GE(rand_val, 0);
+        ASSERT_LE(rand_val, 63);
+        ++mn[rand_val];
+    }
+
+    // Uncomment to see the distribution.
+    // for (size_t i = 0; i < mn.size(); ++i)
+    // {
+    //     cout << i << '\t';
+    //     for (int j=0; j<mn[i]; ++j) cout << '*';
+    //     cout << '\n';
+    // }
+}
+
 /*****************************************************************************/
 /*
  * TimePoint tests

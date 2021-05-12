@@ -835,6 +835,18 @@ void SetThreadLocalError(const CUDTException& e);
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Random distribution functions.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Generate a uniform-distributed random integer from [minVal; maxVal].
+/// If HAVE_CXX11, uses std::uniform_distribution(std::random_device).
+/// @param[in] minVal minimum allowed value of the resulting random number.
+/// @param[in] maxVal maximum allowed value of the resulting random number.
+int genRandomInt(int minVal, int maxVal);
+
 } // namespace sync
 } // namespace srt
 

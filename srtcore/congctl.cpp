@@ -525,11 +525,9 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization
-            srand(m_iLastDecSeq);
-            m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
-            if (m_iDecRandom < 1)
-                m_iDecRandom = 1;
+            // remove global synchronization using randomization.
+            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
