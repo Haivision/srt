@@ -34,7 +34,6 @@ written by
 #define ATR_UNUSED
 #define ATR_DEPRECATED
 #endif
-
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
 

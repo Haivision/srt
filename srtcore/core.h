@@ -401,9 +401,7 @@ public: // internal API
     static int32_t generateISN()
     {
         using namespace srt::sync;
-        // Random Initial Sequence Number (normal mode)
-        srand((unsigned) count_microseconds(steady_clock::now().time_since_epoch()));
-        return (int32_t)(CSeqNo::m_iMaxSeqNo * (double(rand()) / RAND_MAX));
+        return genRandomInt(0, CSeqNo::m_iMaxSeqNo);
     }
 
     // For SRT_tsbpdLoop

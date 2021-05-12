@@ -562,12 +562,6 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 
     if (!packet.isControl())
     {
-        if (dcounter == 0)
-        {
-            timeval tv;
-            gettimeofday(&tv, 0);
-            srand(tv.tv_usec & 0xFFFF);
-        }
         ++dcounter;
 
         if (flwcounter)
@@ -581,7 +575,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            int rnd = rand() % 16 + SRT_TEST_FAKE_LOSS;
+            const int rnd = srt::sync::getRandomInt(8, 24);
 
             if (dcounter > rnd)
             {

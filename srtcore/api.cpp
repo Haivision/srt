@@ -194,22 +194,7 @@ m_bGCStatus(false),
 m_ClosedSockets()
 {
    // Socket ID MUST start from a random value
-   // Note. Don't use CTimer here, because s_UDTUnited is a static instance of CUDTUnited
-   // with dynamic initialization (calling this constructor), while CTimer has
-   // a static member s_ullCPUFrequency with dynamic initialization.
-   // The order of initialization is not guaranteed.
-   timeval t;
-
-   gettimeofday(&t, 0);
-   srand((unsigned int)t.tv_usec);
-
-   const double rand1_0 = double(rand())/RAND_MAX;
-
-   // Motivation: in case when rand() returns the value equal to RAND_MAX,
-   // rand1_0 == 1, so the below formula will be
-   // 1 + (MAX_SOCKET_VAL-1) * 1 = 1 + MAX_SOCKET_VAL - 1 = MAX_SOCKET_VAL
-   // which is the highest allowed value for the socket.
-   m_SocketIDGenerator = 1 + int((MAX_SOCKET_VAL-1) * rand1_0);
+   m_SocketIDGenerator = genRandomInt(1, MAX_SOCKET_VAL);
    m_SocketIDGenerator_init = m_SocketIDGenerator;
 
    // XXX An unlikely exception thrown from the below calls
