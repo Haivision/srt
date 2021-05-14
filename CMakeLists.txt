@@ -136,6 +136,8 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 # Use application-defined group reader
@@ -632,6 +634,11 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
+endif()
+
+if (ENABLE_CLANG_TSA)
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	message(STATUS "Clang TSA: Enabled")
 endif()
 
 if (ENABLE_PROFILE)

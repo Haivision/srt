@@ -244,22 +244,27 @@ srt::sync::UniqueLock::UniqueLock(Mutex& m)
 
 srt::sync::UniqueLock::~UniqueLock()
 {
-    unlock();
+    if (m_iLocked == 0)
+    {
+        unlock();
+    }
 }
 
 void srt::sync::UniqueLock::lock()
 {
-    if (m_iLocked == -1)
-        m_iLocked = m_Mutex.lock();
+    if (m_iLocked != -1)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_iLocked = m_Mutex.lock();
 }
 
 void srt::sync::UniqueLock::unlock()
 {
-    if (m_iLocked == 0)
-    {
-        m_Mutex.unlock();
-        m_iLocked = -1;
-    }
+    if (m_iLocked != 0)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_Mutex.unlock();
+    m_iLocked = -1;
 }
 
 srt::sync::Mutex* srt::sync::UniqueLock::mutex()
