@@ -544,7 +544,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         w_msglen      = 1;
         p             = p->m_pNext;
         bool move     = false;
-        while (msgno == p->getMsgSeq())
+        while (p != m_pLastBlock && msgno == p->getMsgSeq())
         {
             if (p == m_pCurrBlock)
                 move = true;
