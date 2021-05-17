@@ -525,6 +525,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         p = p->m_pNext;
 #if ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
+    int32_t last_seq = p->m_iSeqNo;
 #endif
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
@@ -549,6 +550,9 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         bool move     = false;
         while (msgno == p->getMsgSeq())
         {
+#if ENABLE_HEAVY_LOGGING
+            last_seq = p->m_iSeqNo;
+#endif
             if (p == m_pCurrBlock)
                 move = true;
             p = p->m_pNext;
@@ -558,8 +562,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         }
 
         HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, SEQ " << first_seq << " - " << first_seq + w_msglen - 1
-                  << " to drop, msgno=" << msgno);
+              log << "CSndBuffer::readData: due to TTL exceeded, SEQ " << first_seq << " - " << last_seq << ", "
+                  << w_msglen << " packets to drop, msgno=" << msgno);
 
         // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
         // This means that in this case it should be written by the message sequence value only

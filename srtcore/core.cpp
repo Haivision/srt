@@ -8874,7 +8874,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
 
             HLOGC(qrlog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
