@@ -3,6 +3,8 @@
 Published: 2018-06-28  
 Last updated: 2018-06-28
 
+**NOTE:** This document might be outdated, please consult [Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-3.2.1) and [Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally.
+
 **Contents**
 
 - [Overview](#overview)
@@ -695,7 +697,26 @@ connection will not be made until new, unique cookies are generated (after a
 delay of up to one minute). In the case of an application "connecting to itself", 
 the cookies will always be identical, and so the connection will never be made.
 
-When one party's cookie value is greater than its peer's, it wins the cookie 
+```c++
+// Here m_ConnReq.m_iCookie is a local cookie value sent in connection request to the peer.
+// m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
+const int64_t contest = int64_t(m_ConnReq.m_iCookie) - int64_t(m_ConnRes.m_iCookie);
+
+if ((contest & 0xFFFFFFFF) == 0)
+{
+    return HSD_DRAW;
+}
+
+if (contest & 0x80000000)
+{
+    return HSD_RESPONDER;
+}
+
+return HSD_INITIATOR;
+```
+
+When one party's cookie value is greater than its peer's (based on 32-bit subtraction of both
+with potential overflow), it wins the cookie 
 contest and becomes Initiator (the other party becomes the Responder).
 
 At this point there are two "handshake flows" possible (at least theoretically):
@@ -1333,7 +1354,7 @@ account to calculate the time threshold for `TLPKTDROP`.
 
 `KMREQ` and `KMRSP` contain the KMX (key material exchange) message used for
 encryption. The most important part of this message is the
-AES-wrapped key (see the [Encryption documentation](encryption.md) for
+AES-wrapped key (see [SRT Encryption](encryption.md) for
 details). If the encryption process on the Responder side was successful,
 the response contains the same message for confirmation. Otherwise it's
 one single 32-bit value that contains the value of `SRT_KMSTATE` type,
@@ -1540,8 +1561,4 @@ application should set it on a Caller socket using the `SRTO_STREAMID` option.
 Upon connection, the accepted socket on the Listener side will have exactly the
 same value set, and it can be retrieved using the same option. For more details
 about the prospective use of this option, please refer to the
-[API description document](API.md) and [SRT Access Control guidelines](AccessControl.md).
-
-
-[Return to top of page](#srt-handshake)
-
+[SRT API Socket Options](../API/API-socket-options.md) and [SRT Access Control (Stream ID) Guidlines](access-control.md).

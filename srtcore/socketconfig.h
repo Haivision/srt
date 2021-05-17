@@ -146,7 +146,7 @@ public:
 
         memcpy(stor, s, length);
         stor[length] = 0;
-        len          = length;
+        len          = (int) length;
         return true;
     }
 
@@ -185,7 +185,7 @@ struct CSrtConfig: CSrtMuxerConfig
     static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80 * 1000;
 
     // Mimimum recv flight flag size is 32 packets
-    static const int    DEF_MAX_FLIGHT_PKT = 32;
+    static const int    DEF_MIN_FLIGHT_PKT = 32;
     static const size_t MAX_SID_LENGTH     = 512;
     static const size_t MAX_PFILTER_LENGTH = 64;
     static const size_t MAX_CONG_LENGTH    = 16;
@@ -414,11 +414,15 @@ struct CSrtConfigSetter<SRTO_FC>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int fc = cast_optval<int>(optval, optlen);
-        if (fc < 1)
+        using namespace srt_logging;
+        const int fc = cast_optval<int>(optval, optlen);
+        if (fc < co.DEF_MIN_FLIGHT_PKT)
+        {
+            LOGC(kmlog.Error, log << "SRTO_FC: minimum allowed value is 32 (provided: " << fc << ")");
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
+        }
 
-        co.iFlightFlagSize = std::min(fc, +co.DEF_MAX_FLIGHT_PKT);
+        co.iFlightFlagSize = fc;
     }
 };
 
@@ -447,11 +451,10 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         // Mimimum recv buffer size is 32 packets
         const int mssin_size = co.iMSS - CPacket::UDP_HDR_SIZE;
 
-        // XXX This magic 32 deserves some constant
-        if (val > mssin_size * co.DEF_MAX_FLIGHT_PKT)
+        if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
             co.iRcvBufSize = val / mssin_size;
         else
-            co.iRcvBufSize = co.DEF_MAX_FLIGHT_PKT;
+            co.iRcvBufSize = co.DEF_MIN_FLIGHT_PKT;
 
         // recv buffer MUST not be greater than FC size
         if (co.iRcvBufSize > co.iFlightFlagSize)
@@ -499,7 +502,11 @@ struct CSrtConfigSetter<SRTO_SNDTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iSndTimeOut = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndTimeOut = val;
     }
 };
 
@@ -508,7 +515,11 @@ struct CSrtConfigSetter<SRTO_RCVTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvTimeOut = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvTimeOut = val;
     }
 };
 
@@ -657,8 +668,12 @@ struct CSrtConfigSetter<SRTO_LATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency     = cast_optval<int>(optval, optlen);
-        co.iPeerLatency = cast_optval<int>(optval);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency  = val;
+        co.iPeerLatency = val;
     }
 };
 template<>
@@ -666,7 +681,11 @@ struct CSrtConfigSetter<SRTO_RCVLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRcvLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRcvLatency = val;
     }
 };
 template<>
@@ -674,7 +693,11 @@ struct CSrtConfigSetter<SRTO_PEERLATENCY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerLatency = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerLatency = val;
     }
 };
 template<>
@@ -690,9 +713,11 @@ struct CSrtConfigSetter<SRTO_SNDDROPDELAY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        // Surprise: you may be connected to alter this option.
-        // The application may manipulate this option on sender while transmitting.
-        co.iSndDropDelay = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iSndDropDelay = val;
     }
 };
 template<>
@@ -800,8 +825,12 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
         using namespace srt::sync;
-        co.tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
+        co.tdConnTimeOut = milliseconds_from(val);
     }
 };
 
@@ -891,8 +920,13 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         using namespace srt_logging;
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+        {
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
-        if (*(int *)optval > SRT_LIVE_MAX_PLSIZE)
+        if (val > SRT_LIVE_MAX_PLSIZE)
         {
             LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -911,8 +945,8 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
 
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (co.zExpPayloadSize > efc_max_payload_size)
+            const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+            if (size_t(val) > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
                      log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
@@ -921,7 +955,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
         }
 
-        co.zExpPayloadSize = cast_optval<int>(optval, optlen);
+        co.zExpPayloadSize = val;
     }
 };
 
@@ -959,7 +993,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // File transfer mode:
             // - tsbpd: off
             // - latency: 0
-            // - linger: 2 minutes (180s)
+            // - linger: on
             // - congctl: file (original UDT congestion control)
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
             co.bTSBPD          = false;
@@ -999,14 +1033,28 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
     {
         using namespace srt_logging;
 
-        // If you first change the KMREFRESHRATE, KMPREANNOUNCE
-        // will be set to the maximum allowed value
-        co.uKmRefreshRatePkt = cast_optval<int>(optval, optlen);
-        if (co.uKmPreAnnouncePkt == 0 || co.uKmPreAnnouncePkt > (co.uKmRefreshRatePkt - 1) / 2)
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
         {
-            co.uKmPreAnnouncePkt = (co.uKmRefreshRatePkt - 1) / 2;
+            LOGC(aclog.Error,
+                log << "SRTO_KMREFRESHRATE=" << val << " can't be negative");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        // Changing the KMREFRESHRATE sets KMPREANNOUNCE to the maximum allowed value
+        co.uKmRefreshRatePkt = (unsigned) val;
+
+        if (co.uKmPreAnnouncePkt == 0 && co.uKmRefreshRatePkt == 0)
+            return; // Both values are default
+
+        const unsigned km_preanno = co.uKmPreAnnouncePkt == 0 ? HAICRYPT_DEF_KM_PRE_ANNOUNCE : co.uKmPreAnnouncePkt;
+        const unsigned km_refresh = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
+
+        if (co.uKmPreAnnouncePkt == 0 || km_preanno > (km_refresh - 1) / 2)
+        {
+            co.uKmPreAnnouncePkt = (km_refresh - 1) / 2;
             LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << std::hex << co.uKmRefreshRatePkt << ": setting SRTO_KMPREANNOUNCE=0x"
+                 log << "SRTO_KMREFRESHRATE=0x" << std::hex << km_refresh << ": setting SRTO_KMPREANNOUNCE=0x"
                      << std::hex << co.uKmPreAnnouncePkt);
         }
     }
@@ -1020,11 +1068,19 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
         using namespace srt_logging;
 
         const int val = cast_optval<int>(optval, optlen);
-        const int kmref = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
-        if (val > (kmref - 1) / 2)
+        if (val < 0)
         {
             LOGC(aclog.Error,
-                    log << "SRTO_KMPREANNOUNCE=0x" << std::hex << val << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
+                log << "SRTO_KMPREANNOUNCE=" << val << " can't be negative");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        const unsigned km_preanno = val == 0 ? HAICRYPT_DEF_KM_PRE_ANNOUNCE : val;
+        const unsigned kmref = co.uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : co.uKmRefreshRatePkt;
+        if (km_preanno > (kmref - 1) / 2)
+        {
+            LOGC(aclog.Error,
+                    log << "SRTO_KMPREANNOUNCE=0x" << std::hex << km_preanno << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
                     << " - OPTION REJECTED.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -1047,7 +1103,11 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iPeerIdleTimeout = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iPeerIdleTimeout = val;
     }
 };
 

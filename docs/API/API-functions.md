@@ -99,7 +99,7 @@
 | [srt_bistats](#srt_bistats)                       | Reports the current statistics                                                                                 |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
-<h3 id="asynchronous-operations-epoll">Asynchronous Operations (epoll)</h3>
+<h3 id="asynchronous-operations-epoll">Asynchronous Operations (Epoll)</h3>
   
 | *Function / Structure*                            | *Description*                                                                                                  |
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
@@ -135,6 +135,7 @@
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
 | [srt_time_now](#srt_time_now)                     | Get time in microseconds elapsed since epoch using SRT internal clock <br/> (steady or monotonic clock)              |
 | [srt_connection_time](#srt_connection_time)       | Get connection time in microseconds elapsed since epoch using SRT internal clock <br/> (steady or monotonic clock)   |
+| [srt_clock_type](#srt_clock_type)                 | Get the type of clock used internally by SRT                                                                   |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
 <h3 id="diagnostics">Diagnostics</h3>
@@ -166,8 +167,8 @@
 | [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)           | Rendezvous cookie collision                                                                                    |
 | [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)           | Both parties have defined a passprhase for connection and they differ                                          |
 | [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)             | Only one connection party has set up a password                                                                |
-| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)         | The value for [`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
-| [SRT_REJ_FILTER](#SRT_REJ_FILTER)                 | The [`SRTO_PACKETFILTER`](../docs/APISocketOptions.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
+| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)         | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
+| [SRT_REJ_FILTER](#SRT_REJ_FILTER)                 | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
 | [SRT_REJ_GROUP](#SRT_REJ_GROUP)                   | The group type or some group settings are incompatible for both connection parties                             |
 | [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)               | The connection wasn't rejected, but it timed out                                                               |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
@@ -215,13 +216,13 @@
 [`SRT_EASYNCSND`](#srt_easyncsnd)                   | Sending operation is not ready to perform                                                                      |
 [`SRT_EASYNCRCV`](#srt_easyncrcv)                   | Receiving operation is not ready to perform                                                                    |
 [`SRT_ETIMEOUT`](#srt_etimeout)                     | The operation timed out                                                                                        |
-[`SRT_ECONGEST`](#srt_econgest)                     | With [`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) and [`SRTO_TLPKTDROP`](../docs/APISocketOptions.md#SRTO_TLPKTDROP) set to true, <br/> some packets were dropped by sender                    |
+[`SRT_ECONGEST`](#srt_econgest)                     | With [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) set to true, <br/> some packets were dropped by sender                    |
 [`SRT_EPEERERR`](#srt_epeererr)                     | Receiver peer is writing to a file that the agent is sending                                                   |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
 
 
-## Library initialization
+## Library Initialization
 
 * [srt_startup](#srt_startup)
 * [srt_cleanup](#srt_cleanup)
@@ -275,7 +276,14 @@ This means that if you call [`srt_startup`](#srt_startup) multiple times, you ne
 `srt_cleanup` function exactly the same number of times.
 
 
-## Creating and configuring sockets
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+
+
+
+## Creating and Configuring Sockets
 
 * [srt_socket](#srt_socket)
 * [srt_create_socket](#srt_create_socket)
@@ -303,9 +311,9 @@ is decided at the call of [`srt_connect`](#srt_connect) or [`srt_bind`](#srt_bin
 using `SOCK_STREAM` or `SOCK_DGRAM` symbols (with the latter being misleading,
 as the message mode has nothing to do with UDP datagrams and it's rather
 similar to the SCTP protocol). In SRT these two modes are available by setting
-[`SRTO_TRANSTYPE`](../docs/APISocketOptions.md#SRTO_TRANSTYPE). The default is `SRTT_LIVE`. If, however, you set
-[`SRTO_TRANSTYPE`](../docs/APISocketOptions.md#SRTO_TRANSTYPE) to `SRTT_FILE` for file mode, you can then leave the
-[`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) option as false (default), which corresponds to "stream" mode
+[`SRTO_TRANSTYPE`](API-socket-options.md#SRTO_TRANSTYPE). The default is `SRTT_LIVE`. If, however, you set
+[`SRTO_TRANSTYPE`](API-socket-options.md#SRTO_TRANSTYPE) to `SRTT_FILE` for file mode, you can then leave the
+[`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) option as false (default), which corresponds to "stream" mode
 (TCP-like), or set it to true, which corresponds to "message" mode (SCTP-like).
 
 
@@ -356,14 +364,14 @@ This call is obligatory for a listening socket before calling [`srt_listen`](#sr
 and for rendezvous mode before calling [`srt_connect`](#srt_connect); otherwise it's 
 optional. For a listening socket it defines the network interface and the port where 
 the listener should expect a call request. In the case of rendezvous mode (when the
-socket has set [`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) to 
+socket has set [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to 
 true both parties connect to one another) it defines the network interface and port 
 from which packets will be sent to the peer, and the port to which the peer is 
 expected to send packets.
 
 For a connecting socket this call can set up the outgoing port to be used in the 
 communication. It is allowed that multiple SRT sockets share one local outgoing 
-port, as long as [`SRTO_REUSEADDR`](../docs/APISocketOptions.md#SRTO_REUSEADDRS) 
+port, as long as [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) 
 is set to *true* (default). Without this call the port will be automatically 
 selected by the system.
 
@@ -385,8 +393,6 @@ connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
 
-
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -398,7 +404,6 @@ int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock);
 ```
 
 A version of [`srt_bind`](#srt_bind) that acquires a given UDP socket instead of creating one.
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -427,7 +432,6 @@ Gets the current status of the socket. Possible states are:
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -448,7 +452,6 @@ Retrieves information about the sender buffer.
 
 This function can be used for diagnostics. It is especially useful when the 
 socket needs to be closed asynchronously.
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -474,6 +477,12 @@ last user closed.
 |:------------------------------- |:----------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock) | Socket [`u`](#u) indicates no valid socket ID   |
 | <img width=240px height=1px/>   | <img width=710px height=1px/>                   |
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
 
 
 
@@ -503,7 +512,7 @@ socket and the [`srt_accept`](#srt_accept) function:
 
 * [`srt_listen_callback`](#srt_listen_callback) installs a user function that will 
 be called before [`srt_accept`](#srt_accept) can happen
-* [`SRTO_GROUPCONNECT`](../docs/APISocketOptions.md#SRTO_GROUPCONNECT) option allows 
+* [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) option allows 
 the listener socket to accept group connections
 
 |      Returns                  |                                                           |
@@ -516,12 +525,11 @@ the listener socket to accept group connections
 | [`SRT_EINVPARAM`](#srt_einvparam)       | Value of `backlog` is 0 or negative.                                                         |
 | [`SRT_EINVSOCK`](#srt_einvsock)         | Socket [`u`](#u) indicates no valid SRT socket.                                              |
 | [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) | [`srt_bind`](#srt_bind) has not yet been called on that socket.                              |
-| [`SRT_ERDVNOSERV`](#srt_erdvnoserv)     | [`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) flag is set to true on specified socket. |
+| [`SRT_ERDVNOSERV`](#srt_erdvnoserv)     | [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) flag is set to true on specified socket. |
 | [`SRT_EINVOP`](#srt_einvop)             | Internal error (should not happen when [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) is reported). |
 | [`SRT_ECONNSOCK`](#srt_econnsock)       | The socket is already connected.                                                             |
-| [`SRT_EDUPLISTEN`](#srt_eduplisten)     | The address used in [`srt_bind`](#srt_bind) by this socket is already occupied by another listening socket. <br/> Binding multiple sockets to one IP address and port is allowed, as long as <br/> [`SRTO_REUSEADDR`](../docs/APISocketOptions.md#SRTO_REUSEADDRS) is set to true, but only one of these sockets can be set up as a listener.  |
+| [`SRT_EDUPLISTEN`](#srt_eduplisten)     | The address used in [`srt_bind`](#srt_bind) by this socket is already occupied by another listening socket. <br/> Binding multiple sockets to one IP address and port is allowed, as long as <br/> [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to true, but only one of these sockets can be set up as a listener.  |
 | <img width=240px height=1px/>           | <img width=710px height=1px/>                      |
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -554,14 +562,14 @@ information through [`srt_group_data`](#srt_group_data) or the data filled by
 [`srt_sendmsg2`](#srt_sendmsg) and [`srt_recvmsg2`](#srt_recvmsg2).
 
 If the `lsn` listener socket is configured for blocking mode
-([`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) set to true, default),
+([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) set to true, default),
 the call will block until the incoming connection is ready. Otherwise, the
 call always returns immediately. The `SRT_EPOLL_IN` epoll event should be
 checked on the `lsn` socket prior to calling this function in that case.
 
 If the pending connection is a group connection (initiated on the peer side by 
 calling the connection function using a group ID, and permitted on the listener 
-socket by the [`SRTO_GROUPCONNECT`](../docs/APISocketOptions.md#SRTO_GROUPCONNECT) 
+socket by the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) 
 flag), then the value returned is a group ID. This function then creates a new 
 group, as well as a new socket for this connection, that will be added to the 
 group. Once the group is created this way, further connections within the same 
@@ -584,7 +592,6 @@ internal use only.
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
 | [`SRT_ESCLOSED`](#srt_esclosed)   | The `lsn` socket has been closed while the function was blocking the call. Including when the socket was closed just at the <br/> moment when a connection was made (i.e., the socket got closed during processing)   |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -642,7 +649,6 @@ calling this function.
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -687,13 +693,13 @@ The callback function gets the following parameters passed:
 * `ns`: The freshly created socket to handle the incoming connection
 * `hs_version`: The handshake version (usually 5, pre-1.3 versions of SRT use 4)
 * `peeraddr`: The address of the incoming connection
-* `streamid`: The value set to [`SRTO_STREAMID`](../docs/APISocketOptions.md#SRTO_STREAMID) option set on the peer side
+* `streamid`: The value set to [`SRTO_STREAMID`](API-socket-options.md#SRTO_STREAMID) option set on the peer side
 
 Note that SRT versions that use handshake version 4 are incapable of using
 any extensions, such as `streamid`. However they do support encryption.
 Note also that the SRT version isn't extracted at this point. However you can
 prevent connections with versions that are too old by using the
-[`SRTO_MINVERSION`](../docs/APISocketOptions.md#SRTO_MINVERSION) option.
+[`SRTO_MINVERSION`](API-socket-options.md#SRTO_MINVERSION) option.
 
 The callback function is given an opportunity to:
 
@@ -728,7 +734,6 @@ Avoid any extensive search operations. It is best to cache in memory whatever
 database you have to check against the data received in `streamid` or `peeraddr`.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -759,7 +764,7 @@ interfaces) and port 0 (which makes the system assign the port automatically).
 
 2. This function is used for both connecting to the listening peer in a caller-listener
 arrangement, and calling the peer in rendezvous mode. For the latter, the
-[`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) flag must be set
+[`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) flag must be set
 to true prior to calling this function, and binding, as described in #1,
 is in this case obligatory (see `SRT_ERDVUNBOUND` below).
 
@@ -784,12 +789,12 @@ This function also allows you to use additional settings, available only for gro
 | [`SRT_ERDVUNBOUND`](#srt_erdvunbound) | Socket [`u`](#u) is in rendezvous mode, but it wasn't bound (see note #2) |
 | [`SRT_ECONNSOCK`](#srt_econnsock)     | Socket [`u`](#u) is already connected                       |
 | [`SRT_ECONNREJ`](#srt_econnrej)       | Connection has been rejected                                |
-| [`SRT_ENOSERVER`](#srt_enoserver)     | Connection has been timed out (see [`SRTO_CONNTIMEO`](../docs/APISocketOptions.md#SRTO_CONNTIMEO)) |
+| [`SRT_ENOSERVER`](#srt_enoserver)     | Connection has been timed out (see [`SRTO_CONNTIMEO`](API-socket-options.md#SRTO_CONNTIMEO)) |
 | [`SRT_ESCLOSED`](#srt_esclosed)       | The socket [`u`](#u) has been closed while the function was blocking the call   |
 | <img width=240px height=1px/>         | <img width=710px height=1px/>                      |
 
 If the `u` socket is configured for blocking mode (when
-[`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) is set to true, default),
+[`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to true, default),
 the call will block until the connection succeeds or fails. The "early" errors 
 [`SRT_EINVSOCK`](#srt_einvsock), [`SRT_ERDVUNBOUND`](#srt_erdvunbound) and
 [`SRT_ECONNSOCK`](#srt_econnsock) are reported in both modes immediately. Other
@@ -806,7 +811,6 @@ information. Note that in blocking mode only for the `SRT_ECONNREJ` error
 this function may return any additional information. In non-blocking
 mode a detailed "late" failure cannot be distinguished, and therefore it
 can also be obtained from this function.
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -856,7 +860,6 @@ different families (that is, both `source` and `target` must be `AF_INET` or
 `AF_INET6`), although you may mix links over IPv4 and IPv6 in one group.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -873,7 +876,6 @@ specifying the Initial Sequence Number for data transmission. Normally this valu
 is generated randomly.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -884,7 +886,7 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
         const struct sockaddr* remote_name, int remote_namelen);
 ```
 Performs a rendezvous connection. This is a shortcut for doing bind locally,
-setting the [`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) option 
+setting the [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) option 
 to true, and doing [`srt_connect`](#srt_connect). 
 
 **Arguments**:
@@ -913,7 +915,6 @@ to true, and doing [`srt_connect`](#srt_connect).
 allowed (that is, both `local_name` and `remote_name` must be `AF_INET` or `AF_INET6`).
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -927,7 +928,7 @@ This call installs a callback hook, which will be executed on a given [`u`](#u)
 socket or all member sockets of a [`u`](#u) group, just after a pending connection 
 in the background has been resolved and the connection has failed. Note that this 
 function is not guaranteed to be called if the [`u`](#u) socket is set to blocking 
-mode ([`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) option set to true). 
+mode ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) option set to true). 
 It is guaranteed to be called when a socket is in non-blocking mode, or when you 
 use a group.
 
@@ -941,12 +942,6 @@ the background, while the connecting function blocks until all connections are
 resolved. When all links fail, you will only get a general error code for the 
 group. This mechanism allows you to get individual errors for particular member
 connection failures.
-
-You can also use this mechanism as an alternative method for a single-socket
-connection in non-blocking mode to trigger an action when the connection
-process is finished. It is recommended, however, that you use this callback
-only to collect failure information, as the call will happen in one of the
-internal SRT threads.
 
 **Arguments**:
 
@@ -982,28 +977,20 @@ typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, co
 * `token`: The token value, if it was used for group connection, otherwise -1
 
 
-## Socket group management
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+
+
+
+## Socket Group Management
 
   * [SRT_GROUP_TYPE](#SRT_GROUP_TYPE)
   * [SRT_SOCKGROUPCONFIG](#SRT_SOCKGROUPCONFIG)
   * [SRT_SOCKGROUPDATA](#SRT_SOCKGROUPDATA)
   * [SRT_MEMBERSTATUS](#SRT_MEMBERSTATUS)
-  
-[Functions to be used on groups](#functions-to-be-used-on-groups):
 
-  * [srt_create_group](#srt_create_group)
-  * [srt_include](#srt_include)
-  * [srt_exclude](#srt_exclude)
-  * [srt_groupof](#srt_groupof)
-  * [srt_group_data](#srt_group_data)
-  * [srt_connect_group](#srt_connect_group)
-  * [srt_prepare_endpoint](#srt_prepare_endpoint)
-  * [srt_create_config](#srt_create_config)
-  * [srt_delete_config](#srt_delete_config)
-  * [srt_config_add](#srt_config_add)
-
-
-  
 ### SRT_GROUP_TYPE
 
 The following group types are collected in an [`SRT_GROUP_TYPE`](#SRT_GROUP_TYPE) enum:
@@ -1142,11 +1129,24 @@ as the only active one, this link will be "silenced" (its state will
 become `SRT_GST_IDLE`).
 
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
+---
 
-## Functions to be used on groups:
+### Functions to Be Used on Groups
 
-### srt_create_group
+  * [srt_create_group](#srt_create_group)
+  * [srt_include](#srt_include)
+  * [srt_exclude](#srt_exclude)
+  * [srt_groupof](#srt_groupof)
+  * [srt_group_data](#srt_group_data)
+  * [srt_connect_group](#srt_connect_group)
+  * [srt_prepare_endpoint](#srt_prepare_endpoint)
+  * [srt_create_config](#srt_create_config)
+  * [srt_delete_config](#srt_delete_config)
+  * [srt_config_add](#srt_config_add)
+
+#### srt_create_group
 
 ```
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE type);
@@ -1162,7 +1162,7 @@ the `SRTGROUP_MASK` bit is set on it, unlike for socket ID.
 
 ---  
   
-### srt_include
+#### srt_include
 
 ```
 int srt_include(SRTSOCKET socket, SRTSOCKET group);
@@ -1172,12 +1172,11 @@ This function adds a socket to a group. This is only allowed for unmanaged
 groups. No such group type is currently implemented.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
-### srt_exclude
+#### srt_exclude
 
 ```
 int srt_exclude(SRTSOCKET socket);
@@ -1187,12 +1186,11 @@ This is only allowed for unmanaged groups. No such group type is currently
 implemented.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
-### srt_groupof
+#### srt_groupof
 
 ```
 SRTSOCKET srt_groupof(SRTSOCKET socket);
@@ -1202,12 +1200,11 @@ Returns the group ID of the socket, or `SRT_INVALID_SOCK` if the socket
 doesn't exist or it's not a member of any group.
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
-### srt_group_data 
+#### srt_group_data 
 
 ```
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA output[], size_t* inoutlen);
@@ -1239,14 +1236,13 @@ and providing `socketgroup` and `inoutlen`.
 |         -1                    | Error                                                     |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
+
 |      Errors                        |                                                           |
 |:---------------------------------- |:--------------------------------------------------------- |
 | [`SRT_EINVPARAM`](#srt_einvparam)  | Reported if `socketgroup` is not an existing group ID     |
 | [`SRT_ELARGEMSG`](#srt_elargemsg)  | Reported if `inoutlen` if less than the size of the group |
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
-   
-   
 
 | in:output | in:inoutlen    | returns      | out:output | out:inoutlen | Error                             |
 |:---------:|:--------------:|:------------:|:----------:|:------------:|:---------------------------------:|
@@ -1257,12 +1253,11 @@ and providing `socketgroup` and `inoutlen`.
 | ptr       | < group.size   | -1           | ✖️         | group.size   | [`SRT_ELARGEMSG`](#srt_elargemsg) |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
-### srt_connect_group
+#### srt_connect_group
 
 ```
 int srt_connect_group(SRTSOCKET group,
@@ -1276,7 +1271,7 @@ in `name` array. However if you did this in blocking mode, the first call to
 [`srt_connect`](#srt_connect) would block until the connection is established, 
 whereas this function blocks until any of the specified connections is established.
 
-If you set the group nonblocking mode ([`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) 
+If you set the group nonblocking mode ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) 
 option), there's no difference, except that the [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) 
 structure allows you to add extra configuration data used by groups. Note also that 
 this function accepts only groups, not sockets.
@@ -1367,13 +1362,11 @@ define a unique value for the `token`. Your application can also set unique valu
 in which case the `token` value will be preserved.
 
 
-
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
-### srt_prepare_endpoint
+#### srt_prepare_endpoint
 
 ```
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
@@ -1421,7 +1414,7 @@ the [`errorcode`](#error-codes) field.
 
 ---  
   
-### srt_create_config
+#### srt_create_config
 
 ```
 SRT_SOCKOPT_CONFIG* srt_create_config();
@@ -1443,7 +1436,7 @@ should delete it using [`srt_delete_config`](#srt_delete_config).
 
 ---  
   
-### srt_delete_config
+#### srt_delete_config
 
 ```
 void srt_delete_config(SRT_SOCKOPT_CONFIG* c);
@@ -1456,7 +1449,7 @@ Deletes the configuration object.
 
 ---  
   
-### srt_config_add
+#### srt_config_add
 
 ```
 int srt_config_add(SRT_SOCKOPT_CONFIG* c, SRT_SOCKOPT opt, void* val, int len);
@@ -1476,16 +1469,16 @@ on every socket, you should instead set this option on the whole group.
 
 The following options are allowed to be set on the member socket:
 
-* [`SRTO_SNDBUF`](../docs/APISocketOptions.md#SRTO_SNDBUF): Allows for larger sender buffer for slower links
-* [`SRTO_RCVBUF`](../docs/APISocketOptions.md#SRTO_RCVBUF): Allows for larger receiver buffer for longer recovery
-* [`SRTO_UDP_RCVBUF`](../docs/APISocketOptions.md#SRTO_UDP_RCVBUF): UDP receiver buffer, if this link has a big flight window
-* [`SRTO_UDP_SNDBUF`](../docs/APISocketOptions.md#SRTO_UDP_SNDBUF): UDP sender buffer, if this link has a big flight window
-* [`SRTO_SNDDROPDELAY`](../docs/APISocketOptions.md#SRTO_SNDDROPDELAY): When particular link tends to drop too eagerly
-* [`SRTO_NAKREPORT`](../docs/APISocketOptions.md#SRTO_NAKREPORT): If you don't want NAKREPORT to work for this link
-* [`SRTO_CONNTIMEO`](../docs/APISocketOptions.md#SRTO_CONNTIMEO): If you want to give more time to connect on this link
-* [`SRTO_LOSSMAXTTL`](../docs/APISocketOptions.md#SRTO_LOSSMAXTTL): If this link tends to suffer from UDP reordering
-* [`SRTO_PEERIDLETIMEO`](../docs/APISocketOptions.md#SRTO_PEERIDLETIMEO): If you want to be more tolerant for temporary outages
-* [`SRTO_GROUPSTABTIMEO`](../docs/APISocketOptions.md#SRTO_GROUPSTABTIMEO): To set ACK jitter tolerance per individual link
+* [`SRTO_SNDBUF`](API-socket-options.md#SRTO_SNDBUF): Allows for larger sender buffer for slower links
+* [`SRTO_RCVBUF`](API-socket-options.md#SRTO_RCVBUF): Allows for larger receiver buffer for longer recovery
+* [`SRTO_UDP_RCVBUF`](API-socket-options.md#SRTO_UDP_RCVBUF): UDP receiver buffer, if this link has a big flight window
+* [`SRTO_UDP_SNDBUF`](API-socket-options.md#SRTO_UDP_SNDBUF): UDP sender buffer, if this link has a big flight window
+* [`SRTO_SNDDROPDELAY`](API-socket-options.md#SRTO_SNDDROPDELAY): When particular link tends to drop too eagerly
+* [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT): If you don't want NAKREPORT to work for this link
+* [`SRTO_CONNTIMEO`](API-socket-options.md#SRTO_CONNTIMEO): If you want to give more time to connect on this link
+* [`SRTO_LOSSMAXTTL`](API-socket-options.md#SRTO_LOSSMAXTTL): If this link tends to suffer from UDP reordering
+* [`SRTO_PEERIDLETIMEO`](API-socket-options.md#SRTO_PEERIDLETIMEO): If you want to be more tolerant for temporary outages
+* [`SRTO_GROUPSTABTIMEO`](API-socket-options.md#SRTO_GROUPSTABTIMEO): To set ACK jitter tolerance per individual link
 
 
 |      Returns                  |                                                           |
@@ -1502,9 +1495,12 @@ The following options are allowed to be set on the member socket:
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
+---  
 
 
-## Options and properties
+
+
+## Options and Properties
 
 * [srt_getpeername](#srt_getpeername)
 * [srt_getsockname](#srt_getsockname)
@@ -1512,10 +1508,8 @@ The following options are allowed to be set on the member socket:
 * [srt_setsockopt, srt_setsockflag](#srt_setsockopt-srt_setsockflag)
 * [srt_getversion](#srt_getversion)
 
+**NOTE**: For more information, see [SRT API Socket Options, Getting and Setting Options](API-socket-options.md#getting-and-setting-options).
 
-**NOTE**: For more information, see [Getting and Setting Options](../docs/APISocketOptions.md#getting-and-setting-options)
-
-  
 ### srt_getpeername
 ```
 int srt_getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
@@ -1565,24 +1559,29 @@ port number after it has been autoselected.
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
-  
+
 ### srt_getsockopt
 ### srt_getsockflag
-```
+
+```c++
 int srt_getsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, void* optval, int* optlen);
 int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 ```
 
-Gets the value of the given socket option (from a socket or a group). 
+Gets the value of the given socket option (from a socket or a group).
 
-The first version ([`srt_getsockopt`](#srt_getsockopt)) respects the BSD socket 
-API convention, although the "level" parameter is ignored. The second version 
+The first version ([`srt_getsockopt`](#srt_getsockopt)) follows the BSD socket
+API convention, although the "level" parameter is ignored. The second version
 ([`srt_getsockflag`](#srt_getsockflag)) omits the "level" parameter completely.
 
-Options correspond to various data types, so you need to know what data type is 
-assigned to a particular option, and to pass a variable of the appropriate data 
-type. Specifications are provided in the `apps/socketoptions.hpp` file at the 
-`srt_options` object declaration.
+Options correspond to various data types (see [API-socket-options.md](./API-socket-options.md)).
+A variable `optval` of the appropriate data type has to be passed.
+The integer value of `optlen` should originally contain the size of the `optval` type provided;
+on return, it will be set to the size of the value returned.
+For most options, it will be the size of an integer. Some options, however, use types `bool`, `int64_t`, `C string`, etc.
+(see [API-socket-options.md](./API-socket-options.md#sockopt_types)).
+
+The application is responsible for allocating sufficient memory space as defined and pointed to by `optval`.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
@@ -1593,7 +1592,7 @@ type. Specifications are provided in the `apps/socketoptions.hpp` file at the
 |:-------------------------------- |:---------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock)  | Socket [`u`](#u) indicates no valid socket ID  |
 | [`SRT_EINVOP`](#srt_einvop)      | Option `opt` indicates no valid option         |
-| <img width=240px height=1px/>    | <img width=710px height=1px/>                      |
+| <img width=240px height=1px/>    | <img width=710px height=1px/>                  |
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1602,19 +1601,19 @@ type. Specifications are provided in the `apps/socketoptions.hpp` file at the
 ### srt_setsockopt
 ### srt_setsockflag
 
-```
+```c++
 int srt_setsockopt(SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT opt, const void* optval, int optlen);
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
 ```
 
-Sets a value for a socket option in the socket or group. 
+Sets a value for a socket option in the socket or group.
 
-The first version ([`srt_setsockopt`](#srt_setsockopt)) respects the BSD socket 
-API convention, although the "level" parameter is ignored. The second version 
+The first version ([`srt_setsockopt`](#srt_setsockopt)) follows the BSD socket
+API convention, although the "level" parameter is ignored. The second version
 ([`srt_setsockflag`](#srt_setsockflag)) omits the "level" parameter completely.
 
-Options correspond to various data types, so you need to know what data type is 
-assigned to a particular option, and to pass a variable of the appropriate data 
+Options correspond to various data types, so you need to know what data type is
+assigned to a particular option, and to pass a variable of the appropriate data
 type with the option value to be set.
 
 Please note that some of the options can only be set on sockets or only on
@@ -1626,15 +1625,16 @@ are then derived by the member sockets.
 | `SRT_ERROR`                   | (-1) in case of error, otherwise 0              |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                   |
 
-|       Errors                    |                                               |
-|:------------------------------- |:--------------------------------------------- |
-| [`SRT_EINVSOCK`](#srt_einvsock) | Socket [`u`](#u) indicates no valid socket ID |
-| [`SRT_EINVOP`](#srt_einvop)     | Option `opt` indicates no valid option        |
+|       Errors                        |                                               |
+|:----------------------------------- |:--------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)     | Socket [`u`](#u) indicates no valid socket ID |
+| [`SRT_EINVPARAM`](#srt_einvparam)   | Option `opt` indicates no valid option        |
+| [`SRT_EBOUNDSOCK`](#srt_eboundsock) | Tried to set an option with PRE_BIND restriction on a bound socket. |
+| [`SRT_ECONNSOCK`](#srt_econnsock)   | Tried to set an option with PRE_BIND or PRE restriction on a socket in connecting/listening/connected state. |
 | <img width=240px height=1px/>   | <img width=710px height=1px/>                 |
 
-**NOTE*: Various other errors may result from problems when setting a 
-specific option (see option description for details).
-
+**NOTE*: Various other errors may result from problems when setting a
+specific option (see option description in [API-socket-options.md](./API-socket-options.md) for details).
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1656,11 +1656,22 @@ readable form, where x = ("%d", (version>>16) & 0xff), etc.
 | <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---  
 
 
-## Helper data types for transmission
 
-  
+
+## Helper Data Types for Transmission
+
+* [SRT_MSGCTRL](#SRT_MSGCTRL)
+
+**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
+sections of the RFC additionally. The current section is going to be reworked accordingly.
+
 ### SRT_MSGCTRL
 
 The [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure:
@@ -1668,15 +1679,15 @@ The [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure:
 ```c++
 typedef struct SRT_MsgCtrl_
 {
-   int flags;            // Left for future
-   int msgttl;           // TTL for a message, default -1 (no TTL limitation)
-   int inorder;          // Whether a message is allowed to supersede a partially lost one. Unused in stream and live mode.
-   int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
-   int64_t srctime;      // source time (microseconds since SRT internal clock epoch)
-   int32_t pktseq;       // sequence number of the first packet in received message (unused for sending)
-   int32_t msgno;        // message number (output value for both sending and receiving)
-   SRT_SOCKGROUPDATA* grpdata; // pointer to group data array
-   size_t grpdata_size;  // size of the group array
+   int flags;                   // Left for future
+   int msgttl;                  // TTL for a message, default -1 (no TTL limitation)
+   int inorder;                 // Whether a message is allowed to supersede a partially lost one. Unused in stream and live mode
+   int boundary;                // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
+   int64_t srctime;             // Source time, in microseconds since SRT internal clock epoch
+   int32_t pktseq;              // Sequence number of the first packet in received message (unused for sending)
+   int32_t msgno;               // Message number (output value for both sending and receiving)
+   SRT_SOCKGROUPDATA* grpdata;  // Pointer to group data array
+   size_t grpdata_size;         // Size of the group array
 } SRT_MSGCTRL;
 ```
 
@@ -1729,8 +1740,8 @@ call [`srt_sendmsg2`](#srt_sendmsg) or [`srt_recvmsg2`](#srt_recvmsg2) function
 for a group, you should pass an array here so that you can retrieve the status of 
 particular member sockets. If you pass an array that is too small, your `grpdata_size` 
 field will be rewritten with the current number of members, but without filling in 
-the array. For details, see the (Bonding introduction)[bonding-intro.md] and 
-(Socket Groups)[socket-groups.md] documents.
+the array. For details, see the [SRT Connection Bonding](../features/bonding-intro.md) and 
+[SRT Socket Groups](../features/socket-groups.md) documents.
 
 **Helpers for [`SRT_MSGCTRL`](#SRT_MSGCTRL):**
 
@@ -1746,6 +1757,11 @@ pass this constant object into any of the API functions because they require it
 to be mutable, as they use some fields to output values.
 
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---  
+
+
 
 
 ## Transmission
@@ -1754,7 +1770,12 @@ to be mutable, as they use some fields to output values.
 * [srt_recv, srt_recvmsg, srt_recvmsg2](#srt_recv-srt_recvmsg-srt_recvmsg2)
 * [srt_sendfile, srt_recvfile](#srt_sendfile-srt_recvfile)
 
-  
+**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
+sections of the RFC additionally. The current section is going to be reworked accordingly.
+
+
 ### srt_send
 ### srt_sendmsg
 ### srt_sendmsg2
@@ -1766,7 +1787,6 @@ int srt_sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL *mctrl);
 ```
 
 Sends a payload to a remote party over a given socket.
-
 
 **Arguments**:
 
@@ -1812,12 +1832,10 @@ In both **file/message** and **live mode** the successful return is always equal
 | [`SRT_EINVALMSGAPI`](#srt_einvalmsgapi)       | Incorrect API usage in **message mode**:<br/>**live mode**: trying to send more bytes at once than `SRTO_PAYLOADSIZE` or wrong source time <br/>was provided. |
 | [`SRT_EINVALBUFFERAPI`](#srt_einvalbufferapi) | Incorrect API usage in **stream mode** (reserved for future use):<br/>The congestion controller object used for this mode doesn't use any restrictions on this call, <br/>but this may change. |
 | [`SRT_ELARGEMSG`](#srt_elargemsg)             | Message to be sent can't fit in the sending buffer (that is, it exceeds the current total space in the <br/>sending buffer in bytes). This means that the sender buffer is too small, or the application is <br/>trying to send a larger message than initially predicted.  |
-| [`SRT_EASYNCSND`](#srt_easyncsnd)             | There's no free space currently in the buffer to schedule the payload. This is only reported in <br/>non-blocking mode ([`SRTO_SNDSYN`](../docs/APISocketOptions.md#SRTO_SNDSYN) set to false); in blocking mode the call is blocked until <br/>enough free space in the sending buffer becomes available.  |
-| [`SRT_ETIMEOUT`](#srt_etimeout)               | The condition described above still persists and the timeout has passed. This is only reported in <br/>blocking mode when [`SRTO_SNDTIMEO`](../docs/APISocketOptions.md#SRTO_SNDTIMEO) is set to a value other than -1. |
+| [`SRT_EASYNCSND`](#srt_easyncsnd)             | There's no free space currently in the buffer to schedule the payload. This is only reported in <br/>non-blocking mode ([`SRTO_SNDSYN`](API-socket-options.md#SRTO_SNDSYN) set to false); in blocking mode the call is blocked until <br/>enough free space in the sending buffer becomes available.  |
+| [`SRT_ETIMEOUT`](#srt_etimeout)               | The condition described above still persists and the timeout has passed. This is only reported in <br/>blocking mode when [`SRTO_SNDTIMEO`](API-socket-options.md#SRTO_SNDTIMEO) is set to a value other than -1. |
 | [`SRT_EPEERERR`](#srt_epeererr)               | This is reported only in the case where, as a stream is being received by a peer, the <br/>[`srt_recvfile`](#srt_recvfile) function encounters an error during a write operation on a file. This is reported by <br/>a `UMSG_PEERERROR` message from the peer, and the agent sets the appropriate flag internally. <br/>This flag persists up to the moment when the connection is broken or closed. |
 | <img width=240px height=1px/>                 | <img width=710px height=1px/>                      |
-
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1840,7 +1858,7 @@ Extracts the payload waiting to be received. Note that [`srt_recv`](#srt_recv) a
 kept for historical reasons. In the UDT predecessor the application was required 
 to use either the `UDT::recv` version for **stream mode** and `UDT::recvmsg` for 
 **message mode**. In SRT this distinction is resolved internally by the 
-[`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) flag.
+[`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag.
 
 **Arguments**:
 
@@ -1866,8 +1884,8 @@ the error is reported.
 
 3. In **live mode**, the function behaves as in **file/message mode**, although the 
 number of bytes retrieved will be at most the size of `SRTO_PAYLOADSIZE`. In this mode, 
-however, with default settings of [`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) 
-and [`SRTO_TLPKTDROP`](../docs/APISocketOptions.md#SRTO_TLPKTDROP), the message will be 
+however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) 
+and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP), the message will be 
 received only when its time to play has come, and until then it will be kept in the 
 receiver buffer. Also, when the time to play has come for a message that is next to 
 the currently lost one, it will be delivered and the lost one dropped.
@@ -1883,13 +1901,12 @@ the currently lost one, it will be delivered and the lost one dropped.
 |:--------------------------------------------- |:--------------------------------------------------------- |
 | [`SRT_ENOCONN`](#srt_enoconn)                 | Socket [`u`](#u) used for the operation is not connected. |
 | [`SRT_ECONNLOST`](#srt_econnlost)             | Socket [`u`](#u) used for the operation has lost connection (this is reported only if the connection <br/> was unexpectedly broken, not when it was closed by the foreign host). |
-| [`SRT_EINVALMSGAPI`](#srt_einvalmsgapi)       | Incorrect API usage in **message mode**:<br/>-- **live mode**: size of the buffer is less than [`SRTO_PAYLOADSIZE`](../docs/APISocketOptions.md#SRTO_PAYLOADSIZE) |
+| [`SRT_EINVALMSGAPI`](#srt_einvalmsgapi)       | Incorrect API usage in **message mode**:<br/>-- **live mode**: size of the buffer is less than [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) |
 | [`SRT_EINVALBUFFERAPI`](#srt_einvalbufferapi) | Incorrect API usage in **stream mode**:<br/>• Currently not in use. File congestion control used for **stream mode** does not restrict <br/> the parameters. :warning: &nbsp; **???**   |
 | [`SRT_ELARGEMSG`](#srt_elargemsg)             | Message to be sent can't fit in the sending buffer (that is, it exceeds the current total space in <br/> the sending buffer in bytes). This means that the sender buffer is too small, or the application <br/> is trying to send a larger message than initially intended.  |
-| [`SRT_EASYNCRCV`](#srt_easyncrcv)             | There are no data currently waiting for delivery. This happens only in non-blocking mode <br/> (when [`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) is set to false). In blocking mode the call is blocked until the data are ready. <br/> How this is defined, depends on the mode:<br/>• In **live mode** (with [`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) on), at least one packet must be present in the receiver <br/> buffer and its time to play be in the past<br/>• In **file/message mode**, one full message must be available, the next one waiting if there are no <br/> messages with `inorder` = false, or possibly the first message ready with `inorder` = false<br/>• In **file/stream mode**, it is expected to have at least one byte of data still not extracted  |
-| [`SRT_ETIMEOUT`](#srt_etimeout)               | The readiness condition described above is still not achieved and the timeout has passed. <br/> This is only reported in blocking mode when[`SRTO_RCVTIMEO`](../docs/APISocketOptions.md#SRTO_RCVTIMEO) is set to a value other than -1. |
+| [`SRT_EASYNCRCV`](#srt_easyncrcv)             | There are no data currently waiting for delivery. This happens only in non-blocking mode <br/> (when [`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to false). In blocking mode the call is blocked until the data are ready. <br/> How this is defined, depends on the mode:<br/>• In **live mode** (with [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) on), at least one packet must be present in the receiver <br/> buffer and its time to play be in the past<br/>• In **file/message mode**, one full message must be available, the next one waiting if there are no <br/> messages with `inorder` = false, or possibly the first message ready with `inorder` = false<br/>• In **file/stream mode**, it is expected to have at least one byte of data still not extracted  |
+| [`SRT_ETIMEOUT`](#srt_etimeout)               | The readiness condition described above is still not achieved and the timeout has passed. <br/> This is only reported in blocking mode when[`SRTO_RCVTIMEO`](API-socket-options.md#SRTO_RCVTIMEO) is set to a value other than -1. |
 | <img width=240px height=1px/>                 | <img width=710px height=1px/>                      |
-
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1939,7 +1956,7 @@ You need to pass them to the [`srt_sendfile`](#srt_sendfile) or
 |:--------------------------------------------- |:----------------------------------------------------------------------------- |
 | [`SRT_ENOCONN`](#srt_enoconn)                 | Socket [`u`](#u) used for the operation is not connected.                     |
 | [`SRT_ECONNLOST`](#srt_econnlost)             | Socket [`u`](#u) used for the operation has lost its connection.              |
-| [`SRT_EINVALBUFFERAPI`](#srt_einvalbufferapi) | When socket has [`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) = true or [`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) = true. <br/> (:warning: &nbsp; **BUG?**: Looxlike MESSAGEAPI isn't checked)   |
+| [`SRT_EINVALBUFFERAPI`](#srt_einvalbufferapi) | When socket has [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = true or [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) = true. <br/> (:warning: &nbsp; **BUG?**: Looxlike MESSAGEAPI isn't checked)   |
 | [`SRT_EINVRDOFF`](#srt_einvrdoff)             | There is a mistake in `offset` or `size` parameters, which should match the index availability <br/> and size of the bytes available since `offset` index. This is actually reported for [`srt_sendfile`](#srt_sendfile) <br/> when the `seekg` or `tellg` operations resulted in error.  |
 | [`SRT_EINVWROFF`](#srt_einvwroff)             | Like above, reported for [`srt_recvfile`](#srt_recvfile) and `seekp`/`tellp`. |
 | [`SRT_ERDPERM`](#srt_erdperm)                 | The read from file operation has failed ([`srt_sendfile`](#srt_sendfile)).    |
@@ -1947,14 +1964,18 @@ You need to pass them to the [`srt_sendfile`](#srt_sendfile) or
 | <img width=240px height=1px/>                 | <img width=710px height=1px/>                      |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
+---
 
 
-## Performance tracking
 
-**Sequence Numbers** 
+
+## Performance Tracking
+
+* [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
+
+**Sequence Numbers:** 
 The sequence numbers used in SRT are 32-bit "circular numbers" with the most significant 
 bit not included. For example 0x7FFFFFFF shifted forward by 3 becomes 2. As far as 
 any comparison is concerned, it can be thought of as a "distance" which is an integer
@@ -1967,9 +1988,6 @@ the required range already, so for a numbers like 0x7FFFFFF0 and 0x10, for which
 "numeric difference" would be 0x7FFFFFE0, the "distance" is 0x20.
 
 
-* [srt_bstats, srt_bistats](#srt_bstats-srt_bistats)
-
-  
 ### srt_bstats
 ### srt_bistats
 ```
@@ -1990,11 +2008,17 @@ Reports the current statistics
 * `instantaneous`: 1 if the statistics should use instant data, not moving averages
 
 `SRT_TRACEBSTATS` is an alias to `struct CBytePerfMon`. For a complete description
-of the fields please refer to the document [statistics.md](statistics.md).
+of the fields please refer to [SRT Statistics](statistics.md).
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
 
 
 
-## Asynchronous operations (epoll)
+
+## Asynchronous Operations (Epoll)
 
 * [srt_epoll_create](#srt_epoll_create)
 * [srt_epoll_add_usock, srt_epoll_add_ssock, srt_epoll_update_usock, srt_epoll_update_ssock](#srt_epoll_add_usock-srt_epoll_add_ssock-srt_epoll_update_usock-srt_epoll_update_ssock)
@@ -2012,8 +2036,8 @@ or writing operation, as it's in blocking mode, it blocks until at least one of
 the sockets subscribed for a single waiting call in given operation mode is ready
 to do this operation without blocking. It's usually combined with setting the
 nonblocking mode on a socket. In SRT this is set separately for reading and
-writing ([`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) and 
-[`SRTO_SNDSYN`](../docs/APISocketOptions.md#SRTO_SNDSYN) respectively). This is 
+writing ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) and 
+[`SRTO_SNDSYN`](API-socket-options.md#SRTO_SNDSYN) respectively). This is 
 to ensure that if there is internal error in the application (or even possibly 
 a bug in SRT that has reported a spurious readiness report) the operation will end 
 up with an error rather than cause blocking, which would be more dangerous for the 
@@ -2025,9 +2049,6 @@ managed internally in SRT, which can be subscribed to particular sockets and the
 readiness status of particular operations. The [`srt_epoll_wait`](#srt_epoll_wait) 
 function can then be used to block until any readiness status in the whole 
 [`eid`](#eid) is set.
-
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
   
 ### srt_epoll_create
@@ -2107,7 +2128,7 @@ With [`SRT_EPOLL_ET`](#SRT_EPOLL_ET) flag they become **edge-triggered**.
 
 The [`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) flag is always edge-triggered. It 
 designates a special event that happens on a group, or on a listener socket that 
-has the [`SRTO_GROUPCONNECT`](../docs/APISocketOptions.md#SRTO_GROUPCONNECT) flag 
+has the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) flag 
 set to allow group connections. This flag is triggered in the following situations:
 
 * for group connections, when a new link has been established for a group that 
@@ -2251,7 +2272,6 @@ the only way to know what kind of error has occurred on the socket.
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -2338,7 +2358,6 @@ container identified by [`eid`](#eid).
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -2373,8 +2392,8 @@ the general output array is not empty.
 
 |      Returns                  |                                                                            |
 |:----------------------------- |:-------------------------------------------------------------------------- |
-|                               | This function returns the state of the flags at the time before the call.  |
-|        -1                     | Special value in case when an error occurred.                              |
+|                               | This function returns the state of the flags at the time before the call  |
+|        -1                     | Special value in case when an error occurred                              |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                        |                                                                   |
@@ -2396,8 +2415,8 @@ Deletes the epoll container.
 
 |      Returns                  |                                                                |
 |:----------------------------- |:-------------------------------------------------------------- |
-|                               | The number (\>0) of ready sockets, of whatever kind (if any).  |
-|        -1                     | Error                           .                              |
+|                               | The number (\>0) of ready sockets, of whatever kind (if any)  |
+|        -1                     | Error                                                         |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                        |                                                                   |
@@ -2406,9 +2425,14 @@ Deletes the epoll container.
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---  
 
 
-## Logging control
+
+
+## Logging Control
 
 * [srt_setloglevel](#srt_setloglevel)
 * [srt_addlogfa, srt_dellogfa, srt_resetlogfa](#srt_addlogfa-srt_dellogfa-srt_resetlogfa)
@@ -2424,10 +2448,6 @@ entries up to the *Note* log level are displayed and from all FAs.
 Logging can only be manipulated globally, with no regard to a specific 
 socket. This is because lots of operations in SRT are not dedicated to any 
 particular socket, and some are shared between sockets.
-
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
 ### srt_setloglevel
 
@@ -2492,7 +2512,7 @@ the sending to a stream with a handler function that will receive them.
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
----  
+---
   
 ### srt_setlogflags
 
@@ -2513,6 +2533,10 @@ The following flags are available, as collected in the `logging_api.h` public he
 - `SRT_LOGF_DISABLE_SEVERITY`: Do not provide severity information in the header
 - `SRT_LOGF_DISABLE_EOL`: Do not add the end-of-line character to the log line
 
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
 
 
 ## Time Access
@@ -2576,11 +2600,6 @@ The clock used by the SRT internal clock is determined by the following build fl
 The default is currently to use the system clock as the internal SRT clock,
 although it's highly recommended to use one of the above monotonic clocks,
 as system clock is vulnerable to time modifications during transmission.
-
-
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
 ### srt_time_now
 
@@ -2610,11 +2629,11 @@ Get connection time in microseconds elapsed since epoch using SRT internal clock
 (steady or monotonic clock). The connection time represents the time when SRT socket 
 was open to establish a connection. Milliseconds elapsed since connection start time 
 can be determined using [**Performance tracking**](#Performance-tracking) functions 
-and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics.md)).
+and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [SRT Statistics](statistics.md)).
 
 |      Returns                  |                                                                             |
 |:----------------------------- |:--------------------------------------------------------------------------- |
-|                               | Connection time in microseconds elapsed since epoch of SRT internal clock.  |
+|                               | Connection time in microseconds elapsed since epoch of SRT internal clock  |
 |        -1                     | Error                                                                       |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
@@ -2624,19 +2643,43 @@ and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [statistics.md](statistics
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
   
----  
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
   
-  ## Diagnostics
+### srt_clock_type
 
-General notes concerning the `getlasterror` diagnostic functions: when an API
-function ends up with error, this error information is stored in a thread-local
-storage. This means that you'll get the error of the operation that was last
-performed as long as you call this diagnostic function just after the failed
-function has returned. In any other situation the information provided by the
-diagnostic function is undefined.
+```c
+int srt_clock_type(void);
+```
 
-**NOTE**: There is a list of [Error Codes](#error-codes) at the bottom of this document.
+Get the type of clock used internally by SRT to be used only for informtational peurpose.
+Using any time source except for [`srt_time_now()`](#srt_time_now) and [`srt_connection_time(SRTSOCKET)`](#srt_connection_time)
+to timestamp packets submitted to SRT is not recommended and must be done with awareness and at your own risk.
 
+| Returns | Clock Type                          | Description                                |
+| :------ | :---------------------------------- | :------------------------------------------|
+| 0       | `SRT_SYNC_CLOCK_STDCXX_STEADY`      | C++11 `std::chrono::steady_clock`          |
+| 1       | `SRT_SYNC_CLOCK_GETTIME_MONOTONIC`  | `clock_gettime` with `CLOCK_MONOTONIC`     |
+| 2       | `SRT_SYNC_CLOCK_WINQPC`             | Windows `QueryPerformanceCounter(..)`      |
+| 3       | `SRT_SYNC_CLOCK_MACH_ABSTIME`       | `mach_absolute_time()`                     |
+| 4       | `SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY` | POSIX `gettimeofday(..)`                   |
+| 5       | `SRT_SYNC_CLOCK_AMD64_RDTSC`        | `asm("rdtsc" ..)`                          |
+| 6       | `SRT_SYNC_CLOCK_IA32_RDTSC`         | `asm volatile("rdtsc" ..)`                 |
+| 7       | `SRT_SYNC_CLOCK_IA64_ITC`           | `asm("mov %0=ar.itc" ..)`                  |
+
+|       Errors                      |                                                            |
+|:--------------------------------- |:---------------------------------------------------------- |
+| None                              |                                                            |
+| <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
+
+  
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+
+## Diagnostics
 
 * [srt_getlasterror_str](#srt_getlasterror_str)
 * [srt_getlasterror](#srt_getlasterror)
@@ -2646,7 +2689,16 @@ diagnostic function is undefined.
 * [srt_rejectreason_str](#srt_rejectreason_str)
 * [srt_setrejectreason](#srt_setrejectreason)
 
-  
+General notes concerning the `getlasterror` diagnostic functions: when an API
+function ends up with error, this error information is stored in a thread-local
+storage. This means that you'll get the error of the operation that was last
+performed as long as you call this diagnostic function just after the failed
+function has returned. In any other situation the information provided by the
+diagnostic function is undefined.
+
+**NOTE**: There are lists of rejection reasons and error codes at the bottom of this section.
+
+
 ### srt_getlasterror
 
 ```
@@ -2679,7 +2731,6 @@ as long as only one thread in the whole application calls this function at the
 moment*
 
 
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
@@ -2709,7 +2760,6 @@ report a "successful" code.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
 
 ---  
   
@@ -2747,7 +2797,7 @@ back to the caller peer with the handshake response.
 Note that allowed values for this function begin with `SRT_REJC_PREDEFINED`
 (that is, you cannot set a system rejection code). For example, your application 
 can inform the calling side that the resource specified under the `r` key in the 
-StreamID string (see [`SRTO_STREAMID`](../docs/APISocketOptions.md#SRTO_STREAMID))
+StreamID string (see [`SRTO_STREAMID`](API-socket-options.md#SRTO_STREAMID))
 is not available - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
 
 |      Returns                  |                                                           |
@@ -2762,8 +2812,8 @@ is not available - it then sets the value to `SRT_REJC_PREDEFINED + 404`.
 | [`SRT_EINVPARAM`](#srt_einvparam) | `value` is less than `SRT_REJC_PREDEFINED`   |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---  
   
@@ -2775,16 +2825,20 @@ int srt_getrejectreason(SRTSOCKET sock);
 This function provides a more detailed reason for a failed connection attempt. It 
 shall be called after a connecting function (such as [`srt_connect`](#srt_connect))
 has returned an error, the code for which is [`SRT_ECONNREJ`](#srt_econnrej). If 
-[`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) has been set on the socket 
+[`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) has been set on the socket 
 used for the connection, the function should also be called when the 
 [`SRT_EPOLL_ERR`](#SRT_EPOLL_ERR) event is set for this socket. It returns 
 a numeric code, which can be translated into a message by 
 [`srt_rejectreason_str`](#srt_rejectreason_str).
 
-  
-## Rejection Reasons
 
-  
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---  
+
+### Rejection Reasons
+
+
 #### SRT_REJ_UNKNOWN
 
 A fallback value for cases when there was no connection rejected.
@@ -2812,8 +2866,6 @@ A problem with resource allocation (usually memory).
 The data sent by one party to another cannot be properly interpreted. This
 should not happen during normal usage, unless it's a bug, or some weird
 events are happening on the network.
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
   
 #### SRT_REJ_BACKLOG
@@ -2853,8 +2905,6 @@ the sent handshake packets are returning to the same host as if they
 were sent by the peer (i.e. a party is sending to itself). When this happens, 
 this reject reason will be reported by every attempt.
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
 #### SRT_REJ_BADSECRET
 
@@ -2864,27 +2914,25 @@ Both parties have defined a passphrase for connection, but they differ.
 #### SRT_REJ_UNSECURE
 
 Only one connection party has set up a password. See also the 
-[`SRTO_ENFORCEDENCRYPTION`](../docs/APISocketOptions.md#SRTO_ENFORCEDENCRYPTION) flag.
+[`SRTO_ENFORCEDENCRYPTION`](API-socket-options.md#SRTO_ENFORCEDENCRYPTION) flag.
 
   
 #### SRT_REJ_MESSAGEAPI
 
-The value of the [`SRTO_MESSAGEAPI`](../docs/APISocketOptions.md#SRTO_MESSAGEAPI) 
+The value of the [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) 
 flag is different on both connection parties.
 
   
 #### SRT_REJ_CONGESTION
 
-The [`SRTO_CONGESTION`](../docs/APISocketOptions.md#SRTO_CONGESTION)option has 
+The [`SRTO_CONGESTION`](API-socket-options.md#SRTO_CONGESTION)option has 
 been set up differently on both connection parties.
 
   
 #### SRT_REJ_FILTER
 
-The [`SRTO_PACKETFILTER`](../docs/APISocketOptions.md#SRTO_PACKETFILTER) option 
+The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option 
 has been set differently on both connection parties.
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
   
 #### SRT_REJ_GROUP
@@ -2901,7 +2949,7 @@ completely different from the existing connections in the bonding group.
 
 The connection wasn't rejected, but it timed out. This code is always set on
 connection timeout, but this is the only way to get this state in non-blocking
-mode (see [`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN)).
+mode (see [`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN)).
 
 There may also be server and user rejection codes, as defined by the 
 `SRT_REJC_INTERNAL`, `SRT_REJC_PREDEFINED` and `SRT_REJC_USERDEFINED`
@@ -2913,9 +2961,9 @@ the application.
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
-  
-  
-## Error Codes
+---
+
+### Error Codes
 
 All functions that return the status via `int` value return -1 (designated as 
 `SRT_ERROR`) always when the call has failed (in case of resource creation
@@ -2925,50 +2973,48 @@ functions an appropriate symbol is defined, like `SRT_INVALID_SOCK` for
 `SRT_ERRNO` enum:
 
   
-#### `SRT_EUNKNOWN`
+#### SRT_EUNKNOWN
 
 Internal error when setting the right error code.
 
   
-#### `SRT_SUCCESS`
+#### SRT_SUCCESS
 
 The value set when the last error was cleared and no error has occurred since then.
 
   
-#### `SRT_ECONNSETUP`
+#### SRT_ECONNSETUP
 
 General setup error resulting from internal system state.
 
   
-#### `SRT_ENOSERVER`
+#### SRT_ENOSERVER
 
 Connection timed out while attempting to connect to the remote address. Note
 that when this happens, [`srt_getrejectreason`](#srt_getrejectreason) also reports 
 the timeout reason.
 
   
-#### `SRT_ECONNREJ`
+#### SRT_ECONNREJ
 
 Connection has been rejected. Additional reject reason can be obtained through
 [`srt_getrejectreason`](#srt_getrejectreason) (see above).
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_ESOCKFAIL`
+#### SRT_ESOCKFAIL
 
 An error occurred when trying to call a system function on an internally used
 UDP socket. Note that the detailed system error is available in the extra variable
 passed by pointer to `srt_getlasterror`.
 
   
-#### `SRT_ESECFAIL`
+#### SRT_ESECFAIL
 
 A possible tampering with the handshake packets was detected, or an encryption
 request wasn't properly fulfilled.
 
   
-#### `SRT_ESCLOSED`
+#### SRT_ESCLOSED
 
 A socket that was vital for an operation called in blocking mode
 has been closed during the operation. Please note that this situation is
@@ -2980,85 +3026,79 @@ parameter to [`srt_connect*`](#srt_connect) or [`srt_accept`](#srt_accept)
 is no longer usable.
 
   
-#### `SRT_ECONNFAIL`
+#### SRT_ECONNFAIL
 
 General connection failure of unknown details.
 
   
-#### `SRT_ECONNLOST`
+#### SRT_ECONNLOST
 
 The socket was properly connected, but the connection has been broken.
 This specialization is reported from the transmission functions.
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_ENOCONN`
+#### SRT_ENOCONN
 
 The socket is not connected. This can be reported also when the connection was 
 broken for a function that checks some characteristic socket data.
 
   
-#### `SRT_ERESOURCE`
+#### SRT_ERESOURCE
 
 System or standard library error reported unexpectedly for unknown purpose.
 Usually it means some internal error.
 
   
-#### `SRT_ETHREAD`
+#### SRT_ETHREAD
 
 System was unable to spawn a new thread when required.
 
   
-#### `SRT_ENOBUF`
+#### SRT_ENOBUF
 
 System was unable to allocate memory for buffers.
 
   
-#### `SRT_ESYSOBJ`
+#### SRT_ESYSOBJ
 
 System was unable to allocate system specific objects (such as
 sockets, mutexes or condition variables).
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_EFILE`
+#### SRT_EFILE
 
 General filesystem error (for functions operating with file transmission).
 
   
-#### `SRT_EINVRDOFF`
+#### SRT_EINVRDOFF
 
 Failure when trying to read from a given position in the file (file could
 be modified while it was read from).
 
   
-#### `SRT_ERDPERM`
+#### SRT_ERDPERM
 
 Read permission was denied when trying to read from file.
 
   
-#### `SRT_EINVWROFF`
+#### SRT_EINVWROFF
 
 Failed to set position in the written file.
 
   
-#### `SRT_EWRPERM`
+#### SRT_EWRPERM
 
 Write permission was denied when trying to write to a file.
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_EINVOP`
+#### SRT_EINVOP
 
 Invalid operation performed for the current state of a socket. This mainly
-concerns performing `srt_bind*` operations on a socket that is already bound.  
+concerns performing `srt_bind*` operations on a socket that is already bound.
 Once a socket has been been bound, it cannot be bound again.
 
   
-#### `SRT_EBOUNDSOCK`
+#### SRT_EBOUNDSOCK
 
 The socket is currently bound and the required operation cannot be
 performed in this state. Usually it's about an option that can only
@@ -3066,7 +3106,7 @@ be set on the socket before binding (`srt_bind*`). Note that a socket
 that is currently connected is also considered bound.
 
   
-#### `SRT_ECONNSOCK`
+#### SRT_ECONNSOCK
 
 The socket is currently connected and therefore performing the required operation 
 is not possible. Usually concerns setting an option that must be set before 
@@ -3076,7 +3116,7 @@ isn't in a state that allows it (only [`SRTS_INIT`](#SRTS_INIT) or
 [`SRTS_OPENED`](#SRTS_OPENED) are allowed).
 
   
-#### `SRT_EINVPARAM`
+#### SRT_EINVPARAM
 
 This error is reported in a variety of situations when call parameters
 for API functions have some requirements defined and these were not
@@ -3085,17 +3125,15 @@ parameters of the call before even performing any operation. This error
 can be easily avoided if you set the values correctly.
 
   
-#### `SRT_EINVSOCK`
+#### SRT_EINVSOCK
 
 The API function required an ID of an entity (socket or group) and
 it was invalid. Note that some API functions work only with socket or
 only with group, so they would also return this error if inappropriate
 type of entity was passed, even if it was valid.
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_EUNBOUNDSOCK`
+#### SRT_EUNBOUNDSOCK
 
 The operation to be performed on a socket requires that it first be explicitly 
 bound (using [`srt_bind*`](#srt_bind) functions). Currently it applies when
@@ -3103,23 +3141,23 @@ calling [`srt_listen`](#srt_listen), which cannot work with an implicitly
 bound socket.
 
   
-#### `SRT_ENOLISTEN`
+#### SRT_ENOLISTEN
 
 The socket passed for the operation is required to be in the listen
 state ([`srt_listen`](#srt_listen) must be called first).
 
   
-#### `SRT_ERDVNOSERV`
+#### SRT_ERDVNOSERV
 
 The required operation cannot be performed when the socket is set to rendezvous 
-mode ([`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) set to true). 
+mode ([`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) set to true). 
 Usually applies when trying to call [`srt_listen`](#srt_listen) on such a socket.
 
   
-#### `SRT_ERDVUNBOUND`
+#### SRT_ERDVUNBOUND
 
 An attempt was made to connect to a socket set to rendezvous mode 
-([`SRTO_RENDEZVOUS`](../docs/APISocketOptions.md#SRTO_RENDEZVOUS) set to true) 
+([`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) set to true) 
 that was not first bound. A rendezvous connection requires setting up two addresses 
 and ports on both sides of the connection, then setting the local one with 
 [`srt_bind`](#srt_bind) and using the remote one with [`srt_connect`](#srt_connect) 
@@ -3129,42 +3167,40 @@ state) that is to be bound implicitly is only allowed for regular caller sockets
 (not rendezvous).
 
   
-#### `SRT_EINVALMSGAPI`
+#### SRT_EINVALMSGAPI
 
 The function was used incorrectly in the message API. This can happen if:
 
 * The parameters specific for the message API in [`SRT_MSGCTRL`](#SRT_MSGCTRL) 
-type parameter were incorrectly specified
+type parameter were incorrectly specified.
 
-* The extra parameter check performed by the congestion controller has failed
+* The extra parameter check performed by the congestion controller has failed.
 
 * The socket is a member of a self-managing group, therefore you should
-perform the operation on the group, not on this socket
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+perform the operation on the group, not on this socket.
 
   
-#### `SRT_EINVALBUFFERAPI`
+#### SRT_EINVALBUFFERAPI
 
 The function was used incorrectly in the stream (buffer) API, that is, either the 
 stream-only functions were used with set message API ([`srt_sendfile`](#srt_sendfile)/[`srt_recvfile`](#srt_recvfile)) 
-or TSBPD mode was used with buffer API ([`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) set to true) 
+or TSBPD mode was used with buffer API ([`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) set to true) 
 or the congestion controller has failed to check call parameters.
 
   
-#### `SRT_EDUPLISTEN`
+#### SRT_EDUPLISTEN
 
 The port tried to be bound for listening is already busy. Note that binding to the same port 
-is allowed in general (when [`SRTO_REUSEADDR`](../docs/APISocketOptions.md#SRTO_REUSEADDRS) 
+is allowed in general (when [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) 
 is true on every socket that has bound it), but only one such socket can be a listener.
 
   
-#### `SRT_ELARGEMSG`
+#### SRT_ELARGEMSG
 
 Size exceeded. This is reported in the following situations:
 
 * Trying to receive a message, but the read-ready message is larger than
-the buffer passed to the receiving function
+the buffer passed to the receiving function.
 
 * Trying to send a message, but the size of this message exceeds the
 size of the preset sender buffer, so it cannot be stored in the sender buffer.
@@ -3172,12 +3208,12 @@ size of the preset sender buffer, so it cannot be stored in the sender buffer.
 * When getting group data, the array to be filled is too small.
 
   
-#### `SRT_EINVPOLLID`
+#### SRT_EINVPOLLID
 
-The epoll ID passed to an epoll function is invalid
+The epoll ID passed to an epoll function is invalid.
 
   
-#### `SRT_EPOLLEMPTY`
+#### SRT_EPOLLEMPTY
 
 The epoll container currently has no subscribed sockets. This is reported by an
 epoll waiting function that would in this case block forever. This problem
@@ -3189,50 +3225,48 @@ by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
 you use multiple threads and start waiting without subscribed sockets, so that
 you can subscribe them later from another thread.
 
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
   
-#### `SRT_EASYNCFAIL`
+#### SRT_EASYNCFAIL
 
 General asynchronous failure (not in use currently).
 
   
-#### `SRT_EASYNCSND`
+#### SRT_EASYNCSND
 
 Sending operation is not ready to perform. This error is reported when trying to 
 perform a sending operation on a socket that is not ready for sending, but 
-[`SRTO_SNDSYN`](../docs/APISocketOptions.md#SRTO_SNDSYN) was set to false (when 
+[`SRTO_SNDSYN`](API-socket-options.md#SRTO_SNDSYN) was set to false (when 
 true, the function would block the call otherwise).
 
   
-#### `SRT_EASYNCRCV`
+#### SRT_EASYNCRCV
 
 Receiving operation is not ready to perform. This error is reported when trying to 
 perform a receiving operation or accept a new socket from the listener socket, when 
-the socket is not ready for that operation, but [`SRTO_RCVSYN`](../docs/APISocketOptions.md#SRTO_RCVSYN) 
+the socket is not ready for that operation, but [`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) 
 was set to false (when true, the function would block the call otherwise).
 
   
-#### `SRT_ETIMEOUT`
+#### SRT_ETIMEOUT
 
 The operation timed out. This can happen if you have a timeout set by an option 
-([`SRTO_RCVTIMEO`](../docs/APISocketOptions.md#SRTO_RCVTIMEO) or 
-[`SRTO_SNDTIMEO`](../docs/APISocketOptions.md#SRTO_SNDTIMEO)), or passed as an 
+([`SRTO_RCVTIMEO`](API-socket-options.md#SRTO_RCVTIMEO) or 
+[`SRTO_SNDTIMEO`](API-socket-options.md#SRTO_SNDTIMEO)), or passed as an 
 extra argument ([`srt_epoll_wait`](#srt_epoll_wait) or [`srt_accept_bond`](#srt_accept_bond)) 
 and the function call was blocking, but the required timeout time has passed.
 
-  
-#### `SRT_ECONGEST`
+
+#### SRT_ECONGEST
 
 **NOTE**: This error is used only in an experimental version that requires
 setting the `SRT_ENABLE_ECN` macro at compile time. Otherwise the situation 
 described below results in the usual successful report.
 
 This error should be reported by the sending function when, with
-[`SRTO_TSBPDMODE`](../docs/APISocketOptions.md#SRTO_TSBPDMODE) and 
-[`SRTO_TLPKTDROP`](../docs/APISocketOptions.md#SRTO_TLPKTDROP) set to true, some 
+[`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) and 
+[`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) set to true, some 
 packets were dropped at the sender side (see the description of 
-[`SRTO_TLPKTDROP`](../docs/APISocketOptions.md#SRTO_TLPKTDROP) for details). This
+[`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) for details). This
 doesn't concern the data that were passed for sending by the sending function
 (these data are placed at the back of the sender buffer, while the dropped
 packets are at the front). In other words, the operation done by the sending
@@ -3240,7 +3274,7 @@ function is successful, but the application might want to slow down the sending
 rate to avoid congestion.
 
   
-#### `SRT_EPEERERR`
+#### SRT_EPEERERR
 
 This error is reported when a receiver peer is writing to a file that an agent 
 is sending. When the peer encounters an error when writing the received data to 
@@ -3248,7 +3282,4 @@ a file, it sends the `UMSG_PEERERROR` message back to the sender, and the sender
 reports this error from the API sending function.
 
 
-  
-  
-
-[RETURN TO TOP OF PAGE](#SRT-API-Functions)
+[Return to Top of Page](#SRT-API-Functions)

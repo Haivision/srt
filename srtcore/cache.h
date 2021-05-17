@@ -235,15 +235,15 @@ private:
 class CInfoBlock
 {
 public:
-   uint32_t m_piIP[4];		// IP address, machine read only, not human readable format
-   int m_iIPversion;   		// Address family: AF_INET or AF_INET6
-   uint64_t m_ullTimeStamp;	// last update time
-   int m_iRTT;			// RTT
-   int m_iBandwidth;		// estimated bandwidth
-   int m_iLossRate;		// average loss rate
-   int m_iReorderDistance;	// packet reordering distance
-   double m_dInterval;		// inter-packet time, congestion control
-   double m_dCWnd;		// congestion window size, congestion control
+   uint32_t m_piIP[4];        // IP address, machine read only, not human readable format.
+   int m_iIPversion;          // Address family: AF_INET or AF_INET6.
+   uint64_t m_ullTimeStamp;   // Last update time.
+   int m_iSRTT;               // Smoothed RTT.
+   int m_iBandwidth;          // Estimated link bandwidth.
+   int m_iLossRate;           // Average loss rate.
+   int m_iReorderDistance;    // Packet reordering distance.
+   double m_dInterval;        // Inter-packet time (Congestion Control).
+   double m_dCWnd;            // Congestion window size (Congestion Control).
 
 public:
    CInfoBlock() {} // NOTE: leaves uninitialized

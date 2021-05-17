@@ -320,32 +320,85 @@ private:
    CHash& operator=(const CHash&);
 };
 
+/// @brief A queue of sockets pending for connection.
+/// It can be either a caller socket in a non-blocking mode
+/// (the connection has to be handled in background),
+/// or a socket in rendezvous connection mode.
 class CRendezvousQueue
 {
 public:
-   CRendezvousQueue();
-   ~CRendezvousQueue();
+    CRendezvousQueue();
+    ~CRendezvousQueue();
 
 public:
-   void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr,
-               const srt::sync::steady_clock::time_point &ttl);
+    /// @brief Insert a new socket pending for connection (non-blocking caller or rendezvous).
+    /// @param id socket ID.
+    /// @param u pointer to a corresponding CUDT instance.
+    /// @param addr remote address to connect to.
+    /// @param ttl timepoint for connection attempt to expire.
+    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr,
+                const srt::sync::steady_clock::time_point &ttl);
 
-   void remove(const SRTSOCKET& id);
-   CUDT* retrieve(const sockaddr_any& addr, SRTSOCKET& id);
+    /// @brief Remove a socket from the connection pending list.
+    /// @param id socket ID.
+    void remove(const SRTSOCKET& id);
 
-   void updateConnStatus(EReadStatus rst, EConnectStatus, const CPacket& response);
+    /// @brief Locate a socket in the connection pending queue.
+    /// @param addr source address of the packet received over UDP (peer address).
+    /// @param id socket ID.
+    /// @return a pointer to CUDT instance retrieved, or NULL if nothing was found.
+    CUDT* retrieve(const sockaddr_any& addr, SRTSOCKET& id) const;
+
+    /// @brief Update status of connections in the pending queue.
+    /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
+    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param cst target status for pending connection: reject or proceed.
+    /// @param pktIn packet received from the UDP socket.
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& pktIn);
+
+private:
+    struct LinkStatusInfo
+    {
+        CUDT* u;
+        SRTSOCKET id;
+        int errorcode;
+        sockaddr_any peeraddr;
+        int token;
+
+        struct HasID
+        {
+            SRTSOCKET id;
+            HasID(SRTSOCKET p) : id(p) {}
+            bool operator()(const LinkStatusInfo& i)
+            {
+                return i.id == id;
+            }
+        };
+    };
+
+    /// @brief Qualify pending connections:
+    /// - Sockets with expired TTL go to the 'to_remove' list and removed from the queue straight away.
+    /// - If HS request is to be resent (resend 250 ms if no response from the peer) go to the 'to_process' list.
+    /// 
+    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param cst target status for pending connection: reject or proceed.
+    /// @param iDstSockID destination socket ID of the received packet.
+    /// @param[in,out] toRemove stores sockets with expired TTL.
+    /// @param[in,out] toProcess stores sockets which should repeat (resend) HS connection request.
+    bool qualifyToHandle(EReadStatus rst, EConnectStatus cst, int iDstSockID,
+        std::vector<LinkStatusInfo>& toRemove, std::vector<LinkStatusInfo>& toProcess);
 
 private:
    struct CRL
    {
-      SRTSOCKET m_iID;        // UDT socket ID (self)
-      CUDT* m_pUDT;           // UDT instance
-      sockaddr_any m_PeerAddr;// UDT sonnection peer address
+      SRTSOCKET m_iID;        // SRT socket ID (self)
+      CUDT* m_pUDT;           // CUDT instance
+      sockaddr_any m_PeerAddr;// SRT sonnection peer address
       srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
    };
    std::list<CRL> m_lRendezvousID;    // The sockets currently in rendezvous mode
 
-   srt::sync::Mutex m_RIDVectorLock;
+   mutable srt::sync::Mutex m_RIDListLock;
 };
 
 class CSndQueue

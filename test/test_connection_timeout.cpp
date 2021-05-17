@@ -100,7 +100,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
-    const int connection_timeout_ms = 500;
+    const int connection_timeout_ms = 300;
     EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
     const int yes = 1;

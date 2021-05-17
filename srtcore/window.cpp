@@ -77,22 +77,21 @@ void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t s
       r_iTail = (r_iTail + 1) % size;
 }
 
-int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack)
+int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack, const steady_clock::time_point& currtime)
 {
+   // Head has not exceeded the physical boundary of the window
    if (r_iHead >= r_iTail)
    {
-      // Head has not exceeded the physical boundary of the window
-
       for (int i = r_iTail, n = r_iHead; i < n; ++ i)
       {
-         // looking for identical ACK Seq. No.
+         // Looking for an identical ACK Seq. No.
          if (seq == r_aSeq[i].iACKSeqNo)
          {
-            // return the Data ACK it carried
+            // Return the Data ACK it carried
             r_ack = r_aSeq[i].iACK;
 
-            // calculate RTT
-            const int rtt = count_microseconds(steady_clock::now() - r_aSeq[i].tsTimeStamp);
+            // Calculate RTT estimate
+            const int rtt = count_microseconds(currtime - r_aSeq[i].tsTimeStamp);
 
             if (i + 1 == r_iHead)
             {
@@ -106,22 +105,22 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
          }
       }
 
-      // Bad input, the ACK node has been overwritten
+      // The record about ACK is not found in the buffer, RTT can not be calculated
       return -1;
    }
 
    // Head has exceeded the physical window boundary, so it is behind tail
    for (int j = r_iTail, n = r_iHead + size; j < n; ++ j)
    {
-      // looking for indentical ACK seq. no.
+      // Looking for an identical ACK Seq. No.
       if (seq == r_aSeq[j % size].iACKSeqNo)
       {
-         // return Data ACK
+         // Return the Data ACK it carried
          j %= size;
          r_ack = r_aSeq[j].iACK;
 
-         // calculate RTT
-         const int rtt = count_microseconds(steady_clock::now() - r_aSeq[j].tsTimeStamp);
+         // Calculate RTT estimate
+         const int rtt = count_microseconds(currtime - r_aSeq[j].tsTimeStamp);
 
          if (j == r_iHead)
          {
@@ -135,9 +134,10 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
       }
    }
 
-   // bad input, the ACK node has been overwritten
+   // The record about ACK is not found in the buffer, RTT can not be calculated
    return -1;
 }
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////

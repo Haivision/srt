@@ -12,40 +12,25 @@ in `transmitmedia.*` files in the `apps` directory
 which is used by all applications. See `SrtSource::Read` and `SrtTarget::Write`
 as examples of how data are read and written in SRT.
 
-- [Setup and teardown](#setup-and-teardown)
-- [Creating and destroying a socket](#creating-and-destroying-a-socket)
-  - [Synopsis](#synopsis)
-  - [Usage](#usage)
-  - [Important Remarks](#important-remarks)
-- [Binding and connecting](#binding-and-connecting)
-  - [Synopsis](#synopsis)
-  - [SRT Usage - listener (server)](#srt-usage---listener-server)
-  - [SRT Usage - rendezvous](#srt-usage---rendezvous)
+- [Setup and Teardown](#setup-and-teardown)
+- [Creating and Destroying a Socket](#creating-and-destroying-a-socket)
+- [Binding and Connecting](#binding-and-connecting)
 - [Sending and Receiving](#sending-and-receiving)
-  - [Synopsis](#synopsis)
-  - [Usage](#usage)
-  - [Transmission types available in SRT](#transmission-types-available-in-srt)
-- [Blocking and Non-blocking Mode](#blocking-and-non-blocking-mode)
-- [EPoll (Non-blocking Mode Events)](#epoll-non-blocking-mode-events))
-  - [Synopsis](#synopsis)
-  - [SRT Usage](#srt-usage)
-  - [Transmission types](#transmission-types)
-    - [Terminology](#terminology)
-  - [Transmission method: Live](#transmission-method-live)
-  - [Transmission method: Buffer](#transmission-method-buffer)
-  - [Transmission method: Message](#transmission-method-message)
+- [Blocking and Non-blocking Modes](#blocking-and-non-blocking-mode)
+  - [EPoll (Non-blocking Mode Events)](#epoll-non-blocking-mode-events)
+- [Transmission Types](#transmission-types)
+  - [Transmission Method: Live](#transmission-method-live)
+  - [Transmission Method: Buffer](#transmission-method-buffer)
+  - [Transmission Method: Message](#transmission-method-message)
 
-**NOTE**: The socket option descriptions originally contained in this document
-have been moved to [APISocketOptions.md](https://github.com/Haivision/srt/blob/master/docs/APISocketOptions.md).
-
-## Setup and teardown
+## Setup and Teardown
 
 Before any part of the SRT C API can be used, the user should call the `srt_startup()`
 function. Likewise, before the application exits, the `srt_cleanup()` function
 should be called. Note that one of the things the startup function does is to create
 a new thread, so choose the point of execution for these functions carefully.
 
-## Creating and destroying a socket
+## Creating and Destroying a Socket
 
 To do anything with SRT, you first have to create an SRT socket. The term "socket"
 in this case is used because of its logical similarity to system-wide sockets.
@@ -92,7 +77,7 @@ port". However SRT offers more flexibility than UDP (or TCP, the more logical
 similarity) because it manages ports as its own resources. For example, one port
 may be shared between various services.
 
-## Binding and connecting
+## Binding and Connecting
 
 Connections are established using the same philosophy as TCP, using functions
 with names and signatures similar to the BSD Socket API. What is new here is
@@ -253,7 +238,7 @@ forwarding SRT streams. It permits pulling and pushing of the sender's original
 time stamp, converted to local time and drift adjusted. The `srctime` parameter
 is the number of usec (since epoch) in local SRT clock time. If the connection
 is not between SRT peers or if **Timestamp-Based Packet Delivery mode (TSBPDMODE)**
-is not enabled (see [APISocketOptions.md](https://github.com/Haivision/srt/blob/master/docs/APISocketOptions.md)),
+is not enabled (see [SRT API Socket Options](API-socket-options.md)),
 the extracted `srctime` will be 0. Passing `srctime = 0` in `sendmsg` is like using
 the API without `srctime` and the local send time will be used (if TSBPDMODE is
 enabled and receiver supports it).
@@ -293,10 +278,10 @@ SRT_MSGCTRL mc = srt_msgctrl_default;
 nb = srt_recvmsg2(u, buf, nb, &mc);
 ```
 
-### Transmission types available in SRT
+### Transmission Types Available in SRT
 
 Mode settings determine how the sender and receiver functions work. The main
-[socket options](APISocketOptions.md) that control it are:
+SRT [socket options](API-socket-options.md) that control it are:
 
 - `SRTO_TRANSTYPE`. Sets several parameters in accordance with the selected
 mode:
@@ -308,9 +293,9 @@ mode:
 
 See [Transmission types](#transmission-types) below.
 
-## Blocking and Non-blocking Mode
+## Blocking and Non-blocking Modes
 
-SRT functions can also work in blocking and non-blocking mode, for which
+SRT functions can also work in blocking and non-blocking modes, for which
 there are two separate options for sending and receiving: `SRTO_SNDSYN` and
 `SRTO_RCVSYN`. When blocking mode is used, a function will not exit until
 the availability condition is satisfied. In non-blocking mode the function
@@ -323,13 +308,13 @@ and receiving. For example, `SNDSYN` defines blocking for `srt_connect` and
 `RCVSYN` defines blocking for `srt_accept`. The `SNDSYN` also makes `srt_close`
 exit only after the sending buffer is completely empty.
 
-## EPoll (Non-blocking Mode Events)
+### EPoll (Non-blocking Mode Events)
 
 EPoll is a mechanism to track the events happening on the sockets, both "system
 sockets" (see `SYSSOCKET` type) and SRT Sockets. Note that `SYSSOCKET` is also
 an alias for `int`, used only for clarity.
 
-### Synopsis
+#### Synopsis
 
 ```c++
 int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
@@ -341,7 +326,7 @@ int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTim
 int srt_epoll_clear_usocks(int eid);
 ```
 
-### SRT Usage
+#### Usage
 
 SRT socket being a user level concept, the system epoll (or other select)
 cannot be used to handle SRT non-blocking mode events. Instead, SRT provides a
@@ -413,7 +398,7 @@ when system sockets are involved, is also 10ms. The return time from a poll
 function can only be quicker when there is an event raised on one of the active
 SRT sockets.
 
-### `srt_epoll_uwait`
+#### `srt_epoll_uwait`
 
 In this function only the SRT sockets can be subscribed
 (it reports error if you pass an epoll id that is subscribed to system sockets).
@@ -440,7 +425,12 @@ the epoll container.
 The SRT EPoll system does not supports all features of Linux epoll. For
 example, it only supports level-triggered events for system sockets.
 
-### Transmission types
+## Transmission Types
+
+**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
+sections of the RFC additionally. The current section is going to be reworked accordingly.
 
 SRT was originally intended to be used for Live Streaming and therefore its main
 and default transmission type is "live". However, SRT supports the modes that
@@ -527,9 +517,9 @@ lost, or at least not for all still unacknowledged packets. The congestion contr
 class is responsible for the algorithm for taking care of this situation, which is
 either `FASTREXMIT` or `LATEREXMIT`. This will be explained below.
 
-### Transmission method: Live
+### Transmission Method: Live
 
-Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [parameters](APISocketOptions.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [socket options](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = true
 - `SRTO_RCVLATENCY` = 120
@@ -563,7 +553,7 @@ Otherwise the behavior is undefined and might be surprisingly disappointing.
 The reading function will always return only a payload that was
 sent, and it will HANGUP until the time to play has come for this
 packet (if TSBPD mode is on) or when it is available without gaps of
-lost packets (if TSBPD mode is off - see [`SRTO_TSBPDMODE`](APISocketOptions.md#SRTO_TSBPDMODE)).
+lost packets (if TSBPD mode is off - see [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)).
 
 You may wish to tweak some of the parameters below:
 
@@ -604,9 +594,9 @@ too long before acknowledging them. This mechanism isn't used (i.e. the BLIND RE
 situation isn't handled at all) when `SRTO_NAKREPORT` is set by the peer -- the
 NAKREPORT method is considered so effective that FASTREXMIT isn't necessary.
 
-### Transmission method: Buffer
+### Transmission Method: Buffer
 
-Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [parameters](APISocketOptions.md):
+Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [socket options](API-socket-options.md):
 
 - `SRTO_TSBPDMODE` = false
 - `SRTO_RCVLATENCY` = 0
@@ -652,7 +642,7 @@ designate features used in Live mode. None are used with File mode. The only opt
 that makes sense to modify after the `SRTT_FILE` type was set is `SRTO_MESSAGEAPI`,
 which is described below.
 
-### Transmission method: Message
+### Transmission Method: Message
 
 Setting `SRTO_TRANSTYPE` to `SRTT_FILE` and then setting `SRTO_MESSAGEAPI` to
 `true` implies usage of the Message transmission method. Parameters are set as
@@ -708,7 +698,6 @@ Note that you can use any of the sending and receiving functions for sending and
 receiving messages, except `sendfile/recvfile`, which are dedicated exclusively
 for Buffer API.
 
-For more information, see [APISocketOptions.md](APISocketOptions.md).
+For more information, see [SRT API Socket Options](API-socket-options.md).
 
-[Return to top](#srt-api)
- 
+[Return to Top of Page](#srt-api)
