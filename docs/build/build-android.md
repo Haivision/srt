@@ -2,31 +2,17 @@
 
 **NOTE:** The scripts have been moved to [scripts/build-android](../../scripts/build-android/) folder.
 
-## Establishing a Build Environment
-
-### Installing the Android NDK
+## Install the NDK and CMake
 
 The Android NDK is required to build native modules for Android.
+[Install and configure the NDK](https://developer.android.com/studio/projects/install-ndk)
+
 Consider installing the latest version of cmake. The higher version of cmake the better. As of writing the current version of CMake is 3.18.4
 You can download Cmake from the following website:
 [https://cmake.org/download](https://cmake.org/download/)
 
-Download the NDK r19 or newer archive from the following site:
-[Download the Android NDK on developer.android.com](https://developer.android.com/ndk/downloads/index.html)
-To install the Android NDK, simply expand the archive in the folder where you want to install it.
-
-### OpenSSL
-
-Google removed openssl from Android 7+. You must build openssl libs by yourself.
-
-## Configure the NDK Path
-
-Edit the ```mkall``` script to configure NDK path. Set the ```NDK``` to the directory where the NDK is installed.
-
 ## Build SRT for Android
 
-Run ```/bin/bash mkall > build.log``` script. Libraries will be installed to ```./target-architecture/lib```.
+Run ```./build-android -n /path/to/ndk```. E.g. ```./build-android -n /home/username/Android/Sdk/ndk/21.4.7075529```
 
-## Export SRT Libraries
-
-Run ```/bin/bash packjni``` to generate ```jniLibs``` archive for Android Studio.
+[Include prebuilt native libraries](https://developer.android.com/studio/projects/gradle-external-native-builds#jniLibs) from ```prebuilt``` folder into Android Studio project.
