@@ -227,7 +227,7 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
         __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
         __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif defined(_WIN32) && !defined(__MINGW__)
+#elif defined(_WIN32) && !defined(__MINGW32__)
         __nop();
         __nop();
         __nop();
