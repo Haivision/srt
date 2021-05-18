@@ -49,7 +49,7 @@ fi
 # Determine the path of the executing script
 BASE_DIR=$(readlink -f $0 | xargs dirname)
 
-$BASE_DIR/mkssl -n $NDK_ROOT -o $OPENSSL_VERSION -a $API_LEVEL -t "$BUILD_TARGETS"
+$BASE_DIR/mkssl -n $NDK_ROOT -a $API_LEVEL -t "$BUILD_TARGETS" -o $OPENSSL_VERSION
 
 if [ ! -d $BASE_DIR/srt ]; then
  git clone https://github.com/Haivision/srt srt
@@ -62,7 +62,7 @@ JNI_DIR=$BASE_DIR/prebuilt
 
 for build_target in $BUILD_TARGETS; do
  git -C $BASE_DIR/srt clean -fd
- $BASE_DIR/mksrt -s $BASE_DIR/srt -i $BASE_DIR/$build_target -b $build_target -n $NDK_ROOT -l $API_LEVEL
+ $BASE_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -s $BASE_DIR/srt -i $BASE_DIR/$build_target
 
  mkdir -p $JNI_DIR/$build_target
  cp $BASE_DIR/$build_target/lib/libsrt.so $JNI_DIR/$build_target/libsrt.so

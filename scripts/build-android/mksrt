@@ -1,14 +1,14 @@
 #!/bin/sh
 
-while getopts s:i:b:n:l: option
+while getopts s:i:t:n:a: option
 do
  case "${option}"
  in
  s) SRC_DIR=${OPTARG};;
  i) INSTALL_DIR=${OPTARG};;
- b) ARCH_ABI=${OPTARG};;
+ t) ARCH_ABI=${OPTARG};;
  n) NDK_ROOT=${OPTARG};;
- l) API_LEVEL=${OPTARG};;
+ a) API_LEVEL=${OPTARG};;
  *) twentytwo=${OPTARG};;
  esac
 done
