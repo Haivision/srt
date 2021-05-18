@@ -20,7 +20,8 @@ The default receiver buffer size is 8192 packets. It is approximately:
 ### Setting Receiver Buffer Size
 
 As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
-When the`SRTO_RCVBUF` option value is set using the`srt_setsockopt(..)` the function internally converts the provided size in bytes to the corresponding size in packets
+When the `SRTO_RCVBUF` option value is set using the `srt_setsockopt(..)` function,
+the provided size in bytes is internally converted to the corresponding size in packets
 using the configured value of the `SRTO_MSS` option to estimate the maximum possible payload of a packet.
 
 The following function returns the buffer size in packets:
@@ -106,10 +107,4 @@ srt_setsockopt(sock, 0, SRTO_FC, (void*) &optval, optlen);
 
 optval = rcvbuf;
 srt_setsockopt(sock, 0, SRTO_RCVBUF, (void*) &optval, optlen);
-
-
 ```
-
-
-
-
