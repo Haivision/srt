@@ -8848,9 +8848,10 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
             // No matter whether this is right or not (maybe the attack case should be
             // considered, and some LOSSREPORT flood prevention), send the drop request
             // to the peer.
-            int32_t seqpair[2];
-            seqpair[0] = w_packet.m_iSeqNo;
-            seqpair[1] = m_iSndLastDataAck;
+            int32_t seqpair[2] = {
+                w_packet.m_iSeqNo,
+                CSeqNo::decseq(m_iSndLastDataAck)
+            };
 
             HLOGC(qrlog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
