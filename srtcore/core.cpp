@@ -2400,7 +2400,17 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
     if (hs.m_iVersion < HS_VERSION_SRT1)
+    {
+        if (m_config.uMinimumPeerSrtVersion && m_config.uMinimumPeerSrtVersion >= SRT_VERSION_FEAT_HSv5)
+        {
+            m_RejectReason = SRT_REJ_VERSION;
+            // This means that a version with minimum 1.3.0 that features HSv5 is required,
+            // hence all HSv4 clients should be rejected.
+            LOGP(cnlog.Error, "interpretSrtHandshake: minimum peer version 1.3.0 (HSv5 only), rejecting HSv4 client");
+            return false;
+        }
         return true; // do nothing
+    }
 
     // Anyway, check if the handshake contains any extra data.
     if (hspkt.getLength() <= CHandShake::m_iContentSize)
@@ -10618,16 +10628,31 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // (or the above procedure failed)
         if (result == -1)
         {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
-                      << RequestTypeStr(hs.m_iReqType));
-            size_t size = CHandShake::m_iContentSize;
-            hs.store_to((packet.m_pcData), (size));
-            packet.setLength(size);
-            packet.m_iID        = id;
-            setPacketTS(packet, steady_clock::now());
-            HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
-            m_pSndQueue->sendto(addr, packet);
+            if (hs.m_iVersion < HS_VERSION_SRT1)
+            {
+                HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: HSv4 caller, sending SHUTDOWN after rejection with "
+                        << RequestTypeStr(hs.m_iReqType));
+                // The HSv4 clients do not interpret the error handshake response correctly.
+                // In order to really disallow them to connect there's needed the shutdown response.
+                CPacket rsp;
+                setPacketTS((rsp), steady_clock::now());
+                rsp.pack(UMSG_SHUTDOWN);
+                rsp.m_iID = m_PeerID;
+                m_pSndQueue->sendto(addr, rsp);
+            }
+            else
+            {
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
+                        << RequestTypeStr(hs.m_iReqType));
+                size_t size = CHandShake::m_iContentSize;
+                hs.store_to((packet.m_pcData), (size));
+                packet.setLength(size);
+                packet.m_iID        = id;
+                setPacketTS(packet, steady_clock::now());
+                HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
+                m_pSndQueue->sendto(addr, packet);
+            }
         }
         // new connection response should be sent in acceptAndRespond()
         // turn the socket writable if this is the first time when this was found out.
