@@ -82,20 +82,12 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
-/* Obsolete way to define MINGW */
-#ifndef __MINGW__
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#define __MINGW__ 1
-#endif
-#endif
-
 #ifdef __cplusplus
 #include <fstream>
 #include <set>
 #include <string>
 #include <vector>
 #endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 

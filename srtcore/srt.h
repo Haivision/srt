@@ -35,7 +35,7 @@ written by
 
 
 #ifdef _WIN32
-   #ifndef __MINGW__
+   #ifndef __MINGW32__
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
       typedef __int64 int64_t;
@@ -56,7 +56,7 @@ written by
       #else
          #define SRT_API
       #endif
-   #else // __MINGW__
+   #else // __MINGW32__
       #define SRT_API
    #endif
 #else
@@ -152,7 +152,7 @@ typedef int32_t SRTSOCKET;
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
-   #ifndef __MINGW__
+   #ifndef __MINGW32__
       typedef SOCKET SYSSOCKET;
    #else
       typedef int SYSSOCKET;
