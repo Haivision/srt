@@ -70,6 +70,7 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
+using namespace srt;
 using namespace srt::sync;
 
 namespace srt_logging {

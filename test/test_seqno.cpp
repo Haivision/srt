@@ -2,6 +2,8 @@
 #include "common.h"
 #include "core.h"
 
+using namespace srt;
+
 
 const int32_t CSeqNo::m_iSeqNoTH;
 const int32_t CSeqNo::m_iMaxSeqNo;

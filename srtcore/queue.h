@@ -63,8 +63,10 @@ modified by
 #include <queue>
 #include <vector>
 
-class CUDT;
+namespace srt
+{
 class CChannel;
+class CUDT;
 
 struct CUnit
 {
@@ -92,7 +94,6 @@ public: // Storage size operations
         /// @param [in] mss maximum segment size
         /// @param [in] version IP version
         /// @return 0: success, -1: failure.
-
     int init(int size, int mss, int version);
 
     /// Increase (double) the unit queue size.
@@ -112,7 +113,6 @@ public:
 public: // Operations on units
         /// find an available unit for incoming packet.
         /// @return Pointer to the available unit, NULL if not found.
-
     CUnit* getNextAvailUnit();
 
     void makeUnitFree(CUnit* unit);
@@ -149,8 +149,8 @@ private:
 
 struct CSNode
 {
-    CUDT*                               m_pUDT; // Pointer to the instance of CUDT socket
-    srt::sync::steady_clock::time_point m_tsTimeStamp;
+    CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
+    sync::steady_clock::time_point m_tsTimeStamp;
 
     int m_iHeapLoc; // location on the heap, -1 means not on the heap
 };
@@ -193,7 +193,7 @@ public:
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
 
-    srt::sync::steady_clock::time_point getNextProcTime();
+    sync::steady_clock::time_point getNextProcTime();
 
 private:
     /// Doubles the size of the list.
@@ -204,14 +204,14 @@ private:
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
-    void insert_(const srt::sync::steady_clock::time_point& ts, const CUDT* u);
+    void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
     /// Insert a new UDT instance into the list without realloc.
     /// Should be called if there is a gauranteed space for the element.
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
-    void insert_norealloc_(const srt::sync::steady_clock::time_point& ts, const CUDT* u);
+    void insert_norealloc_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
     void remove_(const CUDT* u);
 
@@ -220,12 +220,12 @@ private:
     int      m_iArrayLength; // physical length of the array
     int      m_iLastEntry;   // position of last entry on the heap array
 
-    srt::sync::Mutex m_ListLock;
+    sync::Mutex m_ListLock;
 
-    srt::sync::Mutex*     m_pWindowLock;
-    srt::sync::Condition* m_pWindowCond;
+    sync::Mutex*     m_pWindowLock;
+    sync::Condition* m_pWindowCond;
 
-    srt::sync::CTimer* m_pTimer;
+    sync::CTimer* m_pTimer;
 
 private:
     CSndUList(const CSndUList&);
@@ -234,8 +234,8 @@ private:
 
 struct CRNode
 {
-    CUDT*                               m_pUDT;        // Pointer to the instance of CUDT socket
-    srt::sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
+    CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
+    sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
 
     CRNode* m_pPrev; // previous link
     CRNode* m_pNext; // next link
@@ -401,7 +401,7 @@ private:
     };
     std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
 
-    mutable srt::sync::Mutex m_RIDListLock;
+    mutable sync::Mutex m_RIDListLock;
 };
 
 class CSndQueue
@@ -514,7 +514,7 @@ public:
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
 
-    void init(int size, size_t payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
+    void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID
@@ -528,8 +528,8 @@ public:
     void setClosing() { m_bClosing = true; }
 
 private:
-    static void*       worker(void* param);
-    srt::sync::CThread m_WorkerThread;
+    static void*  worker(void* param);
+    sync::CThread m_WorkerThread;
     // Subroutines of worker
     EReadStatus    worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
     EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
@@ -537,11 +537,11 @@ private:
     EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
 
 private:
-    CUnitQueue         m_UnitQueue; // The received packet queue
-    CRcvUList*         m_pRcvUList; // List of UDT instances that will read packets from the queue
-    CHash*             m_pHash;     // Hash table for UDT socket looking up
-    CChannel*          m_pChannel;  // UDP channel for receving packets
-    srt::sync::CTimer* m_pTimer;    // shared timer with the snd queue
+    CUnitQueue    m_UnitQueue; // The received packet queue
+    CRcvUList*    m_pRcvUList; // List of UDT instances that will read packets from the queue
+    CHash*        m_pHash;     // Hash table for UDT socket looking up
+    CChannel*     m_pChannel;  // UDP channel for receving packets
+    sync::CTimer* m_pTimer;    // shared timer with the snd queue
 
     size_t m_szPayloadSize; // packet payload size
 
@@ -554,10 +554,10 @@ private:
     int  setListener(CUDT* u);
     void removeListener(const CUDT* u);
 
-    void registerConnector(const SRTSOCKET&                           id,
-                           CUDT*                                      u,
-                           const sockaddr_any&                        addr,
-                           const srt::sync::steady_clock::time_point& ttl);
+    void registerConnector(const SRTSOCKET&                      id,
+                           CUDT*                                 u,
+                           const sockaddr_any&                   addr,
+                           const sync::steady_clock::time_point& ttl);
     void removeConnector(const SRTSOCKET& id);
 
     void  setNewEntry(CUDT* u);
@@ -567,16 +567,16 @@ private:
     void storePkt(int32_t id, CPacket* pkt);
 
 private:
-    srt::sync::Mutex  m_LSLock;
+    sync::Mutex       m_LSLock;
     CUDT*             m_pListener;        // pointer to the (unique, if any) listening UDT entity
     CRendezvousQueue* m_pRendezvousQueue; // The list of sockets in rendezvous mode
 
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
-    srt::sync::Mutex   m_IDLock;
+    sync::Mutex        m_IDLock;
 
     std::map<int32_t, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
-    srt::sync::Mutex                         m_BufferLock;
-    srt::sync::Condition                     m_BufferCond;
+    sync::Mutex                              m_BufferLock;
+    sync::Condition                          m_BufferCond;
 
 private:
     CRcvQueue(const CRcvQueue&);
@@ -585,10 +585,10 @@ private:
 
 struct CMultiplexer
 {
-    CSndQueue*         m_pSndQueue; // The sending queue
-    CRcvQueue*         m_pRcvQueue; // The receiving queue
-    CChannel*          m_pChannel;  // The UDP channel for sending and receiving
-    srt::sync::CTimer* m_pTimer;    // The timer
+    CSndQueue*    m_pSndQueue; // The sending queue
+    CRcvQueue*    m_pRcvQueue; // The receiving queue
+    CChannel*     m_pChannel;  // The UDP channel for sending and receiving
+    sync::CTimer* m_pTimer;    // The timer
 
     int m_iPort;      // The UDP port number of this multiplexer
     int m_iIPversion; // Address family (AF_INET or AF_INET6)
@@ -610,5 +610,7 @@ struct CMultiplexer
 
     void destroy();
 };
+
+} // namespace srt
 
 #endif

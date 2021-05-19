@@ -34,6 +34,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
