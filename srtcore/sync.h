@@ -22,7 +22,6 @@
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
-#include "srt_attr_defs.h"
 
 // Defile clock type to use
 #ifdef IA32
@@ -51,6 +50,7 @@
 #endif // ENABLE_STDCXX_SYNC
 
 #include "utilities.h"
+#include "srt_attr_defs.h"
 
 class CUDTException;    // defined in common.h
 
