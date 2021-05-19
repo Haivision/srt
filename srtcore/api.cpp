@@ -2831,7 +2831,6 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
 
 void CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af)
 {
-
    w_m.m_mcfg = s->m_pUDT->m_config;
    w_m.m_iIPversion = af;
    w_m.m_iRefCount = 1;
