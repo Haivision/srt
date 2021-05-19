@@ -8852,6 +8852,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
                 w_packet.m_iSeqNo,
                 CSeqNo::decseq(m_iSndLastDataAck)
             };
+            w_packet.m_iMsgNo = 0; // Message number is not known, setting all 32 bits to 0.
 
             HLOGC(qrlog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
