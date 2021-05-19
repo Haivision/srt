@@ -414,7 +414,6 @@ TEST(ReuseAddr, Wildcard)
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
     srt_cleanup();
-
 }
 
 
@@ -439,5 +438,4 @@ TEST(ReuseAddr, ProtocolVersion)
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
     srt_cleanup();
-
 }
