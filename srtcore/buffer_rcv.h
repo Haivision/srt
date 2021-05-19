@@ -47,8 +47,8 @@ namespace srt
 
 class CRcvBufferNew
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
 public:
     CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool peerRexmit);
@@ -186,6 +186,38 @@ private:
     int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
 
 private:
+    // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.
+    class CUnitPtr
+    {
+    public:
+        void operator=(CUnit* pUnit)
+        {
+            if (m_pUnit != NULL)
+            {
+                // m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
+            }
+        }
+    private:
+        CUnit* m_pUnit;
+    };
+
+    enum EntryStatus
+    {
+        EntryState_Empty,   //< No CUnit record.
+        EntryState_Avail,   //< Entry is available for reading.
+        EntryState_Read,    //< Entry was already read (out of order).
+        EntryState_Drop     //< Entry was dropped.
+    };
+    struct Entry
+    {
+        CUnit*      pUnit;
+        EntryStatus status;
+    };
+
+    static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
+
+    const Entry* m_entries;
+
     // TODO: maybe use std::vector?
     CUnit**      m_pUnit;      // pointer to the array of units (buffer)
     const size_t m_szSize;     // size of the array of units (buffer)
