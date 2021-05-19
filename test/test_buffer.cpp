@@ -2,6 +2,8 @@
 #include "gtest/gtest.h"
 #include "buffer.h"
 
+using namespace srt;
+
 
 TEST(CRcvBuffer, Create)
 {

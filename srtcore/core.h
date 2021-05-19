@@ -137,14 +137,16 @@ enum SeqPairItems
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
 };
 
-#if ENABLE_EXPERIMENTAL_BONDING
-class CUDTGroup;
-#endif
 
 // Extended SRT Congestion control class - only an incomplete definition required
 class CCryptoControl;
+
+namespace srt {
 class CUDTUnited;
 class CUDTSocket;
+#if ENABLE_EXPERIMENTAL_BONDING
+class CUDTGroup;
+#endif
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -167,10 +169,10 @@ class CUDT
     friend class PacketFilter;
     friend class CUDTGroup;
     friend struct FByOldestActive; // this functional will use private fields
-    friend class TestMockCUDT;
+    friend class TestMockCUDT; // unit tests
 
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration duration;
 
 private: // constructor and desctructor
     void construct();
@@ -1111,12 +1113,12 @@ private: // Timers functions
 
 
 private: // for UDP multiplexer
-    CSndQueue* m_pSndQueue;         // packet sending queue
-    CRcvQueue* m_pRcvQueue;         // packet receiving queue
-    sockaddr_any m_PeerAddr;        // peer address
-    uint32_t m_piSelfIP[4];         // local UDP IP address
-    CSNode* m_pSNode;               // node information for UDT list used in snd queue
-    CRNode* m_pRNode;               // node information for UDT list used in rcv queue
+    CSndQueue* m_pSndQueue;    // packet sending queue
+    CRcvQueue* m_pRcvQueue;    // packet receiving queue
+    sockaddr_any m_PeerAddr;   // peer address
+    uint32_t m_piSelfIP[4];    // local UDP IP address
+    CSNode* m_pSNode;          // node information for UDT list used in snd queue
+    CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
     const CSndQueue* sndQueue() { return m_pSndQueue; }
@@ -1129,5 +1131,6 @@ private: // for epoll
     void removeEPollID(const int eid);
 };
 
+} // namespace srt
 
 #endif

@@ -348,11 +348,18 @@ std::string DisplayEpollWatch();
    }
 };
 
+namespace srt
+{
+    class CUDT;
+    class CRendezvousQueue;
+    class CUDTGroup;
+}
+
 class CEPoll
 {
-friend class CUDT;
-friend class CUDTGroup;
-friend class CRendezvousQueue;
+friend class srt::CUDT;
+friend class srt::CUDTGroup;
+friend class srt::CRendezvousQueue;
 
 public:
    CEPoll();

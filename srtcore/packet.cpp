@@ -174,14 +174,14 @@ namespace srt_logging
 using namespace srt_logging;
 
 // Set up the aliases in the constructure
-CPacket::CPacket():
-m_extra_pad(),
-m_data_owned(false),
-m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO])),
-m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO])),
-m_iTimeStamp((int32_t&)(m_nHeader[SRT_PH_TIMESTAMP])),
-m_iID((int32_t&)(m_nHeader[SRT_PH_ID])),
-m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
+srt::CPacket::CPacket():
+    m_extra_pad(),
+    m_data_owned(false),
+    m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO])),
+    m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO])),
+    m_iTimeStamp((int32_t&)(m_nHeader[SRT_PH_TIMESTAMP])),
+    m_iID((int32_t&)(m_nHeader[SRT_PH_ID])),
+    m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
 {
     m_nHeader.clear();
 
@@ -195,12 +195,12 @@ m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
     m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
-char* CPacket::getData()
+char* srt::CPacket::getData()
 {
     return (char*)m_PacketVector[PV_DATA].dataRef();
 }
 
-void CPacket::allocate(size_t alloc_buffer_size)
+void srt::CPacket::allocate(size_t alloc_buffer_size)
 {
     if (m_data_owned)
     {
@@ -214,14 +214,14 @@ void CPacket::allocate(size_t alloc_buffer_size)
     m_data_owned = true;
 }
 
-void CPacket::deallocate()
+void srt::CPacket::deallocate()
 {
     if (m_data_owned)
         delete [] (char*)m_PacketVector[PV_DATA].data();
     m_PacketVector[PV_DATA].set(NULL, 0);
 }
 
-char* CPacket::release()
+char* srt::CPacket::release()
 {
     // When not owned, release returns NULL.
     char* buffer = NULL;
@@ -235,7 +235,7 @@ char* CPacket::release()
     return buffer;
 }
 
-CPacket::~CPacket()
+srt::CPacket::~CPacket()
 {
     // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
     // Delete the internal buffer only if it was declared as owned.
@@ -244,17 +244,17 @@ CPacket::~CPacket()
 }
 
 
-size_t CPacket::getLength() const
+size_t srt::CPacket::getLength() const
 {
    return m_PacketVector[PV_DATA].size();
 }
 
-void CPacket::setLength(size_t len)
+void srt::CPacket::setLength(size_t len)
 {
    m_PacketVector[PV_DATA].setLength(len);
 }
 
-void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
+void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
     setControl(pkttype);
@@ -365,7 +365,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
    }
 }
 
-void CPacket::toNL()
+void srt::CPacket::toNL()
 {
     // XXX USE HtoNLA!
     if (isControl())
@@ -383,7 +383,7 @@ void CPacket::toNL()
     }
 }
 
-void CPacket::toHL()
+void srt::CPacket::toHL()
 {
     // convert back into local host order
     uint32_t* p = m_nHeader;
@@ -401,22 +401,22 @@ void CPacket::toHL()
 }
 
 
-IOVector* CPacket::getPacketVector()
+IOVector* srt::CPacket::getPacketVector()
 {
    return m_PacketVector;
 }
 
-UDTMessageType CPacket::getType() const
+UDTMessageType srt::CPacket::getType() const
 {
     return UDTMessageType(SEQNO_MSGTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]));
 }
 
-int CPacket::getExtendedType() const
+int srt::CPacket::getExtendedType() const
 {
     return SEQNO_EXTTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]);
 }
 
-int32_t CPacket::getAckSeqNo() const
+int32_t srt::CPacket::getAckSeqNo() const
 {
    // read additional information field
    // This field is used only in UMSG_ACK and UMSG_ACKACK,
@@ -425,7 +425,7 @@ int32_t CPacket::getAckSeqNo() const
    return m_nHeader[SRT_PH_MSGNO];
 }
 
-uint16_t CPacket::getControlFlags() const
+uint16_t srt::CPacket::getControlFlags() const
 {
     // This returns exactly the "extended type" value,
     // which is not used at all in case when the standard
@@ -434,17 +434,17 @@ uint16_t CPacket::getControlFlags() const
     return SEQNO_EXTTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]);
 }
 
-PacketBoundary CPacket::getMsgBoundary() const
+PacketBoundary srt::CPacket::getMsgBoundary() const
 {
     return PacketBoundary(MSGNO_PACKET_BOUNDARY::unwrap(m_nHeader[SRT_PH_MSGNO]));
 }
 
-bool CPacket::getMsgOrderFlag() const
+bool srt::CPacket::getMsgOrderFlag() const
 {
     return 0!=  MSGNO_PACKET_INORDER::unwrap(m_nHeader[SRT_PH_MSGNO]);
 }
 
-int32_t CPacket::getMsgSeq(bool has_rexmit) const
+int32_t srt::CPacket::getMsgSeq(bool has_rexmit) const
 {
     if ( has_rexmit )
     {
@@ -456,13 +456,13 @@ int32_t CPacket::getMsgSeq(bool has_rexmit) const
     }
 }
 
-bool CPacket::getRexmitFlag() const
+bool srt::CPacket::getRexmitFlag() const
 {
     // return false; //
     return 0 !=  MSGNO_REXMIT::unwrap(m_nHeader[SRT_PH_MSGNO]);
 }
 
-EncryptionKeySpec CPacket::getMsgCryptoFlags() const
+EncryptionKeySpec srt::CPacket::getMsgCryptoFlags() const
 {
     return EncryptionKeySpec(MSGNO_ENCKEYSPEC::unwrap(m_nHeader[SRT_PH_MSGNO]));
 }
@@ -470,19 +470,19 @@ EncryptionKeySpec CPacket::getMsgCryptoFlags() const
 // This is required as the encryption/decryption happens in place.
 // This is required to clear off the flags after decryption or set
 // crypto flags after encrypting a packet.
-void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
+void srt::CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
 {
     int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_ENCKEYSPEC::mask;
     m_nHeader[SRT_PH_MSGNO] = clr_msgno | EncryptionKeyBits(spec);
 }
 
-uint32_t CPacket::getMsgTimeStamp() const
+uint32_t srt::CPacket::getMsgTimeStamp() const
 {
    // SRT_DEBUG_TSBPD_WRAP may enable smaller timestamp for faster wraparoud handling tests
    return (uint32_t)m_nHeader[SRT_PH_TIMESTAMP] & TIMESTAMP_MASK;
 }
 
-CPacket* CPacket::clone() const
+srt::CPacket* srt::CPacket::clone() const
 {
    CPacket* pkt = new CPacket;
    memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
@@ -492,6 +492,8 @@ CPacket* CPacket::clone() const
 
    return pkt;
 }
+
+namespace srt {
 
 // Useful for debugging
 std::string PacketMessageFlagStr(uint32_t msgno_field)
@@ -521,8 +523,10 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
         os << val;
 }
 
+} // namespace srt
+
 #if ENABLE_LOGGING
-std::string CPacket::Info()
+std::string srt::CPacket::Info()
 {
     std::ostringstream os;
     os << "TARGET=@" << m_iID << " ";

@@ -59,6 +59,8 @@ modified by
 #include "socketconfig.h"
 #include "netinet_any.h"
 
+namespace srt {
+
 class CChannel
 {
    void createSocket(int family);
@@ -114,14 +116,14 @@ public:
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data sent.
 
-   int sendto(const sockaddr_any& addr, CPacket& packet) const;
+   int sendto(const sockaddr_any& addr, srt::CPacket& packet) const;
 
       /// Receive a packet from the channel and record the source address.
       /// @param [in] addr pointer to the source address.
       /// @param [in] packet reference to a CPacket entity.
       /// @return Actual size of data received.
 
-   EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
+   EReadStatus recvfrom(sockaddr_any& addr, srt::CPacket& packet) const;
 
    void setConfig(const CSrtMuxerConfig& config);
 
@@ -160,5 +162,6 @@ private:
    sockaddr_any m_BindAddr;
 };
 
+} // namespace srt
 
 #endif
