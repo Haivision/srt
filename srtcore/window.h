@@ -58,20 +58,20 @@ modified by
    #include <sys/time.h>
    #include <time.h>
 #endif
-#include "udt.h"
 #include "packet.h"
+#include "udt.h"
 
 namespace ACKWindowTools
 {
    struct Seq
    {
-       int32_t iACKSeqNo;       // Seq. No. for the ACK packet
-       int32_t iACK;            // Data Seq. No. carried by the ACK packet
-       srt::sync::steady_clock::time_point tsTimeStamp;      // The timestamp when the ACK was sent
+       int32_t iACKSeqNo;                                   // Seq. No. of the ACK packet
+       int32_t iACK;                                        // Data packet Seq. No. carried by the ACK packet
+       srt::sync::steady_clock::time_point tsTimeStamp;     // The timestamp when the ACK was sent
    };
 
    void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t ack);
-   int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack);
+   int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack, const srt::sync::steady_clock::time_point& currtime);
 }
 
 template <size_t SIZE>
@@ -89,22 +89,24 @@ public:
    ~CACKWindow() {}
 
       /// Write an ACK record into the window.
-      /// @param [in] seq ACK seq. no.
-      /// @param [in] ack DATA ACK no.
+      /// @param [in] seq Seq. No. of the ACK packet
+      /// @param [in] ack Data packet Seq. No. carried by the ACK packet
 
    void store(int32_t seq, int32_t ack)
    {
        return ACKWindowTools::store(m_aSeq, SIZE, m_iHead, m_iTail, seq, ack);
    }
 
-      /// Search the ACK-2 "seq" in the window, find out the DATA "ack" and caluclate RTT .
-      /// @param [in] seq ACK-2 seq. no.
-      /// @param [out] ack the DATA ACK no. that matches the ACK-2 no.
-      /// @return RTT.
+      /// Search the ACKACK "seq" in the window, find out the data packet "ack"
+      /// and calculate RTT estimate based on the ACK/ACKACK pair
+      /// @param [in] seq Seq. No. of the ACK packet carried within ACKACK
+      /// @param [out] ack Acknowledged data packet Seq. No. from the ACK packet that matches the ACKACK
+      /// @param [in] currtime The timestamp of ACKACK packet reception by the receiver
+      /// @return RTT
 
-   int acknowledge(int32_t seq, int32_t& r_ack)
+   int acknowledge(int32_t seq, int32_t& r_ack, const srt::sync::steady_clock::time_point& currtime)
    {
-       return ACKWindowTools::acknowledge(m_aSeq, SIZE, m_iHead, m_iTail, seq, r_ack);
+       return ACKWindowTools::acknowledge(m_aSeq, SIZE, m_iHead, m_iTail, seq, r_ack, currtime);
    }
 
 private:
@@ -112,7 +114,7 @@ private:
    typedef ACKWindowTools::Seq Seq;
 
    Seq m_aSeq[SIZE];
-   int m_iHead;                 // Pointer to the lastest ACK record
+   int m_iHead;                 // Pointer to the latest ACK record
    int m_iTail;                 // Pointer to the oldest ACK record
 
 private:
@@ -216,7 +218,7 @@ public:
        m_tsCurrArrTime = srt::sync::steady_clock::now();
 
        // record the packet interval between the current and the last one
-       m_aPktWindow[m_iPktWindowPtr] = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
+       m_aPktWindow[m_iPktWindowPtr] = (int) srt::sync::count_microseconds(m_tsCurrArrTime - m_tsLastArrTime);
        m_aBytesWindow[m_iPktWindowPtr] = pktsz;
 
        // the window is logically circular
@@ -323,22 +325,22 @@ public:
    }
 
 private:
-   int m_aPktWindow[ASIZE];          // packet information window (inter-packet time)
-   int m_aBytesWindow[ASIZE];        // 
-   int m_iPktWindowPtr;         // position pointer of the packet info. window.
-   mutable srt::sync::Mutex m_lockPktWindow; // used to synchronize access to the packet window
+   int m_aPktWindow[ASIZE];                                 // Packet information window (inter-packet time)
+   int m_aBytesWindow[ASIZE];
+   int m_iPktWindowPtr;                                     // Position pointer of the packet info. window
+   mutable srt::sync::Mutex m_lockPktWindow;                // Used to synchronize access to the packet window
 
-   int m_aProbeWindow[PSIZE];        // record inter-packet time for probing packet pairs
-   int m_iProbeWindowPtr;       // position pointer to the probing window
-   mutable srt::sync::Mutex m_lockProbeWindow; // used to synchronize access to the probe window
+   int m_aProbeWindow[PSIZE];                               // Record inter-packet time for probing packet pairs
+   int m_iProbeWindowPtr;                                   // Position pointer to the probing window
+   mutable srt::sync::Mutex m_lockProbeWindow;              // Used to synchronize access to the probe window
 
-   int m_iLastSentTime;         // last packet sending time
-   int m_iMinPktSndInt;         // Minimum packet sending interval
+   int m_iLastSentTime;                                     // Last packet sending time
+   int m_iMinPktSndInt;                                     // Minimum packet sending interval
 
-   srt::sync::steady_clock::time_point m_tsLastArrTime;      // last packet arrival time
-   srt::sync::steady_clock::time_point m_tsCurrArrTime;      // current packet arrival time
-   srt::sync::steady_clock::time_point m_tsProbeTime;        // arrival time of the first probing packet
-   int32_t m_Probe1Sequence;    // sequence number for which the arrival time was notified
+   srt::sync::steady_clock::time_point m_tsLastArrTime;     // Last packet arrival time
+   srt::sync::steady_clock::time_point m_tsCurrArrTime;     // Current packet arrival time
+   srt::sync::steady_clock::time_point m_tsProbeTime;       // Arrival time of the first probing packet
+   int32_t m_Probe1Sequence;                                // Sequence number for which the arrival time was notified
 
 private:
    CPktTimeWindow(const CPktTimeWindow&);

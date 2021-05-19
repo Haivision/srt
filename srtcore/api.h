@@ -70,7 +70,7 @@ modified by
 #endif
 
 // Please refer to structure and locking information provided in the
-// LowLevelInfo.md document.
+// docs/dev/low-level-info.md document.
 
 class CUDT;
 
@@ -88,8 +88,6 @@ public:
 #endif
        , m_iISN(0)
        , m_pUDT(NULL)
-       , m_pQueuedSockets(NULL)
-       , m_pAcceptSockets(NULL)
        , m_AcceptCond()
        , m_AcceptLock()
        , m_uiBackLog(0)
@@ -119,16 +117,15 @@ public:
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   CUDTGroup::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-   CUDTGroup* m_GroupOf;                     //< Group this socket is a member of, or NULL if it isn't
+   srt::groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+   CUDTGroup* m_GroupOf;                       //< Group this socket is a member of, or NULL if it isn't
 #endif
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<SRTSOCKET>* m_pQueuedSockets;    //< set of connections waiting for accept()
-   std::set<SRTSOCKET>* m_pAcceptSockets;    //< set of accept()ed connections
+   std::set<SRTSOCKET> m_QueuedSockets;    //< set of connections waiting for accept()
 
    srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
    srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
@@ -185,8 +182,8 @@ public:
    // Instrumentally used by select() and also required for non-blocking
    // mode check in groups
    bool readReady();
-   bool writeReady();
-   bool broken();
+   bool writeReady() const;
+   bool broken() const;
 
 private:
    CUDTSocket(const CUDTSocket&);
@@ -204,6 +201,9 @@ friend class CRendezvousQueue;
 public:
    CUDTUnited();
    ~CUDTUnited();
+
+   // Public constants
+   static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1;    // maximum value for a regular socket
 
 public:
 
@@ -305,6 +305,7 @@ public:
    }
 
    void deleteGroup(CUDTGroup* g);
+   void deleteGroup_LOCKED(CUDTGroup* g);
 
    // [[using locked(m_GlobControlLock)]]
    CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
@@ -348,8 +349,6 @@ private:
    srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
    srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
-
-   static const int32_t MAX_SOCKET_VAL = 1 << 29;    // maximum value for a regular socket
 
    SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
    SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
@@ -409,7 +408,6 @@ private:
 
    // Utility functions for updateMux
    void configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
-   void configureChannel(CMultiplexer& w_m, const CUDTSocket* );
    uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
    bool channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s);
 

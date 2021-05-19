@@ -88,236 +88,18 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-const char* CUDTException::getErrorMessage() const ATR_NOTHROW
-{
-    return getErrorString().c_str();
+namespace srt {
+const char* strerror_get_message(size_t major, size_t minor);
 }
 
-const string& CUDTException::getErrorString() const
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
-   // translate "Major:Minor" code into text message.
+    return srt::strerror_get_message(m_iMajor, m_iMinor);
+}
 
-   switch (m_iMajor)
-   {
-      case MJ_SUCCESS:
-        m_strMsg = "Success";
-        break;
-
-      case MJ_SETUP:
-        m_strMsg = "Connection setup failure";
-
-        switch (m_iMinor)
-        {
-        case MN_TIMEOUT:
-           m_strMsg += ": connection time out";
-           break;
-
-        case MN_REJECTED:
-           m_strMsg += ": connection rejected";
-           break;
-
-        case MN_NORES:
-           m_strMsg += ": unable to create/configure SRT socket";
-           break;
-
-        case MN_SECURITY:
-           m_strMsg += ": abort for security reasons";
-           break;
-
-        case MN_CLOSED:
-           m_strMsg += ": socket closed during operation";
-           break;
-
-        default:
-           break;
-        }
-
-        break;
-
-      case MJ_CONNECTION:
-        switch (m_iMinor)
-        {
-        case MN_CONNLOST:
-           m_strMsg = "Connection was broken";
-           break;
-
-        case MN_NOCONN:
-           m_strMsg = "Connection does not exist";
-           break;
-
-        default:
-           break;
-        }
-
-        break;
-
-      case MJ_SYSTEMRES:
-        m_strMsg = "System resource failure";
-
-        switch (m_iMinor)
-        {
-        case MN_THREAD:
-           m_strMsg += ": unable to create new threads";
-           break;
-
-        case MN_MEMORY:
-           m_strMsg += ": unable to allocate buffers";
-           break;
-
-
-        case MN_OBJECT:
-           m_strMsg += ": unable to allocate system object";
-           break;
-
-        default:
-           break;
-        }
-
-        break;
-
-      case MJ_FILESYSTEM:
-        m_strMsg = "File system failure";
-
-        switch (m_iMinor)
-        {
-        case MN_SEEKGFAIL:
-           m_strMsg += ": cannot seek read position";
-           break;
-
-        case MN_READFAIL:
-           m_strMsg += ": failure in read";
-           break;
-
-        case MN_SEEKPFAIL:
-           m_strMsg += ": cannot seek write position";
-           break;
-
-        case MN_WRITEFAIL:
-           m_strMsg += ": failure in write";
-           break;
-
-        default:
-           break;
-        }
-
-        break;
-
-      case MJ_NOTSUP:
-        m_strMsg = "Operation not supported";
- 
-        switch (m_iMinor)
-        {
-        case MN_ISBOUND:
-           m_strMsg += ": Cannot do this operation on a BOUND socket";
-           break;
-
-        case MN_ISCONNECTED:
-           m_strMsg += ": Cannot do this operation on a CONNECTED socket";
-           break;
-
-        case MN_INVAL:
-           m_strMsg += ": Bad parameters";
-           break;
-
-        case MN_SIDINVAL:
-           m_strMsg += ": Invalid socket ID";
-           break;
-
-        case MN_ISUNBOUND:
-           m_strMsg += ": Cannot do this operation on an UNBOUND socket";
-           break;
-
-        case MN_NOLISTEN:
-           m_strMsg += ": Socket is not in listening state";
-           break;
-
-        case MN_ISRENDEZVOUS:
-           m_strMsg += ": Listen/accept is not supported in rendezous connection setup";
-           break;
-
-        case MN_ISRENDUNBOUND:
-           m_strMsg += ": Cannot call connect on UNBOUND socket in rendezvous connection setup";
-           break;
-
-        case MN_INVALMSGAPI:
-           m_strMsg += ": Incorrect use of Message API (sendmsg/recvmsg).";
-           break;
-
-        case MN_INVALBUFFERAPI:
-           m_strMsg += ": Incorrect use of Buffer API (send/recv) or File API (sendfile/recvfile).";
-           break;
-
-        case MN_BUSY:
-           m_strMsg += ": Another socket is already listening on the same port";
-           break;
-
-        case MN_XSIZE:
-           m_strMsg += ": Message is too large to send (it must be less than the SRT send buffer size)";
-           break;
-
-        case MN_EIDINVAL:
-           m_strMsg += ": Invalid epoll ID";
-           break;
-
-        case MN_EEMPTY:
-           m_strMsg += ": All sockets removed from epoll, waiting would deadlock";
-           break;
-
-        case MN_BUSYPORT:
-           m_strMsg += ": Another socket is bound to that port and is not reusable for requested settings";
-           break;
-
-
-        default:
-           break;
-        }
-
-        break;
-
-     case MJ_AGAIN:
-        m_strMsg = "Non-blocking call failure";
-
-        switch (m_iMinor)
-        {
-        case MN_WRAVAIL:
-           m_strMsg += ": no buffer available for sending";
-           break;
-
-        case MN_RDAVAIL:
-           m_strMsg += ": no data available for reading";
-           break;
-
-        case MN_XMTIMEOUT:
-           m_strMsg += ": transmission timed out";
-           break;
-
-#ifdef SRT_ENABLE_ECN
-        case MN_CONGESTION:
-           m_strMsg += ": early congestion notification";
-           break;
-#endif /* SRT_ENABLE_ECN */
-        default:
-           break;
-        }
-
-        break;
-
-     case MJ_PEERERROR:
-        m_strMsg = "The peer side has signalled an error";
-
-        break;
-
-      default:
-        m_strMsg = "Unknown error";
-   }
-
-   // Adding "errno" information
-   if ((MJ_SUCCESS != m_iMajor) && (0 < m_iErrno))
-   {
-      m_strMsg += ": " + SysStrError(m_iErrno);
-   }
-
-   return m_strMsg;
+string CUDTException::getErrorString() const
+{
+    return getErrorMessage();
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
@@ -680,7 +462,7 @@ extern const char* const srt_rejectreason_msg [] = {
     "Password required or unexpected",
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
-    "Packet Filter type collision",
+    "Packet Filter settings error",
     "Group settings collision",
     "Connection timeout"
 };
@@ -713,7 +495,8 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
         Split(*i, ':', back_inserter(keyval));
         if (keyval.size() != 2)
             return false;
-        w_config.parameters[keyval[0]] = keyval[1];
+        if (keyval[1] != "")
+            w_config.parameters[keyval[0]] = keyval[1];
     }
 
     return true;

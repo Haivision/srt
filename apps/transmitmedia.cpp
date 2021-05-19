@@ -302,7 +302,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
 
     SrtConfigurePost(sock, m_options);
 
-    for (auto o: srt_options)
+    for (const auto &o: srt_options)
     {
         if ( o.binding == SocketOption::POST && m_options.count(o.name) )
         {
@@ -624,7 +624,7 @@ void SrtModel::Establish(std::string& w_name)
         if (w_name != "")
         {
             Verb() << "Connect with requesting stream [" << w_name << "]";
-            UDT::setstreamid(m_sock, w_name);
+            srt::setstreamid(m_sock, w_name);
         }
         else
         {
@@ -667,7 +667,7 @@ void SrtModel::Establish(std::string& w_name)
         Verb() << "Accepting a client...";
         AcceptNewClient();
         // This rewrites m_sock with a new SRT socket ("accepted" socket)
-        w_name = UDT::getstreamid(m_sock);
+        w_name = srt::getstreamid(m_sock);
         Verb() << "... GOT CLIENT for stream [" << w_name << "]";
     }
 }

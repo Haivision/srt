@@ -100,7 +100,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
-    const int connection_timeout_ms = 500;
+    const int connection_timeout_ms = 300;
     EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
     const int yes = 1;
@@ -126,7 +126,6 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         int wlen = 2;
         SRTSOCKET write[2];
 
-        using namespace std;
         const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
 
         // Here we check the connection timeout.
@@ -143,9 +142,8 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
         // Confidence interval border : +/-80 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 80);
-        EXPECT_GE(delta_ms, connection_timeout_ms - 80);
-        cerr << "Timeout was: " << delta_ms << "\n";
+        EXPECT_LE(delta_ms, connection_timeout_ms + 80) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 80) << "Timeout was: " << delta_ms;
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
@@ -172,21 +170,27 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
 */
 TEST_F(TestConnectionTimeout, BlockingLoop)
 {
-    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
+    const SRTSOCKET client_sock = srt_create_socket();
+    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+
+    // Set connection timeout to 999 ms to reduce the test execution time.
+    // Also need to hit a time point between two threads:
+    // srt_connect will check TTL every second,
+    // CRcvQueue::worker will wait on a socket for 10 ms.
+    // Need to have a condition, when srt_connect will process the timeout.
     const int connection_timeout_ms = 999;
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
     for (int i = 0; i < 10; ++i)
     {
-        const SRTSOCKET client_sock = srt_create_socket();
-        ASSERT_GT(client_sock, 0);    // socket_id should be > 0
-
-        // Set connection timeout to 999 ms to reduce the test execution time.
-        // Also need to hit a time point between two threads:
-        // srt_connect will check TTL every second,
-        // CRcvQueue::worker will wait on a socket for 10 ms.
-        // Need to have a condition, when srt_connect will process the timeout.
-        EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
-
+        const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
         EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+
+        const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - chrono_ts_start).count();
+        // Confidence interval border : +/-200 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 200) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 200) << "Timeout was: " << delta_ms;
 
         const int error_code = srt_getlasterror(nullptr);
         EXPECT_EQ(error_code, SRT_ENOSERVER);
@@ -196,9 +200,9 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
                 << error_code << " " << srt_getlasterror_str() << "\n";
             break;
         }
-
-        EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
     }
+
+    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
 }
 
 

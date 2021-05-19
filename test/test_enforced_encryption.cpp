@@ -277,10 +277,10 @@ public:
     bool GetEnforcedEncryption(PEER_TYPE peer_type)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        int value = -1;
-        int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
-        return value ? true : false;
+        bool optval;
+        int  optlen = sizeof optval;
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_SUCCESS);
+        return optval ? true : false;
     }
 
 
@@ -415,21 +415,24 @@ public:
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 } while (!caller_done);
 
-                const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                if (m_is_tracing)
-                {
-                    std::cerr << "LATE Socket state accepted: " << m_socket_state[status]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
-                }
+                // Special case when the expected state is "broken": if so, tolerate every possible
+                // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
 
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    EXPECT_TRUE(accepted_socket == -1 || status == SRTS_BROKEN || status == SRTS_CLOSED);
+                    EXPECT_GE(srt_getsockstate(accepted_socket), SRTS_BROKEN);
                 }
                 else
                 {
-                    EXPECT_EQ(status, expect.socket_state[CHECK_SOCKET_ACCEPTED]);
+                    EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
                     EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+                }
+
+                if (m_is_tracing)
+                {
+                    const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
+                    std::cerr << "LATE Socket state accepted: " << m_socket_state[status]
+                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
                 }
             }
         });
@@ -500,8 +503,8 @@ private:
 
     int       m_pollid          = 0;
 
-    const int s_yes = 1;
-    const int s_no  = 0;
+    const bool s_yes = true;
+    const bool s_no  = false;
 
     const bool          m_is_tracing = false;
     static const char*  m_km_state[];

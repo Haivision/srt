@@ -8,14 +8,22 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-# XXX This can be potentially done in future, but there still exist
-# some dependent project using cmake 2.8 - this can't be done this way.
-#cmake_minimum_required (VERSION 3.0.2 FATAL_ERROR)
-#project(SRT VERSION "1.4.2")
-project(SRT C CXX)
+set (SRT_VERSION 1.4.3)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-include(haiUtil)
+include(haiUtil) # needed for set_version_variables
+# CMake version 3.0 introduced the VERSION option of the project() command
+# to specify a project version as well as the name.
+if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
+  project(SRT C CXX)
+  # Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  set_version_variables(SRT_VERSION ${SRT_VERSION})
+else()
+  cmake_policy(SET CMP0048 NEW)
+  # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+  project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
+endif()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -42,9 +50,6 @@ set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
 if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
 	include(GNUInstallDirs)
 endif()
-
-set (SRT_VERSION 1.4.2)
-set_version_variables(SRT_VERSION ${SRT_VERSION})
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
@@ -91,6 +96,8 @@ endforeach()
 # SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
+# SRT_DEBUG_BONDING_STATES 1
+# SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 
 # option defaults
@@ -277,14 +284,29 @@ if (ENABLE_ENCRYPTION)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-	else() # Common for mbedtls and openssl
-		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-			add_definitions(-DUSE_MBEDTLS=1)
-			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
-		else()
-			add_definitions(-DUSE_OPENSSL=1)
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+	elseif ("${USE_ENCLIB}" STREQUAL "mbedtls")
+		add_definitions(-DUSE_MBEDTLS=1)
+		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+			set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
+			find_package(MbedTLS REQUIRED)
+			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
+			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 		endif()
+		if ("${SSL_LIBRARIES}" STREQUAL "")
+			set (SSL_LIBRARIES  mbedtls mbedcrypto)
+		endif()
+		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+
+		foreach(LIB ${SSL_LIBRARIES})
+			if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+			else()
+				set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+			endif()
+		endforeach()
+	else() # openssl
+		add_definitions(-DUSE_OPENSSL=1)
+		set (SSL_REQUIRED_MODULES "openssl libcrypto")
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
@@ -309,24 +331,12 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-					set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
-					find_package(MbedTLS REQUIRED)
-					set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
-					set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
-				endif()
-				if ("${SSL_LIBRARIES}" STREQUAL "")
-					set (SSL_LIBRARIES  mbedtls mbedcrypto)
-				endif()
-				message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			else()
-				find_package(OpenSSL REQUIRED)
-				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			endif()
+			find_package(OpenSSL REQUIRED)
+			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
@@ -409,9 +419,6 @@ if (NOT ENABLE_CXX11)
 	if (ENABLE_STDCXX_SYNC)
 		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
 	endif()
-	if (DEFINED USE_CXX_STD)
-		message(FATAL_ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
-	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
 	if (DEFINED USE_CXX_STD)
@@ -455,9 +462,14 @@ if (DEFINED USE_CXX_STD)
 
 			# Set this through independent flags
 			set (USE_CXX_STD_LIB ${STDCXX})
-			set (USE_CXX_STD_APP "")
 			set (FORCE_CXX_STANDARD 1)
-			message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			if (NOT ENABLE_APPS)
+				set (USE_CXX_STD_APP ${STDCXX})
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
+			else()
+				set (USE_CXX_STD_APP "")
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			endif()
 		elseif (FORCE_CXX_STANDARD_GNUONLY)
 			# CMake is too old to handle CMAKE_CXX_STANDARD,
 			# use bare GNU options.
@@ -775,13 +787,16 @@ MafReadDir(srtcore filelist.maf
 	PRIVATE_HEADERS HEADERS_srt_private
 )
 
-message(STATUS "SRT Sources: ${SOURCES_srt}")
-
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
@@ -801,10 +816,10 @@ macro(srt_set_stdcxx targetname spec)
 	if (NOT "${stdcxxspec}" STREQUAL "")
 		if (FORCE_CXX_STANDARD_GNUONLY)
 			target_compile_options(${targetname} PRIVATE -std=c++${stdcxxspec})
-			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
+			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
 		else()
 			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
-			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
+			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 		endif()
 	else()
 		message(STATUS "APP: ${targetname}: using default C++ standard")
@@ -821,7 +836,7 @@ if (srt_libspec_shared)
 	# shared libraries need PIC
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
-	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR})
+	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
@@ -1163,6 +1178,9 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(test-c-client.c)
 	srt_make_application(test-c-client)
 
+	srt_add_example(example-client-nonblock.c)
+	srt_make_application(example-client-nonblock)
+
 	srt_add_example(test-c-server.c)
 	srt_make_application(test-c-server)
 
@@ -1180,6 +1198,16 @@ endif()
 
 
 if (ENABLE_UNITTESTS AND ENABLE_CXX11)
+
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		message(STATUS "VERSION < 3.10 -- adding test using the old method")
+		set (USE_OLD_ADD_METHOD 1)
+	else()
+		message(STATUS "VERSION > 3.10 -- using NEW POLICY for in_list operator")
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+	endif()
+
+
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	find_package(GTest 1.8)
@@ -1196,8 +1224,6 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	MafReadDir(test filelist.maf
 		SOURCES SOURCES_unittests
 	)
-	
-	message(STATUS "Unit test sources: ${SOURCES_unittests}")
 
 	srt_add_program(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
@@ -1210,13 +1236,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+	if (USE_OLD_ADD_METHOD)
 		add_test(
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
 	else()
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 		gtest_add_tests(
 			test-srt
 			""
