@@ -183,7 +183,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
     int64_t& w_srctime  = w_mctrl.srctime;
-    int&      w_ttl     = w_mctrl.msgttl;
+    const int& ttl      = w_mctrl.msgttl;
     int       size      = len / m_iMSS;
     if ((len % m_iMSS) != 0)
         size++;
@@ -254,7 +254,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         s->m_llSourceTime_us = w_srctime;
         s->m_tsOriginTime = time;
         s->m_tsRexmitTime = time_point();
-        s->m_iTTL = w_ttl;
+        s->m_iTTL = ttl;
         // Rewrite the actual sending time back into w_srctime
         // so that the calling facilities can reuse it
         if (!w_srctime)
@@ -542,6 +542,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // if found block is stale
     // (This is for messages that have declared TTL - messages that fail to be sent
     // before the TTL defined time comes, will be dropped).
+
     if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
     {
         int32_t msgno = p->getMsgSeq();
