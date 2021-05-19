@@ -78,14 +78,14 @@ CUnitQueue::CUnitQueue()
 
 CUnitQueue::~CUnitQueue()
 {
-    CQEntry *p = m_pQEntry;
+    CQEntry* p = m_pQEntry;
 
     while (p != NULL)
     {
         delete[] p->m_pUnit;
         delete[] p->m_pBuffer;
 
-        CQEntry *q = p;
+        CQEntry* q = p;
         if (p == m_pLastQueue)
             p = NULL;
         else
@@ -96,9 +96,9 @@ CUnitQueue::~CUnitQueue()
 
 int CUnitQueue::init(int size, int mss, int version)
 {
-    CQEntry *tempq = NULL;
-    CUnit *  tempu = NULL;
-    char *   tempb = NULL;
+    CQEntry* tempq = NULL;
+    CUnit*   tempu = NULL;
+    char*    tempb = NULL;
 
     try
     {
@@ -142,11 +142,11 @@ int CUnitQueue::increase()
 {
     // adjust/correct m_iCount
     int      real_count = 0;
-    CQEntry *p          = m_pQEntry;
+    CQEntry* p          = m_pQEntry;
     while (p != NULL)
     {
-        CUnit *u = p->m_pUnit;
-        for (CUnit *end = u + p->m_iSize; u != end; ++u)
+        CUnit* u = p->m_pUnit;
+        for (CUnit* end = u + p->m_iSize; u != end; ++u)
             if (u->m_iFlag != CUnit::FREE)
                 ++real_count;
 
@@ -159,9 +159,9 @@ int CUnitQueue::increase()
     if (double(m_iCount) / m_iSize < 0.9)
         return -1;
 
-    CQEntry *tempq = NULL;
-    CUnit *  tempu = NULL;
-    char *   tempb = NULL;
+    CQEntry* tempq = NULL;
+    CUnit*   tempu = NULL;
+    char*    tempb = NULL;
 
     // all queues have the same size
     const int size = m_pQEntry->m_iSize;
@@ -179,8 +179,8 @@ int CUnitQueue::increase()
         delete[] tempb;
 
         LOGC(rslog.Error,
-            log << "CUnitQueue:increase: failed to allocate " << size << " new units."
-                << " Current size=" << m_iSize);
+             log << "CUnitQueue:increase: failed to allocate " << size << " new units."
+                 << " Current size=" << m_iSize);
         return -1;
     }
 
@@ -208,7 +208,7 @@ int CUnitQueue::shrink()
     return -1;
 }
 
-CUnit *CUnitQueue::getNextAvailUnit()
+CUnit* CUnitQueue::getNextAvailUnit()
 {
     if (m_iCount * 10 > m_iSize * 9)
         increase();
@@ -219,7 +219,7 @@ CUnit *CUnitQueue::getNextAvailUnit()
     int units_checked = 0;
     do
     {
-        const CUnit *end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
+        const CUnit* end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
         for (; m_pAvailUnit != end; ++m_pAvailUnit, ++units_checked)
         {
             if (m_pAvailUnit->m_iFlag == CUnit::FREE)
@@ -237,7 +237,7 @@ CUnit *CUnitQueue::getNextAvailUnit()
     return NULL;
 }
 
-void CUnitQueue::makeUnitFree(CUnit *unit)
+void CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
@@ -245,7 +245,7 @@ void CUnitQueue::makeUnitFree(CUnit *unit)
     --m_iCount;
 }
 
-void CUnitQueue::makeUnitGood(CUnit *unit)
+void CUnitQueue::makeUnitGood(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
@@ -262,7 +262,7 @@ CSndUList::CSndUList()
     , m_pWindowCond(NULL)
     , m_pTimer(NULL)
 {
-    m_pHeap = new CSNode *[m_iArrayLength];
+    m_pHeap = new CSNode*[m_iArrayLength];
 }
 
 CSndUList::~CSndUList()
@@ -307,7 +307,7 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
         return -1;
 
-    CUDT *u = m_pHeap[0]->m_pUDT;
+    CUDT* u = m_pHeap[0]->m_pUDT;
     remove_(u);
 
 #define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
@@ -337,7 +337,7 @@ int CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     return 1;
 }
 
-void CSndUList::remove(const CUDT *u)
+void CSndUList::remove(const CUDT* u)
 {
     ScopedLock listguard(m_ListLock);
 
@@ -356,18 +356,18 @@ steady_clock::time_point CSndUList::getNextProcTime()
 
 void CSndUList::realloc_()
 {
-    CSNode **temp = NULL;
+    CSNode** temp = NULL;
 
     try
     {
-        temp = new CSNode *[2 * m_iArrayLength];
+        temp = new CSNode*[2 * m_iArrayLength];
     }
     catch (...)
     {
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    memcpy((temp), m_pHeap, sizeof(CSNode *) * m_iArrayLength);
+    memcpy((temp), m_pHeap, sizeof(CSNode*) * m_iArrayLength);
     m_iArrayLength *= 2;
     delete[] m_pHeap;
     m_pHeap = temp;
@@ -384,7 +384,7 @@ void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 
 void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
 {
-    CSNode *n = u->m_pSNode;
+    CSNode* n = u->m_pSNode;
 
     // do not insert repeated node
     if (n->m_iHeapLoc >= 0)
@@ -394,7 +394,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
 
     m_iLastEntry++;
     m_pHeap[m_iLastEntry] = n;
-    n->m_tsTimeStamp = ts;
+    n->m_tsTimeStamp      = ts;
 
     int q = m_iLastEntry;
     int p = q;
@@ -424,7 +424,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
 
 void CSndUList::remove_(const CUDT* u)
 {
-    CSNode *n = u->m_pSNode;
+    CSNode* n = u->m_pSNode;
 
     if (n->m_iHeapLoc >= 0)
     {
@@ -493,14 +493,20 @@ CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
-int CSndQueue::ioctlQuery(int type) const { return m_pChannel->ioctlQuery(type); }
-int CSndQueue::sockoptQuery(int level, int type) const { return m_pChannel->sockoptQuery(level, type); }
+int CSndQueue::ioctlQuery(int type) const
+{
+    return m_pChannel->ioctlQuery(type);
+}
+int CSndQueue::sockoptQuery(int level, int type) const
+{
+    return m_pChannel->sockoptQuery(level, type);
+}
 
 #if ENABLE_LOGGING
-    int CSndQueue::m_counter = 0;
+int CSndQueue::m_counter = 0;
 #endif
 
-void CSndQueue::init(CChannel *c, CTimer *t)
+void CSndQueue::init(CChannel* c, CTimer* t)
 {
     m_pChannel                 = c;
     m_pTimer                   = t;
@@ -512,7 +518,7 @@ void CSndQueue::init(CChannel *c, CTimer *t)
 #if ENABLE_LOGGING
     ++m_counter;
     const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
-    const char* thname = thrname.c_str();
+    const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
 #endif
@@ -520,17 +526,26 @@ void CSndQueue::init(CChannel *c, CTimer *t)
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
 }
 
-int CSndQueue::getIpTTL() const { return m_pChannel ? m_pChannel->getIpTTL() : -1; }
+int CSndQueue::getIpTTL() const
+{
+    return m_pChannel ? m_pChannel->getIpTTL() : -1;
+}
 
-int CSndQueue::getIpToS() const { return m_pChannel ? m_pChannel->getIpToS() : -1; }
+int CSndQueue::getIpToS() const
+{
+    return m_pChannel ? m_pChannel->getIpToS() : -1;
+}
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool CSndQueue::getBind(char* dst, size_t len) const { return m_pChannel ? m_pChannel->getBind(dst, len) : false; }
+bool CSndQueue::getBind(char* dst, size_t len) const
+{
+    return m_pChannel ? m_pChannel->getBind(dst, len) : false;
+}
 #endif
 
-void *CSndQueue::worker(void *param)
+void* CSndQueue::worker(void* param)
 {
-    CSndQueue *self = (CSndQueue *)param;
+    CSndQueue* self = (CSndQueue*)param;
 
 #if ENABLE_LOGGING
     THREAD_STATE_INIT(("SRT:SndQ:w" + Sprint(m_counter)).c_str());
@@ -558,8 +573,8 @@ void *CSndQueue::worker(void *param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            UniqueLock windlock (self->m_WindowLock);
-            CSync windsync  (self->m_WindowCond, windlock);
+            UniqueLock windlock(self->m_WindowLock);
+            CSync      windsync(self->m_WindowCond, windlock);
 
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
@@ -646,9 +661,9 @@ CRcvUList::CRcvUList()
 
 CRcvUList::~CRcvUList() {}
 
-void CRcvUList::insert(const CUDT *u)
+void CRcvUList::insert(const CUDT* u)
 {
-    CRNode *n      = u->m_pRNode;
+    CRNode* n        = u->m_pRNode;
     n->m_tsTimeStamp = steady_clock::now();
 
     if (NULL == m_pUList)
@@ -667,9 +682,9 @@ void CRcvUList::insert(const CUDT *u)
     m_pLast          = n;
 }
 
-void CRcvUList::remove(const CUDT *u)
+void CRcvUList::remove(const CUDT* u)
 {
-    CRNode *n = u->m_pRNode;
+    CRNode* n = u->m_pRNode;
 
     if (!n->m_bOnList)
         return;
@@ -698,9 +713,9 @@ void CRcvUList::remove(const CUDT *u)
     n->m_pNext = n->m_pPrev = NULL;
 }
 
-void CRcvUList::update(const CUDT *u)
+void CRcvUList::update(const CUDT* u)
 {
-    CRNode *n = u->m_pRNode;
+    CRNode* n = u->m_pRNode;
 
     if (!n->m_bOnList)
         return;
@@ -739,10 +754,10 @@ CHash::~CHash()
 {
     for (int i = 0; i < m_iHashSize; ++i)
     {
-        CBucket *b = m_pBucket[i];
+        CBucket* b = m_pBucket[i];
         while (NULL != b)
         {
-            CBucket *n = b->m_pNext;
+            CBucket* n = b->m_pNext;
             delete b;
             b = n;
         }
@@ -753,7 +768,7 @@ CHash::~CHash()
 
 void CHash::init(int size)
 {
-    m_pBucket = new CBucket *[size];
+    m_pBucket = new CBucket*[size];
 
     for (int i = 0; i < size; ++i)
         m_pBucket[i] = NULL;
@@ -761,10 +776,10 @@ void CHash::init(int size)
     m_iHashSize = size;
 }
 
-CUDT *CHash::lookup(int32_t id)
+CUDT* CHash::lookup(int32_t id)
 {
     // simple hash function (% hash table size); suitable for socket descriptors
-    CBucket *b = m_pBucket[id % m_iHashSize];
+    CBucket* b = m_pBucket[id % m_iHashSize];
 
     while (NULL != b)
     {
@@ -776,11 +791,11 @@ CUDT *CHash::lookup(int32_t id)
     return NULL;
 }
 
-void CHash::insert(int32_t id, CUDT *u)
+void CHash::insert(int32_t id, CUDT* u)
 {
-    CBucket *b = m_pBucket[id % m_iHashSize];
+    CBucket* b = m_pBucket[id % m_iHashSize];
 
-    CBucket *n = new CBucket;
+    CBucket* n = new CBucket;
     n->m_iID   = id;
     n->m_pUDT  = u;
     n->m_pNext = b;
@@ -790,8 +805,8 @@ void CHash::insert(int32_t id, CUDT *u)
 
 void CHash::remove(int32_t id)
 {
-    CBucket *b = m_pBucket[id % m_iHashSize];
-    CBucket *p = NULL;
+    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* p = NULL;
 
     while (NULL != b)
     {
@@ -824,26 +839,28 @@ CRendezvousQueue::~CRendezvousQueue()
     m_lRendezvousID.clear();
 }
 
-void CRendezvousQueue::insert(
-    const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const steady_clock::time_point& ttl)
+void CRendezvousQueue::insert(const SRTSOCKET&                id,
+                              CUDT*                           u,
+                              const sockaddr_any&             addr,
+                              const steady_clock::time_point& ttl)
 {
     ScopedLock vg(m_RIDListLock);
 
     CRL r;
-    r.m_iID        = id;
-    r.m_pUDT       = u;
+    r.m_iID      = id;
+    r.m_pUDT     = u;
     r.m_PeerAddr = addr;
-    r.m_tsTTL = ttl;
+    r.m_tsTTL    = ttl;
 
     m_lRendezvousID.push_back(r);
-    HLOGC(cnlog.Debug, log << "RID: adding socket @" << id << " for address: " << addr.str()
-            << " expires: " << FormatTime(ttl)
-            << " (total connectors: " << m_lRendezvousID.size() << ")");
+    HLOGC(cnlog.Debug,
+          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl)
+              << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
 
-void CRendezvousQueue::remove(const SRTSOCKET &id)
+void CRendezvousQueue::remove(const SRTSOCKET& id)
 {
-    ScopedLock lkv (m_RIDListLock);
+    ScopedLock lkv(m_RIDListLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
@@ -857,35 +874,36 @@ void CRendezvousQueue::remove(const SRTSOCKET &id)
 
 CUDT* CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id) const
 {
-    ScopedLock     vg(m_RIDListLock);
+    ScopedLock vg(m_RIDListLock);
 
     // TODO: optimize search
     for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
-            HLOGC(cnlog.Debug, log << "RID: found id @" << i->m_iID << " while looking for "
-                    << (w_id ? "THIS ID FROM " : "A NEW CONNECTION FROM ")
-                    << i->m_PeerAddr.str());
+            HLOGC(cnlog.Debug,
+                  log << "RID: found id @" << i->m_iID << " while looking for "
+                      << (w_id ? "THIS ID FROM " : "A NEW CONNECTION FROM ") << i->m_PeerAddr.str());
             w_id = i->m_iID;
             return i->m_pUDT;
         }
     }
 
 #if ENABLE_HEAVY_LOGGING
-   std::ostringstream spec;
-   if (w_id == 0)
-       spec << "A NEW CONNECTION REQUEST";
-   else
-       spec << " AGENT @" << w_id;
-   HLOGC(cnlog.Debug, log << "RID: NO CONNECTOR FOR ADR:" << addr.str()
-           << " while looking for " << spec.str() << " (" << m_lRendezvousID.size() << " connectors total)");
+    std::ostringstream spec;
+    if (w_id == 0)
+        spec << "A NEW CONNECTION REQUEST";
+    else
+        spec << " AGENT @" << w_id;
+    HLOGC(cnlog.Debug,
+          log << "RID: NO CONNECTOR FOR ADR:" << addr.str() << " while looking for " << spec.str() << " ("
+              << m_lRendezvousID.size() << " connectors total)");
 #endif
 
     return NULL;
 }
 
-void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket &pktIn)
+void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& pktIn)
 {
     vector<LinkStatusInfo> toRemove, toProcess;
 
@@ -896,8 +914,9 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
 
     // [[using locked()]];
 
-    HLOGC(cnlog.Debug, log << "updateConnStatus: collected " << toProcess.size() << " for processing, "
-            << toRemove.size() << " to close");
+    HLOGC(cnlog.Debug,
+          log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
+              << " to close");
 
     // Repeat (resend) connection request.
     for (vector<LinkStatusInfo>::iterator i = toProcess.begin(); i != toProcess.end(); ++i)
@@ -925,18 +944,18 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
             conn_st = CONN_AGAIN;
         }
 
-        HLOGC(cnlog.Debug, log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+        HLOGC(cnlog.Debug,
+              log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
         if (!i->u->processAsyncConnectRequest(read_st, conn_st, pktIn, i->peeraddr))
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
             // its already set in this case.
             LinkStatusInfo fi = *i;
-            fi.errorcode = SRT_ECONNREJ;
+            fi.errorcode      = SRT_ECONNREJ;
             toRemove.push_back(fi);
             i->u->sendCtrl(UMSG_SHUTDOWN);
         }
-
     }
 
     // NOTE: it is "believed" here that all CUDT objects will not be
@@ -962,7 +981,8 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         // be normally closed by the application, after it is done with them.
 
         // app can call any UDT API to learn the connection_broken error
-        CUDT::s_UDTUnited.m_EPoll.update_events(i->u->m_SocketID, i->u->m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+        CUDT::s_UDTUnited.m_EPoll.update_events(
+            i->u->m_SocketID, i->u->m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
         i->u->completeBrokenConnectionDependencies(i->errorcode);
     }
@@ -975,15 +995,21 @@ void CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, con
         {
             if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
             {
-                LOGC(cnlog.Error, log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID << ". Setting TTL as EXPIRED.");
-                i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
+                LOGC(cnlog.Error,
+                     log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
+                         << ". Setting TTL as EXPIRED.");
+                i->m_tsTTL =
+                    steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
             }
         }
     }
 }
 
-bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_ATR_UNUSED,
-    int iDstSockID, vector<LinkStatusInfo>& toRemove, vector<LinkStatusInfo>& toProcess)
+bool CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
+                                       EConnectStatus cst      SRT_ATR_UNUSED,
+                                       int                     iDstSockID,
+                                       vector<LinkStatusInfo>& toRemove,
+                                       vector<LinkStatusInfo>& toProcess)
 {
     ScopedLock vg(m_RIDListLock);
 
@@ -991,8 +1017,8 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
         return false; // nothing to process.
 
     HLOGC(cnlog.Debug,
-        log << "updateConnStatus: updating after getting pkt with DST socket ID @" << iDstSockID
-        << " status: " << ConnectStatusStr(cst));
+          log << "updateConnStatus: updating after getting pkt with DST socket ID @" << iDstSockID
+              << " status: " << ConnectStatusStr(cst));
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
     {
@@ -1003,11 +1029,11 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
 
         if (tsNow >= i->m_tsTTL)
         {
-            HLOGC(cnlog.Debug, log << "RID: socket @" << i->m_iID
-                << " removed - EXPIRED ("
-                // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
-                << (is_zero(i->m_tsTTL) ? "enforced on FAILURE" : "passed TTL")
-                << "). WILL REMOVE from queue.");
+            HLOGC(cnlog.Debug,
+                  log << "RID: socket @" << i->m_iID
+                      << " removed - EXPIRED ("
+                      // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
+                      << (is_zero(i->m_tsTTL) ? "enforced on FAILURE" : "passed TTL") << "). WILL REMOVE from queue.");
 
             // Set appropriate error information, but do not update yet.
             // Exit the lock first. Collect objects to update them later.
@@ -1018,7 +1044,7 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
                 {
                     // Timer expired, set TIMEOUT forcefully
                     i->m_pUDT->m_RejectReason = SRT_REJ_TIMEOUT;
-                    ccerror = SRT_ENOSERVER;
+                    ccerror                   = SRT_ENOSERVER;
                 }
                 else
                 {
@@ -1031,7 +1057,7 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
             // The call to completeBrokenConnectionDependencies() cannot happen here
             // under the lock of m_RIDListLock as it risks a deadlock.
             // Collect in 'toRemove' to update later.
-            LinkStatusInfo fi = { i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1 };
+            LinkStatusInfo fi = {i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1};
             toRemove.push_back(fi);
 
             // i_next was preincremented, but this is guaranteed to point to
@@ -1041,12 +1067,14 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "RID: socket @" << i->m_iID << " still active (remaining "
-                << std::fixed << (count_microseconds(i->m_tsTTL - tsNow) / 1000000.0) << "s of TTL)...");
+            HLOGC(cnlog.Debug,
+                  log << "RID: socket @" << i->m_iID << " still active (remaining " << std::fixed
+                      << (count_microseconds(i->m_tsTTL - tsNow) / 1000000.0) << "s of TTL)...");
         }
 
         const steady_clock::time_point tsLastReq = i->m_pUDT->m_tsLastReqTime;
-        const steady_clock::time_point tsRepeat  = tsLastReq + milliseconds_from(250); // Repeat connection request (send HS).
+        const steady_clock::time_point tsRepeat =
+            tsLastReq + milliseconds_from(250); // Repeat connection request (send HS).
 
         // A connection request is repeated every 250 ms if there was no response from the peer:
         // - RST_AGAIN means no packet was received over UDP.
@@ -1054,20 +1082,21 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus rst, EConnectStatus cst SRT_A
         if ((rst == RST_AGAIN || i->m_iID != iDstSockID) && tsNow <= tsRepeat)
         {
             HLOGC(cnlog.Debug,
-                log << "RID:@" << i->m_iID << std::fixed << count_microseconds(tsNow - tsLastReq) / 1000.0
-                    << " ms passed since last connection request.");
+                  log << "RID:@" << i->m_iID << std::fixed << count_microseconds(tsNow - tsLastReq) / 1000.0
+                      << " ms passed since last connection request.");
 
             continue;
         }
 
-        HLOGC(cnlog.Debug, log << "RID:@" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- repeating connection request.");
+        HLOGC(cnlog.Debug,
+              log << "RID:@" << i->m_iID << " cst=" << ConnectStatusStr(cst) << " -- repeating connection request.");
 
         // This queue is used only in case of Async mode (rendezvous or caller-listener).
         // Synchronous connection requests are handled in startConnect() completely.
         if (!i->m_pUDT->m_config.bSynRecving)
         {
             // Collect them so that they can be updated out of m_RIDListLock.
-            LinkStatusInfo fi = { i->m_pUDT, i->m_iID, SRT_SUCCESS, i->m_PeerAddr, -1 };
+            LinkStatusInfo fi = {i->m_pUDT, i->m_iID, SRT_SUCCESS, i->m_PeerAddr, -1};
             toProcess.push_back(fi);
         }
         else
@@ -1116,11 +1145,11 @@ CRcvQueue::~CRcvQueue()
     delete m_pRendezvousQueue;
 
     // remove all queued messages
-    for (map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
+    for (map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
     {
         while (!i->second.empty())
         {
-            CPacket *pkt = i->second.front();
+            CPacket* pkt = i->second.front();
             delete[] pkt->m_pcData;
             delete pkt;
             i->second.pop();
@@ -1129,15 +1158,14 @@ CRcvQueue::~CRcvQueue()
 }
 
 #if ENABLE_LOGGING
-    int CRcvQueue::m_counter = 0;
+int CRcvQueue::m_counter = 0;
 #endif
 
-
-void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel *cc, CTimer *t)
+void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
 {
     m_szPayloadSize = payload;
 
-    m_UnitQueue.init(qsize, (int) payload, version);
+    m_UnitQueue.init(qsize, (int)payload, version);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1161,9 +1189,9 @@ void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel
     }
 }
 
-void *CRcvQueue::worker(void *param)
+void* CRcvQueue::worker(void* param)
 {
-    CRcvQueue *  self = (CRcvQueue *)param;
+    CRcvQueue*   self = (CRcvQueue*)param;
     sockaddr_any sa(self->m_UnitQueue.getIPversion());
     int32_t      id = 0;
 
@@ -1173,7 +1201,7 @@ void *CRcvQueue::worker(void *param)
     THREAD_STATE_INIT("SRT:RcvQ:worker");
 #endif
 
-    CUnit *        unit = 0;
+    CUnit*         unit = 0;
     EConnectStatus cst  = CONN_AGAIN;
     while (!self->m_bClosing)
     {
@@ -1243,12 +1271,13 @@ void *CRcvQueue::worker(void *param)
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
         // take care of the timing event for all UDT sockets
-        const steady_clock::time_point curtime_minus_syn = steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
+        const steady_clock::time_point curtime_minus_syn =
+            steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
-        CRNode *ul = self->m_pRcvUList->m_pUList;
+        CRNode* ul = self->m_pRcvUList->m_pUList;
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
         {
-            CUDT *u = ul->m_pUDT;
+            CUDT* u = ul->m_pUDT;
 
             if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
             {
@@ -1304,7 +1333,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
     // check waiting list, if new socket, insert it to the list
     while (ifNewEntry())
     {
-        CUDT *ne = getNewEntry();
+        CUDT* ne = getNewEntry();
         if (ne)
         {
             HLOGC(qrlog.Debug,
@@ -1344,9 +1373,9 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
     if (rst == RST_OK)
     {
         w_id = w_unit->m_Packet.m_iID;
-        HLOGC(qrlog.Debug, log << "INCOMING PACKET: FROM=" << w_addr.str()
-                << " BOUND=" << m_pChannel->bindAddressAny().str()
-                << " " << w_unit->m_Packet.Info());
+        HLOGC(qrlog.Debug,
+              log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
+                  << w_unit->m_Packet.Info());
     }
     return rst;
 }
@@ -1354,20 +1383,18 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockad
 EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
 {
     HLOGC(cnlog.Debug,
-          log << "Got sockID=0 from " << addr.str()
-              << " - trying to resolve it as a connection request...");
+          log << "Got sockID=0 from " << addr.str() << " - trying to resolve it as a connection request...");
     // Introduced protection because it may potentially happen
     // that another thread could have closed the socket at
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
-    int listener_ret  = SRT_REJ_UNKNOWN;
-    bool              have_listener = false;
+    int  listener_ret  = SRT_REJ_UNKNOWN;
+    bool have_listener = false;
     {
         ScopedLock cg(m_LSLock);
         if (m_pListener)
         {
-            LOGC(cnlog.Note,
-                 log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
+            LOGC(cnlog.Note, log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
@@ -1398,7 +1425,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
 {
-    CUDT *u = m_pHash->lookup(id);
+    CUDT* u = m_pHash->lookup(id);
     if (!u)
     {
         // Pass this to either async rendezvous connection,
@@ -1412,8 +1439,8 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit,
     if (addr != u->m_PeerAddr)
     {
         HLOGC(cnlog.Debug,
-              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str()
-                  << " received from " << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
+              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str() << " received from "
+                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
         // This came not from the address that is the peer associated
         // with the socket. Ignore it.
         return CONN_AGAIN;
@@ -1454,7 +1481,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
     // stored in the rendezvous queue (see CRcvQueue::registerConnector)
     // or simply 0, but then at least the address must match one of these.
     // If the id was 0, it will be set to the actual socket ID of the returned CUDT.
-    CUDT *u = m_pRendezvousQueue->retrieve(addr, (id));
+    CUDT* u = m_pRendezvousQueue->retrieve(addr, (id));
     if (!u)
     {
         // this socket is then completely unknown to the system.
@@ -1525,7 +1552,7 @@ EConnectStatus CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, c
             // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
             // into the pending anteroom.
 
-            CUDT *ne = getNewEntry(); // This function actuall removes the entry and returns it.
+            CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
             // This **should** now always return a non-null value, but check it first
             // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
             // result in redirecting it to here and so on until the call stack overflow. In case of
@@ -1597,10 +1624,10 @@ void CRcvQueue::stopWorker()
 
 int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 {
-    UniqueLock bufferlock (m_BufferLock);
-    CSync buffercond    (m_BufferCond, bufferlock);
+    UniqueLock bufferlock(m_BufferLock);
+    CSync      buffercond(m_BufferCond, bufferlock);
 
-    map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
+    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
@@ -1617,7 +1644,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     }
 
     // retrieve the earliest packet
-    CPacket *newpkt = i->second.front();
+    CPacket* newpkt = i->second.front();
 
     if (w_packet.getLength() < newpkt->getLength())
     {
@@ -1649,7 +1676,7 @@ int CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     return (int)w_packet.getLength();
 }
 
-int CRcvQueue::setListener(CUDT *u)
+int CRcvQueue::setListener(CUDT* u)
 {
     ScopedLock lslock(m_LSLock);
 
@@ -1660,7 +1687,7 @@ int CRcvQueue::setListener(CUDT *u)
     return 0;
 }
 
-void CRcvQueue::removeListener(const CUDT *u)
+void CRcvQueue::removeListener(const CUDT* u)
 {
     ScopedLock lslock(m_LSLock);
 
@@ -1668,21 +1695,24 @@ void CRcvQueue::removeListener(const CUDT *u)
         m_pListener = NULL;
 }
 
-void CRcvQueue::registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const steady_clock::time_point& ttl)
+void CRcvQueue::registerConnector(const SRTSOCKET&                id,
+                                  CUDT*                           u,
+                                  const sockaddr_any&             addr,
+                                  const steady_clock::time_point& ttl)
 {
     HLOGC(cnlog.Debug,
           log << "registerConnector: adding @" << id << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
     m_pRendezvousQueue->insert(id, u, addr, ttl);
 }
 
-void CRcvQueue::removeConnector(const SRTSOCKET &id)
+void CRcvQueue::removeConnector(const SRTSOCKET& id)
 {
     HLOGC(cnlog.Debug, log << "removeConnector: removing @" << id);
     m_pRendezvousQueue->remove(id);
 
     ScopedLock bufferlock(m_BufferLock);
 
-    map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
+    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
     {
         HLOGC(cnlog.Debug,
@@ -1697,34 +1727,37 @@ void CRcvQueue::removeConnector(const SRTSOCKET &id)
     }
 }
 
-void CRcvQueue::setNewEntry(CUDT *u)
+void CRcvQueue::setNewEntry(CUDT* u)
 {
     HLOGC(cnlog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
     ScopedLock listguard(m_IDLock);
     m_vNewEntry.push_back(u);
 }
 
-bool CRcvQueue::ifNewEntry() { return !(m_vNewEntry.empty()); }
+bool CRcvQueue::ifNewEntry()
+{
+    return !(m_vNewEntry.empty());
+}
 
-CUDT *CRcvQueue::getNewEntry()
+CUDT* CRcvQueue::getNewEntry()
 {
     ScopedLock listguard(m_IDLock);
 
     if (m_vNewEntry.empty())
         return NULL;
 
-    CUDT *u = (CUDT *)*(m_vNewEntry.begin());
+    CUDT* u = (CUDT*)*(m_vNewEntry.begin());
     m_vNewEntry.erase(m_vNewEntry.begin());
 
     return u;
 }
 
-void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
+void CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
-    UniqueLock bufferlock (m_BufferLock);
-    CSync passcond    (m_BufferCond, bufferlock);
+    UniqueLock bufferlock(m_BufferLock);
+    CSync      passcond(m_BufferCond, bufferlock);
 
-    map<int32_t, std::queue<CPacket *> >::iterator i = m_mBuffer.find(id);
+    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
@@ -1741,10 +1774,9 @@ void CRcvQueue::storePkt(int32_t id, CPacket *pkt)
     }
 }
 
-
 void CMultiplexer::destroy()
 {
-    // Reverse order of the assigned 
+    // Reverse order of the assigned
     delete m_pRcvQueue;
     delete m_pSndQueue;
     delete m_pTimer;
