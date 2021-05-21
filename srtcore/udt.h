@@ -249,7 +249,7 @@ namespace logging {
     using namespace srt_logging;
 }
 
-}
+} // namespace srt
 
 // Planned deprecated removal: rel1.6.0
 // There's also no portable way possible to enforce a deprecation

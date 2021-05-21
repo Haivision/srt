@@ -24,6 +24,7 @@ written by
 #include "utilities.h"
 
 using namespace std;
+using namespace srt;
 
 
 extern "C" {

@@ -865,7 +865,7 @@ SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* op
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
-   int msgttl;           // TTL for a message, default -1 (no TTL limitation)
+   int msgttl;           // TTL for a message (millisec), default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
    int64_t srctime;      // source time since epoch (usec), 0: use internal time (sender)

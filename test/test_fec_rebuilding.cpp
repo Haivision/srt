@@ -13,6 +13,7 @@
 #include "api.h"
 
 using namespace std;
+using namespace srt;
 
 class TestFECRebuilding: public testing::Test
 {
@@ -91,16 +92,18 @@ protected:
     }
 };
 
-class TestMockCUDT
-{
-public:
-    CUDT* core;
-
-    bool checkApplyFilterConfig(const string& s)
+namespace srt {
+    class TestMockCUDT
     {
-        return core->checkApplyFilterConfig(s);
-    }
-};
+    public:
+        CUDT* core;
+
+        bool checkApplyFilterConfig(const string& s)
+        {
+            return core->checkApplyFilterConfig(s);
+        }
+    };
+}
 
 // The expected whole procedure of connection using FEC is
 // expected to:
