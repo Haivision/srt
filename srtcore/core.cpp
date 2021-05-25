@@ -8886,6 +8886,8 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
 
             continue;
         }
+        else if (payload == -2)
+            continue;
         // NOTE: This is just a sanity check. Returning 0 is impossible to happen
         // in case of retransmission. If the offset was a positive value, then the
         // block must exist in the old blocks because it wasn't yet cut off by ACK

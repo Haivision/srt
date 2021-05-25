@@ -522,7 +522,19 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
     for (int i = 0; i < offset; ++i)
+    {
+        if (p == NULL || p == m_pLastBlock)
+        {
+            LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
+            return -2;
+        }
         p = p->m_pNext;
+    }
+    if (p == NULL || p == m_pLastBlock)
+    {
+        LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
+        return -2;
+    }
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
