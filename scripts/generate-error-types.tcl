@@ -61,7 +61,7 @@ set code_minor {
     XSIZE           12
     EIDINVAL        13
     EEMPTY          14
-	BUSYPORT        15
+    BUSYPORT        15
     
     WRAVAIL          1
     RDAVAIL          2
@@ -122,7 +122,7 @@ set errortypes {
         XSIZE          "Message is too large to send (it must be less than the SRT send buffer size)"
         EIDINVAL       "Invalid epoll ID"
         EEMPTY         "All sockets removed from epoll, waiting would deadlock"
-		BUSYPORT       "Another socket is bound to that port and is not reusable for requested settings"
+        BUSYPORT       "Another socket is bound to that port and is not reusable for requested settings"
     }
 
     AGAIN "Non-blocking call failure" {
@@ -227,14 +227,14 @@ proc Generate:imp {} {
 
         append minor_array_list "    strerror_msgs_$majorlc, // MJ_$mt = $majitem\n"
         #append minor_array_sizes "    [expr {$minitem}],\n"
-		append minor_array_sizes "    SRT_ARRAY_SIZE(strerror_msgs_$majorlc) - 1,\n"
+        append minor_array_sizes "    SRT_ARRAY_SIZE(strerror_msgs_$majorlc) - 1,\n"
         incr majitem
     }
     append minor_array_list "    NULL"
     append minor_array_sizes "    0"
 
     puts [subst -nobackslashes -nocommands $::main_array_item]
-	puts {#define SRT_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])}
+    puts {#define SRT_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])}
     puts [subst -nobackslashes -nocommands $::major_size_item]
 
     puts $::strerror_function
@@ -249,4 +249,3 @@ if {[lindex $argv 0] != ""} {
 }
 
 Generate:$defmode
-
