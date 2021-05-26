@@ -30,7 +30,7 @@
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW__
+#ifndef __MINGW32__
    #include <intrin.h>
 #endif
 

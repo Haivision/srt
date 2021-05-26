@@ -13,6 +13,8 @@ using namespace srt_logging;
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
 
+namespace srt {
+
 int32_t CUDTGroup::s_tokenGen = 0;
 
 // [[using locked(this->m_GroupLock)]];
@@ -4587,3 +4589,5 @@ void CUDTGroup::debugGroup()
     }
 }
 #endif
+
+} // namespace srt

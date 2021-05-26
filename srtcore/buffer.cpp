@@ -61,6 +61,7 @@ modified by
 
 using namespace std;
 using namespace srt_logging;
+using namespace srt;
 using namespace srt::sync;
 
 // You can change this value at build config by using "ENFORCE" options.
@@ -183,7 +184,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
     int64_t& w_srctime  = w_mctrl.srctime;
-    int&      w_ttl     = w_mctrl.msgttl;
+    const int& ttl      = w_mctrl.msgttl;
     int       size      = len / m_iMSS;
     if ((len % m_iMSS) != 0)
         size++;
@@ -254,7 +255,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         s->m_llSourceTime_us = w_srctime;
         s->m_tsOriginTime = time;
         s->m_tsRexmitTime = time_point();
-        s->m_iTTL = w_ttl;
+        s->m_iTTL = ttl;
         // Rewrite the actual sending time back into w_srctime
         // so that the calling facilities can reuse it
         if (!w_srctime)
@@ -317,7 +318,7 @@ void CSndBuffer::updateInputRate(const steady_clock::time_point& time, int pkts,
     if (early_update || period_us > m_InRatePeriod)
     {
         // Required Byte/sec rate (payload + headers)
-        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
+        m_iInRateBytesCount += (m_iInRatePktsCount * srt::CPacket::SRT_DATA_HDR_SIZE);
         m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
         HLOGC(bslog.Debug,
               log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
@@ -410,7 +411,7 @@ steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& bloc
     return block.m_tsOriginTime;
 }
 
-int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
+int CSndBuffer::readData(srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
 {
     // No data to read
     if (m_pCurrBlock == m_pLastBlock)
@@ -511,7 +512,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
+int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
 {
     int32_t& msgno_bitset = w_packet.m_iMsgNo;
 
@@ -535,6 +536,10 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
         return -2;
     }
+#if ENABLE_HEAVY_LOGGING
+    const int32_t first_seq = p->m_iSeqNo;
+    int32_t last_seq = p->m_iSeqNo;
+#endif
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
@@ -550,6 +555,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // if found block is stale
     // (This is for messages that have declared TTL - messages that fail to be sent
     // before the TTL defined time comes, will be dropped).
+
     if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
     {
         int32_t msgno = p->getMsgSeq();
@@ -558,6 +564,9 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         bool move     = false;
         while (p != m_pLastBlock && msgno == p->getMsgSeq())
         {
+#if ENABLE_HEAVY_LOGGING
+            last_seq = p->m_iSeqNo;
+#endif
             if (p == m_pCurrBlock)
                 move = true;
             p = p->m_pNext;
@@ -567,7 +576,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         }
 
         HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, " << w_msglen << " messages to drop, up to " << msgno);
+              log << "CSndBuffer::readData: due to TTL exceeded, SEQ " << first_seq << " - " << last_seq << ", "
+                  << w_msglen << " packets to drop, msgno=" << msgno);
 
         // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
         // This means that in this case it should be written by the message sequence value only
@@ -930,7 +940,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
             return -1;
         }
 
-        const CPacket& pkt = m_pUnit[p]->m_Packet;
+        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
 
         if (bTsbPdEnabled)
         {
@@ -999,7 +1009,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
             continue;
         }
 
-        const CPacket& pkt = m_pUnit[p]->m_Packet;
+        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
 
 #if ENABLE_LOGGING
         trace_seq = pkt.getSeqNo();
@@ -1439,7 +1449,7 @@ bool CRcvBuffer::isRcvDataReady(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
     if (m_tsbpd.isEnabled())
     {
-        const CPacket* pkt = getRcvReadyPacket(seqdistance);
+        const srt::CPacket* pkt = getRcvReadyPacket(seqdistance);
         if (!pkt)
         {
             HLOGC(brlog.Debug, log << "isRcvDataReady: packet NOT extracted.");
@@ -1576,7 +1586,7 @@ void CRcvBuffer::reportBufferStats() const
     uint64_t lower_time = low_ts;
 
     if (lower_time > upper_time)
-        upper_time += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
+        upper_time += uint64_t(srt::CPacket::MAX_TIMESTAMP) + 1;
 
     int32_t timespan = upper_time - lower_time;
     int     seqspan  = 0;
