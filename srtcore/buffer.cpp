@@ -524,14 +524,14 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
     // by sequence number. Consider using some circular buffer.
     for (int i = 0; i < offset; ++i)
     {
-        if (p == NULL || p == m_pLastBlock)
+        if (p == m_pLastBlock)
         {
             LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
             return -2;
         }
         p = p->m_pNext;
     }
-    if (p == NULL || p == m_pLastBlock)
+    if (p == m_pLastBlock)
     {
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
         return -2;
