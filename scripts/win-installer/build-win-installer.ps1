@@ -200,6 +200,9 @@ if ($Missing -gt 0) {
 # Build the binary installer.
 #-----------------------------------------------------------------------------
 
+$InstallExe = "$OutDir\libsrt-$Version.exe"
+$InstallZip = "$OutDir\libsrt-$Version-win-installer.zip"
+
 Write-Output "Building installer ..."
 & $NSIS /V2 `
     /DVersion="$Version" `
@@ -208,5 +211,17 @@ Write-Output "Building installer ..."
     /DBuildRoot="$TmpDir" `
     /DRepoDir="$RepoDir" `
     "$ScriptDir\libsrt.nsi" 
+
+if (-not (Test-Path $InstallExe)) {
+    Exit-Script "**** Missing $InstallExe"
+}
+
+Write-Output "Building installer archive ..."
+Remove-Item -Force -ErrorAction SilentlyContinue $InstallZip
+Compress-Archive -Path $InstallExe -DestinationPath $InstallZip -CompressionLevel Optimal
+
+if (-not (Test-Path $InstallZip)) {
+    Exit-Script "**** Missing $InstallZip"
+}
 
 Exit-Script
