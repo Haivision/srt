@@ -153,7 +153,7 @@ public:
     /// @param [out] msgno message number of the packet.
     /// @param [out] origintime origin time stamp of the message
     /// @param [out] msglen length of the message
-    /// @return Actual length of data read.
+    /// @return Actual length of data read. (-1 if TTL exceeded, -2 if offset too large)
     int readData(const int offset, srt::CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
