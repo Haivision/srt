@@ -58,7 +58,7 @@ matrix:
             - make
             - cd ..
           env: BUILD_TYPE=Release
-          
+
          # Power jobs
         - os: linux
           arch: ppc64le

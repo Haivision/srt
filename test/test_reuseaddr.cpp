@@ -202,7 +202,6 @@ void clientSocket(std::string ip, int port, bool expect_success)
                     true // in order must be set to true
                     ),
                 SRT_ERROR);
-
     }
     else
     {
