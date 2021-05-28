@@ -61,6 +61,7 @@ set code_minor {
     XSIZE           12
     EIDINVAL        13
     EEMPTY          14
+    BUSYPORT        15
     
     WRAVAIL          1
     RDAVAIL          2
@@ -121,7 +122,7 @@ set errortypes {
         XSIZE          "Message is too large to send (it must be less than the SRT send buffer size)"
         EIDINVAL       "Invalid epoll ID"
         EEMPTY         "All sockets removed from epoll, waiting would deadlock"
-
+        BUSYPORT       "Another socket is bound to that port and is not reusable for requested settings"
     }
 
     AGAIN "Non-blocking call failure" {
@@ -142,11 +143,10 @@ set main_array_item {
 const char** strerror_array_major [] = {
 $minor_array_list
 };
-
 }
 
 set major_size_item {
-size_t strerror_array_sizes [] = {
+const size_t strerror_array_sizes [] = {
 $minor_array_sizes
 };
 }
@@ -155,11 +155,9 @@ set minor_array_item {
 const char* strerror_msgs_$majorlc [] = {
 $minor_message_items
 };
-
 }
 
 set strerror_function {
-
 const char* strerror_get_message(size_t major, size_t minor)
 {
     static const char* const undefined = "UNDEFINED ERROR";
@@ -228,16 +226,17 @@ proc Generate:imp {} {
         puts [subst -nobackslashes -nocommands $::minor_array_item]
 
         append minor_array_list "    strerror_msgs_$majorlc, // MJ_$mt = $majitem\n"
-        append minor_array_sizes "    [expr {$minitem}],\n"
+        #append minor_array_sizes "    [expr {$minitem}],\n"
+        append minor_array_sizes "    SRT_ARRAY_SIZE(strerror_msgs_$majorlc) - 1,\n"
         incr majitem
     }
-    append minor_array_list "    NULL\n"
-    append minor_array_sizes "    0\n"
+    append minor_array_list "    NULL"
+    append minor_array_sizes "    0"
 
     puts [subst -nobackslashes -nocommands $::main_array_item]
+    puts {#define SRT_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])}
     puts [subst -nobackslashes -nocommands $::major_size_item]
 
-    puts ""
     puts $::strerror_function
 
     puts "\} // namespace srt"
@@ -250,4 +249,3 @@ if {[lindex $argv 0] != ""} {
 }
 
 Generate:$defmode
-
