@@ -5149,8 +5149,17 @@ void * srt::CUDT::tsbpd(void *param)
         int32_t                  current_pkt_seq = 0;
         steady_clock::time_point tsbpdtime;
         bool                     rxready = false;
+        int32_t                  rcv_base_seq = SRT_SEQNO_NONE;
 #if ENABLE_EXPERIMENTAL_BONDING
         bool shall_update_group = false;
+        if (gkeeper.group)
+        {
+            // Functions called below will lock m_GroupLock, which in hierarchy
+            // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
+            // m_GroupLock inside the calls.
+            InvertedLock unrecv(self->m_RecvLock);
+            rcv_base_seq = gkeeper.group->getRcvBaseSeqNo();
+        }
 #endif
 
         enterCS(self->m_RcvBufferLock);
@@ -5162,7 +5171,7 @@ void * srt::CUDT::tsbpd(void *param)
             int32_t skiptoseqno = SRT_SEQNO_NONE;
             bool    passack     = true; // Get next packet to wait for even if not acked
 
-            rxready = self->m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
+            rxready = self->m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq), rcv_base_seq);
 
             HLOGC(tslog.Debug,
                   log << boolalpha << "NEXT PKT CHECK: rdy=" << rxready << " passack=" << passack << " skipto=%"
