@@ -21,14 +21,10 @@
 #include "common.h"
 
 #if defined(_WIN32)
-#define TIMING_USE_QPC
 #include "win/wintime.h"
 #include <sys/timeb.h>
 #elif TARGET_OS_MAC
-#define TIMING_USE_MACH_ABS_TIME
 #include <mach/mach_time.h>
-#elif defined(ENABLE_MONOTONIC_CLOCK)
-#define TIMING_USE_CLOCK_GETTIME
 #endif
 
 namespace srt_logging
@@ -42,9 +38,9 @@ namespace srt
 namespace sync
 {
 
-void rdtsc(uint64_t& x)
+static void rdtsc(uint64_t& x)
 {
-#ifdef IA32
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA32_RDTSC
     uint32_t lval, hval;
     // asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
     // asm volatile ("xor %eax, %eax; cpuid");
@@ -52,52 +48,58 @@ void rdtsc(uint64_t& x)
     // asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
     x = hval;
     x = (x << 32) | lval;
-#elif defined(IA64)
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA64_ITC
     asm("mov %0=ar.itc" : "=r"(x)::"memory");
-#elif defined(AMD64)
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_AMD64_RDTSC
     uint32_t lval, hval;
     asm("rdtsc" : "=a"(lval), "=d"(hval));
     x = hval;
     x = (x << 32) | lval;
-#elif defined(TIMING_USE_QPC)
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
     // This function should not fail, because we checked the QPC
     // when calling to QueryPerformanceFrequency. If it failed,
     // the m_bUseMicroSecond was set to true.
     QueryPerformanceCounter((LARGE_INTEGER*)&x);
-#elif defined(TIMING_USE_MACH_ABS_TIME)
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
     x = mach_absolute_time();
-#elif defined(TIMING_USE_CLOCK_GETTIME)
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     // get_cpu_frequency() returns 1 us accuracy in this case
     timespec tm;
     clock_gettime(CLOCK_MONOTONIC, &tm);
     x = tm.tv_sec * uint64_t(1000000) + (tm.tv_nsec / 1000);
-#else
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
     // use system call to read time clock for other archs
     timeval t;
     gettimeofday(&t, 0);
     x = t.tv_sec * uint64_t(1000000) + t.tv_usec;
+#else
+#error Wrong SRT_SYNC_CLOCK
 #endif
 }
 
-int64_t get_cpu_frequency()
+static int64_t get_cpu_frequency()
 {
     int64_t frequency = 1; // 1 tick per microsecond.
 
-#if defined(TIMING_USE_QPC)
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
     LARGE_INTEGER ccf; // in counts per second
     if (QueryPerformanceFrequency(&ccf))
+    {
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+    }
+    else
+    {
+        // Can't throw an exception, it won't be handled.
+        LOGC(inlog.Error, log << "IPE: QueryPerformanceFrequency failed with " << GetLastError());
+    }
 
-#elif defined(TIMING_USE_CLOCK_GETTIME)
-    frequency = 1;
-
-#elif defined(TIMING_USE_MACH_ABS_TIME)
-
+#elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
     mach_timebase_info_data_t info;
     mach_timebase_info(&info);
     frequency = info.denom * int64_t(1000) / info.numer;
 
-#elif defined(IA32) || defined(IA64) || defined(AMD64)
+#elif SRT_SYNC_CLOCK >= SRT_SYNC_CLOCK_AMD64_RDTSC && SRT_SYNC_CLOCK <= SRT_SYNC_CLOCK_IA64_ITC
+    // SRT_SYNC_CLOCK_AMD64_RDTSC or SRT_SYNC_CLOCK_IA32_RDTSC or SRT_SYNC_CLOCK_IA64_ITC
     uint64_t t1, t2;
 
     rdtsc(t1);
@@ -287,7 +289,7 @@ Condition::~Condition() {}
 void Condition::init()
 {
     pthread_condattr_t* attr = NULL;
-#if ENABLE_MONOTONIC_CLOCK
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
     pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
@@ -311,7 +313,7 @@ void Condition::wait(UniqueLock& lock)
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     timespec timeout;
-#if ENABLE_MONOTONIC_CLOCK
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     clock_gettime(CLOCK_MONOTONIC, &timeout);
     const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
 #else
@@ -422,7 +424,7 @@ void srt::sync::CThread::join()
 #ifdef HEAVY_LOGGING
     else
     {
-        LOGC(inlog.Debug, log << "pthread_join SUCCEEDED");
+        HLOGC(inlog.Debug, log << "pthread_join SUCCEEDED");
     }
 #endif
     // After joining, joinable should be false

@@ -701,10 +701,10 @@ unique_ptr<Medium> TcpMedium::Accept()
 
     // Configure 1s timeout
     timeval timeout_1s { 1, 0 };
-    int st = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
+    int st SRT_ATR_UNUSED = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
     timeval re;
     socklen_t size = sizeof re;
-    int st2 = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&re, &size);
+    int st2 SRT_ATR_UNUSED = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&re, &size);
 
     LOGP(applog.Debug, "Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
             ", read-back value: ", st2 == -1 ? int64_t(-1) : (int64_t(re.tv_sec)*1000000 + re.tv_usec)/1000, "ms");
@@ -1115,21 +1115,21 @@ int main( int argc, char** argv )
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
+    srt::setloglevel(lev);
     if (logfa == "")
     {
-        UDT::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(SRT_LOGFA_APP);
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
         set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
-        UDT::resetlogfa(fas);
+        srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            UDT::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(SRT_LOGFA_APP);
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);

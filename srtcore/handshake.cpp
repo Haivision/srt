@@ -58,18 +58,19 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "utilities.h"
 
 using namespace std;
+using namespace srt;
 
 
-CHandShake::CHandShake():
-m_iVersion(0),
-m_iType(0), // Universal: UDT_UNDEFINED or no flags
-m_iISN(0),
-m_iMSS(0),
-m_iFlightFlagSize(0),
-m_iReqType(URQ_WAVEAHAND),
-m_iID(0),
-m_iCookie(0),
-m_extension(false)
+CHandShake::CHandShake()
+    : m_iVersion(0)
+    , m_iType(0) // Universal: UDT_UNDEFINED or no flags
+    , m_iISN(0)
+    , m_iMSS(0)
+    , m_iFlightFlagSize(0)
+    , m_iReqType(URQ_WAVEAHAND)
+    , m_iID(0)
+    , m_iCookie(0)
+    , m_extension(false)
 {
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = 0;

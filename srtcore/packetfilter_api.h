@@ -19,6 +19,8 @@
 #include <vector>
 #include <utility>
 
+namespace srt {
+
 class CPacket;
 
 enum SrtPktHeaderFields
@@ -151,6 +153,6 @@ protected:
     }
 };
 
-
+} // namespace srt
 
 #endif

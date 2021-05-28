@@ -34,7 +34,6 @@ written by
 #define ATR_UNUSED
 #define ATR_DEPRECATED
 #endif
-
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
 
@@ -791,11 +790,13 @@ public:
         m_qDriftSum += driftval;
         ++m_uDriftSpan;
 
+        // I moved it here to calculate accumulated overdrift.
+        if (CLEAR_ON_UPDATE)
+            m_qOverdrift = 0;
+
         if (m_uDriftSpan < MAX_SPAN)
             return false;
 
-        if (CLEAR_ON_UPDATE)
-            m_qOverdrift = 0;
 
         // Calculate the median of all drift values.
         // In most cases, the divisor should be == MAX_SPAN.

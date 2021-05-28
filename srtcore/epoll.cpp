@@ -608,7 +608,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             {
 #ifdef LINUX
                 const int max_events = ed.m_sLocals.size();
-                SRT_ASSERT(max_event > 0);
+                SRT_ASSERT(max_events > 0);
                 epoll_event ev[max_events];
                 int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
 
@@ -631,7 +631,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 #elif defined(BSD) || TARGET_OS_MAC
                 struct timespec tmout = {0, 0};
                 const int max_events = ed.m_sLocals.size();
-                SRT_ASSERT(max_event > 0);
+                SRT_ASSERT(max_events > 0);
                 struct kevent ke[max_events];
 
                 int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
@@ -808,7 +808,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
     return 0;
 }
 
-bool CEPoll::empty(CEPollDesc& d)
+bool CEPoll::empty(const CEPollDesc& d) const
 {
     ScopedLock lg (m_EPollLock);
     return d.watch_empty();
