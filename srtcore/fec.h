@@ -19,6 +19,8 @@
 
 #include "packetfilter_api.h"
 
+namespace srt {
+
 class FECFilterBuiltin: public SrtPacketFilterBase
 {
     SrtFilterConfig cfg;
@@ -265,6 +267,11 @@ public:
     static const size_t EXTRA_SIZE = 4;
 
     virtual SRT_ARQLevel arqLevel() ATR_OVERRIDE { return m_fallback_level; }
+
+    static const char defaultConfig [];
+    static bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg);
 };
+
+} // namespace srt
 
 #endif

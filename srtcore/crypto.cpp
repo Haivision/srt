@@ -27,6 +27,7 @@ written by
 #include "logging.h"
 #include "core.h"
 
+using namespace srt;
 using namespace srt_logging;
 
 #define SRT_MAX_KMRETRY     10
@@ -439,7 +440,7 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
      * then (re-)send handshake request.
      */
     if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->RTT() * 3)/2)) <= now))
+        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->SRTT() * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {
@@ -584,8 +585,8 @@ bool CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UNUSED)
     // Set security-pending state, if a password was set.
     m_SndKmState = hasPassphrase() ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
 
-    m_KmPreAnnouncePkt = m_parent->m_config.m_uKmPreAnnouncePkt;
-    m_KmRefreshRatePkt = m_parent->m_config.m_uKmRefreshRatePkt;
+    m_KmPreAnnouncePkt = m_parent->m_config.uKmPreAnnouncePkt;
+    m_KmRefreshRatePkt = m_parent->m_config.uKmRefreshRatePkt;
 
     if ( side == HSD_INITIATOR )
     {

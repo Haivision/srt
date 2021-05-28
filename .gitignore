@@ -37,3 +37,6 @@ _*/
 # Ignode Visual Studio Code temp folder
 .vs/
 .vscode/
+
+# Ignore vcpkg submodule
+vcpkg/

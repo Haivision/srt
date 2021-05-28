@@ -70,6 +70,7 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
+using namespace srt;
 using namespace srt::sync;
 
 namespace srt_logging {
@@ -462,7 +463,7 @@ extern const char* const srt_rejectreason_msg [] = {
     "Password required or unexpected",
     "MessageAPI/StreamAPI collision",
     "Congestion controller type collision",
-    "Packet Filter type collision",
+    "Packet Filter settings error",
     "Group settings collision",
     "Connection timeout"
 };
@@ -495,7 +496,8 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
         Split(*i, ':', back_inserter(keyval));
         if (keyval.size() != 2)
             return false;
-        w_config.parameters[keyval[0]] = keyval[1];
+        if (keyval[1] != "")
+            w_config.parameters[keyval[0]] = keyval[1];
     }
 
     return true;

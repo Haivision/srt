@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.4.2)
+set (SRT_VERSION 1.4.3)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -97,6 +97,7 @@ endforeach()
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
 # SRT_DEBUG_BONDING_STATES 1
+# SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 
 # option defaults
@@ -283,14 +284,29 @@ if (ENABLE_ENCRYPTION)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-	else() # Common for mbedtls and openssl
-		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-			add_definitions(-DUSE_MBEDTLS=1)
-			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
-		else()
-			add_definitions(-DUSE_OPENSSL=1)
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+	elseif ("${USE_ENCLIB}" STREQUAL "mbedtls")
+		add_definitions(-DUSE_MBEDTLS=1)
+		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+			set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
+			find_package(MbedTLS REQUIRED)
+			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
+			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 		endif()
+		if ("${SSL_LIBRARIES}" STREQUAL "")
+			set (SSL_LIBRARIES  mbedtls mbedcrypto)
+		endif()
+		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+
+		foreach(LIB ${SSL_LIBRARIES})
+			if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+			else()
+				set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+			endif()
+		endforeach()
+	else() # openssl
+		add_definitions(-DUSE_OPENSSL=1)
+		set (SSL_REQUIRED_MODULES "openssl libcrypto")
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
@@ -315,24 +331,12 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-					set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
-					find_package(MbedTLS REQUIRED)
-					set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
-					set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
-				endif()
-				if ("${SSL_LIBRARIES}" STREQUAL "")
-					set (SSL_LIBRARIES  mbedtls mbedcrypto)
-				endif()
-				message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			else()
-				find_package(OpenSSL REQUIRED)
-				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			endif()
+			find_package(OpenSSL REQUIRED)
+			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
@@ -786,8 +790,13 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
@@ -1189,6 +1198,16 @@ endif()
 
 
 if (ENABLE_UNITTESTS AND ENABLE_CXX11)
+
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		message(STATUS "VERSION < 3.10 -- adding test using the old method")
+		set (USE_OLD_ADD_METHOD 1)
+	else()
+		message(STATUS "VERSION > 3.10 -- using NEW POLICY for in_list operator")
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+	endif()
+
+
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	find_package(GTest 1.8)
@@ -1217,13 +1236,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+	if (USE_OLD_ADD_METHOD)
 		add_test(
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
 	else()
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 		gtest_add_tests(
 			test-srt
 			""

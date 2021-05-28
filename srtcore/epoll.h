@@ -60,7 +60,7 @@ modified by
 #include "udt.h"
 
 
-struct CEPollDesc
+class CEPollDesc
 {
    const int m_iID;                                // epoll ID
 
@@ -143,8 +143,6 @@ struct CEPollDesc
 std::string DisplayEpollWatch();
 #endif
 
-private:
-
    /// Sockets that are subscribed for events in this eid.
    ewatch_t m_USockWatchState;
 
@@ -159,7 +157,10 @@ private:
 
    enotice_t::iterator nullNotice() { return m_USockEventNotice.end(); }
 
-public:
+   // Only CEPoll class should have access to it.
+   // Guarding private access to the class is not necessary
+   // within the epoll module.
+   friend class CEPoll;
 
    CEPollDesc(int id, int localID)
        : m_iID(id)
@@ -347,11 +348,18 @@ public:
    }
 };
 
+namespace srt
+{
+    class CUDT;
+    class CRendezvousQueue;
+    class CUDTGroup;
+}
+
 class CEPoll
 {
-friend class CUDT;
-friend class CUDTGroup;
-friend class CRendezvousQueue;
+friend class srt::CUDT;
+friend class srt::CUDTGroup;
+friend class srt::CRendezvousQueue;
 
 public:
    CEPoll();
@@ -423,6 +431,9 @@ public: // for CUDTUnited API
    /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
+   /// Empty subscription check - for internal use only.
+   bool empty(const CEPollDesc& d) const;
+
    /// Reports which events are ready on the given socket.
    /// @param mp socket event map retirned by `swait`
    /// @param sock which socket to ask
@@ -482,7 +493,7 @@ private:
    srt::sync::Mutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   srt::sync::Mutex m_EPollLock;
+   mutable srt::sync::Mutex m_EPollLock;
 };
 
 #if ENABLE_HEAVY_LOGGING

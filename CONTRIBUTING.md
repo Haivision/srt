@@ -21,7 +21,7 @@ Submit a pull request at any time, whether an issue has been created or not. It 
 * SRT protocol definitions
 * portability and platform-specific parts
 
-Please follow the [Developer's guide](./docs/DevelopersGuide.md).
+Please follow the [SRT Developer's Guide](docs/dev/developers-guide.md).
 
 ## Code Style
 

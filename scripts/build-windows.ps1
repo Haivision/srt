@@ -6,7 +6,7 @@
 #
 # By default produces a VS2019 64-bit Release binary using C++11 threads, without
 # encryption or unit tests enabled, but including test apps.
-# Before enabling any encryption options, please install OpenSSL (or customize)
+# Before enabling any encryption options, install OpenSSL or set VCKPG flag to build
 ################################################################################
 
 param (
@@ -17,7 +17,9 @@ param (
     [Parameter()][String]$STATIC_LINK_SSL = "OFF",
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
-    [Parameter()][String]$UNIT_TESTS = "OFF"
+    [Parameter()][String]$UNIT_TESTS = "OFF",
+    [Parameter()][String]$BUILD_DIR = "_build",
+    [Parameter()][String]$VCPKG_OPENSSL = "OFF"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
@@ -65,7 +67,7 @@ if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERAT
 if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64'; $MSBUILDVER = "12.0"; }
 
 # clear any previous build and create & enter the build directory
-$buildDir = Join-Path "$projectRoot" "_build"
+$buildDir = Join-Path "$projectRoot" "$BUILD_DIR"
 Write-Output "Creating (or cleaning if already existing) the folder $buildDir for project files and outputs"
 Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Path $buildDir -ErrorAction SilentlyContinue | Out-Null
@@ -88,19 +90,20 @@ if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) {
         Start-Process $cmakeMsiFile -Wait
         Remove-Item $cmakeMsiFile
         Write-Output "Cmake should have installed, this script will now exit because of path updates - please now re-run this script"
-        exit
+        throw
     }
     else{
         Write-Output "Quitting because cmake is required"     
-        exit
+        throw
     }
 }
 
+# get pthreads from nuget if CXX11 is not enabled
 if ( $CXX11 -eq "OFF" ) {
     # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
     if ( $VS_VERSION -gt 2015 ) { 
         Write-Output "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
-        exit
+        throw
     }
     if ( $DEVENV_PLATFORM -eq 'Win32' ) { 
         nuget install cinegy.pthreads-win32-$VS_VERSION -version 2.9.1.24 -OutputDirectory ../_packages
@@ -110,10 +113,20 @@ if ( $CXX11 -eq "OFF" ) {
     }
 }
 
+# check to see if static SSL linking was requested, and enable encryption if not already ON
 if ( $STATIC_LINK_SSL -eq "ON" ) {
     if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
         # requesting a static link implicitly requires encryption support
         Write-Output "Static linking to OpenSSL requested, will force encryption feature ON"
+        $ENABLE_ENCRYPTION = "ON"
+    }
+}
+
+# check to see if VCPKG is marked to provide OpenSSL, and enable encryption if not already ON
+if ( $VCPKG_OPENSSL -eq "ON" ) {
+    if ( $ENABLE_ENCRYPTION -eq "OFF" ) {
+        # requesting VCPKG to provide OpenSSL requires encryption support
+        Write-Output "VCPKG compilation of OpenSSL requested, will force encryption feature ON"
         $ENABLE_ENCRYPTION = "ON"
     }
 }
@@ -123,8 +136,48 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
-                "-DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL " + 
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
+
+# if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
+if ( $VCPKG_OPENSSL -eq 'ON' ) {    
+    Push-Location $projectRoot
+    Write-Output "Cloning VCPKG into: $(Get-Location)"
+    if (Test-Path -Path ".\vcpkg") {
+        Set-Location .\vcpkg
+        git pull
+    } else {
+        git clone https://github.com/microsoft/vcpkg
+        Set-Location .\vcpkg
+    }
+
+    .\bootstrap-vcpkg.bat
+
+    if($DEVENV_PLATFORM -EQ "x64"){
+        if($STATIC_LINK_SSL -EQ "ON"){
+            .\vcpkg install openssl:x64-windows-static
+            $cmakeFlags += " -DVCPKG_TARGET_TRIPLET=x64-windows-static"
+        }
+        else{
+            .\vcpkg install openssl:x64-windows
+        }        
+    }
+    else{        
+        if($STATIC_LINK_SSL -EQ "ON"){
+            .\vcpkg install openssl:x86-windows-static
+            $cmakeFlags += " -DVCPKG_TARGET_TRIPLET=x86-windows-static"
+        }
+        else{
+            .\vcpkg install openssl:x86-windows
+        }
+    }
+    
+    .\vcpkg integrate install
+    Pop-Location
+    $cmakeFlags += " -DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
+}
+else {    
+    $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
+}
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
 if ( $VS_VERSION -eq '2019' ) {    
@@ -143,7 +196,8 @@ Invoke-Expression "& $execVar"
 
 # check build ran OK, exit if cmake failed
 if( $LASTEXITCODE -ne 0 ) {
-    return $LASTEXITCODE
+    Write-Output "Non-zero exit code from cmake: $LASTEXITCODE"
+    throw
 }
 
 $ErrorActionPreference = "Stop"
@@ -161,13 +215,17 @@ if ( $null -eq $msBuildPath ) {
         $vsWherePath = Get-Command "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -ErrorAction SilentlyContinue
         if ( $null -eq $vsWherePath ) {
             Write-Output "Cannot find vswhere (used to locate msbuild). Please install VS2017 update 2 (or later) or add vswhere to your path and try again"
-            exit
+            throw
         }
     }    
-    $msBuildPath = & $vsWherePath -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+    $msBuildPath = & $vsWherePath -products * -version $MSBUILDVER -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | select-object -first 1
+	if ( $null -eq $msBuildPath ) { 
+		Write-Output "vswhere.exe cannot find msbuild for the specified Visual Studio version - please check the installation"
+		throw
+	}
 }
 
-& $msBuildPath SRT.sln /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+& $msBuildPath SRT.sln -m /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
 
 # return to the directory previously occupied before running the script
 Pop-Location

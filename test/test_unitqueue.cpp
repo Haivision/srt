@@ -3,9 +3,8 @@
 #include "gtest/gtest.h"
 #include "queue.h"
 
-
 using namespace std;
-
+using namespace srt;
 
 /// Create CUnitQueue with queue size of 4 units.
 /// The size of 4 is chosen on purpose, because 

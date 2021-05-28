@@ -205,7 +205,10 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             isoption = true;
             // If a[0] isn't NUL - because it is dash - then
             // we can safely check a[1].
-            if (a[1] && isdigit(a[1]))
+            // An expression starting with a dash is not
+            // an option marker if it is a single dash or
+            // a negative number.
+            if (!a[1] || isdigit(a[1]))
                 isoption = false;
         }
 
@@ -391,10 +394,10 @@ struct SrtStatsTableInit
         STAT(SEND, bytes, byteSent);
         STAT(SEND, bytesUnique, byteSentUnique);
         STAT(SEND, bytesDropped, byteSndDrop);
+        STAT(SEND, byteAvailBuf, byteAvailSndBuf);
+        STAT(SEND, msBuf, msSndBuf);
         STAT(SEND, mbitRate, mbpsSendRate);
         STAT(SEND, sendPeriod, usPktSndPeriod);
-        //STAT(SEND, msAvgResponseTime, msAvgResponseTime);
-        //STAT(SEND, msMaxResponseTime, msMaxResponseTime);
 
         STAT(RECV, packets, pktRecv);
         STAT(RECV, packetsUnique, pktRecvUnique);
@@ -409,7 +412,10 @@ struct SrtStatsTableInit
         STAT(RECV, bytesUnique, byteRecvUnique);
         STAT(RECV, bytesLost, byteRcvLoss);
         STAT(RECV, bytesDropped, byteRcvDrop);
+        STAT(RECV, byteAvailBuf, byteAvailRcvBuf);
+        STAT(RECV, msBuf, msRcvBuf);
         STAT(RECV, mbitRate, mbpsRecvRate);
+        STAT(RECV, msTsbPdDelay, msRcvTsbPdDelay);
     }
 } g_SrtStatsTableInit (g_SrtStatsTable);
 
@@ -546,7 +552,7 @@ public:
         }
 
         // Close the general category entity
-        output << "}," << pretty_cr << endl;
+        output << "}" << pretty_cr << endl;
 
         return output.str();
     }
@@ -586,12 +592,8 @@ public:
             output << endl;
             first_line_printed = true;
         }
-        int rcv_latency = 0;
-        int int_len     = sizeof rcv_latency;
-        srt_getsockopt(sid, 0, SRTO_RCVLATENCY, &rcv_latency, &int_len);
 
         // Values
-
 #ifdef HAS_PUT_TIME
         // HDR: Timepoint
         output << print_timestamp() << ",";
@@ -685,4 +687,3 @@ SrtStatsPrintFormat ParsePrintFormat(string pf, string& w_extras)
 
     return SRTSTATS_PROFMAT_INVALID;
 }
-

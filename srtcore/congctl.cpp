@@ -34,6 +34,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
@@ -358,11 +359,11 @@ private:
                 }
                 else
                 {
-                    m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+                    m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                     HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = wndsize/(RTT+RCIV) RTT="
-                        << m_parent->RTT() << " RCIV=" << m_iRCInterval);
+                        << m_parent->SRTT() << " RCIV=" << m_iRCInterval);
                 }
             }
             else
@@ -374,9 +375,9 @@ private:
         }
         else
         {
-            m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->RTT() + m_iRCInterval) + 16;
+            m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->SRTT() + m_iRCInterval) + 16;
             HLOGC(cclog.Debug, log << "FileCC: UPD (speed mode) wndsize="
-                << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->RTT()
+                << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->SRTT()
                 << " sndperiod=" << m_dPktSndPeriod << "us. deliverRate = "
                 << m_parent->deliveryRate() << " pkts/s)");
         }
@@ -481,9 +482,9 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+                m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
-                    << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")");
+                    << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
             }
 
         }
@@ -491,7 +492,7 @@ private:
         m_bLoss = true;
 
         // TODO: const int pktsInFlight = CSeqNo::seqoff(m_iLastAck, m_parent->sndSeqNo());
-        const int pktsInFlight = m_parent->RTT() / m_dPktSndPeriod;
+        const int pktsInFlight = m_parent->SRTT() / m_dPktSndPeriod;
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
@@ -525,11 +526,9 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization
-            srand(m_iLastDecSeq);
-            m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
-            if (m_iDecRandom < 1)
-                m_iDecRandom = 1;
+            // remove global synchronization using randomization.
+            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)
@@ -581,9 +580,9 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->RTT() + m_iRCInterval);
+                m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
-                    << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->RTT() << " RCIV=" << m_iRCInterval << ")");
+                    << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
         else

@@ -27,6 +27,15 @@ if($Env:APPVEYOR){
 	Update-AppveyorBuild -Version "$majorVer.$minorVer.$patchVer.$buildNum"
 	$FileDescriptionBranchCommitValue = "$Env:APPVEYOR_REPO_NAME - $($Env:APPVEYOR_REPO_BRANCH) ($($Env:APPVEYOR_REPO_COMMIT.substring(0,8)))"
 }
+if($Env:TEAMCITY_VERSION){
+	#make TeamCity update with this new version number
+	Write-Output "##teamcity[buildNumber '$majorVer.$minorVer.$patchVer.$buildNum']"
+	Write-Output "##teamcity[setParameter name='MajorVersion' value='$majorVer']"
+	Write-Output "##teamcity[setParameter name='MinorVersion' value='$minorVer']"
+	Write-Output "##teamcity[setParameter name='PatchVersion' value='$patchVer']"
+	Write-Output "##teamcity[setParameter name='BuildVersion' value='$buildNum']"
+	$FileDescriptionBranchCommitValue = "$majorVer.$minorVer.$patchVer.$buildNum - ($($Env:BUILD_VCS_NUMBER.substring(0,8)))"
+}
 
 #find C++ resource files and update file description with branch / commit details
 $FileDescriptionStringRegex = '(\bVALUE\s+\"FileDescription\"\s*\,\s*\")([^\"]*\\\")*[^\"]*(\")'
