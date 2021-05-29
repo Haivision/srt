@@ -8903,12 +8903,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             continue;
         }
         else if (payload == 0)
-        {
-            LOGC(qrlog.Error,
-                 log << "IPE/EPE: packLostData: couldn't find a packet with seqno " << w_packet.m_iSeqNo
-                 << " (offset " << offset << ").");
             continue;
-        }
 
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
