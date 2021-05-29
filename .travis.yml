@@ -58,7 +58,7 @@ matrix:
             - make
             - cd ..
           env: BUILD_TYPE=Release
-          
+
          # Power jobs
         - os: linux
           arch: ppc64le
@@ -69,6 +69,7 @@ matrix:
           - BUILD_TYPE=Release
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
+    - TESTS_IPv6="TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*:ReuseAddr.ProtocolVersion" ; # Tests to skip due to lack of IPv6 support
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
@@ -91,7 +92,7 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*";
+        ./test-srt --gtest_filter="-$TESTS_IPv6";
       fi
     - if (( "$RUN_CODECOV" )); then
         source ./scripts/collect-gcov.sh;

@@ -408,6 +408,11 @@ private:
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
+   // Utility functions for updateMux
+   void configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
+   uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
+   bool channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s);
+
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
    sync::Mutex            m_MultiplexerLock;

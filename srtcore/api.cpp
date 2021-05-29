@@ -2829,51 +2829,150 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
    }
 }
 
-void srt::CUDTUnited::updateMux(
-   CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
+void srt::CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af)
 {
-   ScopedLock cg(m_GlobControlLock);
+   w_m.m_mcfg = s->m_pUDT->m_config;
+   w_m.m_iIPversion = af;
+   w_m.m_iRefCount = 1;
+   w_m.m_iID = s->m_SocketID;
+}
 
-   // Don't try to reuse given address, if udpsock was given.
-   // In such a case rely exclusively on that very socket and
-   // use it the way as it is configured, of course, create also
-   // always a new multiplexer for that very socket.
-   if (!udpsock && s->m_pUDT->m_config.bReuseAddr)
-   {
-      const int port = addr.hport();
+uint16_t srt::CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
+{
+    w_s->m_pUDT->m_pSndQueue = fw_sm.m_pSndQueue;
+    w_s->m_pUDT->m_pRcvQueue = fw_sm.m_pRcvQueue;
+    w_s->m_iMuxID = fw_sm.m_iID;
+    sockaddr_any sa;
+    fw_sm.m_pChannel->getSockAddr((sa));
+    w_s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
+    return sa.hport();
+}
 
-      // find a reusable address
-      for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
-         i != m_mMultiplexer.end(); ++ i)
-      {
-          // Use the "family" value blindly from the address; we
-          // need to find an existing multiplexer that binds to the
-          // given port in the same family as requested address.
-          if ((i->second.m_iIPversion == addr.family())
-                  && i->second.m_mcfg == s->m_pUDT->m_config)
-          {
-            if (i->second.m_iPort == port)
+bool srt::CUDTUnited::channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s)
+{
+    return m.m_mcfg.bReuseAddr && m.m_mcfg == s->m_pUDT->m_config;
+}
+
+void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
+{
+    ScopedLock cg(m_GlobControlLock);
+
+    // If udpsock is provided, then this socket will be simply
+    // taken for binding as a good deal. It would be nice to make
+    // a sanity check to see if this UDP socket isn't already installed
+    // in some multiplexer, but we state this UDP socket isn't accessible
+    // anyway so this wouldn't be possible.
+    if (!udpsock)
+    {
+        // If not, we need to see if there exist already a multiplexer bound
+        // to the same endpoint.
+        const int port = addr.hport();
+
+        bool reuse_attempt = false;
+        for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
+                i != m_mMultiplexer.end(); ++ i)
+        {
+            CMultiplexer& m = i->second;
+
+            // First, we need to find a multiplexer with the same port.
+            if (m.m_iPort != port)
             {
-               // HLOGF(smlog.Debug, "reusing multiplexer for port
-               // %hd\n", port);
-               // reuse the existing multiplexer
-               ++ i->second.m_iRefCount;
-               s->m_pUDT->m_pSndQueue = i->second.m_pSndQueue;
-               s->m_pUDT->m_pRcvQueue = i->second.m_pRcvQueue;
-               s->m_iMuxID = i->second.m_iID;
-               s->m_SelfAddr.family(addr.family());
-               return;
+                HLOGC(smlog.Debug, log << "bind: muxer @" << m.m_iID << " found, but for port "
+                        << m.m_iPort << " (requested port: " << port << ")");
+                continue;
             }
-         }
-      }
-   }
+
+            // If this is bound to the wildcard address, it can be reused if:
+            // - addr is also a wildcard
+            // - channel settings match
+            // Otherwise it's a conflict.
+            sockaddr_any sa;
+            m.m_pChannel->getSockAddr((sa));
+
+            HLOGC(smlog.Debug, log << "bind: Found existing muxer @" << m.m_iID << " : " << sa.str()
+                    << " - check against " << addr.str());
+
+            if (sa.isany())
+            {
+                if (!addr.isany())
+                {
+                    LOGC(smlog.Error, log << "bind: Address: " << addr.str()
+                            << " conflicts with existing wildcard binding: " << sa.str());
+                    throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                }
+
+                // Still, for ANY you need either the same family, or open
+                // for families.
+                if (m.m_mcfg.iIpV6Only != -1 && m.m_mcfg.iIpV6Only != s->m_pUDT->m_config.iIpV6Only)
+                {
+                    LOGC(smlog.Error, log << "bind: Address: " << addr.str()
+                            << " conflicts with existing IPv6 wildcard binding: " << sa.str());
+                    throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                }
+
+                if ((m.m_mcfg.iIpV6Only == 0 || s->m_pUDT->m_config.iIpV6Only == 0) && m.m_iIPversion != addr.family())
+                {
+                    LOGC(smlog.Error, log << "bind: Address: " << addr.str()
+                            << " conflicts with IPv6 wildcard binding: " << sa.str()
+                            << " : family " << (m.m_iIPversion == AF_INET ? "IPv4" : "IPv6")
+                            << " vs. " << (addr.family() == AF_INET ? "IPv4" : "IPv6"));
+                    throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                }
+                reuse_attempt = true;
+                HLOGC(smlog.Debug, log << "bind: wildcard address - multiplexer reusable");
+            }
+            else if (addr.isany() && addr.family() == sa.family())
+            {
+                LOGC(smlog.Error, log << "bind: Wildcard address: " << addr.str()
+                        << " conflicts with existting IP binding: " << sa.str());
+                throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+            }
+            // If this is bound to a certain address, AND:
+            else if (sa.equal_address(addr))
+            {
+                // - the address is the same as addr
+                reuse_attempt = true;
+                HLOGC(smlog.Debug, log << "bind: same IP address - multiplexer reusable");
+            }
+            else
+            {
+                HLOGC(smlog.Debug, log << "bind: IP addresses differ - ALLOWED to create a new multiplexer");
+            }
+            // Otherwise:
+            // - the address is different than addr
+            //   - the address can't be reused, but this can go on with new one.
+
+            // If this is a reusage attempt:
+            if (reuse_attempt)
+            {
+                //   - if the channel settings match, it can be reused
+                if (channelSettingsMatch(m, s))
+                {
+                    HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
+                    // reuse the existing multiplexer
+                    ++ i->second.m_iRefCount;
+                    installMuxer((s), (i->second));
+                    return;
+                }
+                else
+                {
+                    //   - if not, it's a conflict
+                    LOGC(smlog.Error, log << "bind: Address: " << addr.str()
+                            << " conflicts with binding: " << sa.str() << " due to channel settings");
+                    throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                }
+            }
+            // If not, proceed to the next one, and when there are no reusage
+            // candidates, proceed with creating a new multiplexer.
+
+            // Note that a binding to a different IP address is not treated
+            // as a candidate for either reuseage or conflict.
+        }
+    }
 
    // a new multiplexer is needed
    CMultiplexer m;
-   m.m_mcfg = s->m_pUDT->m_config;
-   m.m_iIPversion = addr.family();
-   m.m_iRefCount = 1;
-   m.m_iID = s->m_SocketID;
+   configureMuxer((m), s, addr.family());
 
    try
    {
@@ -2903,13 +3002,7 @@ void srt::CUDTUnited::updateMux(
            m.m_pChannel->open(addr);
        }
 
-       sockaddr_any sa;
-       m.m_pChannel->getSockAddr((sa));
-       m.m_iPort = sa.hport();
-       s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
-
        m.m_pTimer = new CTimer;
-
        m.m_pSndQueue = new CSndQueue;
        m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
        m.m_pRcvQueue = new CRcvQueue;
@@ -2917,11 +3010,10 @@ void srt::CUDTUnited::updateMux(
                32, s->m_pUDT->maxPayloadSize(), m.m_iIPversion, 1024,
                m.m_pChannel, m.m_pTimer);
 
+       // Rewrite the port here, as it might be only known upon return
+       // from CChannel::open.
+       m.m_iPort = installMuxer((s), m);
        m_mMultiplexer[m.m_iID] = m;
-
-       s->m_pUDT->m_pSndQueue = m.m_pSndQueue;
-       s->m_pUDT->m_pRcvQueue = m.m_pRcvQueue;
-       s->m_iMuxID = m.m_iID;
    }
    catch (const CUDTException&)
    {
@@ -2934,8 +3026,7 @@ void srt::CUDTUnited::updateMux(
        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
    }
 
-   HLOGF(smlog.Debug, 
-      "creating new multiplexer for port %i\n", m.m_iPort);
+   HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m.m_iPort);
 }
 
 // This function is going to find a multiplexer for the port contained

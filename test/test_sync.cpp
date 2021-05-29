@@ -449,8 +449,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(100))),
-        move(future_result[1].wait_for(chrono::microseconds(100)))
+        move(future_result[0].wait_for(chrono::microseconds(500))),
+        move(future_result[1].wait_for(chrono::microseconds(500)))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()

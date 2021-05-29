@@ -473,6 +473,7 @@ enum CodeMinor
     MN_XSIZE           = 12,
     MN_EIDINVAL        = 13,
     MN_EEMPTY          = 14,
+    MN_BUSYPORT        = 15,
     // MJ_AGAIN
     MN_WRAVAIL         =  1,
     MN_RDAVAIL         =  2,
@@ -528,6 +529,7 @@ typedef enum SRT_ERRNO
     SRT_ELARGEMSG       = MN(NOTSUP, XSIZE),
     SRT_EINVPOLLID      = MN(NOTSUP, EIDINVAL),
     SRT_EPOLLEMPTY      = MN(NOTSUP, EEMPTY),
+    SRT_EBINDCONFLICT   = MN(NOTSUP, BUSYPORT),
 
     SRT_EASYNCFAIL      = MJ(AGAIN),
     SRT_EASYNCSND       = MN(AGAIN, WRAVAIL),

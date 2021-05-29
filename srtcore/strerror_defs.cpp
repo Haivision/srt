@@ -19,7 +19,6 @@ const char* strerror_msgs_success [] = {
     ""
 };
 
-
 // MJ_SETUP 'Connection setup failure'
 
 const char* strerror_msgs_setup [] = {
@@ -32,7 +31,6 @@ const char* strerror_msgs_setup [] = {
     ""
 };
 
-
 // MJ_CONNECTION ''
 
 const char* strerror_msgs_connection [] = {
@@ -41,7 +39,6 @@ const char* strerror_msgs_connection [] = {
     "Connection does not exist", // MN_NOCONN = 2
     ""
 };
-
 
 // MJ_SYSTEMRES 'System resource failure'
 
@@ -53,7 +50,6 @@ const char* strerror_msgs_systemres [] = {
     ""
 };
 
-
 // MJ_FILESYSTEM 'File system failure'
 
 const char* strerror_msgs_filesystem [] = {
@@ -64,7 +60,6 @@ const char* strerror_msgs_filesystem [] = {
     "File system failure: failure in write", // MN_WRITEFAIL = 4
     ""
 };
-
 
 // MJ_NOTSUP 'Operation not supported'
 
@@ -84,9 +79,9 @@ const char* strerror_msgs_notsup [] = {
     "Operation not supported: Message is too large to send (it must be less than the SRT send buffer size)", // MN_XSIZE = 12
     "Operation not supported: Invalid epoll ID", // MN_EIDINVAL = 13
     "Operation not supported: All sockets removed from epoll, waiting would deadlock", // MN_EEMPTY = 14
+    "Operation not supported: Another socket is bound to that port and is not reusable for requested settings", // MN_BUSYPORT = 15
     ""
 };
-
 
 // MJ_AGAIN 'Non-blocking call failure'
 
@@ -99,14 +94,12 @@ const char* strerror_msgs_again [] = {
     ""
 };
 
-
 // MJ_PEERERROR 'The peer side has signaled an error'
 
 const char* strerror_msgs_peererror [] = {
     "The peer side has signaled an error", // MN_NONE = 0
     ""
 };
-
 
 
 const char** strerror_array_major [] = {
@@ -123,7 +116,7 @@ const char** strerror_array_major [] = {
 
 #define SRT_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
 
-const size_t strerror_array_sizes[] = {
+const size_t strerror_array_sizes [] = {
     SRT_ARRAY_SIZE(strerror_msgs_success) - 1,
     SRT_ARRAY_SIZE(strerror_msgs_setup) - 1,
     SRT_ARRAY_SIZE(strerror_msgs_connection) - 1,
@@ -134,6 +127,7 @@ const size_t strerror_array_sizes[] = {
     SRT_ARRAY_SIZE(strerror_msgs_peererror) - 1,
     0
 };
+
 
 const char* strerror_get_message(size_t major, size_t minor)
 {
