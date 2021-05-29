@@ -1371,7 +1371,7 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
                 }
                 else if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqoff(base_seq, w_curpktseq) <= 0)
                 {
-                    IF_HEAVY_LOGGING(reason = "smaller than base_seq " + base_seq);
+                    IF_HEAVY_LOGGING(reason = "smaller than base_seq");
                     w_tsbpdtime = steady_clock::time_point();
                     freeunit = true;
                 }
