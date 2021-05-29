@@ -8882,7 +8882,6 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
         int msglen;
 
         const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_origintime), (msglen));
-        SRT_ASSERT(payload != 0);
         if (payload == -1)
         {
             int32_t seqpair[2];
@@ -8903,14 +8902,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
 
             continue;
         }
-        else if (payload == -2)
-            continue;
-        // NOTE: This is just a sanity check. Returning 0 is impossible to happen
-        // in case of retransmission. If the offset was a positive value, then the
-        // block must exist in the old blocks because it wasn't yet cut off by ACK
-        // and has been already recorded as sent (otherwise the peer wouldn't send
-        // back the loss report). May something happen here in case when the send
-        // loss record has been updated by the FASTREXMIT.
+        // ignore invalid offset
         else if (payload == 0)
             continue;
 

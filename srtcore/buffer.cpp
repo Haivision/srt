@@ -527,14 +527,14 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
         if (p == m_pLastBlock)
         {
             LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
-            return -2;
+            return 0;
         }
         p = p->m_pNext;
     }
     if (p == m_pLastBlock)
     {
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
-        return -2;
+        return 0;
     }
 #if ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
