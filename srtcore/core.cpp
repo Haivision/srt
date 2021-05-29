@@ -8904,7 +8904,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
         }
         else if (payload == 0)
         {
-            LOGC(qslog.Error,
+            LOGC(qrlog.Error,
                  log << "IPE/EPE: packLostData: couldn't find a packet with seqno " << w_packet.m_iSeqNo
                  << " (offset " << offset << ").");
             continue;
