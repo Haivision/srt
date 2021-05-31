@@ -1119,6 +1119,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                                 int32_t&                  w_curpktseq,
                                 int32_t                   base_seq)
 {
+    HLOGC(brlog.Debug, log << "getRcvFirstMsg: base_seq=" << base_seq);
     w_skipseqno = SRT_SEQNO_NONE;
     w_passack   = false;
     // tsbpdtime will be retrieved by the below call
@@ -1218,8 +1219,8 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                 if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqoff(base_seq, w_curpktseq) <= 0)
                 {
                     HLOGC(brlog.Debug,
-                          log << "getRcvFirstMsg: found ready packet but not larger than base_seq, try next, %"
-                              << w_curpktseq << " <= " << base_seq);
+                          log << "getRcvFirstMsg: found ready packet %" << w_curpktseq
+                              << " but not larger than base_seq, try next");
                     continue;
                 }
 
