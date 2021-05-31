@@ -3744,7 +3744,7 @@ EConnectStatus srt::CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NO
 
 bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
                                       EConnectStatus      cst,
-                                      const CPacket*      pResponse,
+                                      const CPacket*      pResponse /*[[nullable]]*/,
                                       const sockaddr_any& serv_addr)
 {
     // IMPORTANT!
@@ -3976,7 +3976,7 @@ EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatas
 }
 
 EConnectStatus srt::CUDT::processRendezvous(
-    const CPacket* pResponse, const sockaddr_any& serv_addr,
+    const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
 {
     if (m_RdvState == CHandShake::RDV_CONNECTED)
@@ -4525,6 +4525,8 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
             }
             return CONN_REJECT;
         }
+
+        // [[assert (pResponse != NULL)]];
 
         // NOTE: THIS function must be called before calling prepareConnectionObjects.
         // The reason why it's not part of prepareConnectionObjects is that the activities
