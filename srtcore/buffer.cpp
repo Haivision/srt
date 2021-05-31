@@ -522,8 +522,15 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
-    for (int i = 0; i < offset; ++i)
+    for (int i = 0; i < offset && p != m_pLastBlock; ++i)
+    {
         p = p->m_pNext;
+    }
+    if (p == m_pLastBlock)
+    {
+        LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
+        return 0;
+    }
 #if ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
@@ -550,7 +557,7 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
         w_msglen      = 1;
         p             = p->m_pNext;
         bool move     = false;
-        while (msgno == p->getMsgSeq())
+        while (p != m_pLastBlock && msgno == p->getMsgSeq())
         {
 #if ENABLE_HEAVY_LOGGING
             last_seq = p->m_iSeqNo;
