@@ -354,7 +354,7 @@ public:
     /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& pktIn);
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
 
 private:
     struct LinkStatusInfo

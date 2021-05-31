@@ -903,16 +903,20 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
     return NULL;
 }
 
-void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& pktIn)
+void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
 {
     vector<LinkStatusInfo> toRemove, toProcess;
 
+    const CPacket* pkt = unit ? &unit->m_Packet : NULL;
+
+    // Need a stub value for a case when there's no unit provided ("storage depleted" case).
+    // It should be normally NOT IN USE because in case of "storage depleted", rst != RST_OK.
+    const SRTSOCKET dest_id = pkt ? pkt->m_iID : 0;
+
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
-    if (!qualifyToHandle(rst, cst, pktIn.m_iID, toRemove, toProcess))
+    if (!qualifyToHandle(rst, cst, dest_id, (toRemove), (toProcess)))
         return;
-
-    // [[using locked()]];
 
     HLOGC(cnlog.Debug,
           log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
@@ -938,7 +942,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        if (i->id != pktIn.m_iID)
+        if (i->id != dest_id)
         {
             read_st = RST_AGAIN;
             conn_st = CONN_AGAIN;
@@ -947,7 +951,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         HLOGC(cnlog.Debug,
               log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
-        if (!i->u->processAsyncConnectRequest(read_st, conn_st, pktIn, i->peeraddr))
+        if (!i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr))
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
             // its already set in this case.
@@ -1310,7 +1314,7 @@ void* srt::CRcvQueue::worker(void* param)
         // worker_TryAsyncRend_OrStore --->
         // CUDT::processAsyncConnectResponse --->
         // CUDT::processConnectResponse
-        self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit->m_Packet);
+        self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit);
 
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
@@ -1526,7 +1530,7 @@ EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* un
         {
             LOGC(cnlog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
             storePkt(id, unit->m_Packet.clone());
-            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, unit->m_Packet, u->m_PeerAddr))
+            if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &unit->m_Packet, u->m_PeerAddr))
             {
                 // Reuse previous behavior to reject a packet
                 cst = CONN_REJECT;
