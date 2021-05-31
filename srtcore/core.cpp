@@ -3600,7 +3600,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 // it means that it has done all that was required, however none of the below
                 // things has to be done (this function will do it by itself if needed).
                 // Otherwise the handshake rolling can be interrupted and considered complete.
-                cst = processRendezvous(response, serv_addr, RST_OK, (reqpkt));
+                cst = processRendezvous(&response, serv_addr, RST_OK, (reqpkt));
                 if (cst == CONN_CONTINUE)
                     continue;
                 break;
@@ -3744,7 +3744,7 @@ EConnectStatus srt::CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NO
 
 bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
                                       EConnectStatus      cst,
-                                      const CPacket&      response,
+                                      const CPacket*      pResponse,
                                       const sockaddr_any& serv_addr)
 {
     // IMPORTANT!
@@ -3773,7 +3773,7 @@ bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
     if (cst == CONN_RENDEZVOUS)
     {
         HLOGC(cnlog.Debug, log << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(response, serv_addr, rst, (request));
+        cst = processRendezvous(pResponse, serv_addr, rst, (request));
         if (cst == CONN_ACCEPT)
         {
             HLOGC(cnlog.Debug,
@@ -3976,7 +3976,7 @@ EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatas
 }
 
 EConnectStatus srt::CUDT::processRendezvous(
-    const CPacket& response, const sockaddr_any& serv_addr,
+    const CPacket* pResponse, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
 {
     if (m_RdvState == CHandShake::RDV_CONNECTED)
@@ -4053,7 +4053,7 @@ EConnectStatus srt::CUDT::processRendezvous(
             // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
             // Sanity check
             m_tsLastReqTime = steady_clock::time_point();
-            if (response.getLength() == size_t(-1))
+            if (!pResponse || pResponse->getLength() == size_t(-1))
             {
                 m_RejectReason = SRT_REJ_IPE;
                 LOGC(cnlog.Fatal,
@@ -4061,7 +4061,7 @@ EConnectStatus srt::CUDT::processRendezvous(
                 return CONN_REJECT;
             }
 
-            if (!interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize))
+            if (!interpretSrtHandshake(m_ConnRes, *pResponse, kmdata, &kmdatasize))
             {
                 HLOGC(cnlog.Debug,
                       log << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
@@ -4114,7 +4114,7 @@ EConnectStatus srt::CUDT::processRendezvous(
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
 
-        if (rst != RST_OK || response.getLength() == size_t(-1))
+        if (rst != RST_OK || !pResponse || pResponse->getLength() == size_t(-1))
         {
             // Actually the -1 length would be an IPE, but it's likely that this was reported already.
             HLOGC(
@@ -4125,7 +4125,7 @@ EConnectStatus srt::CUDT::processRendezvous(
         {
             HLOGC(cnlog.Debug,
                   log << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-            if (!interpretSrtHandshake(m_ConnRes, response, 0, 0))
+            if (!interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0))
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
@@ -4165,10 +4165,7 @@ EConnectStatus srt::CUDT::processRendezvous(
     w_reqpkt.setLength(m_iMaxSRTPayloadSize);
     if (m_RdvState == CHandShake::RDV_CONNECTED)
     {
-        // When synchro=false, don't lock a mutex for rendezvous queue.
-        // This is required when this function is called in the
-        // receive queue worker thread - it would lock itself.
-        int cst = postConnect(response, true, 0);
+        int cst = postConnect(pResponse, true, 0);
         if (cst == CONN_REJECT)
         {
             // m_RejectReason already set
@@ -4304,7 +4301,7 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
             m_RdvState = CHandShake::RDV_CONNECTED;
         }
 
-        return postConnect(response, hsv5, eout);
+        return postConnect(&response, hsv5, eout);
     }
 
     if (!response.isControl(UMSG_HANDSHAKE))
@@ -4474,7 +4471,7 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
         }
     }
 
-    return postConnect(response, false, eout);
+    return postConnect(&response, false, eout);
 }
 
 bool srt::CUDT::applyResponseSettings() ATR_NOEXCEPT
@@ -4507,7 +4504,7 @@ bool srt::CUDT::applyResponseSettings() ATR_NOEXCEPT
     return true;
 }
 
-EConnectStatus srt::CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
+EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
@@ -4516,6 +4513,19 @@ EConnectStatus srt::CUDT::postConnect(const CPacket &response, bool rendezvous, 
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
+        // The "local storage depleted" case shouldn't happen here, but
+        // this is a theoretical path that needs prevention.
+        bool ok = pResponse;
+        if (!ok)
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            if (eout)
+            {
+                *eout = CUDTException(MJ_SETUP, MN_REJECTED, 0);
+            }
+            return CONN_REJECT;
+        }
+
         // NOTE: THIS function must be called before calling prepareConnectionObjects.
         // The reason why it's not part of prepareConnectionObjects is that the activities
         // done there are done SIMILAR way in acceptAndRespond, which also calls this
@@ -4527,7 +4537,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket &response, bool rendezvous, 
         //
         // Currently just this function must be called always BEFORE prepareConnectionObjects
         // everywhere except acceptAndRespond().
-        bool ok = applyResponseSettings();
+        ok = applyResponseSettings();
 
         // This will actually be done also in rendezvous HSv4,
         // however in this case the HSREQ extension will not be attached,
@@ -4537,8 +4547,8 @@ EConnectStatus srt::CUDT::postConnect(const CPacket &response, bool rendezvous, 
 
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
         // In this situation the interpretation of handshake was already done earlier.
-        ok = ok && response.isControl();
-        ok = ok && interpretSrtHandshake(m_ConnRes, response, 0, 0);
+        ok = ok && pResponse->isControl();
+        ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
 
         if (!ok)
         {
