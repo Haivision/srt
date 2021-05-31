@@ -19,15 +19,18 @@ packet.cpp
 packetfilter.cpp
 queue.cpp
 congctl.cpp
-srt_c_api.cpp
-window.cpp
 socketconfig.cpp
+srt_c_api.cpp
 srt_compat.c
 strerror_defs.cpp
 sync.cpp
+tsbpd_time.cpp
+window.cpp
 
 SOURCES - ENABLE_EXPERIMENTAL_BONDING
 group.cpp
+group_backup.cpp
+group_common.cpp
 
 SOURCES - !ENABLE_STDCXX_SYNC
 sync_posix.cpp
@@ -68,8 +71,11 @@ congctl.h
 socketconfig.h
 srt_compat.h
 threadname.h
+tsbpd_time.h
 utilities.h
 window.h
 
 PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
 group.h
+group_backup.h
+group_common.h

@@ -321,7 +321,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
                     << tar->GetSRTSocket() << endl;
                 goto exit;
             }
-            UDT::setstreamid(tar->GetSRTSocket(), filename);
+            srt::setstreamid(tar->GetSRTSocket(), filename);
         }
 
         s = tar->GetSRTSocket();
@@ -539,7 +539,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                     cerr << "Failed to add SRT client to poll" << endl;
                     goto exit;
                 }
-                id = UDT::getstreamid(s);
+                id = srt::getstreamid(s);
                 cerr << "Source connected (listener), id ["
                     << id << "]" << endl;
                 connected = true;
@@ -550,7 +550,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
             {
                 if (!connected)
                 {
-                    id = UDT::getstreamid(s);
+                    id = srt::getstreamid(s);
                     cerr << "Source connected (caller), id ["
                         << id << "]" << endl;
                     connected = true;
@@ -714,7 +714,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 

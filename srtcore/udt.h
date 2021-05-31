@@ -82,20 +82,12 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
-/* Obsolete way to define MINGW */
-#ifndef __MINGW__
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#define __MINGW__ 1
-#endif
-#endif
-
 #ifdef __cplusplus
 #include <fstream>
 #include <set>
 #include <string>
 #include <vector>
 #endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -257,7 +249,7 @@ namespace logging {
     using namespace srt_logging;
 }
 
-}
+} // namespace srt
 
 // Planned deprecated removal: rel1.6.0
 // There's also no portable way possible to enforce a deprecation

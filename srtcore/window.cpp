@@ -94,10 +94,8 @@ struct FIsJournal
     }
 };
 
-Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, int32_t& w_ack, int32_t& w_timediff)
+Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, const steady_clock::time_point& currtime, int32_t& w_ack, int32_t& w_timediff)
 {
-    steady_clock::time_point now = steady_clock::now();
-
     Range range1, range2;
     range1.begin = r_iTail;
     range2.begin = 0;
@@ -115,7 +113,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
     }
 
     // Here we are certain that the range1 is contiguous and nonempty
-    // Continuous is by extracting two contiguous ranges in case when the
+    // Contiguous is by extracting two contiguous ranges in case when the
     // original range was non-contiguous.
     // Emptiness is checked here:
     if (range1.begin == range1.end)
@@ -177,7 +175,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
     // As long as none of the above did abnormal termination by early return,
     // pos contains our required node.
     w_ack = r_aSeq[found].iAckSeq;
-    w_timediff = count_microseconds(now - r_aSeq[found].tsTimeStamp);
+    w_timediff = count_microseconds(currtime - r_aSeq[found].tsTimeStamp);
 
     int inext = found + 1;
     if (inext == r_iHead)
@@ -204,22 +202,21 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
 }
 
 /* Updated old version remains for historical reasons
-Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, int32_t& w_ack, int32_t& w_timediff)
+Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, int32_t& w_ack, const steady_clock::time_point& currtime, int32_t& w_timediff)
 {
+   // Head has not exceeded the physical boundary of the window
    if (r_iHead >= r_iTail)
    {
-      // Head has not exceeded the physical boundary of the window
-
       for (int i = r_iTail, n = r_iHead; i < n; ++ i)
       {
-         // looking for identical ACK AckNode. No.
+         // looking for an identical ACK AckNode. No.
          if (jrn == r_aSeq[i].iJournal)
          {
-            // return the Data ACK it carried
+            // Return the Data ACK it carried
             w_ack = r_aSeq[i].iAckSeq;
 
-            // calculate RTT
-            w_timediff = count_microseconds(steady_clock::now() - r_aSeq[i].tsTimeStamp);
+            // Calculate RTT estimate
+            w_timediff = count_microseconds(currtime - r_aSeq[i].tsTimeStamp);
 
             if (i + 1 == r_iHead)
             {
@@ -233,22 +230,22 @@ Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_
          }
       }
 
-      // Bad input, the ACK node has been overwritten
+      // The record about ACK is not found in the buffer, RTT can not be calculated
       return ROGUE;
    }
 
    // Head has exceeded the physical window boundary, so it is behind tail
    for (int j = r_iTail, n = r_iHead + size; j < n; ++ j)
    {
-      // looking for indentical ACK jrn. no.
+      // Looking for an identical ACK Seq. No.
       if (jrn == r_aSeq[j % size].iJournal)
       {
-         // return Data ACK
+         // Return the Data ACK it carried
          j %= size;
          w_ack = r_aSeq[j].iAckSeq;
 
-         // calculate RTT
-         w_timediff = count_microseconds(steady_clock::now() - r_aSeq[j].tsTimeStamp);
+         // Calculate RTT estimate
+         w_timediff = count_microseconds(currtime - r_aSeq[j].tsTimeStamp);
 
          if (j == r_iHead)
          {
@@ -262,7 +259,7 @@ Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_
       }
    }
 
-   // bad input, the ACK node has been overwritten
+   // The record about ACK is not found in the buffer, RTT can not be calculated
    return ROGUE;
 }
 */
@@ -279,7 +276,7 @@ void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeW
       r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
 
    for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = CPacket::SRT_MAX_PAYLOAD_SIZE; //based on 1 pkt/sec set in r_pktWindow[i]
+      r_bytesWindow[i] = srt::CPacket::SRT_MAX_PAYLOAD_SIZE; //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 
@@ -316,7 +313,7 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
    // claculate speed, or return 0 if not enough valid value
    if (count > (asize >> 1))
    {
-      bytes += (CPacket::SRT_DATA_HDR_SIZE * count); //Add protocol headers to bytes received
+      bytes += (srt::CPacket::SRT_DATA_HDR_SIZE * count); //Add protocol headers to bytes received
       bytesps = (unsigned long)ceil(1000000.0 / (double(sum) / double(bytes)));
       return (int)ceil(1000000.0 / (sum / count));
    }

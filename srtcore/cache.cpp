@@ -50,14 +50,14 @@ using namespace std;
 CInfoBlock& CInfoBlock::copyFrom(const CInfoBlock& obj)
 {
    std::copy(obj.m_piIP, obj.m_piIP + 4, m_piIP);
-   m_iIPversion = obj.m_iIPversion;
-   m_ullTimeStamp = obj.m_ullTimeStamp;
-   m_iRTT = obj.m_iRTT;
-   m_iBandwidth = obj.m_iBandwidth;
-   m_iLossRate = obj.m_iLossRate;
+   m_iIPversion       = obj.m_iIPversion;
+   m_ullTimeStamp     = obj.m_ullTimeStamp;
+   m_iSRTT            = obj.m_iSRTT;
+   m_iBandwidth       = obj.m_iBandwidth;
+   m_iLossRate        = obj.m_iLossRate;
    m_iReorderDistance = obj.m_iReorderDistance;
-   m_dInterval = obj.m_dInterval;
-   m_dCWnd = obj.m_dCWnd;
+   m_dInterval        = obj.m_dInterval;
+   m_dCWnd            = obj.m_dCWnd;
 
    return *this;
 }
@@ -84,14 +84,14 @@ CInfoBlock* CInfoBlock::clone()
    CInfoBlock* obj = new CInfoBlock;
 
    std::copy(m_piIP, m_piIP + 4, obj->m_piIP);
-   obj->m_iIPversion = m_iIPversion;
-   obj->m_ullTimeStamp = m_ullTimeStamp;
-   obj->m_iRTT = m_iRTT;
-   obj->m_iBandwidth = m_iBandwidth;
-   obj->m_iLossRate = m_iLossRate;
+   obj->m_iIPversion       = m_iIPversion;
+   obj->m_ullTimeStamp     = m_ullTimeStamp;
+   obj->m_iSRTT            = m_iSRTT;
+   obj->m_iBandwidth       = m_iBandwidth;
+   obj->m_iLossRate        = m_iLossRate;
    obj->m_iReorderDistance = m_iReorderDistance;
-   obj->m_dInterval = m_dInterval;
-   obj->m_dCWnd = m_dCWnd;
+   obj->m_dInterval        = m_dInterval;
+   obj->m_dCWnd            = m_dCWnd;
 
    return obj;
 }

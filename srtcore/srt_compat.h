@@ -22,7 +22,7 @@ written by
 
 #ifndef SRT_API
 #ifdef _WIN32
-   #ifndef __MINGW__
+   #ifndef __MINGW32__
       #ifdef SRT_DYNAMIC
          #ifdef SRT_EXPORTS
             #define SRT_API __declspec(dllexport)

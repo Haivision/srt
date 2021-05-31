@@ -14,7 +14,7 @@ addons:
         token:
             secure: "wJZC0kyyjuf4SZyonZ6p/5Ga9asEqSnKWF9NpRbu6S6ceERO7vbebuSJF5qX3A6ivPuw0TTk5WASOdnvIyfA28FU/D0MWRdH8K7T3w77wdE9EgAEYTUXzdrbzJY18+9pxjljHwWXWALPSGf3MClg4irWrdk1e6uHK+68R39+ZvBGBFpWeeZy/+at9+xwhtAGKBlSHe8zc+3wPxuYdvviLVJ25qbpNmnzkUR0X89G+UBl90raCPSN32EHFdImHZ5DxfEQQJgZFRjzQUY4EW/iYwaMel7jufAq0ClgV4psKujl9Lz8cPqx3WgqRfJyiIthOMTsac7G4zAw8LK2CI0VsssBp0JalLXaumi6vG7o6c3rIwKckzSKccq3pHa7h45praIVVn9s3nq+Q/JGA11FMkKQxdQtmwgFsLhbi6ZxabgsUi5KtWoWY2z6MgpJuROuAjNxZi9XJzUoJs7zSTUtRRW7V8Q2lRiOnknYh25N6TCA5bpyy1EZmRdJErm071YNI9P01gbFz5137FWJFiJzro9TGF0KoHSGiCIdUt3WlMzwr/i/wFLxFBQOZQ2rjTXvhs4hxONxMZV3gzxA1NdLaf9i5Mh6jxVMV+ujaRSV7JmPGzxqiAlpT9cJUhTCYuar9diLLeDrpe7RawEZR8V1xVDQ7yT8ruDNQ78VbSn/sC0="
     homebrew:
-        update: true  # TODO: this should be removed once this bug is fixed: https://travis-ci.community/t/macos-build-fails-because-of-homebrew-bundle-unknown-command/7296
+        update: false
         packages:
         - openssl
 
@@ -23,20 +23,24 @@ matrix:
         - os: linux
           env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
+          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
           - RUN_SONARCUBE=1
           - RUN_CODECOV=1
         - env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON'
+          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release
         - os: osx
-          osx_image: xcode10.2
-          env: BUILD_TYPE=Debug
+          osx_image: xcode11.1
+          env:
+          - BUILD_TYPE=Debug
+          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: osx
-          osx_image: xcode10.2
-          env: BUILD_TYPE=Release
+          osx_image: xcode11.1
+          env:
+          - BUILD_TYPE=Release
+          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           compiler: x86_64-w64-mingw32-g++
           addons:
@@ -54,7 +58,7 @@ matrix:
             - make
             - cd ..
           env: BUILD_TYPE=Release
-          
+
          # Power jobs
         - os: linux
           arch: ppc64le
@@ -65,6 +69,7 @@ matrix:
           - BUILD_TYPE=Release
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
+    - TESTS_IPv6="TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*:ReuseAddr.ProtocolVersion" ; # Tests to skip due to lack of IPv6 support
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
@@ -87,10 +92,10 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        ./test-srt --gtest_filter="-TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*";
-        source ./scripts/collect-gcov.sh;
+        ./test-srt --gtest_filter="-$TESTS_IPv6";
       fi
     - if (( "$RUN_CODECOV" )); then
+        source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);
       fi
     - if (( "$RUN_SONARCUBE" )); then

@@ -38,7 +38,7 @@ namespace srt
 namespace sync
 {
 
-void rdtsc(uint64_t& x)
+static void rdtsc(uint64_t& x)
 {
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA32_RDTSC
     uint32_t lval, hval;
@@ -77,7 +77,7 @@ void rdtsc(uint64_t& x)
 #endif
 }
 
-int64_t get_cpu_frequency()
+static int64_t get_cpu_frequency()
 {
     int64_t frequency = 1; // 1 tick per microsecond.
 

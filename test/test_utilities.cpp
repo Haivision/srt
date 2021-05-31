@@ -9,6 +9,7 @@
 #include "api.h"
 #include "common.h"
 #include "window.h"
+#include "sync.h"
 
 using namespace std;
 
@@ -282,6 +283,8 @@ struct AckData
 
 static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, const std::string& casename)
 {
+    using srt::sync::steady_clock;
+
     typedef CACKWindow<10> ackwindow_t;
     ackwindow_t ackwindow;
 
@@ -296,9 +299,11 @@ static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, co
     for (auto& n: data)
         ackwindow.store(n.journal, n.ackseq);
 
+    steady_clock::time_point now = steady_clock::now();
+
     // Now remove those initial ones
     int32_t dummy1, dummy2;
-    ackwindow.acknowledge(data[0].journal-1, (dummy1), (dummy2));
+    ackwindow.acknowledge(data[0].journal-1, now, (dummy1), (dummy2));
 
     ASSERT_EQ(ackwindow.first().iJournal, data[0].journal) << " (" << casename << ")";
     ASSERT_EQ(ackwindow.last().iJournal, data[4].journal) << " (" << casename << ")";
@@ -308,21 +313,21 @@ static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, co
     int td =0;
 
     // Remove oldest node. Should go ok.
-    ACKWindow::Status stat = ackwindow.acknowledge(data[0].journal, (iack), (td));
+    ACKWindow::Status stat = ackwindow.acknowledge(data[0].journal, now, (iack), (td));
     EXPECT_EQ(iack, data[0].ackseq) << " (" << casename << ")";
     EXPECT_EQ(stat, ACKWindow::OK) << " (" << casename << ")";
     EXPECT_EQ(ackwindow.size(), 4) << " (" << casename << ")";
     EXPECT_EQ(ackwindow.first().iJournal, data[1].journal) << " (" << casename << ")";
 
     // Now remove the node +2
-    stat = ackwindow.acknowledge(data[2].journal, (iack), (td));
+    stat = ackwindow.acknowledge(data[2].journal, now, (iack), (td));
     EXPECT_EQ(iack, data[2].ackseq) << " (" << casename << ")";
     EXPECT_EQ(stat, ACKWindow::OK) << " (" << casename << ")";
     EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
     EXPECT_EQ(ackwindow.first().iJournal, data[3].journal) << " (" << casename << ")";
 
     // Now remove too old node
-    stat = ackwindow.acknowledge(data[1].journal, (iack), (td));
+    stat = ackwindow.acknowledge(data[1].journal, now, (iack), (td));
     EXPECT_EQ(stat, ACKWindow::OLD) << "(" << casename << ")";
     // Like above - no changes were expected
     EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
@@ -330,7 +335,7 @@ static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, co
 
     // And remove the node that wasn't inserted
     int32_t wrongnode = data[4].journal+1;
-    stat = ackwindow.acknowledge(wrongnode, (iack), (td));
+    stat = ackwindow.acknowledge(wrongnode, now, (iack), (td));
     EXPECT_EQ(stat, ACKWindow::ROGUE);
     // Like above - no changes were expected
     EXPECT_EQ(ackwindow.size(), 2) << " (" << casename << ")";
@@ -341,7 +346,7 @@ static void TestAckWindow(const std::array<AckData, 5>& data, size_t initpos, co
     // prepared just in case.
     ackwindow.store(data[4].journal+2, data[4].ackseq);
     // Now a search of data[4].journal+1 should fail appropriately.
-    stat = ackwindow.acknowledge(data[4].journal+1, (iack), (td));
+    stat = ackwindow.acknowledge(data[4].journal+1, now, (iack), (td));
     EXPECT_EQ(stat, ACKWindow::WIPED);
 }
 
