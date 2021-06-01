@@ -1216,7 +1216,7 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                 if (haslost)
                     w_skipseqno = w_curpktseq;
 
-                if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqoff(base_seq, w_curpktseq) <= 0)
+                if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqcmp(w_curpktseq, base_seq) <= 0)
                 {
                     HLOGC(brlog.Debug,
                           log << "getRcvFirstMsg: found ready packet %" << w_curpktseq
@@ -1370,7 +1370,7 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
                     IF_HEAVY_LOGGING(reason = "DECRYPTION FAILED");
                     freeunit = true; /* packet not decrypted */
                 }
-                else if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqoff(base_seq, w_curpktseq) <= 0)
+                else if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqcmp(w_curpktseq, base_seq) <= 0)
                 {
                     IF_HEAVY_LOGGING(reason = "smaller than base_seq");
                     w_tsbpdtime = steady_clock::time_point();
