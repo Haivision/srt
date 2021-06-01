@@ -11,9 +11,6 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
-//#define ENABLE_STDCXX_SYNC
-//#define ENABLE_CXX17
-
 #include <cstdlib>
 #include <limits>
 #ifdef ENABLE_STDCXX_SYNC
@@ -21,9 +18,37 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
+#define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
+
+// Defile clock type to use
+#ifdef IA32
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA32_RDTSC
+#define SRT_SYNC_CLOCK_STR "IA32_RDTSC"
+#elif defined(IA64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA64_ITC
+#define SRT_SYNC_CLOCK_STR "IA64_ITC"
+#elif defined(AMD64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_AMD64_RDTSC
+#define SRT_SYNC_CLOCK_STR "AMD64_RDTSC"
+#elif defined(_WIN32)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_WINQPC
+#define SRT_SYNC_CLOCK_STR "WINQPC"
+#elif TARGET_OS_MAC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
+#define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
+#elif defined(ENABLE_MONOTONIC_CLOCK)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
+#else
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
 #endif
+
+#endif // ENABLE_STDCXX_SYNC
+
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
@@ -773,7 +798,7 @@ namespace this_thread
 #if !defined(_WIN32)
         usleep(count_microseconds(t)); // microseconds
 #else
-        Sleep(count_milliseconds(t));
+        Sleep((DWORD) count_milliseconds(t));
 #endif
     }
 }
@@ -809,6 +834,18 @@ void SetThreadLocalError(const CUDTException& e);
 /// Get thread local error
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Random distribution functions.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Generate a uniform-distributed random integer from [minVal; maxVal].
+/// If HAVE_CXX11, uses std::uniform_distribution(std::random_device).
+/// @param[in] minVal minimum allowed value of the resulting random number.
+/// @param[in] maxVal maximum allowed value of the resulting random number.
+int genRandomInt(int minVal, int maxVal);
 
 } // namespace sync
 } // namespace srt

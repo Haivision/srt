@@ -27,6 +27,7 @@ written by
 #include "logging.h"
 #include "core.h"
 
+using namespace srt;
 using namespace srt_logging;
 
 #define SRT_MAX_KMRETRY     10
@@ -439,7 +440,7 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
      * then (re-)send handshake request.
      */
     if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->RTT() * 3)/2)) <= now))
+        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->SRTT() * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {

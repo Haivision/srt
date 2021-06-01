@@ -16,10 +16,12 @@
 #include <string>
 #include <utility>
 
-class CUDT;
+namespace srt {
+    class CUDT;
+}
 class SrtCongestionControlBase;
 
-typedef SrtCongestionControlBase* srtcc_create_t(CUDT* parent);
+typedef SrtCongestionControlBase* srtcc_create_t(srt::CUDT* parent);
 
 class SrtCongestion
 {
@@ -97,7 +99,7 @@ public:
     // in appropriate time. It should select appropriate
     // congctl basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
-    bool configure(CUDT* parent);
+    bool configure(srt::CUDT* parent);
 
     // This function will intentionally delete the contained object.
     // This makes future calls to ready() return false. Calling
@@ -129,13 +131,15 @@ public:
     };
 };
 
-class CPacket;
+namespace srt {
+    class CPacket;
+}
 
 class SrtCongestionControlBase
 {
 protected:
     // Here can be some common fields
-    CUDT* m_parent;
+    srt::CUDT* m_parent;
 
     double m_dPktSndPeriod;
     double m_dCWndSize;
@@ -146,11 +150,11 @@ protected:
     //int m_iMSS;              // NOT REQUIRED. Use m_parent->MSS() instead.
     //int32_t m_iSndCurrSeqNo; // NOT REQUIRED. Use m_parent->sndSeqNo().
     //int m_iRcvRate;          // NOT REQUIRED. Use m_parent->deliveryRate() instead.
-    //int m_RTT;               // NOT REQUIRED. Use m_parent->RTT() instead.
+    //int m_RTT;               // NOT REQUIRED. Use m_parent->SRTT() instead.
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
     // Constructor in protected section so that this class is semi-abstract.
-    SrtCongestionControlBase(CUDT* parent);
+    SrtCongestionControlBase(srt::CUDT* parent);
 public:
 
     // This could be also made abstract, but this causes a linkage
@@ -192,7 +196,7 @@ public:
     // Arg 2: value calculated out of CUDT's m_config.llInputBW and m_config.iOverheadBW.
     virtual void updateBandwidth(int64_t, int64_t) {}
 
-    virtual bool needsQuickACK(const CPacket&)
+    virtual bool needsQuickACK(const srt::CPacket&)
     {
         return false;
     }

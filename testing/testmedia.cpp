@@ -2296,12 +2296,19 @@ MediaPacket SrtSource::Read(size_t chunk)
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
-        if (stat == SRT_ERROR)
+        if (stat != SRT_ERROR)
         {
+            ready = true;
+        }
+        else
+        {
+            int syserr = 0;
+            int err = srt_getlasterror(&syserr);
+
             if (!m_blocking_mode)
             {
                 // EAGAIN for SRT READING
-                if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                if (err == SRT_EASYNCRCV)
                 {
 Epoll_again:
                     Verb() << "AGAIN: - waiting for data by epoll(" << srt_epoll << ")...";
@@ -2347,8 +2354,11 @@ Epoll_again:
             {
                 // In blocking mode it uses a minimum of 1s timeout,
                 // and continues only if interrupt not requested.
-                if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
+                if (!::transmit_int_state && (err == SRT_EASYNCRCV || err == SRT_ETIMEOUT))
+                {
+                    ready = false;
                     continue;
+                }
             }
             Error("srt_recvmsg2");
         }
@@ -2890,6 +2900,11 @@ public:
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (::setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &tv, sizeof(tv)) < 0)
+            Error(SysError(), "Setting timeout for UDP");
     }
 
     MediaPacket Read(size_t chunk) override
@@ -2897,13 +2912,20 @@ public:
         bytevector data(chunk);
         sockaddr_any sa(sadr.family());
         int64_t srctime = 0;
+AGAIN:
         int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
+        int err = SysError();
         if (transmit_use_sourcetime)
         {
             srctime = srt_time_now();
         }
         if (stat == -1)
+        {
+            if (!::transmit_int_state && err == SysAGAIN)
+                goto AGAIN;
+
             Error(SysError(), "UDP Read/recvfrom");
+        }
 
         if (stat < 1)
         {

@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -43,13 +43,13 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config, PacketFilter::F
     return true;
 }
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
+bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config)
 {
     return ParseFilterConfig(s, (w_config), NULL);
 }
 
 // Parameters are passed by value because they need to be potentially modicied inside.
-bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
+bool srt::CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
 {
     PacketFilter::Factory* fac = PacketFilter::find(w_agent.type);
     if (!fac)
@@ -109,18 +109,20 @@ bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
     return true;
 }
 
-struct SortBySequence
-{
-    bool operator()(const CUnit* u1, const CUnit* u2)
+namespace srt {
+    struct SortBySequence
     {
-        int32_t s1 = u1->m_Packet.getSeqNo();
-        int32_t s2 = u2->m_Packet.getSeqNo();
+        bool operator()(const CUnit* u1, const CUnit* u2)
+        {
+            int32_t s1 = u1->m_Packet.getSeqNo();
+            int32_t s2 = u2->m_Packet.getSeqNo();
 
-        return CSeqNo::seqcmp(s1, s2) < 0;
-    }
-};
+            return CSeqNo::seqcmp(s1, s2) < 0;
+        }
+    };
+} // namespace srt
 
-void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
+void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
 {
     const CPacket& rpkt = unit->m_Packet;
 
@@ -206,7 +208,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
 
 }
 
-bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
+bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
     bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
     if (!have)
@@ -238,7 +240,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 }
 
 
-void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
     if (m_provided.empty())
         return;
@@ -273,19 +275,21 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
     m_provided.clear();
 }
 
-bool PacketFilter::IsBuiltin(const string& s)
+bool srt::PacketFilter::IsBuiltin(const string& s)
 {
     return builtin_filters.count(s);
 }
 
+namespace srt {
 std::set<std::string> PacketFilter::builtin_filters;
 PacketFilter::filters_map_t PacketFilter::filters;
+}
 
-PacketFilter::Factory::~Factory()
+srt::PacketFilter::Factory::~Factory()
 {
 }
 
-void PacketFilter::globalInit()
+void srt::PacketFilter::globalInit()
 {
     // Add here builtin packet filters and mark them
     // as builtin. This will disallow users to register
@@ -295,7 +299,7 @@ void PacketFilter::globalInit()
     builtin_filters.insert("fec");
 }
 
-bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
     m_parent = parent;
 
@@ -329,7 +333,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     return true;
 }
 
-bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
+bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
 {
     const string* pname = map_getp(conf.parameters, "type");
 
@@ -346,7 +350,7 @@ bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
     return true;
 }
 
-PacketFilter::~PacketFilter()
+srt::PacketFilter::~PacketFilter()
 {
     delete m_filter;
 }
