@@ -566,6 +566,8 @@ private:
 
     void storePkt(int32_t id, CPacket* pkt);
 
+    void kick();
+
 private:
     sync::Mutex       m_LSLock;
     CUDT*             m_pListener;        // pointer to the (unique, if any) listening UDT entity

@@ -1964,6 +1964,14 @@ int srt::CUDTUnited::close(CUDTSocket* s)
 {
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
+   // This socket might be currently during reading from
+   // the receiver queue as called from `srt_connect` API.
+   // Until this procedure breaks, locking s->m_ControlLock
+   // would have to wait. Mark it closing right now and force
+   // the receiver queue to stop waiting immediately.
+   s->m_pUDT->m_bClosing = true;
+   s->m_pUDT->m_pRcvQueue->kick();
+
    ScopedLock socket_cg(s->m_ControlLock);
 
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSING (removing from listening, closing CUDT)");

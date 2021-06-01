@@ -3659,6 +3659,12 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
 
+        // The queue could have been kicked by the close() API call,
+        // if so, interrupt immediately.
+        if (m_bClosing || m_bBroken)
+            break;
+
+
         HLOGC(cnlog.Debug,
               log << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
 
