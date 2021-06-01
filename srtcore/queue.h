@@ -137,7 +137,7 @@ private:
     CUnit* m_pAvailUnit; // recent available unit
 
     int m_iSize;  // total size of the unit queue, in number of packets
-    int m_iCount; // total number of valid (occupied) packets in the queue
+    srt::sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
 
     int m_iMSS;       // unit buffer size
     int m_iIPversion; // IP version
@@ -152,7 +152,7 @@ struct CSNode
     CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp;
 
-    int m_iHeapLoc; // location on the heap, -1 means not on the heap
+    srt::sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
 };
 
 class CSndUList
@@ -240,7 +240,7 @@ struct CRNode
     CRNode* m_pPrev; // previous link
     CRNode* m_pNext; // next link
 
-    bool m_bOnList; // if the node is already on the list
+    srt::sync::atomic<bool> m_bOnList;              // if the node is already on the list
 };
 
 class CRcvUList
@@ -465,7 +465,7 @@ private:
     srt::sync::Mutex     m_WindowLock;
     srt::sync::Condition m_WindowCond;
 
-    volatile bool m_bClosing; // closing the worker
+    srt::sync::atomic<bool> m_bClosing;            // closing the worker
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
     uint64_t m_ullDbgPeriod;
@@ -545,7 +545,7 @@ private:
 
     size_t m_szPayloadSize; // packet payload size
 
-    volatile bool m_bClosing; // closing the worker
+    srt::sync::atomic<bool> m_bClosing;            // closing the worker
 #if ENABLE_LOGGING
     static int m_counter;
 #endif

@@ -102,7 +102,7 @@ public:
 
    void construct();
 
-   SRT_SOCKSTATUS m_Status;                  //< current socket state
+   srt::sync::atomic<SRT_SOCKSTATUS> m_Status;                  //< current socket state
 
    /// Time when the socket is closed.
    /// When the socket is closed, it is not removed immediately from the list
@@ -421,7 +421,7 @@ private:
    CCache<CInfoBlock>* m_pCache;			// UDT network information cache
 
 private:
-   volatile bool m_bClosing;
+   srt::sync::atomic<bool> m_bClosing;
    sync::Mutex m_GCStopLock;
    sync::Condition m_GCStopCond;
 
