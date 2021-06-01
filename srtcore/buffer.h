@@ -429,8 +429,9 @@ public:
     /// if none
     /// @param [out] w_passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
     /// @param [out] w_skipseqno SRT_SEQNO_NONE or seq number of 1st unacknowledged pkt ready to play preceeded by
-    /// @param base_seq          SRT_SEQNO_NONE or desired, ignore seq smaller than base if exist RTP larger than base
     /// missing packets.
+    /// @param base_seq          SRT_SEQNO_NONE or desired, ignore seq smaller than base if exist packet ready-to-play
+    /// and larger than base
     /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
     /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
     ///                   IF skipseqno != SRT_SEQNO_NONE, packet ready to play preceeded by missing packets.;
