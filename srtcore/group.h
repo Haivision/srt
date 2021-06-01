@@ -345,6 +345,7 @@ public:
     void         updateWriteState();
     void         updateFailedLink();
     void         activateUpdateEvent(bool still_have_items);
+    int32_t      getRcvBaseSeqNo();
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,
