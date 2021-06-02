@@ -1964,13 +1964,41 @@ int srt::CUDTUnited::close(CUDTSocket* s)
 {
    HLOGC(smlog.Debug, log << s->m_pUDT->CONID() << " CLOSE. Acquiring control lock");
 
-   // This socket might be currently during reading from
-   // the receiver queue as called from `srt_connect` API.
-   // Until this procedure breaks, locking s->m_ControlLock
-   // would have to wait. Mark it closing right now and force
-   // the receiver queue to stop waiting immediately.
-   s->m_pUDT->m_bClosing = true;
-   s->m_pUDT->m_pRcvQueue->kick();
+   // The check for whether m_pRcvQueue isn't NULL is safe enough;
+   // it can either be NULL after socket creation and without binding
+   // and then once it's assigned, it's never reset to NULL even when
+   // destroying the socket.
+   CUDT* e = s->m_pUDT;
+   if (e->m_pRcvQueue && e->m_bConnecting && !e->m_bConnected)
+   {
+       // Workaround for a design flaw.
+       // It's to work around the case when the socket is being
+       // closed in another thread while it's in the process of
+       // connecting in the blocking mode, that is, it runs the
+       // loop in `CUDT::startConnect` whole time under the lock
+       // of CUDT::m_ConnectionLock and CUDTSocket::m_ControlLock
+       // this way blocking the `srt_close` API call from continuing.
+       // We are setting here the m_bClosing flag prematurely so
+       // that the loop may check this flag periodically and exit
+       // immediately if it's set.
+       //
+       // The problem is that this flag shall NOT be set in case
+       // when you have a CONNECTED socket because not only isn't it
+       // not a problem in this case, but also it additionally
+       // turns the socket in a "confused" state in which it skips
+       // vital part of closing itself and therefore runs an infinite
+       // loop when trying to purge the sender buffer of the closing
+       // socket.
+       //
+       // XXX Consider refax on CUDT::startConnect and removing the
+       // connecting loop there and replace the "blocking mode specific"
+       // connecting procedure with delegation to the receiver queue,
+       // which will be then common with non-blocking mode, and synchronize
+       // the blocking through a CV.
+
+       e->m_bClosing = true;
+       e->m_pRcvQueue->kick();
+   }
 
    ScopedLock socket_cg(s->m_ControlLock);
 
