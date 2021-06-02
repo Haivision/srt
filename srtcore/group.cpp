@@ -2134,6 +2134,12 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
     }
 }
 
+int32_t CUDTGroup::getRcvBaseSeqNo()
+{
+    ScopedLock lg(m_GroupLock);
+    return m_RcvBaseSeqNo;
+}
+
 void CUDTGroup::updateWriteState()
 {
     ScopedLock lg(m_GroupLock);

@@ -242,15 +242,17 @@ void srt::CUnitQueue::makeUnitFree(CUnit* unit)
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
     unit->m_iFlag = CUnit::FREE;
+
     --m_iCount;
 }
 
 void srt::CUnitQueue::makeUnitGood(CUnit* unit)
 {
+    ++m_iCount;
+
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
     unit->m_iFlag = CUnit::GOOD;
-    ++m_iCount;
 }
 
 srt::CSndUList::CSndUList()
@@ -431,7 +433,7 @@ void srt::CSndUList::remove_(const CUDT* u)
         // remove the node from heap
         m_pHeap[n->m_iHeapLoc] = m_pHeap[m_iLastEntry];
         m_iLastEntry--;
-        m_pHeap[n->m_iHeapLoc]->m_iHeapLoc = n->m_iHeapLoc;
+        m_pHeap[n->m_iHeapLoc]->m_iHeapLoc = n->m_iHeapLoc.load();
 
         int q = n->m_iHeapLoc;
         int p = q * 2 + 1;
