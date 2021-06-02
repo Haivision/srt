@@ -1215,9 +1215,17 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
         else
         {
             tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+            /* Packet ready to play */
             if (tsbpdtime <= steady_clock::now())
             {
-                /* Packet ready to play */
+                // If the last ready-to-play packet exists, free it.
+                if (!is_zero(w_tsbpdtime)) {
+                    HLOGC(brlog.Debug,
+                          log << "getRcvFirstMsg: found next ready packet, free last %"
+                              << w_curpktseq);
+                    SRT_ASSERT(w_curpktseq != SRT_SEQNO_NONE);
+                    freeUnitAt(w_curpktseq);
+                }
                 w_tsbpdtime = tsbpdtime;
                 w_curpktseq = m_pUnit[i]->m_Packet.m_iSeqNo;
                 if (haslost)
