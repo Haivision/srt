@@ -311,7 +311,9 @@ enum EInitEvent
     TEV_INIT_OHEADBW
 };
 
-class CPacket;
+namespace srt {
+    class CPacket;
+}
 
 // XXX Use some more standard less hand-crafted solution, if possible
 // XXX Consider creating a mapping between TEV_* values and associated types,
@@ -322,7 +324,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        const CPacket* packet;
+        const srt::CPacket* packet;
         int32_t ack;
         struct
         {
@@ -341,7 +343,7 @@ struct EventVariant
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-    explicit EventVariant(const CPacket* arg)
+    explicit EventVariant(const srt::CPacket* arg)
     {
         type = PACKET;
         u.packet = arg;
@@ -430,7 +432,7 @@ class EventArgType;
 // use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef const CPacket* type;
+    typedef const srt::CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
@@ -1406,7 +1408,7 @@ inline std::string SrtVersionString(int version)
     return buf;
 }
 
-bool SrtParseConfig(std::string s, SrtConfig& w_config);
+bool SrtParseConfig(std::string s, srt::SrtConfig& w_config);
 
 struct PacketMetric
 {

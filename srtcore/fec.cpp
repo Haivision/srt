@@ -35,6 +35,7 @@
 using namespace std;
 using namespace srt_logging;
 
+namespace srt {
 
 const char FECFilterBuiltin::defaultConfig [] = "fec,rows:1,layout:staircase,arq:onreq";
 
@@ -1118,11 +1119,11 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, size_t 
     }
 
     // Ok, we have some empty cells, so just adjust to the start of a row.
-	size_t bstep = i % row_size;
-	if (i < bstep)  // you never know...
-		i = 0;
-	else
-		i -= bstep;
+    size_t bstep = i % row_size;
+    if (i < bstep)  // you never know...
+        i = 0;
+    else
+        i -= bstep;
     
     for ( ; i < cells.size(); i += row_size )
     {
@@ -2557,3 +2558,5 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 
     return colgx;
 }
+
+} // namespace srt

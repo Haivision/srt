@@ -35,7 +35,7 @@ written by
 
 
 #ifdef _WIN32
-   #ifndef __MINGW__
+   #ifndef __MINGW32__
       // Explicitly define 32-bit and 64-bit numbers
       typedef __int32 int32_t;
       typedef __int64 int64_t;
@@ -56,7 +56,7 @@ written by
       #else
          #define SRT_API
       #endif
-   #else // __MINGW__
+   #else // __MINGW32__
       #define SRT_API
    #endif
 #else
@@ -152,7 +152,7 @@ typedef int32_t SRTSOCKET;
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
-   #ifndef __MINGW__
+   #ifndef __MINGW32__
       typedef SOCKET SYSSOCKET;
    #else
       typedef int SYSSOCKET;
@@ -473,6 +473,7 @@ enum CodeMinor
     MN_XSIZE           = 12,
     MN_EIDINVAL        = 13,
     MN_EEMPTY          = 14,
+    MN_BUSYPORT        = 15,
     // MJ_AGAIN
     MN_WRAVAIL         =  1,
     MN_RDAVAIL         =  2,
@@ -528,6 +529,7 @@ typedef enum SRT_ERRNO
     SRT_ELARGEMSG       = MN(NOTSUP, XSIZE),
     SRT_EINVPOLLID      = MN(NOTSUP, EIDINVAL),
     SRT_EPOLLEMPTY      = MN(NOTSUP, EEMPTY),
+    SRT_EBINDCONFLICT   = MN(NOTSUP, BUSYPORT),
 
     SRT_EASYNCFAIL      = MJ(AGAIN),
     SRT_EASYNCSND       = MN(AGAIN, WRAVAIL),
@@ -863,7 +865,7 @@ SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* op
 typedef struct SRT_MsgCtrl_
 {
    int flags;            // Left for future
-   int msgttl;           // TTL for a message, default -1 (no TTL limitation)
+   int msgttl;           // TTL for a message (millisec), default -1 (no TTL limitation)
    int inorder;          // Whether a message is allowed to supersede partially lost one. Unused in stream and live mode.
    int boundary;         // 0:mid pkt, 1(01b):end of frame, 2(11b):complete frame, 3(10b): start of frame
    int64_t srctime;      // source time since epoch (usec), 0: use internal time (sender)

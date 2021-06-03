@@ -1,11 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
- * 
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- * 
+ *
  */
 
 /*****************************************************************************
@@ -50,7 +50,6 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-
 #ifndef INC_SRT_QUEUE_H
 #define INC_SRT_QUEUE_H
 
@@ -64,260 +63,262 @@ modified by
 #include <queue>
 #include <vector>
 
-class CUDT;
+namespace srt
+{
 class CChannel;
+class CUDT;
 
 struct CUnit
 {
-   CPacket m_Packet;		// packet
-   enum Flag { FREE = 0, GOOD = 1, PASSACK = 2, DROPPED = 3 };
-   Flag m_iFlag;			// 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
+    CPacket m_Packet; // packet
+    enum Flag
+    {
+        FREE    = 0,
+        GOOD    = 1,
+        PASSACK = 2,
+        DROPPED = 3
+    };
+    Flag m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
 };
 
 class CUnitQueue
 {
 
 public:
+    CUnitQueue();
+    ~CUnitQueue();
 
-   CUnitQueue();
-   ~CUnitQueue();
+public: // Storage size operations
+        /// Initialize the unit queue.
+        /// @param [in] size queue size
+        /// @param [in] mss maximum segment size
+        /// @param [in] version IP version
+        /// @return 0: success, -1: failure.
+    int init(int size, int mss, int version);
 
-public:     // Storage size operations
+    /// Increase (double) the unit queue size.
+    /// @return 0: success, -1: failure.
 
-      /// Initialize the unit queue.
-      /// @param [in] size queue size
-      /// @param [in] mss maximum segment size
-      /// @param [in] version IP version
-      /// @return 0: success, -1: failure.
+    int increase();
 
-   int init(int size, int mss, int version);
+    /// Decrease (halve) the unit queue size.
+    /// @return 0: success, -1: failure.
 
-      /// Increase (double) the unit queue size.
-      /// @return 0: success, -1: failure.
-
-   int increase();
-
-      /// Decrease (halve) the unit queue size.
-      /// @return 0: success, -1: failure.
-
-   int shrink();
+    int shrink();
 
 public:
-   int size() const     { return m_iSize - m_iCount; }
-   int capacity() const { return m_iSize; }
+    int size() const { return m_iSize - m_iCount; }
+    int capacity() const { return m_iSize; }
 
-public:     // Operations on units
+public: // Operations on units
+        /// find an available unit for incoming packet.
+        /// @return Pointer to the available unit, NULL if not found.
+    CUnit* getNextAvailUnit();
 
-      /// find an available unit for incoming packet.
-      /// @return Pointer to the available unit, NULL if not found.
+    void makeUnitFree(CUnit* unit);
 
-   CUnit* getNextAvailUnit();
-
-   void makeUnitFree(CUnit * unit);
-
-   void makeUnitGood(CUnit * unit);
+    void makeUnitGood(CUnit* unit);
 
 public:
-   inline int getIPversion() const { return m_iIPversion; }
+    inline int getIPversion() const { return m_iIPversion; }
 
 private:
-   struct CQEntry
-   {
-      CUnit* m_pUnit;   // unit queue
-      char* m_pBuffer;  // data buffer
-      int m_iSize;      // size of each queue
+    struct CQEntry
+    {
+        CUnit* m_pUnit;   // unit queue
+        char*  m_pBuffer; // data buffer
+        int    m_iSize;   // size of each queue
 
-      CQEntry* m_pNext;
-   }
-   *m_pQEntry,          // pointer to the first unit queue
-   *m_pCurrQueue,       // pointer to the current available queue
-   *m_pLastQueue;       // pointer to the last unit queue
+        CQEntry* m_pNext;
+    } * m_pQEntry,     // pointer to the first unit queue
+        *m_pCurrQueue, // pointer to the current available queue
+        *m_pLastQueue; // pointer to the last unit queue
 
-   CUnit* m_pAvailUnit; // recent available unit
+    CUnit* m_pAvailUnit; // recent available unit
 
-   int m_iSize;         // total size of the unit queue, in number of packets
-   int m_iCount;        // total number of valid (occupied) packets in the queue
+    int m_iSize;  // total size of the unit queue, in number of packets
+    srt::sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
 
-   int m_iMSS;          // unit buffer size
-   int m_iIPversion;    // IP version
+    int m_iMSS;       // unit buffer size
+    int m_iIPversion; // IP version
 
 private:
-   CUnitQueue(const CUnitQueue&);
-   CUnitQueue& operator=(const CUnitQueue&);
+    CUnitQueue(const CUnitQueue&);
+    CUnitQueue& operator=(const CUnitQueue&);
 };
 
 struct CSNode
 {
-   CUDT* m_pUDT;		// Pointer to the instance of CUDT socket
-   srt::sync::steady_clock::time_point m_tsTimeStamp;
+    CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
+    sync::steady_clock::time_point m_tsTimeStamp;
 
-   int m_iHeapLoc;		// location on the heap, -1 means not on the heap
+    srt::sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
 };
 
 class CSndUList
 {
-friend class CSndQueue;
+    friend class CSndQueue;
 
 public:
-   CSndUList();
-   ~CSndUList();
+    CSndUList();
+    ~CSndUList();
 
 public:
+    enum EReschedule
+    {
+        DONT_RESCHEDULE = 0,
+        DO_RESCHEDULE   = 1
+    };
 
-   enum EReschedule { DONT_RESCHEDULE = 0, DO_RESCHEDULE = 1 };
+    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
 
-   static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+    /// Update the timestamp of the UDT instance on the list.
+    /// @param [in] u pointer to the UDT instance
+    /// @param [in] reschedule if the timestamp should be rescheduled
 
-      /// Update the timestamp of the UDT instance on the list.
-      /// @param [in] u pointer to the UDT instance
-      /// @param [in] reschedule if the timestamp should be rescheduled
+    void update(const CUDT* u, EReschedule reschedule);
 
-   void update(const CUDT* u, EReschedule reschedule);
+    /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
+    /// @param [out] addr destination address of the next packet
+    /// @param [out] pkt the next packet to be sent
+    /// @return 1 if successfully retrieved, -1 if no packet found.
 
-      /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
-      /// @param [out] addr destination address of the next packet
-      /// @param [out] pkt the next packet to be sent
-      /// @return 1 if successfully retrieved, -1 if no packet found.
+    int pop(sockaddr_any& addr, CPacket& pkt);
 
-   int pop(sockaddr_any& addr, CPacket& pkt);
+    /// Remove UDT instance from the list.
+    /// @param [in] u pointer to the UDT instance
 
-      /// Remove UDT instance from the list.
-      /// @param [in] u pointer to the UDT instance
+    void remove(const CUDT* u);
 
-   void remove(const CUDT* u);
+    /// Retrieve the next scheduled processing time.
+    /// @return Scheduled processing time of the first UDT socket in the list.
 
-      /// Retrieve the next scheduled processing time.
-      /// @return Scheduled processing time of the first UDT socket in the list.
-
-   srt::sync::steady_clock::time_point getNextProcTime();
-
-private:
-
-   /// Doubles the size of the list.
-   ///
-   void realloc_();
-
-   /// Insert a new UDT instance into the list with realloc if required.
-   ///
-   /// @param [in] ts time stamp: next processing time
-   /// @param [in] u pointer to the UDT instance
-   void insert_(const srt::sync::steady_clock::time_point &ts, const CUDT* u);
-
-   /// Insert a new UDT instance into the list without realloc.
-   /// Should be called if there is a gauranteed space for the element.
-   ///
-   /// @param [in] ts time stamp: next processing time
-   /// @param [in] u pointer to the UDT instance
-   void insert_norealloc_(const srt::sync::steady_clock::time_point &ts, const CUDT* u);
-
-   void remove_(const CUDT* u);
+    sync::steady_clock::time_point getNextProcTime();
 
 private:
-   CSNode** m_pHeap;			// The heap array
-   int m_iArrayLength;			// physical length of the array
-   int m_iLastEntry;			// position of last entry on the heap array
+    /// Doubles the size of the list.
+    ///
+    void realloc_();
 
-   srt::sync::Mutex m_ListLock;
+    /// Insert a new UDT instance into the list with realloc if required.
+    ///
+    /// @param [in] ts time stamp: next processing time
+    /// @param [in] u pointer to the UDT instance
+    void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
-   srt::sync::Mutex* m_pWindowLock;
-   srt::sync::Condition* m_pWindowCond;
+    /// Insert a new UDT instance into the list without realloc.
+    /// Should be called if there is a gauranteed space for the element.
+    ///
+    /// @param [in] ts time stamp: next processing time
+    /// @param [in] u pointer to the UDT instance
+    void insert_norealloc_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
-   srt::sync::CTimer* m_pTimer;
+    void remove_(const CUDT* u);
 
 private:
-   CSndUList(const CSndUList&);
-   CSndUList& operator=(const CSndUList&);
+    CSNode** m_pHeap;        // The heap array
+    int      m_iArrayLength; // physical length of the array
+    int      m_iLastEntry;   // position of last entry on the heap array
+
+    sync::Mutex m_ListLock;
+
+    sync::Mutex*     m_pWindowLock;
+    sync::Condition* m_pWindowCond;
+
+    sync::CTimer* m_pTimer;
+
+private:
+    CSndUList(const CSndUList&);
+    CSndUList& operator=(const CSndUList&);
 };
 
 struct CRNode
 {
-   CUDT* m_pUDT;                // Pointer to the instance of CUDT socket
-   srt::sync::steady_clock::time_point m_tsTimeStamp;      // Time Stamp
+    CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
+    sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
 
-   CRNode* m_pPrev;             // previous link
-   CRNode* m_pNext;             // next link
+    CRNode* m_pPrev; // previous link
+    CRNode* m_pNext; // next link
 
-   bool m_bOnList;              // if the node is already on the list
+    srt::sync::atomic<bool> m_bOnList;              // if the node is already on the list
 };
 
 class CRcvUList
 {
 public:
-   CRcvUList();
-   ~CRcvUList();
+    CRcvUList();
+    ~CRcvUList();
 
 public:
+    /// Insert a new UDT instance to the list.
+    /// @param [in] u pointer to the UDT instance
 
-      /// Insert a new UDT instance to the list.
-      /// @param [in] u pointer to the UDT instance
+    void insert(const CUDT* u);
 
-   void insert(const CUDT* u);
+    /// Remove the UDT instance from the list.
+    /// @param [in] u pointer to the UDT instance
 
-      /// Remove the UDT instance from the list.
-      /// @param [in] u pointer to the UDT instance
+    void remove(const CUDT* u);
 
-   void remove(const CUDT* u);
+    /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
+    /// @param [in] u pointer to the UDT instance
 
-      /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
-      /// @param [in] u pointer to the UDT instance
-
-   void update(const CUDT* u);
+    void update(const CUDT* u);
 
 public:
-   CRNode* m_pUList;		// the head node
+    CRNode* m_pUList; // the head node
 
 private:
-   CRNode* m_pLast;		// the last node
+    CRNode* m_pLast; // the last node
 
 private:
-   CRcvUList(const CRcvUList&);
-   CRcvUList& operator=(const CRcvUList&);
+    CRcvUList(const CRcvUList&);
+    CRcvUList& operator=(const CRcvUList&);
 };
 
 class CHash
 {
 public:
-   CHash();
-   ~CHash();
+    CHash();
+    ~CHash();
 
 public:
+    /// Initialize the hash table.
+    /// @param [in] size hash table size
 
-      /// Initialize the hash table.
-      /// @param [in] size hash table size
+    void init(int size);
 
-   void init(int size);
+    /// Look for a UDT instance from the hash table.
+    /// @param [in] id socket ID
+    /// @return Pointer to a UDT instance, or NULL if not found.
 
-      /// Look for a UDT instance from the hash table.
-      /// @param [in] id socket ID
-      /// @return Pointer to a UDT instance, or NULL if not found.
+    CUDT* lookup(int32_t id);
 
-   CUDT* lookup(int32_t id);
+    /// Insert an entry to the hash table.
+    /// @param [in] id socket ID
+    /// @param [in] u pointer to the UDT instance
 
-      /// Insert an entry to the hash table.
-      /// @param [in] id socket ID
-      /// @param [in] u pointer to the UDT instance
+    void insert(int32_t id, CUDT* u);
 
-   void insert(int32_t id, CUDT* u);
+    /// Remove an entry from the hash table.
+    /// @param [in] id socket ID
 
-      /// Remove an entry from the hash table.
-      /// @param [in] id socket ID
-
-   void remove(int32_t id);
-
-private:
-   struct CBucket
-   {
-      int32_t m_iID;		// Socket ID
-      CUDT* m_pUDT;		// Socket instance
-
-      CBucket* m_pNext;		// next bucket
-   } **m_pBucket;		// list of buckets (the hash table)
-
-   int m_iHashSize;		// size of hash table
+    void remove(int32_t id);
 
 private:
-   CHash(const CHash&);
-   CHash& operator=(const CHash&);
+    struct CBucket
+    {
+        int32_t m_iID;  // Socket ID
+        CUDT*   m_pUDT; // Socket instance
+
+        CBucket* m_pNext; // next bucket
+    } * *m_pBucket;       // list of buckets (the hash table)
+
+    int m_iHashSize; // size of hash table
+
+private:
+    CHash(const CHash&);
+    CHash& operator=(const CHash&);
 };
 
 /// @brief A queue of sockets pending for connection.
@@ -336,8 +337,7 @@ public:
     /// @param u pointer to a corresponding CUDT instance.
     /// @param addr remote address to connect to.
     /// @param ttl timepoint for connection attempt to expire.
-    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr,
-                const srt::sync::steady_clock::time_point &ttl);
+    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const srt::sync::steady_clock::time_point& ttl);
 
     /// @brief Remove a socket from the connection pending list.
     /// @param id socket ID.
@@ -354,262 +354,263 @@ public:
     /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket& pktIn);
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
 
 private:
     struct LinkStatusInfo
     {
-        CUDT* u;
-        SRTSOCKET id;
-        int errorcode;
+        CUDT*        u;
+        SRTSOCKET    id;
+        int          errorcode;
         sockaddr_any peeraddr;
-        int token;
+        int          token;
 
         struct HasID
         {
             SRTSOCKET id;
-            HasID(SRTSOCKET p) : id(p) {}
-            bool operator()(const LinkStatusInfo& i)
+            HasID(SRTSOCKET p)
+                : id(p)
             {
-                return i.id == id;
             }
+            bool operator()(const LinkStatusInfo& i) { return i.id == id; }
         };
     };
 
     /// @brief Qualify pending connections:
     /// - Sockets with expired TTL go to the 'to_remove' list and removed from the queue straight away.
     /// - If HS request is to be resent (resend 250 ms if no response from the peer) go to the 'to_process' list.
-    /// 
+    ///
     /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param iDstSockID destination socket ID of the received packet.
     /// @param[in,out] toRemove stores sockets with expired TTL.
     /// @param[in,out] toProcess stores sockets which should repeat (resend) HS connection request.
-    bool qualifyToHandle(EReadStatus rst, EConnectStatus cst, int iDstSockID,
-        std::vector<LinkStatusInfo>& toRemove, std::vector<LinkStatusInfo>& toProcess);
+    bool qualifyToHandle(EReadStatus                  rst,
+                         EConnectStatus               cst,
+                         int                          iDstSockID,
+                         std::vector<LinkStatusInfo>& toRemove,
+                         std::vector<LinkStatusInfo>& toProcess);
 
 private:
-   struct CRL
-   {
-      SRTSOCKET m_iID;        // SRT socket ID (self)
-      CUDT* m_pUDT;           // CUDT instance
-      sockaddr_any m_PeerAddr;// SRT sonnection peer address
-      srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
-   };
-   std::list<CRL> m_lRendezvousID;    // The sockets currently in rendezvous mode
+    struct CRL
+    {
+        SRTSOCKET                           m_iID;      // SRT socket ID (self)
+        CUDT*                               m_pUDT;     // CUDT instance
+        sockaddr_any                        m_PeerAddr; // SRT sonnection peer address
+        srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
+    };
+    std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
 
-   mutable srt::sync::Mutex m_RIDListLock;
+    mutable sync::Mutex m_RIDListLock;
 };
 
 class CSndQueue
 {
-friend class CUDT;
-friend class CUDTUnited;
+    friend class CUDT;
+    friend class CUDTUnited;
 
 public:
-   CSndQueue();
-   ~CSndQueue();
+    CSndQueue();
+    ~CSndQueue();
 
 public:
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working for. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
 
-   // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working for. Required to find
-   // some way to do this, possibly by having a "reverse pointer".
-   // Currently just "unimplemented".
-   std::string CONID() const { return ""; }
+    /// Initialize the sending queue.
+    /// @param [in] c UDP channel to be associated to the queue
+    /// @param [in] t Timer
 
-      /// Initialize the sending queue.
-      /// @param [in] c UDP channel to be associated to the queue
-      /// @param [in] t Timer
+    void init(CChannel* c, srt::sync::CTimer* t);
 
-   void init(CChannel* c, srt::sync::CTimer* t);
+    /// Send out a packet to a given address.
+    /// @param [in] addr destination address
+    /// @param [in] packet packet to be sent out
+    /// @return Size of data sent out.
 
-      /// Send out a packet to a given address.
-      /// @param [in] addr destination address
-      /// @param [in] packet packet to be sent out
-      /// @return Size of data sent out.
+    int sendto(const sockaddr_any& addr, CPacket& packet);
 
-   int sendto(const sockaddr_any& addr, CPacket& packet);
+    /// Get the IP TTL.
+    /// @param [in] ttl IP Time To Live.
+    /// @return TTL.
 
-      /// Get the IP TTL.
-      /// @param [in] ttl IP Time To Live.
-      /// @return TTL.
+    int getIpTTL() const;
 
-   int getIpTTL() const;
+    /// Get the IP Type of Service.
+    /// @return ToS.
 
-      /// Get the IP Type of Service.
-      /// @return ToS.
-
-   int getIpToS() const;
+    int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-   bool getBind(char* dst, size_t len) const;
+    bool getBind(char* dst, size_t len) const;
 #endif
 
-   int ioctlQuery(int type) const;
-   int sockoptQuery(int level, int type) const;
+    int ioctlQuery(int type) const;
+    int sockoptQuery(int level, int type) const;
 
-   void setClosing()
-   {
-       m_bClosing = true;
-   }
+    void setClosing() { m_bClosing = true; }
 
 private:
-   static void* worker(void* param);
-   srt::sync::CThread m_WorkerThread;
+    static void*       worker(void* param);
+    srt::sync::CThread m_WorkerThread;
 
 private:
-   CSndUList* m_pSndUList;              // List of UDT instances for data sending
-   CChannel* m_pChannel;                // The UDP channel for data sending
-   srt::sync::CTimer* m_pTimer;         // Timing facility
+    CSndUList*         m_pSndUList; // List of UDT instances for data sending
+    CChannel*          m_pChannel;  // The UDP channel for data sending
+    srt::sync::CTimer* m_pTimer;    // Timing facility
 
-   srt::sync::Mutex m_WindowLock;
-   srt::sync::Condition m_WindowCond;
+    srt::sync::Mutex     m_WindowLock;
+    srt::sync::Condition m_WindowCond;
 
-   volatile bool m_bClosing;            // closing the worker
+    srt::sync::atomic<bool> m_bClosing;            // closing the worker
 
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)//>>debug high freq worker
-   uint64_t m_ullDbgPeriod;
-   uint64_t m_ullDbgTime;
-   struct {
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
+    uint64_t m_ullDbgPeriod;
+    uint64_t m_ullDbgTime;
+    struct
+    {
         unsigned long lIteration;   //
-        unsigned long lSleepTo;     //SleepTo
-        unsigned long lNotReadyPop; //Continue
+        unsigned long lSleepTo;     // SleepTo
+        unsigned long lNotReadyPop; // Continue
         unsigned long lSendTo;
-        unsigned long lNotReadyTs;  
-        unsigned long lCondWait;    //block on m_WindowCond
-   } m_WorkerStats;
+        unsigned long lNotReadyTs;
+        unsigned long lCondWait; // block on m_WindowCond
+    } m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
 #if ENABLE_LOGGING
-   static int m_counter;
+    static int m_counter;
 #endif
 
 private:
-   CSndQueue(const CSndQueue&);
-   CSndQueue& operator=(const CSndQueue&);
+    CSndQueue(const CSndQueue&);
+    CSndQueue& operator=(const CSndQueue&);
 };
 
 class CRcvQueue
 {
-friend class CUDT;
-friend class CUDTUnited;
+    friend class CUDT;
+    friend class CUDTUnited;
 
 public:
-   CRcvQueue();
-   ~CRcvQueue();
+    CRcvQueue();
+    ~CRcvQueue();
 
 public:
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
 
-   // XXX There's currently no way to access the socket ID set for
-   // whatever the queue is currently working. Required to find
-   // some way to do this, possibly by having a "reverse pointer".
-   // Currently just "unimplemented".
-   std::string CONID() const { return ""; }
+    /// Initialize the receiving queue.
+    /// @param [in] size queue size
+    /// @param [in] mss maximum packet size
+    /// @param [in] version IP version
+    /// @param [in] hsize hash table size
+    /// @param [in] c UDP channel to be associated to the queue
+    /// @param [in] t timer
 
-      /// Initialize the receiving queue.
-      /// @param [in] size queue size
-      /// @param [in] mss maximum packet size
-      /// @param [in] version IP version
-      /// @param [in] hsize hash table size
-      /// @param [in] c UDP channel to be associated to the queue
-      /// @param [in] t timer
+    void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
 
-   void init(int size, size_t payload, int version, int hsize, CChannel* c, srt::sync::CTimer* t);
+    /// Read a packet for a specific UDT socket id.
+    /// @param [in] id Socket ID
+    /// @param [out] packet received packet
+    /// @return Data size of the packet
 
-      /// Read a packet for a specific UDT socket id.
-      /// @param [in] id Socket ID
-      /// @param [out] packet received packet
-      /// @return Data size of the packet
+    int recvfrom(int32_t id, CPacket& to_packet);
 
-   int recvfrom(int32_t id, CPacket& to_packet);
+    void stopWorker();
 
-   void stopWorker();
-
-   void setClosing()
-   {
-       m_bClosing = true;
-   }
+    void setClosing() { m_bClosing = true; }
 
 private:
-   static void* worker(void* param);
-   srt::sync::CThread m_WorkerThread;
-   // Subroutines of worker
-   EReadStatus worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
-   EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-   EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
-   EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
+    static void*  worker(void* param);
+    sync::CThread m_WorkerThread;
+    // Subroutines of worker
+    EReadStatus    worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
+    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
 
 private:
-   CUnitQueue m_UnitQueue;      // The received packet queue
-   CRcvUList* m_pRcvUList;      // List of UDT instances that will read packets from the queue
-   CHash* m_pHash;              // Hash table for UDT socket looking up
-   CChannel* m_pChannel;        // UDP channel for receving packets
-   srt::sync::CTimer* m_pTimer; // shared timer with the snd queue
+    CUnitQueue    m_UnitQueue; // The received packet queue
+    CRcvUList*    m_pRcvUList; // List of UDT instances that will read packets from the queue
+    CHash*        m_pHash;     // Hash table for UDT socket looking up
+    CChannel*     m_pChannel;  // UDP channel for receving packets
+    sync::CTimer* m_pTimer;    // shared timer with the snd queue
 
-   size_t m_szPayloadSize;      // packet payload size
+    size_t m_szPayloadSize; // packet payload size
 
-   volatile bool m_bClosing;    // closing the worker
+    srt::sync::atomic<bool> m_bClosing;            // closing the worker
 #if ENABLE_LOGGING
-   static int m_counter;
+    static int m_counter;
 #endif
 
 private:
-   int setListener(CUDT* u);
-   void removeListener(const CUDT* u);
+    int  setListener(CUDT* u);
+    void removeListener(const CUDT* u);
 
-   void registerConnector(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const srt::sync::steady_clock::time_point& ttl);
-   void removeConnector(const SRTSOCKET& id);
+    void registerConnector(const SRTSOCKET&                      id,
+                           CUDT*                                 u,
+                           const sockaddr_any&                   addr,
+                           const sync::steady_clock::time_point& ttl);
+    void removeConnector(const SRTSOCKET& id);
 
-   void setNewEntry(CUDT* u);
-   bool ifNewEntry();
-   CUDT* getNewEntry();
+    void  setNewEntry(CUDT* u);
+    bool  ifNewEntry();
+    CUDT* getNewEntry();
 
-   void storePkt(int32_t id, CPacket* pkt);
-
-private:
-   srt::sync::Mutex m_LSLock;
-   CUDT* m_pListener;                                   // pointer to the (unique, if any) listening UDT entity
-   CRendezvousQueue* m_pRendezvousQueue;                // The list of sockets in rendezvous mode
-
-   std::vector<CUDT*> m_vNewEntry;                      // newly added entries, to be inserted
-   srt::sync::Mutex m_IDLock;
-
-   std::map<int32_t, std::queue<CPacket*> > m_mBuffer;	// temporary buffer for rendezvous connection request
-   srt::sync::Mutex m_BufferLock;
-   srt::sync::Condition m_BufferCond;
+    void storePkt(int32_t id, CPacket* pkt);
 
 private:
-   CRcvQueue(const CRcvQueue&);
-   CRcvQueue& operator=(const CRcvQueue&);
+    sync::Mutex       m_LSLock;
+    CUDT*             m_pListener;        // pointer to the (unique, if any) listening UDT entity
+    CRendezvousQueue* m_pRendezvousQueue; // The list of sockets in rendezvous mode
+
+    std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
+    sync::Mutex        m_IDLock;
+
+    std::map<int32_t, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
+    sync::Mutex                              m_BufferLock;
+    sync::Condition                          m_BufferCond;
+
+private:
+    CRcvQueue(const CRcvQueue&);
+    CRcvQueue& operator=(const CRcvQueue&);
 };
 
 struct CMultiplexer
 {
-   CSndQueue* m_pSndQueue;  // The sending queue
-   CRcvQueue* m_pRcvQueue;  // The receiving queue
-   CChannel* m_pChannel;    // The UDP channel for sending and receiving
-   srt::sync::CTimer* m_pTimer;  // The timer
+    CSndQueue*    m_pSndQueue; // The sending queue
+    CRcvQueue*    m_pRcvQueue; // The receiving queue
+    CChannel*     m_pChannel;  // The UDP channel for sending and receiving
+    sync::CTimer* m_pTimer;    // The timer
 
-   int m_iPort;         // The UDP port number of this multiplexer
-   int m_iIPversion;    // Address family (AF_INET or AF_INET6)
-   int m_iRefCount;     // number of UDT instances that are associated with this multiplexer
+    int m_iPort;      // The UDP port number of this multiplexer
+    int m_iIPversion; // Address family (AF_INET or AF_INET6)
+    int m_iRefCount;  // number of UDT instances that are associated with this multiplexer
 
-   CSrtMuxerConfig m_mcfg;
+    CSrtMuxerConfig m_mcfg;
 
-   int m_iID;           // multiplexer ID
+    int m_iID; // multiplexer ID
 
-   // Constructor should reset all pointers to NULL
-   // to prevent dangling pointer when checking for memory alloc fails
-   CMultiplexer()
-       : m_pSndQueue(NULL)
-       , m_pRcvQueue(NULL)
-       , m_pChannel(NULL)
-       , m_pTimer(NULL)
+    // Constructor should reset all pointers to NULL
+    // to prevent dangling pointer when checking for memory alloc fails
+    CMultiplexer()
+        : m_pSndQueue(NULL)
+        , m_pRcvQueue(NULL)
+        , m_pChannel(NULL)
+        , m_pTimer(NULL)
     {
     }
 
-   void destroy();
+    void destroy();
 };
+
+} // namespace srt
 
 #endif

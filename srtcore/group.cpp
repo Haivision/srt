@@ -13,6 +13,8 @@ using namespace srt_logging;
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
 
+namespace srt {
+
 int32_t CUDTGroup::s_tokenGen = 0;
 
 // [[using locked(this->m_GroupLock)]];
@@ -2134,6 +2136,12 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
         m_bNewRcvReady = true;
         m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
     }
+}
+
+int32_t CUDTGroup::getRcvBaseSeqNo()
+{
+    ScopedLock lg(m_GroupLock);
+    return m_RcvBaseSeqNo;
 }
 
 void CUDTGroup::updateWriteState()
@@ -4613,3 +4621,5 @@ void CUDTGroup::debugGroup()
     }
 }
 #endif
+
+} // namespace srt

@@ -2903,7 +2903,7 @@ public:
         struct timeval tv;
         tv.tv_sec = 1;
         tv.tv_usec = 0;
-        if (::setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+        if (::setsockopt(m_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &tv, sizeof(tv)) < 0)
             Error(SysError(), "Setting timeout for UDP");
     }
 

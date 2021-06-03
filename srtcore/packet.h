@@ -214,9 +214,9 @@ inline EncryptionKeySpec GetEncryptionKeySpec(int32_t msgno)
 
 const int32_t PUMASK_SEQNO_PROBE = 0xF;
 
-std::string PacketMessageFlagStr(uint32_t msgno_field);
 
-class CChannel;
+namespace srt {
+std::string PacketMessageFlagStr(uint32_t msgno_field);
 
 class CPacket
 {
@@ -284,7 +284,7 @@ public:
 
    void setControl(UDTMessageType type)
    {
-       m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type);
+       m_nHeader[srt::SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type);
    }
 
       /// Read the extended packet type.
@@ -429,5 +429,7 @@ public:
    std::string Info() { return std::string(); }
 #endif
 };
+
+} // namespace srt
 
 #endif

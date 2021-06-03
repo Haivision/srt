@@ -34,6 +34,7 @@
 #include "logging.h"
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
@@ -59,7 +60,7 @@ void SrtCongestion::Check()
 class LiveCC: public SrtCongestionControlBase
 {
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    size_t   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
 
     // NAKREPORT stuff.
@@ -166,7 +167,7 @@ private:
     void updatePktSndPeriod()
     {
         // packet = payload + header
-        const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
+        const double pktsize = (double) m_zSndAvgPayloadSize.load() + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
                 << " by avg pktsize=" << m_zSndAvgPayloadSize
@@ -525,11 +526,9 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization
-            srand(m_iLastDecSeq);
-            m_iDecRandom = (int)ceil(m_iAvgNAKNum * (double(rand()) / RAND_MAX));
-            if (m_iDecRandom < 1)
-                m_iDecRandom = 1;
+            // remove global synchronization using randomization.
+            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq
                 << ", seqdiff=" << CSeqNo::seqoff(m_iLastDecSeq, lossbegin)

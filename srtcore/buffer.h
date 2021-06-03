@@ -145,7 +145,7 @@ public:
     /// @param [out] origintime origin time stamp of the message
     /// @param [in] kflags Odd|Even crypto key flag
     /// @return Actual length of data read.
-    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs);
+    int readData(srt::CPacket& w_packet, time_point& w_origintime, int kflgs);
 
     /// Find data position to pack a DATA packet for a retransmission.
     /// @param [out] data the pointer to the data position.
@@ -153,8 +153,8 @@ public:
     /// @param [out] msgno message number of the packet.
     /// @param [out] origintime origin time stamp of the message
     /// @param [out] msglen length of the message
-    /// @return Actual length of data read.
-    int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
+    /// @return Actual length of data read (return 0 if offset too large, -1 if TTL exceeded).
+    int readData(const int offset, srt::CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -288,7 +288,7 @@ public:
     /// Construct the buffer.
     /// @param [in] queue  CUnitQueue that actually holds the units (packets)
     /// @param [in] bufsize_pkts in units (packets)
-    CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = DEFAULT_SIZE);
+    CRcvBuffer(srt::CUnitQueue* queue, int bufsize_pkts = DEFAULT_SIZE);
     ~CRcvBuffer();
 
 public:
@@ -296,7 +296,7 @@ public:
     /// @param [in] unit pointer to a data unit containing new packet
     /// @param [in] offset offset from last ACK point.
     /// @return 0 is success, -1 if data is repeated.
-    int addData(CUnit* unit, int offset);
+    int addData(srt::CUnit* unit, int offset);
 
     /// Read data into a user buffer.
     /// @param [in] data pointer to user buffer.
@@ -402,7 +402,7 @@ public:
 
     bool     isRcvDataReady();
     bool     isRcvDataAvailable() { return m_iLastAckPos != m_iStartPos; }
-    CPacket* getRcvReadyPacket(int32_t seqdistance);
+    srt::CPacket* getRcvReadyPacket(int32_t seqdistance);
 
     /// Set TimeStamp-Based Packet Delivery Rx Mode
     /// @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -430,11 +430,17 @@ public:
     /// @param [out] w_passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
     /// @param [out] w_skipseqno SRT_SEQNO_NONE or seq number of 1st unacknowledged pkt ready to play preceeded by
     /// missing packets.
+    /// @param base_seq          SRT_SEQNO_NONE or desired, ignore seq smaller than base if exist packet ready-to-play
+    /// and larger than base
     /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
     /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
     ///                   IF skipseqno != SRT_SEQNO_NONE, packet ready to play preceeded by missing packets.;
     ///                   IF skipseqno == SRT_SEQNO_NONE, no missing packet but 1st not ready to play.
-    bool getRcvFirstMsg(time_point& w_tsbpdtime, bool& w_passack, int32_t& w_skipseqno, int32_t& w_curpktseq);
+    bool getRcvFirstMsg(time_point& w_tsbpdtime,
+                        bool&       w_passack,
+                        int32_t&    w_skipseqno,
+                        int32_t&    w_curpktseq,
+                        int32_t     base_seq = SRT_SEQNO_NONE);
 
     /// Update the ACK point of the buffer.
     /// @param [in] len size of data to be skip & acknowledged.
@@ -462,7 +468,7 @@ private:
     /// data.
     size_t freeUnitAt(size_t p)
     {
-        CUnit* u       = m_pUnit[p];
+        srt::CUnit* u  = m_pUnit[p];
         m_pUnit[p]     = NULL;
         size_t rmbytes = u->m_Packet.getLength();
         m_pUnitQueue->makeUnitFree(u);
@@ -473,9 +479,10 @@ private:
     /// Parameters (of the 1st packet queue, ready to play or not):
     /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
     /// none
+    /// @param base_seq        SRT_SEQNO_NONE or desired, ignore seq smaller than base
     /// @retval true 1st packet ready to play without discontinuity (no hole)
     /// @retval false tsbpdtime = 0: no packet ready to play
-    bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
+    bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto, int base_seq = SRT_SEQNO_NONE);
 
 public:
     /// @brief Get clock drift in microseconds.
@@ -528,9 +535,9 @@ private:
     }
 
 private:
-    CUnit**     m_pUnit;      // Array of pointed units collected in the buffer
+    srt::CUnit** m_pUnit;      // Array of pointed units collected in the buffer
     const int   m_iSize;      // Size of the internal array of CUnit* items
-    CUnitQueue* m_pUnitQueue; // the shared unit queue
+    srt::CUnitQueue* m_pUnitQueue; // the shared unit queue
 
     int m_iStartPos;   // HEAD: first packet available for reading
     int m_iLastAckPos; // the last ACKed position (exclusive), follows the last readable

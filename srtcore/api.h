@@ -72,6 +72,8 @@ modified by
 // Please refer to structure and locking information provided in the
 // docs/dev/low-level-info.md document.
 
+namespace srt {
+
 class CUDT;
 
 class CUDTSocket
@@ -100,14 +102,14 @@ public:
 
    void construct();
 
-   SRT_SOCKSTATUS m_Status;                  //< current socket state
+   srt::sync::atomic<SRT_SOCKSTATUS> m_Status;                  //< current socket state
 
    /// Time when the socket is closed.
    /// When the socket is closed, it is not removed immediately from the list
    /// of sockets in order to prevent other methods from accessing invalid address.
    /// A timer is started and the socket will be removed after approximately
    /// 1 second (see CUDTUnited::checkBrokenSockets()).
-   srt::sync::steady_clock::time_point m_tsClosureTimeStamp;
+   sync::steady_clock::time_point m_tsClosureTimeStamp;
 
    sockaddr_any m_SelfAddr;                  //< local address of the socket
    sockaddr_any m_PeerAddr;                  //< peer address of the socket
@@ -117,7 +119,7 @@ public:
 
    SRTSOCKET m_PeerID;                       //< peer socket ID
 #if ENABLE_EXPERIMENTAL_BONDING
-   srt::groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+   groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
    CUDTGroup* m_GroupOf;                       //< Group this socket is a member of, or NULL if it isn't
 #endif
 
@@ -125,10 +127,10 @@ public:
 
    CUDT* m_pUDT;                             //< pointer to the UDT entity
 
-   std::set<SRTSOCKET> m_QueuedSockets;    //< set of connections waiting for accept()
+   std::set<SRTSOCKET> m_QueuedSockets;      //< set of connections waiting for accept()
 
-   srt::sync::Condition m_AcceptCond;        //< used to block "accept" call
-   srt::sync::Mutex m_AcceptLock;            //< mutex associated to m_AcceptCond
+   sync::Condition m_AcceptCond;             //< used to block "accept" call
+   sync::Mutex m_AcceptLock;                 //< mutex associated to m_AcceptCond
 
    unsigned int m_uiBackLog;                 //< maximum number of connections in queue
 
@@ -143,9 +145,9 @@ public:
    // When deleting, you simply "unsubscribe" yourself from the multiplexer, which
    // will unref it and remove the list element by the iterator kept by the
    // socket.
-   int m_iMuxID;                             //< multiplexer ID
+   int m_iMuxID;                        //< multiplexer ID
 
-   srt::sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
+   sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
 
    CUDT& core() { return *m_pUDT; }
 
@@ -346,12 +348,12 @@ private:
    groups_t m_Groups;
 #endif
 
-   srt::sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
+   sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
-   srt::sync::Mutex m_IDLock;                        // used to synchronize ID generation
+   sync::Mutex m_IDLock;                        // used to synchronize ID generation
 
-   SRTSOCKET m_SocketIDGenerator;                    // seed to generate a new unique socket ID
-   SRTSOCKET m_SocketIDGenerator_init;               // Keeps track of the very first one
+   SRTSOCKET m_SocketIDGenerator;               // seed to generate a new unique socket ID
+   SRTSOCKET m_SocketIDGenerator_init;          // Keeps track of the very first one
 
    std::map<int64_t, std::set<SRTSOCKET> > m_PeerRec;// record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
@@ -394,7 +396,7 @@ private:
                // We have a guarantee that if `group` was set
                // as non-NULL here, it is also acquired and will not
                // be deleted until this busy flag is set back to false.
-               srt::sync::ScopedLock cgroup (*group->exp_groupLock());
+               sync::ScopedLock cgroup (*group->exp_groupLock());
                group->apiRelease();
                // Only now that the group lock is lifted, can the
                // group be now deleted and this pointer potentially dangling
@@ -406,23 +408,28 @@ private:
    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
    bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
+   // Utility functions for updateMux
+   void configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
+   uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
+   bool channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s);
+
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
-   srt::sync::Mutex            m_MultiplexerLock;
+   sync::Mutex            m_MultiplexerLock;
 
 private:
    CCache<CInfoBlock>* m_pCache;			// UDT network information cache
 
 private:
-   volatile bool m_bClosing;
-   srt::sync::Mutex m_GCStopLock;
-   srt::sync::Condition m_GCStopCond;
+   srt::sync::atomic<bool> m_bClosing;
+   sync::Mutex m_GCStopLock;
+   sync::Condition m_GCStopCond;
 
-   srt::sync::Mutex m_InitLock;
+   sync::Mutex m_InitLock;
    int m_iInstanceCount;				// number of startup() called by application
    bool m_bGCStatus;					// if the GC thread is working (true)
 
-   srt::sync::CThread m_GCThread;
+   sync::CThread m_GCThread;
    static void* garbageCollect(void*);
 
    sockets_t m_ClosedSockets;   // temporarily store closed sockets
@@ -439,5 +446,7 @@ private:
    CUDTUnited(const CUDTUnited&);
    CUDTUnited& operator=(const CUDTUnited&);
 };
+
+} // namespace srt
 
 #endif
