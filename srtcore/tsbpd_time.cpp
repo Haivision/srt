@@ -22,7 +22,7 @@ namespace srt
 #if SRT_DEBUG_TRACE_DRIFT
 class drift_logger
 {
-    using steady_clock = srt::sync::steady_clock;
+    typedef srt::sync::steady_clock steady_clock;
 
 public:
     drift_logger() {}
@@ -33,12 +33,12 @@ public:
         m_fout.close();
     }
 
-    void trace(unsigned                                     ackack_timestamp,
-               int                                          rtt_us,
-               int64_t                                      drift_sample,
-               int64_t                                      drift,
-               int64_t                                      overdrift,
-               const std::chrono::steady_clock::time_point& tsbpd_base)
+    void trace(unsigned                                   ackack_timestamp,
+               int                                        rtt_us,
+               int64_t                                    drift_sample,
+               int64_t                                    drift,
+               int64_t                                    overdrift,
+               const srt::sync::steady_clock::time_point& tsbpd_base)
     {
         using namespace srt::sync;
         ScopedLock lck(m_mtx);
