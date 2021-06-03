@@ -346,6 +346,12 @@ std::string DisplayEpollWatch();
 
        return SRT_INVALID_SOCK;
    }
+
+   // For debug purposes only
+   size_t numberWatch()
+   {
+       return m_USockWatchState.size();
+   }
 };
 
 namespace srt

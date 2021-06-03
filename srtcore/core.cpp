@@ -1398,6 +1398,8 @@ size_t srt::CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, siz
 // PREREQUISITE:
 // pkt must be set the buffer and configured for UMSG_HANDSHAKE.
 // Note that this function replaces also serialization for the HSv4.
+
+// [[using maybe_locked(m_ConnectionLock)]]
 bool srt::CUDT::createSrtHandshake(
         int             srths_cmd,
         int             srtkm_cmd,
@@ -1700,7 +1702,7 @@ bool srt::CUDT::createSrtHandshake(
     // need to be changed for some other types.
     if (have_group)
     {
-        // NOTE: See information about mutex ordering in api.h
+        // NOTE: See information about mutex ordering in docs/LowLevelInfo.md
         ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
         if (!m_parent->m_GroupOf)
         {
@@ -3975,6 +3977,7 @@ EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatas
     return CONN_ACCEPT;
 }
 
+// [[using maybe_locked(m_ConnectionLock)]]
 EConnectStatus srt::CUDT::processRendezvous(
     const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
@@ -8488,6 +8491,8 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
     HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
 
+        // XXX SHOULD LOCK m_ConnectionLock ???
+
     if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
         || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
     {
@@ -10639,6 +10644,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
             if (conn != CONN_ACCEPT)
                 return conn;
+
+            // XXX Requires lock on m_ConnectionLock,
+            // however the lock on m_LSLock is later, so probably this one
+            // requires unlocking. Unlocking it risks socket removal in the meantime,
+            // this must be then done carefully.
 
             packet.setLength(m_iMaxSRTPayloadSize);
             if (!acpu->createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
