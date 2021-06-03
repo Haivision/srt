@@ -1169,10 +1169,11 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
      * No acked packets ready but caller want to know next packet to wait for
      * Check the not yet acked packets that may be stuck by missing packet(s).
      */
-    bool                     haslost   = false;
-    steady_clock::time_point tsbpdtime = steady_clock::time_point();
-    w_tsbpdtime                        = steady_clock::time_point();
-    w_passack                          = true;
+    bool                     haslost        = false;
+    int                      last_ready_pos = -1;
+    steady_clock::time_point tsbpdtime      = steady_clock::time_point();
+    w_tsbpdtime                             = steady_clock::time_point();
+    w_passack                               = true;
 
     // XXX SUSPECTED ISSUE with this algorithm:
     // The above call to getRcvReadyMsg() should report as to whether:
@@ -1215,11 +1216,20 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
         else
         {
             tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+            /* Packet ready to play */
             if (tsbpdtime <= steady_clock::now())
             {
-                /* Packet ready to play */
-                w_tsbpdtime = tsbpdtime;
-                w_curpktseq = m_pUnit[i]->m_Packet.m_iSeqNo;
+                // If the last ready-to-play packet exists, free it.
+                if (!is_zero(w_tsbpdtime)) {
+                    HLOGC(brlog.Debug,
+                          log << "getRcvFirstMsg: found next ready packet, free last %"
+                              << w_curpktseq << " POS=" << last_ready_pos);
+                    SRT_ASSERT(w_curpktseq != SRT_SEQNO_NONE);
+                    freeUnitAt(last_ready_pos);
+                }
+                w_tsbpdtime    = tsbpdtime;
+                w_curpktseq    = m_pUnit[i]->m_Packet.m_iSeqNo;
+                last_ready_pos = i;
                 if (haslost)
                     w_skipseqno = w_curpktseq;
 
