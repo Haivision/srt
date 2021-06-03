@@ -2641,13 +2641,17 @@ void srt::CUDTUnited::checkBrokenSockets()
             // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
             // this function is called (isRcvDataReady also checks if the
             // available data is "ready to play").
-            && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable()
-            && (s->m_pUDT->m_iBrokenCounter -- > 0))
+            && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable())
          {
-            // HLOGF(smlog.Debug, "STILL KEEPING socket (still have data):
-            // %d\n", i->first);
-            // if there is still data in the receiver buffer, wait longer
-            continue;
+             const int bc = s->m_pUDT->m_iBrokenCounter.load();
+             if (bc > 0)
+             {
+                 // HLOGF(smlog.Debug, "STILL KEEPING socket (still have data):
+                 // %d\n", i->first);
+                 // if there is still data in the receiver buffer, wait longer
+                 s->m_pUDT->m_iBrokenCounter.store(bc - 1);
+                 continue;
+             }
          }
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -2702,15 +2706,17 @@ void srt::CUDTUnited::checkBrokenSockets()
       // RcvUList
       const steady_clock::time_point now = steady_clock::now();
       const steady_clock::duration closed_ago = now - j->second->m_tsClosureTimeStamp;
-      if ((closed_ago > seconds_from(1))
-         && ((!j->second->m_pUDT->m_pRNode)
-            || !j->second->m_pUDT->m_pRNode->m_bOnList))
+      if (closed_ago > seconds_from(1))
       {
-         HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
-                 << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
+          CRNode* rnode = j->second->m_pUDT->m_pRNode;
+          if (!rnode || !rnode->m_bOnList)
+          {
+              HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                      << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
-         // HLOGF(smlog.Debug, "will unref socket: %d\n", j->first);
-         tbr.push_back(j->first);
+              // HLOGF(smlog.Debug, "will unref socket: %d\n", j->first);
+              tbr.push_back(j->first);
+          }
       }
    }
 
@@ -2733,6 +2739,19 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
       return;
 
    CUDTSocket* const s = i->second;
+
+   // The socket may be in the trashcan now, but could
+   // still be under processing in the sender/receiver worker
+   // threads. If that's the case, SKIP IT THIS TIME. The
+   // socket will be checked next time the GC rollover starts.
+   CSNode* sn = s->m_pUDT->m_pSNode;
+   if (sn && sn->m_iHeapLoc != -1)
+       return;
+
+   CRNode* rn = s->m_pUDT->m_pRNode;
+   if (rn && rn->m_bOnList)
+       return;
+
 
 #if ENABLE_EXPERIMENTAL_BONDING
    if (s->m_GroupOf)
