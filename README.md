@@ -49,7 +49,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * CMake 2.8.12 or above (as build system).
 * OpenSSL 1.1 (to enable encryption, or build with `-DENABLE_ENCRYPTION=OFF`).
 * Multithreading is provided by either of the following:
-  * C++11: standard library (std);
+  * C++11: standard library (`std` by `-DENABLE_STDCXX_SYNC=ON` CMake option);
   * C++03: Pthreads (for POSIX systems it's built in, for Windows there is a ported library).
 * Tcl 8.5 (optional, used by `./configure` script or use CMake directly).
 
