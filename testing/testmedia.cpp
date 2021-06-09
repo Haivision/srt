@@ -20,6 +20,7 @@
 #include <map>
 #include <chrono>
 #include <thread>
+#include <atomic>
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
@@ -48,8 +49,8 @@ using srt_logging::SockStatusStr;
 using srt_logging::MemberStatusStr;
 #endif
 
-volatile bool transmit_throw_on_interrupt = false;
-volatile bool transmit_int_state = false;
+std::atomic<bool> transmit_throw_on_interrupt {false};
+std::atomic<bool> transmit_int_state {false};
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;

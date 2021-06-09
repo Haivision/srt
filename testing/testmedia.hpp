@@ -15,14 +15,16 @@
 #include <map>
 #include <stdexcept>
 #include <deque>
+#include <atomic>
 
+#include "apputil.hpp"
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
 #include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
-extern volatile bool transmit_int_state;
+extern std::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 

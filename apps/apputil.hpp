@@ -90,6 +90,21 @@ const int SysAGAIN = EAGAIN;
 sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
+template <class VarType, class ValType>
+struct OnReturnSetter
+{
+    VarType& var;
+    ValType value;
+
+    OnReturnSetter(VarType& target, ValType v): var(target), value(v) {}
+    ~OnReturnSetter() { var = value; }
+};
+
+template <class VarType, class ValType>
+OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
+{ return OnReturnSetter<VarType, ValType>(target, v); }
+
+// ---- OPTIONS MODULE
 
 inline bool CheckTrue(const std::vector<std::string>& in)
 {
