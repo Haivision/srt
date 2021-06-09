@@ -908,12 +908,114 @@ int CRcvBuffer::addData(CUnit* unit, int offset)
     }
     m_pUnit[pos] = unit;
     countBytes(1, (int)unit->m_Packet.getLength());
+#if ENABLE_EXPERIMENTAL_BONDING
+    if (!m_tsbpd.isEnabled())
+    {
+        const srt::CPacket& pkt    = unit->m_Packet;
+        int32_t             msg_no = pkt.getMsgSeq();
+        if (m_MsgNoToReceivedPktNum[msg_no] == 0)
+        {
+            HLOGC(qrlog.Debug, log << "addData: found new message #" << msg_no << " %" << pkt.getSeqNo());
+            m_MsgNoToFirstPktSeq[msg_no] = SRT_SEQNO_NONE;
+            m_MsgNoToLastPktSeq[msg_no]  = SRT_SEQNO_NONE;
+            m_MsgNoToTotalPktNum[msg_no] = 0;
+        }
+        ++m_MsgNoToReceivedPktNum[msg_no];
 
+        if (pkt.getMsgBoundary() & PB_FIRST)
+        {
+            HLOGC(qrlog.Debug, log << "addData: found first packet of message #" << msg_no << " %" << pkt.getSeqNo());
+            if (m_MsgNoToFirstPktSeq[msg_no] != SRT_SEQNO_NONE && m_MsgNoToFirstPktSeq[msg_no] != pkt.getSeqNo())
+            {
+                LOGC(qrlog.Error,
+                     log << "addData: found different PB_FIRST of message #" << msg_no
+                         << ": old=" << m_MsgNoToFirstPktSeq[msg_no] << " new=" << pkt.getSeqNo());
+            }
+            m_MsgNoToFirstPktSeq[msg_no] = pkt.getSeqNo();
+        }
+        if (pkt.getMsgBoundary() & PB_LAST)
+        {
+            HLOGC(qrlog.Debug, log << "addData: found last packet of message #" << msg_no << " %" << pkt.getSeqNo());
+            if (m_MsgNoToLastPktSeq[msg_no] != SRT_SEQNO_NONE && m_MsgNoToLastPktSeq[msg_no] != pkt.getSeqNo())
+            {
+                LOGC(qrlog.Error,
+                     log << "addData: found different PB_LAST of message #" << msg_no
+                         << ": old=" << m_MsgNoToLastPktSeq[msg_no] << " new=" << pkt.getSeqNo());
+            }
+            m_MsgNoToLastPktSeq[msg_no] = pkt.getSeqNo();
+        }
+        if (m_MsgNoToTotalPktNum[msg_no] <= 0 && m_MsgNoToFirstPktSeq[msg_no] != SRT_SEQNO_NONE &&
+            m_MsgNoToLastPktSeq[msg_no] != SRT_SEQNO_NONE)
+        {
+            m_MsgNoToTotalPktNum[msg_no] =
+                CSeqNo::seqoff(m_MsgNoToFirstPktSeq[msg_no], m_MsgNoToLastPktSeq[msg_no]) + 1;
+            HLOGC(qrlog.Debug,
+                  log << "addData: calculated total packet number of message #" << msg_no << ": "
+                      << m_MsgNoToTotalPktNum[msg_no]);
+            if (m_MsgNoToTotalPktNum[msg_no] <= 0)
+            {
+                LOGC(qrlog.Error,
+                     log << "addData: calculated total packet number of message #" << msg_no << ": "
+                         << m_MsgNoToTotalPktNum[msg_no] << " <= 0");
+            }
+        }
+        if (m_MsgNoToTotalPktNum[msg_no] > 0 && m_MsgNoToReceivedPktNum[msg_no] >= m_MsgNoToTotalPktNum[msg_no])
+        {
+            HLOGC(qrlog.Debug, log << "addData: message #" << msg_no << " is ready");
+            if (m_MsgNoToReceivedPktNum[msg_no] > m_MsgNoToTotalPktNum[msg_no])
+            {
+                LOGC(qrlog.Error,
+                     log << "addData: message #" << msg_no << " got too many packets: "
+                         << m_MsgNoToReceivedPktNum[msg_no] << " > " << m_MsgNoToTotalPktNum[msg_no]);
+            }
+            if (CSeqNo::seqcmp(msg_no, m_iLargestReadyMsgNo) > 0)
+            {
+                HLOGC(qrlog.Debug, log << "addData: updated m_iLargestReadyMsgNo to " << msg_no);
+                m_iLargestReadyMsgNo = msg_no;
+            }
+        }
+    }
+#endif
     m_pUnitQueue->makeUnitGood(unit);
 
     HLOGC(qrlog.Debug,
           log << "addData: unit %" << unit->m_Packet.m_iSeqNo << " accepted, off=" << offset << " POS=" << pos);
     return 0;
+}
+
+size_t CRcvBuffer::freeUnitAt(size_t p)
+{
+    srt::CUnit* u = m_pUnit[p];
+    m_pUnit[p]    = NULL;
+#if ENABLE_EXPERIMENTAL_BONDING
+    if (!m_tsbpd.isEnabled())
+    {
+        int32_t msg_no = u->m_Packet.getMsgSeq();
+        --m_MsgNoToReceivedPktNum[msg_no];
+        if (m_MsgNoToReceivedPktNum[msg_no] <= 0)
+        {
+            HLOGC(qrlog.Debug, log << "freeUnitAt: clear message #" << msg_no);
+            if (m_MsgNoToReceivedPktNum[msg_no] < 0)
+            {
+                LOGC(qrlog.Error,
+                     log << "freeUnitAt: message #" << msg_no
+                         << " was freed too many times: " << m_MsgNoToReceivedPktNum[msg_no]);
+            }
+            m_MsgNoToFirstPktSeq.erase(msg_no);
+            m_MsgNoToLastPktSeq.erase(msg_no);
+            m_MsgNoToTotalPktNum.erase(msg_no);
+            m_MsgNoToReceivedPktNum.erase(msg_no);
+        }
+    }
+#endif
+    size_t rmbytes = u->m_Packet.getLength();
+    m_pUnitQueue->makeUnitFree(u);
+    return rmbytes;
+}
+
+int32_t CRcvBuffer::getReadyMsgInMessageMode()
+{
+    return m_iLargestReadyMsgNo;
 }
 
 int CRcvBuffer::readBuffer(char* data, int len)
@@ -1915,6 +2017,7 @@ int CRcvBuffer::readMsg(char* data, int len, SRT_MSGCTRL& w_msgctl, int upto)
     // the API caller.
     w_msgctl.pktseq = pkt1.getSeqNo();
     w_msgctl.msgno  = pkt1.getMsgSeq();
+    w_msgctl.inorder = pkt1.getMsgOrderFlag();
 
     return extractData((data), len, p, q, passack);
 }

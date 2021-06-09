@@ -3259,7 +3259,7 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     start_time = m_stats.tsStartTime;
     peer_start_time = m_tsRcvPeerStartTime;
 
-    if (!gp->applyGroupTime((start_time), (peer_start_time)))
+    if (!gp->applyGroupTime((start_time), (peer_start_time), m_bTsbPd))
     {
         HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
                 << " DERIVED: ST="
@@ -7794,15 +7794,26 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #if ENABLE_EXPERIMENTAL_BONDING
             if (m_parent->m_GroupOf)
             {
+                // int32_t rcv_base_seq = SRT_SEQNO_NONE;
+                // {
+                //     ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+                //     if (m_parent->m_GroupOf) {
+                //         rcv_base_seq = m_parent->m_GroupOf->getRcvBaseSeqNo();
+                //     }
+                // }
+                int32_t ready_msg_no = SRT_MSGNO_NONE;
+                {
+                    ScopedLock glock (m_RcvBufferLock);
+                    ready_msg_no = m_pRcvBuffer->getReadyMsgInMessageMode();
+                }
                 // See above explanation for double-checking
                 ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-
                 if (m_parent->m_GroupOf)
                 {
                     // The current "APP reader" needs to simply decide as to whether
                     // the next CUDTGroup::recv() call should return with no blocking or not.
                     // When the group is read-ready, it should update its pollers as it sees fit.
-                    m_parent->m_GroupOf->updateReadState(m_SocketID, first_seq);
+                    m_parent->m_GroupOf->updateReadState(m_SocketID, ready_msg_no);
                 }
             }
 #endif

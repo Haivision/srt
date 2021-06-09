@@ -466,14 +466,7 @@ private:
     /// This gives up unit at index p. The unit is given back to the
     /// free unit storage for further assignment for the new incoming
     /// data.
-    size_t freeUnitAt(size_t p)
-    {
-        srt::CUnit* u  = m_pUnit[p];
-        m_pUnit[p]     = NULL;
-        size_t rmbytes = u->m_Packet.getLength();
-        m_pUnitQueue->makeUnitFree(u);
-        return rmbytes;
-    }
+    size_t freeUnitAt(size_t p);
 
     /// Adjust receive queue to 1st ready to play message (tsbpdtime < now).
     /// Parameters (of the 1st packet queue, ready to play or not):
@@ -483,6 +476,9 @@ private:
     /// @retval true 1st packet ready to play without discontinuity (no hole)
     /// @retval false tsbpdtime = 0: no packet ready to play
     bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto, int base_seq = SRT_SEQNO_NONE);
+
+public:
+    int32_t getReadyMsgInMessageMode();
 
 public:
     /// @brief Get clock drift in microseconds.
@@ -559,6 +555,14 @@ private:
     srt::CTsbpdTime  m_tsbpd;
 
     AvgBufSize       m_mavg;
+
+#if ENABLE_EXPERIMENTAL_BONDING
+    std::map<int32_t, int32_t>  m_MsgNoToFirstPktSeq;
+    std::map<int32_t, int32_t>  m_MsgNoToLastPktSeq;
+    std::map<int32_t, uint32_t> m_MsgNoToTotalPktNum;
+    std::map<int32_t, uint32_t> m_MsgNoToReceivedPktNum;
+    int32_t                     m_iLargestReadyMsgNo = SRT_SEQNO_NONE;
+#endif
 
 private:
     CRcvBuffer();

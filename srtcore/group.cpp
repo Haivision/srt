@@ -2032,6 +2032,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This can only happen when 0 is passed as timeout and none is ready.
         // And 0 is passed only in non-blocking mode. So this is none ready in
         // non-blocking mode.
+        m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
         throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
     }
 
@@ -2205,7 +2206,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                           << ": " << BufferStamp(&pos->packet[0], pos->packet.size()));
                 memcpy(buf, &pos->packet[0], pos->packet.size());
                 fillGroupData((w_mc), pos->mctrl);
-                m_RcvBaseSeqNo = pos->mctrl.pktseq;
+                m_RcvBaseSeqNo = recv_GetNo(pos->mctrl);
                 len = pos->packet.size();
                 pos->packet.clear();
 
@@ -2333,12 +2334,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             }
             else
             {
-                // The position is not known, so get the position on which
-                // the socket is currently standing.
-                pair<pit_t, bool> ee = m_Positions.insert(make_pair(id, ReadPos(ps->core().m_iRcvLastSkipAck)));
+                pair<pit_t, bool> ee = m_Positions.insert(make_pair(id, ReadPos()));
                 p                    = &(ee.first->second);
                 HLOGC(grlog.Debug,
-                      log << "group/recv: EPOLL: @" << id << " %" << p->mctrl.pktseq << " NEW SOCKET INSERTED");
+                      log << "group/recv: EPOLL: @" << id << " NEW SOCKET INSERTED");
             }
 
             // Read from this socket stubbornly, until:
@@ -2354,18 +2353,21 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // by "more correct data" if found more appropriate later. But we have to
                 // copy these data anyway anywhere, even if they need to fall on the floor later.
                 int stat;
-                char extrabuf[SRT_LIVE_MAX_PLSIZE];
+                thread_local std::vector<char> extrabuf;
+                extrabuf.reserve(SRT_LIVE_MAX_PLSIZE);
+                if (!m_bTsbPd)
+                    extrabuf.reserve(len);
                 char* msgbuf = NULL;
                 if (output_size)
                 {
                     // We already have the target data in `buf`. Now reading extra data potentially redundant (to be ignored)
                     // or AHEAD (to be buffered internally by the group)
-                    msgbuf = extrabuf;
-                    stat = ps->core().receiveMessage((extrabuf), SRT_LIVE_MAX_PLSIZE, (mctrl), CUDTUnited::ERH_RETURN);
+                    msgbuf = extrabuf.data();
+                    stat = ps->core().receiveMessage((msgbuf), extrabuf.capacity(), (mctrl), CUDTUnited::ERH_RETURN);
                     HLOGC(grlog.Debug,
                           log << "group/recv: @" << id << " EXTRACTED EXTRA data with %" << mctrl.pktseq
-                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(extrabuf, stat))
-                              << (CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo) > 1 ? " - TO STORE" : " - TO IGNORE"));
+                              << " #" << mctrl.msgno << ": " << (stat <= 0 ? "(NOTHING)" : BufferStamp(msgbuf, stat))
+                              << (CSeqNo::seqcmp(recv_GetNo(mctrl), m_RcvBaseSeqNo) > 1 ? " - TO STORE" : " - TO IGNORE"));
                 }
                 else
                 {
@@ -2405,14 +2407,14 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // embrace everything below.
 
                 // We need to first qualify the sequence, just for a case
-                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && abs(m_RcvBaseSeqNo - recv_GetNo(mctrl)) > CSeqNo::m_iSeqNoTH)
                 {
                     // This error should be returned if the link turns out
                     // to be the only one, or set to the group data.
                     // err = SRT_ESECFAIL;
                     LOGC(grlog.Error,
                          log << "group/recv: @" << id << ": SEQUENCE DISCREPANCY: base=%" << m_RcvBaseSeqNo
-                             << " vs pkt=%" << mctrl.pktseq << ", setting ESECFAIL");
+                             << " vs pkt=%" << recv_GetNo(mctrl) << ", setting ESECFAIL");
                     broken.insert(ps);
                     break;
                 }
@@ -2422,11 +2424,12 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // this is only required when the sequence is ahead; for that
                 // it will be fixed later.
                 p->mctrl.pktseq = mctrl.pktseq;
+                p->mctrl.msgno = mctrl.msgno;
 
                 if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
                 {
                     // Now we can safely check it.
-                    const int seqdiff = CSeqNo::seqcmp(mctrl.pktseq, m_RcvBaseSeqNo);
+                    const int seqdiff = CSeqNo::seqcmp(recv_GetNo(mctrl), m_RcvBaseSeqNo);
 
                     if (seqdiff <= 0)
                     {
@@ -2474,7 +2477,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 updateAvgPayloadSize(output_size);
 
                 // Record, but do not update yet, until all sockets are handled.
-                next_seq = mctrl.pktseq;
+                next_seq = recv_GetNo(mctrl);
                 break;
             }
         }
@@ -2519,6 +2522,19 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
         // May be required to be re-read.
         broken.clear();
+
+        // Clear invalid readpos.
+        for (pit_t rp = m_Positions.begin(); rp != m_Positions.end();)
+        {
+            if (rp->second.mctrl.pktseq == SRT_SEQNO_NONE)
+            {
+                rp = m_Positions.erase(rp);
+            }
+            else
+            {
+                ++rp;
+            }
+        }
 
         if (output_size)
         {
@@ -2589,7 +2605,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 // NOTE that m_RcvBaseSeqNo in this place wasn't updated
                 // because we haven't successfully extracted anything.
-                int seqdiff = CSeqNo::seqcmp(rp->second.mctrl.pktseq, m_RcvBaseSeqNo);
+                int seqdiff = CSeqNo::seqcmp(recv_GetNo(rp->second.mctrl), m_RcvBaseSeqNo);
                 if (seqdiff < 0)
                 {
                     elephants.insert(rp->first);
@@ -2600,7 +2616,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                     // If there's already a slowest_kangaroo, seqdiff decides if this one is slower.
                     // Otherwise it is always slower by having no competition.
                     seqdiff = slowest_kangaroo
-                                  ? CSeqNo::seqcmp(slowest_kangaroo->second.mctrl.pktseq, rp->second.mctrl.pktseq)
+                                  ? CSeqNo::seqcmp(recv_GetNo(slowest_kangaroo->second.mctrl), recv_GetNo(rp->second.mctrl))
                                   : 1;
                     if (seqdiff > 0)
                     {
@@ -2621,16 +2637,16 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // kangaroo, we can simply return it.
 
                 // Check how many were skipped and add them to the stats
-                const int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+                const int32_t jump = (CSeqNo(recv_GetNo(slowest_kangaroo->second.mctrl)) - CSeqNo(m_RcvBaseSeqNo)) - 1;
                 if (jump > 0)
                 {
                     m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
                     LOGC(grlog.Warn,
                          log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
-                             << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
+                             << m_RcvBaseSeqNo << " to %" << recv_GetNo(slowest_kangaroo->second.mctrl));
                 }
 
-                m_RcvBaseSeqNo    = slowest_kangaroo->second.mctrl.pktseq;
+                m_RcvBaseSeqNo    = recv_GetNo(slowest_kangaroo->second.mctrl);
                 vector<char>& pkt = slowest_kangaroo->second.packet;
                 if (size_t(len) < pkt.size())
                     throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
@@ -2691,7 +2707,7 @@ CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
         // aren't going to read from it - we have the packet already.
         ReadPos& a = i->second;
 
-        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
+        const int seqdiff = CSeqNo::seqcmp(recv_GetNo(a.mctrl), m_RcvBaseSeqNo);
         if (seqdiff == 1)
         {
             // The very next packet. Return it.
