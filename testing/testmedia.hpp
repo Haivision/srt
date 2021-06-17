@@ -300,6 +300,55 @@ public:
     }
 };
 
+class UdpCommon
+{
+protected:
+    int m_sock = -1;
+    sockaddr_any sadr;
+    std::string adapter;
+    std::map<std::string, std::string> m_options;
+    void Setup(std::string host, int port, std::map<std::string,std::string> attr);
+    void Error(int err, std::string src);
+
+    ~UdpCommon();
+};
+
+
+class UdpSource: public virtual Source, public virtual UdpCommon
+{
+    bool eof = true;
+public:
+
+    UdpSource(string host, int port, const map<string,string>& attr);
+
+    MediaPacket Read(size_t chunk) override;
+
+    bool IsOpen() override { return m_sock != -1; }
+    bool End() override { return eof; }
+};
+
+class UdpTarget: public virtual Target, public virtual UdpCommon
+{
+public:
+    UdpTarget(string host, int port, const map<string,string>& attr);
+
+    void Write(const MediaPacket& data) override;
+    bool IsOpen() override { return m_sock != -1; }
+    bool Broken() override { return false; }
+};
+
+class UdpRelay: public Relay, public UdpSource, public UdpTarget
+{
+public:
+    UdpRelay(string host, int port, const map<string,string>& attr):
+        UdpSource(host, port, attr),
+        UdpTarget(host, port, attr)
+    {
+    }
+
+    bool IsOpen() override { return m_sock != -1; }
+};
+
 
 
 #endif
