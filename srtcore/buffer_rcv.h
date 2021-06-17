@@ -23,7 +23,7 @@ namespace srt
 {
 
 /*
- *   Receiver buffer (circular buffer):
+ *   Circular receiver buffer.
  *
  *   |<------------------- m_szSize ---------------------------->|
  *   |       |<------------ m_iMaxPosInc ----------->|           |
@@ -99,7 +99,7 @@ public:
     /// @return size of valid (continous) data for reading.
     int getRcvDataSize() const;
 
-    /// TODO: To miplement
+    /// TODO: To implement
     int getRcvDataSize(int& bytes, int& timespan);
 
     struct PacketInfo

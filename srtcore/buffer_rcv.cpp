@@ -40,7 +40,7 @@ namespace srt {
  */
 
 CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool peerRexmit)
-    : m_pUnit(NULL)
+    : m_entries(NULL)
     , m_szSize(size)
     , m_pUnitQueue(unitqueue)
     , m_iStartSeqNo(initSeqNo)
@@ -57,22 +57,19 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     , m_uAvgPayloadSz(7 * 188)
 {
     SRT_ASSERT(size < INT_MAX); // All position pointers are integers
-    m_pUnit = new CUnit * [m_szSize];
-    for (size_t i = 0; i < m_szSize; ++i)
-        m_pUnit[i] = NULL;
+
+
 }
 
 CRcvBufferNew::~CRcvBufferNew()
 {
     for (size_t i = 0; i < m_szSize; ++i)
     {
-        if (m_pUnit[i] != NULL)
+        if (m_entries[i].pUnit != NULL)
         {
-            m_pUnitQueue->makeUnitFree(m_pUnit[i]);
+            m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
         }
     }
-
-    delete[] m_pUnit;
 }
 
 int CRcvBufferNew::insert(CUnit* unit)
@@ -93,11 +90,11 @@ int CRcvBufferNew::insert(CUnit* unit)
 
     // Packet already exists
     SRT_ASSERT(pos >= 0 && pos < m_szSize);
-    if (m_pUnit[pos] != NULL)
+    if (m_entries[pos].pUnit != NULL)
         return -1;
 
     m_pUnitQueue->makeUnitGood(unit);
-    m_pUnit[pos] = unit;
+    m_entries[pos].pUnit = unit;
     countBytes(1, (int)unit->m_Packet.getLength());
 
     // If packet "in order" flag is zero, it can be read out of order
