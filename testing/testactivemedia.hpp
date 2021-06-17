@@ -11,6 +11,8 @@
 
 #include "testmedia.hpp"
 #include "logsupport.hpp"
+
+#define SRT_ENABLE_VERBOSE_LOCK 1
 #include "verbose.hpp"
 
 #include "logging.h"
