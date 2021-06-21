@@ -38,6 +38,7 @@ public:
                int64_t                                    drift_sample,
                int64_t                                    drift,
                int64_t                                    overdrift,
+               const srt::sync::steady_clock::time_point& pkt_base,
                const srt::sync::steady_clock::time_point& tsbpd_base)
     {
         using namespace srt::sync;
@@ -50,6 +51,9 @@ public:
         std::string str_tbase = srt::sync::FormatTime(tsbpd_base);
         str_tbase.resize(str_tbase.size() - 7); // remove trailing ' [STDY]' part
 
+        std::string str_pkt_base = srt::sync::FormatTime(pkt_base);
+        str_pkt_base.resize(str_pkt_base.size() - 7); // remove trailing ' [STDY]' part
+
         // m_fout << str_tnow << ",";
         m_fout << count_microseconds(steady_clock::now() - m_start_time) << ",";
         m_fout << ackack_timestamp << ",";
@@ -57,6 +61,7 @@ public:
         m_fout << drift_sample << ",";
         m_fout << drift << ",";
         m_fout << overdrift << ",";
+        m_fout << str_pkt_base << ",";
         m_fout << str_tbase << "\n";
         m_fout.flush();
     }
@@ -65,7 +70,7 @@ private:
     void print_header()
     {
         m_fout << "usElapsedStd,usAckAckTimestampStd,";
-        m_fout << "usRTTStd,usDriftSampleStd,usDriftStd,usOverdriftStd,TSBPDBase\n";
+        m_fout << "usRTTStd,usDriftSampleStd,usDriftStd,usOverdriftStd,tsPktBase,TSBPDBase\n";
     }
 
     void create_file()
@@ -121,8 +126,9 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
     // A change in network delay has to be taken into account. The only way to get some estimation of it
     // is to estimate RTT change and assume that the change of the one way network delay is
     // approximated by the half of the RTT change.
-    const duration tdRTTDelta = microseconds_from((usRTTSample - m_iFirstRTT) / 2);
-    const steady_clock::duration tdDrift = tsNow - getPktTsbPdBaseTime(usPktTimestamp) - tdRTTDelta;
+    const duration               tdRTTDelta    = microseconds_from((usRTTSample - m_iFirstRTT) / 2);
+    const time_point             tsPktBaseTime = getPktTsbPdBaseTime(usPktTimestamp);
+    const steady_clock::duration tdDrift       = tsNow - tsPktBaseTime - tdRTTDelta;
 
     const bool updated = m_DriftTracer.update(count_microseconds(tdDrift));
 
@@ -152,6 +158,7 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
                          count_microseconds(tdDrift),
                          m_DriftTracer.drift(),
                          m_DriftTracer.overdrift(),
+                         tsPktBaseTime,
                          m_tsTsbPdTimeBase);
 #endif
     return updated;
@@ -168,7 +175,7 @@ void CTsbpdTime::setTsbPdMode(const steady_clock::time_point& timebase, bool wra
     //
     // This function is called in the HSREQ reception handler only.
     m_tsTsbPdTimeBase = timebase;
-    m_tdTsbPdDelay = delay;
+    m_tdTsbPdDelay    = delay;
 }
 
 void CTsbpdTime::applyGroupTime(const steady_clock::time_point& timebase,
@@ -210,8 +217,11 @@ void CTsbpdTime::applyGroupDrift(const steady_clock::time_point& timebase,
 
 CTsbpdTime::time_point CTsbpdTime::getTsbPdTimeBase(uint32_t timestamp_us) const
 {
-    const uint64_t carryover_us =
-        (m_bTsbPdWrapCheck && timestamp_us < TSBPD_WRAP_PERIOD) ? uint64_t(CPacket::MAX_TIMESTAMP) + 1 : 0;
+    // A data packet within [TSBPD_WRAP_PERIOD; 2 * TSBPD_WRAP_PERIOD] would end TSBPD wrap-aware state.
+    // Some incoming control packets may not update the TSBPD base (calling updateTsbPdTimeBase(..)),
+    // but may come before a data packet with a timestamp in this range. Therefore the whole range should be tracked.
+    const int64_t carryover_us =
+        (m_bTsbPdWrapCheck && timestamp_us <= 2 * TSBPD_WRAP_PERIOD) ? int64_t(CPacket::MAX_TIMESTAMP) + 1 : 0;
 
     return (m_tsTsbPdTimeBase + microseconds_from(carryover_us));
 }
@@ -243,14 +253,14 @@ void CTsbpdTime::updateTsbPdTimeBase(uint32_t usPktTimestamp)
         return;
     }
 
-    // Check if timestamp is in the last 30 seconds before reaching the MAX_TIMESTAMP.
+    // Check if timestamp is within the TSBPD_WRAP_PERIOD before reaching the MAX_TIMESTAMP.
     if (usPktTimestamp > (CPacket::MAX_TIMESTAMP - TSBPD_WRAP_PERIOD))
     {
         // Approching wrap around point, start wrap check period (if for packet delivery head)
         m_bTsbPdWrapCheck = true;
         LOGC(tslog.Debug,
-             log << "tsbpd wrap period begins with ts=" << usPktTimestamp << " drift: " << m_DriftTracer.drift()
-                 << "us.");
+             log << "tsbpd wrap period begins with ts=" << usPktTimestamp
+                 << " TIME BASE: " << FormatTime(m_tsTsbPdTimeBase) << " drift: " << m_DriftTracer.drift() << "us.");
     }
 }
 
