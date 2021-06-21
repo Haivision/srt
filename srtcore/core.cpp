@@ -7974,14 +7974,14 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 #endif
 
     // insert this socket to snd list if it is not on the list yet
-    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+    const steady_clock::time_point currtime = steady_clock::now();
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE, currtime);
 
     if (m_config.bSynSending)
     {
         CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
     }
 
-    const steady_clock::time_point currtime = steady_clock::now();
     // record total time used for sending
     enterCS(m_StatsLock);
     m_stats.sndDuration += count_microseconds(currtime - m_stats.sndDurationCounter);

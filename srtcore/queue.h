@@ -173,13 +173,12 @@ public:
     /// Update the timestamp of the UDT instance on the list.
     /// @param [in] u pointer to the UDT instance
     /// @param [in] reschedule if the timestamp should be rescheduled
-    void update(const CUDT* u, EReschedule reschedule);
+    /// @param [in] ts the next time to trigger sending logic on the CUDT
+    void update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
-    /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
-    /// @param [out] addr destination address of the next packet
-    /// @param [out] pkt the next packet to be sent
-    /// @return 1 if successfully retrieved, -1 if no packet found.
-    int pop(sockaddr_any& addr, CPacket& pkt);
+    /// Retrieve the next (in time) socket from the heap to process its sending request.
+    /// @return a pointer to CUDT instance to process next.
+    CUDT* pop();
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
