@@ -70,10 +70,10 @@ modified by
 #include "srt.h"
 
 /*
-* SRT_ENABLE_THREADCHECK (THIS IS SET IN MAKEFILE NOT HERE)
+* SRT_ENABLE_THREADCHECK IS SET IN MAKEFILE, NOT HERE
 */
 #if defined(SRT_ENABLE_THREADCHECK)
-#include <threadcheck.h>
+#include "threadcheck.h"
 #else
 #define THREAD_STATE_INIT(name)
 #define THREAD_EXIT()
