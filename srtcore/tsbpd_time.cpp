@@ -127,7 +127,7 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
     // is to estimate RTT change and assume that the change of the one way network delay is
     // approximated by the half of the RTT change.
     const duration               tdRTTDelta    = microseconds_from((usRTTSample - m_iFirstRTT) / 2);
-    const auto                   tsPktBaseTime = getPktTsbPdBaseTime(usPktTimestamp);
+    const time_point             tsPktBaseTime = getPktTsbPdBaseTime(usPktTimestamp);
     const steady_clock::duration tdDrift       = tsNow - tsPktBaseTime - tdRTTDelta;
 
     const bool updated = m_DriftTracer.update(count_microseconds(tdDrift));
