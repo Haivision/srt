@@ -157,10 +157,8 @@ struct CSNode
 
 class CSndUList
 {
-    friend class CSndQueue;
-
 public:
-    CSndUList();
+    CSndUList(sync::CTimer* pTimer);
     ~CSndUList();
 
 public:
@@ -175,30 +173,32 @@ public:
     /// Update the timestamp of the UDT instance on the list.
     /// @param [in] u pointer to the UDT instance
     /// @param [in] reschedule if the timestamp should be rescheduled
-
     void update(const CUDT* u, EReschedule reschedule);
 
     /// Retrieve the next packet and peer address from the first entry, and reschedule it in the queue.
     /// @param [out] addr destination address of the next packet
     /// @param [out] pkt the next packet to be sent
     /// @return 1 if successfully retrieved, -1 if no packet found.
-
     int pop(sockaddr_any& addr, CPacket& pkt);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
-
-    void remove(const CUDT* u);
+    void remove(const CUDT* u);// EXCLUDES(m_ListLock);
 
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
-
     sync::steady_clock::time_point getNextProcTime();
+
+    /// Wait for the list to become non empty.
+    void waitNonEmpty() const;
+
+    /// Signal to stop waiting in waitNonEmpty().
+    void signalInterrupt() const;
 
 private:
     /// Doubles the size of the list.
     ///
-    void realloc_();
+    void realloc_();// REQUIRES(m_ListLock);
 
     /// Insert a new UDT instance into the list with realloc if required.
     ///
@@ -211,21 +211,21 @@ private:
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
-    void insert_norealloc_(const sync::steady_clock::time_point& ts, const CUDT* u);
+    void insert_norealloc_(const sync::steady_clock::time_point& ts, const CUDT* u);// REQUIRES(m_ListLock);
 
+    /// Removes CUDT entry from the list.
+    /// If the last entry is removed, calls sync::CTimer::interrupt().
     void remove_(const CUDT* u);
 
 private:
     CSNode** m_pHeap;        // The heap array
     int      m_iArrayLength; // physical length of the array
-    int      m_iLastEntry;   // position of last entry on the heap array
+    int      m_iLastEntry;   // position of last entry on the heap array or -1 if empty.
 
-    sync::Mutex m_ListLock;
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iArrayLength, m_iLastEntry).
+    mutable sync::Condition m_ListCond;
 
-    sync::Mutex*     m_pWindowLock;
-    sync::Condition* m_pWindowCond;
-
-    sync::CTimer* m_pTimer;
+    sync::CTimer* const m_pTimer;
 
 private:
     CSndUList(const CSndUList&);
@@ -461,9 +461,6 @@ private:
     CSndUList*         m_pSndUList; // List of UDT instances for data sending
     CChannel*          m_pChannel;  // The UDP channel for data sending
     srt::sync::CTimer* m_pTimer;    // Timing facility
-
-    srt::sync::Mutex     m_WindowLock;
-    srt::sync::Condition m_WindowCond;
 
     srt::sync::atomic<bool> m_bClosing;            // closing the worker
 

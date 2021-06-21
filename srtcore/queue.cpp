@@ -255,20 +255,20 @@ void srt::CUnitQueue::makeUnitGood(CUnit* unit)
     unit->m_iFlag = CUnit::GOOD;
 }
 
-srt::CSndUList::CSndUList()
+srt::CSndUList::CSndUList(sync::CTimer* pTimer)
     : m_pHeap(NULL)
     , m_iArrayLength(512)
     , m_iLastEntry(-1)
     , m_ListLock()
-    , m_pWindowLock(NULL)
-    , m_pWindowCond(NULL)
-    , m_pTimer(NULL)
+    , m_pTimer(pTimer)
 {
+    setupCond(m_ListCond, "CSndUListCond");
     m_pHeap = new CSNode*[m_iArrayLength];
 }
 
 srt::CSndUList::~CSndUList()
 {
+    releaseCond(m_ListCond);
     delete[] m_pHeap;
 }
 
@@ -305,7 +305,7 @@ int srt::CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
     if (-1 == m_iLastEntry)
         return -1;
 
-    // no pop until the next schedulled time
+    // no pop until the next scheduled time
     if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
         return -1;
 
@@ -342,7 +342,6 @@ int srt::CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
 void srt::CSndUList::remove(const CUDT* u)
 {
     ScopedLock listguard(m_ListLock);
-
     remove_(u);
 }
 
@@ -354,6 +353,21 @@ steady_clock::time_point srt::CSndUList::getNextProcTime()
         return steady_clock::time_point();
 
     return m_pHeap[0]->m_tsTimeStamp;
+}
+
+void srt::CSndUList::waitNonEmpty() const
+{
+    UniqueLock listguard(m_ListLock);
+    if (m_iLastEntry >= 0)
+        return;
+
+    m_ListCond.wait(listguard);
+}
+
+void srt::CSndUList::signalInterrupt() const
+{
+    ScopedLock listguard(m_ListLock);
+    m_ListCond.notify_all();
 }
 
 void srt::CSndUList::realloc_()
@@ -420,7 +434,8 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
     {
-        CSync::lock_signal(*m_pWindowCond, *m_pWindowLock);
+        // m_ListLock is assumed to be locked.
+        m_ListCond.notify_all();
     }
 }
 
@@ -468,10 +483,8 @@ srt::CSndQueue::CSndQueue()
     : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_WindowCond()
     , m_bClosing(false)
 {
-    setupCond(m_WindowCond, "Window");
 }
 
 srt::CSndQueue::~CSndQueue()
@@ -483,14 +496,14 @@ srt::CSndQueue::~CSndQueue()
         m_pTimer->interrupt();
     }
 
-    CSync::lock_signal(m_WindowCond, m_WindowLock);
+    // Unblock CSndQueue worker thread if it is waiting.
+    m_pSndUList->signalInterrupt();
 
     if (m_WorkerThread.joinable())
     {
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-    releaseCond(m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -510,12 +523,9 @@ int srt::CSndQueue::m_counter = 0;
 
 void srt::CSndQueue::init(CChannel* c, CTimer* t)
 {
-    m_pChannel                 = c;
-    m_pTimer                   = t;
-    m_pSndUList                = new CSndUList;
-    m_pSndUList->m_pWindowLock = &m_WindowLock;
-    m_pSndUList->m_pWindowCond = &m_WindowCond;
-    m_pSndUList->m_pTimer      = m_pTimer;
+    m_pChannel  = c;
+    m_pTimer    = t;
+    m_pSndUList = new CSndUList(t);
 
 #if ENABLE_LOGGING
     ++m_counter;
@@ -575,14 +585,11 @@ void* srt::CSndQueue::worker(void* param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            UniqueLock windlock(self->m_WindowLock);
-            CSync      windsync(self->m_WindowCond, windlock);
-
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
-            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
+            if (!self->m_bClosing)
             {
-                windsync.wait();
+                self->m_pSndUList->waitNonEmpty();
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
                 self->m_WorkerStats.lCondWait++;
