@@ -272,7 +272,7 @@ srt::CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
-void srt::CSndUList::update(const CUDT* u, EReschedule reschedule)
+void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
 
@@ -285,58 +285,33 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule)
 
         if (n->m_iHeapLoc == 0)
         {
-            n->m_tsTimeStamp = steady_clock::now();
+            n->m_tsTimeStamp = ts;
             m_pTimer->interrupt();
             return;
         }
 
         remove_(u);
-        insert_norealloc_(steady_clock::now(), u);
+        insert_norealloc_(ts, u);
         return;
     }
 
-    insert_(steady_clock::now(), u);
+    insert_(ts, u);
 }
 
-int srt::CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
+srt::CUDT* srt::CSndUList::pop()
 {
     ScopedLock listguard(m_ListLock);
 
     if (-1 == m_iLastEntry)
-        return -1;
+        return NULL;
 
     // no pop until the next scheduled time
     if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
-        return -1;
+        return NULL;
 
     CUDT* u = m_pHeap[0]->m_pUDT;
     remove_(u);
-
-#define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
-
-    HLOGC(qslog.Debug,
-          log << "SND:pop: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
-              << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-              << UST(Opened));
-#undef UST
-
-    if (!u->m_bConnected || u->m_bBroken)
-        return -1;
-
-    // pack a packet from the socket
-    const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
-
-    if (res_time.first <= 0)
-        return -1;
-
-    w_addr = u->m_PeerAddr;
-
-    // insert a new entry, ts is the next processing time
-    const steady_clock::time_point send_time = res_time.second;
-    if (!is_zero(send_time))
-        insert_norealloc_(send_time, u);
-
-    return 1;
+    return u;
 }
 
 void srt::CSndUList::remove(const CUDT* u)
@@ -630,17 +605,50 @@ void* srt::CSndQueue::worker(void* param)
         }
         THREAD_RESUMED();
 
-        // it is time to send the next pkt
-        sockaddr_any addr;
-        CPacket      pkt;
-        if (self->m_pSndUList->pop((addr), (pkt)) < 0)
+        // Get a socket with a send request if any.
+        CUDT* u = self->m_pSndUList->pop();
+        if (u == NULL)
         {
-            continue;
-
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lNotReadyPop++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
         }
+        
+#define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
+        HLOGC(qslog.Debug,
+            log << "CSndQueue: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
+                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
+                << UST(Opened));
+#undef UST
+
+        if (!u->m_bConnected || u->m_bBroken)
+        {
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
+            self->m_WorkerStats.lNotReadyPop++;
+#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
+        }
+
+        // pack a packet from the socket
+        CPacket pkt;
+        const std::pair<int, steady_clock::time_point> res_time = u->packData((pkt));
+
+        // Check if payload size is invalid.
+        if (res_time.first <= 0)
+        {
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
+            self->m_WorkerStats.lNotReadyPop++;
+#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
+        }
+
+        const sockaddr_any addr = u->m_PeerAddr;
+        // Insert a new entry, send_time is the next processing time.
+        // TODO: maybe reschedule by taking the smaller time?
+        const steady_clock::time_point send_time = res_time.second;
+        if (!is_zero(send_time))
+            self->m_pSndUList->update(u, CSndUList::DONT_RESCHEDULE, send_time);
 
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
