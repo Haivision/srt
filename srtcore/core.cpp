@@ -5833,8 +5833,9 @@ void srt::CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt);
 }
 
-// [[using maybe_locked(m_GlobControlLock, if called from GC)]]
-bool srt::CUDT::closeInternal()
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool srt::CUDT::closeInternal() ATR_NOEXCEPT
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -8958,7 +8959,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
     return 0;
 }
 
-std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
+std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet) ATR_NOEXCEPT
 {
     int payload = 0;
     bool probe = false;
