@@ -2323,7 +2323,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // x = 0: the socket should be ready to get the exactly next packet
                 // x = 1: the case is already handled by GroupCheckPacketAhead.
                 // x > 1: AHEAD. DO NOT READ.
-                const int seqdiff = CSeqNo::seqcmp(p->mctrl.pktseq, m_RcvBaseSeqNo);
+                const int seqdiff = CSeqNo::seqcmp(recv_GetNo(p->mctrl), m_RcvBaseSeqNo);
                 if (seqdiff > 1)
                 {
                     HLOGC(grlog.Debug,
