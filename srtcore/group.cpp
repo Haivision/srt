@@ -2532,7 +2532,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             if (rp->second.mctrl.pktseq == SRT_SEQNO_NONE)
             {
-                rp = m_Positions.erase(rp);
+                m_Positions.erase(rp++);
             }
             else
             {
