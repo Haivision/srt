@@ -2327,8 +2327,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 if (seqdiff > 1)
                 {
                     HLOGC(grlog.Debug,
-                          log << "group/recv: EPOLL: @" << id << " %" << p->mctrl.pktseq << " AHEAD %" << m_RcvBaseSeqNo
-                              << ", not reading.");
+                          log << "group/recv: EPOLL: @" << id << " %" << recv_GetNo(p->mctrl) << " AHEAD %"
+                              << m_RcvBaseSeqNo << ", not reading.");
                     continue;
                 }
             }
