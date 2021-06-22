@@ -10359,6 +10359,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     HLOGC(cnlog.Debug, log << "processConnectRequest: received a connection request");
 
+    // NOTE (IMPORTANT!!!)
+    //
+    // The current CUDT object represents a LISTENER SOCKET to which
+    // the request was redirected from the receiver queue.
+
     if (m_bClosing)
     {
         m_RejectReason = SRT_REJ_CLOSE;
@@ -10689,17 +10694,6 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
         // new connection response should be sent in acceptAndRespond()
-        // turn the socket writable if this is the first time when this was found out.
-        else
-        {
-            // a new connection has been created, enable epoll for write
-           HLOGC(cnlog.Debug, log << "processConnectRequest: @" << m_SocketID
-                   << " connected, setting epoll to connect:");
-
-           // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
-           // executed for the accepted socket.
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
-        }
     }
     LOGC(cnlog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
 
