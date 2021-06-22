@@ -665,7 +665,9 @@ private:
     std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
-    // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
+    // delivered if tsbpd is enabled, else it's the message number of
+    // previously delivered message.
+    // Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
