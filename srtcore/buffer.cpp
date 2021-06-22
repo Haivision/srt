@@ -834,6 +834,7 @@ CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     , m_iAckedPktsCount(0)
     , m_iAckedBytesCount(0)
     , m_uAvgPayloadSz(7 * 188)
+    , m_iLargestReadyMsgNo(SRT_SEQNO_NONE)
 {
     m_pUnit = new CUnit*[m_iSize];
     for (int i = 0; i < m_iSize; ++i)

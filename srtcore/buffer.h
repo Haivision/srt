@@ -556,13 +556,11 @@ private:
 
     AvgBufSize       m_mavg;
 
-#if ENABLE_EXPERIMENTAL_BONDING
     std::map<int32_t, int32_t> m_MsgNoToFirstPktSeq;
     std::map<int32_t, int32_t> m_MsgNoToLastPktSeq;
     std::map<int32_t, int32_t> m_MsgNoToTotalPktNum;
     std::map<int32_t, int32_t> m_MsgNoToReceivedPktNum;
-    int32_t                    m_iLargestReadyMsgNo = SRT_SEQNO_NONE;
-#endif
+    int32_t                    m_iLargestReadyMsgNo;
 
 private:
     CRcvBuffer();
