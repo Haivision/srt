@@ -2353,7 +2353,11 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // by "more correct data" if found more appropriate later. But we have to
                 // copy these data anyway anywhere, even if they need to fall on the floor later.
                 int stat;
+#if HAVE_CXX11
                 thread_local std::vector<char> extrabuf;
+#else
+                std::vector<char> extrabuf;
+#endif
                 extrabuf.reserve(SRT_LIVE_MAX_PLSIZE);
                 if (!m_bTsbPd)
                     extrabuf.reserve(len);
