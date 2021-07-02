@@ -70,6 +70,11 @@ modified by
 #include "logging_api.h" // Required due to containing extern srt_logger_config
 #include "logger_defs.h"
 
+#if !HAVE_CXX11
+// for pthread_once
+#include <pthread.h>
+#endif
+
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
 #undef min
@@ -82,10 +87,6 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
-
-namespace srt {
-    CUDTUnited CUDT::s_UDTUnited;
-}
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
@@ -222,6 +223,32 @@ const SrtOptionAction s_sockopt_action;
 
 } // namespace srt
 
+#if HAVE_CXX11
+
+CUDTUnited* srt::CUDT::uglobal()
+{
+    static CUDTUnited instance;
+    return &instance;
+}
+
+#else // !HAVE_CXX11
+
+static pthread_once_t s_UDTUnitedOnce = PTHREAD_ONCE_INIT;
+
+static CUDTUnited *getInstance()
+{
+    static CUDTUnited instance;
+    return &instance;
+}
+
+CUDTUnited* srt::CUDT::uglobal()
+{
+    // We don't want lock each time, pthread_once can be faster than mutex.
+    pthread_once(&s_UDTUnitedOnce, reinterpret_cast<void (*)()>(getInstance));
+    return getInstance();
+}
+
+#endif
 
 void srt::CUDT::construct()
 {
@@ -511,7 +538,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_STATE:
-        *(int32_t *)optval = s_UDTUnited.getStatus(m_SocketID);
+        *(int32_t *)optval = uglobal()->getStatus(m_SocketID);
         optlen             = sizeof(int32_t);
         break;
 
@@ -1701,7 +1728,7 @@ bool srt::CUDT::createSrtHandshake(
     if (have_group)
     {
         // NOTE: See information about mutex ordering in api.h
-        ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
+        ScopedLock gdrg (uglobal()->m_GlobControlLock);
         if (!m_parent->m_GroupOf)
         {
             // This may only happen if since last check of m_GroupOf pointer the socket was removed
@@ -3039,7 +3066,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         return false;
     }
 
-    ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
+    ScopedLock guard_group_existence (uglobal()->m_GlobControlLock);
 
     if (m_SrtHsSide == HSD_INITIATOR)
     {
@@ -3161,7 +3188,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
     // it right now so there's no need to lock s->m_ControlLock.
 
     // Check if there exists a group that this one is a peer of.
-    CUDTGroup* gp = s_UDTUnited.findPeerGroup_LOCKED(peergroup);
+    CUDTGroup* gp = uglobal()->findPeerGroup_LOCKED(peergroup);
     bool was_empty = true;
     if (gp)
     {
@@ -3192,7 +3219,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         if (!gp->applyFlags(link_flags, m_SrtHsSide))
         {
             // Wrong settings. Must reject. Delete group.
-            s_UDTUnited.deleteGroup_LOCKED(gp);
+            uglobal()->deleteGroup_LOCKED(gp);
             return -1;
         }
 
@@ -4567,7 +4594,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
     {
 #if ENABLE_EXPERIMENTAL_BONDING
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
+        ScopedLock cl (uglobal()->m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -4617,7 +4644,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // the socket could have been started removal before this function
     // has started. Do a sanity check before you continue with the
     // connection process.
-    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    CUDTSocket* s = uglobal()->locateSocket(m_SocketID);
     if (s)
     {
         // The socket could be closed at this very moment.
@@ -4674,7 +4701,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     //int token = -1;
 #if ENABLE_EXPERIMENTAL_BONDING
     {
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
+        ScopedLock cl (uglobal()->m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -4703,7 +4730,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
+    uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
     CGlobEvent::triggerEvent();
 
@@ -5148,7 +5175,7 @@ void * srt::CUDT::tsbpd(void *param)
     // which will ensure that the group will not be physically
     // deleted until this thread exits.
     // NOTE: DO NOT LEAD TO EVER CANCEL THE THREAD!!!
-    CUDTUnited::GroupKeeper gkeeper (self->s_UDTUnited, self->m_parent);
+    CUDTUnited::GroupKeeper gkeeper (*self->uglobal(), self->m_parent);
 #endif
 
     UniqueLock recv_lock  (self->m_RecvLock);
@@ -5266,7 +5293,7 @@ void * srt::CUDT::tsbpd(void *param)
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
-            self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
+            self->uglobal()->m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
 #if ENABLE_EXPERIMENTAL_BONDING
             // If this is NULL, it means:
             // - the socket never was a group member
@@ -5543,7 +5570,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
 
     {
 #if ENABLE_EXPERIMENTAL_BONDING
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
+        ScopedLock cl (uglobal()->m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -5900,13 +5927,13 @@ bool srt::CUDT::closeInternal()
 
     // Make a copy under a lock because other thread might access it
     // at the same time.
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal()->m_EPoll.m_EPollLock);
     set<int> epollid = m_sPollID;
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal()->m_EPoll.m_EPollLock);
 
     // trigger any pending IO events.
     HLOGC(smlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(epollid) << " of @" << m_SocketID);
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
+    uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     int no_events = 0;
     for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
@@ -5914,7 +5941,7 @@ bool srt::CUDT::closeInternal()
         HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
         try
         {
-            s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
+            uglobal()->m_EPoll.update_usock(*i, m_SocketID, &no_events);
         }
         catch (...)
         {
@@ -5931,9 +5958,9 @@ bool srt::CUDT::closeInternal()
     // IMPORTANT: there's theoretically little time between setting ERR readiness
     // and unsubscribing, however if there's an application waiting on this event,
     // it should be informed before this below instruction locks the epoll mutex.
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal()->m_EPoll.m_EPollLock);
     m_sPollID.clear();
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal()->m_EPoll.m_EPollLock);
 
     // XXX What's this, could any of the above actions make it !m_bOpened?
     if (!m_bOpened)
@@ -6124,7 +6151,7 @@ int srt::CUDT::receiveBuffer(char *data, int len)
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     if ((res <= 0) && (m_config.iRcvTimeOut >= 0))
@@ -6511,7 +6538,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
             // write is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
+            uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
         }
     }
 
@@ -6634,7 +6661,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
         if (!m_pRcvBuffer->isRcvDataReady())
         {
             // read is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
         }
 
         if (res == 0)
@@ -6675,7 +6702,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             }
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
             // Forced to return 0 instead of throwing exception, in case of AGAIN/READ
             if (!by_exception)
                 return 0;
@@ -6696,7 +6723,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             }
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
 
             // After signaling the tsbpd for ready data, report the bandwidth.
 #if ENABLE_HEAVY_LOGGING
@@ -6815,7 +6842,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     // Unblock when required
@@ -6944,7 +6971,7 @@ int64_t srt::CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int blo
             if (sndBuffersLeft() <= 0)
             {
                 // write is not available any more
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
+                uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
             }
         }
 
@@ -7068,7 +7095,7 @@ int64_t srt::CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int blo
     if (!m_pRcvBuffer->isRcvDataReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     return size - torecv;
@@ -7737,7 +7764,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // can be either never set, already reset, or ever set
             // and possibly dangling. The re-check after lock eliminates
             // the dangling case.
-            ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+            ScopedLock glock (uglobal()->m_GlobControlLock);
 
             // Note that updateLatestRcv will lock m_GroupOf->m_GroupLock,
             // but this is an intended order.
@@ -7789,13 +7816,13 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 //      (4) receive thread: receive data and set SRT_EPOLL_IN to true
                 //      (5) user thread: set SRT_EPOLL_IN to false
                 // 4. so , m_RecvLock must be used here to protect epoll event
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
+                uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
             }
 #if ENABLE_EXPERIMENTAL_BONDING
             if (m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
-                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+                ScopedLock glock (uglobal()->m_GlobControlLock);
 
                 if (m_parent->m_GroupOf)
                 {
@@ -7945,7 +7972,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         m_pSndBuffer->ackData(offset);
 
         // acknowledde any waiting epolls to write
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         CGlobEvent::triggerEvent();
     }
 
@@ -7954,7 +7981,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     {
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
         // be done now that m_RecvAckLock is unlocked.
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+        ScopedLock glock (uglobal()->m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             HLOGC(inlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
@@ -8103,7 +8130,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 #if ENABLE_EXPERIMENTAL_BONDING
     if (m_parent->m_GroupOf)
     {
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+        ScopedLock glock (uglobal()->m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             // Will apply m_GroupLock, ordered after m_GlobControlLock.
@@ -8323,7 +8350,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
 #if ENABLE_EXPERIMENTAL_BONDING
         if (drift_updated && m_parent->m_GroupOf)
         {
-            ScopedLock glock(s_UDTUnited.m_GlobControlLock);
+            ScopedLock glock(uglobal()->m_GlobControlLock);
             if (m_parent->m_GroupOf)
             {
                 m_parent->m_GroupOf->synchronizeDrift(this, udrift, newtimebase);
@@ -8822,7 +8849,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
 
     if (m_parent->m_GroupOf)
     {
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+        ScopedLock glock (uglobal()->m_GlobControlLock);
         grpspec = m_parent->m_GroupOf
             ? " group=$" + Sprint(m_parent->m_GroupOf->id())
             : string();
@@ -9267,7 +9294,7 @@ void srt::CUDT::processClose()
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
+    uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(smlog.Debug, "processClose: triggering timer event to spread the bad news");
     CGlobEvent::triggerEvent();
@@ -9542,7 +9569,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     // reception sequence pointer stating that this link is not receiving.
     if (m_parent->m_GroupOf)
     {
-        ScopedLock protect_group_existence (s_UDTUnited.m_GlobControlLock);
+        ScopedLock protect_group_existence (uglobal()->m_GlobControlLock);
         groups::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
@@ -10558,7 +10585,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     {
         int error  = SRT_REJ_UNKNOWN;
         CUDT* acpu = NULL;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
+        int result = uglobal()->newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10698,7 +10725,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
            // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
            // executed for the accepted socket.
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+           uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         }
     }
     LOGC(cnlog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
@@ -10998,7 +11025,7 @@ void srt::CUDT::checkTimers()
 #if ENABLE_EXPERIMENTAL_BONDING
         if (m_parent->m_GroupOf)
         {
-            ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+            ScopedLock glock (uglobal()->m_GlobControlLock);
             if (m_parent->m_GroupOf)
             {
                 // Pass socket ID because it's about changing group socket data
@@ -11018,7 +11045,7 @@ void srt::CUDT::updateBrokenConnection()
     m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
     CGlobEvent::triggerEvent();
 }
 
@@ -11029,7 +11056,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
 #if ENABLE_EXPERIMENTAL_BONDING
     bool pending_broken = false;
     {
-        ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
+        ScopedLock guard_group_existence (uglobal()->m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             token = m_parent->m_GroupMemberData->token;
@@ -11061,7 +11088,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
         // existence of the group will not be changed during
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
-        ScopedLock lock(s_UDTUnited.m_GlobControlLock);
+        ScopedLock lock(uglobal()->m_GlobControlLock);
         CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {
@@ -11074,8 +11101,8 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
     // explicitly, otherwise they will never be deleted.
     if (pending_broken)
     {
-        // XXX This somehow can cause a deadlock, even without GlobControlLock
-        // s_UDTUnited.close(m_parent);
+        // XXX This somehow can cause a deadlock
+        // uglobal()->close(m_parent);
         m_parent->setBrokenClosed();
     }
 #endif
@@ -11083,9 +11110,9 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
 
 void srt::CUDT::addEPoll(const int eid)
 {
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal()->m_EPoll.m_EPollLock);
     m_sPollID.insert(eid);
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal()->m_EPoll.m_EPollLock);
 
     if (!stillConnected())
         return;
@@ -11093,13 +11120,13 @@ void srt::CUDT::addEPoll(const int eid)
     enterCS(m_RecvLock);
     if (m_pRcvBuffer->isRcvDataReady())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
     }
     leaveCS(m_RecvLock);
 
     if (m_config.iSndBufSize > m_pSndBuffer->getCurrBufSize())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        uglobal()->m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
     }
 }
 
@@ -11109,14 +11136,14 @@ void srt::CUDT::removeEPollEvents(const int eid)
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+    uglobal()->m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
 }
 
 void srt::CUDT::removeEPollID(const int eid)
 {
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal()->m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal()->m_EPoll.m_EPollLock);
 }
 
 void srt::CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
@@ -11145,7 +11172,7 @@ void srt::CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
 
 int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 {
-    CUDTSocket *s = s_UDTUnited.locateSocket(u);
+    CUDTSocket *s = uglobal()->locateSocket(u);
     if (!s || !s->m_pUDT)
         return -1;
 
@@ -11168,7 +11195,7 @@ int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 
 int srt::CUDT::rejectReason(SRTSOCKET u)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    CUDTSocket* s = uglobal()->locateSocket(u);
     if (!s || !s->m_pUDT)
         return SRT_REJ_UNKNOWN;
 
@@ -11177,7 +11204,7 @@ int srt::CUDT::rejectReason(SRTSOCKET u)
 
 int srt::CUDT::rejectReason(SRTSOCKET u, int value)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    CUDTSocket* s = uglobal()->locateSocket(u);
     if (!s || !s->m_pUDT)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
@@ -11190,7 +11217,7 @@ int srt::CUDT::rejectReason(SRTSOCKET u, int value)
 
 int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
+    CUDTSocket* s = uglobal()->locateSocket(u);
     if (!s || !s->m_pUDT)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
@@ -11311,7 +11338,7 @@ void srt::CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
         // existence of the group will not be changed during
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
-        ScopedLock lock(s_UDTUnited.m_GlobControlLock);
+        ScopedLock lock(uglobal()->m_GlobControlLock);
         CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {

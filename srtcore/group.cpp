@@ -248,7 +248,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 }
 
 CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
-    : m_pGlobal(&CUDT::s_UDTUnited)
+    : m_pGlobal(CUDT::uglobal())
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
     , m_selfManaged(true)
@@ -920,7 +920,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
-        ScopedLock glob(CUDT::s_UDTUnited.m_GlobControlLock);
+        ScopedLock glob(CUDT::uglobal()->m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         // A non-managed group may only be closed if there are no
@@ -941,7 +941,7 @@ void CUDTGroup::close()
             ids.push_back(ig->id);
             // Immediately cut ties to this group.
             // Just for a case, redispatch the socket, to stay safe.
-            CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(ig->id);
+            CUDTSocket* s = CUDT::uglobal()->locateSocket_LOCKED(ig->id);
             if (!s)
             {
                 HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
@@ -963,7 +963,7 @@ void CUDTGroup::close()
         {
             // Global EPOLL lock must be applied to access any socket's epoll set.
             // This is a set of all epoll ids subscribed to it.
-            ScopedLock elock (CUDT::s_UDTUnited.m_EPoll.m_EPollLock);
+            ScopedLock elock (CUDT::uglobal()->m_EPoll.m_EPollLock);
             epollid = m_sPollID; // use move() in C++11
             m_sPollID.clear();
         }
@@ -974,7 +974,7 @@ void CUDTGroup::close()
             HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of $" << id());
             try
             {
-                CUDT::s_UDTUnited.m_EPoll.update_usock(*i, id(), &no_events);
+                CUDT::uglobal()->m_EPoll.update_usock(*i, id(), &no_events);
             }
             catch (...)
             {
@@ -994,7 +994,7 @@ void CUDTGroup::close()
     {
         try
         {
-            CUDT::s_UDTUnited.close(*i);
+            CUDT::uglobal()->close(*i);
         }
         catch (CUDTException&)
         {
@@ -1446,7 +1446,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         {
             InvertedLock ung (m_GroupLock);
-            enterCS(CUDT::s_UDTUnited.m_GlobControlLock);
+            enterCS(CUDT::uglobal()->m_GlobControlLock);
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: Locked GlobControlLock, locking back GroupLock");
         }
 
@@ -1454,7 +1454,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         // the Sendstate::it field shall not be used here!
         for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
         {
-            CUDTSocket* ps = CUDT::s_UDTUnited.locateSocket_LOCKED(is->id);
+            CUDTSocket* ps = CUDT::uglobal()->locateSocket_LOCKED(is->id);
 
             // Is the socket valid? If not, simply SKIP IT. Nothing to be done with it,
             // it's already deleted.
@@ -1498,7 +1498,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         // Now you can leave GlobControlLock, while GroupLock is still locked.
-        leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
+        leaveCS(CUDT::uglobal()->m_GlobControlLock);
     }
 
     // Re-check after the waiting lock has been reacquired
@@ -1554,7 +1554,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         {
             HLOGC(gslog.Debug,
                   log << "Will block on blocked socket @" << (*b)->id << " as only blocked socket remained");
-            CUDT::s_UDTUnited.epoll_add_usock_INTERNAL(m_SndEID, (*b)->ps, &modes);
+            CUDT::uglobal()->epoll_add_usock_INTERNAL(m_SndEID, (*b)->ps, &modes);
         }
 
         const int blocklen = blocked.size();
@@ -1871,7 +1871,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
     w_out.grpdata = grpdata;
 }
 
-// [[using locked(CUDT::s_UDTUnited.m_GlobControLock)]]
+// [[using locked(CUDT::uglobal()->m_GlobControLock)]]
 // [[using locked(m_GroupLock)]]
 struct FLookupSocketWithEvent_LOCKED
 {
@@ -1978,7 +1978,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // which requires lock on m_GlobControlLock, while this lock cannot be applied without
         // first unlocking m_GroupLock.
         const int read_modes = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-        CUDT::s_UDTUnited.epoll_add_usock_INTERNAL(m_RcvEID, *i, &read_modes);
+        CUDT::uglobal()->epoll_add_usock_INTERNAL(m_RcvEID, *i, &read_modes);
     }
 
     // Here we need to make an additional check.
@@ -2018,7 +2018,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         THREAD_RESUMED();
 
         // HERE GlobControlLock is locked first, then GroupLock is applied back
-        enterCS(CUDT::s_UDTUnited.m_GlobControlLock);
+        enterCS(CUDT::uglobal()->m_GlobControlLock);
     }
     // BOTH m_GlobControlLock AND m_GroupLock are locked here.
 
@@ -2028,7 +2028,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     {
         // GlobControlLock is applied manually, so unlock manually.
         // GroupLock will be unlocked as per scope.
-        leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
+        leaveCS(CUDT::uglobal()->m_GlobControlLock);
         // This can only happen when 0 is passed as timeout and none is ready.
         // And 0 is passed only in non-blocking mode. So this is none ready in
         // non-blocking mode.
@@ -2079,7 +2079,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
     }
     
-    leaveCS(CUDT::s_UDTUnited.m_GlobControlLock);
+    leaveCS(CUDT::uglobal()->m_GlobControlLock);
 
     return readReady;
 }
@@ -2504,7 +2504,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             InvertedLock ung (m_GroupLock);
             for (set<CUDTSocket*>::iterator b = broken.begin(); b != broken.end(); ++b)
             {
-                CUDT::s_UDTUnited.close(*b);
+                CUDT::uglobal()->close(*b);
             }
         }
 
@@ -3542,11 +3542,11 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         // With unlocked GroupLock, we can now lock GlobControlLock.
         // This is needed prevent any of them be deleted from the container
         // at the same time.
-        ScopedLock globlock(CUDT::s_UDTUnited.m_GlobControlLock);
+        ScopedLock globlock(CUDT::uglobal()->m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
         {
-            CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(*p);
+            CUDTSocket* s = CUDT::uglobal()->locateSocket_LOCKED(*p);
 
             // If the socket has been just moved to ClosedSockets, it means that
             // the object still exists, but it will be no longer findable.
@@ -3579,7 +3579,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // With unlocked GroupLock, we can now lock GlobControlLock.
     // This is needed prevent any of them be deleted from the container
     // at the same time.
-    ScopedLock globlock(CUDT::s_UDTUnited.m_GlobControlLock);
+    ScopedLock globlock(CUDT::uglobal()->m_GlobControlLock);
 
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)
@@ -3589,7 +3589,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
 
         // m_GroupLock is unlocked, therefore member->pSocketData can't be used.
         const SRTSOCKET sockid = member->socketID;
-        CUDTSocket* s = CUDT::s_UDTUnited.locateSocket_LOCKED(sockid);
+        CUDTSocket* s = CUDT::uglobal()->locateSocket_LOCKED(sockid);
 
         // If the socket has been just moved to ClosedSockets, it means that
         // the object still exists, but it will be no longer findable.
@@ -3729,7 +3729,7 @@ RetryWaitBlocked:
                     HLOGC(gslog.Debug,
                         log << "grp/sendBackup: swait/ex on @" << (id)
                         << " while waiting for any writable socket - CLOSING");
-                    CUDT::s_UDTUnited.close(s); // << LOCKS m_GlobControlLock, then GroupLock!
+                    CUDT::uglobal()->close(s); // << LOCKS m_GlobControlLock, then GroupLock!
                 }
                 else
                 {
@@ -4579,7 +4579,7 @@ void CUDTGroup::updateFailedLink()
 }
 
 #if ENABLE_HEAVY_LOGGING
-// [[using maybe_locked(CUDT::s_UDTUnited.m_GlobControlLock)]]
+// [[using maybe_locked(CUDT::uglobal()->m_GlobControlLock)]]
 void CUDTGroup::debugGroup()
 {
     ScopedLock gg(m_GroupLock);
