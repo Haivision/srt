@@ -461,7 +461,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     // Now exactly one waiting thread should become ready
     // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1);
+    ASSERT_EQ(notified_clients.size(), 1U);
 
     const int ready = notified_clients[0];
     const int not_ready = (ready + 1) % 2;
@@ -611,7 +611,7 @@ TEST(Sync, FormatTime)
         const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_LE(sm.size(), 6);
+        EXPECT_LE(sm.size(), 6U);
         if (sm.size() != 6 && sm.size() != 5)
             return 0;
 
@@ -655,7 +655,7 @@ TEST(Sync, FormatTimeSys)
         const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_EQ(sm.size(), 5);
+        EXPECT_EQ(sm.size(), 5U);
         if (sm.size() != 5)
             return 0;
 

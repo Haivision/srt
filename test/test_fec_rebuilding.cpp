@@ -801,7 +801,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
 
     bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
-    EXPECT_EQ(provided.size(), 0); // Confirm that nothing was rebuilt
+    EXPECT_EQ(provided.size(), 0U); // Confirm that nothing was rebuilt
 
     /*
     // XXX With such a short sequence, losses will not be reported.
@@ -879,8 +879,8 @@ TEST_F(TestFECRebuilding, Rebuild)
     const bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
 
-    EXPECT_EQ(loss.size(), 0);
-    ASSERT_EQ(provided.size(), 1);
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
 
     SrtPacket& rebuilt = provided[0];
     CPacket& skipped = *source[4];

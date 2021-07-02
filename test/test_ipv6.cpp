@@ -61,7 +61,7 @@ public:
 
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
-        ASSERT_NE(fam.count(w.family()), 0) << "INVALID FAMILY";
+        ASSERT_NE(fam.count(w.family()), 0U) << "INVALID FAMILY";
         std::cout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
     }
 
