@@ -51,6 +51,7 @@
 
 #endif // ENABLE_STDCXX_SYNC
 
+#include "srt.h"
 #include "utilities.h"
 
 class CUDTException;    // defined in common.h
@@ -596,7 +597,7 @@ public:
         cond.notify_all();
     }
 
-    void signal_locked(UniqueLock& lk ATR_UNUSED)
+    void signal_locked(UniqueLock& lk SRT_ATR_UNUSED)
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();

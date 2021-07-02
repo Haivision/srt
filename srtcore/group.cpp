@@ -3168,7 +3168,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
 }
 
 // [[using locked(this->m_GroupLock)]]
-bool CUDTGroup::sendBackup_CheckSendStatus(const steady_clock::time_point& currtime ATR_UNUSED,
+bool CUDTGroup::sendBackup_CheckSendStatus(const steady_clock::time_point& currtime SRT_ATR_UNUSED,
                                            const int                       send_status,
                                            const int32_t                   lastseq,
                                            const int32_t                   pktseq,
@@ -3769,7 +3769,7 @@ RetryWaitBlocked:
     // suffer linear search.
 
     int nwaiting = 0;
-    int nactivated ATR_UNUSED = 0;
+    int nactivated SRT_ATR_UNUSED = 0;
     int stat = -1;
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
@@ -4217,7 +4217,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // sequences already used by the link from which packets were
             // copied to the backup buffer.
             IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
-            const bool su ATR_UNUSED = core.overrideSndSeqNo(curseq);
+            const bool su SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
             HLOGC(gslog.Debug,
                   log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
                       << (su ? " - succeeded" : " - FAILED!"));

@@ -112,7 +112,7 @@ TEST(Core, ListenCallback) {
     (void)srt_cleanup();
 }
 
-int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
+int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
 {
     using namespace std;
 

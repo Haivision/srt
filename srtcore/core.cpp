@@ -2385,7 +2385,7 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
 bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                                  const CPacket&    hspkt,
-                                 uint32_t*         out_data,
+                                 uint32_t*         out_data SRT_ATR_UNUSED,
                                  size_t*           pw_len)
 {
     // Initialize pw_len to 0 to handle the unencrypted case
@@ -2440,7 +2440,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
     uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
     size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
 
-    int hsreq_type_cmd ATR_UNUSED = SRT_CMD_NONE;
+    int hsreq_type_cmd SRT_ATR_UNUSED = SRT_CMD_NONE;
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
     {
@@ -2671,7 +2671,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
         m_config.sCongestion.set("live", 4);
     }
 
-    bool have_group ATR_UNUSED = false;
+    bool have_group SRT_ATR_UNUSED = false;
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
     {
@@ -7715,7 +7715,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // IF ack %> m_iRcvLastAck
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
-        const int32_t first_seq ATR_UNUSED = ackDataUpTo(ack);
+        const int32_t first_seq SRT_ATR_UNUSED = ackDataUpTo(ack);
         InvertedLock un_bufflock (m_RcvBufferLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -8318,7 +8318,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     {
         steady_clock::duration udrift(0);
         steady_clock::time_point newtimebase;
-        const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(),
+        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(),
             rtt, (udrift), (newtimebase));
 #if ENABLE_EXPERIMENTAL_BONDING
         if (drift_updated && m_parent->m_GroupOf)
@@ -10795,7 +10795,7 @@ int srt::CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
     return debug_decision;
 }
 
-bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason ATR_UNUSED)
+bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason SRT_ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
 #if ENABLE_HEAVY_LOGGING & 1
