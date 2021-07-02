@@ -18,7 +18,7 @@ written by
 
 // ATTRIBUTES:
 //
-// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
+// SRT_ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
 // ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
 // ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
 // ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
@@ -28,10 +28,8 @@ written by
 
 
 #ifdef __GNUG__
-#define ATR_UNUSED __attribute__((unused))
 #define ATR_DEPRECATED __attribute__((deprecated))
 #else
-#define ATR_UNUSED
 #define ATR_DEPRECATED
 #endif
 #if defined(__cplusplus) && __cplusplus > 199711L
@@ -719,7 +717,8 @@ struct CallbackHolder
         // Casting function-to-function, however, should not. Unfortunately
         // newer compilers disallow that, too (when a signature differs), but
         // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        void* (*testfn)(void*) = (void*(*)(void*))f;
+        (void)(testfn);
 #endif
         opaque = o;
         fn = f;

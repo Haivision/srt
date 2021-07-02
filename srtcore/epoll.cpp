@@ -713,7 +713,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
         }
 
-        const bool wait_signaled ATR_UNUSED = CGlobEvent::waitForEvent();
+        const bool wait_signaled SRT_ATR_UNUSED = CGlobEvent::waitForEvent();
         HLOGC(ealog.Debug, log << "CEPoll::wait: EVENT WAITING: "
             << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
@@ -779,7 +779,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
                     st[i->fd] = i->events;
                     IF_HEAVY_LOGGING(singles << "@" << i->fd << ":");
                     IF_HEAVY_LOGGING(PrintEpollEvent(singles, i->events, i->parent->edgeOnly()));
-                    const bool edged ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
+                    const bool edged SRT_ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
                     IF_HEAVY_LOGGING(singles << (edged ? "<^> " : " "));
                 }
 

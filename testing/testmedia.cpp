@@ -2260,7 +2260,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 {
     static size_t counter = 1;
 
-    bool have_group ATR_UNUSED = !m_group_nodes.empty();
+    bool have_group SRT_ATR_UNUSED = !m_group_nodes.empty();
 
     bytevector data(chunk);
     // EXPERIMENTAL

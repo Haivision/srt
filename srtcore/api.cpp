@@ -1384,7 +1384,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
         // Set all options that were requested by the options set on a group
         // prior to connecting.
-        string error_reason ATR_UNUSED;
+        string error_reason SRT_ATR_UNUSED;
         try
         {
             for (size_t i = 0; i < g.m_config.size(); ++i)
