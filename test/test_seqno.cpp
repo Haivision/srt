@@ -27,7 +27,7 @@ TEST(CSeqNo, seqcmp)
     EXPECT_EQ(CSeqNo::seqcmp(1, 128), -127);
 
     // abs(seq1 - seq2) >= 0x3FFFFFFF : seq2 - seq1
-    EXPECT_EQ(CSeqNo::seqcmp(0x7FFFFFFF, 1), 0x80000002);   // -2147483646
+    EXPECT_EQ(CSeqNo::seqcmp(0x7FFFFFFF, 1), int(0x80000002));   // -2147483646
     EXPECT_EQ(CSeqNo::seqcmp(1, 0x7FFFFFFF), 0x7FFFFFFE);   //  2147483646
 }
 
