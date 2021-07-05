@@ -54,6 +54,7 @@ written by
 
 extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
+namespace {
 typedef void setter_function(CSrtConfig& co, const void* optval, int optlen);
 
 template<SRT_SOCKOPT name>
@@ -872,15 +873,11 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
-static struct SrtConfigSetter
+int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
-    setter_function* fn[SRTO_E_SIZE];
-
-    SrtConfigSetter()
+    switch (optName)
     {
-        memset(fn, 0, sizeof fn);
-
-#define DISPATCH(optname) fn[optname] = &CSrtConfigSetter<optname>::set;
+#define DISPATCH(optname) case optname: CSrtConfigSetter<optname>::set(co, optval, optlen); return 0;
 
         DISPATCH(SRTO_MSS);
         DISPATCH(SRTO_FC);
@@ -937,17 +934,16 @@ static struct SrtConfigSetter
         DISPATCH(SRTO_RETRANSMITALGO);
 
 #undef DISPATCH
+    default:
+        return -1;
     }
-} srt_config_setter;
+}
+
+} // anonymous namespace
 
 int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
-    setter_function* fn = srt_config_setter.fn[optName];
-    if (!fn)
-        return -1; // No such option
-
-    fn(*this, optval, optlen); // MAY THROW EXCEPTION.
-    return 0;
+    return dispatchSet(optName, *this, optval, optlen);
 }
 
 #if ENABLE_EXPERIMENTAL_BONDING
