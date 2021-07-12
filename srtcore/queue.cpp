@@ -280,7 +280,10 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_
 
     if (n->m_iHeapLoc >= 0)
     {
-        if (!reschedule) // EReschedule to bool conversion, predicted.
+        if (reschedule == DONT_RESCHEDULE)
+            return;
+
+        if (n->m_tsTimeStamp <= ts)
             return;
 
         if (n->m_iHeapLoc == 0)
@@ -644,11 +647,9 @@ void* srt::CSndQueue::worker(void* param)
         }
 
         const sockaddr_any addr = u->m_PeerAddr;
-        // Insert a new entry, send_time is the next processing time.
-        // TODO: maybe reschedule by taking the smaller time?
-        const steady_clock::time_point send_time = res_time.second;
-        if (!is_zero(send_time))
-            self->m_pSndUList->update(u, CSndUList::DONT_RESCHEDULE, send_time);
+        const steady_clock::time_point next_send_time = res_time.second;
+        if (!is_zero(next_send_time))
+            self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
 
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
