@@ -113,7 +113,7 @@ public:
         return true;
     }
 
-    void checkPacketPos(CUnit* unit)
+    void checkPacketPos(CUnit* unit SRT_ATR_UNUSED)
     {
         // TODO: check that a certain packet was placed into the right
         // position with right offset.

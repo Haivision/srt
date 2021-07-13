@@ -11,6 +11,7 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
+#define ENABLE_NEW_RCVBUFFER 1
 #if ENABLE_NEW_RCVBUFFER
 
 #include "buffer.h" // AvgBufSize
@@ -196,6 +197,7 @@ private:
             {
                 // m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
             }
+            m_pUnit = pUnit;
         }
     private:
         CUnit* m_pUnit;
@@ -210,16 +212,22 @@ private:
     };
     struct Entry
     {
+        Entry()
+            : pUnit(NULL)
+            , status(EntryState_Empty)
+        {}
+
         CUnit*      pUnit;
         EntryStatus status;
     };
 
-    static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
+    //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
 
-    const Entry* m_entries;
+    FixedArray<Entry> m_entries;
+    //const Entry* m_entries;
 
     // TODO: maybe use std::vector?
-    CUnit**      m_pUnit;      // pointer to the array of units (buffer)
+    //CUnit**      m_pUnit;      // pointer to the array of units (buffer)
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
 

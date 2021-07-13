@@ -440,6 +440,70 @@ struct DynamicStruct
 };
 
 
+/// Fixed-size array template class.
+namespace srt {
+
+template <class T>
+class FixedArray
+{
+public:
+    FixedArray(size_t size)
+        : m_size(size)
+        , m_entries(new T[size])
+    {
+    }
+
+    ~FixedArray()
+    {
+        delete [] m_entries;
+    }
+
+public:
+    const T& operator[](size_t index) const
+    {
+        if (index >= m_size)
+            throw std::runtime_error("Invalid index");
+
+        return m_entries[index];
+    }
+
+    T& operator[](size_t index)
+    {
+        if (index >= m_size)
+            throw std::runtime_error("Invalid index");
+
+        return m_entries[index];
+    }
+
+    const T& operator[](int index) const
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error("Invalid index");
+
+        return m_entries[index];
+    }
+
+    T& operator[](int index)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error("Invalid index");
+
+        return m_entries[index];
+    }
+
+    size_t  size() const { return m_size; }
+
+private:
+    FixedArray(const FixedArray<T>& );
+    FixedArray<T>& operator=(const FixedArray<T>&);
+
+private:
+    size_t    m_size;
+    T* const  m_entries;
+};
+
+} // namespace srt
+
 // ------------------------------------------------------------
 
 

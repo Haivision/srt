@@ -6844,7 +6844,9 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             return res;
     }
 
+#if !ENABLE_NEW_RCVBUFFER
     const int seqdistance = -1;
+#endif
 
     if (!m_config.bSynRecving)
     {
@@ -8819,13 +8821,13 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
     {
-        const bool using_rexmit_flag = m_bPeerRexmitFlag;
         UniqueLock rlock(m_RecvLock);
 #if ENABLE_NEW_RCVBUFFER
         // TODO
         // If message number is present, try to drop the whole message.
         // If message number is 0, then drop by sequence range.
 #else
+        const bool using_rexmit_flag = m_bPeerRexmitFlag;
         m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
 #endif
         // When the drop request was received, it means that there are
