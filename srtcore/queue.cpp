@@ -1774,6 +1774,11 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
     return u;
 }
 
+void srt::CRcvQueue::kick()
+{
+    CSync::lock_broadcast(m_BufferCond, m_BufferLock);
+}
+
 void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
     UniqueLock bufferlock(m_BufferLock);
