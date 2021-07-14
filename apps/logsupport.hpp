@@ -14,8 +14,8 @@
 #include <string>
 #include <map>
 #include <vector>
-#include "../srtcore/srt.h"
-#include "../srtcore/logging_api.h"
+#include "srt.h"
+#include "logging_api.h"
 
 srt_logging::LogLevel::type SrtParseLogLevel(std::string level);
 std::set<srt_logging::LogFA> SrtParseLogFA(std::string fa, std::set<std::string>* punknown = nullptr);
