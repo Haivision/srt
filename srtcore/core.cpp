@@ -6764,6 +6764,15 @@ int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return receiveBuffer(data, len);
 }
 
+size_t srt::CUDT::getAvailRcvBufferSize() const
+{
+#if ENABLE_NEW_RCVBUFFER
+    return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
+#else
+    return m_pRcvBuffer->getAvailBufSize();
+#endif
+}
+
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
@@ -7421,7 +7430,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         if (m_pRcvBuffer)
         {
-            perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_config.iMSS;
+            perf->byteAvailRcvBuf = getAvailRcvBufferSize() * m_config.iMSS;
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
@@ -7882,7 +7891,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
 int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 {
     SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
-    int32_t ack;
+    int32_t ack;    // First unacknowledged packet seqnuence number (acknowledge up to ack).
     int nbsent = 0;
     int local_prevack = 0;
 
@@ -8072,7 +8081,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
-        data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
+        data[ACKD_BUFFERLEFT] = getAvailRcvBufferSize();
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         if (data[ACKD_BUFFERLEFT] < 2)
             data[ACKD_BUFFERLEFT] = 2;
@@ -9870,7 +9879,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 continue;
             }
 
-            const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+            const int avail_bufsize = getAvailRcvBufferSize();
             if (offset >= avail_bufsize)
             {
                 // This is already a sequence discrepancy. Probably there could be found
@@ -9906,7 +9915,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 {
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                         << ", insert offset " << offset << ". "
-                        << m_pRcvBuffer->strFullnessState(steady_clock::now())
+                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
                     );
 
                     return -1;

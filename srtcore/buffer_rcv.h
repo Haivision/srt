@@ -64,9 +64,11 @@ public:
     /// @param [in] offset offset from last ACK point.
     ///
     /// @return  0 on success, -1 if packet is already in buffer, -2 if packet is before m_iStartSeqNo.
+    /// -3 if a packet is offset is ahead the buffer capacity.
+    // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
-    /// Drop packets in the receiver buffer up to the seqno (excluding seqno).
+    /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     ///
     void dropUpTo(int32_t seqno);
@@ -90,17 +92,37 @@ public:
     int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL);
 
 public:
-    /// Query how many buffer space is left for data receiving.
-    ///
-    /// @return size of available buffer space (including user buffer) for data receiving.
-    int getAvailBufSize() const;
+    /// Get the starting position of the buffer as a packet sequence number.
+    int getStartSeqNo() const { return m_iStartSeqNo; }
+
+    /// Given the sequence number of the first unacknowledged packet
+    /// tells the size of the buffer available for packets.
+    /// Effective returns capacity of the buffer minus acknowledged packet still kept in it.
+    // TODO: Maybe does not need to return minus one slot now to distinguish full and empty buffer.
+    size_t getAvailSize(int iFirstUnackSeqNo) const
+    {
+        // Receiver buffer allows reading unacknowledged packets.
+        // Therefore if the first packet in the buffer is ahead of the iFirstUnackSeqNo
+        // then it does not have acknowledged packets and its full capacity is available.
+        // Otherwise subtract the number of acknowledged but not yet read packets from its capacity.
+        const int iRBufSeqNo  = getStartSeqNo();
+        if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
+        {
+            // Full capacity is available, still don't want to encourage extra packets to come.
+            // Note: CSeqNo::seqlen(n, n) returns 1.
+            return capacity() - CSeqNo::seqlen(iFirstUnackSeqNo, iRBufSeqNo) + 1;
+        }
+
+        // Note: CSeqNo::seqlen(n, n) returns 1.
+        return capacity() - CSeqNo::seqlen(iRBufSeqNo, iFirstUnackSeqNo) + 1;
+    }
 
     /// Query how many data has been continuously received (for reading) and ready to play (tsbpdtime < now).
     /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay
     /// @return size of valid (continous) data for reading.
     int getRcvDataSize() const;
 
-    /// TODO: To implement
+    // TODO: To implement
     int getRcvDataSize(int& bytes, int& timespan);
 
     struct PacketInfo
@@ -134,9 +156,12 @@ public:
         return (m_iMaxPosInc == 0);
     }
 
+    /// Return buffer capacity.
+    /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
     size_t capacity() const
     {
-        return m_szSize;
+        return m_szSize - 1;
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -173,7 +198,10 @@ private:
     void countBytes(int pkts, int bytes, bool acked = false);
     void updateNonreadPos();
     void releaseUnitInPos(int pos);
-    void releasePassackUnits();
+
+    /// Release entries following the current buffer position if they were already
+    /// read out of order (EntryState_Read) or dropped (EntryState_Drop).
+    void releaseNextFillerEntries();
 
     bool hasReadableInorderPkts() const { return (m_iFirstNonreadPos != m_iStartPos); }
 
@@ -224,10 +252,7 @@ private:
     //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
 
     FixedArray<Entry> m_entries;
-    //const Entry* m_entries;
 
-    // TODO: maybe use std::vector?
-    //CUnit**      m_pUnit;      // pointer to the array of units (buffer)
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
@@ -267,7 +292,7 @@ public: // TSBPD public functions
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
-    std::string strFullnessState(const time_point& tsNow) const;
+    std::string strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const;
 
 private:
     CTsbpdTime  m_tsbpd;

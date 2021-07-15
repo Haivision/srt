@@ -616,7 +616,7 @@ public:
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
-   /// That is, it returns a negative value if seq1 < seq2,
+   /// Returns a negative value if seq1 < seq2,
    /// positive if seq1 > seq2, and zero if they are equal.
    /// The only correct application of this function is when you
    /// compare two values and it works faster than seqoff. However

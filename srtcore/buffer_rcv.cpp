@@ -64,8 +64,7 @@ CRcvBufferNew::~CRcvBufferNew()
 {
     for (size_t i = 0; i < m_szSize; ++i)
     {
-        Entry& entry = m_entries[i];
-        CUnit* unit = entry.pUnit;
+        CUnit* unit = m_entries[i].pUnit;
         if (unit != NULL)
         {
             m_pUnitQueue->makeUnitFree(unit);
@@ -77,11 +76,14 @@ CRcvBufferNew::~CRcvBufferNew()
 int CRcvBufferNew::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
-    const int32_t seqno = unit->m_Packet.getSeqNo();
+    const int32_t seqno  = unit->m_Packet.getSeqNo();
     const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
 
     if (offset < 0)
         return -2;
+
+    if (offset >= (int) capacity())
+        return -3;
 
     // If >= 2, then probably there is a long gap, and buffer needs to be reset.
     SRT_ASSERT((m_iStartPos + offset) / m_szSize < 2);
@@ -92,14 +94,17 @@ int CRcvBufferNew::insert(CUnit* unit)
 
     // Packet already exists
     SRT_ASSERT(pos >= 0 && pos < m_szSize);
-    if (m_entries[pos].pUnit != NULL)
+    if (m_entries[pos].status != EntryState_Empty)
         return -1;
+    SRT_ASSERT(m_entries[pos].pUnit == NULL);
 
     m_pUnitQueue->makeUnitGood(unit);
-    m_entries[pos].pUnit = unit;
+    m_entries[pos].pUnit  = unit;
+    m_entries[pos].status = EntryState_Avail;
     countBytes(1, (int)unit->m_Packet.getLength());
 
-    // If packet "in order" flag is zero, it can be read out of order
+    // If packet "in order" flag is zero, it can be read out of order.
+    // With TSBPD enabled packets are always assumed in order (the flag is ignored).
     if (!m_tsbpd.isEnabled() && !unit->m_Packet.getMsgOrderFlag())
     {
         ++m_numOutOfOrderPackets;
@@ -107,7 +112,6 @@ int CRcvBufferNew::insert(CUnit* unit)
     }
 
     updateNonreadPos();
-
     return 0;
 }
 
@@ -129,14 +133,20 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     // Check that all packets being dropped are missing.
     while (len > 0)
     {
-        SRT_ASSERT(m_pUnit[m_iStartPos] == nullptr);
+        if (m_entries[m_iStartPos].pUnit != nullptr)
+        {
+            releaseUnitInPos(m_iStartPos);
+        }
+
+        SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
         m_iStartPos = incPos(m_iStartPos);
         --len;
     }
 
     // Update positions
     m_iStartSeqNo = seqno;
-    releasePassackUnits();
+    // Move forward if there are "read" entries.
+    releaseNextFillerEntries();
     // Set nonread position to the starting position before updating,
     // because start position was increased, and preceeding packets are invalid. 
     m_iFirstNonreadPos = m_iStartPos;
@@ -229,17 +239,11 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     if (!updateStartPos)
         updateFirstReadableOutOfOrder();
 
-    releasePassackUnits();
+    releaseNextFillerEntries();
     m_iFirstNonreadPos = m_iStartPos;
     updateNonreadPos();
 
     return (dst - data);
-}
-
-int CRcvBufferNew::getAvailBufSize() const
-{
-    // One slot must be empty in order to tell the difference between "empty buffer" and "full buffer"
-    return m_szSize - getRcvDataSize() - 1;
 }
 
 int CRcvBufferNew::getRcvDataSize() const
@@ -344,10 +348,11 @@ void CRcvBufferNew::releaseUnitInPos(int pos)
     m_pUnitQueue->makeUnitFree(tmp);
 }
 
-void CRcvBufferNew::releasePassackUnits()
+void CRcvBufferNew::releaseNextFillerEntries()
 {
     int pos = m_iStartPos;
-    while (m_entries[pos].pUnit && m_entries[pos].status == EntryState_Read)
+    while (m_entries[pos].pUnit
+        && (m_entries[pos].status == EntryState_Read || m_entries[pos].status == EntryState_Drop))
     {
         m_iStartSeqNo = CSeqNo::incseq(m_entries[pos].pUnit->m_Packet.getSeqNo());
         releaseUnitInPos(pos);
@@ -645,11 +650,11 @@ void CRcvBufferNew::updateTsbPdTimeBase(uint32_t usPktTimestamp)
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBufferNew::strFullnessState(const time_point& tsNow) const
+string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
 {
     stringstream ss;
 
-    ss << "Space avail " << getAvailBufSize() << "/" << m_szSize;
+    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize;
     ss << " pkts. ";
     if (m_tsbpd.isEnabled())
     {

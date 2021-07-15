@@ -865,7 +865,7 @@ private: // Receiving related data
     CACKWindow<ACK_WND_SIZE> m_ACKWindow;        // ACK history window
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
-    int32_t m_iRcvLastAck;                       // Last sent ACK
+    int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
@@ -1024,6 +1024,8 @@ private: // Generation and processing of packets
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
     void handleKeepalive(const char* data, size_t lenghth);
+
+    size_t getAvailRcvBufferSize() const;
 
 private: // Trace
     struct CoreStats
