@@ -16,7 +16,6 @@ TEST(CRcvBuffer, Create)
     EXPECT_EQ(rcv_buffer.getAvailBufSize(), buffer_size_pkts - 1);   // logic
 }
 
-
 TEST(CRcvBuffer, FullBuffer)
 {
     const int buffer_size_pkts = 16;
@@ -221,7 +220,6 @@ protected:
     }
 
 protected:
-
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
@@ -240,7 +238,6 @@ protected:
     }
 
 public:
-
     void addMessage(size_t msg_len_pkts, int start_seqno, bool out_of_order = false)
     {
         const int msg_offset = start_seqno - m_init_seqno;
@@ -271,7 +268,6 @@ public:
     }
 
 protected:
-
     unique_ptr<CUnitQueue> m_unit_queue;
     unique_ptr<CRcvBuffer> m_rcv_buffer;
     const int m_buff_size_pkts = 16;
@@ -380,7 +376,6 @@ TEST_F(TestRcvBufferRead, MsgHalfAck)
     const int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
 }
-
 
 TEST_F(TestRcvBufferRead, OutOfOrderMsgNoACK)
 {

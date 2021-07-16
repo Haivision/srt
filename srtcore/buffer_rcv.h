@@ -11,7 +11,6 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#define ENABLE_NEW_RCVBUFFER 1
 #if ENABLE_NEW_RCVBUFFER
 
 #include "buffer.h" // AvgBufSize

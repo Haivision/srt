@@ -1,4 +1,3 @@
-#define ENABLE_NEW_RCVBUFFER 1
 #if ENABLE_NEW_RCVBUFFER
 #include <cmath>
 #include "buffer_rcv.h"
@@ -294,16 +293,16 @@ size_t CRcvBufferNew::countReadable() const
 
 bool CRcvBufferNew::isRcvDataReady(time_point time_now) const
 {
-    const bool haveAckedPackets = hasReadableInorderPkts();
+    const bool haveInorderPackets = hasReadableInorderPkts();
     if (!m_tsbpd.isEnabled())
     {
-        if (haveAckedPackets)
+        if (haveInorderPackets)
             return true;
 
         return (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1);
     }
 
-    if (!haveAckedPackets)
+    if (!haveInorderPackets)
         return false;
 
     const PacketInfo info = getFirstValidPacketInfo();

@@ -4,18 +4,16 @@
 #include <numeric>
 
 #if ENABLE_NEW_RCVBUFFER
-
 #include "buffer_rcv.h"
 #include "sync.h"
 
 using namespace std;
 using namespace srt;
-#if 0
+using namespace srt::sync;
 
 class TestRcvBufferTSBPD
     : public ::testing::Test
 {
-    using steady_clock = srt::sync::steady_clock;
 protected:
     TestRcvBufferTSBPD()
     {
@@ -35,9 +33,8 @@ protected:
         //m_unit_queue = make_unique<CUnitQueue>();
         m_unit_queue = unique_ptr<CUnitQueue>(new CUnitQueue);
         m_unit_queue->init(m_buff_size_pkts, 1500, AF_INET);
-        //m_rcv_buffer = make_unique<CRcvBufferNew>(m_init_seqno, m_buff_size_pkts);
-        m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get()));
-        //m_rcv_buffer->setTsbPdMode(m_tsbpd_base, false, m_delay, steady_clock::duration(0));
+        m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), true));
+        m_rcv_buffer->setTsbPdMode(m_tsbpd_base, false, m_delay);
     }
 
     void TearDown() override
@@ -49,7 +46,6 @@ protected:
     }
 
 protected:
-
     unique_ptr<CUnitQueue>  m_unit_queue;
     unique_ptr<CRcvBufferNew> m_rcv_buffer;
     const int m_buff_size_pkts = 16;
@@ -60,9 +56,7 @@ protected:
 };
 
 
-
-
-/// TSBPD = ON, not acknowledged ready to play packet is preceeded by a missing packet.
+/// TSBPD = ON, a ready to play packet is preceeded by a missing packet.
 /// So the CRcvBufferNew::updateState() function should drop the missing packet.
 /// The packet has a timestamp of 200 us.
 /// The TSBPD delay is set to 200 ms. This means, that the packet can be played
@@ -100,31 +94,25 @@ TEST_F(TestRcvBufferTSBPD, UnackPreceedsMissing)
     pkt.m_iTimeStamp = static_cast<int32_t>(200);
     EXPECT_EQ(m_rcv_buffer->insert(unit), 0);
 
-    const uint64_t readready_timestamp = m_peer_start_time_us + pkt.m_iTimeStamp + m_delay_us;
+    const steady_clock::time_point readready_timestamp = m_tsbpd_base + microseconds_from(pkt.m_iTimeStamp) + m_delay;
     // Check that getFirstValidPacketInfo() returns first valid packet.
     const auto pkt_info = m_rcv_buffer->getFirstValidPacketInfo();
     EXPECT_EQ(pkt_info.tsbpd_time, readready_timestamp);
     EXPECT_EQ(pkt_info.seqno, seqno);
     EXPECT_TRUE(pkt_info.seq_gap);
 
-    // The packet is not yet acknowledges, so we can't read it
+    // The packet can't be read because there is a missing packet preceeding.
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(readready_timestamp));
 
-    // The packet is preceeded by a gap, so we can't acknowledge it
-    //EXPECT_FALSE(m_rcv_buffer->canAck());
+    const int seq_gap_len = CSeqNo::seqoff(m_rcv_buffer->getStartSeqNo(), pkt_info.seqno);
+    EXPECT_GT(seq_gap_len, 0);
+    if (seq_gap_len > 0)
+    {
+        m_rcv_buffer->dropUpTo(pkt_info.seqno);
+    }
 
-    // Update at time before read readyness should not change anything.
-    //m_rcv_buffer->updateState(readready_timestamp - 1);
-    //EXPECT_FALSE(m_rcv_buffer->canAck());
-
-    // updateState() should drop the missing packet
-    //m_rcv_buffer->updateState(readready_timestamp);
-
-    // Now the missing packet is droped, so we can acknowledge the existing packet.
-    //EXPECT_TRUE(m_rcv_buffer->canAck());
-
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady(readready_timestamp));
 }
-
 
 
 /// In this test case one packet is inserted into the CRcvBufferNew.
@@ -152,16 +140,14 @@ TEST_F(TestRcvBufferTSBPD, ReadMessage)
     EXPECT_EQ(m_rcv_buffer->insert(unit), 0);
 
     const auto pkt_info = m_rcv_buffer->getFirstValidPacketInfo();
-    EXPECT_EQ(pkt_info.tsbpd_time, m_peer_start_time_us + pkt.m_iTimeStamp + m_delay_us);
+    EXPECT_EQ(pkt_info.tsbpd_time, m_tsbpd_base + microseconds_from(pkt.m_iTimeStamp) + m_delay);
 
-    // The packet is not yet acknowledges, so we can't read it
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time - 1));
-
-    //m_rcv_buffer->ack(CSeqNo::incseq(seqno));
     // Expect it is not time to read the next packet
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time - 1));
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time - microseconds_from(1)));
+
+    // Now can read
     EXPECT_TRUE (m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time));
-    EXPECT_TRUE (m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time + 1));
+    EXPECT_TRUE (m_rcv_buffer->isRcvDataReady(pkt_info.tsbpd_time + microseconds_from(1)));
 
     // Read the message from the buffer
     std::array<char, payload_size> read_buffer;
@@ -191,7 +177,5 @@ TEST_F(TestRcvBufferTSBPD, ReadMessage)
 /// In that case all missing packets have to be dropped up to the first ready packet. And wait for ACK of that packet.
 /// So those missing packets should be removed from the receiver's loss list, and the receiver's buffer
 /// has to skip m_iStartPos and m_iLastAckPos up to that packet.
-
-#endif
 
 #endif // ENABLE_NEW_RCVBUFFER
