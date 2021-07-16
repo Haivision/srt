@@ -132,7 +132,7 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     // Check that all packets being dropped are missing.
     while (len > 0)
     {
-        if (m_entries[m_iStartPos].pUnit != nullptr)
+        if (m_entries[m_iStartPos].pUnit != NULL)
         {
             releaseUnitInPos(m_iStartPos);
         }
