@@ -642,15 +642,16 @@ private:
     {
         std::vector<char> packet;
         SRT_MSGCTRL       mctrl;
-        ReadPos(int32_t s)
+        ReadPos()
             : mctrl(srt_msgctrl_default)
         {
-            mctrl.pktseq = s;
         }
     };
     std::map<SRTSOCKET, ReadPos> m_Positions;
 
     ReadPos* checkPacketAhead();
+
+    int32_t recv_GetNo(const SRT_MSGCTRL& mctrl) { return m_bTsbPd ? mctrl.pktseq : mctrl.msgno; }
 
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
@@ -664,7 +665,9 @@ private:
     std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
-    // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
+    // delivered if tsbpd is enabled, else it's the message number of
+    // previously delivered message.
+    // Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
     volatile int32_t m_RcvBaseSeqNo;
 
@@ -767,10 +770,12 @@ public:
         m_RcvBaseSeqNo = SRT_SEQNO_NONE;
     }
 
-    bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
+    bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time, bool tsbpd)
     {
         using srt::sync::is_zero;
         using srt_logging::gmlog;
+
+        m_bTsbPd = tsbpd;
 
         if (is_zero(m_tsStartTime))
         {
