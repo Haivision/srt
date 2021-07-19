@@ -90,6 +90,8 @@ public:
     ///         -1 on failure.
     int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL);
 
+    int readBufferToFile(std::fstream& ofs, int len, int iFirstUnackSeqNo);
+
 public:
     /// Get the starting position of the buffer as a packet sequence number.
     int getStartSeqNo() const { return m_iStartSeqNo; }
@@ -122,7 +124,7 @@ public:
     int getRcvDataSize() const;
 
     // TODO: To implement
-    int getRcvDataSize(int& bytes, int& timespan);
+    int getRcvDataSize(int& bytes, int& timespan, int iFirstUnackSeqNo);
 
     struct PacketInfo
     {
@@ -303,7 +305,7 @@ private: // Statistics
     sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
     int         m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
-    int         m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
+    int         m_iAckedBytesCount; // TODO: Not counted properly. Number of acknowledged payload bytes in the buffer
     unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 };
 

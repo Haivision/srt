@@ -154,7 +154,7 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
 
 void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
-    const int end_pos = (m_iStartPos + m_iMaxPosInc) % m_szSize;
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     if (msgno != 0)
     {
         for (int i = m_iStartPos; i != end_pos; i = incPos(i))
@@ -286,6 +286,63 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     return (dst - data);
 }
 
+int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
+{
+
+    if (CSeqNo::seqcmp(m_iStartSeqNo, iFirstUnackSeqNo) >= 0)
+        return 0;
+
+    int p = m_iStartPos;
+    const int iNumAvail = CSeqNo::seqlen(m_iStartSeqNo, iFirstUnackSeqNo);
+
+    SRT_ASSERT(iNumAvail <= m_iMaxPosInc);
+    const int end_pos = incPos(m_iStartPos, iNumAvail);
+
+    int rs = len;
+    while ((p != end_pos) && (rs > 0))
+    {
+        if (!m_entries[p].pUnit)
+        {
+            p = incPos(p);
+            LOGC(rbuflog.Error, log << "readBufferToFile: IPE: NULL unit found in file transmission");
+            continue;
+        }
+
+        const srt::CPacket& pkt = m_entries[p].pUnit->m_Packet;
+
+        const int pktlen = (int)pkt.getLength();
+        const int remain_pktlen = pktlen - m_iNotch;
+        const int unitsize = std::min(remain_pktlen, rs);
+
+        ofs.write(pkt.m_pcData + m_iNotch, unitsize);
+        if (ofs.fail())
+            break;
+
+        if (rs >= remain_pktlen)
+        {
+            releaseUnitInPos(p);
+            p = incPos(p);
+            m_iNotch = 0;
+        }
+        else
+            m_iNotch += rs;
+
+        rs -= unitsize;
+    }
+
+    /* we removed acked bytes form receive buffer */
+    countBytes(-1, -(len - rs), true);
+    
+    // Update positions
+    m_iStartSeqNo = p;
+    // Set nonread position to the starting position before updating,
+    // because start position was increased, and preceeding packets are invalid. 
+    m_iFirstNonreadPos = m_iStartPos;
+    updateNonreadPos();
+
+    return len - rs;
+}
+
 int CRcvBufferNew::getRcvDataSize() const
 {
     if (m_iFirstNonreadPos >= m_iStartPos)
@@ -294,12 +351,40 @@ int CRcvBufferNew::getRcvDataSize() const
     return m_szSize + m_iFirstNonreadPos - m_iStartPos;
 }
 
-int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan)
+int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan, int iFirstUnackSeqNo)
 {
-    // TODO: to implement
-    bytes = 0;
     timespan = 0;
-    return 0;
+    bytes = 0;
+    if (m_tsbpd.isEnabled())
+    {
+        int startpos = m_iStartPos;
+        if (m_entries[startpos].pUnit == NULL)
+            return 0;
+
+        const int iNumAvail = CSeqNo::seqlen(m_iStartSeqNo, iFirstUnackSeqNo) - 1;
+        if (iNumAvail <= 0)
+            return 0;
+
+        SRT_ASSERT(iNumAvail <= m_iMaxPosInc);
+        const int end_pos = incPos(m_iStartPos, iNumAvail);
+        if (m_entries[end_pos].pUnit == NULL)
+            return 0;
+
+        const steady_clock::time_point startstamp =
+            getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
+        const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[end_pos].pUnit->m_Packet.getMsgTimeStamp());
+        if (endstamp > startstamp)
+            timespan = count_milliseconds(endstamp - startstamp);
+
+        // Timespan can be less then 1000 us (1 ms) if few packets.
+        // Also, if there is only one pkt in buffer, the time difference will be 0.
+        // Therefore, always add 1 ms if not empty.
+        if (0 < m_iAckedPktsCount)
+            timespan += 1;
+    }
+
+    bytes = m_iAckedBytesCount;
+    return m_iAckedPktsCount;
 }
 
 CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
