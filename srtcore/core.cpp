@@ -7275,9 +7275,10 @@ int64_t srt::CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int blo
         }
 
         unitsize = int((torecv > block) ? block : torecv);
-        // TODO: readBufferFromFile
 #if ENABLE_NEW_RCVBUFFER
+        // TODO: readBufferFromFile
         recvsize = 0;
+        unitsize = 0;
 #else
         recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
 #endif
@@ -8829,14 +8830,14 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
+    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
+
     {
         UniqueLock rlock(m_RecvLock);
-#if ENABLE_NEW_RCVBUFFER
-        // TODO
-        // If message number is present, try to drop the whole message.
-        // If message number is 0, then drop by sequence range.
-#else
         const bool using_rexmit_flag = m_bPeerRexmitFlag;
+#if ENABLE_NEW_RCVBUFFER
+        m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+#else
         m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
 #endif
         // When the drop request was received, it means that there are
@@ -8849,8 +8850,6 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             cc.signal_locked(rlock);
         }
     }
-
-    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     dropFromLossLists(dropdata[0], dropdata[1]);
 
@@ -9982,7 +9981,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
                     << " offset=" << offset
                     << " BUFr=" << avail_bufsize
-                    << " avail=" << m_pRcvBuffer->getAvailBufSize()
+                    << " avail=" << getAvailRcvBufferSize()
                     << " buffer=(" << m_iRcvLastSkipAck
                     << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
                     << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)

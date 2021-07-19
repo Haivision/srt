@@ -152,10 +152,51 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     updateNonreadPos();
 }
 
-void CRcvBufferNew::dropMessage(int32_t seqnolo SRT_ATR_UNUSED, int32_t seqnohi SRT_ATR_UNUSED, int32_t msgno SRT_ATR_UNUSED)
+void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
-    // TODO: Add implementation.
+    const int end_pos = (m_iStartPos + m_iMaxPosInc) % m_szSize;
+    if (msgno != 0)
+    {
+        for (int i = m_iStartPos; i != end_pos; i = incPos(i))
+        {
+            // TODO: Maybe check status?
+            if (!m_entries[i].pUnit)
+                continue;
 
+            const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
+            if (msgseq == msgno)
+            {
+                releaseUnitInPos(i);
+                m_entries[i].status = EntryState_Drop;
+            }
+        }
+
+        return;
+    }
+
+    // Drop by packet seqno range.
+    const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
+    const int offset_b = CSeqNo::seqoff(m_iStartSeqNo, seqnohi);
+    if (offset_b < 0)
+    {
+        LOGC(rbuflog.Warn, log << "CRcvBufferNew.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
+                               << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
+        return;
+    }
+
+    const int start_off = max(0, offset_a);
+    const int last_pos = incPos(m_iStartPos, offset_b);
+    for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != last_pos; i = incPos(i))
+    {
+        if (m_entries[i].pUnit)
+        {
+            releaseUnitInPos(i);
+        }
+        m_entries[i].status = EntryState_Drop;
+    }
+
+    LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): [" << seqnolo << "; "
+        << seqnohi << "].");
 }
 
 int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
@@ -342,7 +383,7 @@ void CRcvBufferNew::countBytes(int pkts, int bytes, bool acked)
 void CRcvBufferNew::releaseUnitInPos(int pos)
 {
     CUnit* tmp = m_entries[pos].pUnit;
-    SRT_ASSERT(tmp !+ NULL);
+    SRT_ASSERT(tmp != NULL);
     m_entries[pos] = Entry();
     m_pUnitQueue->makeUnitFree(tmp);
 }

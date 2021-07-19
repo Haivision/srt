@@ -158,6 +158,7 @@ public:
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
     /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
+    /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
         return m_szSize - 1;
