@@ -6291,9 +6291,8 @@ int srt::CUDT::receiveBuffer(char *data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
-    // TODO: Implement readBuffer
 #if ENABLE_NEW_RCVBUFFER
-    const int res = -1;
+    const int res = m_pRcvBuffer->readBuffer(data, len, m_iRcvLastAck);
 #else
     const int res = m_pRcvBuffer->readBuffer(data, len);
 #endif

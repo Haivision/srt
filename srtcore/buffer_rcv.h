@@ -90,6 +90,18 @@ public:
     ///         -1 on failure.
     int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL);
 
+    /// Read acknowledged data into a user buffer.
+    /// @param [in, out] dst pointer to the target user buffer.
+    /// @param [in] len length of user buffer.
+    /// @param iFirstUnackSeqNo the first unack packet sequence number.
+    /// @return size of data read.
+    int readBuffer(char* dst, int len, int iFirstUnackSeqNo);
+
+    /// Read acknowledged data directly into file.
+    /// @param [in] ofs C++ file stream.
+    /// @param [in] len expected length of data to write into the file.
+    /// @param iFirstUnackSeqNo the first unack packet sequence number.
+    /// @return size of data read.
     int readBufferToFile(std::fstream& ofs, int len, int iFirstUnackSeqNo);
 
 public:
@@ -215,6 +227,15 @@ private:
     void updateFirstReadableOutOfOrder();
     int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
     int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
+
+    typedef bool copy_to_dst_f(char* data, int len, void* arg);
+
+    /// Read acknowledged data directly into file.
+    /// @param [in] ofs C++ file stream.
+    /// @param [in] len expected length of data to write into the file.
+    /// @param iFirstUnackSeqNo the first unack packet sequence number.
+    /// @return size of data read.
+    int readBufferTo(int len, int iFirstUnackSeqNo, copy_to_dst_f funcCopyToDst, void* arg);
 
 private:
     // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.

@@ -286,9 +286,34 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     return (dst - data);
 }
 
-int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
-{
+namespace {
+    /// @brief Writes bytes to file stream.
+    /// @param data pointer to data to write.
+    /// @param len the number of bytes to write
+    /// @param arg a void pointer to the fstream to write to.
+    /// @return true on success, false on failure
+    bool writeBytesToFile(char* data, int len, void* arg)
+    {
+        fstream* pofs = reinterpret_cast<fstream*>(arg);
+        pofs->write(data, len);
+        return !pofs->fail();
+    }
 
+    /// @brief Copies bytes to the destination buffer.
+    /// @param data pointer to data to copy.
+    /// @param len the number of bytes to copy
+    /// @param arg A pointer to the destination buffer
+    /// @return true on success, false on failure
+    bool copyBytesToBuf(char* data, int len, void* arg)
+    {
+        char* dst = reinterpret_cast<char*>(arg);
+        memcpy(dst, data, len);
+        return true;
+    }
+}
+
+int CRcvBufferNew::readBufferTo(int len, int iFirstUnackSeqNo, copy_to_dst_f funcCopyToDst, void* arg)
+{
     if (CSeqNo::seqcmp(m_iStartSeqNo, iFirstUnackSeqNo) >= 0)
         return 0;
 
@@ -297,6 +322,9 @@ int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
 
     SRT_ASSERT(iNumAvail <= m_iMaxPosInc);
     const int end_pos = incPos(m_iStartPos, iNumAvail);
+
+    const bool bTsbPdEnabled = m_tsbpd.isEnabled();
+    const steady_clock::time_point now = (bTsbPdEnabled ? steady_clock::now() : steady_clock::time_point());
 
     int rs = len;
     while ((p != end_pos) && (rs > 0))
@@ -310,12 +338,23 @@ int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
 
         const srt::CPacket& pkt = m_entries[p].pUnit->m_Packet;
 
+        if (bTsbPdEnabled)
+        {
+            const steady_clock::time_point tsPlay = getPktTsbPdTime(pkt.getMsgTimeStamp());
+            HLOGC(rbuflog.Debug,
+                log << "readBuffer: check if time to play:"
+                << " NOW=" << FormatTime(now)
+                << " PKT TS=" << FormatTime(tsPlay));
+
+            if ((tsPlay > now))
+                break; /* too early for this unit, return whatever was copied */
+        }
+
         const int pktlen = (int)pkt.getLength();
         const int remain_pktlen = pktlen - m_iNotch;
         const int unitsize = std::min(remain_pktlen, rs);
 
-        ofs.write(pkt.m_pcData + m_iNotch, unitsize);
-        if (ofs.fail())
+        if (!funcCopyToDst(pkt.m_pcData + m_iNotch, unitsize, arg))
             break;
 
         if (rs >= remain_pktlen)
@@ -332,7 +371,7 @@ int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
 
     /* we removed acked bytes form receive buffer */
     countBytes(-1, -(len - rs), true);
-    
+
     // Update positions
     m_iStartSeqNo = p;
     // Set nonread position to the starting position before updating,
@@ -341,6 +380,16 @@ int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
     updateNonreadPos();
 
     return len - rs;
+}
+
+int CRcvBufferNew::readBuffer(char* dst, int len, int iFirstUnackSeqNo)
+{
+    return readBufferTo(len, iFirstUnackSeqNo, copyBytesToBuf, reinterpret_cast<void*>(dst));
+}
+
+int CRcvBufferNew::readBufferToFile(fstream& ofs, int len, int iFirstUnackSeqNo)
+{
+    return readBufferTo(len, iFirstUnackSeqNo, writeBytesToFile, reinterpret_cast<void*>(&ofs));
 }
 
 int CRcvBufferNew::getRcvDataSize() const
