@@ -124,6 +124,9 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     if (len <= 0)
         return;
 
+    /*LOGC(rbuflog.Warn, log << "CRcvBufferNew.dropUpTo(): seqno=" << seqno << ", pkts=" << len
+        << ". Buffer start " << m_iStartSeqNo << ".");*/
+
     m_iMaxPosInc -= len;
     if (m_iMaxPosInc < 0)
         m_iMaxPosInc = 0;
@@ -538,11 +541,7 @@ void CRcvBufferNew::updateNonreadPos()
     //    m_iFirstNonreadPos = pos;
     //    return;
     //}
-
-    // Check if the gap is filled.
-    SRT_ASSERT(m_entries[m_iFirstNonreadPos].pUnit);
-
-    const int last_pos = incPos(m_iStartPos, m_iMaxPosInc);
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc); // The empty position right after the last valid entry.
 
     int pos = m_iFirstNonreadPos;
     while (m_entries[pos].pUnit && m_entries[pos].status == EntryState_Avail && (m_entries[pos].pUnit->m_Packet.getMsgBoundary() & PB_FIRST))
@@ -560,10 +559,10 @@ void CRcvBufferNew::updateNonreadPos()
         // If the message didn't look as expected, interrupt this.
 
         // This begins with a message starting at m_iStartPos
-        // up to last_pos OR until the PB_LAST message is found.
+        // up to end_pos (excluding) OR until the PB_LAST message is found.
         // If any of the units on this way isn't good, this OUTER loop
         // will be interrupted.
-        for (int i = pos; i != last_pos; i = (i + 1) % m_szSize)
+        for (int i = pos; i != end_pos; i = (i + 1) % m_szSize)
         {
             if (!m_entries[i].pUnit || m_entries[pos].status != EntryState_Avail)
             {

@@ -5183,17 +5183,21 @@ void * srt::CUDT::tsbpd(void* param)
             const int seq_gap_len = CSeqNo::seqoff(self->m_iRcvLastSkipAck, info.seqno);
             if (seq_gap_len > 0)
             {
-                if (!info.seq_gap)
+                /*if (!info.seq_gap)
                 {
-                    LOGC(brlog.Error, log << "TSBPD worker: no gap. pktseqno=" << info.seqno
+                    LOGC(brlog.Warn, log << "TSBPD worker: no gap. pktseqno=" << info.seqno
                         << ", m_iRcvLastSkipAck=" << self->m_iRcvLastSkipAck
-                        << ", RBuffer start seqno=" << self->m_pRcvBuffer->getStartSeqNo());
-                }
-                SRT_ASSERT(info.seq_gap);
+                        << ", RBuffer start seqno=" << self->m_pRcvBuffer->getStartSeqNo()
+                        << ", m_iRcvLastAck=" << self->m_iRcvLastAck
+                        << ", init seqnoo=" << self->m_iISN);
+                }*/
 
                 // Drop too late packets
                 self->updateForgotten(seq_gap_len, self->m_iRcvLastSkipAck, info.seqno);
-                self->m_pRcvBuffer->dropUpTo(info.seqno);
+                if (info.seq_gap) // If there is no sequence gap, we are reading ahead of ACK.
+                {
+                    self->m_pRcvBuffer->dropUpTo(info.seqno);
+                }
 
                 self->m_iRcvLastSkipAck = info.seqno;
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -5208,7 +5212,7 @@ void * srt::CUDT::tsbpd(void* param)
                     << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
                     << (timediff_us / 1000) << "." << (timediff_us % 1000) << " ms");*/
 #endif
-                LOGC(brlog.Warn, log << "RCV-DROPPED packet delay=" << (timediff_us / 1000) << "ms");
+                LOGC(brlog.Warn, log << "RCV-DROPPED packet delay=" << (timediff_us / 1000) << "ms" << " up to seqno " << info.seqno);
 #endif
 
                 tsbpd_time = steady_clock::time_point(); // Ready to read, nothing to wait for.
