@@ -6108,7 +6108,9 @@ int srt::CUDT::receiveBuffer(char *data, int len)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+    enterCS(m_RcvBufferLock);
     const int res = m_pRcvBuffer->readBuffer(data, len);
+    leaveCS(m_RcvBufferLock);
 
     /* Kick TsbPd thread to schedule next wakeup (if running) */
     if (m_bTsbPd)
@@ -7056,7 +7058,9 @@ int64_t srt::CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int blo
         }
 
         unitsize = int((torecv > block) ? block : torecv);
+        enterCS(m_RcvBufferLock);
         recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
+        leaveCS(m_RcvBufferLock);
 
         if (recvsize > 0)
         {
