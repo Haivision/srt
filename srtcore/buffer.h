@@ -272,6 +272,8 @@ private:
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#if (!ENABLE_NEW_RCVBUFFER)
+
 class CRcvBuffer
 {
     typedef srt::sync::steady_clock::time_point time_point;
@@ -565,5 +567,7 @@ private:
     CRcvBuffer(const CRcvBuffer&);
     CRcvBuffer& operator=(const CRcvBuffer&);
 };
+
+#endif // !ENABLE_NEW_RCVBUFFER
 
 #endif

@@ -155,8 +155,15 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
+#if ENABLE_NEW_RCVBUFFER
     if (m_pUDT->m_bConnected && m_pUDT->m_pRcvBuffer->isRcvDataReady())
         return true;
+#else
+    if (m_pUDT->m_bConnected && m_pUDT->m_pRcvBuffer->isRcvDataReady())
+        return true;
+#endif
+
+
     if (m_pUDT->m_bListening)
     {
         return m_QueuedSockets.size() > 0;
@@ -2641,7 +2648,11 @@ void srt::CUDTUnited::checkBrokenSockets()
             // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
             // this function is called (isRcvDataReady also checks if the
             // available data is "ready to play").
+#if ENABLE_NEW_RCVBUFFER
+            && s->m_pUDT->m_pRcvBuffer->isRcvDataReady()) // zero time includes any available packets
+#else
             && s->m_pUDT->m_pRcvBuffer->isRcvDataAvailable())
+#endif
          {
              const int bc = s->m_pUDT->m_iBrokenCounter.load();
              if (bc > 0)

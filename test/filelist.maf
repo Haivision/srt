@@ -1,5 +1,7 @@
-
 SOURCES
+test_buffer2.cpp
+test_rcvbuffer_tsbpd.cpp
+test_rcvbuffer2_read.cpp
 test_buffer.cpp
 test_bonding.cpp
 test_common.cpp
