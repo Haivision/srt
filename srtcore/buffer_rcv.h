@@ -135,8 +135,8 @@ public:
     /// @return size of valid (continous) data for reading.
     int getRcvDataSize() const;
 
-    // TODO: To implement
-    int getRcvDataSize(int& bytes, int& timespan, int iFirstUnackSeqNo);
+    /// Get the number of packets, bytes and buffer timespan.
+    int getRcvDataSize(int& bytes, int& timespan) const;
 
     struct PacketInfo
     {
@@ -209,7 +209,7 @@ private:
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
 
 private:
-    void countBytes(int pkts, int bytes, bool acked = false);
+    void countBytes(int pkts, int bytes);
     void updateNonreadPos();
     void releaseUnitInPos(int pos);
 
@@ -236,6 +236,10 @@ private:
     /// @param iFirstUnackSeqNo the first unack packet sequence number.
     /// @return size of data read.
     int readBufferTo(int len, int iFirstUnackSeqNo, copy_to_dst_f funcCopyToDst, void* arg);
+
+    /// @brief Estimate timespan of the stored packets (acknowledged and unacknowledged).
+    /// @return timespan in milliseconds
+    int getTimespan_ms() const;
 
 private:
     // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.
@@ -323,10 +327,10 @@ private:
 private: // Statistics
     AvgBufSize m_mavg;
 
-    sync::Mutex m_BytesCountLock;   // used to protect counters operations
+    // TODO: m_BytesCountLock is probably not needed as the buffer has to be protected from simulteneous access.
+    mutable sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
-    int         m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
-    int         m_iAckedBytesCount; // TODO: Not counted properly. Number of acknowledged payload bytes in the buffer
+    int         m_iPktsCount;       // Number of payload bytes in the buffer
     unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 };
 

@@ -52,9 +52,8 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     , m_iFirstReadableOutOfOrder(-1)
     , m_bPeerRexmitFlag(peerRexmit)
     , m_iBytesCount(0)
-    , m_iAckedPktsCount(0)
-    , m_iAckedBytesCount(0)
-    , m_uAvgPayloadSz(7 * 188)
+    , m_iPktsCount(0)
+    , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
     SRT_ASSERT(size < INT_MAX); // All position pointers are integers
 }
@@ -154,6 +153,7 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
 
 void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
+    // TODO: count bytes as removed?
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     if (msgno != 0)
     {
@@ -275,7 +275,7 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         }
     }
 
-    countBytes(-pkts_read, -bytes_read, true);
+    countBytes(-pkts_read, -bytes_read);
     if (!updateStartPos)
         updateFirstReadableOutOfOrder();
 
@@ -370,7 +370,7 @@ int CRcvBufferNew::readBufferTo(int len, int iFirstUnackSeqNo, copy_to_dst_f fun
     }
 
     /* we removed acked bytes form receive buffer */
-    countBytes(-1, -(len - rs), true);
+    countBytes(-1, -(len - rs));
 
     // Update positions
     m_iStartSeqNo = p;
@@ -400,45 +400,52 @@ int CRcvBufferNew::getRcvDataSize() const
     return m_szSize + m_iFirstNonreadPos - m_iStartPos;
 }
 
-int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan, int iFirstUnackSeqNo)
+int CRcvBufferNew::getTimespan_ms() const
 {
-    timespan = 0;
-    bytes = 0;
-    if (m_tsbpd.isEnabled())
+    if (!m_tsbpd.isEnabled())
+        return 0;
+
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
+    int startpos = m_iStartPos;
+
+    while (m_entries[startpos].pUnit == NULL)
     {
-        int startpos = m_iStartPos;
-        if (m_entries[startpos].pUnit == NULL)
-            return 0;
+        if (startpos == end_pos)
+            break;
 
-        const int iNumAvail = CSeqNo::seqlen(m_iStartSeqNo, iFirstUnackSeqNo) - 1;
-        if (iNumAvail <= 0)
-            return 0;
-
-        SRT_ASSERT(iNumAvail <= m_iMaxPosInc);
-        const int end_pos = incPos(m_iStartPos, iNumAvail);
-        if (m_entries[end_pos].pUnit == NULL)
-            return 0;
-
-        const steady_clock::time_point startstamp =
-            getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
-        const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[end_pos].pUnit->m_Packet.getMsgTimeStamp());
-        if (endstamp > startstamp)
-            timespan = count_milliseconds(endstamp - startstamp);
-
-        // Timespan can be less then 1000 us (1 ms) if few packets.
-        // Also, if there is only one pkt in buffer, the time difference will be 0.
-        // Therefore, always add 1 ms if not empty.
-        if (0 < m_iAckedPktsCount)
-            timespan += 1;
+        ++startpos;
     }
 
-    bytes = m_iAckedBytesCount;
-    return m_iAckedPktsCount;
+    if (m_entries[startpos].pUnit == NULL)
+        return 0;
+
+    // Should not happen
+    SRT_ASSERT(m_entries[end_pos].pUnit != NULL);
+    if (m_entries[end_pos].pUnit == NULL)
+        return 0;
+
+    const steady_clock::time_point startstamp =
+        getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
+    const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[end_pos].pUnit->m_Packet.getMsgTimeStamp());
+    if (endstamp < startstamp)
+        return 0;
+
+    // One millisecond is added as a duration of a packet in the buffer.
+    // If there is only one packet in the buffer, one millisecond is returned.
+    return count_milliseconds(endstamp - startstamp) + 1;
+}
+
+int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
+{
+    ScopedLock lck(m_BytesCountLock);
+    bytes = m_iBytesCount;
+    timespan = getTimespan_ms();
+    return m_iPktsCount;
 }
 
 CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
 {
-    const int end_pos = (m_iStartPos + m_iMaxPosInc) % m_szSize;
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     for (int i = m_iStartPos; i != end_pos; i = incPos(i))
     {
         // TODO: Maybe check status?
@@ -485,33 +492,13 @@ bool CRcvBufferNew::isRcvDataReady(time_point time_now) const
     return info.tsbpd_time <= time_now;
 }
 
-void CRcvBufferNew::countBytes(int pkts, int bytes, bool acked)
+void CRcvBufferNew::countBytes(int pkts, int bytes)
 {
-    /*
-     * Byte counter changes from both sides (Recv & Ack) of the buffer
-     * so the higher level lock is not enough for thread safe op.
-     *
-     * pkts are...
-     *  added (bytes>0, acked=false),
-     *  acked (bytes>0, acked=true),
-     *  removed (bytes<0, acked=n/a)
-     */
     ScopedLock lock(m_BytesCountLock);
-
-    if (!acked) // adding new pkt in RcvBuffer
-    {
-        m_iBytesCount += bytes; /* added or removed bytes from rcv buffer */
-        if (bytes > 0)          /* Assuming one pkt when adding bytes */
-            m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
-    }
-    else // acking/removing pkts to/from buffer
-    {
-        m_iAckedPktsCount += pkts;   /* acked or removed pkts from rcv buffer */
-        m_iAckedBytesCount += bytes; /* acked or removed bytes from rcv buffer */
-
-        if (bytes < 0)
-            m_iBytesCount += bytes; /* removed bytes from rcv buffer */
-    }
+    m_iBytesCount += bytes; // added or removed bytes from rcv buffer
+    m_iPktsCount  += pkts;
+    if (bytes > 0)          // Assuming one pkt when adding bytes
+        m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
 }
 
 void CRcvBufferNew::releaseUnitInPos(int pos)
