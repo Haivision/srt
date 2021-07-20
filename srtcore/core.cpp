@@ -5183,6 +5183,12 @@ void * srt::CUDT::tsbpd(void* param)
             const int seq_gap_len = CSeqNo::seqoff(self->m_iRcvLastSkipAck, info.seqno);
             if (seq_gap_len > 0)
             {
+                if (!info.seq_gap)
+                {
+                    LOGC(brlog.Error, log << "TSBPD worker: no gap. pktseqno=" << info.seqno
+                        << ", m_iRcvLastSkipAck=" << self->m_iRcvLastSkipAck
+                        << ", RBuffer start seqno=" << self->m_pRcvBuffer->getStartSeqNo());
+                }
                 SRT_ASSERT(info.seq_gap);
 
                 // Drop too late packets

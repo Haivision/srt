@@ -405,12 +405,15 @@ int CRcvBufferNew::getTimespan_ms() const
     if (!m_tsbpd.isEnabled())
         return 0;
 
-    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
+    if (m_iMaxPosInc == 0)
+        return 0;
+
+    const int lastpos = incPos(m_iStartPos, m_iMaxPosInc - 1);
     int startpos = m_iStartPos;
 
     while (m_entries[startpos].pUnit == NULL)
     {
-        if (startpos == end_pos)
+        if (startpos == lastpos)
             break;
 
         ++startpos;
@@ -420,13 +423,13 @@ int CRcvBufferNew::getTimespan_ms() const
         return 0;
 
     // Should not happen
-    SRT_ASSERT(m_entries[end_pos].pUnit != NULL);
-    if (m_entries[end_pos].pUnit == NULL)
+    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
+    if (m_entries[lastpos].pUnit == NULL)
         return 0;
 
     const steady_clock::time_point startstamp =
         getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
-    const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[end_pos].pUnit->m_Packet.getMsgTimeStamp());
+    const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[lastpos].pUnit->m_Packet.getMsgTimeStamp());
     if (endstamp < startstamp)
         return 0;
 
@@ -817,7 +820,7 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
 
     ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize;
     ss << " pkts. ";
-    if (m_tsbpd.isEnabled())
+    if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
         ss << " (TSBPD ready in ";
         if (m_entries[m_iStartPos].pUnit)
@@ -830,7 +833,7 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
             ss << "n/a";
         }
 
-        const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc);
+        const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc - 1);
         if (m_entries[iLastPos].pUnit)
         {
             ss << ":";

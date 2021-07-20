@@ -136,11 +136,11 @@ protected:
 /// Don't allow to add packet with the same sequence number.
 ///
 /// 1. insert
-///   /
+///   / 
 /// +---+  ---+---+---+---+---+   +---+
 /// | 1 |   0 | 0 | 0 | 0 | 0 |...| 0 | m_pUnit[]
 /// +---+  ---+---+---+---+---+   +---+
-///   \
+///   \ 
 /// 2. read
 ///
 TEST_F(TestRcvBuffer2Read, OnePacket)
@@ -166,11 +166,11 @@ TEST_F(TestRcvBuffer2Read, OnePacket)
 /// One packet is added to the buffer. Is allowed to be read on TSBPD condition.
 ///
 /// 1. insert
-///   /
+///   / 
 /// +---+  ---+---+---+---+---+   +---+
 /// | 1 |   0 | 0 | 0 | 0 | 0 |...| 0 | m_pUnit[]
 /// +---+  ---+---+---+---+---+   +---+
-///   \
+///   \ 
 /// 2. read
 ///
 TEST_F(TestRcvBuffer2Read, OnePacketTSBPD)
@@ -212,7 +212,7 @@ TEST_F(TestRcvBuffer2Read, OnePacketTSBPD)
 /// +---+---+  ---+---+---+---+   +---+
 /// | 0 | 1 |   0 | 0 | 0 | 0 |...| 0 | m_pUnit[]
 /// +---+---+  ---+---+---+---+   +---+
-///   \    \
+///   \    \ 
 /// 2. read
 ///
 TEST_F(TestRcvBuffer2Read, OnePacketAfterGapDrop)
