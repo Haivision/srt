@@ -1208,16 +1208,9 @@ void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
 
-    static const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ / sizeof(int32_t);
-
-    // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
-    // too small to keep all the data. As this is "static const", declaring
-    // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS_E_SIZE ? SRTDATA_MAXSIZE : -1;
-
-    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used
-    // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
-    uint32_t srtdata[SRTDATA_SIZE];
+    SRT_STATIC_ASSERT(SRTDATA_MAXSIZE >= SRT_HS_E_SIZE, "SRT_CMD_MAXSZ is too small to hold all the data");
+    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used for incoming data.
+    uint32_t srtdata[SRTDATA_MAXSIZE];
 
     size_t srtlen = 0;
 
@@ -1233,7 +1226,7 @@ void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
     {
     case SRT_CMD_HSREQ:
     case SRT_CMD_HSRSP:
-        srtlen = prepareSrtHsMsg(cmd, srtdata, SRTDATA_SIZE);
+        srtlen = prepareSrtHsMsg(cmd, srtdata, SRTDATA_MAXSIZE);
         break;
 
     case SRT_CMD_KMREQ: // Sender
