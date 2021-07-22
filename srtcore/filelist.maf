@@ -41,15 +41,6 @@ sync_cxx11.cpp
 SOURCES - EXTRA_WIN32_SHARED
 srt_shared.rc
 
-PUBLIC HEADERS
-srt.h
-logging_api.h
-access_control.h
-
-PROTECTED HEADERS
-platform_sys.h
-udt.h
-
 PRIVATE HEADERS
 api.h
 buffer.h

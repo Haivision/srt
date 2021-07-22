@@ -559,6 +559,7 @@ endif()
 
 set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
 set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
+set (SRT_SRC_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/srt)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
@@ -601,7 +602,7 @@ endif()
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_INCLUDE_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 
 if (ENABLE_LOGGING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -782,9 +783,12 @@ endif()
 
 MafReadDir(srtcore filelist.maf
 	SOURCES SOURCES_srt
-	PUBLIC_HEADERS HEADERS_srt
 	PROTECTED_HEADERS HEADERS_srt
 	PRIVATE_HEADERS HEADERS_srt_private
+)
+
+MafReadDir(include/srt filelist.maf
+	PUBLIC_HEADERS HEADERS_srt
 )
 
 # Auto generated version file and add it to the HEADERS_srt list.
