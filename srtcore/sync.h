@@ -305,7 +305,7 @@ using ScopedLock = lock_guard<mutex>;
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
 /// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
-class CAPABILITY("mutex") Mutex
+class SRT_ATTR_CAPABILITY("mutex") Mutex
 {
     friend class SyncEvent;
 
@@ -314,11 +314,11 @@ public:
     ~Mutex();
 
 public:
-    int lock() ACQUIRE();
-    int unlock() RELEASE();
+    int lock() SRT_ATTR_ACQUIRE();
+    int unlock() SRT_ATTR_RELEASE();
 
     /// @return     true if the lock was acquired successfully, otherwise false
-    bool try_lock() TRY_ACQUIRE(true);
+    bool try_lock() SRT_ATTR_TRY_ACQUIRE(true);
 
     // TODO: To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
@@ -328,29 +328,40 @@ private:
 };
 
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
-class SCOPED_CAPABILITY ScopedLock
+class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
 {
 public:
-    ScopedLock(Mutex& m) ACQUIRE(m);
-    ~ScopedLock() RELEASE();
+    SRT_ATTR_ACQUIRE(m)
+    ScopedLock(Mutex& m);
+
+    SRT_ATTR_RELEASE()
+    ~ScopedLock();
 
 private:
     Mutex& m_mutex;
 };
 
 /// A pthread version of std::chrono::unique_lock<mutex>
-class SCOPED_CAPABILITY UniqueLock
+class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
 
 public:
-    UniqueLock(Mutex &m) ACQUIRE(m_Mutex);
-    ~UniqueLock() RELEASE(m_Mutex);
+    SRT_ATTR_ACQUIRE(m_Mutex)
+    UniqueLock(Mutex &m);
+
+    SRT_ATTR_RELEASE(m_Mutex)
+    ~UniqueLock();
 
 public:
-    void lock() ACQUIRE(m_Mutex);
-    void unlock() RELEASE(m_Mutex);
-    Mutex* mutex() RETURN_CAPABILITY(m_Mutex); // reflects C++11 unique_lock::mutex()
+    SRT_ATTR_ACQUIRE(m_Mutex)
+    void lock();
+
+    SRT_ATTR_RELEASE(m_Mutex)
+    void unlock();
+
+    SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
+    Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 
 private:
     int m_iLocked;
@@ -358,22 +369,26 @@ private:
 };
 #endif // ENABLE_STDCXX_SYNC
 
-inline void enterCS(Mutex& m) EXCLUDES(m) ACQUIRE(m) { m.lock(); }
-inline bool tryEnterCS(Mutex& m) TRY_ACQUIRE(true, m) { return m.try_lock(); }
-inline void leaveCS(Mutex& m) REQUIRES(m) RELEASE(m) { m.unlock(); }
+inline void enterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+
+inline bool tryEnterCS(Mutex& m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+
+inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
 
 class InvertedLock
 {
     Mutex& m_mtx;
 
-  public:
-    InvertedLock(Mutex& m) REQUIRES(m) RELEASE(m)
+public:
+    SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
+    InvertedLock(Mutex& m)
         : m_mtx(m)
     {
         m_mtx.unlock();
     }
 
-    ~InvertedLock() ACQUIRE(m_mtx)
+    SRT_ATTR_ACQUIRE(m_mtx)
+    ~InvertedLock()
     {
         m_mtx.lock();
     }

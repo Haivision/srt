@@ -131,8 +131,11 @@ struct LogConfig
     {
     }
 
-    void lock() ACQUIRE(mutex) { mutex.lock(); }
-    void unlock() RELEASE(mutex) { mutex.unlock(); }
+    SRT_ATTR_ACQUIRE(mutex)
+    void lock() { mutex.lock(); }
+
+    SRT_ATTR_RELEASE(mutex)
+    void unlock() { mutex.unlock(); }
 };
 
 // The LogDispatcher class represents the object that is responsible for
