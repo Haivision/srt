@@ -131,7 +131,10 @@ struct LogConfig
     {
     }
 
+    SRT_ATTR_ACQUIRE(mutex)
     void lock() { mutex.lock(); }
+
+    SRT_ATTR_RELEASE(mutex)
     void unlock() { mutex.unlock(); }
 };
 
