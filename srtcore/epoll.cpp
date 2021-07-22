@@ -108,7 +108,11 @@ int CEPoll::create(CEPollDesc** pout)
    int localid = 0;
 
    #ifdef LINUX
-   localid = epoll_create(1024);
+   int flags = 0;
+#if ENABLE_SOCK_CLOEXEC
+   flags |= EPOLL_CLOEXEC;
+#endif
+   localid = epoll_create1(flags);
    /* Possible reasons of -1 error:
 EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys/fs/epoll/max_user_instances was encountered.
 ENFILE: The system limit on the total number of open files has been reached.
