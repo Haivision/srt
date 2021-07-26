@@ -6,7 +6,7 @@ The receiver buffer can be configured with the [`SRTO_RCVBUF`](./API-socket-opti
 Buffer size in bytes is expected to be passed in the `optval` argument of the `srt_setsockopt(..)` function.
 However, internally the value will be converted into the number of packets stored in the receiver buffer.
 
-The allowed value of `SRTO_RCVBUF` is also limited by the value of the flow control window size [`SRTO_FC`]((./API-socket-options.md#SRTO_FC) socket option.
+The allowed value of `SRTO_RCVBUF` is also limited by the value of the flow control window size [`SRTO_FC`](./API-socket-options.md#SRTO_FC) socket option.
 See issue [#700](https://github.com/Haivision/srt/issues/700).
 
 The default flow control window size is 25600 packets. It is approximately:
