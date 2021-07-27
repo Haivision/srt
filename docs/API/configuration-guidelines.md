@@ -32,7 +32,7 @@ int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
     // UDP header size is assumed to be 28 bytes
     // 20 bytes IPv4 + 8 bytes of UDP
     const int UDPHDR_SIZE = 28;
-    const in pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE));
+    const int pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE));
 
     return min(pkts, SRTO_FC);
 }
@@ -88,7 +88,7 @@ where
 
 ```c++
 
-auto CalculateTargetRBufSize(int msRTT, int bpsRate, int bytesPayloadSize, int msLatency, int SRTO_MSS, int SRTO_FC)
+auto CalculateTargetRBufSize(int msRTT, int bpsRate, int bytesPayloadSize, int msLatency, int SRTO_MSS)
 {
     const int UDPHDR_SIZE = 28;
     const int targetPayloadBytes = (msLatency + msRTT / 2) * bpsRate / 1000 / 8;
@@ -99,7 +99,7 @@ auto CalculateTargetRBufSize(int msRTT, int bpsRate, int bytesPayloadSize, int m
 
 // Configuring
 
-const auto [fc, rcvbuf] = CalculateTargetRBufSize(msRTT, bpsRate, bytesPayloadSize, SRTO_RCVLATENCY, SRTO_MSS, SRTO_FC);
+const auto [fc, rcvbuf] = CalculateTargetRBufSize(msRTT, bpsRate, bytesPayloadSize, SRTO_RCVLATENCY, SRTO_MSS);
 
 int optval = fc;
 int optlen = sizeof optval;
