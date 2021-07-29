@@ -58,6 +58,10 @@ modified by
 #include <cstring>
 #include <iterator>
 
+#if defined(__FreeBSD_kernel__)
+#include <sys/event.h>
+#endif
+
 #include "common.h"
 #include "epoll.h"
 #include "logging.h"
