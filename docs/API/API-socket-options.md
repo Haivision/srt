@@ -847,6 +847,8 @@ dedicated network settings. MSS is not to be confused with the size of the UDP
 payload or SRT payload - this size is the size of the IP packet, including the
 UDP and SRT headers*
 
+THe value of `SRTO_MSS` must not exceed `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`.
+
 [Return to list](#list-of-options)
 
 ---

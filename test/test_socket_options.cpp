@@ -191,7 +191,7 @@ const OptionTestEntry g_test_matrix_options[] =
     { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
     //SRTO_MININPUTBW
     { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
-    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,  INT32_MAX,     1500,        1400,    {-1, 0, 75} },
+    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75} },
     { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
     { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101} },
     //SRTO_PACKETFILTER
@@ -202,7 +202,7 @@ const OptionTestEntry g_test_matrix_options[] =
     { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1} },
     { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1} },
     //SRTO_PEERVERSION
-    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
     //SRTO_RCVDATA
     //SRTO_RCVKMSTATE
     { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1} },
@@ -212,7 +212,7 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_RETRANSMITALGO
     //SRTO_REUSEADDR
     //SRTO_SENDER
-    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), INT32_MAX, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
     //SRTO_SNDDATA
     { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2} },
     //SRTO_SNDKMSTATE
@@ -395,6 +395,12 @@ TEST_F(TestSocketOptions, MaxVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (entry.optid == SRTO_KMPREANNOUNCE || entry.optid == SRTO_KMREFRESHRATE)
+        {
+            cerr << "Skipping " << entry.optname << "\n";
+            continue;
+        }
+
         const char* test_desc = "[Caller, max value]";
         if (entry.max_val.type() == typeid(bool))
         {
