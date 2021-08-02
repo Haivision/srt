@@ -186,7 +186,6 @@ public:
     }
 
 private: // Storage and Virtual Method Table
-
     union storage_union
     {
         using stack_storage_t = typename std::aligned_storage<2 * sizeof(void*), std::alignment_of<void*>::value>::type;

@@ -267,7 +267,6 @@ void CheckSetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueTy
         CheckGetSockOpt<ValueType>(entry, sock, value, desc);
     }
     // TODO: else check the previous value is in force
-
 }
 
 template<class ValueType>
