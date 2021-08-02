@@ -302,6 +302,8 @@ public: // internal API
     static std::vector<SRTSOCKET>   existingSockets();
 
     void addressAndSend(CPacket& pkt);
+
+    SRT_ATTR_REQUIRES(m_ConnectionLock)
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
