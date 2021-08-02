@@ -457,7 +457,8 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
     // according to the present state and received message type, as well as the
@@ -476,9 +477,15 @@ private:
     /// @param response incoming handshake response packet to be interpreted
     /// @param serv_addr incoming packet's address
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
-    SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
-    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
+
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
+
     SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
@@ -708,7 +715,8 @@ private:
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
-    UniquePtr<CCryptoControl> m_pCryptoControl;         // Congestion control SRT class (small data extension)
+    SRT_ATTR_PT_GUARDED_BY(m_ConnectionLock)
+    UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
@@ -932,7 +940,7 @@ private: // Common connection Congestion Control setup
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
-    SRT_ATR_NODISCARD
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets

@@ -1497,14 +1497,11 @@ bool srt::CUDT::createSrtHandshake(
     w_hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
     bool have_sid = false;
-    if (srths_cmd == SRT_CMD_HSREQ)
+    if (srths_cmd == SRT_CMD_HSREQ && !m_config.sStreamName.empty())
     {
-        if (!m_config.sStreamName.empty())
-        {
-            have_sid = true;
-            w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-            logext << ",SID";
-        }
+        have_sid = true;
+        w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+        logext << ",SID";
     }
 
     // If this is a response, we have also information
