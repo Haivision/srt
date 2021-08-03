@@ -656,6 +656,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             co.iSndDropDelay   = 0;
             co.bMessageAPI     = true;
             co.bRcvNakReport   = true;
+            co.iRetransmitAlgo = 1;
             co.zExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
             co.Linger.l_onoff  = 0;
             co.Linger.l_linger = 0;
@@ -676,6 +677,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             co.iSndDropDelay   = -1;
             co.bMessageAPI     = false;
             co.bRcvNakReport   = false;
+            co.iRetransmitAlgo = 0;
             co.zExpPayloadSize = 0; // use maximum
             co.Linger.l_onoff  = 1;
             co.Linger.l_linger = CSrtConfig::DEF_LINGER_S;
@@ -869,7 +871,11 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRetransmitAlgo = cast_optval<int32_t>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0 || val > 1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRetransmitAlgo = val;
     }
 };
 
