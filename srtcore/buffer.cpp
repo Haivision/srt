@@ -412,57 +412,70 @@ steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& bloc
     return block.m_tsOriginTime;
 }
 
-int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
+int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
-    // No data to read
-    if (m_pCurrBlock == m_pLastBlock)
-        return 0;
+    int readlen = 0;
+    w_seqnoinc = 0;
 
-    // Make the packet REFLECT the data stored in the buffer.
-    w_packet.m_pcData = m_pCurrBlock->m_pcData;
-    int readlen       = m_pCurrBlock->m_iLength;
-    w_packet.setLength(readlen);
-    w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
-
-    // XXX This is probably done because the encryption should happen
-    // just once, and so this sets the encryption flags to both msgno bitset
-    // IN THE PACKET and IN THE BLOCK. This is probably to make the encryption
-    // happen at the time when scheduling a new packet to send, but the packet
-    // must remain in the send buffer until it's ACKed. For the case of rexmit
-    // the packet will be taken "as is" (that is, already encrypted).
-    //
-    // The problem is in the order of things:
-    // 0. When the application stores the data, some of the flags for PH_MSGNO are set.
-    // 1. The readData() is called to get the original data sent by the application.
-    // 2. The data are original and must be encrypted. They WILL BE encrypted, later.
-    // 3. So far we are in readData() so the encryption flags must be updated NOW because
-    //    later we won't have access to the block's data.
-    // 4. After exiting from readData(), the packet is being encrypted. It's immediately
-    //    sent, however the data must remain in the sending buffer until they are ACKed.
-    // 5. In case when rexmission is needed, the second overloaded version of readData
-    //    is being called, and the buffer + PH_MSGNO value is extracted. All interesting
-    //    flags must be present and correct at that time.
-    //
-    // The only sensible way to fix this problem is to encrypt the packet not after
-    // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
-    // flags for PH_MSGNO will be applied directly there. Then here the value for setting
-    // PH_MSGNO will be set as is.
-
-    if (kflgs == -1)
+    while (m_pCurrBlock != m_pLastBlock)
     {
-        HLOGC(bslog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
-        readlen = 0;
-    }
-    else
-    {
-        m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
-    }
+        // Make the packet REFLECT the data stored in the buffer.
+        w_packet.m_pcData = m_pCurrBlock->m_pcData;
+        readlen = m_pCurrBlock->m_iLength;
+        w_packet.setLength(readlen);
+        w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
 
-    w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
-    w_srctime         = getSourceTime(*m_pCurrBlock);
-    m_pCurrBlock      = m_pCurrBlock->m_pNext;
+        // XXX This is probably done because the encryption should happen
+        // just once, and so this sets the encryption flags to both msgno bitset
+        // IN THE PACKET and IN THE BLOCK. This is probably to make the encryption
+        // happen at the time when scheduling a new packet to send, but the packet
+        // must remain in the send buffer until it's ACKed. For the case of rexmit
+        // the packet will be taken "as is" (that is, already encrypted).
+        //
+        // The problem is in the order of things:
+        // 0. When the application stores the data, some of the flags for PH_MSGNO are set.
+        // 1. The readData() is called to get the original data sent by the application.
+        // 2. The data are original and must be encrypted. They WILL BE encrypted, later.
+        // 3. So far we are in readData() so the encryption flags must be updated NOW because
+        //    later we won't have access to the block's data.
+        // 4. After exiting from readData(), the packet is being encrypted. It's immediately
+        //    sent, however the data must remain in the sending buffer until they are ACKed.
+        // 5. In case when rexmission is needed, the second overloaded version of readData
+        //    is being called, and the buffer + PH_MSGNO value is extracted. All interesting
+        //    flags must be present and correct at that time.
+        //
+        // The only sensible way to fix this problem is to encrypt the packet not after
+        // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
+        // flags for PH_MSGNO will be applied directly there. Then here the value for setting
+        // PH_MSGNO will be set as is.
 
-    HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        if (kflgs == -1)
+        {
+            HLOGC(bslog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
+            readlen = 0;
+        }
+        else
+        {
+            m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+        }
+
+        Block* p = m_pCurrBlock;
+        w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
+        w_srctime = getSourceTime(*m_pCurrBlock);
+        m_pCurrBlock = m_pCurrBlock->m_pNext;
+
+        if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
+        {
+            LOGC(bslog.Warn, log << CONID() << "CSndBuffer: skipping packet %" << p->m_iSeqNo << " #" << p->getMsgSeq() << " with TTL=" << p->m_iTTL);
+            // Skip this packet due to TTL expiry.
+            readlen = 0;
+            ++w_seqnoinc;
+            continue;
+        }
+
+        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        break;
+    }
 
     return readlen;
 }
