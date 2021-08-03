@@ -835,7 +835,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
 
 #if ENABLE_EXPERIMENTAL_BONDING
 template<>
-struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
+struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
@@ -845,23 +845,19 @@ struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
         // socket so that it is then applied on the group when a
         // group connection is configuired.
         const int val = cast_optval<int>(optval, optlen);
-
-        // Search if you already have SRTO_PEERIDLETIMEO set
-
         const int idletmo = co.iPeerIdleTimeout;
 
-        // Both are in milliseconds.
         // This option is RECORDED in microseconds, while
         // idletmo is recorded in milliseconds, only translated to
         // microseconds directly before use.
         if (val >= idletmo)
         {
-            LOGC(aclog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
+            LOGC(aclog.Error, log << "group option: SRTO_GROUPMINSTABLETIMEO(" << val
                                   << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        co.uStabilityTimeout = val * 1000;
+        co.uMinStabilityTimeoutUS = val * 1000;
     }
 };
 #endif
@@ -935,7 +931,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
 #if ENABLE_EXPERIMENTAL_BONDING
-        DISPATCH(SRTO_GROUPSTABTIMEO);
+        DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
         DISPATCH(SRTO_RETRANSMITALGO);
 
@@ -964,7 +960,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     case SRTO_CONNTIMEO:
     case SRTO_DRIFTTRACER:
         //SRTO_FC - not allowed to be different among group members
-    case SRTO_GROUPSTABTIMEO:
+    case SRTO_GROUPMINSTABLETIMEO:
         //SRTO_INPUTBW - per transmission setting
     case SRTO_IPTOS:
     case SRTO_IPTTL:

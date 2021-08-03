@@ -174,7 +174,7 @@ struct CSrtConfig: CSrtMuxerConfig
         DEF_CONNTIMEO_S = 3;    // 3 seconds
 
     static const int      COMM_RESPONSE_TIMEOUT_MS      = 5 * 1000; // 5 seconds
-    static const uint32_t COMM_DEF_STABILITY_TIMEOUT_US = 80 * 1000;
+    static const uint32_t COMM_DEF_MIN_STABILITY_TIMEOUT_US = 60 * 1000; // 60 ms
 
     // Mimimum recv flight flag size is 32 packets
     static const int    DEF_MIN_FLIGHT_PKT = 32;
@@ -219,7 +219,7 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
     int      iGroupConnect;    // 1 - allow group connections
     int      iPeerIdleTimeout; // Timeout for hearing anything from the peer.
-    uint32_t uStabilityTimeout;
+    uint32_t uMinStabilityTimeoutUS;
     int      iRetransmitAlgo;
 
     int64_t llInputBW;         // Input stream rate (bytes/sec). 0: use internally estimated input bandwidth
@@ -270,7 +270,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , bEnforcedEnc(true)
         , iGroupConnect(0)
         , iPeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
-        , uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
+        , uMinStabilityTimeoutUS(COMM_DEF_MIN_STABILITY_TIMEOUT_US)
         , iRetransmitAlgo(1)
         , llInputBW(0)
         , llMinInputBW(0)

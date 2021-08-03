@@ -258,7 +258,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
-    , m_uOPT_StabilityTimeout(CSrtConfig::COMM_DEF_STABILITY_TIMEOUT_US)
+    , m_uOPT_MinStabilityTimeout(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_US)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
@@ -387,7 +387,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
-    case SRTO_GROUPSTABTIMEO:
+    case SRTO_GROUPMINSTABLETIMEO:
     {
         const int val = cast_optval<int>(optval, optlen);
 
@@ -403,12 +403,11 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         if (val >= idletmo)
         {
             LOGC(qmlog.Error,
-                 log << "group option: SRTO_GROUPSTABTIMEO(" << val << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo
-                     << ")");
+                 log << "group option: SRTO_GROUPMINSTABLETIMEO=" << val << " exceeds SRTO_PEERIDLETIMEO=" << idletmo);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        m_uOPT_StabilityTimeout = val * 1000;
+        m_uOPT_MinStabilityTimeout = val * 1000;
     }
 
     break;
@@ -565,7 +564,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_ENFORCEDENCRYPTION, bEnforcedEnc);
     IM(SRTO_IPV6ONLY, iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout);
-    IM(SRTO_GROUPSTABTIMEO, uStabilityTimeout);
+    IM(SRTO_GROUPMINSTABLETIMEO, uMinStabilityTimeoutUS);
 
     importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
@@ -760,6 +759,8 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(true);
     case SRTO_PAYLOADSIZE:
         RD(0);
+    case SRTO_GROUPMINSTABLETIMEO:
+        RD(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_US);
     }
 
 #undef RD

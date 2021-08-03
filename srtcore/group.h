@@ -614,7 +614,7 @@ private:
     senderBuffer_t   m_SenderBuffer;
     int32_t          m_iSndOldestMsgNo; // oldest position in the sender buffer
     volatile int32_t m_iSndAckedMsgNo;
-    uint32_t         m_uOPT_StabilityTimeout;
+    uint32_t         m_uOPT_MinStabilityTimeout;
 
     // THIS function must be called only in a function for a group type
     // that does use sender buffer.

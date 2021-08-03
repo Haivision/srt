@@ -205,7 +205,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_EVENT`](#SRTO_EVENT)                            |       |          | `int32_t` | flags   |                   |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                  |       | pre      | `int32_t` | pkts    | 25600             | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)              | 1.5.0 | pre      | `int32_t` |         | 0                 | 0...1    | W   | S     |
-| [`SRTO_GROUPSTABTIMEO`](#SRTO_GROUPSTABTIMEO)          | 1.5.0 | pre      | `int32_t` | ms      | 80                | 10-...   | W   | GSD+  |
+| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO)          | 1.5.0 | pre      | `int32_t` | ms      | 80                | 10-...   | W   | GSD+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                    | 1.5.0 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                        | 1.0.5 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                            | 1.0.5 | pre-bind | `int32_t` |         | (system)          | 0..255   | RW  | GSD   |
@@ -455,11 +455,11 @@ function will return the group, not this socket ID.
 
 ---
 
-#### SRTO_GROUPSTABTIMEO
+#### SRTO_GROUPMINSTABLETIMEO
 
 | OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_GROUPSTABTIMEO` | 1.5.0 | pre      | `int32_t`  | ms     | 80       | 10-... | W   | GSD+   |
+| `SRTO_GROUPMINSTABLETIMEO` | 1.5.0 | pre      | `int32_t`  | ms     | 80       | 10-... | W   | GSD+   |
 
 **Not in use at the moment. Is to be repurposed in SRT v1.4.3!**
 
@@ -494,7 +494,7 @@ for 100% for a time of one ACK interval).
 Note that the value of this option is not allowed to exceed the value of
 `SRTO_PEERIDLETIMEO`. Usually it is only meaningful if you change the latter
 option, as the default value of it is way above any sensible value of
-`SRTO_GROUPSTABTIMEO`.
+`SRTO_GROUPMINSTABLETIMEO`.
 
 [Return to list](#list-of-options)
 
