@@ -209,7 +209,7 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_RCVSYN
     { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2} },
     //SRTO_RENDEZVOUS
-    //SRTO_RETRANSMITALGO
+    { SRTO_RETRANSMITALGO, "SRTO_RETRANSMITALGO", RestrictionType::PRE,   sizeof(int),                 0,         1,   1,    0, {-1, 2} },
     //SRTO_REUSEADDR
     //SRTO_SENDER
     { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },

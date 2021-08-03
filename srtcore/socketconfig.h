@@ -271,7 +271,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iGroupConnect(0)
         , iPeerIdleTimeout(COMM_RESPONSE_TIMEOUT_MS)
         , uStabilityTimeout(COMM_DEF_STABILITY_TIMEOUT_US)
-        , iRetransmitAlgo(0)
+        , iRetransmitAlgo(1)
         , llInputBW(0)
         , llMinInputBW(0)
         , iOverheadBW(25)

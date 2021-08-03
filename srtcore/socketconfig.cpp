@@ -869,7 +869,11 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iRetransmitAlgo = cast_optval<int32_t>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0 || val > 1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iRetransmitAlgo = val;
     }
 };
 
