@@ -144,7 +144,10 @@ public:
     static const bool   DUMMY_IMPL = ThreadNameImpl::DUMMY_IMPL;
     static const size_t BUFSIZE    = ThreadNameImpl::BUFSIZE;
 
-    // len should >= BUFSIZE
+    /// @brief Print thread ID to the provided buffer.
+    /// The size of the destination buffer is assumed to be at least ThreadName::BUFSIZE.
+    /// @param [out] output destination buffer to get thread name
+    /// @return true on success, false on failure
     static bool get(char* output) {
         return ThreadNameImpl::get(output);
     }
