@@ -243,6 +243,7 @@ void srt::CUDT::construct()
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
 
+    m_PeerID              = 0;
     m_bOpened             = false;
     m_bListening          = false;
     m_bConnecting         = false;
@@ -3784,9 +3785,9 @@ bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
     {
         // m_RejectReason already set at worker_ProcessAddressedPacket.
         LOGC(cnlog.Warn,
-             log << "processAsyncConnectRequest: REJECT reported from HS processing:"
+             log << "processAsyncConnectRequest: REJECT reported from HS processing: "
              << srt_rejectreason_str(m_RejectReason)
-             << "- not processing further"); //; REQ-TIME LOW"); XXX ?
+             << " - not processing further");
         // m_tsLastReqTime = steady_clock::time_point(); XXX ?
         return false;
     }
@@ -5957,7 +5958,7 @@ bool srt::CUDT::closeInternal()
     {
         if (!m_bShutdown)
         {
-            HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer");
+            HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer @" << m_PeerID);
             sendCtrl(UMSG_SHUTDOWN);
         }
 
@@ -7615,6 +7616,8 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
+        if (m_PeerID == 0) // Dont't send SHUTDOWN if we don't know peer ID.
+            break;
         ctrlpkt.pack(pkttype);
         ctrlpkt.m_iID = m_PeerID;
         nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);

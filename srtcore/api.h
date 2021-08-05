@@ -325,14 +325,21 @@ public:
    CEPoll& epoll_ref() { return m_EPoll; }
 
 private:
-//   void init();
-
    /// Generates a new socket ID. This function starts from a randomly
    /// generated value (at initialization time) and goes backward with
    /// with next calls. The possible values come from the range without
    /// the SRTGROUP_MASK bit, and the group bit is set when the ID is
    /// generated for groups. It is also internally checked if the
    /// newly generated ID isn't already used by an existing socket or group.
+   /// 
+   /// Socket ID value range.
+   /// - [0]: reserved for handshake procedure. If the destination Socket ID is 0
+   ///   (destination Socket ID unknown) the packet will be sent to the listening socket
+   ///   or to a socket that is in the rendezvous connection phase.
+   /// - [1; 2 ^ 30): single socket ID range.
+   /// - (2 ^ 30; 2 ^ 31): group socket ID range. Effectively any positive number
+   ///   from [1; 2 ^ 30) with bit 30 set to 1. Bit 31 is zero.
+   /// The most significant bit 31 (sign bit) is left unused so that checking for a value <= 0 identifies an invalid socket ID.
    ///
    /// @param group The socket id should be for socket group.
    /// @return The new socket ID.
