@@ -1029,7 +1029,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;                 // timestamp when the UDT entity is started
+        time_point tsStartTime;             // timestamp when the UDT entity is started
         int64_t sentTotal;                  // total number of sent data packets, including retransmissions
         int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
         int64_t recvTotal;                  // total number of received packets
