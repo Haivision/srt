@@ -349,7 +349,7 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
     {
         try {
             const ValueType val = linb::any_cast<ValueType>(inval);
-            CheckSetSockOpt<ValueType>(entry, sock, val, SRT_ERROR, "[Caller, invalid val]");
+            CheckSetSockOpt<ValueType>(entry, sock, val, SRT_ERROR, sock_name);
         }
         catch (const linb::bad_any_cast&)
         {
@@ -454,17 +454,18 @@ TEST_F(TestSocketOptions, InvalidVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        const char* desc = "[Caller, invalid val]";
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckInvalidValues<bool>(entry, m_caller_sock, "[Caller, invalid val]"));
+            EXPECT_TRUE(CheckInvalidValues<bool>(entry, m_caller_sock, desc));
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckInvalidValues<int>(entry, m_caller_sock, "[Caller, invalid val]"));
+            EXPECT_TRUE(CheckInvalidValues<int>(entry, m_caller_sock, desc));
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, m_caller_sock, "[Caller, invalid val]"));
+            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, m_caller_sock, desc));
         }
         else
         {
