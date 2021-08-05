@@ -92,7 +92,6 @@ else
  echo "Unknown encryption library. Possible options: openssl mbedtls"
  exit 128
 fi
-[ $? -eq 0 ] || exit 128
 
 if [ ! -d $BASE_DIR/srt ]; then
  git clone https://github.com/Haivision/srt srt
@@ -100,7 +99,6 @@ if [ ! -d $BASE_DIR/srt ]; then
   git -C $BASE_DIR/srt checkout $SRT_VERSION
  fi
 fi
-[ $? -eq 0 ] || exit 128
 
 for build_target in $BUILD_TARGETS; do
  LIB_DIR=$BASE_DIR/$build_target/lib
@@ -110,7 +108,6 @@ for build_target in $BUILD_TARGETS; do
 
  if [ $ENC_LIB = 'mbedtls' ]; then
   $SCRIPT_DIR/mkmbedtls -n $NDK_ROOT -a $API_LEVEL -t $build_target -s $BASE_DIR/mbedtls -i $BASE_DIR/$build_target
-  [ $? -eq 0 ] || exit 128
   cp $LIB_DIR/libmbedcrypto.so $JNI_DIR/libmbedcrypto.so
   cp $LIB_DIR/libmbedtls.so $JNI_DIR/libmbedtls.so
   cp $LIB_DIR/libmbedx509.so $JNI_DIR/libmbedx509.so
@@ -118,6 +115,5 @@ for build_target in $BUILD_TARGETS; do
 
  git -C $BASE_DIR/srt clean -fd
  $SCRIPT_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s $BASE_DIR/srt -i $BASE_DIR/$build_target
- [ $? -eq 0 ] || exit 128
  cp $LIB_DIR/libsrt.so $JNI_DIR/libsrt.so
 done
