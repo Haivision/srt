@@ -343,8 +343,19 @@ proc postprocess {} {
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
 
-	if { $::HAVE_DARWIN && !$toolchain_changed} {
-
+	set use_brew 0
+	if { $::HAVE_DARWIN && !$toolchain_changed } {
+		set use_brew 1
+	}
+	if { $use_brew } {
+		foreach item $::cmakeopt {
+			if { [string first "Android" $item] != -1 } {
+				set use_brew 0
+				break
+			}
+		}
+	}
+	if { $use_brew } {
 		if { $have_gnutls } {
 			# Use gnutls explicitly, as found in brew
 			set er [catch {exec brew info gnutls} res]
