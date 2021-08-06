@@ -1725,6 +1725,16 @@ bool srt::CUDT::createSrtHandshake(
         HLOGC(cnlog.Debug,
               log << "createSrtHandshake: "
                   << (m_config.CryptoSecret.len > 0 ? "Agent uses ENCRYPTION" : "Peer requires ENCRYPTION"));
+
+        if (!m_pCryptoControl && (srtkm_cmd == SRT_CMD_KMREQ || srtkm_cmd == SRT_CMD_KMRSP))
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(cnlog.Error, log << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
+                << " Socket state: connected=" << boolalpha << m_bConnected << ", connecting=" << m_bConnecting
+                << ", broken=" << m_bBroken << ", closing=" << m_bClosing << ".");
+            return false;
+        }
+
         if (srtkm_cmd == SRT_CMD_KMREQ)
         {
             bool have_any_keys = false;
@@ -1753,7 +1763,6 @@ bool srt::CUDT::createSrtHandshake(
         {
             offset += ra_size + 1;
             ra_size = fillHsExtKMRSP(p + offset - 1, kmdata, kmdata_wordsize);
-
         }
         else
         {
