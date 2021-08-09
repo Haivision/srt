@@ -10890,21 +10890,21 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
 
 void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 {
-    /* There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
-     *
-     * LATEREXMIT is only used with FileCC.
-     * The mode is triggered when some time has passed since the last ACK from
-     * the receiver, while there is still some unacknowledged data in the sender's buffer,
-     * and the loss list is empty.
-     *
-     * FASTREXMIT is only used with LiveCC.
-     * The mode is triggered if the receiver does not send periodic NAK reports,
-     * when some time has passed since the last ACK from the receiver,
-     * while there is still some unacknowledged data in the sender's buffer.
-     *
-     * In case the above conditions are met, the unacknowledged packets
-     * in the sender's buffer will be added to loss list and retransmitted.
-     */
+    // There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
+    //
+    // LATEREXMIT is only used with FileCC.
+    // The RTO is triggered when some time has passed since the last ACK from
+    // the receiver, while there is still some unacknowledged data in the sender's buffer,
+    // and the loss list is empty at the moment of RTO (nothing to retransmit yet).
+    //
+    // FASTREXMIT is only used with LiveCC.
+    // The RTO is triggered if the receiver is not configured to send periodic NAK reports,
+    // when some time has passed since the last ACK from the receiver,
+    // while there is still some unacknowledged data in the sender's buffer.
+    //
+    // In case the above conditions are met, the unacknowledged packets
+    // in the sender's buffer will be added to the SND loss list and retransmitted.
+    //
 
     const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
     const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
@@ -10917,19 +10917,19 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     if (m_pSndBuffer->getCurrBufSize() <= 0)
         return;
 
-    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT;
-    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT;
+    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT; // FileCC
+    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT; // LiveCC
 
     // If the receiver will send periodic NAK reports, then FASTREXMIT (live) is inactive.
     // TODO: Probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
     if (is_fastrexmit && m_bPeerNakReport)
         return;
 
-    // Schedule for retransmission IF:
+    // Schedule a retransmission IF:
     // - there are packets in flight (getFlightSpan() > 0);
     // - in case of LATEREXMIT (File Mode): the sender loss list is empty
     //   (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track).
-    // - in case of FASTREXMIT (Live Mode): there is the latency constraint, therefore
+    // - in case of FASTREXMIT (Live Mode): the RTO (rtt_syn) was triggered, therefore
     //   schedule unacknowledged packets for retransmission regardless of the loss list emptiness.
     if (getFlightSpan() > 0 && (!is_laterexmit || m_pSndLossList->getLossLength() == 0))
     {
