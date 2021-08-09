@@ -570,7 +570,7 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
         if (val == "vod")
             val = "file";
 
-        bool res = SrtCongestion::exists(val);
+        bool res = srt::SrtCongestion::exists(val);
         if (!res)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 

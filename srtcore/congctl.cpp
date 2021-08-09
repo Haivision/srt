@@ -34,9 +34,10 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
+
+namespace srt {
 
 SrtCongestionControlBase::SrtCongestionControlBase(CUDT* parent)
 {
@@ -399,7 +400,7 @@ private:
             else
             {
                 double inc = 0;
-                const int loss_bw = 2 * (1000000 / m_dLastDecPeriod); // 2 times last loss point
+                const int loss_bw = static_cast<int>(2 * (1000000 / m_dLastDecPeriod)); // 2 times last loss point
                 const int bw_pktps = min(loss_bw, m_parent->bandwidth());
 
                 int64_t B = (int64_t)(bw_pktps - 1000000.0 / m_dPktSndPeriod);
@@ -500,7 +501,7 @@ private:
         m_bLoss = true;
 
         // TODO: const int pktsInFlight = CSeqNo::seqoff(m_iLastAck, m_parent->sndSeqNo());
-        const int pktsInFlight = m_parent->SRTT() / m_dPktSndPeriod;
+        const int pktsInFlight = static_cast<int>(m_parent->SRTT() / m_dPktSndPeriod);
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
@@ -656,3 +657,5 @@ SrtCongestion::~SrtCongestion()
 {
     dispose();
 }
+
+} // namespace srt
