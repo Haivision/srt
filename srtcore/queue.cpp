@@ -989,11 +989,12 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        /*
-         * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
-         * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
-         * and may crash on next pass.
-         */
+        //
+        // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
+        // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
+        // and may crash on next pass.
+        //
+        // TODO: maybe lock i->u->m_ConnectionLock?
         i->u->m_bConnecting = false;
         remove(i->u->m_SocketID);
 

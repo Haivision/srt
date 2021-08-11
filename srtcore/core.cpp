@@ -3769,6 +3769,8 @@ bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
     bool status = true;
 
     ScopedLock cg(m_ConnectionLock);
+    if (!m_bOpened) // Check the socket has not been closed before already.
+        return false;
 
     if (cst == CONN_RENDEZVOUS)
     {
