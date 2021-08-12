@@ -325,8 +325,6 @@ public:
    CEPoll& epoll_ref() { return m_EPoll; }
 
 private:
-//   void init();
-
    /// Generates a new socket ID. This function starts from a randomly
    /// generated value (at initialization time) and goes backward with
    /// with next calls. The possible values come from the range without

@@ -86,6 +86,12 @@ static int64_t get_cpu_frequency()
     if (QueryPerformanceFrequency(&ccf))
     {
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+        if (frequency == 0)
+        {
+            LOGC(inlog.Warn, log << "Win QPC frequency of " << ccf.QuadPart
+                << " counts/s is below the required 1 us accuracy. Please consider using C++11 timing (-DENABLE_STDCXX_SYNC=ON) instead.");
+            frequency = 1; // set back to 1 to avoid division by zero.
+        }
     }
     else
     {
