@@ -57,7 +57,7 @@ written by
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__)
 
 #	include <endian.h>
 
@@ -115,7 +115,7 @@ written by
 
 #	include <sys/endian.h>
 
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
 
 #	include <sys/endian.h>
 
