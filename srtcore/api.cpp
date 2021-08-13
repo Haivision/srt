@@ -2171,8 +2171,8 @@ int srt::CUDTUnited::select(
 {
    const steady_clock::time_point entertime = steady_clock::now();
 
-   const long timeo_us = timeout
-       ? timeout->tv_sec * 1000000 + timeout->tv_usec
+   const int64_t timeo_us = timeout
+       ? static_cast<int64_t>(timeout->tv_sec) * 1000000 + timeout->tv_usec
        : -1;
    const steady_clock::duration timeo(microseconds_from(timeo_us));
 
@@ -2285,7 +2285,7 @@ int srt::CUDTUnited::selectEx(
 {
     const steady_clock::time_point entertime = steady_clock::now();
 
-    const long timeo_us = msTimeOut >= 0
+    const int64_t timeo_us = msTimeOut >= 0
         ? msTimeOut * 1000
         : -1;
     const steady_clock::duration timeo(microseconds_from(timeo_us));
