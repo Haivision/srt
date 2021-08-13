@@ -4670,8 +4670,8 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // the local port must be correctly assigned BEFORE CUDT::startConnect(),
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
-    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
-    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, m_PeerAddr);
+    s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
+    CIPAddress::pton((s->m_SelfAddr), s->core().m_piSelfIP, m_PeerAddr);
 
     //int token = -1;
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -11154,10 +11154,10 @@ void srt::CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
 int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 {
     CUDTSocket *s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    if (!s)
         return -1;
 
-    CSndBuffer *b = s->m_pUDT->m_pSndBuffer;
+    CSndBuffer *b = s->core().m_pSndBuffer;
 
     if (!b)
         return -1;
@@ -11177,32 +11177,32 @@ int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 int srt::CUDT::rejectReason(SRTSOCKET u)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    if (!s)
         return SRT_REJ_UNKNOWN;
 
-    return s->m_pUDT->m_RejectReason;
+    return s->core().m_RejectReason;
 }
 
 int srt::CUDT::rejectReason(SRTSOCKET u, int value)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
     if (value < SRT_REJC_PREDEFINED)
         return APIError(MJ_NOTSUP, MN_INVAL);
 
-    s->m_pUDT->m_RejectReason = value;
+    s->core().m_RejectReason = value;
     return 0;
 }
 
 int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
 {
     CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    return count_microseconds(s->m_pUDT->m_stats.tsStartTime.time_since_epoch());
+    return count_microseconds(s->core().m_stats.tsStartTime.time_since_epoch());
 }
 
 bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)

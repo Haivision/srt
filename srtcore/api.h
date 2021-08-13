@@ -76,6 +76,8 @@ namespace srt {
 
 class CUDT;
 
+/// @brief Class CUDTSocket is a control layer on top of the CUDT core functionality layer.
+/// CUDTSocket owns CUDT.
 class CUDTSocket
 {
 public:
@@ -89,7 +91,26 @@ public:
        , m_GroupOf()
 #endif
        , m_iISN(0)
-       , m_pUDT(NULL)
+       , m_UDT(this)
+       , m_AcceptCond()
+       , m_AcceptLock()
+       , m_uiBackLog(0)
+       , m_iMuxID(-1)
+   {
+       construct();
+   }
+
+   CUDTSocket(const CUDTSocket& ancestor)
+       : m_Status(SRTS_INIT)
+       , m_SocketID(0)
+       , m_ListenSocket(0)
+       , m_PeerID(0)
+#if ENABLE_EXPERIMENTAL_BONDING
+       , m_GroupMemberData()
+       , m_GroupOf()
+#endif
+       , m_iISN(0)
+       , m_UDT(this, ancestor.m_UDT)
        , m_AcceptCond()
        , m_AcceptLock()
        , m_uiBackLog(0)
@@ -125,8 +146,10 @@ public:
 
    int32_t m_iISN;                           //< initial sequence number, used to tell different connection from same IP:port
 
-   CUDT* m_pUDT;                             //< pointer to the UDT entity
+private:
+   CUDT m_UDT;                               //< internal SRT socket logic
 
+public:
    std::set<SRTSOCKET> m_QueuedSockets;      //< set of connections waiting for accept()
 
    sync::Condition m_AcceptCond;             //< used to block "accept" call
@@ -149,7 +172,8 @@ public:
 
    sync::Mutex m_ControlLock;           //< lock this socket exclusively for control APIs: bind/listen/connect
 
-   CUDT& core() { return *m_pUDT; }
+   CUDT& core() { return m_UDT; }
+   const CUDT& core() const { return m_UDT; }
 
    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn)
    {
@@ -188,7 +212,6 @@ public:
    bool broken() const;
 
 private:
-   CUDTSocket(const CUDTSocket&);
    CUDTSocket& operator=(const CUDTSocket&);
 };
 

@@ -231,7 +231,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)
     {
-        int plsize = data.ps->m_pUDT->OPT_PayloadSize();
+        int plsize = data.ps->core().OPT_PayloadSize();
         HLOGC(gmlog.Debug,
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
@@ -2738,13 +2738,13 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
             continue;
 
         // Skip the entity that has reported this
-        if (cu == gi->ps->m_pUDT)
+        if (cu == &gi->ps->core())
             continue;
 
         steady_clock::time_point this_timebase;
         steady_clock::duration   this_udrift(0);
         bool wrp = false;
-        gi->ps->m_pUDT->m_pRcvBuffer->getInternalTimeBase((this_timebase), (wrp), (this_udrift));
+        gi->ps->core().m_pRcvBuffer->getInternalTimeBase((this_timebase), (wrp), (this_udrift));
 
         udrift                                   = std::min(udrift, this_udrift);
         steady_clock::time_point new_newtimebase = std::min(newtimebase, this_timebase);
@@ -2775,7 +2775,7 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
         if (gi->laststatus != SRTS_CONNECTED)
             continue;
 
-        gi->ps->m_pUDT->m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
+        gi->ps->core().m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
     }
 }
 
@@ -3094,7 +3094,7 @@ void CUDTGroup::sendBackup_CheckIdleTime(gli_t w_d)
         // probability that the link will be recognized as IDLE on the
         // reception side ASAP.
         int32_t arg = 1;
-        w_d->ps->m_pUDT->sendCtrl(UMSG_KEEPALIVE, &arg);
+        w_d->ps->core().sendCtrl(UMSG_KEEPALIVE, &arg);
     }
 }
 
@@ -4411,9 +4411,9 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
 
     HLOGC(grlog.Debug,
           log << "updateLatestRcv: BACKUP group, updating from active link @" << s->m_SocketID << " with %"
-              << s->m_pUDT->m_iRcvLastSkipAck);
+              << s->core().m_iRcvLastSkipAck);
 
-    CUDT*         source = s->m_pUDT;
+    CUDT*         source = &s->core();
     vector<CUDT*> targets;
 
     UniqueLock lg(m_GroupLock);
@@ -4448,13 +4448,13 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
         }
 
         // Sanity check
-        if (!gi->ps->m_pUDT->m_bConnected)
+        if (!gi->ps->core().m_bConnected)
         {
             HLOGC(grlog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
             continue;
         }
 
-        targets.push_back(gi->ps->m_pUDT);
+        targets.push_back(&gi->ps->core());
     }
 
     lg.unlock();
