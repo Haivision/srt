@@ -59,7 +59,6 @@ TEST(Transmission, FileUpload)
         }
 
         ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
-
     }
 
     ASSERT_GE(bind_res, 0);
