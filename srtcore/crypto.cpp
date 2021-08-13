@@ -27,6 +27,7 @@ written by
 #include "logging.h"
 #include "core.h"
 
+using namespace srt;
 using namespace srt_logging;
 
 #define SRT_MAX_KMRETRY     10
@@ -42,7 +43,7 @@ using namespace srt_logging;
 */
 
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
-const int SRT_CRYPT_KM_PRE_ANNOUNCE = 0x10000;
+const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
 namespace srt_logging
 {
@@ -439,7 +440,7 @@ void CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
      * then (re-)send handshake request.
      */
     if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->RTT() * 3)/2)) <= now))
+        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->SRTT() * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {
@@ -661,6 +662,8 @@ std::string CCryptoControl::CONID() const
     return os.str();
 }
 
+#ifdef SRT_ENABLE_ENCRYPTION
+
 #if ENABLE_HEAVY_LOGGING
 static std::string CryptoFlags(int flg)
 {
@@ -678,9 +681,8 @@ static std::string CryptoFlags(int flg)
     copy(f.begin(), f.end(), ostream_iterator<string>(os, "|"));
     return os.str();
 }
-#endif
+#endif // ENABLE_HEAVY_LOGGING
 
-#ifdef SRT_ENABLE_ENCRYPTION
 bool CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir, HaiCrypt_Handle& w_hCrypto)
 {
 

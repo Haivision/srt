@@ -24,6 +24,7 @@ written by
 #include "utilities.h"
 
 using namespace std;
+using namespace srt;
 
 
 extern "C" {
@@ -408,6 +409,11 @@ int64_t srt_time_now()
 int64_t srt_connection_time(SRTSOCKET sock)
 {
     return CUDT::socketStartTime(sock);
+}
+
+int srt_clock_type()
+{
+    return SRT_SYNC_CLOCK;
 }
 
 }

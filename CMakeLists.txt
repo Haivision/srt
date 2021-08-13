@@ -97,6 +97,7 @@ endforeach()
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
 # SRT_DEBUG_BONDING_STATES 1
+# SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 
 # option defaults
@@ -128,12 +129,14 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" OFF)
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
+
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -633,6 +636,11 @@ if (ENABLE_THREAD_CHECK)
 	)
 endif()
 
+if (ENABLE_CLANG_TSA)
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	message(STATUS "Clang TSA: Enabled")
+endif()
+
 if (ENABLE_PROFILE)
 	if (HAVE_COMPILER_GNU_COMPAT)
 		# They are actually cflags, not definitions, but CMake is stupid enough.
@@ -789,8 +797,13 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)

@@ -2,6 +2,8 @@
 #include "gtest/gtest.h"
 #include "buffer.h"
 
+using namespace srt;
+
 
 TEST(CRcvBuffer, Create)
 {
@@ -45,7 +47,7 @@ TEST(CRcvBuffer, FullBuffer)
     for (int i = 0; i < buffer_size_pkts - 1; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), buff.size());
-        EXPECT_EQ(res, payload_size);
+        EXPECT_EQ(size_t(res), payload_size);
     }
 }
 
@@ -107,7 +109,7 @@ TEST(CRcvBuffer, ReadData)
 
     std::array<char, payload_size> buff;
     const int res = rcv_buffer.readBuffer(buff.data(), buff.size());
-    EXPECT_EQ(res, payload_size);
+    EXPECT_EQ(size_t(res), payload_size);
 }
 
 
@@ -146,7 +148,7 @@ TEST(CRcvBuffer, AddData)
     for (int i = 0; i < ack_pkts; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), buff.size());
-        EXPECT_EQ(res, payload_size);
+        EXPECT_EQ(size_t(res), payload_size);
         EXPECT_EQ(rcv_buffer.getAvailBufSize(), buffer_size_pkts - ack_pkts + i);
     }
 

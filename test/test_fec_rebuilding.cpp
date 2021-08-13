@@ -13,6 +13,7 @@
 #include "api.h"
 
 using namespace std;
+using namespace srt;
 
 class TestFECRebuilding: public testing::Test
 {
@@ -91,16 +92,18 @@ protected:
     }
 };
 
-class TestMockCUDT
-{
-public:
-    CUDT* core;
-
-    bool checkApplyFilterConfig(const string& s)
+namespace srt {
+    class TestMockCUDT
     {
-        return core->checkApplyFilterConfig(s);
-    }
-};
+    public:
+        CUDT* core;
+
+        bool checkApplyFilterConfig(const string& s)
+        {
+            return core->checkApplyFilterConfig(s);
+        }
+    };
+}
 
 // The expected whole procedure of connection using FEC is
 // expected to:
@@ -294,7 +297,7 @@ TEST(TestFEC, Connection)
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
-    
+
     srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
@@ -302,19 +305,21 @@ TEST(TestFEC, Connection)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    // Given 2s timeout for accepting as it has occasionally happened with Travis
+    // that 1s might not be enough.
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
-    srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
-    srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size);
+    EXPECT_NE(srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size), -1);
+    EXPECT_NE(srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size), -1);
 
     string caller_config = result_config1;
     string accept_config = result_config2;
@@ -355,15 +360,15 @@ TEST(TestFEC, ConnectionReorder)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -408,15 +413,15 @@ TEST(TestFEC, ConnectionFull1)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -460,15 +465,15 @@ TEST(TestFEC, ConnectionFull2)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -513,15 +518,15 @@ TEST(TestFEC, ConnectionMess)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -564,15 +569,15 @@ TEST(TestFEC, ConnectionForced)
         });
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -796,7 +801,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
 
     bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
-    EXPECT_EQ(provided.size(), 0); // Confirm that nothing was rebuilt
+    EXPECT_EQ(provided.size(), 0U); // Confirm that nothing was rebuilt
 
     /*
     // XXX With such a short sequence, losses will not be reported.
@@ -874,8 +879,8 @@ TEST_F(TestFECRebuilding, Rebuild)
     const bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
 
-    EXPECT_EQ(loss.size(), 0);
-    ASSERT_EQ(provided.size(), 1);
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
 
     SrtPacket& rebuilt = provided[0];
     CPacket& skipped = *source[4];

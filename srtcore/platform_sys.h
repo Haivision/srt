@@ -30,7 +30,7 @@
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW__
+#ifndef __MINGW32__
    #include <intrin.h>
 #endif
 
@@ -41,7 +41,7 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
-      #pragma warning(disable:4251)
+      #pragma warning(disable: 4251 26812)
    #endif
 #else
 

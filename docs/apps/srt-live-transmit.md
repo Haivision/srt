@@ -314,7 +314,7 @@ All other parameters are SRT socket options. The following have the following va
 | `nakreport`          | `bool`           | `SRTO_NAKREPORT`          | Enables/disables periodic NAK reports |
 | `oheadbw`            | 5..100           | `SRTO_OHEADBW`            | limits bandwidth overhead, percents |
 | `packetfilter`       | `string`         | `SRTO_PACKETFILTER`       | Set up the packet filter. |
-| `passphrase`         | `string`         | `SRTO_PASSPHRASE`         | Password for the encrypted transmission. |
+| `passphrase`         | `string`         | `SRTO_PASSPHRASE`         | Password for the encrypted transmission. (must be 10 to 79 characters) |
 | `payloadsize`        | 0..              | `SRTO_PAYLOADSIZE`        | Maximum payload size. |
 | `pbkeylen`           | {16, 24, 32}     | `SRTO_PBKEYLEN`           | Crypto key length in bytes. |
 | `peeridletimeo`      | `ms`             | `SRTO_PEERIDLETIMEO`      | Peer idle timeout. |
