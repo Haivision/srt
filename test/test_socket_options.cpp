@@ -345,7 +345,7 @@ bool CheckMaxValue(const OptionTestEntry& entry, SRTSOCKET sock, const char* des
 template<class ValueType>
 bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char* sock_name)
 {
-    for (const auto inval : entry.invalid_vals)
+    for (const auto& inval : entry.invalid_vals)
     {
         try {
             const ValueType val = linb::any_cast<ValueType>(inval);
