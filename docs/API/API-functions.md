@@ -1889,7 +1889,7 @@ number of bytes retrieved will be at most the maximum payload of one MTU.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value configured by the sender
 is not negotiated, and not known to the receiver.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value set on the SRT receiver
-is mainly used for heuristics, however, the receiver is prepared to receive
+is mainly used for heuristics. However, the receiver is prepared to receive
 the whole MTU as configured with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS).
 In this mode, however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) 
 and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP), the message will be 
