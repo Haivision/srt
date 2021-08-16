@@ -123,7 +123,8 @@ public:
 
    void construct();
 
-   srt::sync::atomic<SRT_SOCKSTATUS> m_Status;                  //< current socket state
+   SRT_ATTR_GUARDED_BY(m_ControlLock)
+   sync::atomic<SRT_SOCKSTATUS> m_Status;                  //< current socket state
 
    /// Time when the socket is closed.
    /// When the socket is closed, it is not removed immediately from the list
@@ -441,7 +442,12 @@ private:
    // Utility functions for updateMux
    void configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
    uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
-   bool channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s);
+
+   /// @brief Checks if channel configuration matches the socket configuration.
+   /// @param cfgMuxer multiplexer configuration.
+   /// @param cfgSocket socket configuration.
+   /// @return tru if configurations match, false otherwise.
+   static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
 
 private:
    std::map<int, CMultiplexer> m_mMultiplexer;		// UDP multiplexer
