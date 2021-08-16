@@ -1818,71 +1818,69 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
 int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32_t forced_isn)
 {
-   ScopedLock cg(s->m_ControlLock);
-   // a socket can "connect" only if it is in the following states:
-   // - OPENED: assume the socket binding parameters are configured
-   // - INIT: configure binding parameters here
-   // - any other (meaning, already connected): report error
+    ScopedLock cg(s->m_ControlLock);
+    // a socket can "connect" only if it is in the following states:
+    // - OPENED: assume the socket binding parameters are configured
+    // - INIT: configure binding parameters here
+    // - any other (meaning, already connected): report error
 
-   if (s->m_Status == SRTS_INIT)
-   {
-       if (s->core().m_config.bRendezvous)
-           throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
+    if (s->m_Status == SRTS_INIT)
+    {
+        if (s->core().m_config.bRendezvous)
+            throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
 
-       // If bind() was done first on this socket, then the
-       // socket will not perform this step. This actually does the
-       // same thing as bind() does, just with empty address so that
-       // the binding parameters are autoselected.
+        // If bind() was done first on this socket, then the
+        // socket will not perform this step. This actually does the
+        // same thing as bind() does, just with empty address so that
+        // the binding parameters are autoselected.
 
-       s->core().open();
-       sockaddr_any autoselect_sa (target_addr.family());
-       // This will create such a sockaddr_any that
-       // will return true from empty(). 
-       updateMux(s, autoselect_sa);  // <<---- updateMux
-       // -> C(Snd|Rcv)Queue::init
-       // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
-       s->m_Status = SRTS_OPENED;
-   }
-   else
-   {
-       if (s->m_Status != SRTS_OPENED)
-           throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        s->core().open();
+        sockaddr_any autoselect_sa (target_addr.family());
+        // This will create such a sockaddr_any that
+        // will return true from empty(). 
+        updateMux(s, autoselect_sa);  // <<---- updateMux
+        // -> C(Snd|Rcv)Queue::init
+        // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
+        s->m_Status = SRTS_OPENED;
+    }
+    else
+    {
+        if (s->m_Status != SRTS_OPENED)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-       // status = SRTS_OPENED, so family should be known already.
-       if (target_addr.family() != s->m_SelfAddr.family())
-       {
-           LOGP(cnlog.Error, "srt_connect: socket is bound to a different family than target address");
-           throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-       }
-   }
+        // status = SRTS_OPENED, so family should be known already.
+        if (target_addr.family() != s->m_SelfAddr.family())
+        {
+            LOGP(cnlog.Error, "srt_connect: socket is bound to a different family than target address");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+    }
 
 
-   // connect_complete() may be called before connect() returns.
-   // So we need to update the status before connect() is called,
-   // otherwise the status may be overwritten with wrong value
-   // (CONNECTED vs. CONNECTING).
-   s->m_Status = SRTS_CONNECTING;
+    // connect_complete() may be called before connect() returns.
+    // So we need to update the status before connect() is called,
+    // otherwise the status may be overwritten with wrong value
+    // (CONNECTED vs. CONNECTING).
+    s->m_Status = SRTS_CONNECTING;
 
-  /* 
-   * In blocking mode, connect can block for up to 30 seconds for
-   * rendez-vous mode. Holding the s->m_ControlLock prevent close
-   * from cancelling the connect
-   */
-   try
-   {
-       // record peer address
-       s->m_PeerAddr = target_addr;
-       s->core().startConnect(target_addr, forced_isn);
-   }
-   catch (CUDTException& e) // Interceptor, just to change the state.
-   {
-      s->m_Status = SRTS_OPENED;
-      throw e;
-   }
+    /*
+     * In blocking mode, connect can block for up to 30 seconds for
+     * rendez-vous mode. Holding the s->m_ControlLock prevent close
+     * from cancelling the connect
+     */
+    try
+    {
+        // record peer address
+        s->m_PeerAddr = target_addr;
+        s->core().startConnect(target_addr, forced_isn);
+    }
+    catch (CUDTException& e) // Interceptor, just to change the state.
+    {
+        s->m_Status = SRTS_OPENED;
+        throw e;
+    }
 
-   // ScopedLock destructor will delete cg and unlock s->m_ControlLock
-
-   return 0;
+    return 0;
 }
 
 
@@ -2859,9 +2857,9 @@ uint16_t srt::CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
     return sa.hport();
 }
 
-bool srt::CUDTUnited::channelSettingsMatch(const CMultiplexer& m, const CUDTSocket* s)
+bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket)
 {
-    return m.m_mcfg.bReuseAddr && m.m_mcfg == s->core().m_config;
+    return cfgMuxer.bReuseAddr && cfgMuxer == cfgSocket;
 }
 
 void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* udpsock /*[[nullable]]*/)
@@ -2878,6 +2876,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const U
         // If not, we need to see if there exist already a multiplexer bound
         // to the same endpoint.
         const int port = addr.hport();
+        const CSrtConfig& cfgSocket = s->core().m_config;
 
         bool reuse_attempt = false;
         for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin();
@@ -2914,14 +2913,14 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const U
 
                 // Still, for ANY you need either the same family, or open
                 // for families.
-                if (m.m_mcfg.iIpV6Only != -1 && m.m_mcfg.iIpV6Only != s->core().m_config.iIpV6Only)
+                if (m.m_mcfg.iIpV6Only != -1 && m.m_mcfg.iIpV6Only != cfgSocket.iIpV6Only)
                 {
                     LOGC(smlog.Error, log << "bind: Address: " << addr.str()
                             << " conflicts with existing IPv6 wildcard binding: " << sa.str());
                     throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
                 }
 
-                if ((m.m_mcfg.iIpV6Only == 0 || s->core().m_config.iIpV6Only == 0) && m.m_iIPversion != addr.family())
+                if ((m.m_mcfg.iIpV6Only == 0 || cfgSocket.iIpV6Only == 0) && m.m_iIPversion != addr.family())
                 {
                     LOGC(smlog.Error, log << "bind: Address: " << addr.str()
                             << " conflicts with IPv6 wildcard binding: " << sa.str()
@@ -2957,7 +2956,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const U
             if (reuse_attempt)
             {
                 //   - if the channel settings match, it can be reused
-                if (channelSettingsMatch(m, s))
+                if (channelSettingsMatch(m.m_mcfg, cfgSocket))
                 {
                     HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
                     // reuse the existing multiplexer
