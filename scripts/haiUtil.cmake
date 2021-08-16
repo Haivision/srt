@@ -12,11 +12,11 @@ include(CheckCXXSourceCompiles)
 # Useful for combinging paths
 
 function(adddirname prefix lst out_lst)
-        set(output)
-        foreach(item ${lst})
-                list(APPEND output "${prefix}/${item}")
-        endforeach()
-        set(${out_lst} ${${out_lst}} ${output} PARENT_SCOPE)
+	set(output)
+	foreach(item ${lst})
+		list(APPEND output "${prefix}/${item}")
+	endforeach()
+	set(${out_lst} ${${out_lst}} ${output} PARENT_SCOPE)
 endfunction()
 
 # Splits a version formed as "major.minor.patch" recorded in variable 'prefix'
@@ -32,11 +32,11 @@ ENDMACRO(set_version_variables)
 # Sets given variable to 1, if the condition that follows it is satisfied.
 # Otherwise set it to 0.
 MACRO(set_if varname)
-   IF(${ARGN})
-     SET(${varname} 1)
-   ELSE(${ARGN})
-     SET(${varname} 0)
-   ENDIF(${ARGN})
+	IF(${ARGN})
+		SET(${varname} 1)
+	ELSE(${ARGN})
+		SET(${varname} 0)
+	ENDIF(${ARGN})
 ENDMACRO(set_if)
 
 FUNCTION(join_arguments outvar)
@@ -80,11 +80,11 @@ MACRO(MafReadDir directory maffile)
 	configure_file(${directory}/${maffile} dummy_${maffile}.cmake.out)
 	file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/dummy_${maffile}.cmake.out)
 
-    #message("DEBUG: MAF FILE CONTENTS: ${MAFREAD_CONTENTS}")
-    #message("DEBUG: PASSED VARIABLES:")
-    #foreach(DEBUG_VAR ${MAFREAD_TAGS})
-    #	message("DEBUG: ${DEBUG_VAR}=${MAFREAD_VAR_${DEBUG_VAR}}")
-    #endforeach()
+	#message("DEBUG: MAF FILE CONTENTS: ${MAFREAD_CONTENTS}")
+	#message("DEBUG: PASSED VARIABLES:")
+	#foreach(DEBUG_VAR ${MAFREAD_TAGS})
+	#	message("DEBUG: ${DEBUG_VAR}=${MAFREAD_VAR_${DEBUG_VAR}}")
+	#endforeach()
 
 	# The unnamed section becomes SOURCES
 	set (MAFREAD_VARIABLE ${MAFREAD_VAR_SOURCES})
@@ -186,15 +186,15 @@ MACRO(MafReadDir directory maffile)
 	ENDFOREACH()
 	
 	# Final debug report
-    #set (ALL_VARS "")
-    #message("DEBUG: extracted variables:")
-    #foreach(DEBUG_VAR ${MAFREAD_TAGS})
-    #	list(APPEND ALL_VARS ${MAFREAD_VAR_${DEBUG_VAR}})
-    #endforeach()
-    #list(REMOVE_DUPLICATES ALL_VARS)
-    #foreach(DEBUG_VAR ${ALL_VARS})
-    #	message("DEBUG: --> ${DEBUG_VAR} = ${${DEBUG_VAR}}")
-    #endforeach()
+	#set (ALL_VARS "")
+	#message("DEBUG: extracted variables:")
+	#foreach(DEBUG_VAR ${MAFREAD_TAGS})
+	#	list(APPEND ALL_VARS ${MAFREAD_VAR_${DEBUG_VAR}})
+	#endforeach()
+	#list(REMOVE_DUPLICATES ALL_VARS)
+	#foreach(DEBUG_VAR ${ALL_VARS})
+	#	message("DEBUG: --> ${DEBUG_VAR} = ${${DEBUG_VAR}}")
+	#endforeach()
 ENDMACRO(MafReadDir)
 
 # NOTE: This is historical only. Not in use.
@@ -214,9 +214,9 @@ MACRO(GetMafHeaders directory outvar)
 ENDMACRO(GetMafHeaders)
 
 function (getVarsWith _prefix _varResult)
-    get_cmake_property(_vars VARIABLES)
-    string (REGEX MATCHALL "(^|;)${_prefix}[A-Za-z0-9_]*" _matchedVars "${_vars}")
-    set (${_varResult} ${_matchedVars} PARENT_SCOPE)
+	get_cmake_property(_vars VARIABLES)
+	string (REGEX MATCHALL "(^|;)${_prefix}[A-Za-z0-9_]*" _matchedVars "${_vars}")
+	set (${_varResult} ${_matchedVars} PARENT_SCOPE)
 endfunction()
 
 function (check_testcode_compiles testcode libraries _successful)
@@ -228,15 +228,18 @@ function (check_testcode_compiles testcode libraries _successful)
 	set (CMAKE_REQUIRED_LIBRARIES ${save_required_libraries})
 endfunction()
 
-function (test_requires_clock_gettime _result)
+function (test_requires_clock_gettime _enable _linklib)
 	# This function tests if clock_gettime can be used
 	# - at all
 	# - with or without librt
 
 	# Result will be:
-	# rt (if librt required)
-	# "" (if no extra libraries required)
-	# -- killed by FATAL_ERROR if clock_gettime is not available
+	# - CLOCK_MONOTONIC is available, link with librt:
+	#   _enable = ON; _linklib = "-lrt".
+	# - CLOCK_MONOTONIC is available, link without librt:
+	#   _enable = ON; _linklib = "".
+	# - CLOCK_MONOTONIC is not available:
+	#   _enable = OFF; _linklib = "-".
 
 	set (code "
 		#include <time.h>
@@ -249,19 +252,23 @@ function (test_requires_clock_gettime _result)
 
 	check_testcode_compiles(${code} "" HAVE_CLOCK_GETTIME_IN)
 	if (HAVE_CLOCK_GETTIME_IN)
-		message(STATUS "Checked clock_gettime(): no extra libs needed")
-		set (${_result} "" PARENT_SCOPE)
+		message(STATUS "CLOCK_MONOTONIC: availabe, no extra libs needed")
+		set (${_enable}  ON PARENT_SCOPE)
+		set (${_linklib} "" PARENT_SCOPE)
 		return()
 	endif()
 
 	check_testcode_compiles(${code} "rt" HAVE_CLOCK_GETTIME_LIBRT)
 	if (HAVE_CLOCK_GETTIME_LIBRT)
-		message(STATUS "Checked clock_gettime(): requires -lrt")
-		set (${_result} "-lrt" PARENT_SCOPE)
+		message(STATUS "CLOCK_MONOTONIC: available, requires -lrt")
+		set (${_enable}  ON PARENT_SCOPE)
+		set (${_linklib} "-lrt" PARENT_SCOPE)
 		return()
 	endif()
 
-	message(FATAL_ERROR "clock_gettime() is not available on this system")
+	set (${_enable}  OFF PARENT_SCOPE)
+	set (${_linklib} "-" PARENT_SCOPE)
+	message(STATUS "CLOCK_MONOTONIC: not available on this system")
 endfunction()
 
 function (parse_compiler_type wct _type _suffix)
