@@ -1870,8 +1870,6 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
      */
     try
     {
-        // record peer address
-        s->m_PeerAddr = target_addr;
         s->core().startConnect(target_addr, forced_isn);
     }
     catch (CUDTException& e) // Interceptor, just to change the state.
