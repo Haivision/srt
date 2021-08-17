@@ -220,7 +220,7 @@ struct OptionScheme
 
     OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names() const;
+    const std::set<std::string>& names() const;
 };
 
 struct OptionName
@@ -234,8 +234,6 @@ struct OptionName
         : helptext(ht), main_name(first),
           names {first, rest...}
     {
-        int x = 0;
-        x+=1;
     }
 
     template <class... Args>
