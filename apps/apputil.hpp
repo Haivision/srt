@@ -220,7 +220,7 @@ struct OptionScheme
 
     OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names();
+	const std::set<std::string>& names() const;
 };
 
 struct OptionName
@@ -234,6 +234,8 @@ struct OptionName
         : helptext(ht), main_name(first),
           names {first, rest...}
     {
+        int x = 0;
+        x+=1;
     }
 
     template <class... Args>
@@ -265,7 +267,7 @@ private:
 };
 
 inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
-inline const std::set<std::string>& OptionScheme::names() { return pid->names; }
+inline const std::set<std::string>& OptionScheme::names() const { return pid->names; }
 
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
