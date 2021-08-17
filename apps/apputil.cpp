@@ -251,7 +251,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             }
 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
-            for (auto s: scheme)
+            for (const auto& s: scheme)
             {
                 if (s.names().count(current_key))
                 {
