@@ -1,6 +1,6 @@
 #!/bin/sh
 
-while getopts n:o:a:t: option
+while getopts n:o:a:t:d:h: option
 do
  case "${option}"
  in
@@ -8,13 +8,14 @@ do
  o) OPENSSL_VERSION=${OPTARG};;
  a) API_LEVEL=${OPTARG};;
  t) BUILD_TARGETS=${OPTARG};;
+ d) OUT_DIR=${OPTARG};;
+ h) HOST_TAG=${OPTARG};;
  *) twentytwo=${OPTARG};;
  esac
 done
 
 
 BUILD_DIR=/tmp/openssl_android_build
-OUT_DIR=$(pwd)
 
 if [ ! -d openssl-${OPENSSL_VERSION} ]
 then
@@ -29,7 +30,7 @@ cd openssl-${OPENSSL_VERSION} || exit 128
 
 
 ##### Prepare Files #####
-sed -i 's/.*-mandroid.*//' Configurations/15-android.conf
+sed -i.bak 's/.*-mandroid.*//' Configurations/15-android.conf
 patch -p1 -N <<EOP
 --- old/Configurations/unix-Makefile.tmpl   2018-09-11 14:48:19.000000000 +0200
 +++ new/Configurations/unix-Makefile.tmpl   2018-10-18 09:06:27.282007245 +0200
@@ -64,7 +65,7 @@ export ANDROID_NDK
 
 ##### build-function #####
 build_the_thing() {
-    TOOLCHAIN=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64
+    TOOLCHAIN=$ANDROID_NDK/toolchains/llvm/prebuilt/$HOST_TAG
     export PATH=$TOOLCHAIN/$TRIBLE/bin:$TOOLCHAIN/bin:"$PATH"
 echo $PATH
     make clean

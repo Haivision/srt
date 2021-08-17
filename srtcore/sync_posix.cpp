@@ -86,6 +86,12 @@ static int64_t get_cpu_frequency()
     if (QueryPerformanceFrequency(&ccf))
     {
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+        if (frequency == 0)
+        {
+            LOGC(inlog.Warn, log << "Win QPC frequency of " << ccf.QuadPart
+                << " counts/s is below the required 1 us accuracy. Please consider using C++11 timing (-DENABLE_STDCXX_SYNC=ON) instead.");
+            frequency = 1; // set back to 1 to avoid division by zero.
+        }
     }
     else
     {
@@ -244,22 +250,27 @@ srt::sync::UniqueLock::UniqueLock(Mutex& m)
 
 srt::sync::UniqueLock::~UniqueLock()
 {
-    unlock();
+    if (m_iLocked == 0)
+    {
+        unlock();
+    }
 }
 
 void srt::sync::UniqueLock::lock()
 {
-    if (m_iLocked == -1)
-        m_iLocked = m_Mutex.lock();
+    if (m_iLocked != -1)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_iLocked = m_Mutex.lock();
 }
 
 void srt::sync::UniqueLock::unlock()
 {
-    if (m_iLocked == 0)
-    {
-        m_Mutex.unlock();
-        m_iLocked = -1;
-    }
+    if (m_iLocked != 0)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_Mutex.unlock();
+    m_iLocked = -1;
 }
 
 srt::sync::Mutex* srt::sync::UniqueLock::mutex()

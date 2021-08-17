@@ -521,14 +521,15 @@ either `FASTREXMIT` or `LATEREXMIT`. This will be explained below.
 
 Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [socket options](API-socket-options.md):
 
-- `SRTO_TSBPDMODE` = true
-- `SRTO_RCVLATENCY` = 120
-- `SRTO_PEERLATENCY` = 0
-- `SRTO_TLPKTDROP` = true
-- `SRTO_MESSAGEAPI` = true
-- `SRTO_NAKREPORT` = true
-- `SRTO_PAYLOADSIZE` = 1316
-- `SRTO_CONGESTION` = "live"
+- [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) = true
+- [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 120
+- [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
+- [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = true
+- [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = true
+- [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = true
+- [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 1
+- [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) = 1316
+- [`SRTO_CONGESTION`](API-socket-options.md#SRTO_CONGESTION) = "live"
 
 In this mode, every call to a sending function is allowed to send only
 so much data, as declared by `SRTO_PAYLOADSIZE`, whose value is still
@@ -580,6 +581,10 @@ loss report itself was lost. Without it, the loss report will be always reported
 just once and never repeated again, and then the lost payload packet will
 be probably dropped by the TLPKTDROP mechanism.
 
+- `SRTO_RETRANSMITALGO`: Given the receiver sends periodic NAK reports,
+the sender can reduce the retransmission overhead by not retransmitting a loss
+more often than once per RTT (value 1).
+
 - `SRTO_PAYLOADSIZE`: Default value is for MPEG TS. If you are going
 to use SRT to send any different kind of payload, such as, for example,
 wrapping a live stream in very small frames, then you can use a bigger
@@ -598,14 +603,15 @@ NAKREPORT method is considered so effective that FASTREXMIT isn't necessary.
 
 Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [socket options](API-socket-options.md):
 
-- `SRTO_TSBPDMODE` = false
-- `SRTO_RCVLATENCY` = 0
-- `SRTO_PEERLATENCY` = 0
-- `SRTO_TLPKTDROP` = false
-- `SRTO_MESSAGEAPI` = false
-- `SRTO_NAKREPORT` = false
-- `SRTO_PAYLOADSIZE` = 0
-- `SRTO_CONGESTION` = "file"
+- [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) = false
+- [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 0
+- [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
+- [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = false
+- [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = false
+- [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = false
+- [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 0
+- [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) = 0
+- [`SRTO_CONGESTION`](API-socket-options.md#SRTO_CONGESTION) = "file"
 
 In this mode, calling a sending function is allowed to potentially send
 virtually any size of data. The sending function will HANGUP only if the

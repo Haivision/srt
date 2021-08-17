@@ -251,7 +251,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             }
 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
-            for (auto s: scheme)
+            for (const auto& s: scheme)
             {
                 if (s.names().count(current_key))
                 {
@@ -484,7 +484,6 @@ public:
     string WriteStats(int sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
-        static const string qt = R"(")";
 
         string pretty_cr, pretty_tab;
         if (Option("pretty"))
@@ -540,9 +539,7 @@ public:
 
             // Print the current field
             output << quotekey(i->name);
-            output << qt;
             i->PrintValue(output, mon);
-            output << qt;
         }
 
         // Close the previous subcategory

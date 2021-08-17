@@ -43,7 +43,7 @@ using namespace srt_logging;
 */
 
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
-const int SRT_CRYPT_KM_PRE_ANNOUNCE = 0x10000;
+const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
 namespace srt_logging
 {
@@ -662,6 +662,8 @@ std::string CCryptoControl::CONID() const
     return os.str();
 }
 
+#ifdef SRT_ENABLE_ENCRYPTION
+
 #if ENABLE_HEAVY_LOGGING
 static std::string CryptoFlags(int flg)
 {
@@ -679,9 +681,8 @@ static std::string CryptoFlags(int flg)
     copy(f.begin(), f.end(), ostream_iterator<string>(os, "|"));
     return os.str();
 }
-#endif
+#endif // ENABLE_HEAVY_LOGGING
 
-#ifdef SRT_ENABLE_ENCRYPTION
 bool CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir, HaiCrypt_Handle& w_hCrypto)
 {
 

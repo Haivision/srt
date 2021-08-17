@@ -58,6 +58,10 @@ modified by
 #include <cstring>
 #include <iterator>
 
+#if defined(__FreeBSD_kernel__)
+#include <sys/event.h>
+#endif
+
 #include "common.h"
 #include "epoll.h"
 #include "logging.h"
@@ -108,7 +112,11 @@ int CEPoll::create(CEPollDesc** pout)
    int localid = 0;
 
    #ifdef LINUX
-   localid = epoll_create(1024);
+   int flags = 0;
+#if ENABLE_SOCK_CLOEXEC
+   flags |= EPOLL_CLOEXEC;
+#endif
+   localid = epoll_create1(flags);
    /* Possible reasons of -1 error:
 EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys/fs/epoll/max_user_instances was encountered.
 ENFILE: The system limit on the total number of open files has been reached.
@@ -713,7 +721,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
         }
 
-        const bool wait_signaled ATR_UNUSED = CGlobEvent::waitForEvent();
+        const bool wait_signaled SRT_ATR_UNUSED = CGlobEvent::waitForEvent();
         HLOGC(ealog.Debug, log << "CEPoll::wait: EVENT WAITING: "
             << (wait_signaled ? "TRIGGERED" : "CHECKPOINT"));
     }
@@ -779,7 +787,7 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
                     st[i->fd] = i->events;
                     IF_HEAVY_LOGGING(singles << "@" << i->fd << ":");
                     IF_HEAVY_LOGGING(PrintEpollEvent(singles, i->events, i->parent->edgeOnly()));
-                    const bool edged ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
+                    const bool edged SRT_ATR_UNUSED = d.checkEdge(i++); // NOTE: potentially deletes `i`
                     IF_HEAVY_LOGGING(singles << (edged ? "<^> " : " "));
                 }
 

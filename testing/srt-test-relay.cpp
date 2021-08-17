@@ -15,6 +15,7 @@ written by
 
 #include "platform_sys.h"
 
+#include <atomic>
 #include <iostream>
 #include <iterator>
 #include <vector>
@@ -32,6 +33,8 @@ written by
 #include <srt.h>
 #include <udt.h>
 
+#include "testactivemedia.hpp"
+
 #include "apputil.hpp"
 #include "uriparser.hpp"
 #include "logsupport.hpp"
@@ -41,13 +44,15 @@ written by
 #include "testmedia.hpp"
 #include "threadname.h"
 
+
+
+
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
 
-volatile bool g_program_interrupted = false;
-volatile bool g_program_established = false;
+std::atomic<bool> g_program_established {false};
 
 SrtModel* g_pending_model = nullptr;
 
@@ -56,7 +61,7 @@ thread::id g_root_thread = std::this_thread::get_id();
 static void OnINT_SetInterrupted(int)
 {
     Verb() << VerbLock << "SIGINT: Setting interrupt state.";
-    ::g_program_interrupted = true;
+    ::transmit_int_state = true;
 
     // Just for a case, forcefully close all active SRT sockets.
     SrtModel* pm = ::g_pending_model;
@@ -83,167 +88,9 @@ static void OnINT_SetInterrupted(int)
 
 using namespace std;
 
-template <class VarType, class ValType>
-struct OnReturnSetter
-{
-    VarType& var;
-    ValType value;
-
-    OnReturnSetter(VarType& target, ValType v): var(target), value(v) {}
-    ~OnReturnSetter() { var = value; }
-};
-
-template <class VarType, class ValType>
-OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
-{ return OnReturnSetter<VarType, ValType>(target, v); }
-
-template<class MediumDir>
-struct Medium
-{
-    class SrtMainLoop* master = nullptr;
-    MediumDir* med = nullptr;
-    unique_ptr<MediumDir> pinned_med;
-    list<MediaPacket> buffer;
-    mutex buffer_lock;
-    thread thr;
-    condition_variable ready;
-    volatile bool running = false;
-    std::exception_ptr xp; // To catch exception thrown by a thread
-
-    virtual void Runner() = 0;
-
-    void RunnerBase()
-    {
-        try
-        {
-            Runner();
-        }
-        catch (...)
-        {
-            xp = std::current_exception();
-        }
-
-        //Verb() << "Medium: " << this << ": thread exit";
-        unique_lock<mutex> g(buffer_lock);
-        running = false;
-        ready.notify_all();
-        //Verb() << VerbLock << "Medium: EXIT NOTIFIED";
-    }
-
-    void run()
-    {
-        running = true;
-        std::ostringstream tns;
-        tns << typeid(*this).name() << ":" << this;
-        ThreadName tn(tns.str().c_str());
-        thr = thread( [this] { RunnerBase(); } );
-    }
-
-    void quit()
-    {
-        if (!med)
-            return;
-
-        applog.Debug() << "Medium(" << typeid(*med).name() << ") quit. Buffer contains " << buffer.size() << " blocks";
-
-        string name;
-        if (Verbose::on)
-            name = typeid(*med).name();
-
-        med->Close();
-        if (thr.joinable())
-        {
-            applog.Debug() << "Medium::quit: Joining medium thread (" << name << ") ...";
-            thr.join();
-            applog.Debug() << "... done";
-        }
-
-        if (xp)
-        {
-            try {
-                std::rethrow_exception(xp);
-            } catch (TransmissionError& e) {
-                if (Verbose::on)
-                    Verb() << VerbLock << "Medium " << this << " exited with Transmission Error:\n\t" << e.what();
-                else
-                    cerr << "Transmission Error: " << e.what() << endl;
-            } catch (...) {
-                if (Verbose::on)
-                    Verb() << VerbLock << "Medium " << this << " exited with UNKNOWN EXCEPTION:";
-                else
-                    cerr << "UNKNOWN EXCEPTION on medium\n";
-            }
-        }
-
-        // Prevent further quits from running
-        med = nullptr;
-    }
-
-    void Setup(SrtMainLoop* mst, MediumDir* t)
-    {
-        med = t;
-        master = mst;
-        // Leave pinned_med as 0
-    }
-
-    void Setup(SrtMainLoop* mst, unique_ptr<MediumDir>&& medbase)
-    {
-        pinned_med = move(medbase);
-        med = pinned_med.get();
-        master = mst;
-    }
-
-    virtual ~Medium()
-    {
-        //Verb() << "Medium: " << this << " DESTROYED. Threads quit.";
-        quit();
-    }
-};
-
 size_t g_chunksize = 0;
 size_t g_default_live_chunksize = 1316;
 size_t g_default_file_chunksize = 1456;
-
-struct SourceMedium: Medium<Source>
-{
-    // Source Runner: read payloads and put on the buffer
-    void Runner() override;
-
-    // External user: call this to get the buffer.
-    MediaPacket Extract();
-};
-
-struct TargetMedium: Medium<Target>
-{
-    void Runner() override;
-
-    bool Schedule(const MediaPacket& data)
-    {
-        lock_guard<mutex> lg(buffer_lock);
-        if (!running || ::g_program_interrupted)
-            return false;
-
-        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << data.payload.size() << "] CLIENT -> BUFFER";
-        buffer.push_back(data);
-        ready.notify_one();
-        return true;
-    }
-
-    void Interrupt()
-    {
-        lock_guard<mutex> lg(buffer_lock);
-        running = false;
-        ready.notify_one();
-    }
-
-    ~TargetMedium()
-    {
-        //Verb() << "TargetMedium: DESTROYING";
-        Interrupt();
-        // ~Medium will do quit() additionally, which joins the thread
-    }
-
-};
 
 class SrtMainLoop
 {
@@ -274,140 +121,6 @@ public:
             m_input_thr.join();
     }
 };
-
-
-void SourceMedium::Runner()
-{
-    ThreadName::set("SourceRN");
-    if (!master)
-    {
-        cerr << "IPE: incorrect setup, master empty\n";
-        return;
-    }
-
-    /* Don't stop me now...
-    struct OnReturn
-    {
-        SrtMainLoop* m;
-        OnReturn(SrtMainLoop* mst): m(mst) {}
-        ~OnReturn()
-        {
-            m->MakeStop();
-        }
-    } on_return(master);
-    */
-
-    Verb() << VerbLock << "Starting SourceMedium: " << this;
-    for (;;)
-    {
-        auto input = med->Read(g_chunksize);
-        if (input.payload.empty() && med->End())
-        {
-            Verb() << VerbLock << "Exiting SourceMedium: " << this;
-            return;
-        }
-        applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << input.payload.size() << "] MEDIUM -> BUFFER. signal(" << &ready << ")";
-
-        lock_guard<mutex> g(buffer_lock);
-        buffer.push_back(input);
-        ready.notify_one();
-    }
-}
-
-MediaPacket SourceMedium::Extract()
-{
-    if (!master)
-        return {};
-
-    unique_lock<mutex> g(buffer_lock);
-    for (;;)
-    {
-        if (!buffer.empty())
-        {
-            MediaPacket top;
-            swap(top, *buffer.begin());
-            buffer.pop_front();
-            applog.Debug() << "SourceMedium(" << typeid(*med).name() << "): [" << top.payload.size() << "] BUFFER -> CLIENT";
-            return top;
-        }
-        else
-        {
-            // Don't worry about the media status as long as you have somthing in the buffer.
-            // Purge the buffer first, then worry about the other things.
-            if (!running || ::g_program_interrupted)
-            {
-                applog.Debug() << "Extract(" << typeid(*med).name() << "): INTERRUPTED READING ("
-                                                                                << (!running ? "local" : (!master->IsRunning() ? "master" : "unknown")) << ")";
-                //Verb() << "SourceMedium " << this << " not running";
-                return {};
-            }
-
-        }
-
-        // Block until ready
-        applog.Debug() << "Extract(" << typeid(*med).name() << "): " << this << " wait(" << &ready << ") -->";
-        ready.wait_for(g, chrono::seconds(1), [this] { return running && master->IsRunning() && !buffer.empty(); });
-        applog.Debug() << "Extract(" << typeid(*med).name() << "): " << this << " <-- notified (running:"
-            << boolalpha << running << " master:" << master->IsRunning() << " buffer:" << buffer.size() << ")";
-    }
-}
-
-void TargetMedium::Runner()
-{
-    ThreadName::set("TargetRN");
-    auto on_return_set = OnReturnSet(running, false);
-    Verb() << VerbLock << "Starting TargetMedium: " << this;
-    for (;;)
-    {
-        MediaPacket val;
-        {
-            unique_lock<mutex> lg(buffer_lock);
-            if (buffer.empty())
-            {
-                if (!running)
-                {
-                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium stopped, exiting.";
-                    return;
-                }
-
-                bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
-                applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER update (timeout:"
-                                << boolalpha << gotsomething << " running: " << running << ")";
-                if (::g_program_interrupted || !running || !med || med->Broken())
-                {
-                    applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): buffer empty, medium "
-                                   << (!::g_program_interrupted ?
-                                           (running ?
-                                                (med ?
-                                                    (med->Broken() ? "broken" : "UNKNOWN")
-                                                : "deleted")
-                                           : "stopped")
-                                      : "killed");
-                    return;
-                }
-                if (!gotsomething) // exit on timeout
-                    continue;
-            }
-            swap(val, *buffer.begin());
-            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER extraction";
-
-            buffer.pop_front();
-        }
-
-        // Check before writing
-        if (med->Broken())
-        {
-            applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER -> DISCARDED (medium broken)";
-            running = false;
-            return;
-        }
-
-        applog.Debug() << "TargetMedium(" << typeid(*med).name() << "): [" << val.payload.size() << "] BUFFER -> MEDIUM";
-        // You get the data to send, send them.
-        med->Write(val);
-    }
-}
-
 
 int main( int argc, char** argv )
 {
@@ -605,7 +318,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     {
         Verb() << "Setting up output: " << spec;
         unique_ptr<TargetMedium> m { new TargetMedium };
-        m->Setup(this, Target::Create(spec));
+        m->Setup(Target::Create(spec));
         m_output_media.push_back(move(m));
     }
 
@@ -631,14 +344,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     Verb() << "... Established. configuring other pipes:";
 
     // Once it's ready, use it to initialize the medium.
-
-    m_srt_relay.reset(new SrtRelay);
-    m_srt_relay->StealFrom(m);
-
-    m_srt_source.Setup(this, m_srt_relay.get());
-
     bool file_mode = (transtype == "file");
-
     if (g_chunksize == 0)
     {
         if (file_mode)
@@ -649,6 +355,11 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         Verb() << "DEFAULT CHUNKSIZE used: " << g_chunksize;
     }
 
+    m_srt_relay.reset(new SrtRelay);
+    m_srt_relay->StealFrom(m);
+
+    m_srt_source.Setup(m_srt_relay.get(), g_chunksize);
+
     // Now check the input medium
     if (input_echoback)
     {
@@ -656,7 +367,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
         // Add SRT medium to output targets, and keep input medium empty.
         unique_ptr<TargetMedium> m { new TargetMedium };
-        m->Setup(this, m_srt_relay.get());
+        m->Setup(m_srt_relay.get());
         m_output_media.push_back(move(m));
     }
     else
@@ -665,7 +376,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         // to the output list, as this will be fed directly
         // by the data from this input medium in a spearate engine.
         Verb() << "Setting up input: " << input_spec;
-        m_input_medium.Setup(this, Source::Create(input_spec));
+        m_input_medium.Setup(Source::Create(input_spec), g_chunksize);
 
         if (!file_mode)
         {
@@ -796,6 +507,11 @@ void SrtMainLoop::run()
     }
 
     Verb() << "MEDIA LOOP EXIT";
+    for (auto& m : m_output_media)
+    {
+        m->quit();
+    }
+    m_input_medium.quit();
     m_srt_source.quit();
 
     if (m_input_xp)

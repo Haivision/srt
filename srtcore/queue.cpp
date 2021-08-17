@@ -255,24 +255,24 @@ void srt::CUnitQueue::makeUnitGood(CUnit* unit)
     unit->m_iFlag = CUnit::GOOD;
 }
 
-srt::CSndUList::CSndUList()
+srt::CSndUList::CSndUList(sync::CTimer* pTimer)
     : m_pHeap(NULL)
     , m_iArrayLength(512)
     , m_iLastEntry(-1)
     , m_ListLock()
-    , m_pWindowLock(NULL)
-    , m_pWindowCond(NULL)
-    , m_pTimer(NULL)
+    , m_pTimer(pTimer)
 {
+    setupCond(m_ListCond, "CSndUListCond");
     m_pHeap = new CSNode*[m_iArrayLength];
 }
 
 srt::CSndUList::~CSndUList()
 {
+    releaseCond(m_ListCond);
     delete[] m_pHeap;
 }
 
-void srt::CSndUList::update(const CUDT* u, EReschedule reschedule)
+void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
 
@@ -280,69 +280,46 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule)
 
     if (n->m_iHeapLoc >= 0)
     {
-        if (!reschedule) // EReschedule to bool conversion, predicted.
+        if (reschedule == DONT_RESCHEDULE)
+            return;
+
+        if (n->m_tsTimeStamp <= ts)
             return;
 
         if (n->m_iHeapLoc == 0)
         {
-            n->m_tsTimeStamp = steady_clock::now();
+            n->m_tsTimeStamp = ts;
             m_pTimer->interrupt();
             return;
         }
 
         remove_(u);
-        insert_norealloc_(steady_clock::now(), u);
+        insert_norealloc_(ts, u);
         return;
     }
 
-    insert_(steady_clock::now(), u);
+    insert_(ts, u);
 }
 
-int srt::CSndUList::pop(sockaddr_any& w_addr, CPacket& w_pkt)
+srt::CUDT* srt::CSndUList::pop()
 {
     ScopedLock listguard(m_ListLock);
 
     if (-1 == m_iLastEntry)
-        return -1;
+        return NULL;
 
-    // no pop until the next schedulled time
+    // no pop until the next scheduled time
     if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
-        return -1;
+        return NULL;
 
     CUDT* u = m_pHeap[0]->m_pUDT;
     remove_(u);
-
-#define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
-
-    HLOGC(qslog.Debug,
-          log << "SND:pop: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
-              << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-              << UST(Opened));
-#undef UST
-
-    if (!u->m_bConnected || u->m_bBroken)
-        return -1;
-
-    // pack a packet from the socket
-    const std::pair<int, steady_clock::time_point> res_time = u->packData((w_pkt));
-
-    if (res_time.first <= 0)
-        return -1;
-
-    w_addr = u->m_PeerAddr;
-
-    // insert a new entry, ts is the next processing time
-    const steady_clock::time_point send_time = res_time.second;
-    if (!is_zero(send_time))
-        insert_norealloc_(send_time, u);
-
-    return 1;
+    return u;
 }
 
 void srt::CSndUList::remove(const CUDT* u)
 {
     ScopedLock listguard(m_ListLock);
-
     remove_(u);
 }
 
@@ -354,6 +331,21 @@ steady_clock::time_point srt::CSndUList::getNextProcTime()
         return steady_clock::time_point();
 
     return m_pHeap[0]->m_tsTimeStamp;
+}
+
+void srt::CSndUList::waitNonEmpty() const
+{
+    UniqueLock listguard(m_ListLock);
+    if (m_iLastEntry >= 0)
+        return;
+
+    m_ListCond.wait(listguard);
+}
+
+void srt::CSndUList::signalInterrupt() const
+{
+    ScopedLock listguard(m_ListLock);
+    m_ListCond.notify_all();
 }
 
 void srt::CSndUList::realloc_()
@@ -420,7 +412,8 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
     {
-        CSync::lock_signal(*m_pWindowCond, *m_pWindowLock);
+        // m_ListLock is assumed to be locked.
+        m_ListCond.notify_all();
     }
 }
 
@@ -468,10 +461,8 @@ srt::CSndQueue::CSndQueue()
     : m_pSndUList(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
-    , m_WindowCond()
     , m_bClosing(false)
 {
-    setupCond(m_WindowCond, "Window");
 }
 
 srt::CSndQueue::~CSndQueue()
@@ -483,14 +474,14 @@ srt::CSndQueue::~CSndQueue()
         m_pTimer->interrupt();
     }
 
-    CSync::lock_signal(m_WindowCond, m_WindowLock);
+    // Unblock CSndQueue worker thread if it is waiting.
+    m_pSndUList->signalInterrupt();
 
     if (m_WorkerThread.joinable())
     {
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-    releaseCond(m_WindowCond);
 
     delete m_pSndUList;
 }
@@ -510,12 +501,9 @@ int srt::CSndQueue::m_counter = 0;
 
 void srt::CSndQueue::init(CChannel* c, CTimer* t)
 {
-    m_pChannel                 = c;
-    m_pTimer                   = t;
-    m_pSndUList                = new CSndUList;
-    m_pSndUList->m_pWindowLock = &m_WindowLock;
-    m_pSndUList->m_pWindowCond = &m_WindowCond;
-    m_pSndUList->m_pTimer      = m_pTimer;
+    m_pChannel  = c;
+    m_pTimer    = t;
+    m_pSndUList = new CSndUList(t);
 
 #if ENABLE_LOGGING
     ++m_counter;
@@ -575,14 +563,11 @@ void* srt::CSndQueue::worker(void* param)
             self->m_WorkerStats.lNotReadyTs++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-            UniqueLock windlock(self->m_WindowLock);
-            CSync      windsync(self->m_WindowCond, windlock);
-
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
-            if (!self->m_bClosing && (self->m_pSndUList->m_iLastEntry < 0))
+            if (!self->m_bClosing)
             {
-                windsync.wait();
+                self->m_pSndUList->waitNonEmpty();
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
                 self->m_WorkerStats.lCondWait++;
@@ -623,17 +608,48 @@ void* srt::CSndQueue::worker(void* param)
         }
         THREAD_RESUMED();
 
-        // it is time to send the next pkt
-        sockaddr_any addr;
-        CPacket      pkt;
-        if (self->m_pSndUList->pop((addr), (pkt)) < 0)
+        // Get a socket with a send request if any.
+        CUDT* u = self->m_pSndUList->pop();
+        if (u == NULL)
         {
-            continue;
-
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lNotReadyPop++;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
         }
+        
+#define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
+        HLOGC(qslog.Debug,
+            log << "CSndQueue: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
+                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
+                << UST(Opened));
+#undef UST
+
+        if (!u->m_bConnected || u->m_bBroken)
+        {
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
+            self->m_WorkerStats.lNotReadyPop++;
+#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
+        }
+
+        // pack a packet from the socket
+        CPacket pkt;
+        const std::pair<int, steady_clock::time_point> res_time = u->packData((pkt));
+
+        // Check if payload size is invalid.
+        if (res_time.first <= 0)
+        {
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
+            self->m_WorkerStats.lNotReadyPop++;
+#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            continue;
+        }
+
+        const sockaddr_any addr = u->m_PeerAddr;
+        const steady_clock::time_point next_send_time = res_time.second;
+        if (!is_zero(next_send_time))
+            self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
 
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
@@ -973,11 +989,12 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        /*
-         * Setting m_bConnecting to false but keeping socket in rendezvous queue is not a good idea.
-         * Next CUDT::close will not remove it from rendezvous queue (because !m_bConnecting)
-         * and may crash on next pass.
-         */
+        //
+        // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
+        // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
+        // and may crash on next pass.
+        //
+        // TODO: maybe lock i->u->m_ConnectionLock?
         i->u->m_bConnecting = false;
         remove(i->u->m_SocketID);
 

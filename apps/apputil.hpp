@@ -90,6 +90,21 @@ const int SysAGAIN = EAGAIN;
 sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
+template <class VarType, class ValType>
+struct OnReturnSetter
+{
+    VarType& var;
+    ValType value;
+
+    OnReturnSetter(VarType& target, ValType v): var(target), value(v) {}
+    ~OnReturnSetter() { var = value; }
+};
+
+template <class VarType, class ValType>
+OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
+{ return OnReturnSetter<VarType, ValType>(target, v); }
+
+// ---- OPTIONS MODULE
 
 inline bool CheckTrue(const std::vector<std::string>& in)
 {
@@ -205,7 +220,7 @@ struct OptionScheme
 
     OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names();
+    const std::set<std::string>& names() const;
 };
 
 struct OptionName
@@ -250,7 +265,7 @@ private:
 };
 
 inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
-inline const std::set<std::string>& OptionScheme::names() { return pid->names; }
+inline const std::set<std::string>& OptionScheme::names() const { return pid->names; }
 
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }

@@ -52,11 +52,35 @@ else
  fi
 fi
 
-# Determine the path of the executing script
-BASE_DIR=$(readlink -f $0 | xargs dirname)
+SCRIPT_DIR=$(pwd)
+HOST_TAG='unknown'
+unamestr=$(uname -s)
+if [ "$unamestr" = 'Linux' ]; then
+ SCRIPT_DIR=$(readlink -f $0 | xargs dirname)
+ HOST_TAG='linux-x86_64'
+elif [ "$unamestr" = 'Darwin' ]; then
+ SCRIPT_DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
+ if [ $(uname -p) = 'arm' ]; then
+  echo "NDK does not currently support ARM64"
+  exit 128
+ else
+  HOST_TAG='darwin-x86_64'
+ fi
+fi
+
+# Write files relative to current location
+BASE_DIR=$(pwd)
+case "${BASE_DIR}" in
+  *\ * )
+    echo "Your path contains whitespaces, which is not supported by 'make install'."
+    exit 128
+  ;;
+esac
+cd "${BASE_DIR}"
 
 if [ $ENC_LIB = 'openssl' ]; then
- $BASE_DIR/mkssl -n $NDK_ROOT -a $API_LEVEL -t "$BUILD_TARGETS" -o $OPENSSL_VERSION
+ echo "Building OpenSSL $OPENSSL_VERSION"
+ $SCRIPT_DIR/mkssl -n $NDK_ROOT -a $API_LEVEL -t "$BUILD_TARGETS" -o $OPENSSL_VERSION -d $BASE_DIR -h $HOST_TAG
 elif [ $ENC_LIB = 'mbedtls' ]; then
  if [ ! -d $BASE_DIR/mbedtls ]; then
   git clone https://github.com/ARMmbed/mbedtls mbedtls
@@ -83,13 +107,13 @@ for build_target in $BUILD_TARGETS; do
  mkdir -p $JNI_DIR
 
  if [ $ENC_LIB = 'mbedtls' ]; then
-  $BASE_DIR/mkmbedtls -n $NDK_ROOT -a $API_LEVEL -t $build_target -s $BASE_DIR/mbedtls -i $BASE_DIR/$build_target
+  $SCRIPT_DIR/mkmbedtls -n $NDK_ROOT -a $API_LEVEL -t $build_target -s $BASE_DIR/mbedtls -i $BASE_DIR/$build_target
   cp $LIB_DIR/libmbedcrypto.so $JNI_DIR/libmbedcrypto.so
   cp $LIB_DIR/libmbedtls.so $JNI_DIR/libmbedtls.so
   cp $LIB_DIR/libmbedx509.so $JNI_DIR/libmbedx509.so
  fi
 
  git -C $BASE_DIR/srt clean -fd
- $BASE_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s $BASE_DIR/srt -i $BASE_DIR/$build_target
+ $SCRIPT_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s $BASE_DIR/srt -i $BASE_DIR/$build_target
  cp $LIB_DIR/libsrt.so $JNI_DIR/libsrt.so
 done
