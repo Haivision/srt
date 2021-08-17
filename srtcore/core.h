@@ -744,7 +744,7 @@ private:
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<int> m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
-    sync::atomic<int> m_iBrokenCounter;               // A counter (number of GC checks) to let the GC tag this socket as disconnected
+    sync::atomic<int> m_iBrokenCounter;          // A counter (number of GC checks) to let the GC tag this socket as disconnected
 
     int m_iEXPCount;                             // Expiration counter
     sync::atomic<int> m_iBandwidth;              // Estimated bandwidth, number of packets per second
@@ -773,6 +773,7 @@ private: // Sending related data
 
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
     double m_dCongestionWindow;                  // Congestion window size
 
@@ -782,6 +783,7 @@ private: // Timers
 
     duration   m_tdACKInterval;                  // ACK interval
     duration   m_tdNAKInterval;                  // NAK interval
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // Timestamp of last ACK from the peer
     atomic_time_point m_tsLastSndTime;           // Timestamp of last data/ctrl sent (in system ticks)
@@ -799,6 +801,7 @@ private: // Timers
     time_point m_tsNextSendTime;                 // Scheduled time of next packet sending
 
     sync::atomic<int32_t> m_iSndLastFullAck;     // Last full ACK received
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndLastAck;         // Last ACK received
 
     // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
@@ -809,9 +812,9 @@ private: // Timers
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
-    sync::atomic<int32_t> m_iSndLastDataAck;// The real last ACK that updates the sender buffer and loss list
-    sync::atomic<int32_t> m_iSndCurrSeqNo;  // The largest sequence number that HAS BEEN SENT
-    sync::atomic<int32_t> m_iSndNextSeqNo;  // The sequence number predicted to be placed at the currently scheduled packet
+    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
+    sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
@@ -853,6 +856,8 @@ private: // Timers
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
     bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
+
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
