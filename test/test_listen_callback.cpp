@@ -112,7 +112,7 @@ TEST(Core, ListenCallback) {
     (void)srt_cleanup();
 }
 
-int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
+int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
 {
     using namespace std;
 
@@ -183,8 +183,12 @@ int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct 
 
 #if SRT_ENABLE_ENCRYPTION
     cerr << "TEST: Setting password '" << exp_pw << "' as per user '" << username << "'\n";
-    srt_setsockflag(ns, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    EXPECT_EQ(srt_setsockflag(ns, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size()), SRT_SUCCESS);
 #endif
+
+    // Checking that SRTO_RCVLATENCY (PRE option) can be altered in the listener callback.
+    int optval = 200;
+    EXPECT_EQ(srt_setsockflag(ns, SRTO_RCVLATENCY, &optval, sizeof optval), SRT_SUCCESS);
     return 0;
 }
 

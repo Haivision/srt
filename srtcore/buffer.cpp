@@ -986,8 +986,8 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
     int lastack = m_iLastAckPos;
     int rs      = len;
 
-    int32_t trace_seq ATR_UNUSED = SRT_SEQNO_NONE;
-    int trace_shift ATR_UNUSED = -1;
+    int32_t trace_seq SRT_ATR_UNUSED = SRT_SEQNO_NONE;
+    int trace_shift SRT_ATR_UNUSED = -1;
 
     while ((p != lastack) && (rs > 0))
     {

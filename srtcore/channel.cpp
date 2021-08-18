@@ -183,7 +183,7 @@ void srt::CChannel::createSocket(int family)
 
     if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
     {
-        const int res ATR_UNUSED =
+        const int res SRT_ATR_UNUSED =
             ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
 #if ENABLE_LOGGING
         if (res == -1)

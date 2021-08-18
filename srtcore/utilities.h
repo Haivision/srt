@@ -16,83 +16,11 @@ written by
 #ifndef INC_SRT_UTILITIES_H
 #define INC_SRT_UTILITIES_H
 
-// ATTRIBUTES:
-//
-// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
-// ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
-// ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
-// ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
-// ATR_CONSTEXPR: In C++11: `constexpr`. Otherwise empty.
-// ATR_OVERRIDE: In C++11: `override`. Otherwise empty.
-// ATR_FINAL: In C++11: `final`. Otherwise empty.
-
-
-#ifdef __GNUG__
-#define ATR_UNUSED __attribute__((unused))
-#define ATR_DEPRECATED __attribute__((deprecated))
-#else
-#define ATR_UNUSED
-#define ATR_DEPRECATED
-#endif
-#if defined(__cplusplus) && __cplusplus > 199711L
-#define HAVE_CXX11 1
-
-// For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
-// however it's only the "most required C++11 support".
-#if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-#else
-#define HAVE_FULL_CXX11 1
-#define ATR_NOEXCEPT noexcept
-#define ATR_NOTHROW noexcept
-#define ATR_CONSTEXPR constexpr
-#define ATR_OVERRIDE override
-#define ATR_FINAL final
-#endif
-
-// Microsoft Visual Studio supports C++11, but not fully,
-// and still did not change the value of __cplusplus. Treat
-// this special way.
-// _MSC_VER == 1800  means Microsoft Visual Studio 2013.
-#elif defined(_MSC_VER) && _MSC_VER >= 1800
-#define HAVE_CXX11 1
-#if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
-#define HAVE_FULL_CXX11 1
-#define ATR_NOEXCEPT noexcept
-#define ATR_NOTHROW noexcept
-#define ATR_CONSTEXPR constexpr
-#define ATR_OVERRIDE override
-#define ATR_FINAL final
-#else
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-#endif
-#else
-#define HAVE_CXX11 0
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-
-#endif
-
-#if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
-#error "The currently compiled application required C++11, but your compiler doesn't support it."
-#endif
-
-
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
 
 #include "platform_sys.h"
+#include "srt_attr_defs.h" // defines HAVE_CXX11
 
 // Happens that these are defined, undefine them in advance
 #undef min
@@ -129,7 +57,7 @@ written by
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__)
 
 #	include <endian.h>
 
@@ -719,7 +647,8 @@ struct CallbackHolder
         // Casting function-to-function, however, should not. Unfortunately
         // newer compilers disallow that, too (when a signature differs), but
         // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        void* (*testfn)(void*) = (void*(*)(void*))f;
+        (void)(testfn);
 #endif
         opaque = o;
         fn = f;

@@ -109,6 +109,16 @@ if (ENABLE_DEBUG)
 endif()
 
 
+set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
+set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+set(MONOTONIC_CLOCK_LINKLIB "")
+if (MICROSOFT)
+	set(ENABLE_STDCXX_SYNC_DEFAULT ON)
+elseif (LINUX)
+	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
+endif()
+
+
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
@@ -129,12 +139,14 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
-option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" OFF)
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
+option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
+
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -263,6 +275,10 @@ if (DEFINED HAVE_INET_PTON)
 endif()
 
 if (ENABLE_MONOTONIC_CLOCK)
+	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
+		message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+	endif()
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
 	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
@@ -433,6 +449,7 @@ elseif (ENABLE_STDCXX_SYNC)
 endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
@@ -522,14 +539,6 @@ if (USE_STATIC_LIBSTDCXX)
 	else()
 		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
 	endif()
-endif()
-
-# We need clock_gettime, but on some systems this is only provided
-# by librt. Check if librt is required.
-if (ENABLE_MONOTONIC_CLOCK AND LINUX)
-	# "requires" - exits on FATAL_ERROR when clock_gettime not available
-	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
-	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
 endif()
 
 
@@ -632,6 +641,11 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
+endif()
+
+if (ENABLE_CLANG_TSA)
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	message(STATUS "Clang TSA: Enabled")
 endif()
 
 if (ENABLE_PROFILE)

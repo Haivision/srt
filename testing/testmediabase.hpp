@@ -11,6 +11,7 @@
 #ifndef INC_SRT_COMMON_TRANMITBASE_HPP
 #define INC_SRT_COMMON_TRANMITBASE_HPP
 
+#include <atomic>
 #include <string>
 #include <memory>
 #include <vector>

@@ -408,7 +408,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     int result = epoll.uwait(epoll_id, fds, 1024, -1);
     ASSERT_EQ(result, 1); 
-    ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+    ASSERT_EQ(fds[0].events, int(SRT_EPOLL_ERR));
 
     // Edge-triggered means that after one wait call was done, the next
     // call to this event should no longer report it. Now use timeout 0
@@ -529,7 +529,7 @@ TEST(CEPoll, ThreadedUpdate)
     int result = epoll.uwait(epoll_id, fds, 1024, -1);
     cerr << "Exit no longer infinite-wait by uwait, result=" << result << "\n";
     ASSERT_EQ(result, 1); 
-    ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+    ASSERT_EQ(fds[0].events, int(SRT_EPOLL_ERR));
 
     cerr << "THREAD JOIN...\n";
     td.join();

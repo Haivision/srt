@@ -172,8 +172,8 @@ class CUDT
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
-    typedef srt::sync::AtomicClock<srt::sync::steady_clock> atomic_time_point;
-    typedef srt::sync::AtomicDuration<srt::sync::steady_clock> atomic_duration;
+    typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
+    typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
 
 private: // constructor and desctructor
     void construct();
@@ -302,6 +302,8 @@ public: // internal API
     static std::vector<SRTSOCKET>   existingSockets();
 
     void addressAndSend(CPacket& pkt);
+
+    SRT_ATTR_REQUIRES(m_ConnectionLock)
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
@@ -311,8 +313,8 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
-    srt::sync::steady_clock::time_point   lastRspTime()             const { return m_tsLastRspTime.load(); }
-    srt::sync::steady_clock::time_point   freshActivationStart()    const { return m_tsFreshActivation; }
+    sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
+    sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
@@ -384,7 +386,7 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         // XXX Would be nice to check if local_time > m_tsStartTime,
         // otherwise it may go unnoticed with clock skew.
-        return (int32_t) srt::sync::count_microseconds(from_time - m_stats.tsStartTime);
+        return (int32_t) sync::count_microseconds(from_time - m_stats.tsStartTime);
     }
 
     void setPacketTS(CPacket& p, const time_point& local_time)
@@ -396,14 +398,14 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        srt::sync::ScopedLock cg(m_ConnectionLock);
+        sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
 
     static int32_t generateISN()
     {
-        using namespace srt::sync;
+        using namespace sync;
         return genRandomInt(0, CSeqNo::m_iMaxSeqNo);
     }
 
@@ -418,8 +420,8 @@ public: // internal API
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
-    SRTU_PROPERTY_RR(srt::sync::Condition*, recvDataCond, &m_RecvDataCond);
-    SRTU_PROPERTY_RR(srt::sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
+    SRTU_PROPERTY_RR(sync::Condition*, recvDataCond, &m_RecvDataCond);
+    SRTU_PROPERTY_RR(sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
     void breakAsUnstable() { m_bBreakAsUnstable = true; }
@@ -457,7 +459,8 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
     // according to the present state and received message type, as well as the
@@ -476,9 +479,15 @@ private:
     /// @param response incoming handshake response packet to be interpreted
     /// @param serv_addr incoming packet's address
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
-    SRT_ATR_NODISCARD bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
-    SRT_ATR_NODISCARD EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
+
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
+
     SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
@@ -707,7 +716,8 @@ private:
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
-    UniquePtr<CCryptoControl> m_pCryptoControl;         // Congestion control SRT class (small data extension)
+    SRT_ATTR_PT_GUARDED_BY(m_ConnectionLock)
+    UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
@@ -723,30 +733,30 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
-    srt::sync::atomic<bool> m_bListening;        // If the UDT entity is listening to connection
-    srt::sync::atomic<bool> m_bConnecting;       // The short phase when connect() is called but not yet completed
-    srt::sync::atomic<bool> m_bConnected;        // Whether the connection is on or off
-    srt::sync::atomic<bool> m_bClosing;          // If the UDT entity is closing
-    srt::sync::atomic<bool> m_bShutdown;         // If the peer side has shutdown the connection
-    srt::sync::atomic<bool> m_bBroken;           // If the connection has been broken
-    srt::sync::atomic<bool> m_bBreakAsUnstable;  // A flag indicating that the socket should become broken because it has been unstable for too long.
-    srt::sync::atomic<bool> m_bPeerHealth;       // If the peer status is normal
-    srt::sync::atomic<int> m_RejectReason;
+    sync::atomic<bool> m_bListening;             // If the UDT entity is listening to connection
+    sync::atomic<bool> m_bConnecting;            // The short phase when connect() is called but not yet completed
+    sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
+    sync::atomic<bool> m_bClosing;               // If the UDT entity is closing
+    sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
+    sync::atomic<bool> m_bBroken;                // If the connection has been broken
+    sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
+    sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
+    sync::atomic<int> m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
-    srt::sync::atomic<int> m_iBrokenCounter;               // A counter (number of GC checks) to let the GC tag this socket as disconnected
+    sync::atomic<int> m_iBrokenCounter;          // A counter (number of GC checks) to let the GC tag this socket as disconnected
 
     int m_iEXPCount;                             // Expiration counter
-    srt::sync::atomic<int> m_iBandwidth;         // Estimated bandwidth, number of packets per second
-    srt::sync::atomic<int> m_iSRTT;              // Smoothed RTT (an exponentially-weighted moving average (EWMA)
+    sync::atomic<int> m_iBandwidth;              // Estimated bandwidth, number of packets per second
+    sync::atomic<int> m_iSRTT;                   // Smoothed RTT (an exponentially-weighted moving average (EWMA)
                                                  // of an endpoint's RTT samples), in microseconds
-    srt::sync::atomic<int> m_iRTTVar;            // The variation in the RTT samples (RTT variance), in microseconds
-    srt::sync::atomic<bool> m_bIsFirstRTTReceived;// True if the first RTT sample was obtained from the ACK/ACKACK pair
+    sync::atomic<int> m_iRTTVar;                 // The variation in the RTT samples (RTT variance), in microseconds
+    sync::atomic<bool> m_bIsFirstRTTReceived;    // True if the first RTT sample was obtained from the ACK/ACKACK pair
                                                  // at the receiver side or received by the sender from an ACK packet.
                                                  // It's used to reset the initial value of smoothed RTT (m_iSRTT)
                                                  // at the beginning of transmission (including the one taken from
                                                  // cache). False by default.
-    srt::sync::atomic<int> m_iDeliveryRate;      // Packet arrival rate at the receiver side
-    srt::sync::atomic<int> m_iByteDeliveryRate;  // Byte arrival rate at the receiver side
+    sync::atomic<int> m_iDeliveryRate;           // Packet arrival rate at the receiver side
+    sync::atomic<int> m_iByteDeliveryRate;       // Byte arrival rate at the receiver side
 
     CHandShake m_ConnReq;                        // Connection request
     CHandShake m_ConnRes;                        // Connection response
@@ -762,7 +772,8 @@ private: // Sending related data
 
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 
-    srt::sync::atomic<int> m_iFlowWindowSize;    // Flow control window size
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
+    sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
     double m_dCongestionWindow;                  // Congestion window size
 
 private: // Timers
@@ -771,6 +782,7 @@ private: // Timers
 
     duration   m_tdACKInterval;                  // ACK interval
     duration   m_tdNAKInterval;                  // NAK interval
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // Timestamp of last ACK from the peer
     atomic_time_point m_tsLastSndTime;           // Timestamp of last data/ctrl sent (in system ticks)
@@ -787,8 +799,9 @@ private: // Timers
 
     time_point m_tsNextSendTime;                 // Scheduled time of next packet sending
 
-    srt::sync::atomic<int32_t> m_iSndLastFullAck;// Last full ACK received
-    srt::sync::atomic<int32_t> m_iSndLastAck;    // Last ACK received
+    sync::atomic<int32_t> m_iSndLastFullAck;     // Last full ACK received
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
+    sync::atomic<int32_t> m_iSndLastAck;         // Last ACK received
 
     // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
     // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
@@ -798,9 +811,9 @@ private: // Timers
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
-    srt::sync::atomic<int32_t> m_iSndLastDataAck;// The real last ACK that updates the sender buffer and loss list
-    srt::sync::atomic<int32_t> m_iSndCurrSeqNo;  // The largest sequence number that HAS BEEN SENT
-    srt::sync::atomic<int32_t> m_iSndNextSeqNo;  // The sequence number predicted to be placed at the currently scheduled packet
+    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
+    sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
@@ -842,6 +855,8 @@ private: // Timers
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
     bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
     bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
+
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
@@ -862,7 +877,7 @@ private: // Receiving related data
     int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
     int32_t m_iRcvLastAckAck;                    // Last sent ACK that has been acknowledged
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
-    srt::sync::atomic<int32_t> m_iRcvCurrSeqNo;  // Largest received sequence number
+    sync::atomic<int32_t> m_iRcvCurrSeqNo;       // Largest received sequence number
     int32_t m_iRcvCurrPhySeqNo;                  // Same as m_iRcvCurrSeqNo, but physical only (disregarding a filter)
 
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
@@ -873,10 +888,10 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
-    srt::sync::CThread m_RcvTsbPdThread;         // Rcv TsbPD Thread handle
-    srt::sync::Condition m_RcvTsbPdCond;         // TSBPD signals if reading is ready. Use together with m_RecvLock
+    sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
+    sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
     bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
-    srt::sync::Mutex m_RcvTsbPdStartupLock;      // Protects TSBPD thread creating and joining
+    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
@@ -898,21 +913,21 @@ private:
 
 
 private: // synchronization: mutexes and conditions
-    srt::sync::Mutex m_ConnectionLock;           // used to synchronize connection operation
+    sync::Mutex m_ConnectionLock;                // used to synchronize connection operation
 
-    srt::sync::Condition m_SendBlockCond;        // used to block "send" call
-    srt::sync::Mutex m_SendBlockLock;            // lock associated to m_SendBlockCond
+    sync::Condition m_SendBlockCond;             // used to block "send" call
+    sync::Mutex m_SendBlockLock;                 // lock associated to m_SendBlockCond
 
-    srt::sync::Mutex m_RcvBufferLock;            // Protects the state of the m_pRcvBuffer
+    sync::Mutex m_RcvBufferLock;                 // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    srt::sync::Mutex m_RecvAckLock;              // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
+    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
-    srt::sync::Condition m_RecvDataCond;         // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
-    srt::sync::Mutex m_RecvLock;                 // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
+    sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
+    sync::Mutex m_RecvLock;                      // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
 
-    srt::sync::Mutex m_SendLock;                 // used to synchronize "send" call
-    srt::sync::Mutex m_RcvLossLock;              // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
-    mutable srt::sync::Mutex m_StatsLock;        // used to synchronize access to trace statistics
+    sync::Mutex m_SendLock;                      // used to synchronize "send" call
+    sync::Mutex m_RcvLossLock;                   // Protects the receiver loss list (access: CRcvQueue::worker, CUDT::tsbpd)
+    mutable sync::Mutex m_StatsLock;             // used to synchronize access to trace statistics
 
     void initSynch();
     void destroySynch();
@@ -931,7 +946,7 @@ private: // Common connection Congestion Control setup
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
-    SRT_ATR_NODISCARD
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
@@ -1018,7 +1033,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;                 // timestamp when the UDT entity is started
+        time_point tsStartTime;             // timestamp when the UDT entity is started
         int64_t sentTotal;                  // total number of sent data packets, including retransmissions
         int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
         int64_t recvTotal;                  // total number of received packets

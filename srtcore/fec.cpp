@@ -2029,7 +2029,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         any_dismiss = true;
 
         const int32_t newbase = rcv.colq[numberCols()].base;
-        int32_t newbase_row ATR_UNUSED; // For logging only, but including FATAL.
+        int32_t newbase_row SRT_ATR_UNUSED; // For logging only, but including FATAL.
         // Sanity check
         // If sanity check failed OR if the number of existing row
         // groups doesn't enclose those that need to be dismissed,

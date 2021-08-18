@@ -48,7 +48,7 @@ namespace srt
 const size_t SRT_KMR_KMSTATE = 0;
 
 #define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
-const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(int32_t);
+const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
 
