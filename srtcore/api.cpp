@@ -848,7 +848,7 @@ ERR_ROLLBACK:
 // static forwarder
 int srt::CUDT::installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
-    return uglobal()->installAcceptHook(lsn, hook, opaq);
+    return uglobal().installAcceptHook(lsn, hook, opaq);
 }
 
 int srt::CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
@@ -869,7 +869,7 @@ int srt::CUDTUnited::installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_
 
 int srt::CUDT::installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
 {
-    return uglobal()->installConnectHook(lsn, hook, opaq);
+    return uglobal().installConnectHook(lsn, hook, opaq);
 }
 
 int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_fn* hook, void* opaq)
@@ -3212,22 +3212,22 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 
 int srt::CUDT::startup()
 {
-   return uglobal()->startup();
+   return uglobal().startup();
 }
 
 int srt::CUDT::cleanup()
 {
-   return uglobal()->cleanup();
+   return uglobal().cleanup();
 }
 
 SRTSOCKET srt::CUDT::socket()
 {
-   if (!uglobal()->m_bGCStatus)
-      uglobal()->startup();
+   if (!uglobal().m_bGCStatus)
+      uglobal().startup();
 
    try
    {
-      return uglobal()->newSocket();
+      return uglobal().newSocket();
    }
    catch (const CUDTException& e)
    {
@@ -3266,21 +3266,21 @@ srt::CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
 srt::CUDTGroup& srt::CUDT::newGroup(const int type)
 {
-    const SRTSOCKET id = uglobal()->generateSocketID(true);
+    const SRTSOCKET id = uglobal().generateSocketID(true);
 
     // Now map the group
-    return uglobal()->addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
+    return uglobal().addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
 {
     // Doing the same lazy-startup as with srt_create_socket()
-    if (!uglobal()->m_bGCStatus)
-        uglobal()->startup();
+    if (!uglobal().m_bGCStatus)
+        uglobal().startup();
 
     try
     {
-        srt::sync::ScopedLock globlock (uglobal()->m_GlobControlLock);
+        srt::sync::ScopedLock globlock (uglobal().m_GlobControlLock);
         return newGroup(gt).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
@@ -3311,8 +3311,8 @@ int srt::CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     // Find the socket and the group
-    CUDTSocket* s = uglobal()->locateSocket(socket);
-    CUDTUnited::GroupKeeper k (*uglobal(), group, uglobal()->ERH_RETURN);
+    CUDTSocket* s = uglobal().locateSocket(socket);
+    CUDTUnited::GroupKeeper k (uglobal(), group, CUDTUnited::ERH_RETURN);
 
     if (!s || !k.group)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
@@ -3333,7 +3333,7 @@ int srt::CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
     }
 
     ScopedLock cg (s->m_ControlLock);
-    ScopedLock cglob (uglobal()->m_GlobControlLock);
+    ScopedLock cglob (uglobal().m_GlobControlLock);
     if (g->closing())
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -3357,7 +3357,7 @@ int srt::CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
 // groups.
 int srt::CUDT::removeSocketFromGroup(SRTSOCKET socket)
 {
-    CUDTSocket* s = uglobal()->locateSocket(socket);
+    CUDTSocket* s = uglobal().locateSocket(socket);
     if (!s)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -3365,7 +3365,7 @@ int srt::CUDT::removeSocketFromGroup(SRTSOCKET socket)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     ScopedLock cg (s->m_ControlLock);
-    ScopedLock glob_grd (uglobal()->m_GlobControlLock);
+    ScopedLock glob_grd (uglobal().m_GlobControlLock);
     s->removeFromGroup(false);
     return 0;
 }
@@ -3405,8 +3405,8 @@ SRTSOCKET srt::CUDT::getGroupOfSocket(SRTSOCKET socket)
 {
     // Lock this for the whole function as we need the group
     // to persist the call.
-    ScopedLock glock (uglobal()->m_GlobControlLock);
-    CUDTSocket* s = uglobal()->locateSocket_LOCKED(socket);
+    ScopedLock glock (uglobal().m_GlobControlLock);
+    CUDTSocket* s = uglobal().locateSocket_LOCKED(socket);
     if (!s || !s->m_GroupOf)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -3420,7 +3420,7 @@ int srt::CUDT::configureGroup(SRTSOCKET groupid, const char* str)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    CUDTUnited::GroupKeeper k (*uglobal(), groupid, uglobal()->ERH_RETURN);
+    CUDTUnited::GroupKeeper k (uglobal(), groupid, CUDTUnited::ERH_RETURN);
     if (!k.group)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
@@ -3436,7 +3436,7 @@ int srt::CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t*
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    CUDTUnited::GroupKeeper k (*uglobal(), groupid, uglobal()->ERH_RETURN);
+    CUDTUnited::GroupKeeper k (uglobal(), groupid, CUDTUnited::ERH_RETURN);
     if (!k.group)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
@@ -3460,11 +3460,11 @@ int srt::CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
            // This is a user error.
            return APIError(MJ_NOTSUP, MN_INVAL, 0);
        }
-       CUDTSocket* s = uglobal()->locateSocket(u);
+       CUDTSocket* s = uglobal().locateSocket(u);
        if (!s)
            return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-       return uglobal()->bind(s, sa);
+       return uglobal().bind(s, sa);
    }
    catch (const CUDTException& e)
    {
@@ -3487,11 +3487,11 @@ int srt::CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
 {
     try
     {
-        CUDTSocket* s = uglobal()->locateSocket(u);
+        CUDTSocket* s = uglobal().locateSocket(u);
         if (!s)
             return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-        return uglobal()->bind(s, udpsock);
+        return uglobal().bind(s, udpsock);
     }
     catch (const CUDTException& e)
     {
@@ -3513,7 +3513,7 @@ int srt::CUDT::listen(SRTSOCKET u, int backlog)
 {
    try
    {
-      return uglobal()->listen(u, backlog);
+      return uglobal().listen(u, backlog);
    }
    catch (const CUDTException& e)
    {
@@ -3535,7 +3535,7 @@ SRTSOCKET srt::CUDT::accept_bond(const SRTSOCKET listeners [], int lsize, int64_
 {
    try
    {
-      return uglobal()->accept_bond(listeners, lsize, msTimeOut);
+      return uglobal().accept_bond(listeners, lsize, msTimeOut);
    }
    catch (const CUDTException& e)
    {
@@ -3560,7 +3560,7 @@ SRTSOCKET srt::CUDT::accept(SRTSOCKET u, sockaddr* addr, int* addrlen)
 {
    try
    {
-      return uglobal()->accept(u, addr, addrlen);
+      return uglobal().accept(u, addr, addrlen);
    }
    catch (const CUDTException& e)
    {
@@ -3586,7 +3586,7 @@ int srt::CUDT::connect(
 {
    try
    {
-      return uglobal()->connect(u, name, tname, namelen);
+      return uglobal().connect(u, name, tname, namelen);
    }
    catch (const CUDTException& e)
    {
@@ -3619,8 +3619,8 @@ int srt::CUDT::connectLinks(SRTSOCKET grp,
 
     try
     {
-        CUDTUnited::GroupKeeper k(*uglobal(), grp, uglobal()->ERH_THROW);
-        return uglobal()->groupConnect(k.group, targets, arraysize);
+        CUDTUnited::GroupKeeper k(uglobal(), grp, CUDTUnited::ERH_THROW);
+        return uglobal().groupConnect(k.group, targets, arraysize);
     }
     catch (CUDTException& e)
     {
@@ -3644,7 +3644,7 @@ int srt::CUDT::connect(
 {
    try
    {
-      return uglobal()->connect(u, name, namelen, forced_isn);
+      return uglobal().connect(u, name, namelen, forced_isn);
    }
    catch (const CUDTException &e)
    {
@@ -3666,7 +3666,7 @@ int srt::CUDT::close(SRTSOCKET u)
 {
    try
    {
-      return uglobal()->close(u);
+      return uglobal().close(u);
    }
    catch (const CUDTException& e)
    {
@@ -3684,7 +3684,7 @@ int srt::CUDT::getpeername(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      uglobal()->getpeername(u, name, namelen);
+      uglobal().getpeername(u, name, namelen);
       return 0;
    }
    catch (const CUDTException& e)
@@ -3703,7 +3703,7 @@ int srt::CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
 {
    try
    {
-      uglobal()->getsockname(u, name, namelen);
+      uglobal().getsockname(u, name, namelen);
       return 0;
    }
    catch (const CUDTException& e)
@@ -3731,13 +3731,13 @@ int srt::CUDT::getsockopt(
 #if ENABLE_EXPERIMENTAL_BONDING
         if (u & SRTGROUP_MASK)
         {
-            CUDTUnited::GroupKeeper k(*uglobal(), u, uglobal()->ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             k.group->getOpt(optname, (pw_optval), (*pw_optlen));
             return 0;
         }
 #endif
 
-        CUDT& udt = uglobal()->locateSocket(u, uglobal()->ERH_THROW)->core();
+        CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
         udt.getOpt(optname, (pw_optval), (*pw_optlen));
         return 0;
     }
@@ -3763,13 +3763,13 @@ int srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* opt
 #if ENABLE_EXPERIMENTAL_BONDING
        if (u & SRTGROUP_MASK)
        {
-           CUDTUnited::GroupKeeper k(*uglobal(), u, uglobal()->ERH_THROW);
+           CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
            k.group->setOpt(optname, optval, optlen);
            return 0;
        }
 #endif
 
-       CUDT& udt = uglobal()->locateSocket(u, uglobal()->ERH_THROW)->core();
+       CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
        udt.setOpt(optname, optval, optlen);
        return 0;
    }
@@ -3812,12 +3812,12 @@ int srt::CUDT::sendmsg2(
 #if ENABLE_EXPERIMENTAL_BONDING
        if (u & SRTGROUP_MASK)
        {
-           CUDTUnited::GroupKeeper k (*uglobal(), u, uglobal()->ERH_THROW);
+           CUDTUnited::GroupKeeper k (uglobal(), u, CUDTUnited::ERH_THROW);
            return k.group->send(buf, len, (w_m));
        }
 #endif
 
-       return uglobal()->locateSocket(u, CUDTUnited::ERH_THROW)->core().sendmsg2(buf, len, (w_m));
+       return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().sendmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
    {
@@ -3857,12 +3857,12 @@ int srt::CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
 #if ENABLE_EXPERIMENTAL_BONDING
       if (u & SRTGROUP_MASK)
       {
-          CUDTUnited::GroupKeeper k(*uglobal(), u, uglobal()->ERH_THROW);
+          CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
           return k.group->recv(buf, len, (w_m));
       }
 #endif
 
-      return uglobal()->locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, (w_m));
+      return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, (w_m));
    }
    catch (const CUDTException& e)
    {
@@ -3881,7 +3881,7 @@ int64_t srt::CUDT::sendfile(
 {
    try
    {
-      CUDT& udt = uglobal()->locateSocket(u, uglobal()->ERH_THROW)->core();
+      CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
       return udt.sendfile(ifs, offset, size, block);
    }
    catch (const CUDTException& e)
@@ -3905,7 +3905,7 @@ int64_t srt::CUDT::recvfile(
 {
    try
    {
-       return uglobal()->locateSocket(u, CUDTUnited::ERH_THROW)->core().recvfile(ofs, offset, size, block);
+       return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().recvfile(ofs, offset, size, block);
    }
    catch (const CUDTException& e)
    {
@@ -3933,7 +3933,7 @@ int srt::CUDT::select(
 
    try
    {
-      return uglobal()->select(readfds, writefds, exceptfds, timeout);
+      return uglobal().select(readfds, writefds, exceptfds, timeout);
    }
    catch (const CUDTException& e)
    {
@@ -3965,7 +3965,7 @@ int srt::CUDT::selectEx(
 
    try
    {
-      return uglobal()->selectEx(fds, readfds, writefds, exceptfds, msTimeOut);
+      return uglobal().selectEx(fds, readfds, writefds, exceptfds, msTimeOut);
    }
    catch (const CUDTException& e)
    {
@@ -3987,7 +3987,7 @@ int srt::CUDT::epoll_create()
 {
    try
    {
-      return uglobal()->epoll_create();
+      return uglobal().epoll_create();
    }
    catch (const CUDTException& e)
    {
@@ -4005,7 +4005,7 @@ int srt::CUDT::epoll_clear_usocks(int eid)
 {
    try
    {
-      return uglobal()->epoll_clear_usocks(eid);
+      return uglobal().epoll_clear_usocks(eid);
    }
    catch (const CUDTException& e)
    {
@@ -4023,7 +4023,7 @@ int srt::CUDT::epoll_add_usock(const int eid, const SRTSOCKET u, const int* even
 {
    try
    {
-      return uglobal()->epoll_add_usock(eid, u, events);
+      return uglobal().epoll_add_usock(eid, u, events);
    }
    catch (const CUDTException& e)
    {
@@ -4041,7 +4041,7 @@ int srt::CUDT::epoll_add_ssock(const int eid, const SYSSOCKET s, const int* even
 {
    try
    {
-      return uglobal()->epoll_add_ssock(eid, s, events);
+      return uglobal().epoll_add_ssock(eid, s, events);
    }
    catch (const CUDTException& e)
    {
@@ -4060,7 +4060,7 @@ int srt::CUDT::epoll_update_usock(
 {
    try
    {
-      return uglobal()->epoll_add_usock(eid, u, events);
+      return uglobal().epoll_add_usock(eid, u, events);
    }
    catch (const CUDTException& e)
    {
@@ -4079,7 +4079,7 @@ int srt::CUDT::epoll_update_ssock(
 {
    try
    {
-      return uglobal()->epoll_update_ssock(eid, s, events);
+      return uglobal().epoll_update_ssock(eid, s, events);
    }
    catch (const CUDTException& e)
    {
@@ -4098,7 +4098,7 @@ int srt::CUDT::epoll_remove_usock(const int eid, const SRTSOCKET u)
 {
    try
    {
-      return uglobal()->epoll_remove_usock(eid, u);
+      return uglobal().epoll_remove_usock(eid, u);
    }
    catch (const CUDTException& e)
    {
@@ -4116,7 +4116,7 @@ int srt::CUDT::epoll_remove_ssock(const int eid, const SYSSOCKET s)
 {
    try
    {
-      return uglobal()->epoll_remove_ssock(eid, s);
+      return uglobal().epoll_remove_ssock(eid, s);
    }
    catch (const CUDTException& e)
    {
@@ -4140,7 +4140,7 @@ int srt::CUDT::epoll_wait(
 {
    try
    {
-      return uglobal()->epoll_ref().wait(
+      return uglobal().epoll_ref().wait(
               eid, readfds, writefds, msTimeOut, lrfds, lwfds);
    }
    catch (const CUDTException& e)
@@ -4163,7 +4163,7 @@ int srt::CUDT::epoll_uwait(
 {
    try
    {
-      return uglobal()->epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
+      return uglobal().epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
    }
    catch (const CUDTException& e)
    {
@@ -4183,7 +4183,7 @@ int32_t srt::CUDT::epoll_set(
 {
    try
    {
-      return uglobal()->epoll_set(eid, flags);
+      return uglobal().epoll_set(eid, flags);
    }
    catch (const CUDTException& e)
    {
@@ -4201,7 +4201,7 @@ int srt::CUDT::epoll_release(const int eid)
 {
    try
    {
-      return uglobal()->epoll_release(eid);
+      return uglobal().epoll_release(eid);
    }
    catch (const CUDTException& e)
    {
@@ -4229,7 +4229,7 @@ int srt::CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instanta
 
    try
    {
-      CUDT& udt = uglobal()->locateSocket(u, uglobal()->ERH_THROW)->core();
+      CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
       udt.bstats(perf, clear, instantaneous);
       return 0;
    }
@@ -4250,7 +4250,7 @@ int srt::CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
 {
    try
    {
-      CUDTUnited::GroupKeeper k(*uglobal(), u, uglobal()->ERH_THROW);
+      CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
       k.group->bstatsSocket(perf, clear);
       return 0;
    }
@@ -4273,7 +4273,7 @@ srt::CUDT* srt::CUDT::getUDTHandle(SRTSOCKET u)
 {
    try
    {
-      return &uglobal()->locateSocket(u, uglobal()->ERH_THROW)->core();
+      return &uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
    }
    catch (const CUDTException& e)
    {
@@ -4292,8 +4292,8 @@ srt::CUDT* srt::CUDT::getUDTHandle(SRTSOCKET u)
 vector<SRTSOCKET> srt::CUDT::existingSockets()
 {
     vector<SRTSOCKET> out;
-    for (CUDTUnited::sockets_t::iterator i = uglobal()->m_Sockets.begin();
-            i != uglobal()->m_Sockets.end(); ++i)
+    for (CUDTUnited::sockets_t::iterator i = uglobal().m_Sockets.begin();
+            i != uglobal().m_Sockets.end(); ++i)
     {
         out.push_back(i->first);
     }
@@ -4307,11 +4307,11 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 #if ENABLE_EXPERIMENTAL_BONDING
       if (isgroup(u))
       {
-          CUDTUnited::GroupKeeper k(*uglobal(), u, uglobal()->ERH_THROW);
+          CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
           return k.group->getStatus();
       }
 #endif
-      return uglobal()->getStatus(u);
+      return uglobal().getStatus(u);
    }
    catch (const CUDTException& e)
    {

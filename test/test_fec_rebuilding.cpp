@@ -211,7 +211,7 @@ TEST(TestFEC, ConfigExchange)
 
     CUDTSocket* s1;
 
-    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
 
     TestMockCUDT m1;
     m1.core = &s1->core();
@@ -243,7 +243,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     CUDTSocket* s1;
 
-    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
 
     const char* fec_config_wrong [] = {
         "FEC,Cols:20", // D: unknown filter

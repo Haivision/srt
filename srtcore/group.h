@@ -395,7 +395,7 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
-    class srt::CUDTUnited* m_pGlobal;
+    srt::CUDTUnited&  m_Global;
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
