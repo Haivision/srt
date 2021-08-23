@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "gtest/gtest.h"
+
+#ifdef SRT_ENABLE_ENCRYPTION
 #include "common.h"
 #include "hcrypt.h"
 #include "version.h"
@@ -791,3 +793,5 @@ TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_256)
     test_AESctr(cryspr_m, cryspr_cb, 2, DECRYPT);
 }
 #endif /* CRYSPR_HAS_AESCTR */
+
+#endif /* SRT_ENABLE_ENCRYPTION */

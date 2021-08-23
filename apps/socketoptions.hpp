@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__SOCKETOPTIONS_HPP
-#define INC__SOCKETOPTIONS_HPP
+#ifndef INC_SRT_SOCKETOPTIONS_HPP
+#define INC_SRT_SOCKETOPTIONS_HPP
 
 #include <string>
 #include <map>
@@ -42,6 +42,7 @@ struct SocketOption
     enum Binding { PRE = 0, POST };
     enum Domain { SYSTEM, SRT };
     enum Mode {FAILURE = -1, LISTENER = 0, CALLER = 1, RENDEZVOUS = 2};
+    static const char* const mode_names [3];
 
     std::string name;
     int protocol;
@@ -50,27 +51,36 @@ struct SocketOption
     Type type;
     const std::map<std::string, int>* valmap;
 
-    template <Domain D>
-    bool apply(int socket, std::string value) const;
+    template <Domain D, typename Object = int>
+    bool apply(Object socket, std::string value) const;
 
-    template <Domain D, Type T>
-    bool applyt(int socket, std::string value) const;
+    template <Domain D, Type T, typename Object = int>
+    bool applyt(Object socket, std::string value) const;
 
-    template <Domain D>
-    static int setso(int socket, int protocol, int symbol, const void* data, size_t size);
+    template <Domain D, typename Object>
+    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size);
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
 };
 
 template<>
-inline int SocketOption::setso<SocketOption::SRT>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING
 template<>
-inline int SocketOption::setso<SocketOption::SYSTEM>(int socket, int proto, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
+{
+    return srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
+}
+#endif
+
+
+template<>
+inline int SocketOption::setso<SocketOption::SYSTEM, int>(int socket, int proto, int sym, const void* data, size_t size)
 {
     return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
@@ -167,8 +177,8 @@ inline bool SocketOption::extract<SocketOption::ENUM>(std::string value, OptionV
     return false;
 }
 
-template <SocketOption::Domain D, SocketOption::Type T>
-inline bool SocketOption::applyt(int socket, std::string value) const
+template <SocketOption::Domain D, SocketOption::Type T, typename Object>
+inline bool SocketOption::applyt(Object socket, std::string value) const
 {
     OptionValue o; // common meet point
     int result = -1;
@@ -178,12 +188,12 @@ inline bool SocketOption::applyt(int socket, std::string value) const
 }
 
 
-template<SocketOption::Domain D>
-inline bool SocketOption::apply(int socket, std::string value) const
+template<SocketOption::Domain D, typename Object>
+inline bool SocketOption::apply(Object socket, std::string value) const
 {
     switch ( type )
     {
-#define SRT_HANDLE_TYPE(ty) case ty: return applyt<D, ty>(socket, value)
+#define SRT_HANDLE_TYPE(ty) case ty: return applyt<D, ty, Object>(socket, value)
 
         SRT_HANDLE_TYPE(STRING);
         SRT_HANDLE_TYPE(INT);
@@ -201,7 +211,7 @@ extern const std::map<std::string, int> enummap_transtype;
 namespace {
 const SocketOption srt_options [] {
     { "transtype", 0, SRTO_TRANSTYPE, SocketOption::PRE, SocketOption::ENUM, &enummap_transtype },
-    { "maxbw", 0, SRTO_MAXBW, SocketOption::PRE, SocketOption::INT64, nullptr},
+    { "maxbw", 0, SRTO_MAXBW, SocketOption::POST, SocketOption::INT64, nullptr},
     { "pbkeylen", 0, SRTO_PBKEYLEN, SocketOption::PRE, SocketOption::INT, nullptr},
     { "passphrase", 0, SRTO_PASSPHRASE, SocketOption::PRE, SocketOption::STRING, nullptr},
 
@@ -214,6 +224,7 @@ const SocketOption srt_options [] {
     { "ipttl", 0, SRTO_IPTTL, SocketOption::PRE, SocketOption::INT, nullptr},
     { "iptos", 0, SRTO_IPTOS, SocketOption::PRE, SocketOption::INT, nullptr},
     { "inputbw", 0, SRTO_INPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
+    { "mininputbw", 0, SRTO_MININPUTBW, SocketOption::POST, SocketOption::INT64, nullptr},
     { "oheadbw", 0, SRTO_OHEADBW, SocketOption::POST, SocketOption::INT, nullptr},
     { "latency", 0, SRTO_LATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "tsbpdmode", 0, SRTO_TSBPDMODE, SocketOption::PRE, SocketOption::BOOL, nullptr},
@@ -221,7 +232,8 @@ const SocketOption srt_options [] {
     { "snddropdelay", 0, SRTO_SNDDROPDELAY, SocketOption::POST, SocketOption::INT, nullptr},
     { "nakreport", 0, SRTO_NAKREPORT, SocketOption::PRE, SocketOption::BOOL, nullptr},
     { "conntimeo", 0, SRTO_CONNTIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
-    { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "drifttracer", 0, SRTO_DRIFTTRACER, SocketOption::POST, SocketOption::BOOL, nullptr},
+    { "lossmaxttl", 0, SRTO_LOSSMAXTTL, SocketOption::POST, SocketOption::INT, nullptr},
     { "rcvlatency", 0, SRTO_RCVLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "peerlatency", 0, SRTO_PEERLATENCY, SocketOption::PRE, SocketOption::INT, nullptr},
     { "minversion", 0, SRTO_MINVERSION, SocketOption::PRE, SocketOption::INT, nullptr},
@@ -232,11 +244,23 @@ const SocketOption srt_options [] {
     { "kmrefreshrate", 0, SRTO_KMREFRESHRATE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "kmpreannounce", 0, SRTO_KMPREANNOUNCE, SocketOption::PRE, SocketOption::INT, nullptr },
     { "enforcedencryption", 0, SRTO_ENFORCEDENCRYPTION, SocketOption::PRE, SocketOption::BOOL, nullptr },
+    { "ipv6only", 0, SRTO_IPV6ONLY, SocketOption::PRE, SocketOption::INT, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
-    { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr }
+    { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
+#if ENABLE_EXPERIMENTAL_BONDING
+    { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
+#endif
+#ifdef SRT_ENABLE_BINDTODEVICE
+    { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
+#endif
+#if ENABLE_EXPERIMENTAL_BONDING
+    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::POST, SocketOption::INT, nullptr},
+#endif
+    { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
 };
 }
 
+SocketOption::Mode SrtInterpretMode(const std::string& modestr, const std::string& host, const std::string& adapter);
 SocketOption::Mode SrtConfigurePre(SRTSOCKET socket, std::string host, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 void SrtConfigurePost(SRTSOCKET socket, std::map<std::string, std::string> options, std::vector<std::string>* failures = 0);
 

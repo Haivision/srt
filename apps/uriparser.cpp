@@ -44,11 +44,59 @@ struct UriParserInit
 
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
 {
+    m_expect = exp;
     Parse(strUrl, exp);
 }
 
 UriParser::~UriParser(void)
 {
+}
+
+string UriParser::makeUri()
+{
+    // Reassemble parts into the URI
+    string prefix = "";
+    if (m_proto != "")
+    {
+        prefix = m_proto + "://";
+    }
+
+    std::ostringstream out;
+
+    out << prefix << m_host;
+    if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
+    {
+        // Do not add port
+    }
+    else
+    {
+        out << ":" << m_port;
+    }
+
+    if (m_path != "")
+    {
+        if (m_path[0] != '/')
+            out << "/";
+        out << m_path;
+    }
+
+    if (!m_mapQuery.empty())
+    {
+        out << "?";
+
+        query_it i = m_mapQuery.begin();
+        for (;;)
+        {
+            out << i->first << "=" << i->second;
+            ++i;
+            if (i == m_mapQuery.end())
+                break;
+            out << "&";
+        }
+    }
+
+    m_origUri = out.str();
+    return m_origUri;
 }
 
 string UriParser::proto(void) const
@@ -120,7 +168,26 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
-    idx = m_host.find("/");
+    // Handle the IPv6 specification in square brackets.
+    // This actually handles anything specified in [] so potentially
+    // you can also specify the usual hostname here as well. If the
+    // whole host results to have [] at edge positions, they are stripped,
+    // otherwise they remain. In both cases the search for the colon
+    // separating the port specification starts only after ].
+    const size_t i6pos = m_host.find("[");
+    size_t i6end = string::npos;
+
+    // Search for the "path" part only behind the closed bracket,
+    // if both open and close brackets were found
+    size_t path_since = 0;
+    if (i6pos != string::npos)
+    {
+        i6end = m_host.find("]", i6pos);
+        if (i6end != string::npos)
+            path_since = i6end;
+    }
+
+    idx = m_host.find("/", path_since);
     if (idx != string::npos)
     {
         m_path = m_host.substr(idx, m_host.size() - idx);
@@ -158,11 +225,50 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host = realhost;
     }
 
-    idx = m_host.find(":");
+    bool stripbrackets = false;
+    size_t hostend = 0;
+    if (i6pos != string::npos)
+    {
+        // IPv6 IP address. Find the terminating ]
+        hostend = m_host.find("]", i6pos);
+        idx = m_host.rfind(":");
+        if (hostend != string::npos)
+        {
+            // Found the end. But not necessarily it was
+            // at the beginning. If it was at the beginning,
+            // strip them from the host name.
+
+            size_t lasthost = idx;
+            if (idx != string::npos && idx < hostend)
+            {
+                idx = string::npos;
+                lasthost = m_host.size();
+            }
+
+            if (i6pos == 0 && hostend == lasthost - 1)
+            {
+                stripbrackets = true;
+            }
+        }
+    }
+    else
+    {
+        idx = m_host.rfind(":");
+    }
+
     if (idx != string::npos)
     {
         m_port = m_host.substr(idx + 1, m_host.size() - (idx + 1));
+
+        // Extract host WITHOUT stripping brackets
         m_host = m_host.substr(0, idx);
+    }
+
+    if (stripbrackets)
+    {
+        if (!hostend)
+            hostend = m_host.size() - 1;
+        m_host = m_host.substr(1, hostend - 1);
     }
 
     if ( m_port == "" && m_host != "" )
@@ -224,6 +330,8 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
 #ifdef TEST
 
+#include <vector>
+
 using namespace std;
 
 int main( int argc, char** argv )
@@ -232,19 +340,42 @@ int main( int argc, char** argv )
     {
         return 0;
     }
-    UriParser parser (argv[1]);
+    UriParser parser (argv[1], UriParser::EXPECT_HOST);
+    std::vector<std::string> args;
+
+    if (argc > 2)
+    {
+        copy(argv+2, argv+argc, back_inserter(args));
+    }
+
+
     (void)argc;
 
     cout << "PARSING URL: " << argv[1] << endl;
-    cerr << "SCHEME INDEX: " << int(parser.type()) << endl;
+    cout << "SCHEME INDEX: " << int(parser.type()) << endl;
     cout << "PROTOCOL: " << parser.proto() << endl;
     cout << "HOST: " << parser.host() << endl;
-    cout << "PORT: " << parser.portno() << endl;
+    cout << "PORT (string): " << parser.port() << endl;
+    cout << "PORT (numeric): " << parser.portno() << endl;
     cout << "PATH: " << parser.path() << endl;
     cout << "PARAMETERS:\n";
     for (auto& p: parser.parameters()) 
     {
         cout << "\t" << p.first << " = " << p.second << endl;
+    }
+
+    if (!args.empty())
+    {
+        for (string& s: args)
+        {
+            vector<string> keyval;
+            Split(s, '=', back_inserter(keyval));
+            if (keyval.size() < 2)
+                keyval.push_back("");
+            parser[keyval[0]] = keyval[1];
+        }
+
+        cout << "REASSEMBLED: " << parser.makeUri() << endl;
     }
     return 0;
 }

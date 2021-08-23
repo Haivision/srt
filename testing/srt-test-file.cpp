@@ -20,6 +20,7 @@ written by
 #include <iterator>
 #include <vector>
 #include <map>
+#include <tuple>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -27,6 +28,7 @@ written by
 #include <sys/stat.h>
 #include <srt.h>
 #include <udt.h>
+#include <logging.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
@@ -43,29 +45,30 @@ written by
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-
 static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-file");
+
 int main( int argc, char** argv )
 {
-    set<string>
-        o_loglevel = { "ll", "loglevel" },
-        o_buffer = {"b", "buffer" },
-        o_verbose = {"v", "verbose" },
-        o_noflush = {"s", "skipflush" };
+    vector<OptionScheme> optargs;
 
-    // Options that expect no arguments (ARG_NONE) need not be mentioned.
-    vector<OptionScheme> optargs = {
-        { o_loglevel, OptionScheme::ARG_ONE },
-        { o_buffer, OptionScheme::ARG_ONE }
-    };
+    OptionName
+        o_loglevel ((optargs), "<severity=fatal|error|note|warning|debug> Minimum severity for logs", "ll",  "loglevel"),
+        o_buffer   ((optargs), "<size[b]=1456> Size of the single reading operation", "b", "buffer"),
+        o_verbose  ((optargs), " Print extra verbos output", "v",   "verbose"),
+        o_noflush  ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
+        o_help      ((optargs), " This help", "?",   "help", "-help")
+            ;
+
     options_t params = ProcessOptions(argv, argc, optargs);
 
-    /*
+    bool need_help = OptionPresent(params, o_help);
+
+    //*
     cerr << "OPTIONS (DEBUG)\n";
     for (auto o: params)
     {
@@ -73,7 +76,28 @@ int main( int argc, char** argv )
         copy(o.second.begin(), o.second.end(), ostream_iterator<string>(cerr, " "));
         cerr << endl;
     }
-    */
+    // */
+
+    if (need_help)
+    {
+        cerr << "Usage:\n";
+        cerr << "     " << argv[0] << " [options] <input> <output>\n";
+        cerr << "*** (Position of [options] is unrestricted.)\n";
+        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+        cerr << "where:\n";
+        cerr << "    <input> and <output> is specified by an URI.\n";
+        cerr << "SUPPORTED URI SCHEMES:\n";
+        cerr << "    srt: use SRT connection\n";
+        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
+        cerr << "    file (default if scheme not specified) specified as:\n";
+        cerr << "       - empty host/port and absolute file path in the URI\n";
+        cerr << "       - only a filename, also as a relative path\n";
+        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
+        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
+        for (auto os: optargs)
+            cout << OptionHelpItem(*os.pid) << endl;
+        return 1;
+    }
 
     vector<string> args = params[""];
     if ( args.size() < 2 )
@@ -84,12 +108,15 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::setloglevel(lev);
+    srt::addlogfa(SRT_LOGFA_APP);
 
-   string verbo = Option<OutString>(params, "no", o_verbose);
-   if ( verbo == "" || !false_names.count(verbo) )
-       Verbose::on = true;
+    bool verbo = OptionPresent(params, o_verbose);
+    if (verbo)
+    {
+        Verbose::on = true;
+        Verbose::cverb = &std::cout;
+    }
 
     string bs = Option<OutString>(params, "", o_buffer);
     if ( bs != "" )
@@ -144,7 +171,7 @@ int main( int argc, char** argv )
     return 0;
 }
 
-void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
+tuple<string, string> ExtractPath(string path)
 {
     //string& dir = r_dir;
     //string& fname = r_fname;
@@ -188,8 +215,7 @@ void ExtractPath(string path, ref_t<string> dir, ref_t<string> fname)
         directory = wd + "/" + directory;
     }
 
-    *dir = directory;
-    *fname = filename;
+    return make_tuple(directory, filename);
 }
 
 bool DoUpload(UriParser& ut, string path, string filename)
@@ -199,7 +225,7 @@ bool DoUpload(UriParser& ut, string path, string filename)
     string id = filename;
     Verb() << "Passing '" << id << "' as stream ID\n";
 
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     // Check if the filename was changed
     if (id != filename)
@@ -287,7 +313,7 @@ bool DoDownload(UriParser& us, string directory, string filename)
     SrtModel m(us.host(), us.portno(), us.parameters());
 
     string id = filename;
-    m.Establish(Ref(id));
+    m.Establish((id));
 
     // Disregard the filename, unless the destination file exists.
 
@@ -365,7 +391,7 @@ bool Upload(UriParser& srt_target_uri, UriParser& fileuri)
 
     string path = fileuri.path();
     string directory, filename;
-    ExtractPath(path, ref(directory), ref(filename));
+    tie(directory, filename) = ExtractPath(path);
     Verb() << "Extract path '" << path << "': directory=" << directory << " filename=" << filename;
     // Set ID to the filename.
     // Directory will be preserved.
@@ -385,7 +411,7 @@ bool Download(UriParser& srt_source_uri, UriParser& fileuri)
     }
 
     string path = fileuri.path(), directory, filename;
-    ExtractPath(path, Ref(directory), Ref(filename));
+    tie(directory, filename) = ExtractPath(path);
 
     srt_source_uri["transtype"] = "file";
 

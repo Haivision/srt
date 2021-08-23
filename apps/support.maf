@@ -8,7 +8,9 @@
 # take selectively whichever parts they need.
 
 SOURCES
+apputil.cpp
 logsupport.cpp
+logsupport_appdefs.cpp
 socketoptions.cpp
 transmitmedia.cpp
 uriparser.cpp

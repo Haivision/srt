@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__CRYPTO_H
-#define INC__CRYPTO_H
+#ifndef INC_SRT_CRYPTO_H
+#define INC_SRT_CRYPTO_H
 
 #include <cstring>
 #include <string>
@@ -28,29 +28,33 @@ written by
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
 
-#if ENABLE_LOGGING
 
-std::string KmStateStr(SRT_KM_STATE state);
 
 namespace srt_logging
 {
-extern Logger mglog;
+std::string KmStateStr(SRT_KM_STATE state);
+#if ENABLE_LOGGING
+extern Logger cnlog;
+#endif
 }
 
-#endif
+namespace srt
+{
+    class CUDT;
+}
+
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
 
 #define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
-const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(int32_t);
+const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
 
 class CCryptoControl
 {
-//public:
-    class CUDT* m_parent;
+    srt::CUDT*  m_parent;
     SRTSOCKET   m_SocketID;
 
     size_t      m_iSndKmKeyLen;        //Key length
@@ -69,7 +73,7 @@ private:
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
-    uint64_t        m_SndKmLastTime;
+    srt::sync::steady_clock::time_point     m_SndKmLastTime;
     struct {
         unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
         size_t MsgLen;
@@ -119,7 +123,8 @@ public:
     void updateKmState(int cmd, size_t srtlen);
 
     // Detailed processing
-    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
+    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv,
+            uint32_t srtdata_out[], size_t&);
 
     // This returns:
     // 1 - the given payload is the same as the currently used key
@@ -158,18 +163,18 @@ public:
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
 #if ENABLE_LOGGING
-        using srt_logging::mglog;
+        using srt_logging::cnlog;
 #endif
 
-        m_SndKmLastTime = CTimer::getTime();
+        m_SndKmLastTime = srt::sync::steady_clock::now();
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;
-            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
+            HLOGC(cnlog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " retry=" << m_SndKmMsg[ki].iPeerRetry);
         }
         else
         {
-            HLOGC(mglog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
+            HLOGC(cnlog.Debug, log << "getKmMsg_markSent: key[" << ki << "]: len=" << m_SndKmMsg[ki].MsgLen << " STILL IN USE.");
         }
     }
 
@@ -191,7 +196,7 @@ public:
         return false;
     }
 
-    CCryptoControl(CUDT* parent, SRTSOCKET id);
+    CCryptoControl(srt::CUDT* parent, SRTSOCKET id);
 
     // DEBUG PURPOSES:
     std::string CONID() const;
@@ -218,7 +223,7 @@ public:
         m_iRcvKmKeyLen = keylen;
     }
 
-    bool createCryptoCtx(ref_t<HaiCrypt_Handle> rh, size_t keylen, HaiCrypt_CryptoDir tx);
+    bool createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir tx, HaiCrypt_Handle& rh);
 
     int getSndCryptoFlags() const
     {
@@ -253,14 +258,14 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(ref_t<CPacket> r_packet);
+    EncryptionStatus encrypt(srt::CPacket& w_packet);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts
     /// only if the encryption correctly configured, otherwise it
     /// fails. After successful decryption, the ENCKEYSPEC part
     // in PH_MSGNO is set to EK_NOENC.
-    EncryptionStatus decrypt(ref_t<CPacket> r_packet);
+    EncryptionStatus decrypt(srt::CPacket& w_packet);
 
     ~CCryptoControl();
 };

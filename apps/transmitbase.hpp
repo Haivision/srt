@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__COMMON_TRANMITBASE_HPP
-#define INC__COMMON_TRANMITBASE_HPP
+#ifndef INC_SRT_COMMON_TRANMITBASE_HPP
+#define INC_SRT_COMMON_TRANMITBASE_HPP
 
 #include <string>
 #include <memory>
@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include "srt.h"
 #include "uriparser.hpp"
+#include "apputil.hpp"
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
@@ -26,24 +27,22 @@ extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
-enum PrintFormat
+
+struct MediaPacket
 {
-    PRINT_FORMAT_2COLS,
-    PRINT_FORMAT_JSON,
-    PRINT_FORMAT_CSV
+    bytevector payload;
+    int64_t time = 0;
+
+    MediaPacket(bytevector&& src) : payload(std::move(src)) {}
+    MediaPacket(bytevector&& src, int64_t stime) : payload(std::move(src)), time(stime) {}
+
+    MediaPacket(size_t payload_size) : payload(payload_size), time(0) {}
+    MediaPacket(const bytevector& src) : payload(src) {}
+    MediaPacket(const bytevector& src, int64_t stime) : payload(src), time(stime) {}
+    MediaPacket() {}
 };
 
-class SrtStatsWriter
-{
-public:
-    virtual ~SrtStatsWriter() { };
-    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
-    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
-};
-
-std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(PrintFormat printformat);
-
-extern std::shared_ptr<SrtStatsWriter> stats_writer;
+extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
 class Location
 {
@@ -55,7 +54,7 @@ public:
 class Source: public Location
 {
 public:
-    virtual int  Read(size_t chunk, bytevector& data, std::ostream &out_stats = std::cout) = 0;
+    virtual int  Read(size_t chunk, MediaPacket& pkt, std::ostream &out_stats = std::cout) = 0;
     virtual bool IsOpen() = 0;
     virtual bool End() = 0;
     static std::unique_ptr<Source> Create(const std::string& url);
@@ -78,7 +77,7 @@ public:
 class Target: public Location
 {
 public:
-    virtual int  Write(const char* data, size_t size, std::ostream &out_stats = std::cout) = 0;
+    virtual int  Write(const char* data, size_t size, int64_t src_time, std::ostream &out_stats = std::cout) = 0;
     virtual bool IsOpen() = 0;
     virtual bool Broken() = 0;
     virtual void Close() {}
