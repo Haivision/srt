@@ -347,7 +347,7 @@ The general syntax for the field name is `[pfx][mk][mkx][name]`:
 * pfx: Field prefix: `m_` for members, `s_` for static, `g_` for global
 * mk: The marker (can be also empty) - lowercase only
 * mkx: Optional extra marker for specific cases:
-   * for fields bound to socket options: `OPT_`
+    * for fields bound to socket options: `OPT_`
 * name: field name using `PascalCase`
 * Optional sufix `_[unit]`: designates a unit (in specific cases)
 
@@ -359,39 +359,39 @@ designed for keeping a size (usually it's `size_t`): `m_zNumberElements`
 
 2. Integer type with specific size used to implement the field:
 
-* `ll` marker designates a signed 64-bit integer: `m_llDistance`. It is
+    * `ll` marker designates a signed 64-bit integer: `m_llDistance`. It is
 important to highlight this when the value is dealing with others
 of different size.
 
-* `i` marker designates a 32-bit integer type. Although usually there's
+    * `i` marker designates a 32-bit integer type. Although usually there's
 `int` type meant here, in all today compilers `int` is a 32-bit type,
 even on 64-bit systems. The real type of this variable could be `int`
 or `int32_t`.
 
-* `u` before the integer marker designates an unsigned integer type.
+    * `u` before the integer marker designates an unsigned integer type.
 The integer type must always have a designation of signed or unsigned
 type, while it is signed by default. It is important when used in
 expressions that mix signed and unsigned integers. Note also that
 if the variable is to designate a size, it better use `size_t` type
 and `z` marker therefore.
 
-* Note that integer marker is important in case when it's not obvious
+    * Note that integer marker is important in case when it's not obvious
 that particular field designates something for which number representation
 is only one of the possible ones - for example, when it designates
 a number of microseconds since epoch.
 
-* Note: there's no `l` marker in use, as well as there's no use of
+    * Note: there's no `l` marker in use, as well as there's no use of
 `long` type, at least directly, see EXPLANATIONS(4).
 
 3. A variable that designates time should have a marker that states
 that it represents time or duration should have the following
 markers:
 
-* `ts` for steady clock (monotonic)
-* `tc` for system clock
-* `td` for duration
+    * `ts` for steady clock (monotonic)
+    * `tc` for system clock
+    * `td` for duration
 
-For cases when various different units of time are used for particular domain,
+    For cases when various different units of time are used for particular domain,
 a suffix such as `_us` or `_tk` may be required to designate it, in order to
 prevent mistakes with mixing incompatible units.
 
@@ -428,7 +428,7 @@ have an empty marker, just like objects.
 
 # EXPLANATIONS:
 
-1. CONDITIONAL INVERSION (aka *Yoda conditions*)
+## 1. CONDITIONAL INVERSION (aka *Yoda conditions*)
 
 This is a technique that had to be advantegous in mistake prevention,
 however in the end it was proven to cause more harm and trouble. This
@@ -436,7 +436,7 @@ is further discussed
 [here](https://sektorvanskijlen.wordpress.com/2019/05/16/conditional-inversion-very-harmful-myth/).
 
 
-2. REFERENCE PASSING
+## 2. REFERENCE PASSING
 
 The overall problem with reference passing is not exactly with reference,
 but with the fact that the unit being passed to a function is a variable
@@ -487,7 +487,7 @@ is to a structure and you want `s.field` access, or if its of a pointer
 type and you would like to access `s->field` through it.
 
 
-3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
+## 3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
 
 Hungarian Notation is usually a method of embracing the type designation
 in the variable name. It doesn't mandate exactly what it should be used
@@ -509,7 +509,7 @@ help prevent misuse of a field due to used unit, relationship character,
 compatibility and needed translations to a different unit or character.
 
 
-4. NO USE OF LONG TYPE
+## 4. NO USE OF LONG TYPE
 
 The `long` type's size differs on 32-bit and 64-bit systems and therefore it
 only makes sense to use it if there's something in the hardware reflecting
