@@ -46,7 +46,7 @@ specification in POSIX: `#!`.
 
 The next two characters are:
 
-- `:` - this marks the YAML format, the only one currently used
+- `:` - marks the format of the following key-value pair syntax (the only one defined currently).
 - The content format, which is either:
   - `:` - the comma-separated keys with no nesting
   - `{` - like above, but nesting is allowed and must end with `}`
