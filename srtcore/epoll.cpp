@@ -111,17 +111,16 @@ int CEPoll::create(CEPollDesc** pout)
 
    int localid = 0;
 
+   #ifdef LINUX
+
    // NOTE: epoll_create1() and EPOLL_CLOEXEC were introduced in GLIBC-2.9.
    //    So earlier versions of GLIBC, must use epoll_create() and set
    //       FD_CLOEXEC on the file descriptor returned by it after the fact.
-   #ifdef LINUX
-   int flags = 0;
-
-   #if ENABLE_SOCK_CLOEXEC && defined(EPOLL_CLOEXEC)
-      flags |= EPOLL_CLOEXEC;
-   #endif
-
    #if defined(EPOLL_CLOEXEC)
+      int flags = 0;
+      #if ENABLE_SOCK_CLOEXEC
+      flags |= EPOLL_CLOEXEC;
+      #endif
       localid = epoll_create1(flags);
    #else
       localid = epoll_create(1);
