@@ -111,17 +111,43 @@ int CEPoll::create(CEPollDesc** pout)
 
    int localid = 0;
 
+   // NOTE: epoll_create1() and EPOLL_CLOEXEC were introduced in GLIBC-2.9.
+   //    So earlier versions of GLIBC, must use epoll_create() and set
+   //       FD_CLOEXEC on the file descriptor returned by it after the fact.
    #ifdef LINUX
    int flags = 0;
-#if ENABLE_SOCK_CLOEXEC
-   flags |= EPOLL_CLOEXEC;
-#endif
-   localid = epoll_create1(flags);
+
+   #if ENABLE_SOCK_CLOEXEC && defined(EPOLL_CLOEXEC)
+      flags |= EPOLL_CLOEXEC;
+   #endif
+
+   #if defined(EPOLL_CLOEXEC)
+      localid = epoll_create1(flags);
+   #else
+      localid = epoll_create(1);
+      #if ENABLE_SOCK_CLOEXEC
+      if (localid != -1)
+      {
+         int fdFlags = fcntl(localid, F_GETFD);
+         if (fdFlags != -1)
+         {
+            fdFlags != FD_CLOEXEC;
+            fcntl(localid, F_SETFD, fdFlags);
+         }
+      }
+      #endif
+   #endif
+
    /* Possible reasons of -1 error:
 EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys/fs/epoll/max_user_instances was encountered.
 ENFILE: The system limit on the total number of open files has been reached.
 ENOMEM: There was insufficient memory to create the kernel object.
        */
+   // NOTE: The standard says epoll_create1() returns -1 on error. So
+   //    theoretically -2 or some other negative fd value would be a valid
+   //    descriptor and indicate success. I imagine that allowing valid negative
+   //    descriptors through, would break other parts of the code that are also
+   //    checking for <0 as a failure. So ignoring this for now.
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
    #elif defined(BSD) || TARGET_OS_MAC
