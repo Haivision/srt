@@ -131,7 +131,7 @@ int CEPoll::create(CEPollDesc** pout)
          int fdFlags = fcntl(localid, F_GETFD);
          if (fdFlags != -1)
          {
-            fdFlags != FD_CLOEXEC;
+            fdFlags |= FD_CLOEXEC;
             fcntl(localid, F_SETFD, fdFlags);
          }
       }
