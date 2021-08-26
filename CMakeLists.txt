@@ -287,7 +287,7 @@ endif()
 #    used in srtcore/threadname.h.
 # Some BSD distros need to include <pthread_np.h> for pthread_getname_np().
 # TODO: Some BSD distros have pthread_get_name_np() and pthread_set_name_np()
-#     inatread of pthread_getname_np() and pthread_setname_np().
+#     instead of pthread_getname_np() and pthread_setname_np().
 set(CMAKE_REQUIRED_DEFINITIONS
    -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_POSIX_SOURCE=1)
 set(CMAKE_REQUIRED_FLAGS "-pthread")
@@ -325,12 +325,14 @@ endif()
 if (HAVE_PTHREAD_SETNAME_NP)
    add_definitions(-DHAVE_PTHREAD_SETNAME_NP=1)
 endif()
-message(
-   STATUS
-   "HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H}\n"
-   "HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H}\n"
-   "HAVE_PTHREAD_GETNAME_NP=${HAVE_PTHREAD_GETNAME_NP}\n"
-   "HAVE_PTHREAD_SETNAME_NP=${HAVE_PTHREAD_SETNAME_NP}")
+if ("0" MATCHES "1")
+   message(
+      STATUS
+      "HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H}\n"
+      "HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H}\n"
+      "HAVE_PTHREAD_GETNAME_NP=${HAVE_PTHREAD_GETNAME_NP}\n"
+      "HAVE_PTHREAD_SETNAME_NP=${HAVE_PTHREAD_SETNAME_NP}")
+endif()
 
 if (ENABLE_MONOTONIC_CLOCK)
 	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
