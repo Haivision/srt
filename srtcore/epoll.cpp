@@ -142,11 +142,6 @@ EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys
 ENFILE: The system limit on the total number of open files has been reached.
 ENOMEM: There was insufficient memory to create the kernel object.
        */
-   // NOTE: The standard says epoll_create1() returns -1 on error. So
-   //    theoretically -2 or some other negative fd value would be a valid
-   //    descriptor and indicate success. I imagine that allowing valid negative
-   //    descriptors through, would break other parts of the code that are also
-   //    checking for <0 as a failure. So ignoring this for now.
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
    #elif defined(BSD) || TARGET_OS_MAC
