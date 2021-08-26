@@ -74,7 +74,12 @@
    //    for all of the supported architectures. Use the POSIX Mutex
    //    implemention.
    #define ATOMIC_USE_POSIX_MUTEX 1
-#elif defined(__clang__) || defined(__xlc__)
+#elif (defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)) \
+   || defined(__xlc__)
+   // NOTE: Clang <6 does not support GCC __atomic_* intrinsics. I am unsure
+   //    about Clang6. Since Clang sets __GNUC__ and __GNUC_MINOR__ of this era
+   //    to <4.5, older Clang will catch the setting below to use the
+   //    POSIX Mutex Implementation.
    #define ATOMIC_USE_GCC_INTRINSICS
 #elif defined(__GNUC__) \
    && ( (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)) )
