@@ -114,6 +114,7 @@
 #endif
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
    #include <assert.h>
+   #include <stdio.h>
    #include <pthread.h>
 #endif
 
@@ -131,8 +132,11 @@ public:
   {
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
     const int lResult = pthread_mutex_init(&mutex_, NULL);
+    if (lResult != 0)
+    {
+       perror("Initializing Mutex");
+    }
     assert(lResult == 0);
-    (void)lResult;
 #endif
   }
 
@@ -141,8 +145,11 @@ public:
   {
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
     const int lResult = pthread_mutex_init(&mutex_, NULL);
+    if (lResult != 0)
+    {
+       perror("Initializing Mutex");
+    }
     assert(lResult == 0);
-    (void)lResult;
 #endif
   }
 
@@ -150,8 +157,11 @@ public:
   {
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
     const int lResult = pthread_mutex_destroy(&mutex_);
+    if (lResult != 0)
+    {
+       perror("Destroying Mutex");
+    }
     assert(lResult == 0);
-    (void)lResult;
 #endif
   }
 
@@ -174,20 +184,26 @@ public:
     PosixMutexLockGuard & operator=(const PosixMutexLockGuard &);
     #endif
   public:
-    PosixMutexLockGuard(pthread_mutex_t * mutex__)
+    explicit PosixMutexLockGuard(pthread_mutex_t * mutex__)
       : mutex_(mutex__)
     {
       assert(mutex_ != NULL);
       const int lResult = pthread_mutex_lock(mutex_);
+      if (lResult != 0)
+      {
+         perror("Locking Mutex");
+      }
       assert(lResult == 0);
-      (void)lResult;
     }
     ~PosixMutexLockGuard()
     {
       assert(mutex_ != NULL);
       const int lResult = pthread_mutex_unlock(mutex_);
+      if (lResult != 0)
+      {
+         perror("UnLocking Mutex");
+      }
       assert(lResult == 0);
-      (void)lResult;
     }
   };
 #endif
