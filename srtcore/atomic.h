@@ -339,7 +339,7 @@ private:
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
   T value_;
   mutable pthread_mutex_t mutex_;
-#elif defined(ATOMIC_USE_GCC_INTRINSICS)
+#elif defined(ATOMIC_USE_GCC_INTRINSICS) || defined(ATOMIC_USE_MSVC_INTRINSICS)
   volatile T value_;
 #else
   std::atomic<T> value_;
