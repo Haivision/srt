@@ -104,13 +104,13 @@
    #error Unsupported compiler / system.
 #endif
 // Include any necessary headers for the selected Atomic Implementation.
-#if defined(ATOMIC_USE_CPP11_ATOMIC)
-   #include <atomic>
-#endif
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
    #include <assert.h>
    #include <stdio.h>
    #include <pthread.h>
+#endif
+#if defined(ATOMIC_USE_CPP11_ATOMIC)
+   #include <atomic>
 #endif
 
 namespace srt {
@@ -130,7 +130,7 @@ public:
     if (lResult != 0)
     {
        perror("Initializing Mutex");
-      assert(lResult == 0);
+       assert(lResult == 0);
     }
 #endif
   }
@@ -143,7 +143,7 @@ public:
     if (lResult != 0)
     {
        perror("Initializing Mutex");
-      assert(lResult == 0);
+       assert(lResult == 0);
     }
 #endif
   }
