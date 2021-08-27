@@ -214,8 +214,10 @@ public:
     return __atomic_add_fetch(&value_, 1, __ATOMIC_SEQ_CST);
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
     return msvc::interlocked<T>::increment(&value_);
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     return ++value_;
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -230,8 +232,10 @@ public:
     return __atomic_sub_fetch(&value_, 1, __ATOMIC_SEQ_CST);
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
     return msvc::interlocked<T>::decrement(&value_);
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     return --value_;
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -261,9 +265,11 @@ public:
     const T old_val =
         msvc::interlocked<T>::compare_exchange(&value_, new_val, expected_val);
     return (old_val == expected_val);
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     T e = expected_val;
     return value_.compare_exchange_weak(e, new_val);
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -281,8 +287,10 @@ public:
     __atomic_store_n(&value_, new_val, __ATOMIC_SEQ_CST);
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
     (void)msvc::interlocked<T>::exchange(&value_, new_val);
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     value_.store(new_val);
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -299,8 +307,10 @@ public:
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
     // TODO(m): Is there a better solution for MSVC?
     return value_;
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     return value_;
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -321,8 +331,10 @@ public:
     return __atomic_exchange_n(&value_, new_val, __ATOMIC_SEQ_CST);
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
     return msvc::interlocked<T>::exchange(&value_, new_val);
-#else
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
     return value_.exchange(new_val);
+#else
+    #error "Implement Me."
 #endif
   }
 
@@ -339,10 +351,14 @@ private:
 #if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
   T value_;
   mutable pthread_mutex_t mutex_;
-#elif defined(ATOMIC_USE_GCC_INTRINSICS) || defined(ATOMIC_USE_MSVC_INTRINSICS)
+#elif defined(ATOMIC_USE_GCC_INTRINSICS)
   volatile T value_;
-#else
+#elif defined(ATOMIC_USE_MSVC_INTRINSICS)
+  volatile T value_;
+#elif defined(ATOMIC_USE_CPP11_ATOMIC)
   std::atomic<T> value_;
+#else
+   #error "Implement Me. (value_ type)"
 #endif
 
   ATOMIC_DISALLOW_COPY(atomic)
