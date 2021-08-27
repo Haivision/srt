@@ -68,12 +68,6 @@
    //    may not support GCC atomic intrinsics. So go ahead and use the
    //    std::atomic implementation.
    #define ATOMIC_USE_CPP11_ATOMIC
-#elif defined(__APPLE__) && !defined(ATOMIC_USE_POSIX_MUTEX)
-   // NOTE: Does not support c++11 std::atomic and most of the Apple compilers
-   //    from this era will not support GCC atomic intrinsics at least not
-   //    for all of the supported architectures. Use the POSIX Mutex
-   //    implemention.
-   #define ATOMIC_USE_POSIX_MUTEX 1
 #elif (defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)) \
    || defined(__xlc__)
    // NOTE: Clang <6 does not support GCC __atomic_* intrinsics. I am unsure
@@ -87,10 +81,11 @@
    // NOTE: This follows #if defined(__clang__), because most if, not all,
    //    versions of Clang define __GNUC__ and __GNUC_MINOR__ but often define
    //    them to 4.4 or an even earlier version. Most of the newish versions
-   //    of Clang also support GCC Atomic Intrisics.
+   //    of Clang also support GCC Atomic Intrisics even if they set GCC version
+   //    macros to <4.7.
    #define ATOMIC_USE_GCC_INTRINSICS
 #elif defined(__GNUC__) && !defined(ATOMIC_USE_POSIX_MUTEX)
-   // NOTE: GCC compiler built-ins for atomic operations are pure compiler
+   // NOTE: GCC compiler built-ins for atomic operations are pure
    //    compiler extensions prior to GCC-4.7 and were grouped into the
    //    the __sync_* family of functions. GCC-4.7, both the c++11 and C11
    //    standards had been finalized, and GCC updated their built-ins to
@@ -135,8 +130,8 @@ public:
     if (lResult != 0)
     {
        perror("Initializing Mutex");
+      assert(lResult == 0);
     }
-    assert(lResult == 0);
 #endif
   }
 
@@ -148,8 +143,8 @@ public:
     if (lResult != 0)
     {
        perror("Initializing Mutex");
+      assert(lResult == 0);
     }
-    assert(lResult == 0);
 #endif
   }
 
@@ -160,8 +155,8 @@ public:
     if (lResult != 0)
     {
        perror("Destroying Mutex");
+       assert(lResult == 0);
     }
-    assert(lResult == 0);
 #endif
   }
 
@@ -192,8 +187,8 @@ public:
       if (lResult != 0)
       {
          perror("Locking Mutex");
+         assert(lResult == 0);
       }
-      assert(lResult == 0);
     }
     ~PosixMutexLockGuard()
     {
@@ -202,8 +197,8 @@ public:
       if (lResult != 0)
       {
          perror("UnLocking Mutex");
+         assert(lResult == 0);
       }
-      assert(lResult == 0);
     }
   };
 #endif
