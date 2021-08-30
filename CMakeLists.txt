@@ -28,7 +28,6 @@ include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
 include(CheckFunctionExists)
-include(CheckSymbolExists)
 
 # Platform shortcuts
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
@@ -283,56 +282,8 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
-# Check for pthread_getname_np(3) and pthread_setname_np(3)
-#    used in srtcore/threadname.h.
-# Some BSD distros need to include <pthread_np.h> for pthread_getname_np().
-# TODO: Some BSD distros have pthread_get_name_np() and pthread_set_name_np()
-#     instead of pthread_getname_np() and pthread_setname_np().
-set(CMAKE_REQUIRED_DEFINITIONS
-   -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_POSIX_SOURCE=1)
-set(CMAKE_REQUIRED_FLAGS "-pthread")
-message(STATUS "Checking for pthread_(g/s)etname_np in 'pthread_np.h':")
-unset(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-unset(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H CACHE)
-check_symbol_exists(
-   pthread_getname_np "pthread_np.h" HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-if (HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-   add_definitions(-DHAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H=1)
-endif()
-unset(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-unset(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H CACHE)
-check_symbol_exists(
-   pthread_setname_np "pthread_np.h" HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-if (HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-   add_definitions(-DHAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H=1)
-endif()
-unset(HAVE_PTHREAD_GETNAME_NP)
-unset(HAVE_PTHREAD_GETNAME_NP CACHE)
-message(STATUS "Checking for pthread_(g/s)etname_np in 'pthread.h':")
-check_symbol_exists(pthread_getname_np "pthread.h" HAVE_PTHREAD_GETNAME_NP)
-if (HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-   set(HAVE_PTHREAD_GETNAME_NP TRUE)
-endif()
-unset(HAVE_PTHREAD_SETNAME_NP)
-unset(HAVE_PTHREAD_SETNAME_NP CACHE)
-check_symbol_exists(pthread_setname_np "pthread.h" HAVE_PTHREAD_SETNAME_NP)
-if (HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-   set(HAVE_PTHREAD_SETNAME_NP TRUE)
-endif()
-if (HAVE_PTHREAD_GETNAME_NP)
-   add_definitions(-DHAVE_PTHREAD_GETNAME_NP=1)
-endif()
-if (HAVE_PTHREAD_SETNAME_NP)
-   add_definitions(-DHAVE_PTHREAD_SETNAME_NP=1)
-endif()
-if ("0" MATCHES "1")
-   message(
-      STATUS
-      "HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H}\n"
-      "HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H=${HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H}\n"
-      "HAVE_PTHREAD_GETNAME_NP=${HAVE_PTHREAD_GETNAME_NP}\n"
-      "HAVE_PTHREAD_SETNAME_NP=${HAVE_PTHREAD_SETNAME_NP}")
-endif()
+include(FindPThreadGetSetName)
+FindPThreadGetSetName()
 
 if (ENABLE_MONOTONIC_CLOCK)
 	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
