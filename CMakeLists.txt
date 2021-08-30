@@ -529,6 +529,7 @@ endif()
 
 if (NOT MICROSOFT)
 	check_requires_atomic_linked("${USE_CXX_STD_LIB}" LINK_LIBATOMIC)
+	message(STATUS "LINK_LIBATOMIC: ${LINK_LIBATOMIC}")
 	if (${LINK_LIBATOMIC})
 		set (WITH_EXTRALIBS "${WITH_EXTRALIBS} -latomic")
 	endif()

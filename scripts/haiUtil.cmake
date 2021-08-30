@@ -272,15 +272,25 @@ function (test_requires_clock_gettime _enable _linklib)
 endfunction()
 
 function (check_requires_atomic_linked _use_cxx_std_lib _need_atomic)
+	set(CMAKE_REQUIRED_INCLUDES "${CMAKE_SOURCE_DIR}/srtcore")
+	message(STATUS "ENABLE_STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+	if (ENABLE_STDCXX_SYNC)
+		set(CMAKE_REQUIRED_DEFINITIONS -DENABLE_STDCXX_SYNC=1)
+	endif()
 	set (code "
-		#include <iostream>
 		#include <stdlib.h>
-		#include \"${CMAKE_SOURCE_DIR}/srtcore/atomic.h\"
+		#ifdef ENABLE_STDCXX_SYNC
+		#pragma message(\"C++11\")
+		#include <atomic>
+		using namespace std\;
+		#else
+		#pragma message(\"srt::sync\")
+		#include \"atomic.h\"
+		using namespace srt::sync\;
+		#endif
 		int main() {
-			srt::sync::atomic<bool> test_bool = true\;
-			test_bool = (rand() % 2) != 0\;
-			std::cout << test_bool\;
-			return 0\;
+			atomic<bool> test_bool(true)\;
+			return (rand() % 2) != 0\;
 		}
 	")
 
@@ -291,13 +301,13 @@ function (check_requires_atomic_linked _use_cxx_std_lib _need_atomic)
 		set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
 		set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++11")
 	endif()
+
 	message(STATUS "CODE: ${code}")
-	set(COMPILES_WITHOUT_ATOMIC False)
 	check_testcode_compiles(${code} "" COMPILES_WITHOUT_ATOMIC)
 	message(STATUS "COMPILES_WITHOUT_ATOMIC: ${COMPILES_WITHOUT_ATOMIC}")
 
 	if (COMPILES_WITHOUT_ATOMIC)
-		set(_need_atomic False)
+		set(${_need_atomic} False PARENT_SCOPE)
 		return()
 	endif()
 
@@ -306,7 +316,7 @@ function (check_requires_atomic_linked _use_cxx_std_lib _need_atomic)
 	if (NOT COMPILES_WITH_ATOMIC)
 		message(FATAL_ERROR "Host compiler must support atomic!")
 	endif()
-	set(_need_atomic True)
+	set(${_need_atomic} True PARENT_SCOPE)
 	message(STATUS "Compiles with atomic.")
 
 	if ("${_use_cxx_std_lib}" STREQUAL "11")
