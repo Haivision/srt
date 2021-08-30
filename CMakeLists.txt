@@ -526,6 +526,14 @@ if (FORCE_CXX_STANDARD)
 	endif()
 endif()
 
+
+if (NOT MICROSOFT)
+	check_requires_atomic_linked("${USE_CXX_STD_LIB}" LINK_LIBATOMIC)
+	if (${LINK_LIBATOMIC})
+		set (WITH_EXTRALIBS "${WITH_EXTRALIBS} -latomic")
+	endif()
+endif()
+
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
 	set (SRT_GCC_WARN "-Wall -Wextra")

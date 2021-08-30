@@ -271,6 +271,47 @@ function (test_requires_clock_gettime _enable _linklib)
 	message(STATUS "CLOCK_MONOTONIC: not available on this system")
 endfunction()
 
+function (check_requires_atomic_linked _use_cxx_std_lib _need_atomic)
+	set (code "
+		#include <iostream>
+		#include <stdlib.h>
+		#include \"${CMAKE_SOURCE_DIR}/srtcore/atomic.h\"
+		int main() {
+			srt::sync::atomic<bool> test_bool = true\;
+			test_bool = (rand() % 2) != 0\;
+			std::cout << test_bool\;
+			return 0\;
+		}
+	")
+
+	message(STATUS "CMAKE_CXX_STANDARD: ${CMAKE_CXX_STANDARD}")
+	message(STATUS "_use_cxx_std_lib: ${_use_cxx_std_lib}")
+	if ("${_use_cxx_std_lib}" STREQUAL "11" OR "${CMAKE_CXX_STANDARD}" STREQUAL "11")
+		message(STATUS "Checking with -std=c++11")
+		set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+		set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -std=c++11")
+	endif()
+	message(STATUS "CODE: ${code}")
+	set(COMPILES_WITHOUT_ATOMIC False)
+	check_testcode_compiles(${code} "" COMPILES_WITHOUT_ATOMIC)
+	message(STATUS "COMPILES_WITHOUT_ATOMIC: ${COMPILES_WITHOUT_ATOMIC}")
+
+	set(_need_atomic False)
+	if (NOT ${COMPILES_WITHOUT_ATOMIC})
+		check_testcode_compiles(${code} "atomic" COMPILES_WITH_ATOMIC)
+		if (NOT ${COMPILES_WITH_ATOMIC})
+			message(FATAL_ERROR "Host compiler must support atomic!")
+		endif()
+		set(_need_atomic True)
+		message(STATUS "Compiles with atomic.")
+	endif()
+
+	if ("${_use_cxx_std_lib}" STREQUAL "11")
+		set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
+	endif()
+
+endfunction()
+
 function (parse_compiler_type wct _type _suffix)
 	if (wct STREQUAL "")
 		set(${_type} "" PARENT_SCOPE)
