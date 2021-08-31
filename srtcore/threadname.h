@@ -22,7 +22,7 @@ written by
 //    HAVE_PTHREAD_GETNAME_NP
 //    HAVE_PTHREAD_GETNAME_NP
 //    Are detected and set in ../CMakeLists.txt.
-//    OS Availability:
+//    OS Availability of pthread_getname_np(..) and pthread_setname_np(..):
 //       MacOS(10.6)
 //       iOS(3.2)
 //       AIX(7.1)
