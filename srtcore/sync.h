@@ -905,9 +905,9 @@ namespace this_thread
 ///
 #ifdef ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -438,7 +438,7 @@ void SrtMainLoop::run()
 
         std::ostringstream tns;
         tns << "Input:" << this;
-        srt::ThreadName tn(tns.str().c_str());
+        srt::ThreadName tn(tns.str());
         m_input_thr = thread([this] {
                 try {
                     InputRunner();

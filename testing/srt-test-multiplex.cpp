@@ -196,7 +196,7 @@ public:
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        srt::ThreadName tn(thread_name.c_str());
+        srt::ThreadName tn(thread_name);
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;

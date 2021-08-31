@@ -202,21 +202,16 @@ public:
         return ret;
     }
 
-    // note: set can fail if name is too long. The upper limit is platform
-    // dependent. strlen(name) <= 15 should work on most of the platform.
-    static bool set(const char* name) { return ThreadNameImpl::set(name); }
-
     static bool set(const std::string& name) { return set(name.c_str()); }
 
-    ThreadName(const char* name)
-        : impl(name)
-    {
-    }
-
-    ThreadName(const std::string& name)
+    explicit ThreadName(const std::string& name)
         : impl(name.c_str())
     {
     }
+
+private:
+    ThreadName(const ThreadName&);
+    ThreadName(const char*);
 };
 
 } // namespace srt

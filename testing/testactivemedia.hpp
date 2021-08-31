@@ -58,7 +58,7 @@ struct Medium
         running = true;
         std::ostringstream tns;
         tns << typeid(*this).name() << ":" << this;
-        srt::ThreadName tn(tns.str().c_str());
+        srt::ThreadName tn(tns.str());
         thr = thread( [this] { RunnerBase(); } );
     }
 
