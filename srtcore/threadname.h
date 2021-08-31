@@ -65,6 +65,8 @@ written by
 #include "common.h"
 #include "sync.h"
 
+namespace srt {
+
 class ThreadName
 {
 
@@ -216,5 +218,7 @@ public:
     {
     }
 };
+
+} // namespace srt
 
 #endif
