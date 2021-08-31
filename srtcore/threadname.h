@@ -61,7 +61,7 @@ written by
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <assert.h>
+#include <cassert>
 
 #include "sync.h"
 
