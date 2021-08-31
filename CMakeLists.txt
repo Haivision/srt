@@ -275,6 +275,9 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
+include(FindPThreadGetSetName)
+FindPThreadGetSetName() # Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
+
 if (ENABLE_MONOTONIC_CLOCK)
 	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
 		message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")

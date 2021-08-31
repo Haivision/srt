@@ -116,7 +116,7 @@ used by SRT library internally.
 #define SRT_ATTR_NO_THREAD_SAFETY_ANALYSIS
 #else
 
-#if defined(__clang__)
+#if defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
 #else
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)   // no-op
