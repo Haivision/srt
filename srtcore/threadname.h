@@ -22,7 +22,7 @@ written by
 //    HAVE_PTHREAD_GETNAME_NP
 //    HAVE_PTHREAD_GETNAME_NP
 //    Are detected and set in ../CMakeLists.txt.
-//    OS Availability of pthread_getname_np(..) and pthread_setname_np(..):
+//    OS Availability of pthread_getname_np(..) and pthread_setname_np(..)::
 //       MacOS(10.6)
 //       iOS(3.2)
 //       AIX(7.1)
@@ -61,9 +61,11 @@ written by
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <cassert>
 
+#include "common.h"
 #include "sync.h"
+
+namespace srt {
 
 class ThreadName
 {
@@ -92,19 +94,18 @@ class ThreadName
 
         static bool set(const char* name)
         {
+            SRT_ASSERT(name != NULL);
 #if defined(__linux__)
             // The name can be up to 16 bytes long, including the terminating
             // null byte. (If the length of the string, including the terminating
             // null byte, exceeds 16 bytes, the string is silently truncated.)
             return prctl(PR_SET_NAME, (unsigned long)name, 0, 0) != -1;
 #elif defined(HAVE_PTHREAD_SETNAME_NP)
-            #if defined(__APPLE__)
-            return name != NULL
-               && pthread_setname_np(name) == 0;
-            #else
-            return name != NULL
-               && pthread_setname_np(pthread_self(), name) == 0;
-            #endif
+    #if defined(__APPLE__)
+            return pthread_setname_np(name) == 0;
+    #else
+            return pthread_setname_np(pthread_self(), name) == 0;
+    #endif
 #else
 #error "unsupported platform"
 #endif
@@ -217,5 +218,7 @@ public:
     {
     }
 };
+
+} // namespace srt
 
 #endif

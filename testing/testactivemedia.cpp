@@ -3,7 +3,7 @@
 
 void SourceMedium::Runner()
 {
-    ThreadName::set("SourceRN");
+    srt::ThreadName::set("SourceRN");
 
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
@@ -63,7 +63,7 @@ MediaPacket SourceMedium::Extract()
 
 void TargetMedium::Runner()
 {
-    ThreadName::set("TargetRN");
+    srt::ThreadName::set("TargetRN");
     auto on_return_set = OnReturnSet(running, false);
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)

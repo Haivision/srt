@@ -4,6 +4,8 @@
 #include "gtest/gtest.h"
 #include "threadname.h"
 
+using namespace srt;
+
 TEST(ThreadName, GetSet)
 {
     std::string name("getset");

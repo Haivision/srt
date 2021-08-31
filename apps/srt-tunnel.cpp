@@ -223,17 +223,17 @@ public:
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
         :
 #ifdef HAVE_FULL_CXX11
-		media {m1, m2},
+        media {m1, m2},
 #endif
-		parent_tunnel(p), nameid(nid)
+        parent_tunnel(p), nameid(nid)
     {
 #ifndef HAVE_FULL_CXX11
-		// MSVC is not exactly C++11 compliant and complains around
-		// initialization of an array.
-		// Leaving this method of initialization for clarity and
-		// possibly more preferred performance.
-		media[0] = m1;
-		media[1] = m2;
+        // MSVC is not exactly C++11 compliant and complains around
+        // initialization of an array.
+        // Leaving this method of initialization for clarity and
+        // possibly more preferred performance.
+        media[0] = m1;
+        media[1] = m2;
 #endif
     }
 
@@ -241,7 +241,7 @@ public:
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
         std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        ThreadName tn(thrn.c_str());
+        srt::ThreadName tn(thrn.c_str());
 
         thr = thread([this]() { Worker(); });
     }

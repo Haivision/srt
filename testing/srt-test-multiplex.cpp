@@ -154,14 +154,14 @@ struct MediumPair
                 applog.Note() << sout.str();
             }
         }
-        catch (Source::ReadEOF& x)
+        catch (const Source::ReadEOF&)
         {
             applog.Note() << "EOS - closing media for loop: " << name;
             src->Close();
             tar->Close();
             applog.Note() << "CLOSED: " << name;
         }
-        catch (std::runtime_error& x)
+        catch (const std::runtime_error& x)
         {
             applog.Note() << "INTERRUPTED: " << x.what();
             src->Close();
@@ -196,7 +196,7 @@ public:
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        ThreadName tn(thread_name.c_str());
+        srt::ThreadName tn(thread_name.c_str());
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;
@@ -577,7 +577,7 @@ int main( int argc, char** argv )
 
     SrtModel m(up.host(), iport, up.parameters());
 
-    ThreadName::set("main");
+    srt::ThreadName::set("main");
 
     // Note: for input, there must be an exactly defined
     // number of sources. The loop rolls up to all these sources.
@@ -615,7 +615,7 @@ int main( int argc, char** argv )
                     break;
             }
 
-            ThreadName::set("main");
+            srt::ThreadName::set("main");
         }
 
         applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";
