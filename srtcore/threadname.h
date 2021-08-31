@@ -202,7 +202,7 @@ public:
         return ret;
     }
 
-    static bool set(const std::string& name) { return set(name.c_str()); }
+    static bool set(const std::string& name) { return ThreadNameImpl::set(name.c_str()); }
 
     explicit ThreadName(const std::string& name)
         : impl(name.c_str())
