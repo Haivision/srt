@@ -111,9 +111,9 @@ class ThreadName
 #endif
         }
 
-        ThreadNameImpl(const char* name)
+        explicit ThreadNameImpl(const char* name)
+            : reset(false)
         {
-            reset = false;
             tid   = pthread_self();
 
             if (!get(old_name))
@@ -140,6 +140,10 @@ class ThreadName
             if (tid == pthread_self())
                 set(old_name);
         }
+    
+    private:
+        ThreadNameImpl(ThreadNameImpl& other);
+        ThreadNameImpl& operator=(const ThreadNameImpl& other);
 
     private:
         bool      reset;
@@ -212,6 +216,7 @@ public:
 private:
     ThreadName(const ThreadName&);
     ThreadName(const char*);
+    ThreadName& operator=(const ThreadName& other);
 };
 
 } // namespace srt
