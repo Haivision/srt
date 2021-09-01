@@ -61,7 +61,7 @@
       line)[(2 * static_cast<int>(!!(condition))) - 1] _impl_UNUSED
 #endif
 
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
    // NOTE: Defined at the top level.
 #elif defined(__APPLE__) && (__cplusplus >= 201103L)
    // NOTE: Does support c++11 std::atomic, but the compiler may or
@@ -84,7 +84,7 @@
    //    of Clang also support GCC Atomic Intrisics even if they set GCC version
    //    macros to <4.7.
    #define ATOMIC_USE_GCC_INTRINSICS
-#elif defined(__GNUC__) && !defined(ATOMIC_USE_POSIX_MUTEX)
+#elif defined(__GNUC__) && !defined(ATOMIC_USE_SRT_SYNC_MUTEX)
    // NOTE: GCC compiler built-ins for atomic operations are pure
    //    compiler extensions prior to GCC-4.7 and were grouped into the
    //    the __sync_* family of functions. GCC-4.7, both the c++11 and C11
@@ -94,7 +94,7 @@
    //    differently, than in pre 4.7.
    // TODO: PORT to the pre GCC-4.7 __sync_* intrinsics. In the meantime use
    //    the POSIX Mutex Implementation.
-   #define ATOMIC_USE_POSIX_MUTEX 1
+   #define ATOMIC_USE_SRT_SYNC_MUTEX 1
 #elif defined(_MSC_VER)
    #define ATOMIC_USE_MSVC_INTRINSICS
    #include "atomic_msvc.h"
@@ -104,10 +104,8 @@
    #error Unsupported compiler / system.
 #endif
 // Include any necessary headers for the selected Atomic Implementation.
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-   #include <assert.h>
-   #include <stdio.h>
-   #include <pthread.h>
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+   #include "sync.h"
 #endif
 #if defined(ATOMIC_USE_CPP11_ATOMIC)
    #include <atomic>
@@ -124,90 +122,32 @@ public:
 
   atomic()
     : value_(static_cast<T>(0))
-  {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    const int lResult = pthread_mutex_init(&mutex_, NULL);
-    if (lResult != 0)
-    {
-       perror("Initializing Mutex");
-       assert(lResult == 0);
-    }
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    , mutex_()
 #endif
+  {
+     // No-Op
   }
 
   explicit atomic(const T value)
     : value_(value)
-  {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    const int lResult = pthread_mutex_init(&mutex_, NULL);
-    if (lResult != 0)
-    {
-       perror("Initializing Mutex");
-       assert(lResult == 0);
-    }
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    , mutex_()
 #endif
+  {
+     // No-Op
   }
 
   ~atomic()
   {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    const int lResult = pthread_mutex_destroy(&mutex_);
-    if (lResult != 0)
-    {
-       perror("Destroying Mutex");
-       assert(lResult == 0);
-    }
-#endif
+     // No-Op
   }
-
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-  class PosixMutexLockGuard
-  {
-  private:
-    pthread_mutex_t * mutex_;
-  private:
-    // disallow default/copy/move constructors and assignment.
-    #if __cplusplus >= 201103L
-    PosixMutexLockGuard() = delete;
-    PosixMutexLockGuard(const PosixMutexLockGuard &) = delete;
-    PosixMutexLockGuard(const PosixMutexLockGuard &&) = delete;
-    PosixMutexLockGuard & operator=(const PosixMutexLockGuard &) = delete;
-    PosixMutexLockGuard & operator=(const PosixMutexLockGuard &&) = delete;
-    #else
-    PosixMutexLockGuard();
-    PosixMutexLockGuard(const PosixMutexLockGuard &);
-    PosixMutexLockGuard & operator=(const PosixMutexLockGuard &);
-    #endif
-  public:
-    explicit PosixMutexLockGuard(pthread_mutex_t * mutex__)
-      : mutex_(mutex__)
-    {
-      assert(mutex_ != NULL);
-      const int lResult = pthread_mutex_lock(mutex_);
-      if (lResult != 0)
-      {
-         perror("Locking Mutex");
-         assert(lResult == 0);
-      }
-    }
-    ~PosixMutexLockGuard()
-    {
-      assert(mutex_ != NULL);
-      const int lResult = pthread_mutex_unlock(mutex_);
-      if (lResult != 0)
-      {
-         perror("UnLocking Mutex");
-         assert(lResult == 0);
-      }
-    }
-  };
-#endif
 
   /// @brief Performs an atomic increment operation (value + 1).
   /// @returns The new value of the atomic object.
   T operator++() {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     const T t = ++value_;
     return t;
 #elif defined(ATOMIC_USE_GCC_INTRINSICS)
@@ -224,8 +164,8 @@ public:
   /// @brief Performs an atomic decrement operation (value - 1).
   /// @returns The new value of the atomic object.
   T operator--() {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     const T t = --value_;
     return t;
 #elif defined(ATOMIC_USE_GCC_INTRINSICS)
@@ -248,8 +188,8 @@ public:
   /// @param new_val The new value to write to the atomic object.
   /// @returns True if new_value was written to the atomic object.
   bool compare_exchange(const T expected_val, const T new_val) {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     bool result = false;
     if (expected_val == value_)
     {
@@ -280,8 +220,8 @@ public:
   ///
   /// @param new_val The new value to write to the atomic object.
   void store(const T new_val) {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     value_ = new_val;
 #elif defined(ATOMIC_USE_GCC_INTRINSICS)
     __atomic_store_n(&value_, new_val, __ATOMIC_SEQ_CST);
@@ -298,8 +238,8 @@ public:
   /// @note Be careful about how this is used, since any operations on the
   /// returned value are inherently non-atomic.
   T load() const {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     const T t = value_;
     return t;
 #elif defined(ATOMIC_USE_GCC_INTRINSICS)
@@ -322,8 +262,8 @@ public:
   /// @param new_val The new value to write to the atomic object.
   /// @returns the old value.
   T exchange(const T new_val) {
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
-    PosixMutexLockGuard lock_(&mutex_);
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
+    ScopedLock lg_(mutex_);
     const T t = value_;
     value_ = new_val;
     return t;
@@ -348,9 +288,9 @@ public:
   }
 
 private:
-#if defined(ATOMIC_USE_POSIX_MUTEX) && (ATOMIC_USE_POSIX_MUTEX == 1)
+#if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
   T value_;
-  mutable pthread_mutex_t mutex_;
+  mutable Mutex mutex_;
 #elif defined(ATOMIC_USE_GCC_INTRINSICS)
   volatile T value_;
 #elif defined(ATOMIC_USE_MSVC_INTRINSICS)
