@@ -149,6 +149,13 @@ option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
+# NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
+#  Atomic implemetation in srtcore/atomic.h.
+option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
+if (ATOMIC_USE_SRT_SYNC_MUTEX)
+   add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
+endif()
+
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
 # Use application-defined group reader

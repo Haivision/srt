@@ -23,7 +23,6 @@
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
-#include "atomic.h"
 
 // Defile clock type to use
 #ifdef IA32
@@ -233,72 +232,11 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 
 #endif // ENABLE_STDCXX_SYNC
 
-template <class Clock>
-class AtomicDuration
-{
-    atomic<int64_t> dur;
-    typedef typename Clock::duration duration_type;
-    typedef typename Clock::time_point time_point_type;
-public:
-
-    AtomicDuration() ATR_NOEXCEPT : dur(0) {}
-
-    duration_type load()
-    {
-        int64_t val = dur.load();
-        return duration_type(val);
-    }
-
-    void store(const duration_type& d)
-    {
-        dur.store(d.count());
-    }
-
-    AtomicDuration<Clock>& operator=(const duration_type& s)
-    {
-        dur = s.count();
-        return *this;
-    }
-
-    operator duration_type() const
-    {
-        return duration_type(dur);
-    }
-};
-
-template <class Clock>
-class AtomicClock
-{
-    atomic<uint64_t> dur;
-    typedef typename Clock::duration duration_type;
-    typedef typename Clock::time_point time_point_type;
-public:
-
-    AtomicClock() ATR_NOEXCEPT : dur(0) {}
-
-    time_point_type load() const
-    {
-        int64_t val = dur.load();
-        return time_point_type(duration_type(val));
-    }
-
-    void store(const time_point_type& d)
-    {
-        dur.store(uint64_t(d.time_since_epoch().count()));
-    }
-
-    AtomicClock& operator=(const time_point_type& s)
-    {
-        dur = s.time_since_epoch().count();
-        return *this;
-    }
-
-    operator time_point_type() const
-    {
-        return time_point_type(duration_type(dur.load()));
-    }
-};
-
+// NOTE: Moved the following class definitons to "atomic_clock.h"
+//   template <class Clock>
+//      class AtomicDuration;
+//   template <class Clock>
+//      class AtomicClock;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -938,5 +876,7 @@ int genRandomInt(int minVal, int maxVal);
 
 } // namespace sync
 } // namespace srt
+
+#include "atomic_clock.h"
 
 #endif // INC_SRT_SYNC_H
