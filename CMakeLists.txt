@@ -40,8 +40,9 @@ set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(GNU         ${CMAKE_SYSTEM_NAME} MATCHES "GNU")
 set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
-set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
+set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -282,8 +283,9 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
+# Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
 include(FindPThreadGetSetName)
-FindPThreadGetSetName() # Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
+FindPThreadGetSetName()
 
 if (ENABLE_MONOTONIC_CLOCK)
 	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
@@ -603,6 +605,9 @@ elseif(CYGWIN)
 elseif(GNU)
 	add_definitions(-DGNU=1)
 	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
+elseif(SUNOS)
+	add_definitions(-DSUNOS=1)
+	message(STATUS "DETECTED SYSTEM: SUNOS|Solaris;  SUNOS=1" )
 else()
 	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()

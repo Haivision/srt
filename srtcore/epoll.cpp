@@ -149,7 +149,8 @@ ENOMEM: There was insufficient memory to create the kernel object.
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
    #else
-   // on Solaris, use /dev/poll
+   // TODO: Solaris, use port_getn()
+   //    https://docs.oracle.com/cd/E86824_01/html/E54766/port-get-3c.html
    // on Windows, select
    #endif
 

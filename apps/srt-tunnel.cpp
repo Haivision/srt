@@ -94,7 +94,7 @@ protected:
     bool m_eof = false;
     bool m_broken = false;
 
-    mutex access; // For closing
+    std::mutex access; // For closing
 
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
@@ -287,7 +287,7 @@ class Tunnel
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
     volatile bool running = true;
-    mutex access;
+    std::mutex access;
 
 public:
 
@@ -324,7 +324,7 @@ public:
 
         /*
         {
-            lock_guard<mutex> lk(access);
+            lock_guard<std::mutex> lk(access);
             if (acp_to_clr.stat() == -1 && clr_to_acp.stat() == -1)
             {
                 Verb() << "Tunnel: Both engine decommissioned, will stop the tunnel.";
@@ -438,7 +438,7 @@ public:
     void CloseSrt()
     {
         Verb() << "Closing SRT socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == SRT_ERROR)
             return;
         srt_close(m_socket);
@@ -528,7 +528,7 @@ public:
     void CloseTcp()
     {
         Verb() << "Closing TCP socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == -1)
             return;
         tcp_close(m_socket);
@@ -954,20 +954,20 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
 struct Tunnelbox
 {
     list<unique_ptr<Tunnel>> tunnels;
-    mutex access;
+    std::mutex access;
     condition_variable decom_ready;
     bool main_running = true;
     thread thr;
 
     void signal_decommission()
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         decom_ready.notify_one();
     }
 
     void install(std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
         tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
@@ -992,7 +992,7 @@ private:
 
     void CleanupWorker()
     {
-        unique_lock<mutex> lk(access);
+        unique_lock<std::mutex> lk(access);
 
         while (main_running)
         {
@@ -1027,7 +1027,7 @@ void Tunnel::Stop()
     if (!running)
         return; // already stopped
 
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
 
     // Ok, you are the first to make the tunnel
     // not running and inform the tunnelbox.
@@ -1037,7 +1037,7 @@ void Tunnel::Stop()
 
 bool Tunnel::decommission_if_dead(bool forced)
 {
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
     if (running && !forced)
         return false; // working, not to be decommissioned
 
