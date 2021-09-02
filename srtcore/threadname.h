@@ -111,9 +111,9 @@ class ThreadName
 #endif
         }
 
-        ThreadNameImpl(const char* name)
+        explicit ThreadNameImpl(const char* name)
+            : reset(false)
         {
-            reset = false;
             tid   = pthread_self();
 
             if (!get(old_name))
@@ -140,6 +140,10 @@ class ThreadName
             if (tid == pthread_self())
                 set(old_name);
         }
+    
+    private:
+        ThreadNameImpl(ThreadNameImpl& other);
+        ThreadNameImpl& operator=(const ThreadNameImpl& other);
 
     private:
         bool      reset;
@@ -202,21 +206,17 @@ public:
         return ret;
     }
 
-    // note: set can fail if name is too long. The upper limit is platform
-    // dependent. strlen(name) <= 15 should work on most of the platform.
-    static bool set(const char* name) { return ThreadNameImpl::set(name); }
+    static bool set(const std::string& name) { return ThreadNameImpl::set(name.c_str()); }
 
-    static bool set(const std::string& name) { return set(name.c_str()); }
-
-    ThreadName(const char* name)
-        : impl(name)
-    {
-    }
-
-    ThreadName(const std::string& name)
+    explicit ThreadName(const std::string& name)
         : impl(name.c_str())
     {
     }
+
+private:
+    ThreadName(const ThreadName&);
+    ThreadName(const char*);
+    ThreadName& operator=(const ThreadName& other);
 };
 
 } // namespace srt

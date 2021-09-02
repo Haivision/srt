@@ -28,12 +28,12 @@ TEST(ThreadName, GetSet)
 
 TEST(ThreadName, AutoReset)
 {
-    std::string old_name("old");
+    const std::string old_name("old");
     std::string new_name("new-name");
     if (ThreadName::DUMMY_IMPL)
     {
         // just make sure the API is correct
-        ThreadName t("test");
+        ThreadName t(std::string("test"));
         return;
     }
 

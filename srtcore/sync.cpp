@@ -79,9 +79,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 
 
 #ifdef ENABLE_STDCXX_SYNC
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
     ThreadName tn(name);

@@ -240,8 +240,8 @@ public:
     void Start()
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
-        std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        srt::ThreadName tn(thrn.c_str());
+        const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
+        srt::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }

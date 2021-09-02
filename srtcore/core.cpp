@@ -9395,10 +9395,10 @@ int srt::CUDT::processData(CUnit* in_unit)
 
         const string& tn = tns2.str();
 
-        ThreadName tnkeep(tn.c_str());
-        const char* thname = tn.c_str();
+        ThreadName tnkeep(tn);
+        const string& thname = tn;
 #else
-        const char* thname = "SRT:TsbPd";
+        const string thname = "SRT:TsbPd";
 #endif
         if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
             return -1;

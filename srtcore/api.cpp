@@ -154,9 +154,7 @@ bool srt::CUDTSocket::readReady()
     if (m_UDT.m_bConnected && m_UDT.m_pRcvBuffer->isRcvDataReady())
         return true;
     if (m_UDT.m_bListening)
-    {
-        return m_QueuedSockets.size() > 0;
-    }
+        return !m_QueuedSockets.empty();
 
     return broken();
 }
@@ -955,7 +953,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
    s->m_Status = SRTS_OPENED;
 
    // copy address information of local node
-   s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
+   s->core().m_pSndQueue->m_pChannel->getSockAddr(s->m_SelfAddr);
 
    return 0;
 }
@@ -1535,7 +1533,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             HLOGC(aclog.Debug, log << "groupConnect: connecting a new socket with ISN=" << isn);
             connectIn(ns, target_addr, isn);
         }
-        catch (CUDTException& e)
+        catch (const CUDTException& e)
         {
             LOGC(aclog.Error, log << "groupConnect: socket @" << sid << " in group " << pg->id() << " failed to connect");
             // We know it does belong to a group.
