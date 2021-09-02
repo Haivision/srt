@@ -155,6 +155,7 @@ option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF
 if (ATOMIC_USE_SRT_SYNC_MUTEX)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
 endif()
+message(STATUS "ATOMIC_USE_SRT_SYNC_MUTEX: ${ATOMIC_USE_SRT_SYNC_MUTEX}")
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -564,6 +565,7 @@ endif()
 # but may help in several corner cases in unusual platforms.
 if (WITH_EXTRALIBS)
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
+	message(STATUS "WITH_EXTRALIBS: ${WITH_EXTRALIBS}")
 endif()
 
 # CMake has only discovered in 3.3 version that some set-finder is
