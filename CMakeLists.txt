@@ -411,6 +411,20 @@ else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX
 	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
 
+# Check for GCC Atomic Intrinsics and C++11 Atomics.
+# Sets:
+#  HAVE_LIBATOMIC
+#  HAVE_GCCATOMIC_INTRINSICS
+#  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
+#  HAVE_GCCATOMIC_INTRINSICS_STATIC
+#  HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC
+include(CheckGCCAtomicIntrinsics)
+CheckGCCAtomicIntrinsics()
+#  HAVE_CXX_ATOMIC
+#  HAVE_CXX_ATOMIC_STATIC
+include(CheckCXXAtomic)
+CheckCXXAtomic()
+
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
 elseif( DEFINED ENABLE_CXX11 )
@@ -877,8 +891,6 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
-	elseif (ANDROID)
-		target_link_libraries(${TARGET_srt}_shared PRIVATE atomic)
 	endif()
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
@@ -913,8 +925,6 @@ if (srt_libspec_static)
 		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_static PRIVATE wsock32 ws2_32)
-	elseif (ANDROID)
-		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
 	if (USE_GNUSTL)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
@@ -964,6 +974,13 @@ if (srt_libspec_shared)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
 	endif()
+endif()
+
+# Required by some toolchains when statically linking this library if the
+#  GCC Atomic Intrinsics are being used.
+if (HAVE_GCCATOMIC_INTRINSICS
+	AND HAVE_LIBATOMIC)
+	target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
