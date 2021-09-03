@@ -140,7 +140,7 @@ written by
 #	define le64toh(x) letoh64(x)
 #endif
 
-#elif defined(SUN)
+#elif defined(SUNOS)
 
    // SunOS/Solaris
 
