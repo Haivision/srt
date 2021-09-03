@@ -140,7 +140,7 @@ written by
 #	define le64toh(x) letoh64(x)
 #endif
 
-#elif defined __sun
+#elif defined(SUN)
 
    // SunOS/Solaris
 
@@ -150,7 +150,7 @@ written by
    #define __LITTLE_ENDIAN 1234
    #define __BIG_ENDIAN 4321
 
-   # ifdef _BIG_ENDIAN
+   # if defined(_BIG_ENDIAN)
    #define __BYTE_ORDER __BIG_ENDIAN
    #define be64toh(x) (x)
    #define be32toh(x) (x)
