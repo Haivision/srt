@@ -111,7 +111,7 @@ class ThreadName
 #endif
         }
 
-        explicit ThreadNameImpl(const char* name)
+        explicit ThreadNameImpl(const std::string& name)
             : reset(false)
         {
             tid   = pthread_self();
@@ -119,16 +119,16 @@ class ThreadName
             if (!get(old_name))
                 return;
 
-            reset = set(name);
+            reset = set(name.c_str());
             if (reset)
                 return;
 
             // Try with a shorter name. 15 is the upper limit supported by Linux,
             // other platforms should support a larger value. So 15 should works
             // on all platforms.
-            size_t max_len = 15;
-            if (std::strlen(name) > max_len)
-                reset = set(std::string(name, max_len).c_str());
+            const size_t max_len = 15;
+            if (name.size() > max_len)
+                reset = set(name.substr(0, max_len).c_str());
         }
 
         ~ThreadNameImpl()
@@ -171,7 +171,7 @@ class ThreadName
 
         static bool set(const char*) { return false; }
 
-        ThreadNameImpl(const char*) {}
+        ThreadNameImpl(const std::string&) {}
 
         ~ThreadNameImpl() // just to make it "non-trivially-destructible" for compatibility with normal version
         {
@@ -209,7 +209,7 @@ public:
     static bool set(const std::string& name) { return ThreadNameImpl::set(name.c_str()); }
 
     explicit ThreadName(const std::string& name)
-        : impl(name.c_str())
+        : impl(name)
     {
     }
 
