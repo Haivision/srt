@@ -41,23 +41,23 @@ The Stream ID uses UTF-8 encoding.
 
 ## General Syntax
 
-This recommended syntax starts with the characters known as an executable
-specification in POSIX: `#!`.
+The recommended syntax starts with the characters known as an executable specification in POSIX: `#!`.
 
-The next two characters are:
+The next character defines the format used for the following key-value pair syntax.
+At the moment, there is only one supported syntax identified by `:` and described below.
 
-- `:` - marks the format of the following key-value pair syntax (the only one defined currently).
-- The content format, which is either:
-  - `:` - the comma-separated keys with no nesting
-  - `{` - like above, but nesting is allowed and must end with `}`
+Everything that comes after a syntax identifier is further referenced as the content of the Stream ID.
 
-(Nesting means that you can have multiple level brace-enclosed parts inside.)
+The content starts with a `:` or `{` character identifying its format:
 
-The form of the key-value pair is:
+- `:` : comma-separated key-value pairs with no nesting,
+- `{` : a nested block with one or several key-value pairs that must end with a `}` character. Nesting means that multiple level brace-enclosed parts are allowed.
 
-```js
-key1=value1,key2=value2...
-```
+The form of the key-value pair is
+
+~~~
+key1=value1,key2=value2,...
+~~~
 
 ## Standard Keys
 
