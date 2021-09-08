@@ -22,8 +22,11 @@
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
 #else
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <io.h>
+#endif
+#if defined(SUNOS)
+#include <sys/filio.h>
 #endif
 
 #include "netinet_any.h"

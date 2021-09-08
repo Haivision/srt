@@ -150,7 +150,7 @@ struct TargetMedium: Medium<Target>
     bool Schedule(const MediaPacket& data)
     {
         LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
-        lock_guard<mutex> lg(buffer_lock);
+        lock_guard<std::mutex> lg(buffer_lock);
         LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
         if (!running || ::transmit_int_state)
         {
@@ -166,13 +166,13 @@ struct TargetMedium: Medium<Target>
 
     void Clear()
     {
-        lock_guard<mutex> lg(buffer_lock);
+        lock_guard<std::mutex> lg(buffer_lock);
         buffer.clear();
     }
 
     void Interrupt()
     {
-        lock_guard<mutex> lg(buffer_lock);
+        lock_guard<std::mutex> lg(buffer_lock);
         running = false;
         ready.notify_one();
     }

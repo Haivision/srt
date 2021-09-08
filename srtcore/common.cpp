@@ -98,7 +98,7 @@ const char* CUDTException::getErrorMessage() const ATR_NOTHROW
     return srt::strerror_get_message(m_iMajor, m_iMinor);
 }
 
-string CUDTException::getErrorString() const
+std::string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }

@@ -140,6 +140,46 @@ written by
 #	define le64toh(x) letoh64(x)
 #endif
 
+#elif defined(SUNOS)
+
+   // SunOS/Solaris
+
+   #include <sys/byteorder.h>
+   #include <sys/isa_defs.h>
+
+   #define __LITTLE_ENDIAN 1234
+   #define __BIG_ENDIAN 4321
+
+   # if defined(_BIG_ENDIAN)
+   #define __BYTE_ORDER __BIG_ENDIAN
+   #define be64toh(x) (x)
+   #define be32toh(x) (x)
+   #define be16toh(x) (x)
+   #define le16toh(x) ((uint16_t)BSWAP_16(x))
+   #define le32toh(x) BSWAP_32(x)
+   #define le64toh(x) BSWAP_64(x)
+   #define htobe16(x) (x)
+   #define htole16(x) ((uint16_t)BSWAP_16(x))
+   #define htobe32(x) (x)
+   #define htole32(x) BSWAP_32(x)
+   #define htobe64(x) (x)
+   #define htole64(x) BSWAP_64(x)
+   # else
+   #define __BYTE_ORDER __LITTLE_ENDIAN
+   #define be64toh(x) BSWAP_64(x)
+   #define be32toh(x) ntohl(x)
+   #define be16toh(x) ntohs(x)
+   #define le16toh(x) (x)
+   #define le32toh(x) (x)
+   #define le64toh(x) (x)
+   #define htobe16(x) htons(x)
+   #define htole16(x) (x)
+   #define htobe32(x) htonl(x)
+   #define htole32(x) (x)
+   #define htobe64(x) BSWAP_64(x)
+   #define htole64(x) (x)
+   # endif
+
 #elif defined(__WINDOWS__)
 
 #	include <winsock2.h>
