@@ -25,7 +25,7 @@
 #include <fcntl.h>
 #include <io.h>
 #endif
-#if defined(__sun)
+#if defined(SUNOS)
 #include <sys/filio.h>
 #endif
 
