@@ -199,6 +199,7 @@ struct SrtOptionAction
 #endif
 #if ENABLE_EXPERIMENTAL_BONDING
         flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
+        flags[SRTO_GROUPMINSTABLETIMEO]= SRTO_R_PRE;
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
@@ -767,8 +768,13 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
 #if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPCONNECT:
-        optlen         = sizeof (int);
+        optlen        = sizeof (int);
         *(int*)optval = m_config.iGroupConnect;
+        break;
+
+    case SRTO_GROUPMINSTABLETIMEO:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uMinStabilityTimeout_ms;
         break;
 
     case SRTO_GROUPTYPE:
@@ -788,7 +794,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_PEERIDLETIMEO:
-        *(int *)optval = m_config.iPeerIdleTimeout;
+        *(int *)optval = m_config.iPeerIdleTimeout_ms;
         optlen         = sizeof(int);
         break;
 
@@ -11191,7 +11197,7 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
         return false;
 
     // ms -> us
-    const int PEER_IDLE_TMO_US = m_config.iPeerIdleTimeout * 1000;
+    const int PEER_IDLE_TMO_US = m_config.iPeerIdleTimeout_ms * 1000;
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
     time_point last_rsp_time = m_tsLastRspTime.load();

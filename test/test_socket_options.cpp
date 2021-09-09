@@ -172,7 +172,10 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_EVENT
     { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31} },
     //SRTO_GROUPCONNECT
-    //SRTO_GROUPMINSTABLETIMEO
+#if ENABLE_EXPERIMENTAL_BONDING
+    // Max value can't exceed SRTO_PEERIDLETIMEO
+    { SRTO_GROUPMINSTABLETIMEO, "SRTO_GROUPMINSTABLETIMEO", RestrictionType::PRE, sizeof(int),       60,       5000,       60,           70,     {0, -1, 50, 5001} },
+#endif
     //SRTO_GROUPTYPE
     //SRTO_INPUTBW
     //SRTO_IPTOS

@@ -239,7 +239,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
 #if ENABLE_EXPERIMENTAL_BONDING
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
-   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in microseconds
+   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
 #endif
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter

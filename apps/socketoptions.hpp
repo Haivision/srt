@@ -254,7 +254,7 @@ const SocketOption srt_options [] {
     { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
 #endif
 #if ENABLE_EXPERIMENTAL_BONDING
-    { "groupstabtimeo", 0, SRTO_GROUPSTABTIMEO, SocketOption::POST, SocketOption::INT, nullptr},
+    { "groupminstabletimeo", 0, SRTO_GROUPMINSTABLETIMEO, SocketOption::POST, SocketOption::INT, nullptr},
 #endif
     { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
 };

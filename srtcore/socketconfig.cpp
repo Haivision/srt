@@ -782,7 +782,7 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
         if (val < 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iPeerIdleTimeout = val;
+        co.iPeerIdleTimeout_ms = val;
     }
 };
 
@@ -844,20 +844,26 @@ struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
         // It's set here just for the sake of setting it on a listener
         // socket so that it is then applied on the group when a
         // group connection is configuired.
-        const int val = cast_optval<int>(optval, optlen);
-        const int idletmo = co.iPeerIdleTimeout;
+        const int val_ms = cast_optval<int>(optval, optlen);
 
-        // This option is RECORDED in microseconds, while
-        // idletmo is recorded in milliseconds, only translated to
-        // microseconds directly before use.
-        if (val >= idletmo)
+        if (val_ms < (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
         {
-            LOGC(aclog.Error, log << "group option: SRTO_GROUPMINSTABLETIMEO(" << val
-                                  << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+            LOGC(qmlog.Error,
+                log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is "
+                    << CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        co.uMinStabilityTimeoutUS = val * 1000;
+        const int idletmo_ms = co.iPeerIdleTimeout_ms;
+
+        if (val_ms > idletmo_ms)
+        {
+            LOGC(aclog.Error, log << "group option: SRTO_GROUPMINSTABLETIMEO(" << val_ms
+                                  << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo_ms << ")");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        co.uMinStabilityTimeout_ms = val_ms;
     }
 };
 #endif
@@ -923,6 +929,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_TRANSTYPE);
 #if ENABLE_EXPERIMENTAL_BONDING
         DISPATCH(SRTO_GROUPCONNECT);
+        DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
         DISPATCH(SRTO_KMREFRESHRATE);
         DISPATCH(SRTO_KMPREANNOUNCE);
@@ -930,9 +937,6 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_PEERIDLETIMEO);
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
-#if ENABLE_EXPERIMENTAL_BONDING
-        DISPATCH(SRTO_GROUPMINSTABLETIMEO);
-#endif
         DISPATCH(SRTO_RETRANSMITALGO);
 
 #undef DISPATCH
