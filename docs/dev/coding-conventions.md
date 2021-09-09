@@ -283,8 +283,19 @@ case of the reference-initialization.
 
 Examples:
 
+Calls:
+
 ```
 int bytespeed = getSpeed((packetspeed));  // packetspeed will be filled
+
+//Definition:
+
+int getSpeed(int& w_packetspeed)
+{
+	w_packetspeed = packets()/time(); // <--- here is the "function-external" variable written
+
+	return (avg_pkt_size()*packet())/time();
+}
 
 getData((packet.m_pcData), (data_size)); // filling an array and size, too
 
@@ -297,6 +308,7 @@ mh.msg_iov = (data); // will fill this, when called
 recvmsg(sock, (mh), 0); // mh will be filled and ALSO ATTACHED OBJECTS.
 
 ```
+
 
 4. The variable passed to a function by reference must be **always
 initialized**, even if the designated function is going to fill in the
@@ -438,23 +450,21 @@ is further discussed
 
 ## 2. REFERENCE PASSING
 
-The overall problem with reference passing is not exactly with reference,
-but with the fact that the unit being passed to a function is a variable
-(or object) that the function will potentially modify. In most usual cases when
-you pass something to a function, it's only intended to pass the value,
-maybe copy of it, through some wrapper that does not allow for modifications.
-Even if it was effectively passed by a pointer or reference, it's only
-because passing this way is more efficient, but what is actually intended
-to pass to a function was its value (hence the `const` modifier is enforced
-here).
+The overall problem with reference passing is not exactly with distinction
+between reference and value passing, but with the fact that the unit being
+passed to a function is a variable (or object) that the function will
+potentially modify. In case when you pass by value (copy), or even through
+a constant pointer or reference, this doesn't matter, as the designated
+value source woudn't be modified by the call.
 
 Cases when a variable is passed as such, and it is written to by the
 receiving function, is generally unobvious and very often overlooked. A
 function shall better not get parameters by reference and rather return
-a value that would be intended to be written into a variable. However
-sometimes this is not enough efficient, especially if some larger objects
-are to be modified. For simple types there are some extra abilities that
-could help here in a form of tuples, but these are only available in C++11.
+a value that would be intended to be written into a variable (so the
+assignment operation is clearly visible as modification). However sometimes
+this is not enough efficient, especially if some larger objects are to be
+modified. For simple types there are some extra abilities that could help here
+in a form of tuples, but these are only available in C++11.
 
 This creates a problem - when you analyze the code, at some point you
 have a function call that gets this variable passed, and if you are not
@@ -474,17 +484,16 @@ parameter through which this value will be effectively returned.
 3. When a variable with `w_` prefix is passed to a call with extra
 parentheses, you know that this is a reference pass-though.
 
-There was previously used a specific type wrapper named `ref_t`, however
-this experiment has eventually failed. This idea came from C# language
-and this `Ref` required around the variable was similar to what is required
-in C# in this case. The problem is, however, that the parameter name
-inside the function that receive it require extra `*` operator to access
-the designated reference (or `.get()` method call), as creating a type that can
-transparently designate a reference in C++ is impossible. This can't
-even be helped by a defined conversion operator, as it would only work
-in a limited number of cases. For example, it won't work if the reference
-is to a structure and you want `s.field` access, or if its of a pointer
-type and you would like to access `s->field` through it.
+There was previously tried a solution inspired by C# language with the
+use of a `ref_t` type wrapper and a `Ref` helper function, which should
+simulate the reference marking. This experiment has eventually failed
+as the parameter name inside the function that receive it require extra `*`
+operator to access the designated reference (or `.get()` method call), as
+creating a type that can transparently designate a reference in C++ is
+impossible. The goal was to provide a solution that could be verified
+by the compiler, but this one brought more problems than solutions. The
+convention cannot be enforced by the compiler, but at least it satisfies
+all the visibility requirements.
 
 
 ## 3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
