@@ -59,10 +59,11 @@ modified by
 #include "core.h" // provides some constants
 #include "logging.h"
 
+namespace srt {
+
 using namespace std;
 using namespace srt_logging;
-using namespace srt;
-using namespace srt::sync;
+using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.
 #if !defined(SRT_MAVG_SAMPLING_RATE)
@@ -318,7 +319,7 @@ void CSndBuffer::updateInputRate(const steady_clock::time_point& time, int pkts,
     if (early_update || period_us > m_InRatePeriod)
     {
         // Required Byte/sec rate (payload + headers)
-        m_iInRateBytesCount += (m_iInRatePktsCount * srt::CPacket::SRT_DATA_HDR_SIZE);
+        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
         m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
         HLOGC(bslog.Debug,
               log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
@@ -411,7 +412,7 @@ steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& bloc
     return block.m_tsOriginTime;
 }
 
-int CSndBuffer::readData(srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
+int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
 {
     // No data to read
     if (m_pCurrBlock == m_pLastBlock)
@@ -512,7 +513,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
+int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
 {
     int32_t& msgno_bitset = w_packet.m_iMsgNo;
 
@@ -605,7 +606,7 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
     return readlen;
 }
 
-srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
+sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
     const Block* p = m_pFirstBlock;
@@ -935,7 +936,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
             return -1;
         }
 
-        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
 
         if (bTsbPdEnabled)
         {
@@ -1004,7 +1005,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
             continue;
         }
 
-        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
 
 #if ENABLE_LOGGING
         trace_seq = pkt.getSeqNo();
@@ -1476,7 +1477,7 @@ bool CRcvBuffer::isRcvDataReady(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
     if (m_tsbpd.isEnabled())
     {
-        const srt::CPacket* pkt = getRcvReadyPacket(seqdistance);
+        const CPacket* pkt = getRcvReadyPacket(seqdistance);
         if (!pkt)
         {
             HLOGC(brlog.Debug, log << "isRcvDataReady: packet NOT extracted.");
@@ -1613,7 +1614,7 @@ void CRcvBuffer::reportBufferStats() const
     uint64_t lower_time = low_ts;
 
     if (lower_time > upper_time)
-        upper_time += uint64_t(srt::CPacket::MAX_TIMESTAMP) + 1;
+        upper_time += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
 
     int32_t timespan = upper_time - lower_time;
     int     seqspan  = 0;
@@ -2287,3 +2288,5 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 
     return found;
 }
+
+} // namespace srt
