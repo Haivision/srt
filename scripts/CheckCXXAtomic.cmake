@@ -15,27 +15,12 @@
 
 include(CheckCXXSourceCompiles)
 include(CheckLibraryExists)
+include(UnSetVariableFull)
 
 function(CheckCXXAtomic)
 
-   # unset(.... PARENT_SCOPE) was introduced in cmake-3.0.2.
-   if ("${CMAKE_VERSION}" VERSION_LESS "3.0.2")
-      unset(HAVE_CXX_ATOMIC)
-      set(HAVE_CXX_ATOMIC "" PARENT_SCOPE)
-      unset(HAVE_CXX_ATOMIC CACHE)
-
-      unset(HAVE_CXX_ATOMIC_STATIC)
-      set(HAVE_CXX_ATOMIC_STATIC "" PARENT_SCOPE)
-      unset(HAVE_CXX_ATOMIC_STATIC CACHE)
-   else()
-      unset(HAVE_CXX_ATOMIC)
-      unset(HAVE_CXX_ATOMIC PARENT_SCOPE)
-      unset(HAVE_CXX_ATOMIC CACHE)
-
-      unset(HAVE_CXX_ATOMIC_STATIC)
-      unset(HAVE_CXX_ATOMIC_STATIC PARENT_SCOPE)
-      unset(HAVE_CXX_ATOMIC_STATIC CACHE)
-   endif()
+   UnSetVariableFull(HAVE_CXX_ATOMIC)
+   UnSetVariableFull(HAVE_CXX_ATOMIC_STATIC)
 
    unset(CMAKE_REQUIRED_FLAGS)
    unset(CMAKE_REQUIRED_LIBRARIES)
