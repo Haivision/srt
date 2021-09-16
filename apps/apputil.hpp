@@ -77,8 +77,6 @@ inline void SysCleanupNetwork() {}
 
 #endif
 
-#include "srt.h" // Required for stats module
-
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 const int SysAGAIN = WSAEWOULDBLOCK;
