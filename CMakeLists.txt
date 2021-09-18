@@ -1062,10 +1062,14 @@ else()
 	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
 endif()
 
-macro(srt_add_program name)
+macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+endmacro()
+
+macro(srt_add_program name)
+	srt_add_program_dont_install(${name} ${ARGN})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
@@ -1276,7 +1280,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test-srt ${SOURCES_unittests})
+	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
