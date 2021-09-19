@@ -45,7 +45,7 @@
    #endif
 #else
 
-#if __APPLE__
+#if defined(__APPLE__) && __APPLE__
 // XXX Check if this condition doesn't require checking of
 // also other macros, like TARGET_OS_IOS etc.
 
