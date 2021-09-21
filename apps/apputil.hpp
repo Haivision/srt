@@ -419,5 +419,8 @@ extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;
 
 std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
 
+const char* SRTClockTypeStr();
+void PrintLibVersion();
+
 
 #endif // INC_SRT_APPCOMMON_H
