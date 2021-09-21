@@ -684,3 +684,36 @@ SrtStatsPrintFormat ParsePrintFormat(string pf, string& w_extras)
 
     return SRTSTATS_PROFMAT_INVALID;
 }
+
+const char* SRTClockTypeStr()
+{
+	const int clock_type = srt_clock_type();
+
+	switch (clock_type)
+	{
+	case SRT_SYNC_CLOCK_STDCXX_STEADY:
+		return "CXX11_STEADY";
+	case SRT_SYNC_CLOCK_GETTIME_MONOTONIC:
+		return "GETTIME_MONOTONIC";
+	case SRT_SYNC_CLOCK_WINQPC:
+		return "WIN_QPC";
+	case SRT_SYNC_CLOCK_MACH_ABSTIME:
+		return "MACH_ABSTIME";
+	case SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY:
+		return "POSIX_GETTIMEOFDAY";
+	default:
+		break;
+	}
+	
+	return "UNKNOWN VALUE";
+}
+
+void PrintLibVersion()
+{
+    cerr << "Built with SRT Library version: " << SRT_VERSION  << endl;
+    const uint32_t srtver = srt_getversion();
+    const int major = srtver / 0x10000;
+    const int minor = (srtver / 0x100) % 0x100;
+    const int patch = srtver % 0x100;
+    cerr << "SRT Library version: " << major << "." << minor << "." << patch << ", clock type: " << SRTClockTypeStr() << endl;
+}
