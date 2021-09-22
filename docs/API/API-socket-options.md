@@ -1277,17 +1277,20 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 | --------------------- | ----- | -------- | --------- | ------ | ------- | ------ | --- | ------ |
 | `SRTO_RETRANSMITALGO` | 1.4.2 | pre      | `int32_t` |        | 1       | [0, 1] | RW  | GSD    |
 
-Retransmission algorithm to use (SENDER option):
+An SRT sender option to choose between two retransmission algorithms:
 
-- 0 - Retransmit on every loss report (higher overhead, but slightly higher chance to recover a lost packet).
-- 1 - Reduced retransmissions (retransmit not more often than once per RTT); reduced
-  bandwidth consumption.
+- 0 - an intensive retransmission algorithm (default until SRT v1.4.4), and
+- 1 - a new efficient retransmission algorithm (introduced in SRT v1.4.2; default since SRT v1.4.4).
 
-This option is effective only on the sending side. It influences the decision
+The intensive retransmission algorithm causes the SRT sender to schedule a packet for retransmission each time it receives a negative acknowledgement (NAK). On a network characterized by low packet loss levels and link capacity high enough to accommodate extra retransmission overhead, this algorithm increases the chances of recovering from packet loss with a minimum delay, and may better suit end-to-end latency constraints.
+
+The new efficient algorithm optimizes the bandwidth usage by producing fewer retransmissions per lost packet. It takes SRT statistics into account to determine if a retransmitted packet is still in flight and could reach the receiver in time, so that some of the NAK reports are ignored by the sender. This algorithm better fits general use cases, as well as cases where channel bandwidth is limited.
+
+NOTE: This option is effective only on the sending side. It influences the decision
 as to whether a particular reported lost packet should be retransmitted at a
 certain time or not.
 
-The reduced retransmission algorithm (`SRTO_RETRANSMITALGO=1`) is only operational when receiver sends
+NOTE: The efficient retransmission algorithm can only be used when a receiver sends
 Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
 [Return to list](#list-of-options)
