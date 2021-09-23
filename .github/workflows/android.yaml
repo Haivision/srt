@@ -21,4 +21,4 @@ jobs:
     - uses: actions/checkout@v2
     - name: build
       run: |
-        source ./scripts/build-android/build-android
+        source ./scripts/build-android/build-android -n ${{ env.ANDROID_SDK_ROOT }}
