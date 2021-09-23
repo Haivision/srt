@@ -16,7 +16,7 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ - -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
     - name: test
