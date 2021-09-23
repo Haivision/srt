@@ -54,17 +54,18 @@ function(CheckGCCAtomicIntrinsics)
    check_library_exists(
       atomic __atomic_fetch_add_8 "" HAVE_LIBATOMIC)
 
+   set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE) # CMake 3.6
    check_c_source_compiles(
       "${CheckGCCAtomicIntrinsics_CODE}"
       HAVE_GCCATOMIC_INTRINSICS)
 
-   if (NOT HAVE_GCCATOMIC_INTRINSICS
-      AND HAVE_LIBATOMIC)
+   if (NOT HAVE_GCCATOMIC_INTRINSICS AND HAVE_LIBATOMIC)
       set(CMAKE_REQUIRED_LIBRARIES "atomic")
       check_c_source_compiles(
          "${CheckGCCAtomicIntrinsics_CODE}"
          HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
       if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
+         set(HAVE_GCCATOMIC_INTRINSICS TRUE) # Will be checked soon.
          set(HAVE_GCCATOMIC_INTRINSICS TRUE PARENT_SCOPE)
       endif()
    endif()
@@ -74,7 +75,7 @@ function(CheckGCCAtomicIntrinsics)
    unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
    if (HAVE_GCCATOMIC_INTRINSICS)
-      set(CMAKE_REQUIRED_LINK_OPTIONS "-static")
+      set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY) # CMake 3.6
       check_c_source_compiles(
          "${CheckGCCAtomicIntrinsics_CODE}"
          HAVE_GCCATOMIC_INTRINSICS_STATIC)
