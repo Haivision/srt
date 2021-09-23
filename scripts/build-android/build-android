@@ -53,6 +53,7 @@ else
 fi
 
 SCRIPT_DIR=$(pwd)
+echo "SCRIPT_DIR: $SCRIPT_DIR"
 HOST_TAG='unknown'
 unamestr=$(uname -s)
 if [ "$unamestr" = 'Linux' ]; then
@@ -67,6 +68,7 @@ elif [ "$unamestr" = 'Darwin' ]; then
   HOST_TAG='darwin-x86_64'
  fi
 fi
+echo "SCRIPT_DIR: $SCRIPT_DIR"
 
 # Write files relative to current location
 BASE_DIR=$(pwd)
