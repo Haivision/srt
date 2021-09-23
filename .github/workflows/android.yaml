@@ -1,0 +1,20 @@
+name: cxx11
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    name: ubuntu
+    runs-on: ubuntu-18.04
+
+    steps:
+    - name: Setup Android SDK Tools
+      uses: android-actions/setup-android@v2.0.2
+    - uses: actions/checkout@v2
+    - name: build
+      run: |
+        source ./scripts/build-android/build-android
