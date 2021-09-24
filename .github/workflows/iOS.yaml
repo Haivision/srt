@@ -10,25 +10,17 @@ jobs:
   build:
     strategy:
       matrix:
-        cxxver: [03, 11]
+        cxxstdsync: [OFF, ON]
 
-    name: iOS-cxx${{ matrix.cxxver }}
+    name: iOS-cxxsync${{ matrix.cxxstdsync }}
     runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v2
-    - if: matrix.cxxver == 11
-      name: enable c++11
-      run: |
-        echo "-DENABLE_STDCXX_SYNC=ON" >> $CXX_SYNC
-    - if: matrix.cxxver == 03
-      name: use c++03
-      run: |
-        echo "-DENABLE_STDCXX_SYNC=OFF" >> $CXX_SYNC
     - name: configure
       run: |
         mkdir _build && cd _build
         echo $CXX_SYNC
-        cmake ../ -DENABLE_ENCRYPTION=OFF $CXX_SYNC -DENABLE_UNITTESTS=OFF -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_UNITTESTS=OFF -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
