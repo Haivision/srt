@@ -13,8 +13,6 @@
 #     HAVE_LIBATOMIC
 #     HAVE_GCCATOMIC_INTRINSICS
 #     HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
-#     HAVE_GCCATOMIC_INTRINSICS_STATIC
-#     HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC
 #
 # See
 #  https://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html
@@ -29,8 +27,6 @@ function(CheckGCCAtomicIntrinsics)
    UnSetVariableFull(HAVE_LIBATOMIC)
    UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS)
    UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
-   UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS_STATIC)
-   UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC)
 
    unset(CMAKE_REQUIRED_FLAGS)
    unset(CMAKE_REQUIRED_LIBRARIES)
@@ -65,29 +61,7 @@ function(CheckGCCAtomicIntrinsics)
          "${CheckGCCAtomicIntrinsics_CODE}"
          HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
       if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
-         set(HAVE_GCCATOMIC_INTRINSICS TRUE) # Will be checked soon.
          set(HAVE_GCCATOMIC_INTRINSICS TRUE PARENT_SCOPE)
-      endif()
-   endif()
-
-   unset(CMAKE_REQUIRED_FLAGS)
-   unset(CMAKE_REQUIRED_LIBRARIES)
-   unset(CMAKE_REQUIRED_LINK_OPTIONS)
-
-   if (HAVE_GCCATOMIC_INTRINSICS)
-      set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY) # CMake 3.6
-      check_c_source_compiles(
-         "${CheckGCCAtomicIntrinsics_CODE}"
-         HAVE_GCCATOMIC_INTRINSICS_STATIC)
-      if (NOT HAVE_GCCATOMIC_INTRINSICS_STATIC
-         AND HAVE_LIBATOMIC)
-         set(CMAKE_REQUIRED_LIBRARIES "atomic")
-         check_c_source_compiles(
-            "${CheckGCCAtomicIntrinsics_CODE}"
-            HAVE_GCCATOMIC_INTRINSICS_STATIC)
-         if (HAVE_GCCATOMIC_INTRINSICS_STATIC)
-            set(HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC TRUE PARENT_SCOPE)
-         endif()
       endif()
    endif()
 
