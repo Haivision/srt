@@ -991,8 +991,13 @@ endif()
 
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
-if (srt_libspec_static AND HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
-	target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+	if (srt_libspec_shared)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
