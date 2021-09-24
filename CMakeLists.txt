@@ -991,7 +991,7 @@ endif()
 
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
-if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+if (srt_libspec_static AND HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
 	target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 endif()
 
