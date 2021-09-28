@@ -416,6 +416,8 @@ endif()
 # Check for GCC Atomic Intrinsics and C++11 Atomics.
 # Sets:
 #  HAVE_LIBATOMIC
+#  HAVE_LIBATOMIC_COMPILES
+#  HAVE_LIBATOMIC_COMPILES_STATIC
 #  HAVE_GCCATOMIC_INTRINSICS
 #  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
 include(CheckGCCAtomicIntrinsics)
@@ -973,7 +975,7 @@ endif()
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
 	endif()
@@ -987,6 +989,12 @@ if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
 	endif()
 	if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
+elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
+	# This is a workaround for ANDROID NDK<17 builds, which need to link
+	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
 endif()
 
