@@ -20,13 +20,12 @@
 
 include(CheckCSourceCompiles)
 include(CheckLibraryExists)
-include(UnSetVariableFull)
 
 function(CheckGCCAtomicIntrinsics)
 
-   UnSetVariableFull(HAVE_LIBATOMIC)
-   UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS)
-   UnSetVariableFull(HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC)
+   unset(HAVE_LIBATOMIC CACHE)
+   unset(HAVE_GCCATOMIC_INTRINSICS CACHE)
+   unset(HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC CACHE)
 
    unset(CMAKE_REQUIRED_FLAGS)
    unset(CMAKE_REQUIRED_LIBRARIES)
@@ -64,9 +63,5 @@ function(CheckGCCAtomicIntrinsics)
          set(HAVE_GCCATOMIC_INTRINSICS TRUE PARENT_SCOPE)
       endif()
    endif()
-
-   unset(CMAKE_REQUIRED_FLAGS)
-   unset(CMAKE_REQUIRED_LIBRARIES)
-   unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
 endfunction(CheckGCCAtomicIntrinsics)
