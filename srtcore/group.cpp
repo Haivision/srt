@@ -2741,7 +2741,7 @@ void CUDTGroup::synchronizeDrift(const srt::CUDT* srcMember)
     srcMember->m_pRcvBuffer->getInternalTimeBase((timebase), (wrap_period), (udrift));
 
     HLOGC(grlog.Debug,
-        log << "GROUP: synch uDRIFT=" << FormatDuration(udrift) << " TB=" << FormatTime(newtimebase) << "("
+        log << "GROUP: synch uDRIFT=" << FormatDuration(udrift) << " TB=" << FormatTime(timebase) << "("
         << (wrap_period ? "" : "NO ") << "wrap period)");
 
     // Now that we have the minimum timebase and drift calculated, apply this to every link,
