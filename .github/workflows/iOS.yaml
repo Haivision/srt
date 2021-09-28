@@ -1,4 +1,4 @@
-name: cxx11
+name: iOS
 
 on:
   push:
@@ -8,7 +8,11 @@ on:
 
 jobs:
   build:
-    name: iOS
+    strategy:
+      matrix:
+        cxxstdsync: [OFF, ON]
+
+    name: iOS-cxxsync${{ matrix.cxxstdsync }}
     runs-on: macos-latest
 
     steps:
@@ -16,8 +20,6 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_UNITTESTS=OFF -DENABLE_EXPERIMENTAL_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
-    - name: test
-      run: cd _build && ctest --extra-verbose
