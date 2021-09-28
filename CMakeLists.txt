@@ -418,8 +418,6 @@ endif()
 #  HAVE_LIBATOMIC
 #  HAVE_GCCATOMIC_INTRINSICS
 #  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
-#  HAVE_GCCATOMIC_INTRINSICS_STATIC
-#  HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC
 include(CheckGCCAtomicIntrinsics)
 CheckGCCAtomicIntrinsics()
 #  HAVE_CXX_ATOMIC
@@ -887,7 +885,7 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
 		else()
 			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
@@ -925,7 +923,7 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
 		endif()
 	elseif (MINGW)
@@ -938,8 +936,8 @@ endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-if (MICROSOFT)		
-	if (OPENSSL_USE_STATIC_LIBS)			
+if (MICROSOFT)
+	if (OPENSSL_USE_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
@@ -983,9 +981,13 @@ endif()
 
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
-if (HAVE_GCCATOMIC_INTRINSICS
-	AND HAVE_LIBATOMIC)
-	target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+	if (srt_libspec_shared)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.

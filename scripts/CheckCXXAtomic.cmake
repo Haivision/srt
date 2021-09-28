@@ -15,12 +15,11 @@
 
 include(CheckCXXSourceCompiles)
 include(CheckLibraryExists)
-include(UnSetVariableFull)
 
 function(CheckCXXAtomic)
 
-   UnSetVariableFull(HAVE_CXX_ATOMIC)
-   UnSetVariableFull(HAVE_CXX_ATOMIC_STATIC)
+   unset(HAVE_CXX_ATOMIC CACHE)
+   unset(HAVE_CXX_ATOMIC_STATIC CACHE)
 
    unset(CMAKE_REQUIRED_FLAGS)
    unset(CMAKE_REQUIRED_LIBRARIES)
@@ -45,7 +44,12 @@ function(CheckCXXAtomic)
       HAVE_CXX_ATOMIC)
 
    if(HAVE_CXX_ATOMIC)
-      set(CMAKE_REQUIRED_LINK_OPTIONS "-static")
+      # CMAKE_REQUIRED_LINK_OPTIONS was introduced in CMake 3.14.
+      if(CMAKE_VERSION VERSION_LESS "3.14")
+         set(CMAKE_REQUIRED_LINK_OPTIONS "-static")
+      else()
+         set(CMAKE_REQUIRED_FLAGS "-std=c++11 -static")
+      endif()
       check_cxx_source_compiles(
          "${CheckCXXAtomic_CODE}"
          HAVE_CXX_ATOMIC_STATIC)
