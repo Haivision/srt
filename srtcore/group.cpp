@@ -2725,48 +2725,24 @@ const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
     return unknown;
 }
 
-void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady_clock::time_point newtimebase)
+void CUDTGroup::synchronizeDrift(const srt::CUDT* srcMember)
 {
+    SRT_ASSERT(srcMember != NULL);
     ScopedLock glock(m_GroupLock);
-
-    bool wrap_period = false;
-
-    bool anycheck = false;
-
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-    {
-        // Skip non-connected; these will be synchronized when ready
-        if (gi->laststatus != SRTS_CONNECTED)
-            continue;
-
-        // Skip the entity that has reported this
-        if (cu == &gi->ps->core())
-            continue;
-
-        steady_clock::time_point this_timebase;
-        steady_clock::duration   this_udrift(0);
-        bool wrp = false;
-        gi->ps->core().m_pRcvBuffer->getInternalTimeBase((this_timebase), (wrp), (this_udrift));
-
-        udrift                                   = std::min(udrift, this_udrift);
-        steady_clock::time_point new_newtimebase = std::min(newtimebase, this_timebase);
-        if (new_newtimebase != newtimebase)
-        {
-            wrap_period = wrp;
-        }
-        newtimebase = new_newtimebase;
-        anycheck    = true;
-    }
-
-    if (!anycheck)
+    if (m_Group.size() <= 1)
     {
         HLOGC(grlog.Debug, log << "GROUP: synch uDRIFT NOT DONE, no other links");
         return;
     }
 
+    steady_clock::time_point timebase;
+    steady_clock::duration   udrift(0);
+    bool wrap_period = false;
+    srcMember->m_pRcvBuffer->getInternalTimeBase((timebase), (wrap_period), (udrift));
+
     HLOGC(grlog.Debug,
-          log << "GROUP: synch uDRIFT=" << FormatDuration(udrift) << " TB=" << FormatTime(newtimebase) << "("
-              << (wrap_period ? "" : "NO ") << "wrap period)");
+        log << "GROUP: synch uDRIFT=" << FormatDuration(udrift) << " TB=" << FormatTime(newtimebase) << "("
+        << (wrap_period ? "" : "NO ") << "wrap period)");
 
     // Now that we have the minimum timebase and drift calculated, apply this to every link,
     // INCLUDING THE REPORTER.
@@ -2776,8 +2752,11 @@ void CUDTGroup::synchronizeDrift(CUDT* cu, steady_clock::duration udrift, steady
         // Skip non-connected; these will be synchronized when ready
         if (gi->laststatus != SRTS_CONNECTED)
             continue;
+        CUDT& member = gi->ps->core();
+        if (srcMember == &member)
+            continue;
 
-        gi->ps->core().m_pRcvBuffer->applyGroupDrift(newtimebase, wrap_period, udrift);
+        member.m_pRcvBuffer->applyGroupDrift(timebase, wrap_period, udrift);
     }
 }
 

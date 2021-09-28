@@ -1549,8 +1549,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         HLOGC(brlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " IS NOT RECEIVED.");
         return 0;
     }
-    IF_HEAVY_LOGGING(int nskipped = 0);
 
+    IF_HEAVY_LOGGING(int nskipped = 0);
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
         /*
@@ -1559,8 +1559,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         if (m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD)
         {
             HLOGC(brlog.Debug,
-                  log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
-                      << nskipped << " empty cells skipped)");
+                log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
+                << nskipped << " empty cells skipped)");
             return &m_pUnit[i]->m_Packet;
         }
         IF_HEAVY_LOGGING(++nskipped);
@@ -1881,12 +1881,9 @@ void CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const
     m_tsbpd.setTsbPdMode(timebase, no_wrap_check, delay);
 }
 
-bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t                  timestamp_us,
-                                        int                       rtt,
-                                        steady_clock::duration&   w_udrift,
-                                        steady_clock::time_point& w_newtimebase)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, int rtt)
 {
-    return m_tsbpd.addDriftSample(timestamp_us, rtt, w_udrift, w_newtimebase);
+    return m_tsbpd.addDriftSample(timestamp_us, rtt);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
