@@ -8324,17 +8324,14 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
-        steady_clock::duration udrift(0);
-        steady_clock::time_point newtimebase;
-        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(),
-            rtt, (udrift), (newtimebase));
+        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), rtt);
 #if ENABLE_EXPERIMENTAL_BONDING
         if (drift_updated && m_parent->m_GroupOf)
         {
             ScopedLock glock(s_UDTUnited.m_GlobControlLock);
             if (m_parent->m_GroupOf)
             {
-                m_parent->m_GroupOf->synchronizeDrift(this, udrift, newtimebase);
+                m_parent->m_GroupOf->synchronizeDrift(this);
             }
         }
 #endif

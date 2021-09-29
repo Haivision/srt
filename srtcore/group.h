@@ -798,7 +798,10 @@ public:
     // Live state synchronization
     bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
-    void synchronizeDrift(srt::CUDT* cu, duration udrift, time_point newtimebase);
+
+    /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
+    /// @param srcMember a reference for synchronization.
+    void synchronizeDrift(const srt::CUDT* srcMember);
 
     void updateLatestRcv(srt::CUDTSocket*);
 
