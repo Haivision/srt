@@ -48,6 +48,46 @@ TEST(CSeqNo, seqlen)
 {
     EXPECT_EQ(CSeqNo::seqlen(125, 125), 1);
     EXPECT_EQ(CSeqNo::seqlen(125, 126), 2);
+
+    EXPECT_EQ(CSeqNo::seqlen(2147483647, 0), 2);
+    EXPECT_EQ(CSeqNo::seqlen(0, 2147483647), 2147483648);
+
+    // seq2 %> seq1, but the distance exceeds m_iSeqNoTH = 0x3FFFFFFF.
+    //EXPECT_TRUE(CSeqNo::seqlen(0, 0x3FFFFFFF + 10) > 0x3FFFFFFF);
+    //EXPECT_TRUE(CSeqNo::seqlen(0x7FFFFFFF, 0x3FFFFFFF + 10) > 0x3FFFFFFF);
+
+    // seq2 <% seq1, but the distance exceeds m_iSeqNoTH = 0x3FFFFFFF.
+    //EXPECT_EQ(CSeqNo::seqlen(0x3FFFFFFF + 10, 0), 2);
+    //EXPECT_EQ(CSeqNo::seqlen(0x7FFFFFFF, 0x3FFFFFFF + 10), 2);
+}
+
+enum class pkt_validity
+{
+    descrepancy = -1,
+    ok = 0,
+    behind = 1,
+    ahead = 2
+};
+
+
+pkt_validity ValidateSeqno(int base_seqno, int pkt_seqno)
+{
+    return 0;
+}
+
+TEST(CSeqNo, Descrepancy)
+{
+    EXPECT_EQ(ValidateSeqno(       125,  124), pkt_validity::behind);
+    EXPECT_EQ(ValidateSeqno(       125,  125), pkt_validity::behind);
+    EXPECT_EQ(ValidateSeqno(       125,  126), pkt_validity::ok);
+    EXPECT_EQ(ValidateSeqno(0x7FFFFFFF,    0), pkt_validity::ok);
+    EXPECT_EQ(ValidateSeqno(0x7FFFFFFF,    1), pkt_validity::ahead);
+    EXPECT_EQ(ValidateSeqno(         0, 0x7FFFFFFF), pkt_validity::behind);
+
+    // pkt_seqno is ahead and descrepancy
+    EXPECT_EQ(ValidateSeqno(0, 0x3FFFFFFF + 10), pkt_validity::descrepancy);
+    EXPECT_EQ(ValidateSeqno(0x3FFFFFFF - 10, 0x7FFFFFFF), pkt_validity::descrepancy);
+    
 }
 
 TEST(CUDT, getFlightSpan)

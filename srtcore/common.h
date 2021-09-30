@@ -634,12 +634,16 @@ public:
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test
-   /// if this distance is larger). Prior to calling this function the
-   /// caller must be certain that @a seq2 is a sequence coming from a
-   /// later time than @a seq1, and still, of course, this distance didn't
-   /// exceed m_iMaxSeqNo.
-   inline static int seqlen(int32_t seq1, int32_t seq2)
-   {return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);}
+   /// if this distance is larger).
+   /// Prior to calling this function the caller must be certain that
+   /// @a seq2 is a sequence coming from a later time than @a seq1,
+   /// and that the distance does not exceed m_iMaxSeqNo.
+   inline static uint32_t seqlen(int32_t seq1, int32_t seq2)
+   {
+       SRT_ASSERT(seq1 >= 0 && seq1 <= m_iMaxSeqNo);
+       SRT_ASSERT(seq2 >= 0 && seq2 <= m_iMaxSeqNo);
+       return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (m_iMaxSeqNo - seq1 + seq2 + 2);
+   }
 
    /// This behaves like seq2 - seq1, with the precondition that the true
    /// distance between two sequence numbers never exceeds m_iSeqNoTH.
