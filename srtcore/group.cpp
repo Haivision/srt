@@ -2149,6 +2149,18 @@ void CUDTGroup::updateWriteState()
 }
 
 /// Validate iPktSeqno is in range [iBaseSeqno - m_iSeqNoTH/2; iBaseSeqno + m_iSeqNoTH].
+///
+/// EXPECT_EQ(isValidSeqno(125, 124), true); // behind
+/// EXPECT_EQ(isValidSeqno(125, 125), true); // behind
+/// EXPECT_EQ(isValidSeqno(125, 126), true); // the next in order
+/// EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 0), true); // the next in order
+/// EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 1), true); // ahead by 1 seqno
+/// EXPECT_EQ(isValidSeqno(0, 0x7FFFFFFF), true); // behind by 1 seqno
+///
+/// EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF + 10), false); // too far ahead
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF - 10, 0x7FFFFFFF), false); // too far (ahead?)
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 10, 0x7FFFFFFF), false); // too far (behind?)
+///
 /// @return false if @a iPktSeqno is not inside the valid range; otherwise true.
 static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
 {
