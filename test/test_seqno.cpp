@@ -69,10 +69,47 @@ enum class pkt_validity
     ahead = 2
 };
 
+const char* to_cstr(pkt_validity val)
+{
+    switch (val)
+    {
+    case pkt_validity::descrepancy:
+        return "DESCREPANCY";
+    case pkt_validity::ok:
+        return "OK";
+    case pkt_validity::behind:
+        return "BEHIND";
+    case pkt_validity::ahead:
+        return "AHEAD";
+    default:
+        break;
+    }
+
+    return "INVAL";
+}
+
 
 pkt_validity ValidateSeqno(int base_seqno, int pkt_seqno)
 {
-    return 0;
+    const uint32_t seqlen_ahead  = CSeqNo::seqlen(base_seqno, pkt_seqno);
+    std::cout << "SeqLen ahead: " << seqlen_ahead << std::endl;
+    if (seqlen_ahead == 2)
+        return pkt_validity::ok;
+
+    if (seqlen_ahead <= 1)
+        return pkt_validity::behind;
+
+    if (seqlen_ahead < CSeqNo::m_iSeqNoTH) {
+        return pkt_validity::ahead;
+    }
+
+    const uint32_t seqlen_behind = CSeqNo::seqlen(pkt_seqno, base_seqno);
+    std::cout << "SeqLen behind: " << seqlen_behind << std::endl;
+
+    if (seqlen_behind < CSeqNo::m_iSeqNoTH / 2)
+        return pkt_validity::behind;
+
+    return pkt_validity::descrepancy;
 }
 
 TEST(CSeqNo, Descrepancy)

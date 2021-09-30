@@ -2148,6 +2148,21 @@ void CUDTGroup::updateWriteState()
     m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
 }
 
+/// Validate iPktSeqno is in range [iBaseSeqno - m_iSeqNoTH/2; iBaseSeqno + m_iSeqNoTH].
+/// @return false if @a iPktSeqno is not inside the valid range; otherwise true.
+static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
+{
+    const uint32_t uLenAhead = CSeqNo::seqlen(iBaseSeqno, iPktSeqno);
+    if (uLenAhead < CSeqNo::m_iSeqNoTH)
+        return true;
+
+    const uint32_t uLenBehind = CSeqNo::seqlen(iPktSeqno, iBaseSeqno);
+    if (uLenBehind < CSeqNo::m_iSeqNoTH / 2)
+        return true;
+
+    return false;
+}
+
 // The "app reader" version of the reading function.
 // This reads the packets from every socket treating them as independent
 // and prepared to work with the application. Then packets are sorted out
@@ -2407,7 +2422,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 // embrace everything below.
 
                 // We need to first qualify the sequence, just for a case
-                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && abs(m_RcvBaseSeqNo - mctrl.pktseq) > CSeqNo::m_iSeqNoTH)
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && !isValidSeqno(m_RcvBaseSeqNo, mctrl.pktseq))
                 {
                     // This error should be returned if the link turns out
                     // to be the only one, or set to the group data.
