@@ -2148,28 +2148,38 @@ void CUDTGroup::updateWriteState()
     m_pGlobal->m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
 }
 
-/// Validate iPktSeqno is in range [iBaseSeqno - m_iSeqNoTH/2; iBaseSeqno + m_iSeqNoTH].
+/// Validate iPktSeqno is in range
+/// (iBaseSeqno - m_iSeqNoTH/2; iBaseSeqno + m_iSeqNoTH).
 ///
 /// EXPECT_EQ(isValidSeqno(125, 124), true); // behind
 /// EXPECT_EQ(isValidSeqno(125, 125), true); // behind
 /// EXPECT_EQ(isValidSeqno(125, 126), true); // the next in order
-/// EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 0), true); // the next in order
-/// EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 1), true); // ahead by 1 seqno
-/// EXPECT_EQ(isValidSeqno(0, 0x7FFFFFFF), true); // behind by 1 seqno
 ///
-/// EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF + 10), false); // too far ahead
-/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF - 10, 0x7FFFFFFF), false); // too far (ahead?)
-/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 10, 0x7FFFFFFF), false); // too far (behind?)
+/// EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF - 2), true);  // ahead, but ok.
+/// EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF - 1), false); // too far ahead.
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 2, 0x7FFFFFFF), false); // too far ahead.
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 3, 0x7FFFFFFF), true); // ahead, but ok.
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF + 2), false); // too far (behind)
+/// EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF + 3), true); // behind, but ok
+/// EXPECT_EQ(isValidSeqno(0x70000000, 0x0FFFFFFF), true); // ahead, but ok
+/// EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000 - 2), false); // too far ahead.
+/// EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000 - 3), true); // ahead, but ok
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0), true);
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x7FFFFFFF), true);
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000000), false);
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000001), false);
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000002), true);  // behind by 536870910
+/// EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000003), true);
 ///
 /// @return false if @a iPktSeqno is not inside the valid range; otherwise true.
 static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
 {
-    const uint32_t uLenAhead = CSeqNo::seqlen(iBaseSeqno, iPktSeqno);
-    if (uLenAhead < CSeqNo::m_iSeqNoTH)
+    const int32_t iLenAhead = CSeqNo::seqlen(iBaseSeqno, iPktSeqno);
+    if (iLenAhead >= 0 && iLenAhead < CSeqNo::m_iSeqNoTH)
         return true;
 
-    const uint32_t uLenBehind = CSeqNo::seqlen(iPktSeqno, iBaseSeqno);
-    if (uLenBehind < CSeqNo::m_iSeqNoTH / 2)
+    const int32_t iLenBehind = CSeqNo::seqlen(iPktSeqno, iBaseSeqno);
+    if (iLenBehind >= 0 && iLenBehind < CSeqNo::m_iSeqNoTH / 2)
         return true;
 
     return false;

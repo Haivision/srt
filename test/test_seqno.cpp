@@ -123,8 +123,78 @@ TEST(CSeqNo, Descrepancy)
 
     // pkt_seqno is ahead and descrepancy
     EXPECT_EQ(ValidateSeqno(0, 0x3FFFFFFF + 10), pkt_validity::descrepancy);
-    EXPECT_EQ(ValidateSeqno(0x3FFFFFFF - 10, 0x7FFFFFFF), pkt_validity::descrepancy);
-    
+    EXPECT_EQ(ValidateSeqno(0x3FFFFFFF - 10, 0x7FFFFFFF), pkt_validity::descrepancy);   
+}
+
+
+///
+/// @return false if @a iPktSeqno is not inside the valid range; otherwise true.
+static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
+{
+    using std::hex;
+    using std::setw;
+    using std::setfill;
+
+    std::ios init_fmt(NULL);
+    init_fmt.copyfmt(std::cout);
+    std::cout << "iBaseSeqno = 0x" << hex << setw(8) << setfill('0') << iBaseSeqno
+              << " iPktSeqno = 0x" << /*hex << setw(8) << setfill('0') <<*/ iPktSeqno << std::endl;
+    std::cout.copyfmt(init_fmt);
+    const int32_t iLenAhead = CSeqNo::seqlen(iBaseSeqno, iPktSeqno);
+    std::cout << "SeqLen ahead: " << iLenAhead << std::endl;
+    if (iLenAhead >= 0 && iLenAhead < CSeqNo::m_iSeqNoTH)
+        return true;
+
+    const int32_t iLenBehind = CSeqNo::seqlen(iPktSeqno, iBaseSeqno);
+    std::cout << "SeqLen behind: " << iLenBehind << std::endl;
+    if (iLenBehind >= 0 && iLenBehind < CSeqNo::m_iSeqNoTH / 2)
+        return true;
+
+    return false;
+}
+
+// m_iSeqNoTH = 0x3FFFFFFF  = 1073741823
+// 0x3FFFFFFF / 2 = 536870911
+// The valid offset range is ( -536870911; 1073741823 )
+// or ( -(m_iSeqNoTH / 2) ; + m_iSeqNoTH)
+TEST(CSeqNo, isValid)
+{
+    EXPECT_EQ(isValidSeqno(125, 124), true); // behind
+    EXPECT_EQ(isValidSeqno(125, 125), true); // behind (the same packet, not the next one)
+    EXPECT_EQ(isValidSeqno(125, 126), true); // the next in order
+    EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 0), true); // the next in order
+    EXPECT_EQ(isValidSeqno(0x7FFFFFFF, 1), true); // ahead by 1 seqno
+    EXPECT_EQ(isValidSeqno(0, 0x7FFFFFFF), true); // behind by 1 seqno
+
+    EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF - 2), true);  // ahead, but ok
+    EXPECT_EQ(isValidSeqno(0, 0x3FFFFFFF - 1), false); // too far ahead
+
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 0, 0x7FFFFFFF), false); // too far (ahead?)
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 1, 0x7FFFFFFF), false); // too far (ahead?)
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 2, 0x7FFFFFFF), false); // too far ahead.
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF + 3, 0x7FFFFFFF), true); // ahead, but ok.
+
+    // 0x3FFFFFFF / 2 = 0x1FFFFFFF
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF), false); // too far (behind)
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF + 1), false); // too far (behind)
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF + 2), false); // too far (behind)
+    EXPECT_EQ(isValidSeqno(0x3FFFFFFF, 0x1FFFFFFF + 3), true); // behind by 536870910, but ok
+
+    // 0x3FFFFFFF / 4 = 0x0FFFFFFF
+    // 0x7FFFFFFF - 0x0FFFFFFF = 0x70000000
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x7FFFFFFF), true);
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x0FFFFFFF), true);
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000), false);
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000 - 1), false);
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000 - 2), false);
+    EXPECT_EQ(isValidSeqno(0x70000000, 0x30000000 - 3), true); // ahead by 1073741822
+
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0), true);
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x7FFFFFFF), true);
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000000), false);
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000001), false);
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000002), true);  // behind by 536870910
+    EXPECT_EQ(isValidSeqno(0x0FFFFFFF, 0x70000003), true);
 }
 
 TEST(CUDT, getFlightSpan)
