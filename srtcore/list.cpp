@@ -117,9 +117,8 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
         return 0;
     }
 
-    // TODO: inserted_range now can't be negative
     const int inserted_range = CSeqNo::seqlen(seqno1, seqno2);
-    if (inserted_range == 0 || inserted_range >= m_iSize) {
+    if (inserted_range <= 0 || inserted_range >= m_iSize) {
         LOGC(qslog.Error, log << "IPE: Tried to insert too big range of seqno: " << inserted_range <<  ". Ignoring. "
                 << "seqno " << seqno1 << ":" << seqno2);
         return 0;
