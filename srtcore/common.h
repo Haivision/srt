@@ -638,7 +638,7 @@ public:
    /// Prior to calling this function the caller must be certain that
    /// @a seq2 is a sequence coming from a later time than @a seq1,
    /// and that the distance does not exceed m_iMaxSeqNo.
-   inline static int32_t seqlen(int32_t seq1, int32_t seq2)
+   inline static int seqlen(int32_t seq1, int32_t seq2)
    {
        SRT_ASSERT(seq1 >= 0 && seq1 <= m_iMaxSeqNo);
        SRT_ASSERT(seq2 >= 0 && seq2 <= m_iMaxSeqNo);
