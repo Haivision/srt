@@ -409,8 +409,8 @@ public: // internal API
         return genRandomInt(0, CSeqNo::m_iMaxSeqNo);
     }
 
-    // For SRT_tsbpdLoop
-    static CUDTUnited* uglobal() { return &s_UDTUnited; } // needed by tsbpdLoop
+    static CUDTUnited& uglobal();                      // UDT global management base
+
     std::set<int>& pollset() { return m_sPollID; }
 
     CSrtConfig m_config;
@@ -697,7 +697,6 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    static CUDTUnited s_UDTUnited;                      // UDT global management base
 
 private: // Identification
     CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
