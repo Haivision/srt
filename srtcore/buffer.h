@@ -71,10 +71,12 @@ modified by
 // a +% b : shift a by b
 // a == b : equality is same as for just numbers
 
+namespace srt {
+
 /// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
 class AvgBufSize
 {
-    typedef srt::sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::time_point time_point;
 
 public:
     AvgBufSize()
@@ -102,8 +104,8 @@ private:
 
 class CSndBuffer
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
 public:
     // XXX There's currently no way to access the socket ID set for
@@ -140,21 +142,19 @@ public:
     int addBufferFromFile(std::fstream& ifs, int len);
 
     /// Find data position to pack a DATA packet from the furthest reading point.
-    /// @param [out] data the pointer to the data position.
-    /// @param [out] msgno message number of the packet.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [in] kflags Odd|Even crypto key flag
+    /// @param [out] w_packet data packet buffer to fill.
+    /// @param [out] w_origintime origin time stamp of the message.
+    /// @param [in] kflags Odd|Even crypto key flag.
     /// @return Actual length of data read.
-    int readData(srt::CPacket& w_packet, time_point& w_origintime, int kflgs);
+    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs);
 
     /// Find data position to pack a DATA packet for a retransmission.
-    /// @param [out] data the pointer to the data position.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
-    /// @param [out] msgno message number of the packet.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [out] msglen length of the message
+    /// @param [out] w_packet data packet buffer to fill.
+    /// @param [out] w_origintime origin time stamp of the message
+    /// @param [out] w_msglen length of the message
     /// @return Actual length of data read (return 0 if offset too large, -1 if TTL exceeded).
-    int readData(const int offset, srt::CPacket& w_packet, time_point& w_origintime, int& w_msglen);
+    int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -207,7 +207,7 @@ private:                                                       // Constants
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
-    srt::sync::Mutex m_BufLock; // used to synchronize buffer operation
+    sync::Mutex m_BufLock; // used to synchronize buffer operation
 
     struct Block
     {
@@ -274,8 +274,8 @@ private:
 
 class CRcvBuffer
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
 public:
     // XXX There's currently no way to access the socket ID set for
@@ -288,7 +288,7 @@ public:
     /// Construct the buffer.
     /// @param [in] queue  CUnitQueue that actually holds the units (packets)
     /// @param [in] bufsize_pkts in units (packets)
-    CRcvBuffer(srt::CUnitQueue* queue, int bufsize_pkts = DEFAULT_SIZE);
+    CRcvBuffer(CUnitQueue* queue, int bufsize_pkts = DEFAULT_SIZE);
     ~CRcvBuffer();
 
 public:
@@ -296,7 +296,7 @@ public:
     /// @param [in] unit pointer to a data unit containing new packet
     /// @param [in] offset offset from last ACK point.
     /// @return 0 is success, -1 if data is repeated.
-    int addData(srt::CUnit* unit, int offset);
+    int addData(CUnit* unit, int offset);
 
     /// Read data into a user buffer.
     /// @param [in] data pointer to user buffer.
@@ -402,7 +402,7 @@ public:
 
     bool     isRcvDataReady();
     bool     isRcvDataAvailable() { return m_iLastAckPos != m_iStartPos; }
-    srt::CPacket* getRcvReadyPacket(int32_t seqdistance);
+    CPacket* getRcvReadyPacket(int32_t seqdistance);
 
     /// Set TimeStamp-Based Packet Delivery Rx Mode
     /// @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -411,12 +411,8 @@ public:
 
     /// Add packet timestamp for drift caclculation and compensation
     /// @param [in] timestamp packet time stamp
-    /// @param [out] w_udrift current drift value
-    /// @param [out] w_newtimebase current TSBPD base time
-    bool addRcvTsbPdDriftSample(uint32_t          timestamp,
-                                int               rtt,
-                                duration&         w_udrift,
-                                time_point&       w_newtimebase);
+    /// @param [in] rtt RTT sample
+    bool addRcvTsbPdDriftSample(uint32_t timestamp, int rtt);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
     void printDriftHistogram(int64_t iDrift);
@@ -468,7 +464,7 @@ private:
     /// data.
     size_t freeUnitAt(size_t p)
     {
-        srt::CUnit* u  = m_pUnit[p];
+        CUnit* u       = m_pUnit[p];
         m_pUnit[p]     = NULL;
         size_t rmbytes = u->m_Packet.getLength();
         m_pUnitQueue->makeUnitFree(u);
@@ -535,9 +531,9 @@ private:
     }
 
 private:
-    srt::CUnit** m_pUnit;      // Array of pointed units collected in the buffer
+    CUnit**     m_pUnit;      // Array of pointed units collected in the buffer
     const int   m_iSize;      // Size of the internal array of CUnit* items
-    srt::CUnitQueue* m_pUnitQueue; // the shared unit queue
+    CUnitQueue* m_pUnitQueue; // the shared unit queue
 
     int m_iStartPos;   // HEAD: first packet available for reading
     int m_iLastAckPos; // the last ACKed position (exclusive), follows the last readable
@@ -550,20 +546,22 @@ private:
                   // up to which data are already retrieved;
                   // in message reading mode it's unused and always 0)
 
-    srt::sync::Mutex m_BytesCountLock;   // used to protect counters operations
-    int              m_iBytesCount;      // Number of payload bytes in the buffer
-    int              m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
-    int              m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
-    unsigned         m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
+    sync::Mutex m_BytesCountLock;   // used to protect counters operations
+    int         m_iBytesCount;      // Number of payload bytes in the buffer
+    int         m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
+    int         m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
+    unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 
-    srt::CTsbpdTime  m_tsbpd;
+    CTsbpdTime  m_tsbpd;
 
-    AvgBufSize       m_mavg;
+    AvgBufSize  m_mavg;
 
 private:
     CRcvBuffer();
     CRcvBuffer(const CRcvBuffer&);
     CRcvBuffer& operator=(const CRcvBuffer&);
 };
+
+} // namespace srt
 
 #endif

@@ -333,4 +333,7 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);
 
+const char* SRTClockTypeStr();
+void PrintLibVersion();
+
 #endif // INC_SRT_APPCOMMON_H

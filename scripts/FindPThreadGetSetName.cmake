@@ -27,14 +27,13 @@
 #     add_definitions(-DHAVE_PTHREAD_SETNAME_NP=1)
 
 include(CheckSymbolExists)
-include(UnSetVariableFull)
 
 function(FindPThreadGetSetName)
 
-   UnSetVariableFull(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-   UnSetVariableFull(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-   UnSetVariableFull(HAVE_PTHREAD_GETNAME_NP)
-   UnSetVariableFull(HAVE_PTHREAD_SETNAME_NP)
+   unset(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H CACHE)
+   unset(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H CACHE)
+   unset(HAVE_PTHREAD_GETNAME_NP CACHE)
+   unset(HAVE_PTHREAD_SETNAME_NP CACHE)
 
    set(CMAKE_REQUIRED_DEFINITIONS
       -D_GNU_SOURCE -D_DARWIN_C_SOURCE -D_POSIX_SOURCE=1)
@@ -55,11 +54,11 @@ function(FindPThreadGetSetName)
    message(STATUS "Checking for pthread_(g/s)etname_np in 'pthread.h':")
    check_symbol_exists(pthread_getname_np "pthread.h" HAVE_PTHREAD_GETNAME_NP)
    if (HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H)
-      set(HAVE_PTHREAD_GETNAME_NP TRUE PARENT_SCOPE)
+      set(HAVE_PTHREAD_GETNAME_NP 1 CACHE INTERNAL "" FORCE)
    endif()
    check_symbol_exists(pthread_setname_np "pthread.h" HAVE_PTHREAD_SETNAME_NP)
    if (HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
-      set(HAVE_PTHREAD_SETNAME_NP TRUE PARENT_SCOPE)
+      set(HAVE_PTHREAD_SETNAME_NP 1 CACHE INTERNAL "" FORCE)
    endif()
    if (HAVE_PTHREAD_GETNAME_NP)
       add_definitions(-DHAVE_PTHREAD_GETNAME_NP=1)

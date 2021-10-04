@@ -395,7 +395,7 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
-    class srt::CUDTUnited* m_pGlobal;
+    srt::CUDTUnited&  m_Global;
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
@@ -655,7 +655,7 @@ private:
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
     /// The function polls alive member sockets and retrieves a list of read-ready.
-    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
     ///
     /// @returns list of read-ready sockets
@@ -798,7 +798,10 @@ public:
     // Live state synchronization
     bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
-    void synchronizeDrift(srt::CUDT* cu, duration udrift, time_point newtimebase);
+
+    /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
+    /// @param srcMember a reference for synchronization.
+    void synchronizeDrift(const srt::CUDT* srcMember);
 
     void updateLatestRcv(srt::CUDTSocket*);
 

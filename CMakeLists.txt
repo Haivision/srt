@@ -416,10 +416,10 @@ endif()
 # Check for GCC Atomic Intrinsics and C++11 Atomics.
 # Sets:
 #  HAVE_LIBATOMIC
+#  HAVE_LIBATOMIC_COMPILES
+#  HAVE_LIBATOMIC_COMPILES_STATIC
 #  HAVE_GCCATOMIC_INTRINSICS
 #  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
-#  HAVE_GCCATOMIC_INTRINSICS_STATIC
-#  HAVE_GCCATOMIC_INTRINSICS_STATIC_REQUIRES_LIBATOMIC
 include(CheckGCCAtomicIntrinsics)
 CheckGCCAtomicIntrinsics()
 #  HAVE_CXX_ATOMIC
@@ -887,7 +887,7 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
 		else()
 			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
@@ -925,7 +925,7 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
 		endif()
 	elseif (MINGW)
@@ -938,8 +938,8 @@ endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-if (MICROSOFT)		
-	if (OPENSSL_USE_STATIC_LIBS)			
+if (MICROSOFT)
+	if (OPENSSL_USE_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
@@ -975,7 +975,7 @@ endif()
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
 	endif()
@@ -983,9 +983,19 @@ endif()
 
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
-if (HAVE_GCCATOMIC_INTRINSICS
-	AND HAVE_LIBATOMIC)
-	target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+	if (srt_libspec_shared)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
+elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
+	# This is a workaround for ANDROID NDK<17 builds, which need to link
+	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
 endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
@@ -1062,10 +1072,14 @@ else()
 	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
 endif()
 
-macro(srt_add_program name)
+macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+endmacro()
+
+macro(srt_add_program name)
+	srt_add_program_dont_install(${name} ${ARGN})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
@@ -1276,7 +1290,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test-srt ${SOURCES_unittests})
+	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
