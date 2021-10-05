@@ -692,6 +692,9 @@ private:
         return m_stats.tsStartTime;
     }
 
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    bool isRcvBufferReady() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
@@ -863,17 +866,17 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
-    CRcvBuffer* m_pRcvBuffer;                    // Receiver buffer
-    CRcvLossList* m_pRcvLossList;                // Receiver loss list
-    std::deque<CRcvFreshLoss> m_FreshLoss;       // Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
-    int m_iReorderTolerance;                     // Current value of dynamic reorder tolerance
-    int m_iConsecEarlyDelivery;                  // Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
-    int m_iConsecOrderedDelivery;                // Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
+    CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
+    CRcvLossList* m_pRcvLossList;                //< Receiver loss list
+    std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+    int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
+    int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
+    int m_iConsecOrderedDelivery;                //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
 
     CACKWindow<ACK_WND_SIZE> m_ACKWindow;        // ACK history window
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
-    int32_t m_iRcvLastAck;                       // Last sent ACK
+    int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
@@ -921,7 +924,7 @@ private: // synchronization: mutexes and conditions
     sync::Condition m_SendBlockCond;             // used to block "send" call
     sync::Mutex m_SendBlockLock;                 // lock associated to m_SendBlockCond
 
-    sync::Mutex m_RcvBufferLock;                 // Protects the state of the m_pRcvBuffer
+    mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
     sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
 
@@ -1032,6 +1035,15 @@ private: // Generation and processing of packets
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
     int32_t ackDataUpTo(int32_t seq);
     void handleKeepalive(const char* data, size_t lenghth);
+
+    /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    size_t getAvailRcvBufferSizeLock() const;
+
+    /// Retrieves the available size of the receiver buffer.
+    /// Expects that m_RcvBufferLock is locked.
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    size_t getAvailRcvBufferSizeNoLock() const;
 
 private: // Trace
     struct CoreStats
