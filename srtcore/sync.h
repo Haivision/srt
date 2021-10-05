@@ -357,27 +357,25 @@ private:
 class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
+    int m_iLocked;
+    Mutex& m_Mutex;
 
 public:
-    SRT_ATTR_ACQUIRE(m_Mutex)
+    SRT_ATTR_ACQUIRE(m)
     UniqueLock(Mutex &m);
 
-    SRT_ATTR_RELEASE(m_Mutex)
+    SRT_ATTR_RELEASE()
     ~UniqueLock();
 
 public:
-    SRT_ATTR_ACQUIRE(m_Mutex)
+    SRT_ATTR_ACQUIRE()
     void lock();
 
-    SRT_ATTR_RELEASE(m_Mutex)
+    SRT_ATTR_RELEASE()
     void unlock();
 
     SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
-
-private:
-    int m_iLocked;
-    Mutex& m_Mutex;
 };
 #endif // ENABLE_STDCXX_SYNC
 
