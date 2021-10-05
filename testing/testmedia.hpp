@@ -18,6 +18,7 @@
 #include <atomic>
 
 #include "apputil.hpp"
+#include "statswriter.hpp"
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
 #include <netinet_any.h>
