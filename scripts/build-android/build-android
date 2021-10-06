@@ -3,16 +3,16 @@
 echo_help()
 {
   echo "Usage: $0 [options...]"
-  echo "    -n    Specify NDK root path for the build."
-  echo "    -a    Select target API level."
-  echo "    -t    Select target architectures."
-  echo "          Android supports the following architectures: armeabi-v7a arm64-v8a x86 x86_64."
+  echo "    -n    NDK root path for the build"
+  echo "    -a    Target API level"
+  echo "    -t    Space-separated list of target architectures"
+  echo "          Android supports the following architectures: armeabi-v7a arm64-v8a x86 x86_64"
   echo "    -e    Encryption library to be used. Possible options: openssl (default) mbedtls"
-  echo "    -o    Select OpenSSL (1.1.1 series) version. E.g. 1.1.1h"
-  echo "    -m    Select Mbed TLS version. E.g. v2.26.0"
-  echo "    -s    Select SRT version. E.g. v1.4.3"
+  echo "    -o    OpenSSL version. E.g. 1.1.1l"
+  echo "    -m    Mbed TLS version. E.g. v2.26.0"
+  echo "    -s    SRT version. E.g. v1.4.4"
   echo
-  echo "Example: ./build-android -n /home/username/Android/Sdk/ndk/21.4.7075529 -a 28 -t \"armeabi-v7a arm64-v8a x86 x86_64\" -o 1.1.1h -s v1.4.3"
+  echo "Example: ./build-android -n /home/username/Android/Sdk/ndk/23.0.7599858 -a 28 -t \"arm64-v8a x86_64\""
   echo
 }
 
@@ -20,7 +20,7 @@ echo_help()
 NDK_ROOT=""
 API_LEVEL=28
 BUILD_TARGETS="armeabi-v7a arm64-v8a x86 x86_64"
-OPENSSL_VERSION=1.1.1h
+OPENSSL_VERSION=1.1.1l
 SRT_VERSION=""
 ENC_LIB=openssl
 MBEDTLS_VERSION=v2.26.0
