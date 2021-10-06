@@ -18,8 +18,16 @@ jobs:
         java-version: 1.8
     - name: Setup Android SDK Tools
       uses: android-actions/setup-android@v2.0.2
+    - name: Setup Android NDK R23
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      with:
+        ndk-version: r23
+        add-to-path: false
     - uses: actions/checkout@v2
     - name: build
       run: |
         cd ./scripts/build-android/
-        source ./build-android -n ${{ env.ANDROID_SDK_ROOT }}
+        source ./build-android -n ${{ ANDROID_NDK_HOME }}
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
