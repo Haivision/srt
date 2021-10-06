@@ -1,4 +1,4 @@
-name: cxx11
+name: Android
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: android
+    name: NDK-R23
     runs-on: ubuntu-18.04
 
     steps:
@@ -23,9 +23,10 @@ jobs:
       id: setup-ndk
       with:
         ndk-version: r23
-        add-to-path: true
+        add-to-path: false
     - uses: actions/checkout@v2
     - name: build
       run: |
         cd ./scripts/build-android/
-        source ./build-android
+        echo ${{ steps.setup-ndk.outputs.ndk-path }}
+        source ./build-android -n ${{ steps.setup-ndk.outputs.ndk-path }}
