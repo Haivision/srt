@@ -54,13 +54,16 @@ fi
 
 SCRIPT_DIR=$(pwd)
 echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "uname: $unamestr"
 HOST_TAG='unknown'
 unamestr=$(uname -s)
 if [ "$unamestr" = 'Linux' ]; then
  #SCRIPT_DIR=$(readlink -f $0 | xargs dirname)
+ echo "New SCRIPT_DIR: $(readlink -f $0 | xargs dirname)"
  HOST_TAG='linux-x86_64'
 elif [ "$unamestr" = 'Darwin' ]; then
  #SCRIPT_DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
+ echo "New SCRIPT_DIR: $(cd '$( dirname '${BASH_SOURCE[0]}' )' && pwd)"
  if [ $(uname -p) = 'arm' ]; then
   echo "NDK does not currently support ARM64"
   exit 128
