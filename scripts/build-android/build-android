@@ -59,7 +59,7 @@ unamestr=$(uname -s)
 echo "uname: $unamestr"
 if [ "$unamestr" = 'Linux' ]; then
  #SCRIPT_DIR=$(readlink -f $0 | xargs dirname)
- echo "readlink -f 0: $(readlink -f $0)
+ echo "readlink -f 0: $(readlink -f $0)"
  echo "New SCRIPT_DIR: $(readlink -f $0 | xargs dirname)"
  HOST_TAG='linux-x86_64'
 elif [ "$unamestr" = 'Darwin' ]; then
