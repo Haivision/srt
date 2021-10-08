@@ -152,11 +152,7 @@ typedef int32_t SRTSOCKET;
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
-   #ifndef __MINGW32__
-      typedef SOCKET SYSSOCKET;
-   #else
-      typedef int SYSSOCKET;
-   #endif
+   typedef SOCKET SYSSOCKET;
 #else
    typedef int SYSSOCKET;
 #endif
