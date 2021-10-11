@@ -584,7 +584,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            const int rnd = srt::sync::getRandomInt(8, 24);
+            const int rnd = srt::sync::genRandomInt(8, 24);
 
             if (dcounter > rnd)
             {
