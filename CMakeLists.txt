@@ -147,6 +147,7 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
+option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" ON)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -1326,4 +1327,9 @@ if (DEFINED SRT_EXTRA_APPS_INC)
 	include(${SRT_EXTRA_APPS_INC}.cmake)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
+endif()
+
+if (ENABLE_SHOW_PROJECT_CONFIG)
+	include(ShowProjectConfig)
+	ShowProjectConfig()
 endif()
