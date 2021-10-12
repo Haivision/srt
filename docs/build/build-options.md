@@ -74,8 +74,7 @@ The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library
 as a dependency. This may be required in some cases where you have an application 
 written in C which therefore won't link against `libstdc++` by default.
 
-**`--enable-c++11`** (default: ON)
-**`--enable-c++11`** (default: OFF for GCC<4.7)
+**`--enable-c++11`** (default: ON except for GCC<4.7)
 
 Enable compiling in C++11 mode for those parts that may require it.
 Parts that don't require it will still be compiled in C++03 mode,
