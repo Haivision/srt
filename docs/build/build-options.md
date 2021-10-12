@@ -52,6 +52,12 @@ All options below are presented using the `configure` convention. They can all
 be used in `cmake` with the appropriate format changes.
 
 
+**`--enable-show-project-config`** (default:ON)
+
+When ON, the project configuration is displayed at the end of the CMake Configuration
+Step.
+
+
 **`--cygwin-use-posix`** (default:OFF)
 
 When ON, compile on Cygwin using POSIX API (otherwise it will use MinGW environment).
