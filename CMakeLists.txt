@@ -123,7 +123,11 @@ endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
+else()
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
