@@ -126,7 +126,10 @@ protected:
 };
 
 
-
+// This test establishes multiple connections to a single SRT listener on a localhost port.
+// Packets are submitted for sending to all those connections in a non-blocking mode.
+// Then all connections are closed. Some sockets may potentially still have undelivered packets.
+// This test tries to reproduce the issue described in #1182, and fixed by #1315.
 TEST_F(TestConnection, Multiple)
 {
     const sockaddr_in lsa = m_sa;
