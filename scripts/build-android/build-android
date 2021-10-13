@@ -63,9 +63,11 @@ elif [ "$unamestr" = 'Darwin' ]; then
   HOST_TAG='darwin-x86_64'
  fi
 fi
+echo "SCRIPT_DIR: $SCRIPT_DIR"
 
 # Write files relative to current location
 BASE_DIR=$(pwd)
+echo "BASE_DIR: $BASE_DIR"
 case "${BASE_DIR}" in
   *\ * )
     echo "Your path contains whitespaces, which is not supported by 'make install'."
@@ -73,7 +75,7 @@ case "${BASE_DIR}" in
   ;;
 esac
 cd "${BASE_DIR}"
-
+echo "After cd BASE_DIR"
 if [ $ENC_LIB = 'openssl' ]; then
  echo "Building OpenSSL $OPENSSL_VERSION"
  $SCRIPT_DIR/mkssl -n $NDK_ROOT -a $API_LEVEL -t "$BUILD_TARGETS" -o $OPENSSL_VERSION -d $BASE_DIR -h $HOST_TAG
@@ -102,6 +104,7 @@ for build_target in $BUILD_TARGETS; do
   cp $LIB_DIR/libmbedx509.so $JNI_DIR/libmbedx509.so
  fi
 
+ echo "Before git -C BASE_DIR/srt clean -fd"
  git -C $BASE_DIR/srt clean -fd
  $SCRIPT_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s ../.. -i $BASE_DIR/$build_target
  cp $LIB_DIR/libsrt.so $JNI_DIR/libsrt.so
