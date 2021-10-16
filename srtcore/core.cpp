@@ -7130,98 +7130,129 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    ScopedLock statsguard(m_StatsLock);
-
-    const steady_clock::time_point currtime = steady_clock::now();
-
-    perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
-    perf->pktSent              = m_stats.traceSent;
-    perf->pktSentUnique        = m_stats.traceSentUniq;
-    perf->pktRecv              = m_stats.traceRecv;
-    perf->pktRecvUnique        = m_stats.traceRecvUniq;
-    perf->pktSndLoss           = m_stats.traceSndLoss;
-    perf->pktRcvLoss           = m_stats.traceRcvLoss;
-    perf->pktRetrans           = m_stats.traceRetrans;
-    perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
-    perf->pktSentACK           = m_stats.sentACK;
-    perf->pktRecvACK           = m_stats.recvACK;
-    perf->pktSentNAK           = m_stats.sentNAK;
-    perf->pktRecvNAK           = m_stats.recvNAK;
-    perf->usSndDuration        = m_stats.sndDuration;
-    perf->pktReorderDistance   = m_stats.traceReorderDistance;
-    perf->pktReorderTolerance  = m_iReorderTolerance;
-    perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
-    perf->pktRcvBelated        = m_stats.traceRcvBelated;
-
-    perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
-    perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
-    perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
-    perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
-
-    /* perf byte counters include all headers (SRT+UDP+IP) */
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
-    perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
-    perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
-    perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
-    perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
-    perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
+    {
+        ScopedLock statsguard(m_StatsLock);
 
-    perf->pktSndDrop  = m_stats.traceSndDrop;
-    perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
-    perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
-    perf->byteRcvDrop =
-        m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
-    perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
-    perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
+        const steady_clock::time_point currtime = steady_clock::now();
 
-    perf->pktSentTotal       = m_stats.sentTotal;
-    perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
-    perf->pktRecvTotal       = m_stats.recvTotal;
-    perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
-    perf->pktSndLossTotal    = m_stats.sndLossTotal;
-    perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
-    perf->pktRetransTotal    = m_stats.retransTotal;
-    perf->pktSentACKTotal    = m_stats.sentACKTotal;
-    perf->pktRecvACKTotal    = m_stats.recvACKTotal;
-    perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
-    perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
-    perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
+        perf->pktSent              = m_stats.traceSent;
+        perf->pktSentUnique        = m_stats.traceSentUniq;
+        perf->pktRecv              = m_stats.traceRecv;
+        perf->pktRecvUnique        = m_stats.traceRecvUniq;
+        perf->pktSndLoss           = m_stats.traceSndLoss;
+        perf->pktRcvLoss           = m_stats.traceRcvLoss;
+        perf->pktRetrans           = m_stats.traceRetrans;
+        perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
+        perf->pktSentACK           = m_stats.sentACK;
+        perf->pktRecvACK           = m_stats.recvACK;
+        perf->pktSentNAK           = m_stats.sentNAK;
+        perf->pktRecvNAK           = m_stats.recvNAK;
+        perf->usSndDuration        = m_stats.sndDuration;
+        perf->pktReorderDistance   = m_stats.traceReorderDistance;
+        perf->pktReorderTolerance  = m_iReorderTolerance;
+        perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
+        perf->pktRcvBelated        = m_stats.traceRcvBelated;
 
-    perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
-    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
-    perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
-    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
-    perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
-    perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-    perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-    perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-    perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+        perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
+        perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
+        perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
+        perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
 
-    perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
-    perf->pktSndDropTotal  = m_stats.sndDropTotal;
-    perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
-    perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
-    perf->byteRcvDropTotal =
-        m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
-    perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
-    perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+        /* perf byte counters include all headers (SRT+UDP+IP) */
+        perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
+        perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
+        perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
+        perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
+        perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
+        perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
 
-    const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
-    perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
-    perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-    perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
-    perf->pktFlowWindow       = m_iFlowWindowSize.load();
-    perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = getFlightSpan();
-    perf->msRTT               = (double)m_iSRTT / 1000.0;
-    perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
-    perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
-    perf->byteMSS             = m_config.iMSS;
+        perf->pktSndDrop  = m_stats.traceSndDrop;
+        perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
+        perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
+        perf->byteRcvDrop =
+            m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
+        perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
+        perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
 
-    perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
-                      : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
-                                             : 0;
+        perf->pktSentTotal       = m_stats.sentTotal;
+        perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
+        perf->pktRecvTotal       = m_stats.recvTotal;
+        perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
+        perf->pktSndLossTotal    = m_stats.sndLossTotal;
+        perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
+        perf->pktRetransTotal    = m_stats.retransTotal;
+        perf->pktSentACKTotal    = m_stats.sentACKTotal;
+        perf->pktRecvACKTotal    = m_stats.recvACKTotal;
+        perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
+        perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
+        perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+
+        perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+        perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
+        perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+        perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
+        perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
+        perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
+        perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
+        perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
+        perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+
+        perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
+        perf->pktSndDropTotal  = m_stats.sndDropTotal;
+        perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
+        perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
+        perf->byteRcvDropTotal =
+            m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
+        perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
+        perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+
+        // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
+        const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
+        perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
+        perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
+        perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
+        perf->pktFlowWindow       = m_iFlowWindowSize.load();
+        perf->pktCongestionWindow = (int)m_dCongestionWindow;
+        perf->pktFlightSize       = getFlightSpan();
+        perf->msRTT               = (double)m_iSRTT / 1000.0;
+        perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+        perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
+        perf->byteMSS             = m_config.iMSS;
+
+        perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
+                        : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
+                                                : 0;
+
+        if (clear)
+        {
+            m_stats.traceSndDrop           = 0;
+            m_stats.traceRcvDrop           = 0;
+            m_stats.traceSndBytesDrop      = 0;
+            m_stats.traceRcvBytesDrop      = 0;
+            m_stats.traceRcvUndecrypt      = 0;
+            m_stats.traceRcvBytesUndecrypt = 0;
+            m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
+            m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
+            m_stats.traceSent = m_stats.traceRecv
+                = m_stats.traceSentUniq = m_stats.traceRecvUniq
+                = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+                = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+            m_stats.sndDuration                                                       = 0;
+            m_stats.traceRcvRetrans                                                   = 0;
+            m_stats.traceRcvBelated                                                   = 0;
+            m_stats.traceRcvBytesLoss = 0;
+
+            m_stats.sndFilterExtra = 0;
+            m_stats.rcvFilterExtra = 0;
+
+            m_stats.rcvFilterSupply = 0;
+            m_stats.rcvFilterLoss   = 0;
+
+            m_stats.tsLastSampleTime = currtime;
+        }
+    }
 
     const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth.load();
 
@@ -7242,7 +7273,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
                 perf->pktSndBuf = m_pSndBuffer->getAvgBufSize((perf->byteSndBuf), (perf->msSndBuf));
             }
             perf->byteSndBuf += (perf->pktSndBuf * pktHdrSize);
-            //<
             perf->byteAvailSndBuf = (m_config.iSndBufSize - perf->pktSndBuf) * m_config.iMSS;
         }
         else
@@ -7284,34 +7314,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->msSndBuf   = 0;
         perf->byteRcvBuf = 0;
         perf->msRcvBuf   = 0;
-    }
-
-    if (clear)
-    {
-        m_stats.traceSndDrop           = 0;
-        m_stats.traceRcvDrop           = 0;
-        m_stats.traceSndBytesDrop      = 0;
-        m_stats.traceRcvBytesDrop      = 0;
-        m_stats.traceRcvUndecrypt      = 0;
-        m_stats.traceRcvBytesUndecrypt = 0;
-        m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
-        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
-        m_stats.traceSent = m_stats.traceRecv
-            = m_stats.traceSentUniq = m_stats.traceRecvUniq
-            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.sndDuration                                                       = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceRcvBelated                                                   = 0;
-        m_stats.traceRcvBytesLoss = 0;
-
-        m_stats.sndFilterExtra = 0;
-        m_stats.rcvFilterExtra = 0;
-
-        m_stats.rcvFilterSupply = 0;
-        m_stats.rcvFilterLoss   = 0;
-
-        m_stats.tsLastSampleTime = currtime;
     }
 }
 
