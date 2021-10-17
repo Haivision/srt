@@ -29,7 +29,7 @@
       <AdditionalIncludeDirectories>$(LIBSRT)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>srt.lib;libssl.lib;libcrypto.lib;crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>srt.lib;libssl.lib;libcrypto.lib;crypt32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(LIBSRT)\lib\$(Configuration)-$(SrtPlatform);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
