@@ -749,7 +749,8 @@ private:
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<int> m_RejectReason;
     bool m_bOpened;                              // If the UDT entity has been opened
-    sync::atomic<int> m_iBrokenCounter;          // A counter (number of GC checks) to let the GC tag this socket as disconnected
+                                                 // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
+    sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
 
     int m_iEXPCount;                             // Expiration counter
     sync::atomic<int> m_iBandwidth;              // Estimated bandwidth, number of packets per second
