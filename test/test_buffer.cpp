@@ -152,7 +152,7 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     for (int i = 0; i < m_buff_size_pkts - 1; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), buff.size());
-        EXPECT_EQ(size_t(res), m_payload_sz);
+        EXPECT_TRUE(size_t(res) == m_payload_sz);
     }
 }
 
@@ -247,7 +247,7 @@ TEST_F(CRcvBufferReadMsg, AddData)
     for (int i = 0; i < ack_pkts; ++i)
     {
         const int res = rcv_buffer.readMsg(buff.data(), buff.size());
-        EXPECT_EQ(size_t(res), CRcvBufferReadMsg::m_payload_sz);
+        EXPECT_TRUE(size_t(res) == m_payload_sz);
         EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - ack_pkts + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
     }
