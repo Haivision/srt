@@ -41,7 +41,6 @@ protected:
     }
 
 public:
-
     /// Generate and add one packet to the receiver buffer.
     ///
     /// @returns the result of rcv_buffer::insert(..)
