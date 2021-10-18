@@ -168,7 +168,6 @@ TEST_F(CRcvBufferReadMsg, OnePacketGap)
     EXPECT_EQ(addMessage(1, CSeqNo::incseq(m_init_seqno)), 0);
 
     CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
-    CUnitQueue& unit_queue = *m_unit_queue.get();
     // Before ACK the available buffer size stays the same.
     EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1);
     // Not available for reading as not yet acknowledged.
@@ -224,9 +223,6 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
 // but must be handled by the CUDT socket.
 TEST_F(CRcvBufferReadMsg, AddData)
 {
-    CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
-    CUnitQueue& unit_queue = *m_unit_queue.get();
-
     const int num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
     for (int i = 0; i < num_pkts; ++i)
@@ -237,6 +233,7 @@ TEST_F(CRcvBufferReadMsg, AddData)
     // The available buffer size remains the same
     // The value is reported by SRT receiver like this:
     // data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
+    CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
     EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1);
     EXPECT_FALSE(rcv_buffer.isRcvDataAvailable());
 
@@ -250,7 +247,7 @@ TEST_F(CRcvBufferReadMsg, AddData)
     for (int i = 0; i < ack_pkts; ++i)
     {
         const int res = rcv_buffer.readMsg(buff.data(), buff.size());
-        EXPECT_EQ(size_t(res), m_payload_sz);
+        EXPECT_EQ(size_t(res), CRcvBufferReadMsg::m_payload_sz);
         EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - ack_pkts + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
     }
