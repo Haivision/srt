@@ -2572,10 +2572,6 @@ void srt::CUDTUnited::checkBrokenSockets()
 {
    ScopedLock cg(m_GlobControlLock);
 
-   // set of sockets To Be Closed and To Be Removed
-   vector<SRTSOCKET> tbc;
-   vector<SRTSOCKET> tbr;
-
 #if ENABLE_EXPERIMENTAL_BONDING
    vector<SRTSOCKET> delgids;
 
@@ -2600,74 +2596,70 @@ void srt::CUDTUnited::checkBrokenSockets()
    {
        m_ClosedGroups.erase(*di);
    }
-
 #endif
 
-   for (sockets_t::iterator i = m_Sockets.begin();
-      i != m_Sockets.end(); ++ i)
-   {
-       CUDTSocket* s = i->second;
+   // set of sockets To Be Closed and To Be Removed
+   vector<SRTSOCKET> tbc;
+   vector<SRTSOCKET> tbr;
 
-      // check broken connection
-      if (s->core().m_bBroken)
+   for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++ i)
+   {
+      CUDTSocket* s = i->second;
+      if (!s->core().m_bBroken)
+         continue;
+
+      if (s->m_Status == SRTS_LISTENING)
       {
-         if (s->m_Status == SRTS_LISTENING)
-         {
-            const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp;
-            // for a listening socket, it should wait an extra 3 seconds
-            // in case a client is connecting
-            if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
+         const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp;
+         // A listening socket should wait an extra 3 seconds
+         // in case a client is connecting.
+         if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
+            continue;
+      }
+      else if ((s->core().m_pRcvBuffer != NULL)
+         // FIXED: calling isRcvDataAvailable() just to get the information
+         // whether there are any data waiting in the buffer,
+         // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
+         // this function is called (isRcvDataReady also checks if the
+         // available data is "ready to play").
+         && s->core().m_pRcvBuffer->isRcvDataAvailable())
+      {
+            const int bc = s->core().m_iBrokenCounter.load();
+            if (bc > 0)
             {
+               // if there is still data in the receiver buffer, wait longer
+               s->core().m_iBrokenCounter.store(bc - 1);
                continue;
             }
-         }
-         else if ((s->core().m_pRcvBuffer != NULL)
-            // FIXED: calling isRcvDataAvailable() just to get the information
-            // whether there are any data waiting in the buffer,
-            // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
-            // this function is called (isRcvDataReady also checks if the
-            // available data is "ready to play").
-            && s->core().m_pRcvBuffer->isRcvDataAvailable())
-         {
-             const int bc = s->core().m_iBrokenCounter.load();
-             if (bc > 0)
-             {
-                 // HLOGF(smlog.Debug, "STILL KEEPING socket (still have data):
-                 // %d\n", i->first);
-                 // if there is still data in the receiver buffer, wait longer
-                 s->core().m_iBrokenCounter.store(bc - 1);
-                 continue;
-             }
-         }
+      }
 
 #if ENABLE_EXPERIMENTAL_BONDING
-         if (s->m_GroupOf)
-         {
-             LOGC(smlog.Note, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
-             s->removeFromGroup(true);
-         }
+      if (s->m_GroupOf)
+      {
+         LOGC(smlog.Note, log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
+         s->removeFromGroup(true);
+      }
 #endif
 
-         HLOGC(smlog.Debug, log << "checkBrokenSockets: moving BROKEN socket to CLOSED: @" << i->first);
+      HLOGC(smlog.Debug, log << "checkBrokenSockets: moving BROKEN socket to CLOSED: @" << i->first);
 
-         //close broken connections and start removal timer
-         s->setClosed();
-         tbc.push_back(i->first);
-         m_ClosedSockets[i->first] = s;
+      //close broken connections and start removal timer
+      s->setClosed();
+      tbc.push_back(i->first);
+      m_ClosedSockets[i->first] = s;
 
-         // remove from listener's queue
-         sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
-         if (ls == m_Sockets.end())
-         {
-            ls = m_ClosedSockets.find(s->m_ListenSocket);
-            if (ls == m_ClosedSockets.end())
-               continue;
-         }
-
-         enterCS(ls->second->m_AcceptLock);
-         ls->second->m_QueuedSockets.erase(s->m_SocketID);
-         leaveCS(ls->second->m_AcceptLock);
+      // remove from listener's queue
+      sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
+      if (ls == m_Sockets.end())
+      {
+         ls = m_ClosedSockets.find(s->m_ListenSocket);
+         if (ls == m_ClosedSockets.end())
+            continue;
       }
+
+      enterCS(ls->second->m_AcceptLock);
+      ls->second->m_QueuedSockets.erase(s->m_SocketID);
+      leaveCS(ls->second->m_AcceptLock);
    }
 
    for (sockets_t::iterator j = m_ClosedSockets.begin();
