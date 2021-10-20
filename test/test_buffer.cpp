@@ -107,6 +107,21 @@ public:
         return m_rcv_buffer->ackData(num_pkts);
     }
 
+    int getAvailBufferSize()
+    {
+        return m_rcv_buffer->getAvailBufSize();
+    }
+
+    int readMessage(char* data, size_t len)
+    {
+        return m_rcv_buffer->readMsg(data, len);
+    }
+
+    bool hasAvailablePackets()
+    {
+        return m_rcv_buffer->isRcvDataAvailable();
+    }
+
 protected:
     unique_ptr<CUnitQueue> m_unit_queue;
     unique_ptr<CRcvBuffer> m_rcv_buffer;
@@ -119,74 +134,70 @@ protected:
 // Check the available size of the receiver buffer.
 TEST_F(CRcvBufferReadMsg, Create)
 {
-    EXPECT_EQ(m_rcv_buffer->getAvailBufSize(), m_buff_size_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
 }
 
 // Fill the buffer full, and check adding more data results in an error.
 TEST_F(CRcvBufferReadMsg, FullBuffer)
 {
-    CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
-    CUnitQueue& unit_queue = *m_unit_queue.get();
+    auto& rcv_buffer = *m_rcv_buffer.get();
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
-    for (int i = 0; i < rcv_buffer.getAvailBufSize(); ++i)
+    for (int i = 0; i < getAvailBufferSize(); ++i)
     {
-        CUnit* unit = unit_queue.getNextAvailUnit();
-        EXPECT_NE(unit, nullptr);
-        unit->m_Packet.setLength(m_payload_sz);
-        EXPECT_EQ(rcv_buffer.addData(unit, i), 0);
+        EXPECT_EQ(addMessage(1, CSeqNo::incseq(m_init_seqno, i)), 0);
     }
 
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1);   // logic
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);   // logic
 
     ackPackets(m_buff_size_pkts - 1);
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), 0);
+    EXPECT_EQ(getAvailBufferSize(), 0);
 
     // Try to add more data than the available size of the buffer
-    CUnit* unit = unit_queue.getNextAvailUnit();
-    EXPECT_NE(unit, nullptr);
-    EXPECT_EQ(rcv_buffer.addData(unit, 1), -1);
+    EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, getAvailBufferSize())), -1);
 
     array<char, m_payload_sz> buff;
     for (int i = 0; i < m_buff_size_pkts - 1; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
+        EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
     }
 }
 
-// BUG!!!
+// BUG in the new RCV buffer!!!
 // In this test case a packet is added to receiver buffer with offset 1,
 // thus leaving offset 0 with an empty pointer.
 // The buffer says it is not empty, and the data is available
 // to be read, but reading is not possible.
 TEST_F(CRcvBufferReadMsg, OnePacketGap)
 {
-    // Add a number of units (packets) to the buffer
-    // equal to the buffer size in packets
+    // Add one packet message to to the buffer
+    // with a gap of one packet.
     EXPECT_EQ(addMessage(1, CSeqNo::incseq(m_init_seqno)), 0);
 
-    CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
+    auto& rcv_buffer = *m_rcv_buffer.get();
     // Before ACK the available buffer size stays the same.
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     // Not available for reading as not yet acknowledged.
-    EXPECT_FALSE(rcv_buffer.isRcvDataAvailable());
+    EXPECT_FALSE(hasAvailablePackets());
     // Confirm reading zero bytes.
     array<char, m_payload_sz> buff;
-    int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
+    int res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
 
     // BUG. Acknowledging an empty position must not result in a read-readiness.
     ackPackets(1);
-    EXPECT_TRUE(rcv_buffer.isRcvDataAvailable());
+    // Wrong behavior (BUG)
+    EXPECT_TRUE(hasAvailablePackets());
     EXPECT_TRUE(rcv_buffer.isRcvDataReady());
 
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 2);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 2);
     cerr << "Expecting IPE from readBuffer(..): \n";
     res = rcv_buffer.readBuffer(buff.data(), buff.size());
     EXPECT_EQ(res, -1);
 
-    res = m_rcv_buffer->readMsg(buff.data(), buff.size());
+    res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
 }
 
@@ -201,18 +212,17 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
 
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataAvailable());
-
-    int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
-    EXPECT_EQ(res, 0);
+    EXPECT_FALSE(hasAvailablePackets());
+    const int res1 = readMessage(buff.data(), buff.size());
+    EXPECT_EQ(res1, 0);
 
     // Full ACK
     ackPackets(msg_pkts);
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataAvailable());
+    EXPECT_TRUE(hasAvailablePackets());
 
-    res = m_rcv_buffer->readMsg(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
-    EXPECT_TRUE(verifyPayload(buff.data(), res, m_init_seqno));
+    const int res2 = readMessage(buff.data(), buff.size());
+    EXPECT_EQ(res2, msg_bytelen);
+    EXPECT_TRUE(verifyPayload(buff.data(), res2, m_init_seqno));
 }
 
 // Add ten packets to the buffer, acknowledge and read some of them.
@@ -232,22 +242,21 @@ TEST_F(CRcvBufferReadMsg, AddData)
     // The available buffer size remains the same
     // The value is reported by SRT receiver like this:
     // data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
-    CRcvBuffer& rcv_buffer = *m_rcv_buffer.get();
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1);
-    EXPECT_FALSE(rcv_buffer.isRcvDataAvailable());
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+    EXPECT_FALSE(hasAvailablePackets());
 
     // Now acknowledge two packets
     const int ack_pkts = 2;
     ackPackets(2);
-    EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - 1 - ack_pkts);
-    EXPECT_TRUE(rcv_buffer.isRcvDataAvailable());
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1 - ack_pkts);
+    EXPECT_TRUE(hasAvailablePackets());
 
     std::array<char, m_payload_sz> buff;
     for (int i = 0; i < ack_pkts; ++i)
     {
-        const int res = rcv_buffer.readMsg(buff.data(), buff.size());
+        const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
-        EXPECT_EQ(rcv_buffer.getAvailBufSize(), m_buff_size_pkts - ack_pkts + i);
+        EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - ack_pkts + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
     }
 
@@ -273,9 +282,44 @@ TEST_F(CRcvBufferReadMsg, MsgAcked)
     ackPackets(msg_pkts);
     // Now the whole message can be read.
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataAvailable());
-    const int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
+    EXPECT_TRUE(hasAvailablePackets());
+
+    const int res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, msg_bytelen);
+    for (size_t i = 0; i < msg_pkts; ++i)
+    {
+        const ptrdiff_t offset = i * m_payload_sz;
+        EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, i)));
+    }
+}
+
+// Check reading the whole message (consisting of several packets) into
+// a buffer of an insufficient size.
+TEST_F(CRcvBufferReadMsg, SmallReadBuffer)
+{
+    const size_t msg_pkts = 4;
+    // Adding one message  without acknowledging
+    addMessage(msg_pkts, m_init_seqno, false);
+
+    const size_t msg_bytelen = msg_pkts * m_payload_sz;
+    array<char, 2 * msg_bytelen> buff;
+
+    // Acknowledge all packets of the message.
+    ackPackets(msg_pkts);
+    // Now the whole message can be read.
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+
+    // Check reading into an insufficient size buffer.
+    // The old buffer extracts the whole message, but copies only
+    // the number of bytes provided in the 'len' argument.
+    const int res = readMessage(buff.data(), m_payload_sz);
+    EXPECT_EQ(res, 1456);
+
+    // No more messages to read
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_FALSE(hasAvailablePackets());
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
 }
 
 // BUG!!!
@@ -293,21 +337,21 @@ TEST_F(CRcvBufferReadMsg, MsgHalfAck)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataAvailable());
-    int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
+    EXPECT_FALSE(hasAvailablePackets());
+    const int res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
 
     // ACK half of the message and check read-readiness.
-    m_rcv_buffer->ackData(2);
+    ackPackets(2);
     // FIXME: Sadly RCV buffer says the data is ready to be read.
     // EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    // EXPECT_FALSE(m_rcv_buffer->isRcvDataAvailable());
+    // EXPECT_FALSE(hasAvailablePackets());
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataAvailable());
+    EXPECT_TRUE(hasAvailablePackets());
 
     // Actually must be nothing to read (can't read half a message).
-    res = m_rcv_buffer->readMsg(buff.data(), buff.size());
-    EXPECT_EQ(res, 0);
+    const int res2 = readMessage(buff.data(), buff.size());
+    EXPECT_EQ(res2, 0);
 }
 
 // BUG!!!
@@ -320,9 +364,62 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgNoACK)
     addMessage(msg_pkts, m_init_seqno, true);
 
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataAvailable());
+    EXPECT_FALSE(hasAvailablePackets());
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
-    const int res = m_rcv_buffer->readMsg(buff.data(), buff.size());
+    const int res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, msg_bytelen);
+}
+
+// Adding a message with the out-of-order flag set.
+// The message can be read.
+TEST_F(CRcvBufferReadMsg, OutOfOrderMsgGap)
+{
+    const size_t msg_pkts = 4;
+    // Adding one message with the Out-Of-Order flag set, but without acknowledging.
+    addMessage(msg_pkts, CSeqNo::incseq(m_init_seqno, 1), true);
+
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_FALSE(hasAvailablePackets());
+    const size_t msg_bytelen = msg_pkts * m_payload_sz;
+    array<char, 2 * msg_bytelen> buff;
+    const int res = readMessage(buff.data(), buff.size());
+    EXPECT_EQ(res, msg_bytelen);
+    for (size_t i = 0; i < msg_pkts; ++i)
+    {
+        const ptrdiff_t offset = i * m_payload_sz;
+        EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, 1 + i)));
+    }
+
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_FALSE(hasAvailablePackets());
+    // Adding one message with the Out-Of-Order flag set, but without acknowledging.
+    //int seqno, bool pb_first = true, bool pb_last = true, bool out_of_order = false, int ts = 0)
+    const int res2 = addPacket(CSeqNo::incseq(m_init_seqno, 1));
+    EXPECT_EQ(res2, -1); // already exists
+
+    EXPECT_EQ(addPacket(m_init_seqno), 0);
+    ackPackets(msg_pkts + 1);
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+
+    const int res3 = readMessage(buff.data(), buff.size());
+    EXPECT_TRUE(res3 == m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, m_init_seqno));
+
+    // Only "passack" packets remain in the buffer.
+    // They are falsely signalled as read-ready.
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady()); // BUG: nothing to read.
+    EXPECT_TRUE(hasAvailablePackets()); // BUG: nothing to read.
+
+    // Adding a packet right after the EntryState_Read packets.
+    const int seqno = CSeqNo::incseq(m_init_seqno, msg_pkts + 1);
+    EXPECT_EQ(addPacket(seqno), 0);
+    ackPackets(1);
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(readMessage(buff.data(), buff.size()) == m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, seqno));
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_FALSE(hasAvailablePackets());
 }
