@@ -19,6 +19,8 @@
 
 #include "packetfilter_api.h"
 
+namespace srt {
+
 class FECFilterBuiltin: public SrtPacketFilterBase
 {
     SrtFilterConfig cfg;
@@ -269,5 +271,7 @@ public:
     static const char defaultConfig [];
     static bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg);
 };
+
+} // namespace srt
 
 #endif

@@ -30,7 +30,8 @@ class CTsbpdTime
 
 public:
     CTsbpdTime()
-        : m_bTsbPdMode(false)
+        : m_iFirstRTT(-1)
+        , m_bTsbPdMode(false)
         , m_tdTsbPdDelay(0)
         , m_bTsbPdWrapCheck(false)
     {
@@ -61,15 +62,14 @@ public:
 
     /// @brief Add new drift sample from an ACK-ACKACK pair.
     /// ACKACK packets are sent immediately (except for UDP buffering).
+    /// Therefore their timestamp roughly corresponds to the time of sending
+    /// and can be used to estimate clock drift.
     /// 
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
-    /// @param [out] w_udrift Current clock drift value.
-    /// @param [out] w_newtimebase Current TSBPD base time.
+    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair.
     /// 
     /// @return true if TSBPD base time has changed, false otherwise.
-    bool addDriftSample(uint32_t                  pktTimestamp,
-                        steady_clock::duration&   w_udrift,
-                        steady_clock::time_point& w_newtimebase);
+    bool addDriftSample(uint32_t pktTimestamp, int usRTTSample);
 
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be
@@ -116,8 +116,9 @@ public:
     void getInternalTimeBase(time_point& w_tb, bool& w_wrp, duration& w_udrift) const;
 
 private:
-    bool       m_bTsbPdMode;      //< Rreceiver buffering and TSBPD is active when true.
-    duration   m_tdTsbPdDelay;    //< Negotiated buffering delay.
+    int        m_iFirstRTT;       // First measured RTT sample.
+    bool       m_bTsbPdMode;      // Receiver buffering and TSBPD is active when true.
+    duration   m_tdTsbPdDelay;    // Negotiated buffering delay.
 
     /// @brief Local time base for TsbPd.
     /// @note m_tsTsbPdTimeBase is changed in the following cases:

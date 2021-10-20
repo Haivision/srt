@@ -384,13 +384,14 @@ connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
 | `SRT_ERROR`                   | (-1) on error, otherwise 0                                |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
-|       Errors                        |                                                                      |
-|:----------------------------------- |:-------------------------------------------------------------------- |
-| [`SRT_EINVSOCK`](#srt_einvsock)     | Socket passed as [`u`](#u) designates no valid socket                |
-| [`SRT_EINVOP`](#srt_einvop)         | Socket already bound                                                 |
-| [`SRT_ECONNSETUP`](#srt_econnsetup) | Internal creation of a UDP socket failed                             |
-| [`SRT_ESOCKFAIL`](#srt_esockfail)   | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed |
-| <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
+|       Errors                             |                                                                      |
+|:---------------------------------------- |:-------------------------------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)          | Socket passed as [`u`](#u) designates no valid socket                |
+| [`SRT_EINVOP`](#srt_einvop)              | Socket already bound                                                 |
+| [`SRT_ECONNSETUP`](#srt_econnsetup)      | Internal creation of a UDP socket failed                             |
+| [`SRT_ESOCKFAIL`](#srt_esockfail)        | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed |
+| [`SRT_EBINDCONFLICT`](#srt_ebindconflict)| Binding specification conflicts with existing one                    |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -645,7 +646,7 @@ calling this function.
 | [`SRT_EINVPARAM`](#srt_einvparam) | NULL specified as `listeners` or `nlisteners` < 1            |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | Any socket in `listeners` designates no valid socket ID. Can also mean *Internal Error* when <br/> an error occurred while creating an accepted socket (:warning: &nbsp; **BUG?**) |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | Any socket in `listeners` is not set up as a listener ([`srt_listen`](#srt_listen) not called, or the listener socket <br/> has already been closed)  |
-| [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported on any listener socket as the timeout has been reached. This error is only <br/> reported when `msTimeOut` is not -1  |
+| [`SRT_ETIMEOUT`](#srt_etimeout)   | No connection reported on any listener socket as the timeout has been reached. This error is only <br/> reported when `msTimeOut` is not -1  |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
@@ -841,18 +842,19 @@ first on the automatically created socket for the connection.
 |    `SRT_ERROR`                | (-1) in case of error                                    |
 |         0                     | In case when used for [`u`](#u) socket                   |
 |    Socket ID                  | Created for connection for [`u`](#u) group               |
-| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                            |
 
-|       Errors                          |                                                          |
-|:------------------------------------- |:-------------------------------------------------------- |
-| [`SRT_EINVSOCK`](#srt_einvsock)       | Socket passed as [`u`](#u) designates no valid socket    |
-| [`SRT_EINVOP`](#srt_einvop)           | Socket already bound                                     |
-| [`SRT_ECONNSETUP`](#srt_econnsetup)   | Internal creation of a UDP socket failed                 |
-| [`SRT_ESOCKFAIL`](#srt_esockfail)     | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed   |
-| [`SRT_ERDVUNBOUND`](#srt_erdvunbound) | Internal error ([`srt_connect`](#srt_connect) should not report it after [`srt_bind`](#srt_bind) was called)   |
-| [`SRT_ECONNSOCK`](#srt_econnsock)     | Socket [`u`](#u) is already connected                    |
-| [`SRT_ECONNREJ`](#srt_econnrej)       | Connection has been rejected                             |
-| <img width=240px height=1px/>         | <img width=710px height=1px/>                      |
+|       Errors                             |                                                          |
+|:---------------------------------------- |:-------------------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)          | Socket passed as [`u`](#u) designates no valid socket    |
+| [`SRT_EINVOP`](#srt_einvop)              | Socket already bound                                     |
+| [`SRT_ECONNSETUP`](#srt_econnsetup)      | Internal creation of a UDP socket failed                 |
+| [`SRT_ESOCKFAIL`](#srt_esockfail)        | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed   |
+| [`SRT_ERDVUNBOUND`](#srt_erdvunbound)    | Internal error ([`srt_connect`](#srt_connect) should not report it after [`srt_bind`](#srt_bind) was called)   |
+| [`SRT_ECONNSOCK`](#srt_econnsock)        | Socket [`u`](#u) is already connected                    |
+| [`SRT_ECONNREJ`](#srt_econnrej)          | Connection has been rejected                             |
+| [`SRT_EBINDCONFLICT`](#srt_ebindconflict)| Binding specification conflicts with existing one        |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                            |
 
 
 **IMPORTANT**: It's not allowed to bind and connect the same socket to two
@@ -1883,8 +1885,13 @@ to be returned does not fit in the buffer, nothing will be received and
 the error is reported.
 
 3. In **live mode**, the function behaves as in **file/message mode**, although the 
-number of bytes retrieved will be at most the size of `SRTO_PAYLOADSIZE`. In this mode, 
-however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) 
+number of bytes retrieved will be at most the maximum payload of one MTU.
+The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value configured by the sender
+is not negotiated, and not known to the receiver.
+The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value set on the SRT receiver
+is mainly used for heuristics. However, the receiver is prepared to receive
+the whole MTU as configured with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS).
+In this mode, however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) 
 and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP), the message will be 
 received only when its time to play has come, and until then it will be kept in the 
 receiver buffer. Also, when the time to play has come for a message that is next to 
@@ -3225,6 +3232,54 @@ by setting the `SRT_EPOLL_ENABLE_EMPTY` flag, which may be useful when
 you use multiple threads and start waiting without subscribed sockets, so that
 you can subscribe them later from another thread.
 
+
+#### `SRT_EBINDCONFLICT`
+
+The binding you are attempting to set up a socket with cannot be completed because
+it conflicts with another existing binding. This is because an intersecting binding
+was found that cannot be reused according to the specification in `srt_bind` call.
+
+A binding is considered intersecting if the existing binding has the same port
+and covers at least partially the range as that of the attempted binding. These
+ranges can be split in three groups:
+
+1. An explicitly specified IP address (both IPv4 and IPv6) covers this address only.
+2. An IPv4 wildcard 0.0.0.0 covers all IPv4 addresses (but not IPv6).
+3. An IPv6 wildcard :: covers:
+   * if `SRTO_IPV6ONLY` is true - all IPv6 addresses (but not IPv4)
+   * if `SRTO_IPV6ONLY` is false - all IP addresses.
+
+Example 1:
+
+* Socket 1: bind to IPv4 0.0.0.0
+* Socket 2: bind to IPv6 :: with `SRTO_IPV6ONLY` = true
+* Result: NOT intersecting
+
+Example 2:
+
+* Socket 1: bind to IPv4 1.2.3.4
+* Socket 2: bind to IPv4 0.0.0.0
+* Result: intersecting (and conflicting)
+
+Example 3:
+
+* Socket 1: bind to IPv4 1.2.3.4
+* Socket 2: bind to IPv6 :: with `SRTO_IPV6ONLY` = false
+* Result: intersecting (and conflicting)
+
+If any common range coverage is found between the attempted binding specification
+(in `srt_bind` call) and the found existing binding with the same port number,
+then all of the following conditions must be satisfied between them:
+
+1. The `SRTO_REUSEADDR` must be true (default) in both.
+
+2. The IP address specification (in case of IPv6, also including the value of
+`SRTO_IPV6ONLY` flag) must be exactly identical.
+
+3. The UDP-specific settings must be identical.
+
+If any of these conditions isn't satisfied, the `srt_bind` function results
+in conflict and report this error.
   
 #### SRT_EASYNCFAIL
 

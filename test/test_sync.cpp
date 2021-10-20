@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include <array>
 #include <chrono>
 #include <thread>
 #include <future>
@@ -15,14 +16,6 @@
 using namespace std;
 using namespace srt::sync;
 
-// GNUC supports C++14 starting from version 5
-//#if defined(__GNUC__) && (__GNUC__ < 5)
-////namespace srt
-// constexpr chrono::milliseconds operator"" ms(
-//    unsigned long long _Val) { // return integral milliseconds
-//    return chrono::milliseconds(_Val);
-//}
-//#endif
 
 TEST(SyncDuration, BasicChecks)
 {
@@ -155,6 +148,48 @@ TEST(SyncDuration, OperatorMultIntEq)
     EXPECT_EQ(count_milliseconds(a), 3500);
     a *= 2;
     EXPECT_EQ(count_milliseconds(a), 7000);
+}
+
+TEST(SyncRandom, GenRandomInt)
+{
+    array<int, 64> mn = {};
+
+    // Check generated values are in the specified range.
+    const size_t n = 2048;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int rand_val = genRandomInt(0, mn.size() - 1);
+        ASSERT_GE(rand_val, 0);
+        ASSERT_LT(rand_val, mn.size());
+        ++mn[rand_val];
+    }
+
+    // Check the distribution is more or less uniform.
+    // 100% uniform if each value is generated (n / (2 * mn.size())) times.
+    // We expect at least half of that value for a random uniform distribution.
+    const int min_value = n / (2 * mn.size()) - 1;
+    cout << "min value: " << min_value << endl;
+    for (size_t i = 0; i < mn.size(); ++i)
+    {
+        EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
+    }
+
+    // Uncomment to see the distribution.
+    //for (size_t i = 0; i < mn.size(); ++i)
+    //{
+    //    cout << i << '\t';
+    //    for (int j=0; j<mn[i]; ++j) cout << '*';
+    //    cout << '\n';
+    //}
+
+    // Check INT32_MAX
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int rand_val = genRandomInt(INT32_MAX - 1, INT32_MAX);
+
+        EXPECT_GE(rand_val, INT32_MAX - 1);
+        EXPECT_LE(rand_val, INT32_MAX);
+    }
 }
 
 /*****************************************************************************/
@@ -428,8 +463,8 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(100))),
-        move(future_result[1].wait_for(chrono::microseconds(100)))
+        move(future_result[0].wait_for(chrono::microseconds(500))),
+        move(future_result[1].wait_for(chrono::microseconds(500)))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
@@ -440,7 +475,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     // Now exactly one waiting thread should become ready
     // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1);
+    ASSERT_EQ(notified_clients.size(), 1U);
 
     const int ready = notified_clients[0];
     const int not_ready = (ready + 1) % 2;
@@ -590,7 +625,7 @@ TEST(Sync, FormatTime)
         const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_LE(sm.size(), 6);
+        EXPECT_LE(sm.size(), 6U);
         if (sm.size() != 6 && sm.size() != 5)
             return 0;
 
@@ -634,7 +669,7 @@ TEST(Sync, FormatTimeSys)
         const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_EQ(sm.size(), 5);
+        EXPECT_EQ(sm.size(), 5U);
         if (sm.size() != 5)
             return 0;
 

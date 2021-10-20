@@ -18,6 +18,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
@@ -49,7 +50,9 @@
 
 #endif // ENABLE_STDCXX_SYNC
 
+#include "srt.h"
 #include "utilities.h"
+#include "srt_attr_defs.h"
 
 class CUDTException;    // defined in common.h
 
@@ -57,7 +60,6 @@ namespace srt
 {
 namespace sync
 {
-using namespace std;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -68,7 +70,7 @@ using namespace std;
 #if ENABLE_STDCXX_SYNC
 
 template <class Clock>
-using Duration = chrono::duration<Clock>;
+using Duration = std::chrono::duration<Clock>;
 
 #else
 
@@ -127,13 +129,13 @@ private:
 
 #if ENABLE_STDCXX_SYNC
 
-using steady_clock = chrono::steady_clock;
+using steady_clock = std::chrono::steady_clock;
 
 template <class Clock, class Duration = typename Clock::duration>
-using time_point = chrono::time_point<Clock, Duration>;
+using time_point = std::chrono::time_point<Clock, Duration>;
 
 template <class Clock>
-using TimePoint = chrono::time_point<Clock>;
+using TimePoint = std::chrono::time_point<Clock>;
 
 template <class Clock, class Duration = typename Clock::duration>
 inline bool is_zero(const time_point<Clock, Duration> &tp)
@@ -180,6 +182,11 @@ public:
     {
     }
 
+    TimePoint(const Duration<Clock>& duration_since_epoch)
+        : m_timestamp(duration_since_epoch.count())
+    {
+    }
+
     ~TimePoint() {}
 
 public: // Relational operators
@@ -204,8 +211,8 @@ public: // Assignment operators
     inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
-    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(numeric_limits<uint64_t>::min()); }
-    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(numeric_limits<uint64_t>::max()); }
+    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(std::numeric_limits<uint64_t>::min()); }
+    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(std::numeric_limits<uint64_t>::max()); }
 
 public:
     Duration<Clock> time_since_epoch() const;
@@ -223,6 +230,12 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 }
 
 #endif // ENABLE_STDCXX_SYNC
+
+// NOTE: Moved the following class definitons to "atomic_clock.h"
+//   template <class Clock>
+//      class AtomicDuration;
+//   template <class Clock>
+//      class AtomicClock;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -297,14 +310,14 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 ///////////////////////////////////////////////////////////////////////////////
 
 #if ENABLE_STDCXX_SYNC
-using Mutex = mutex;
-using UniqueLock = unique_lock<mutex>;
-using ScopedLock = lock_guard<mutex>;
+using Mutex = std::mutex;
+using UniqueLock = std::unique_lock<std::mutex>;
+using ScopedLock = std::lock_guard<std::mutex>;
 #else
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
 /// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
-class Mutex
+class SRT_ATTR_CAPABILITY("mutex") Mutex
 {
     friend class SyncEvent;
 
@@ -313,11 +326,11 @@ public:
     ~Mutex();
 
 public:
-    int lock();
-    int unlock();
+    int lock() SRT_ATTR_ACQUIRE();
+    int unlock() SRT_ATTR_RELEASE();
 
     /// @return     true if the lock was acquired successfully, otherwise false
-    bool try_lock();
+    bool try_lock() SRT_ATTR_TRY_ACQUIRE(true);
 
     // TODO: To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
@@ -327,10 +340,13 @@ private:
 };
 
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
-class ScopedLock
+class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
 {
 public:
+    SRT_ATTR_ACQUIRE(m)
     ScopedLock(Mutex& m);
+
+    SRT_ATTR_RELEASE()
     ~ScopedLock();
 
 private:
@@ -338,45 +354,53 @@ private:
 };
 
 /// A pthread version of std::chrono::unique_lock<mutex>
-class UniqueLock
+class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
+    int m_iLocked;
+    Mutex& m_Mutex;
 
 public:
+    SRT_ATTR_ACQUIRE(m)
     UniqueLock(Mutex &m);
+
+    SRT_ATTR_RELEASE()
     ~UniqueLock();
 
 public:
+    SRT_ATTR_ACQUIRE()
     void lock();
-    void unlock();
-    Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 
-private:
-    int m_iLocked;
-    Mutex& m_Mutex;
+    SRT_ATTR_RELEASE()
+    void unlock();
+
+    SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
+    Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 };
 #endif // ENABLE_STDCXX_SYNC
 
-inline void enterCS(Mutex& m) { m.lock(); }
-inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
-inline void leaveCS(Mutex& m) { m.unlock(); }
+inline void enterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+
+inline bool tryEnterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+
+inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
 
 class InvertedLock
 {
-    Mutex *m_pMutex;
+    Mutex& m_mtx;
 
-  public:
+public:
+    SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
     InvertedLock(Mutex& m)
-        : m_pMutex(&m)
+        : m_mtx(m)
     {
-        leaveCS(*m_pMutex);
+        m_mtx.unlock();
     }
 
+    SRT_ATTR_ACQUIRE(m_mtx)
     ~InvertedLock()
     {
-        if (!m_pMutex)
-            return;
-        enterCS(*m_pMutex);
+        m_mtx.lock();
     }
 };
 
@@ -444,7 +468,7 @@ public:
 
 private:
 #if ENABLE_STDCXX_SYNC
-    condition_variable m_cv;
+    std::condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
 #endif
@@ -522,7 +546,7 @@ public:
         cond.notify_all();
     }
 
-    void signal_locked(UniqueLock& lk ATR_UNUSED)
+    void signal_locked(UniqueLock& lk SRT_ATR_UNUSED)
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();
@@ -715,6 +739,7 @@ public:
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
+namespace this_thread = std::this_thread;
 #else // pthreads wrapper version
 typedef ::CUDTException CThreadException;
 
@@ -816,9 +841,9 @@ namespace this_thread
 ///
 #ifdef ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -835,7 +860,21 @@ void SetThreadLocalError(const CUDTException& e);
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Random distribution functions.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Generate a uniform-distributed random integer from [minVal; maxVal].
+/// If HAVE_CXX11, uses std::uniform_distribution(std::random_device).
+/// @param[in] minVal minimum allowed value of the resulting random number.
+/// @param[in] maxVal maximum allowed value of the resulting random number.
+int genRandomInt(int minVal, int maxVal);
+
 } // namespace sync
 } // namespace srt
+
+#include "atomic_clock.h"
 
 #endif // INC_SRT_SYNC_H

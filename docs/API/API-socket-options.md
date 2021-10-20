@@ -239,7 +239,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_RCVSYN`](#SRTO_RCVSYN)                          |       | post     | `bool`    |         | true              |          | RW  | GSI   |
 | [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO)                      |       | post     | `int32_t` | ms      | -1                | -1, 0..  | RW  | GSI   |
 | [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS)                  |       | pre      | `bool`    |         | false             |          | RW  | S     |
-| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.4.2 | pre      | `int32_t` |         | 0                 | [0, 1]   | RW  | GSD   |
+| [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)          | 1.4.2 | pre      | `int32_t` |         | 1                 | [0, 1]   | RW  | GSD   |
 | [`SRTO_REUSEADDR`](#SRTO_REUSEADDR)                    |       | pre-bind | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_SENDER`](#SRTO_SENDER)                          | 1.0.4 | pre      | `bool`    |         | false             |          | W   | S     |
 | [`SRTO_SNDBUF`](#SRTO_SNDBUF)                          |       | pre-bind | `int32_t` | bytes   | 8192 payloads     | \*       | RW  | GSD+  |
@@ -847,6 +847,8 @@ dedicated network settings. MSS is not to be confused with the size of the UDP
 payload or SRT payload - this size is the size of the IP packet, including the
 UDP and SRT headers*
 
+THe value of `SRTO_MSS` must not exceed `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`.
+
 [Return to list](#list-of-options)
 
 ---
@@ -1273,19 +1275,22 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 | OptName               | Since | Restrict | Type      | Units  | Default | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | --------- | ------ | ------- | ------ | --- | ------ |
-| `SRTO_RETRANSMITALGO` | 1.4.2 | pre      | `int32_t` |        | 0       | [0, 1] | RW  | GSD    |
+| `SRTO_RETRANSMITALGO` | 1.4.2 | pre      | `int32_t` |        | 1       | [0, 1] | RW  | GSD    |
 
-Retransmission algorithm to use (SENDER option):
+An SRT sender option to choose between two retransmission algorithms:
 
-- 0 - Default (retransmit on every loss report).
-- 1 - Reduced retransmissions (not more often than once per RTT); reduced
-  bandwidth consumption.
+- 0 - an intensive retransmission algorithm (default until SRT v1.4.4), and
+- 1 - a new efficient retransmission algorithm (introduced in SRT v1.4.2; default since SRT v1.4.4).
 
-This option is effective only on the sending side. It influences the decision
+The intensive retransmission algorithm causes the SRT sender to schedule a packet for retransmission each time it receives a negative acknowledgement (NAK). On a network characterized by low packet loss levels and link capacity high enough to accommodate extra retransmission overhead, this algorithm increases the chances of recovering from packet loss with a minimum delay, and may better suit end-to-end latency constraints.
+
+The new efficient algorithm optimizes the bandwidth usage by producing fewer retransmissions per lost packet. It takes SRT statistics into account to determine if a retransmitted packet is still in flight and could reach the receiver in time, so that some of the NAK reports are ignored by the sender. This algorithm better fits general use cases, as well as cases where channel bandwidth is limited.
+
+NOTE: This option is effective only on the sending side. It influences the decision
 as to whether a particular reported lost packet should be retransmitted at a
 certain time or not.
 
-The reduced retransmission algorithm (`SRTO_RETRANSMITALGO=1`) is only operational when receiver sends
+NOTE: The efficient retransmission algorithm can only be used when a receiver sends
 Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
 [Return to list](#list-of-options)

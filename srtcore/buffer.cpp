@@ -59,9 +59,11 @@ modified by
 #include "core.h" // provides some constants
 #include "logging.h"
 
+namespace srt {
+
 using namespace std;
 using namespace srt_logging;
-using namespace srt::sync;
+using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.
 #if !defined(SRT_MAVG_SAMPLING_RATE)
@@ -183,7 +185,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
     int64_t& w_srctime  = w_mctrl.srctime;
-    int&      w_ttl     = w_mctrl.msgttl;
+    const int& ttl      = w_mctrl.msgttl;
     int       size      = len / m_iMSS;
     if ((len % m_iMSS) != 0)
         size++;
@@ -254,7 +256,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         s->m_llSourceTime_us = w_srctime;
         s->m_tsOriginTime = time;
         s->m_tsRexmitTime = time_point();
-        s->m_iTTL = w_ttl;
+        s->m_iTTL = ttl;
         // Rewrite the actual sending time back into w_srctime
         // so that the calling facilities can reuse it
         if (!w_srctime)
@@ -521,8 +523,19 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
-    for (int i = 0; i < offset; ++i)
+    for (int i = 0; i < offset && p != m_pLastBlock; ++i)
+    {
         p = p->m_pNext;
+    }
+    if (p == m_pLastBlock)
+    {
+        LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
+        return 0;
+    }
+#if ENABLE_HEAVY_LOGGING
+    const int32_t first_seq = p->m_iSeqNo;
+    int32_t last_seq = p->m_iSeqNo;
+#endif
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
@@ -538,14 +551,18 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // if found block is stale
     // (This is for messages that have declared TTL - messages that fail to be sent
     // before the TTL defined time comes, will be dropped).
+
     if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
     {
         int32_t msgno = p->getMsgSeq();
         w_msglen      = 1;
         p             = p->m_pNext;
         bool move     = false;
-        while (msgno == p->getMsgSeq())
+        while (p != m_pLastBlock && msgno == p->getMsgSeq())
         {
+#if ENABLE_HEAVY_LOGGING
+            last_seq = p->m_iSeqNo;
+#endif
             if (p == m_pCurrBlock)
                 move = true;
             p = p->m_pNext;
@@ -555,7 +572,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         }
 
         HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, " << w_msglen << " messages to drop, up to " << msgno);
+              log << "CSndBuffer::readData: due to TTL exceeded, SEQ " << first_seq << " - " << last_seq << ", "
+                  << w_msglen << " packets to drop, msgno=" << msgno);
 
         // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
         // This means that in this case it should be written by the message sequence value only
@@ -588,7 +606,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     return readlen;
 }
 
-srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
+sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
     const Block* p = m_pFirstBlock;
@@ -969,8 +987,8 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
     int lastack = m_iLastAckPos;
     int rs      = len;
 
-    int32_t trace_seq ATR_UNUSED = SRT_SEQNO_NONE;
-    int trace_shift ATR_UNUSED = -1;
+    int32_t trace_seq SRT_ATR_UNUSED = SRT_SEQNO_NONE;
+    int trace_shift SRT_ATR_UNUSED = -1;
 
     while ((p != lastack) && (rs > 0))
     {
@@ -1106,8 +1124,10 @@ size_t CRcvBuffer::dropData(int len)
 bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                                 bool&                     w_passack,
                                 int32_t&                  w_skipseqno,
-                                int32_t&                  w_curpktseq)
+                                int32_t&                  w_curpktseq,
+                                int32_t                   base_seq)
 {
+    HLOGC(brlog.Debug, log << "getRcvFirstMsg: base_seq=" << base_seq);
     w_skipseqno = SRT_SEQNO_NONE;
     w_passack   = false;
     // tsbpdtime will be retrieved by the below call
@@ -1120,8 +1140,8 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
 
     /* Check the acknowledged packets */
     // getRcvReadyMsg returns true if the time to play for the first message
-    // (returned in w_tsbpdtime) is in the past.
-    if (getRcvReadyMsg((w_tsbpdtime), (w_curpktseq), -1))
+    // that larger than base_seq is in the past.
+    if (getRcvReadyMsg((w_tsbpdtime), (w_curpktseq), -1, base_seq))
     {
         HLOGC(brlog.Debug, log << "getRcvFirstMsg: ready CONTIG packet: %" << w_curpktseq);
         return true;
@@ -1150,9 +1170,11 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
      * No acked packets ready but caller want to know next packet to wait for
      * Check the not yet acked packets that may be stuck by missing packet(s).
      */
-    bool haslost = false;
-    w_tsbpdtime  = steady_clock::time_point(); // redundant, for clarity
-    w_passack    = true;
+    bool                     haslost        = false;
+    int                      last_ready_pos = -1;
+    steady_clock::time_point tsbpdtime      = steady_clock::time_point();
+    w_tsbpdtime                             = steady_clock::time_point();
+    w_passack                               = true;
 
     // XXX SUSPECTED ISSUE with this algorithm:
     // The above call to getRcvReadyMsg() should report as to whether:
@@ -1178,8 +1200,11 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
     // When done so, the below loop would be completely unnecessary.
 
     // Logical description of the below algorithm:
-    // 1. Check if the VERY FIRST PACKET is valid; if so then:
-    //    - check if it's ready to play, return boolean value that marks it.
+    // 1. update w_tsbpdtime and w_curpktseq if found one packet ready to play
+    //    - keep check the next packet if still smaller than base_seq
+    // 2. set w_skipseqno if found packets before w_curpktseq lost
+    // if no packets larger than base_seq ready to play, return the largest RTP
+    // else return the first one that larger than base_seq and rady to play
 
     for (int i = m_iLastAckPos, n = shift(m_iLastAckPos, m_iMaxPos); i != n; i = shiftFwd(i))
     {
@@ -1191,19 +1216,30 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
         }
         else
         {
-            /* We got the 1st valid packet */
-            w_tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
-            if (w_tsbpdtime <= steady_clock::now())
+            tsbpdtime = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
+            /* Packet ready to play */
+            if (tsbpdtime <= steady_clock::now())
             {
-                /* Packet ready to play */
+                // If the last ready-to-play packet exists, free it.
+                if (!is_zero(w_tsbpdtime)) {
+                    HLOGC(brlog.Debug,
+                          log << "getRcvFirstMsg: found next ready packet, free last %"
+                              << w_curpktseq << " POS=" << last_ready_pos);
+                    SRT_ASSERT(w_curpktseq != SRT_SEQNO_NONE);
+                    freeUnitAt(last_ready_pos);
+                }
+                w_tsbpdtime    = tsbpdtime;
+                w_curpktseq    = m_pUnit[i]->m_Packet.m_iSeqNo;
+                last_ready_pos = i;
                 if (haslost)
+                    w_skipseqno = w_curpktseq;
+
+                if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqcmp(w_curpktseq, base_seq) <= 0)
                 {
-                    /*
-                     * Packet stuck on non-acked side because of missing packets.
-                     * Tell 1st valid packet seqno so caller can skip (drop) the missing packets.
-                     */
-                    w_skipseqno = m_pUnit[i]->m_Packet.m_iSeqNo;
-                    w_curpktseq = w_skipseqno;
+                    HLOGC(brlog.Debug,
+                          log << "getRcvFirstMsg: found ready packet %" << w_curpktseq
+                              << " but not larger than base_seq, try next");
+                    continue;
                 }
 
                 HLOGC(brlog.Debug,
@@ -1217,6 +1253,10 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
                 // ...
                 return true;
             }
+
+            if (!is_zero(w_tsbpdtime)) {
+                return true;
+            }
             HLOGC(brlog.Debug,
                   log << "getRcvFirstMsg: found NOT READY packet, nSKIPPED: "
                       << ((i - m_iLastAckPos + m_iSize) % m_iSize));
@@ -1228,6 +1268,9 @@ bool CRcvBuffer::getRcvFirstMsg(steady_clock::time_point& w_tsbpdtime,
         // ... and if this first packet WASN'T GOOD, the loop continues, however since now
         // the 'haslost' is set, which means that it continues only to find the first valid
         // packet after stating that the very first packet isn't valid.
+    }
+    if (!is_zero(w_tsbpdtime)) {
+        return true;
     }
     HLOGC(brlog.Debug, log << "getRcvFirstMsg: found NO PACKETS");
     return false;
@@ -1259,7 +1302,7 @@ int32_t CRcvBuffer::getTopMsgno() const
     return m_pUnit[m_iStartPos]->m_Packet.getMsgSeq();
 }
 
-bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto)
+bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto, int base_seq)
 {
     const bool havelimit = upto != -1;
     int        end = -1, past_end = -1;
@@ -1325,7 +1368,8 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
             // 1. Get the TSBPD time of the unit. Stop and return false if this unit
             //    is not yet ready to play.
             // 2. If it's ready to play, check also if it's decrypted. If not, skip it.
-            // 3. If it's ready to play and decrypted, stop and return it.
+            // 3. Check also if it's larger than base_seq, if not, skip it.
+            // 4. If it's ready to play, decrypted and larger than base, stop and return it.
             if (!havelimit)
             {
                 w_tsbpdtime                         = getPktTsbPdTime(m_pUnit[i]->m_Packet.getMsgTimeStamp());
@@ -1343,6 +1387,12 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
                 {
                     IF_HEAVY_LOGGING(reason = "DECRYPTION FAILED");
                     freeunit = true; /* packet not decrypted */
+                }
+                else if (base_seq != SRT_SEQNO_NONE && CSeqNo::seqcmp(w_curpktseq, base_seq) <= 0)
+                {
+                    IF_HEAVY_LOGGING(reason = "smaller than base_seq");
+                    w_tsbpdtime = steady_clock::time_point();
+                    freeunit = true;
                 }
                 else
                 {
@@ -1398,7 +1448,7 @@ bool CRcvBuffer::getRcvReadyMsg(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
         if (freeunit)
         {
-            HLOGC(brlog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED");
+            HLOGC(brlog.Debug, log << "getRcvReadyMsg: POS=" << i << " FREED: " << reason);
             /* removed skipped, dropped, undecryptable bytes from rcv buffer */
             const int rmbytes = (int)m_pUnit[i]->m_Packet.getLength();
             countBytes(-1, -rmbytes, true);
@@ -1500,8 +1550,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         HLOGC(brlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " IS NOT RECEIVED.");
         return 0;
     }
-    IF_HEAVY_LOGGING(int nskipped = 0);
 
+    IF_HEAVY_LOGGING(int nskipped = 0);
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
         /*
@@ -1510,8 +1560,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         if (m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD)
         {
             HLOGC(brlog.Debug,
-                  log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
-                      << nskipped << " empty cells skipped)");
+                log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
+                << nskipped << " empty cells skipped)");
             return &m_pUnit[i]->m_Packet;
         }
         IF_HEAVY_LOGGING(++nskipped);
@@ -1832,11 +1882,9 @@ void CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const
     m_tsbpd.setTsbPdMode(timebase, no_wrap_check, delay);
 }
 
-bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t                  timestamp_us,
-                                        steady_clock::duration&   w_udrift,
-                                        steady_clock::time_point& w_newtimebase)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, int rtt)
 {
-    return m_tsbpd.addDriftSample(timestamp_us, w_udrift, w_newtimebase);
+    return m_tsbpd.addDriftSample(timestamp_us, rtt);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
@@ -2240,3 +2288,5 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 
     return found;
 }
+
+} // namespace srt

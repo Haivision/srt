@@ -74,10 +74,28 @@ public:
     }
 };
 
+// terminal
+inline void Print(Log& ) {}
+
+template <typename Arg1, typename... Args>
+inline void Print(Log& out, Arg1&& arg1, Args&&... args)
+{
+    out << arg1;
+    Print(out, args...);
+}
+
 }
 
 inline Verbose::Log Verb() { return Verbose::Log(); }
 inline Verbose::ErrLog Verror() { return Verbose::ErrLog(); }
+
+template <typename... Args>
+inline void Verb(Args&&... args)
+{
+    Verbose::Log log;
+    Verbose::Print(log, args...);
+}
+
 
 // Manipulator tags
 static const Verbose::LogNoEol VerbNoEOL;

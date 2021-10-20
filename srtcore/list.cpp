@@ -100,13 +100,13 @@ void CSndLossList::traceState() const
     int pos = m_iHead;
     while (pos != SRT_SEQNO_NONE)
     {
-        ::cout << pos << ":[" << m_caSeq[pos].seqstart;
+        std::cout << pos << ":[" << m_caSeq[pos].seqstart;
         if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
-            ::cout << ", " << m_caSeq[pos].seqend;
-        ::cout << "], ";
+            std::cout << ", " << m_caSeq[pos].seqend;
+        std::cout << "], ";
         pos = m_caSeq[pos].inext;
     }
-    ::cout << "\n";
+    std::cout << "\n";
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)

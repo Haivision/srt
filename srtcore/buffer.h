@@ -71,10 +71,12 @@ modified by
 // a +% b : shift a by b
 // a == b : equality is same as for just numbers
 
+namespace srt {
+
 /// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
 class AvgBufSize
 {
-    typedef srt::sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::time_point time_point;
 
 public:
     AvgBufSize()
@@ -102,8 +104,8 @@ private:
 
 class CSndBuffer
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
 public:
     // XXX There's currently no way to access the socket ID set for
@@ -140,20 +142,18 @@ public:
     int addBufferFromFile(std::fstream& ifs, int len);
 
     /// Find data position to pack a DATA packet from the furthest reading point.
-    /// @param [out] data the pointer to the data position.
-    /// @param [out] msgno message number of the packet.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [in] kflags Odd|Even crypto key flag
+    /// @param [out] w_packet data packet buffer to fill.
+    /// @param [out] w_origintime origin time stamp of the message.
+    /// @param [in] kflags Odd|Even crypto key flag.
     /// @return Actual length of data read.
     int readData(CPacket& w_packet, time_point& w_origintime, int kflgs);
 
     /// Find data position to pack a DATA packet for a retransmission.
-    /// @param [out] data the pointer to the data position.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
-    /// @param [out] msgno message number of the packet.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [out] msglen length of the message
-    /// @return Actual length of data read.
+    /// @param [out] w_packet data packet buffer to fill.
+    /// @param [out] w_origintime origin time stamp of the message
+    /// @param [out] w_msglen length of the message
+    /// @return Actual length of data read (return 0 if offset too large, -1 if TTL exceeded).
     int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
@@ -207,7 +207,7 @@ private:                                                       // Constants
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
-    srt::sync::Mutex m_BufLock; // used to synchronize buffer operation
+    sync::Mutex m_BufLock; // used to synchronize buffer operation
 
     struct Block
     {
@@ -274,8 +274,8 @@ private:
 
 class CRcvBuffer
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
 public:
     // XXX There's currently no way to access the socket ID set for
@@ -411,11 +411,8 @@ public:
 
     /// Add packet timestamp for drift caclculation and compensation
     /// @param [in] timestamp packet time stamp
-    /// @param [out] w_udrift current drift value
-    /// @param [out] w_newtimebase current TSBPD base time
-    bool addRcvTsbPdDriftSample(uint32_t          timestamp,
-                                duration&         w_udrift,
-                                time_point&       w_newtimebase);
+    /// @param [in] rtt RTT sample
+    bool addRcvTsbPdDriftSample(uint32_t timestamp, int rtt);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
     void printDriftHistogram(int64_t iDrift);
@@ -429,11 +426,17 @@ public:
     /// @param [out] w_passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
     /// @param [out] w_skipseqno SRT_SEQNO_NONE or seq number of 1st unacknowledged pkt ready to play preceeded by
     /// missing packets.
+    /// @param base_seq          SRT_SEQNO_NONE or desired, ignore seq smaller than base if exist packet ready-to-play
+    /// and larger than base
     /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
     /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
     ///                   IF skipseqno != SRT_SEQNO_NONE, packet ready to play preceeded by missing packets.;
     ///                   IF skipseqno == SRT_SEQNO_NONE, no missing packet but 1st not ready to play.
-    bool getRcvFirstMsg(time_point& w_tsbpdtime, bool& w_passack, int32_t& w_skipseqno, int32_t& w_curpktseq);
+    bool getRcvFirstMsg(time_point& w_tsbpdtime,
+                        bool&       w_passack,
+                        int32_t&    w_skipseqno,
+                        int32_t&    w_curpktseq,
+                        int32_t     base_seq = SRT_SEQNO_NONE);
 
     /// Update the ACK point of the buffer.
     /// @param [in] len size of data to be skip & acknowledged.
@@ -472,9 +475,10 @@ private:
     /// Parameters (of the 1st packet queue, ready to play or not):
     /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
     /// none
+    /// @param base_seq        SRT_SEQNO_NONE or desired, ignore seq smaller than base
     /// @retval true 1st packet ready to play without discontinuity (no hole)
     /// @retval false tsbpdtime = 0: no packet ready to play
-    bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto);
+    bool getRcvReadyMsg(time_point& w_tsbpdtime, int32_t& w_curpktseq, int upto, int base_seq = SRT_SEQNO_NONE);
 
 public:
     /// @brief Get clock drift in microseconds.
@@ -542,20 +546,22 @@ private:
                   // up to which data are already retrieved;
                   // in message reading mode it's unused and always 0)
 
-    srt::sync::Mutex m_BytesCountLock;   // used to protect counters operations
-    int              m_iBytesCount;      // Number of payload bytes in the buffer
-    int              m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
-    int              m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
-    unsigned         m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
+    sync::Mutex m_BytesCountLock;   // used to protect counters operations
+    int         m_iBytesCount;      // Number of payload bytes in the buffer
+    int         m_iAckedPktsCount;  // Number of acknowledged pkts in the buffer
+    int         m_iAckedBytesCount; // Number of acknowledged payload bytes in the buffer
+    unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 
-    srt::CTsbpdTime  m_tsbpd;
+    CTsbpdTime  m_tsbpd;
 
-    AvgBufSize       m_mavg;
+    AvgBufSize  m_mavg;
 
 private:
     CRcvBuffer();
     CRcvBuffer(const CRcvBuffer&);
     CRcvBuffer& operator=(const CRcvBuffer&);
 };
+
+} // namespace srt
 
 #endif

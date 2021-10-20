@@ -2,13 +2,14 @@
 
 ## SRT API Documents
 
-| Document Title                                      |            Folder             | File Name                                          | Description                                          |
-| :-------------------------------------------------- | :---------------------------- | :------------------------------------------------- | :--------------------------------------------------- |
-| [SRT API](API/API.md)                               |          [API](API/)          | [API.md](API/API.md)                               | Detailed description of the SRT C API.               |
-| [SRT API Functions](API/API-functions.md)           |          [API](API/)          | [API-functions.md](API/API-functions.md)           | Reference document for SRT API functions.            |
-| [SRT API Socket Options](API/API-socket-options.md) |          [API](API/)          | [API-socket-options.md](API/API-socket-options.md) | Instructions and list of socket options for SRT API. |
-| [SRT Statistics](API/statistics.md)                 |          [API](API/)          | [statistics.md](API/statistics.md)                 | How to use SRT socket and socket group statistics.   |
-| <img width=200px height=1px/>                       | <img width=100px height=1px/> | <img width=200px height=1px/>                      | <img width=500px height=1px/>                        |
+| Document Title                                         |            Folder             | File Name                                          | Description                                          |
+| :----------------------------------------------------- | :---------------------------- | :------------------------------------------------- | :--------------------------------------------------- |
+| [SRT API](API/API.md)                                  |          [API](API/)          | [API.md](API/API.md)                               | Detailed description of the SRT C API.               |
+| [SRT API Functions](API/API-functions.md)              |          [API](API/)          | [API-functions.md](API/API-functions.md)           | Reference document for SRT API functions.            |
+| [SRT API Socket Options](API/API-socket-options.md)    |          [API](API/)          | [API-socket-options.md](API/API-socket-options.md) | Instructions and list of socket options for SRT API. |
+| [SRT Statistics](API/statistics.md)                    |          [API](API/)          | [statistics.md](API/statistics.md)                 | How to use SRT socket and socket group statistics.   |
+| [Configuration Guidelines](API/configuration-guidelines.md) |     [API](API/)          | [configuration-guidelines.md](API/configuration-guidelines.md) | How to configure SRT buffers.            |
+| <img width=200px height=1px/>                          | <img width=100px height=1px/> | <img width=200px height=1px/>                      | <img width=500px height=1px/>                        |
 
 ## Build Instructions
 
