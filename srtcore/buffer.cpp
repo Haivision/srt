@@ -932,7 +932,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
     {
         if (m_pUnit[p] == NULL)
         {
-            LOGC(brlog.Error, log << CONID() << " IPE readBuffer on null packet pointer");
+            LOGC(brlog.Error, log << CONID() << "IPE readBuffer on null packet pointer");
             return -1;
         }
 
