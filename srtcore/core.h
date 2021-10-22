@@ -60,6 +60,7 @@ modified by
 #include "common.h"
 #include "list.h"
 #include "buffer.h"
+#include "buffer_rcv.h"
 #include "window.h"
 #include "packet.h"
 #include "channel.h"
@@ -417,7 +418,11 @@ public: // internal API
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
+#if ENABLE_NEW_RCVBUFFER
+    SRTU_PROPERTY_RO(srt::CRcvBufferNew*, rcvBuffer, m_pRcvBuffer);
+#else
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
+#endif
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(sync::Condition*, recvDataCond, &m_RecvDataCond);
@@ -867,7 +872,11 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
+#if ENABLE_NEW_RCVBUFFER
+    CRcvBufferNew* m_pRcvBuffer;            //< Receiver buffer
+#else
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
+#endif
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
     std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
     int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
