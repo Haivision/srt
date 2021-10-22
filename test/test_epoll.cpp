@@ -718,7 +718,7 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
+            ASSERT_EQ(read[0], acpsock); // read event is for bind socket
         }
 
         char buffer[1316];
