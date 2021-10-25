@@ -10535,7 +10535,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
           log << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType) << " - checking cookie...");
     if (hs.m_iCookie != cookie_val)
     {
-        cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie
+        cookie_val = bake(addr, cookie_val, 1); // SHOULD generate an earlier, distracted cookie
 
         if (hs.m_iCookie != cookie_val)
         {
