@@ -541,7 +541,7 @@ private:
 
     void updateIdleLinkFrom(CUDT* source);
 
-    void checkNeedDrop(bool& bCongestion);
+    bool checkNeedDrop();
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
