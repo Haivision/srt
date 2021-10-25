@@ -10610,7 +10610,7 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor -
+        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
@@ -10785,7 +10785,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
           log << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType) << " - checking cookie...");
     if (hs.m_iCookie != cookie_val)
     {
-        cookie_val = bake(addr, cookie_val, 1); // SHOULD generate an earlier, distracted cookie
+        cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie
 
         if (hs.m_iCookie != cookie_val)
         {

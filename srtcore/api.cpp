@@ -3178,7 +3178,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
        for (sockets_t::iterator j = self->m_ClosedSockets.begin();
                j != self->m_ClosedSockets.end(); ++ j)
        {
-           j->second->m_tsClosureTimeStamp = steady_clock::now();
+           j->second->m_tsClosureTimeStamp = steady_clock::time_point();
        }
    }
 
