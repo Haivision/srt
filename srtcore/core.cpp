@@ -6362,10 +6362,10 @@ int srt::CUDT::receiveBuffer(char *data, int len)
 
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]];
 // [[using locked(m_SendLock)]];
-void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
+bool srt::CUDT::checkNeedDrop()
 {
     if (!m_bPeerTLPktDrop)
-        return;
+        return false;
 
     if (!m_config.bMessageAPI)
     {
@@ -6390,6 +6390,7 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
                        (2 * COMM_SYN_INTERVAL_US / 1000);
     }
 
+    bool bCongestion = false;
     if (threshold_ms && timespan_ms > threshold_ms)
     {
         // protect packet retransmission
@@ -6447,7 +6448,7 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
             }
 #endif
         }
-        w_bCongestion = true;
+        bCongestion = true;
         leaveCS(m_RecvAckLock);
     }
     else if (timespan_ms > (m_iPeerTsbPdDelay_ms / 2))
@@ -6455,8 +6456,9 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
         HLOGC(aslog.Debug,
               log << "cong, BYTES " << bytes << ", TMSPAN " << timespan_ms << "ms");
 
-        w_bCongestion = true;
+        bCongestion = true;
     }
+    return bCongestion;
 }
 
 int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t srctime)
@@ -6473,8 +6475,6 @@ int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64
 // which is the only case when the m_parent->m_GroupOf is not NULL.
 int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    bool         bCongestion = false;
-
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -6563,7 +6563,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     // checkNeedDrop(...) may lock m_RecvAckLock
     // to modify m_pSndBuffer and m_pSndLossList
-    checkNeedDrop((bCongestion));
+    const bool bCongestion = checkNeedDrop();
 
     int minlen = 1; // Minimum sender buffer space required for STREAM API
     if (m_config.bMessageAPI)
