@@ -5166,6 +5166,199 @@ void srt::CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_e
  * This thread runs only if TsbPd mode is enabled
  * Hold received packets until its time to 'play' them, at PktTimeStamp + TsbPdDelay.
  */
+#if ENABLE_NEW_RCVBUFFER
+void * srt::CUDT::tsbpd(void* param)
+{
+    CUDT* self = (CUDT*)param;
+
+    THREAD_STATE_INIT("SRT:TsbPd");
+
+#if ENABLE_EXPERIMENTAL_BONDING
+    // Make the TSBPD thread a "client" of the group,
+    // which will ensure that the group will not be physically
+    // deleted until this thread exits.
+    // NOTE: DO NOT LEAD TO EVER CANCEL THE THREAD!!!
+    CUDTUnited::GroupKeeper gkeeper(self->uglobal(), self->m_parent);
+#endif
+
+    UniqueLock recv_lock(self->m_RecvLock);
+    CSync recvdata_cc(self->m_RecvDataCond, recv_lock);
+    CSync tsbpd_cc(self->m_RcvTsbPdCond, recv_lock);
+
+    self->m_bTsbPdAckWakeup = true;
+    while (!self->m_bClosing)
+    {
+        steady_clock::time_point tsNextDelivery; // Next packet delivery time
+        bool                     rxready = false;
+#if ENABLE_EXPERIMENTAL_BONDING
+        bool shall_update_group = false;
+#endif
+
+        enterCS(self->m_RcvBufferLock);
+        const steady_clock::time_point tnow = steady_clock::now();
+
+        self->m_pRcvBuffer->updRcvAvgDataSize(tnow);
+        const srt::CRcvBufferNew::PacketInfo info = self->m_pRcvBuffer->getFirstValidPacketInfo();
+
+        const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
+        tsNextDelivery = info.tsbpd_time;
+
+        if (!self->m_bTLPktDrop)
+        {
+            rxready = !info.seq_gap && is_time_to_deliver;
+        }
+        else if (is_time_to_deliver)
+        {
+            rxready = true;
+            if (info.seq_gap)
+            {
+                const int seq_gap_len = CSeqNo::seqoff(self->m_iRcvLastSkipAck, info.seqno);
+                SRT_ASSERT(seq_gap_len > 0);
+                /*if (!info.seq_gap)
+                {
+                    LOGC(brlog.Warn, log << "TSBPD worker: no gap. pktseqno=" << info.seqno
+                        << ", m_iRcvLastSkipAck=" << self->m_iRcvLastSkipAck
+                        << ", RBuffer start seqno=" << self->m_pRcvBuffer->getStartSeqNo()
+                        << ", m_iRcvLastAck=" << self->m_iRcvLastAck
+                        << ", init seqnoo=" << self->m_iISN);
+                }*/
+
+                // Drop too late packets
+                self->updateForgotten(seq_gap_len, self->m_iRcvLastSkipAck, info.seqno);
+                //if (info.seq_gap) // If there is no sequence gap, we are reading ahead of ACK.
+                //{
+                self->m_pRcvBuffer->dropUpTo(info.seqno);
+                //}
+
+                self->m_iRcvLastSkipAck = info.seqno;
+#if ENABLE_EXPERIMENTAL_BONDING
+                shall_update_group = true;
+#endif
+
+#if ENABLE_LOGGING
+                const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
+                // TODO: seq_gap_len is not the actual number of packets dropped.
+#if ENABLE_HEAVY_LOGGING
+                HLOGC(tslog.Debug,
+                    log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
+                    << seq_gap_len << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
+                    << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
+#endif
+                LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << seq_gap_len << " packet(s), packet seqno %" << info.seqno
+                    << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
+                    << (timediff_us % 1000) << " ms");
+#endif
+
+                tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
+            }
+        }
+        leaveCS(self->m_RcvBufferLock);
+
+        if (rxready)
+        {
+            HLOGC(tslog.Debug,
+                log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
+                << (count_milliseconds(steady_clock::now() - info.tsbpd_time)) << "ms)");
+            /*
+             * There are packets ready to be delivered
+             * signal a waiting "recv" call if there is any data available
+             */
+            if (self->m_config.bSynRecving)
+            {
+                recvdata_cc.signal_locked(recv_lock);
+            }
+            /*
+             * Set EPOLL_IN to wakeup any thread waiting on epoll
+             */
+            self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
+#if ENABLE_EXPERIMENTAL_BONDING
+            // If this is NULL, it means:
+            // - the socket never was a group member
+            // - the socket was a group member, but:
+            //    - was just removed as a part of closure
+            //    - and will never be member of the group anymore
+
+            // If this is not NULL, it means:
+            // - This socket is currently member of the group
+            // - This socket WAS a member of the group, though possibly removed from it already, BUT:
+            //   - the group that this socket IS OR WAS member of is in the GroupKeeper
+            //   - the GroupKeeper prevents the group from being deleted
+            //   - it is then completely safe to access the group here,
+            //     EVEN IF THE SOCKET THAT WAS ITS MEMBER IS BEING DELETED.
+
+            // It is ensured that the group object exists here because GroupKeeper
+            // keeps it busy, even if you just closed the socket, remove it as a member
+            // or even the group is empty and was explicitly closed.
+            if (gkeeper.group)
+            {
+                // Functions called below will lock m_GroupLock, which in hierarchy
+                // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
+                // m_GroupLock inside the calls.
+                InvertedLock unrecv(self->m_RecvLock);
+                // The current "APP reader" needs to simply decide as to whether
+                // the next CUDTGroup::recv() call should return with no blocking or not.
+                // When the group is read-ready, it should update its pollers as it sees fit.
+
+                // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << info.seqno << " makes group readable");
+                gkeeper.group->updateReadState(self->m_SocketID, info.seqno);
+
+                if (shall_update_group)
+                {
+                    // A group may need to update the parallelly used idle links,
+                    // should it have any. Pass the current socket position in order
+                    // to skip it from the group loop.
+                    // NOTE: SELF LOCKING.
+                    gkeeper.group->updateLatestRcv(self->m_parent);
+                }
+            }
+#endif
+            CGlobEvent::triggerEvent();
+            tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
+        }
+
+        if (!is_zero(tsNextDelivery))
+        {
+            IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
+            /*
+             * Buffer at head of queue is not ready to play.
+             * Schedule wakeup when it will be.
+             */
+            self->m_bTsbPdAckWakeup = false;
+            HLOGC(tslog.Debug,
+                log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
+                << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms");
+            THREAD_PAUSED();
+            tsbpd_cc.wait_until(tsNextDelivery);
+            THREAD_RESUMED();
+        }
+        else
+        {
+            /*
+             * We have just signaled epoll; or
+             * receive queue is empty; or
+             * next buffer to deliver is not in receive queue (missing packet in sequence).
+             *
+             * Block until woken up by one of the following event:
+             * - All ready-to-play packets have been pulled and EPOLL_IN cleared (then loop to block until next pkt time
+             * if any)
+             * - New buffers ACKed
+             * - Closing the connection
+             */
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
+            self->m_bTsbPdAckWakeup = true;
+            THREAD_PAUSED();
+            tsbpd_cc.wait();
+            THREAD_RESUMED();
+        }
+
+        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
+    }
+    THREAD_EXIT();
+    HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
+    return NULL;
+}
+#else
 void * srt::CUDT::tsbpd(void *param)
 {
     CUDT *self = (CUDT *)param;
@@ -5382,6 +5575,7 @@ void * srt::CUDT::tsbpd(void *param)
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
 }
+#endif // ENABLE_NEW_RCVBUFFER
 
 void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
 {
@@ -5435,7 +5629,12 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
+#if ENABLE_NEW_RCVBUFFER
+        SRT_ASSERT(m_iISN != -1);
+        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, &(m_pRcvQueue->m_UnitQueue), m_bPeerRexmitFlag, m_config.bMessageAPI);
+#else
         m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_config.iRcvBufSize);
+#endif
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
@@ -6609,18 +6808,26 @@ int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 size_t srt::CUDT::getAvailRcvBufferSizeLock() const
 {
     ScopedLock lck(m_RcvBufferLock);
-    return m_pRcvBuffer->getAvailBufSize();
+    return getAvailRcvBufferSizeNoLock();
 }
 
 size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
 {
+#if ENABLE_NEW_RCVBUFFER
+    return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
+#else
     return m_pRcvBuffer->getAvailBufSize();
+#endif
 }
 
 bool srt::CUDT::isRcvBufferReady() const
 {
     ScopedLock lck(m_RcvBufferLock);
+#if ENABLE_NEW_RCVBUFFER
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+#else
     return m_pRcvBuffer->isRcvDataReady();
+#endif
 }
 
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
@@ -6663,7 +6870,13 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: CONNECTION BROKEN - reading from recv buffer just for formality");
         enterCS(m_RcvBufferLock);
+#if ENABLE_NEW_RCVBUFFER
+        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+            ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
+            : 0;
+#else
         const int res = m_pRcvBuffer->readMsg(data, len);
+#endif
         leaveCS(m_RcvBufferLock);
         w_mctrl.srctime = 0;
 
@@ -6697,13 +6910,21 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             return res;
     }
 
+#if !ENABLE_NEW_RCVBUFFER
     const int seqdistance = -1;
+#endif
 
     if (!m_config.bSynRecving)
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
         enterCS(m_RcvBufferLock);
+#if ENABLE_NEW_RCVBUFFER
+        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+            ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
+            : 0;
+#else
         const int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl), seqdistance);
+#endif
         leaveCS(m_RcvBufferLock);
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
 
@@ -6765,9 +6986,13 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
     do
     {
+#if ENABLE_NEW_RCVBUFFER
+        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+#else
         steady_clock::time_point tstime SRT_ATR_UNUSED;
         int32_t seqno;
         if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance))
+#endif
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -6780,7 +7005,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
                 // of kicking TSBPD.
                 // bool spurious = (tstime != 0);
 
-                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd" << (is_zero(tstime) ? " (SPURIOUS!)" : ""));
+                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd");
                 tscond.signal_locked(recvguard);
             }
 
@@ -6823,7 +7048,11 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
                 */
 
         enterCS(m_RcvBufferLock);
+#if ENABLE_NEW_RCVBUFFER
+        res = m_pRcvBuffer->readMessage((data), len, &w_mctrl);
+#else
         res = m_pRcvBuffer->readMsg((data), len, (w_mctrl), seqdistance);
+#endif
         leaveCS(m_RcvBufferLock);
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
@@ -7130,98 +7359,129 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    ScopedLock statsguard(m_StatsLock);
-
-    const steady_clock::time_point currtime = steady_clock::now();
-
-    perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
-    perf->pktSent              = m_stats.traceSent;
-    perf->pktSentUnique        = m_stats.traceSentUniq;
-    perf->pktRecv              = m_stats.traceRecv;
-    perf->pktRecvUnique        = m_stats.traceRecvUniq;
-    perf->pktSndLoss           = m_stats.traceSndLoss;
-    perf->pktRcvLoss           = m_stats.traceRcvLoss;
-    perf->pktRetrans           = m_stats.traceRetrans;
-    perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
-    perf->pktSentACK           = m_stats.sentACK;
-    perf->pktRecvACK           = m_stats.recvACK;
-    perf->pktSentNAK           = m_stats.sentNAK;
-    perf->pktRecvNAK           = m_stats.recvNAK;
-    perf->usSndDuration        = m_stats.sndDuration;
-    perf->pktReorderDistance   = m_stats.traceReorderDistance;
-    perf->pktReorderTolerance  = m_iReorderTolerance;
-    perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
-    perf->pktRcvBelated        = m_stats.traceRcvBelated;
-
-    perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
-    perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
-    perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
-    perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
-
-    /* perf byte counters include all headers (SRT+UDP+IP) */
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
-    perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
-    perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
-    perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
-    perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
-    perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
+    {
+        ScopedLock statsguard(m_StatsLock);
 
-    perf->pktSndDrop  = m_stats.traceSndDrop;
-    perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
-    perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
-    perf->byteRcvDrop =
-        m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
-    perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
-    perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
+        const steady_clock::time_point currtime = steady_clock::now();
 
-    perf->pktSentTotal       = m_stats.sentTotal;
-    perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
-    perf->pktRecvTotal       = m_stats.recvTotal;
-    perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
-    perf->pktSndLossTotal    = m_stats.sndLossTotal;
-    perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
-    perf->pktRetransTotal    = m_stats.retransTotal;
-    perf->pktSentACKTotal    = m_stats.sentACKTotal;
-    perf->pktRecvACKTotal    = m_stats.recvACKTotal;
-    perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
-    perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
-    perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
+        perf->pktSent              = m_stats.traceSent;
+        perf->pktSentUnique        = m_stats.traceSentUniq;
+        perf->pktRecv              = m_stats.traceRecv;
+        perf->pktRecvUnique        = m_stats.traceRecvUniq;
+        perf->pktSndLoss           = m_stats.traceSndLoss;
+        perf->pktRcvLoss           = m_stats.traceRcvLoss;
+        perf->pktRetrans           = m_stats.traceRetrans;
+        perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
+        perf->pktSentACK           = m_stats.sentACK;
+        perf->pktRecvACK           = m_stats.recvACK;
+        perf->pktSentNAK           = m_stats.sentNAK;
+        perf->pktRecvNAK           = m_stats.recvNAK;
+        perf->usSndDuration        = m_stats.sndDuration;
+        perf->pktReorderDistance   = m_stats.traceReorderDistance;
+        perf->pktReorderTolerance  = m_iReorderTolerance;
+        perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
+        perf->pktRcvBelated        = m_stats.traceRcvBelated;
 
-    perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
-    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
-    perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
-    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
-    perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
-    perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-    perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-    perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-    perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+        perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
+        perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
+        perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
+        perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
 
-    perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
-    perf->pktSndDropTotal  = m_stats.sndDropTotal;
-    perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
-    perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
-    perf->byteRcvDropTotal =
-        m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
-    perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
-    perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+        /* perf byte counters include all headers (SRT+UDP+IP) */
+        perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
+        perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
+        perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
+        perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
+        perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
+        perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
 
-    const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
-    perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
-    perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-    perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
-    perf->pktFlowWindow       = m_iFlowWindowSize.load();
-    perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = getFlightSpan();
-    perf->msRTT               = (double)m_iSRTT / 1000.0;
-    perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
-    perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
-    perf->byteMSS             = m_config.iMSS;
+        perf->pktSndDrop  = m_stats.traceSndDrop;
+        perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
+        perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
+        perf->byteRcvDrop =
+            m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
+        perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
+        perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
 
-    perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
-                      : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
-                                             : 0;
+        perf->pktSentTotal       = m_stats.sentTotal;
+        perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
+        perf->pktRecvTotal       = m_stats.recvTotal;
+        perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
+        perf->pktSndLossTotal    = m_stats.sndLossTotal;
+        perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
+        perf->pktRetransTotal    = m_stats.retransTotal;
+        perf->pktSentACKTotal    = m_stats.sentACKTotal;
+        perf->pktRecvACKTotal    = m_stats.recvACKTotal;
+        perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
+        perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
+        perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+
+        perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
+        perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
+        perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
+        perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
+        perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
+        perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
+        perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
+        perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
+        perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+
+        perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
+        perf->pktSndDropTotal  = m_stats.sndDropTotal;
+        perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
+        perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
+        perf->byteRcvDropTotal =
+            m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
+        perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
+        perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+
+        // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
+        const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
+        perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
+        perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
+        perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
+        perf->pktFlowWindow       = m_iFlowWindowSize.load();
+        perf->pktCongestionWindow = (int)m_dCongestionWindow;
+        perf->pktFlightSize       = getFlightSpan();
+        perf->msRTT               = (double)m_iSRTT / 1000.0;
+        perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+        perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
+        perf->byteMSS             = m_config.iMSS;
+
+        perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
+                        : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
+                                                : 0;
+
+        if (clear)
+        {
+            m_stats.traceSndDrop           = 0;
+            m_stats.traceRcvDrop           = 0;
+            m_stats.traceSndBytesDrop      = 0;
+            m_stats.traceRcvBytesDrop      = 0;
+            m_stats.traceRcvUndecrypt      = 0;
+            m_stats.traceRcvBytesUndecrypt = 0;
+            m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
+            m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
+            m_stats.traceSent = m_stats.traceRecv
+                = m_stats.traceSentUniq = m_stats.traceRecvUniq
+                = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
+                = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
+            m_stats.sndDuration                                                       = 0;
+            m_stats.traceRcvRetrans                                                   = 0;
+            m_stats.traceRcvBelated                                                   = 0;
+            m_stats.traceRcvBytesLoss = 0;
+
+            m_stats.sndFilterExtra = 0;
+            m_stats.rcvFilterExtra = 0;
+
+            m_stats.rcvFilterSupply = 0;
+            m_stats.rcvFilterLoss   = 0;
+
+            m_stats.tsLastSampleTime = currtime;
+        }
+    }
 
     const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth.load();
 
@@ -7242,7 +7502,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
                 perf->pktSndBuf = m_pSndBuffer->getAvgBufSize((perf->byteSndBuf), (perf->msSndBuf));
             }
             perf->byteSndBuf += (perf->pktSndBuf * pktHdrSize);
-            //<
             perf->byteAvailSndBuf = (m_config.iSndBufSize - perf->pktSndBuf) * m_config.iMSS;
         }
         else
@@ -7284,34 +7543,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->msSndBuf   = 0;
         perf->byteRcvBuf = 0;
         perf->msRcvBuf   = 0;
-    }
-
-    if (clear)
-    {
-        m_stats.traceSndDrop           = 0;
-        m_stats.traceRcvDrop           = 0;
-        m_stats.traceSndBytesDrop      = 0;
-        m_stats.traceRcvBytesDrop      = 0;
-        m_stats.traceRcvUndecrypt      = 0;
-        m_stats.traceRcvBytesUndecrypt = 0;
-        m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
-        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
-        m_stats.traceSent = m_stats.traceRecv
-            = m_stats.traceSentUniq = m_stats.traceRecvUniq
-            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.sndDuration                                                       = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceRcvBelated                                                   = 0;
-        m_stats.traceRcvBytesLoss = 0;
-
-        m_stats.sndFilterExtra = 0;
-        m_stats.rcvFilterExtra = 0;
-
-        m_stats.rcvFilterSupply = 0;
-        m_stats.rcvFilterLoss   = 0;
-
-        m_stats.tsLastSampleTime = currtime;
     }
 }
 
@@ -7507,12 +7738,22 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
 {
     const int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
-    HLOGC(xtlog.Debug, log << "ackDataUpTo: %" << ack << " vs. current %" << m_iRcvLastSkipAck
-            << " (signing off " << acksize << " packets)");
+    HLOGC(xtlog.Debug, log << "ackDataUpTo: %" << m_iRcvLastSkipAck << " -> %" << ack
+            << " (" << acksize << " packets)");
 
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
 
+#if ENABLE_NEW_RCVBUFFER
+    const std::pair<int, int> range = m_pRcvBuffer->getAvailablePacketsRange();
+    // Some packets acknowledged are not available in the buffer.
+    if (CSeqNo::seqcmp(range.second, ack) < 0)
+    {
+        LOGC(xtlog.Error, log << "IPE: Acknowledged seqno %" << ack << " outruns the RCV buffer state %" << range.first
+            << " - %" << range.second);
+    }
+    return acksize;
+#else
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
     // were signed off for extraction.
@@ -7527,6 +7768,7 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
     if (distance > 0)
         return CSeqNo::decseq(ack, distance);
     return ack;
+#endif
 }
 
 namespace srt {
@@ -8642,10 +8884,16 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
+    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
+
     {
-        const bool using_rexmit_flag = m_bPeerRexmitFlag;
         UniqueLock rlock(m_RecvLock);
+        const bool using_rexmit_flag = m_bPeerRexmitFlag;
+#if ENABLE_NEW_RCVBUFFER
+        m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+#else
         m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+#endif
         // When the drop request was received, it means that there are
         // packets for which there will never be ACK sent; if the TSBPD thread
         // is currently in the ACK-waiting state, it may never exit.
@@ -8656,8 +8904,6 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             cc.signal_locked(rlock);
         }
     }
-
-    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     dropFromLossLists(dropdata[0], dropdata[1]);
 
@@ -8807,7 +9053,11 @@ void srt::CUDT::updateSrtRcvSettings()
     {
         /* We are TsbPd receiver */
         enterCS(m_RecvLock);
+#if ENABLE_NEW_RCVBUFFER
+        m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
+#else
         m_pRcvBuffer->setRcvTsbPdMode(m_tsRcvPeerStartTime, milliseconds_from(m_iTsbPdDelay_ms));
+#endif
         leaveCS(m_RecvLock);
 
         HLOGF(cnlog.Debug,
@@ -9716,17 +9966,28 @@ int srt::CUDT::processData(CUnit* in_unit)
                 }
                 else
                 {
+#if ENABLE_NEW_RCVBUFFER
+                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
+                        << ", insert offset " << offset << ". "
+                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
+                    );
+#else
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                         << ", insert offset " << offset << ". "
                         << m_pRcvBuffer->strFullnessState(steady_clock::now())
                     );
+#endif
 
                     return -1;
                 }
             }
 
             bool adding_successful = true;
+#if ENABLE_NEW_RCVBUFFER
+            if (m_pRcvBuffer->insert(*i) < 0)
+#else
             if (m_pRcvBuffer->addData(*i, offset) < 0)
+#endif
             {
                 // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
                 // So this packet is "redundant".
@@ -9772,14 +10033,6 @@ int srt::CUDT::processData(CUnit* in_unit)
             }
 
 #if ENABLE_HEAVY_LOGGING
-            std::ostringstream timebufspec;
-            if (m_bTsbPd)
-            {
-                int dsize = m_pRcvBuffer->getRcvDataSize();
-                timebufspec << "(" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
-                    << "-" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
-            }
-
             std::ostringstream expectspec;
             if (excessive)
                 expectspec << "EXCESSIVE(" << exc_type << rexmit_reason << ")";
@@ -9796,7 +10049,6 @@ int srt::CUDT::processData(CUnit* in_unit)
                     << ") "
                     << " RSL=" << expectspec.str()
                     << " SN=" << rexmitstat[pktrexmitflag]
-                    << " DLVTM=" << timebufspec.str()
                     << " FLAGS: "
                     << rpkt.MessageFlagStr());
 #endif
@@ -10358,7 +10610,7 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor -
+        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;

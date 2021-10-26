@@ -792,6 +792,8 @@ void CSndBuffer::increase()
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#if (!ENABLE_NEW_RCVBUFFER)
+
 /*
  *   RcvBuffer (circular buffer):
  *
@@ -932,7 +934,7 @@ int CRcvBuffer::readBuffer(char* data, int len)
     {
         if (m_pUnit[p] == NULL)
         {
-            LOGC(brlog.Error, log << CONID() << " IPE readBuffer on null packet pointer");
+            LOGC(brlog.Error, log << CONID() << "IPE readBuffer on null packet pointer");
             return -1;
         }
 
@@ -2288,5 +2290,7 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 
     return found;
 }
+
+#endif // !ENABLE_NEW_RCVBUFFER
 
 } // namespace srt

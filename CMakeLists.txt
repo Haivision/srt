@@ -123,7 +123,11 @@ endif()
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
+else()
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
@@ -148,6 +152,7 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_NEW_RCVBUFFER "Enable new receiver buffer implementation" ON)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -201,7 +206,6 @@ if (NOT USE_ENCLIB)
 	else()
 		set (USE_ENCLIB openssl)
 	endif()
-
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
@@ -481,6 +485,14 @@ message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+endif()
+
+if (ENABLE_NEW_RCVBUFFER)
+	add_definitions(-DENABLE_NEW_RCVBUFFER=1)
+	message(STATUS "RECEIVER_BUFFER: NEW")
+else()
+	remove_definitions(-DENABLE_NEW_RCVBUFFER)
+	message(STATUS "RECEIVER_BUFFER: OLD")
 endif()
 
 if (CMAKE_MAJOR_VERSION LESS 3)
@@ -1288,6 +1300,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	endif()
 
 	MafReadDir(test filelist.maf
+		HEADERS SOURCES_unittests
 		SOURCES SOURCES_unittests
 	)
 

@@ -79,8 +79,6 @@ protected:
         std::uniform_int_distribution<short> dis(-128, 127);
         std::generate(m_buf.begin(), m_buf.end(), [dis, gen]() mutable { return (char)dis(gen); });
 
-        cout << "Generated: " << static_cast<int>(m_buf[0]) << ", " << static_cast<int>(m_buf[1]) << std::endl;
-
         ASSERT_NE(srt_listen(m_server_sock, NSOCK), -1);
     }
 
@@ -126,13 +124,16 @@ protected:
 };
 
 
-
+// This test establishes multiple connections to a single SRT listener on a localhost port.
+// Packets are submitted for sending to all those connections in a non-blocking mode.
+// Then all connections are closed. Some sockets may potentially still have undelivered packets.
+// This test tries to reproduce the issue described in #1182, and fixed by #1315.
 TEST_F(TestConnection, Multiple)
 {
     const sockaddr_in lsa = m_sa;
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&lsa);
 
-    auto ex = std::async([this] { return AcceptLoop(); });
+    auto ex = std::async(std::launch::async, [this] { return AcceptLoop(); });
 
     cerr << "Opening " << NSOCK << " connections\n";
 
@@ -177,6 +178,7 @@ TEST_F(TestConnection, Multiple)
 
     cerr << "Synchronize with the accepting thread\n";
     ex.wait();
+    cerr << "Synchronization done\n";
 }
 
 

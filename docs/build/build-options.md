@@ -80,7 +80,7 @@ The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library
 as a dependency. This may be required in some cases where you have an application 
 written in C which therefore won't link against `libstdc++` by default.
 
-**`--enable-c++11`** (default: ON)
+**`--enable-c++11`** (default: ON except for GCC<4.7)
 
 Enable compiling in C++11 mode for those parts that may require it.
 Parts that don't require it will still be compiled in C++03 mode,
@@ -198,6 +198,11 @@ will be removed when the problem is fixed globally.
 This option enables the standard C++ `thread` and `chrono` libraries (available since C++11)
 to be used by SRT instead of the `pthreads`.
 
+**`--enable-new-rcvbuffer`** (default: ON)
+
+This option enables the new implementation of the receiver buffer with behavior and code improvements.
+The new receiver buffer is to remain the only one. For the transition period there is a possibility to
+fall back to the old one.
 
 **`--enable-profile`** (default: OFF)
 

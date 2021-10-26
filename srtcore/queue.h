@@ -79,6 +79,7 @@ struct CUnit
         DROPPED = 3
     };
     Flag m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
+    // TODO: Transition to the new RcvBuffer allows to use bool here.
 };
 
 class CUnitQueue
