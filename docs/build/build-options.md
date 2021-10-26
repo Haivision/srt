@@ -52,7 +52,7 @@ All options below are presented using the `configure` convention. They can all
 be used in `cmake` with the appropriate format changes.
 
 
-**`--enable-show-project-config`** (default:ON)
+**`--enable-show-project-config`** (default:OFF)
 
 When ON, the project configuration is displayed at the end of the CMake Configuration
 Step.
