@@ -193,20 +193,27 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     HLOGC(bslog.Debug,
           log << "addBuffer: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for "
               << len << " bytes");
+    // Retrieve current time before locking the mutex to be closer to packet submission event.
+    const steady_clock::time_point tnow = steady_clock::now();
 
-    // dynamically increase sender buffer
+    ScopedLock bufferguard(m_BufLock);
+    // Dynamically increase sender buffer if there is not enough room.
     while (size + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug, log << "addBuffer: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
-    const steady_clock::time_point time = steady_clock::now();
     const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
-
     HLOGC(bslog.Debug,
           log << CONID() << "addBuffer: adding " << size << " packets (" << len << " bytes) to send, msgno="
               << (w_msgno > 0 ? w_msgno : m_iNextMsgNo) << (inorder ? "" : " NOT") << " in order");
+
+    // Calculate origin time (same for all blocks of the message).
+    m_tsLastOriginTime = w_srctime ? time_point() + microseconds_from(w_srctime) : tnow;
+    // Rewrite back the actual value, even if it stays the same, so that the calling facilities can reuse it.
+    // May also be a subject to conversion error, thus the actual value is signalled back.
+    w_srctime = count_microseconds(m_tsLastOriginTime.time_since_epoch());
 
     // The sequence number passed to this function is the sequence number
     // that the very first packet from the packet series should get here.
@@ -253,33 +260,21 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_llSourceTime_us = w_srctime;
-        s->m_tsOriginTime = time;
-        s->m_tsRexmitTime = time_point();
         s->m_iTTL = ttl;
-        // Rewrite the actual sending time back into w_srctime
-        // so that the calling facilities can reuse it
-        if (!w_srctime)
-            w_srctime = count_microseconds(s->m_tsOriginTime.time_since_epoch());
-
-        // XXX unchecked condition: s->m_pNext == NULL.
+        s->m_tsRexmitTime = time_point();
+        s->m_tsOriginTime = m_tsLastOriginTime;
+        
         // Should never happen, as the call to increase() should ensure enough buffers.
         SRT_ASSERT(s->m_pNext);
         s = s->m_pNext;
     }
     m_pLastBlock = s;
 
-    enterCS(m_BufLock);
     m_iCount += size;
-
     m_iBytesCount += len;
-    m_tsLastOriginTime = time;
 
-    updateInputRate(time, size, len);
-
-    updAvgBufSize(time);
-
-    leaveCS(m_BufLock);
+    updateInputRate(m_tsLastOriginTime, size, len);
+    updAvgBufSize(m_tsLastOriginTime);
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
     // At least it's known that it's from some index inside til the end (to bit 0).
@@ -402,16 +397,6 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& block)
-{
-    if (block.m_llSourceTime_us)
-    {
-        return steady_clock::time_point() + microseconds_from(block.m_llSourceTime_us);
-    }
-
-    return block.m_tsOriginTime;
-}
-
 int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
 {
     // No data to read
@@ -459,7 +444,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     }
 
     w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
-    w_srctime         = getSourceTime(*m_pCurrBlock);
+    w_srctime         = m_pCurrBlock->m_tsOriginTime;
     m_pCurrBlock      = m_pCurrBlock->m_pNext;
 
     HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
@@ -593,7 +578,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // the packet originally (the other overload of this function) must set these
     // flags.
     w_packet.m_iMsgNo = p->m_iMsgNoBitset;
-    w_srctime = getSourceTime(*p);
+    w_srctime = p->m_tsOriginTime;
 
     // This function is called when packet retransmission is triggered.
     // Therefore we are setting the rexmit time.
@@ -683,9 +668,15 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
      * Also, if there is only one pkt in buffer, the time difference will be 0.
      * Therefore, always add 1 ms if not empty.
      */
-    w_timespan = 0 < m_iCount ? count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
+    w_timespan = 0 < m_iCount ? (int) count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
 
     return m_iCount;
+}
+
+CSndBuffer::time_point CSndBuffer::getOldestTime() const
+{
+    SRT_ASSERT(m_pFirstBlock);
+    return m_pFirstBlock->m_tsOriginTime;
 }
 
 int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)
