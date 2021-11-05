@@ -11,12 +11,13 @@ class CRcvBufferReadMsg
     : public ::testing::Test
 {
 protected:
-    CRcvBufferReadMsg()
+    CRcvBufferReadMsg(bool message_api = true)
+        : m_use_message_api(message_api)
     {
         // initialization code here
     }
 
-    ~CRcvBufferReadMsg()
+    virtual ~CRcvBufferReadMsg()
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
@@ -31,7 +32,7 @@ protected:
         m_unit_queue->init(m_buff_size_pkts, 1500, AF_INET);
 
 #if ENABLE_NEW_RCVBUFFER
-        const bool enable_msg_api = true;
+        const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
         m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_peer_rexmit, enable_msg_api));
 #else
@@ -161,6 +162,7 @@ protected:
     const int m_init_seqno = 1000;
     int m_first_unack_seqno = m_init_seqno;
     static const size_t m_payload_sz = 1456;
+    const bool m_use_message_api;
 
     const sync::steady_clock::time_point m_tsbpd_base = sync::steady_clock::now(); // now() - HS.timestamp, microseconds
     const sync::steady_clock::duration m_delay = sync::milliseconds_from(200);
@@ -831,6 +833,114 @@ TEST_F(CRcvBufferReadMsg, TSBPDGapBeforeValid)
     array<char, 2 * msg_bytelen> buff;
     EXPECT_EQ(readMessage(buff.data(), buff.size()), msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, seqno));
+    EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+}
+
+
+class CRcvBufferReadStream
+    : public CRcvBufferReadMsg
+{
+protected:
+    CRcvBufferReadStream()
+        : CRcvBufferReadMsg(false)
+    {}
+
+    virtual ~CRcvBufferReadStream() { }
+};
+
+
+// Add ten packets to the buffer in stream mode, read some of them.
+// Try to add packets to occupied positions.
+TEST_F(CRcvBufferReadStream, ReadSinglePackets)
+{
+    const int num_pkts = 10;
+    ASSERT_LT(num_pkts, m_buff_size_pkts);
+    for (int i = 0; i < num_pkts; ++i)
+    {
+        EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), false, false), 0);
+    }
+
+    // The available buffer size remains the same
+    // The value is reported by SRT receiver like this:
+    // data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+    EXPECT_TRUE(hasAvailablePackets());
+
+    // Now acknowledge two packets
+    const int ack_pkts = 2;
+    ackPackets(2);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1 - ack_pkts);
+    EXPECT_TRUE(hasAvailablePackets());
+
+    std::array<char, m_payload_sz> buff;
+    for (int i = 0; i < ack_pkts; ++i)
+    {
+        const size_t res = m_rcv_buffer->readBuffer(buff.data(), buff.size());
+        EXPECT_TRUE(size_t(res) == m_payload_sz);
+        EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - ack_pkts + i);
+        EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
+    }
+
+    // Add packet to the position of oackets already read.
+    // Can't check the old buffer, as it does not handle a negative offset.
+    EXPECT_EQ(addPacket(m_init_seqno), -2);
+
+    // Add packet to a non-empty position.
+    EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts)), -1);
+
+    const int num_pkts_left = num_pkts - ack_pkts;
+    ackPackets(num_pkts_left);
+    for (int i = 0; i < num_pkts_left; ++i)
+    {
+        const int res = m_rcv_buffer->readBuffer(buff.data(), buff.size());
+        EXPECT_TRUE(size_t(res) == m_payload_sz);
+        EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts_left + i);
+        EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, ack_pkts + i)));
+    }
+    EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+}
+
+
+// Add packets to the buffer in stream mode. Read fractional number of packets
+// to confirm a partially read packet stays in the buffer and is read properly afterwards.
+TEST_F(CRcvBufferReadStream, ReadFractional)
+{
+    const int num_pkts = 10;
+    ASSERT_LT(num_pkts, m_buff_size_pkts);
+    for (int i = 0; i < num_pkts; ++i)
+    {
+        EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), false, false), 0);
+    }
+
+    // The available buffer size remains the same
+    // The value is reported by SRT receiver like this:
+    // data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+    EXPECT_TRUE(hasAvailablePackets());
+
+    array<char, m_payload_sz * num_pkts> buff;
+
+    const size_t nfull_pkts = 2;
+    const size_t num_bytes1 = nfull_pkts * m_payload_sz + m_payload_sz / 2;
+    const int res1 = m_rcv_buffer->readBuffer(buff.data(), num_bytes1);
+    EXPECT_TRUE(size_t(res1) == num_bytes1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - nfull_pkts - 1);
+    EXPECT_TRUE(hasAvailablePackets());
+
+    const size_t num_bytes2 = m_payload_sz * (num_pkts - nfull_pkts - 1) + m_payload_sz / 2;
+
+    const int res2 = m_rcv_buffer->readBuffer(buff.data() + num_bytes1, buff.size() - num_bytes1);
+    EXPECT_TRUE(size_t(res2) == num_bytes2);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts - 1);
+    EXPECT_FALSE(hasAvailablePackets());
+    ackPackets(num_pkts); // Move the reference ACK position.
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+
+    for (int i = 0; i < num_pkts; ++i)
+    {
+        EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, CSeqNo::incseq(m_init_seqno, i))) << "i = " << i;
+    }
+
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
