@@ -94,7 +94,7 @@ endforeach()
 
 # SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
 # SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
-# SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
+# SRT_DEBUG_TRACE_DRIFT 1         /* Create a trace log for Encoder-Decoder Clock Drift */
 # SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
