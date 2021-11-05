@@ -816,14 +816,6 @@ void CSndBuffer::increase()
  *    m_iMaxPos:     none? (modified on add and ack
  */
 
-// XXX Init values moved to in-class.
-// const uint32_t CRcvBuffer::TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
-// const int CRcvBuffer::TSBPD_DRIFT_MAX_VALUE   = 5000;  // usec
-// const int CRcvBuffer::TSBPD_DRIFT_MAX_SAMPLES = 1000;  // ACK-ACK packets
-#ifdef SRT_DEBUG_TSBPD_DRIFT
-// const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
-#endif
-
 CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     : m_pUnit(NULL)
     , m_iSize(bufsize_pkts)
@@ -841,11 +833,6 @@ CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     m_pUnit = new CUnit*[m_iSize];
     for (int i = 0; i < m_iSize; ++i)
         m_pUnit[i] = NULL;
-
-#ifdef SRT_DEBUG_TSBPD_DRIFT
-    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
-    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
-#endif
 
     setupMutex(m_BytesCountLock, "BytesCount");
 }
