@@ -470,9 +470,9 @@ private:
     FixedArray<T>& operator=(const FixedArray<T>&);
 
 private:
-    const std::string m_strIndexErr;
-    size_t    m_size;
-    T* const  m_entries;
+    const char* m_strIndexErr;
+    size_t      m_size;
+    T* const    m_entries;
 };
 
 } // namespace srt
