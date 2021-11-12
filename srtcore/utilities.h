@@ -44,6 +44,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 // -------------- UTILITIES ------------------------
 
@@ -418,7 +419,8 @@ class FixedArray
 {
 public:
     FixedArray(size_t size)
-        : m_size(size)
+        : m_strIndexErr("FixedArray: invalid index")
+        , m_size(size)
         , m_entries(new T[size])
     {
     }
@@ -432,7 +434,7 @@ public:
     const T& operator[](size_t index) const
     {
         if (index >= m_size)
-            throw std::runtime_error("Invalid index");
+            throw std::runtime_error(m_strIndexErr);
 
         return m_entries[index];
     }
@@ -440,7 +442,7 @@ public:
     T& operator[](size_t index)
     {
         if (index >= m_size)
-            throw std::runtime_error("Invalid index");
+            throw std::runtime_error(m_strIndexErr);
 
         return m_entries[index];
     }
@@ -448,7 +450,7 @@ public:
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error("Invalid index");
+            throw std::runtime_error(m_strIndexErr);
 
         return m_entries[index];
     }
@@ -456,7 +458,7 @@ public:
     T& operator[](int index)
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error("Invalid index");
+            throw std::runtime_error(m_strIndexErr);
 
         return m_entries[index];
     }
@@ -468,6 +470,7 @@ private:
     FixedArray<T>& operator=(const FixedArray<T>&);
 
 private:
+    const std::string m_strIndexErr;
     size_t    m_size;
     T* const  m_entries;
 };
