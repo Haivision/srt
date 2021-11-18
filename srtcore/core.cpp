@@ -8101,7 +8101,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     // The current "APP reader" needs to simply decide as to whether
                     // the next CUDTGroup::recv() call should return with no blocking or not.
                     // When the group is read-ready, it should update its pollers as it sees fit.
-                    m_parent->m_GroupOf->updateReadState(m_SocketID, first_seq);
+                    m_parent->m_GroupOf->updateReadState(m_SocketID, ack);
                 }
             }
 #endif
