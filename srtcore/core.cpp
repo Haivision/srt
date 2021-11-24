@@ -9219,17 +9219,15 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             SRT_ASSERT(msglen >= 1);
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
 
-            HLOGC(qrlog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+            HLOGC(qrlog.Debug,
+                  log << "loss-reported packets expired in SndBuf - requesting DROP: "
+                      << "msgno=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen
+                      << " SEQ:" << seqpair[0] << " - " << seqpair[1]);
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
-            // only one msg drop request is necessary
-            m_pSndLossList->removeUpTo(seqpair[1]);
-
             // skip all dropped packets
+            m_pSndLossList->removeUpTo(seqpair[1]);
             m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqpair[1]);
-
             continue;
         }
         else if (payload == 0)
@@ -9327,7 +9325,14 @@ std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
             // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
             // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
             kflg    = m_pCryptoControl->getSndCryptoFlags();
-            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
+            int pktskipseqno = 0;
+            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg, (pktskipseqno));
+            if (pktskipseqno)
+            {
+                // Some packets were skipped due to TTL expiry.
+                m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo, pktskipseqno);
+            }
+
             if (payload)
             {
                 // A CHANGE. The sequence number is currently added to the packet

@@ -142,17 +142,18 @@ public:
     int addBufferFromFile(std::fstream& ifs, int len);
 
     /// Find data position to pack a DATA packet from the furthest reading point.
-    /// @param [out] w_packet data packet buffer to fill.
-    /// @param [out] w_origintime origin time stamp of the message.
-    /// @param [in] kflags Odd|Even crypto key flag.
+    /// @param [out] packet the packet to read.
+    /// @param [out] origintime origin time stamp of the message
+    /// @param [in] kflags Odd|Even crypto key flag
+    /// @param [out] seqnoinc the number of packets skipped due to TTL, so that seqno should be incremented.
     /// @return Actual length of data read.
-    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs);
+    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
 
     /// Find data position to pack a DATA packet for a retransmission.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
-    /// @param [out] w_packet data packet buffer to fill.
-    /// @param [out] w_origintime origin time stamp of the message
-    /// @param [out] w_msglen length of the message
+    /// @param [out] packet the packet to read.
+    /// @param [out] origintime origin time stamp of the message
+    /// @param [out] msglen length of the message
     /// @return Actual length of data read (return 0 if offset too large, -1 if TTL exceeded).
     int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
