@@ -52,6 +52,12 @@ All options below are presented using the `configure` convention. They can all
 be used in `cmake` with the appropriate format changes.
 
 
+**`--enable-show-project-config`** (default:OFF)
+
+When ON, the project configuration is displayed at the end of the CMake Configuration
+Step.
+
+
 **`--cygwin-use-posix`** (default:OFF)
 
 When ON, compile on Cygwin using POSIX API (otherwise it will use MinGW environment).
@@ -192,6 +198,11 @@ will be removed when the problem is fixed globally.
 This option enables the standard C++ `thread` and `chrono` libraries (available since C++11)
 to be used by SRT instead of the `pthreads`.
 
+**`--enable-new-rcvbuffer`** (default: ON)
+
+This option enables the new implementation of the receiver buffer with behavior and code improvements.
+The new receiver buffer is to remain the only one. For the transition period there is a possibility to
+fall back to the old one.
 
 **`--enable-profile`** (default: OFF)
 

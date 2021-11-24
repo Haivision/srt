@@ -44,6 +44,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 // -------------- UTILITIES ------------------------
 
@@ -409,6 +410,72 @@ struct DynamicStruct
     char* raw() { return (char*)inarray; }
 };
 
+
+/// Fixed-size array template class.
+namespace srt {
+
+template <class T>
+class FixedArray
+{
+public:
+    FixedArray(size_t size)
+        : m_strIndexErr("FixedArray: invalid index")
+        , m_size(size)
+        , m_entries(new T[size])
+    {
+    }
+
+    ~FixedArray()
+    {
+        delete [] m_entries;
+    }
+
+public:
+    const T& operator[](size_t index) const
+    {
+        if (index >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    T& operator[](size_t index)
+    {
+        if (index >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    const T& operator[](int index) const
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    T& operator[](int index)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    size_t  size() const { return m_size; }
+
+private:
+    FixedArray(const FixedArray<T>& );
+    FixedArray<T>& operator=(const FixedArray<T>&);
+
+private:
+    const char* m_strIndexErr;
+    size_t      m_size;
+    T* const    m_entries;
+};
+
+} // namespace srt
 
 // ------------------------------------------------------------
 

@@ -179,6 +179,8 @@ public:
     int  getAvgBufSize(int& bytes, int& timespan);
     int  getCurrBufSize(int& bytes, int& timespan);
 
+    time_point getOldestTime() const;
+
     uint64_t getInRatePeriod() const { return m_InRatePeriod; }
 
     /// Retrieve input bitrate in bytes per second
@@ -198,9 +200,6 @@ private:
     void increase();
     void setInputRateSmpPeriod(int period);
 
-    struct Block; // Defined below
-    static time_point getSourceTime(const CSndBuffer::Block& block);
-
 private:                                                       // Constants
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
@@ -217,9 +216,8 @@ private:
 
         int32_t    m_iMsgNoBitset; // message number
         int32_t    m_iSeqNo;       // sequence number for scheduling
-        time_point m_tsOriginTime; // original request time
+        time_point m_tsOriginTime; // block origin time (either provided from above or equials the time a message was submitted for sending.
         time_point m_tsRexmitTime; // packet retransmission time
-        uint64_t   m_llSourceTime_us;
         int        m_iTTL; // time to live (milliseconds)
 
         Block* m_pNext; // next block
@@ -272,6 +270,8 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
+#if (!ENABLE_NEW_RCVBUFFER)
 
 class CRcvBuffer
 {
@@ -562,6 +562,8 @@ private:
     CRcvBuffer(const CRcvBuffer&);
     CRcvBuffer& operator=(const CRcvBuffer&);
 };
+
+#endif // !ENABLE_NEW_RCVBUFFER
 
 } // namespace srt
 
