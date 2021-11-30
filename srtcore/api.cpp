@@ -178,6 +178,7 @@ bool srt::CUDTSocket::broken() const
 srt::CUDTUnited::CUDTUnited():
     m_Sockets(),
     m_GlobControlLock(),
+    m_UpdateConnStatusLock(),
     m_IDLock(),
     m_mMultiplexer(),
     m_MultiplexerLock(),
@@ -197,6 +198,7 @@ srt::CUDTUnited::CUDTUnited():
    // might destroy the application before `main`. This shouldn't
    // be a problem in general.
    setupMutex(m_GlobControlLock, "GlobControl");
+   setupMutex(m_UpdateConnStatusLock, "UpdateConnectionStatus");
    setupMutex(m_IDLock, "ID");
    setupMutex(m_InitLock, "Init");
 
@@ -214,6 +216,7 @@ srt::CUDTUnited::~CUDTUnited()
     }
 
     releaseMutex(m_GlobControlLock);
+    releaseMutex(m_UpdateConnStatusLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
 
@@ -2572,6 +2575,7 @@ srt::CUDTSocket* srt::CUDTUnited::locatePeer(
 
 void srt::CUDTUnited::checkBrokenSockets()
 {
+   ScopedLock us(m_UpdateConnStatusLock);
    ScopedLock cg(m_GlobControlLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING

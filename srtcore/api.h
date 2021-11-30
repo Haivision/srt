@@ -381,6 +381,8 @@ private:
 
    sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
+   sync::Mutex m_UpdateConnStatusLock;          // used to synchronize Garbage Collector and UpdateConnectionStatus
+
    sync::Mutex m_IDLock;                        // used to synchronize ID generation
 
    SRTSOCKET m_SocketIDGenerator;               // seed to generate a new unique socket ID
