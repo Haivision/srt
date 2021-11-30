@@ -140,7 +140,7 @@ const char* strerror_get_message(size_t major, size_t minor)
     }
 
     const char** array = strerror_array_major[major];
-    size_t size = strerror_array_sizes[major];
+    const size_t size = strerror_array_sizes[major];
 
     if (minor >= size)
     {

@@ -233,7 +233,7 @@ private:
     int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
     int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
 
-    typedef bool copy_to_dst_f(char* data, int len, void* arg);
+    typedef bool copy_to_dst_f(char* data, int len, int dst_offset, void* arg);
 
     /// Read acknowledged data directly into file.
     /// @param [in] ofs C++ file stream.

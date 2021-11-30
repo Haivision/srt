@@ -6275,8 +6275,8 @@ int srt::CUDT::receiveBuffer(char *data, int len)
             return 0;
         }
         HLOGC(arlog.Debug,
-              log << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
-                  << " SHUTDOWN. Reporting as BROKEN.");
+            log << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
+            << " SHUTDOWN. Reporting as BROKEN.");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -6288,31 +6288,29 @@ int srt::CUDT::receiveBuffer(char *data, int len)
         {
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
+
+        // Kick TsbPd thread to schedule next wakeup (if running)
+        if (m_config.iRcvTimeOut < 0)
+        {
+            THREAD_PAUSED();
+            while (stillConnected() && !isRcvBufferReady())
+            {
+                // Do not block forever, check connection status each 1 sec.
+                rcond.wait_for(seconds_from(1));
+            }
+            THREAD_RESUMED();
+        }
         else
         {
-            /* Kick TsbPd thread to schedule next wakeup (if running) */
-            if (m_config.iRcvTimeOut < 0)
+            const steady_clock::time_point exptime =
+                steady_clock::now() + milliseconds_from(m_config.iRcvTimeOut);
+            THREAD_PAUSED();
+            while (stillConnected() && !isRcvBufferReady())
             {
-                THREAD_PAUSED();
-                while (stillConnected() && !isRcvBufferReady())
-                {
-                    // Do not block forever, check connection status each 1 sec.
-                    rcond.wait_for(seconds_from(1));
-                }
-                THREAD_RESUMED();
+                if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
+                    break; // timeout
             }
-            else
-            {
-                const steady_clock::time_point exptime =
-                    steady_clock::now() + milliseconds_from(m_config.iRcvTimeOut);
-                THREAD_PAUSED();
-                while (stillConnected() && !isRcvBufferReady())
-                {
-                    if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
-                        break; // timeout
-                }
-                THREAD_RESUMED();
-            }
+            THREAD_RESUMED();
         }
     }
 
@@ -6364,10 +6362,10 @@ int srt::CUDT::receiveBuffer(char *data, int len)
 
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]];
 // [[using locked(m_SendLock)]];
-void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
+bool srt::CUDT::checkNeedDrop()
 {
     if (!m_bPeerTLPktDrop)
-        return;
+        return false;
 
     if (!m_config.bMessageAPI)
     {
@@ -6392,6 +6390,7 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
                        (2 * COMM_SYN_INTERVAL_US / 1000);
     }
 
+    bool bCongestion = false;
     if (threshold_ms && timespan_ms > threshold_ms)
     {
         // protect packet retransmission
@@ -6449,7 +6448,7 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
             }
 #endif
         }
-        w_bCongestion = true;
+        bCongestion = true;
         leaveCS(m_RecvAckLock);
     }
     else if (timespan_ms > (m_iPeerTsbPdDelay_ms / 2))
@@ -6457,8 +6456,9 @@ void srt::CUDT::checkNeedDrop(bool& w_bCongestion)
         HLOGC(aslog.Debug,
               log << "cong, BYTES " << bytes << ", TMSPAN " << timespan_ms << "ms");
 
-        w_bCongestion = true;
+        bCongestion = true;
     }
+    return bCongestion;
 }
 
 int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t srctime)
@@ -6475,8 +6475,6 @@ int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64
 // which is the only case when the m_parent->m_GroupOf is not NULL.
 int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    bool         bCongestion = false;
-
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -6565,7 +6563,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     // checkNeedDrop(...) may lock m_RecvAckLock
     // to modify m_pSndBuffer and m_pSndLossList
-    checkNeedDrop((bCongestion));
+    const bool bCongestion = checkNeedDrop();
 
     int minlen = 1; // Minimum sender buffer space required for STREAM API
     if (m_config.bMessageAPI)
@@ -8066,23 +8064,31 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             {
                 UniqueLock rdlock (m_RecvLock);
                 CSync      rdcond (m_RecvDataCond, rdlock);
-                if (m_config.bSynRecving)
+
+#if ENABLE_NEW_RCVBUFFER
+                // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
+                // Must check read-readiness under m_RecvLock to protect the epoll from concurrent changes in readBuffer()
+                if (isRcvBufferReady())
+#endif
                 {
-                    // signal a waiting "recv" call if there is any data available
-                    rdcond.signal_locked(rdlock);
+                    if (m_config.bSynRecving)
+                    {
+                        // signal a waiting "recv" call if there is any data available
+                        rdcond.signal_locked(rdlock);
+                    }
+                    // acknowledge any waiting epolls to read
+                    // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
+                    // 1. user call receive/receivemessage(about line number:6482)
+                    // 2. after read/receive, if rcvbuffer is empty, will set SRT_EPOLL_IN event to false
+                    // 3. but if we do not do some lock work here, will cause some sync problems between threads:
+                    //      (1) user thread: call receive/receivemessage
+                    //      (2) user thread: read data
+                    //      (3) user thread: no data in rcvbuffer, set SRT_EPOLL_IN event to false
+                    //      (4) receive thread: receive data and set SRT_EPOLL_IN to true
+                    //      (5) user thread: set SRT_EPOLL_IN to false
+                    // 4. so , m_RecvLock must be used here to protect epoll event
+                    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
                 }
-                // acknowledge any waiting epolls to read
-                // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
-                // 1. user call receive/receivemessage(about line number:6482)
-                // 2. after read/receive, if rcvbuffer is empty, will set SRT_EPOLL_IN event to false
-                // 3. but if we do not do some lock work here, will cause some sync problems between threads:
-                //      (1) user thread: call receive/receivemessage
-                //      (2) user thread: read data
-                //      (3) user thread: no data in rcvbuffer, set SRT_EPOLL_IN event to false
-                //      (4) receive thread: receive data and set SRT_EPOLL_IN to true
-                //      (5) user thread: set SRT_EPOLL_IN to false
-                // 4. so , m_RecvLock must be used here to protect epoll event
-                uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
             }
 #if ENABLE_EXPERIMENTAL_BONDING
             if (m_parent->m_GroupOf)
@@ -9213,17 +9219,15 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             SRT_ASSERT(msglen >= 1);
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
 
-            HLOGC(qrlog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+            HLOGC(qrlog.Debug,
+                  log << "loss-reported packets expired in SndBuf - requesting DROP: "
+                      << "msgno=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen
+                      << " SEQ:" << seqpair[0] << " - " << seqpair[1]);
             sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
 
-            // only one msg drop request is necessary
-            m_pSndLossList->removeUpTo(seqpair[1]);
-
             // skip all dropped packets
+            m_pSndLossList->removeUpTo(seqpair[1]);
             m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqpair[1]);
-
             continue;
         }
         else if (payload == 0)
@@ -9321,7 +9325,14 @@ std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
             // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
             // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
             kflg    = m_pCryptoControl->getSndCryptoFlags();
-            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
+            int pktskipseqno = 0;
+            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg, (pktskipseqno));
+            if (pktskipseqno)
+            {
+                // Some packets were skipped due to TTL expiry.
+                m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo, pktskipseqno);
+            }
+
             if (payload)
             {
                 // A CHANGE. The sequence number is currently added to the packet
