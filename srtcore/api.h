@@ -474,10 +474,10 @@ private:
 #if ENABLE_EXPERIMENTAL_BONDING
    groups_t m_ClosedGroups;
 #endif
-
-   void checkBrokenSockets();
-   void removeSocket(const SRTSOCKET u);
-
+   typedef std::list<std::map<int, CMultiplexer>::iterator> PlexerList;
+   void checkBrokenSockets(PlexerList& toDestroy);
+   void removeSocket(const SRTSOCKET u, PlexerList& toDestroy);
+   void tryDestroyMuxer(PlexerList& toDestroy);
    CEPoll m_EPoll;                                     // handling epoll data structures and events
 
 private:

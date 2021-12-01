@@ -2573,7 +2573,7 @@ srt::CUDTSocket* srt::CUDTUnited::locatePeer(
    return NULL;
 }
 
-void srt::CUDTUnited::checkBrokenSockets()
+void srt::CUDTUnited::checkBrokenSockets(PlexerList& toDestroy)
 {
    ScopedLock us(m_UpdateConnStatusLock);
    ScopedLock cg(m_GlobControlLock);
@@ -2714,11 +2714,11 @@ void srt::CUDTUnited::checkBrokenSockets()
 
    // remove those timeout sockets
    for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++ l)
-      removeSocket(*l);
+      removeSocket(*l, toDestroy);
 }
 
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
+void srt::CUDTUnited::removeSocket(const SRTSOCKET u, PlexerList& toDestroy)
 {
    sockets_t::iterator i = m_ClosedSockets.find(u);
 
@@ -2813,26 +2813,37 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
       LOGC(smlog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
       return;
    }
+   toDestroy.push_back(m);
+   
 
-   CMultiplexer& mx = m->second;
+   
+}
 
-   mx.m_iRefCount --;
-   // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
-   //    u, mx.m_iRefCount);
-   if (0 == mx.m_iRefCount)
+void srt::CUDTUnited::tryDestroyMuxer(PlexerList& toDestroy)
+{
+   for (auto it = toDestroy.begin(); it != toDestroy.end(); ++it)
    {
-       HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
-           << u << " - deleting muxer bound to port "
-           << mx.m_pChannel->bindAddressAny().hport());
-      // The channel has no access to the queues and
-      // it looks like the multiplexer is the master of all of them.
-      // The queues must be silenced before closing the channel
-      // because this will cause error to be returned in any operation
-      // being currently done in the queues, if any.
-      mx.m_pSndQueue->setClosing();
-      mx.m_pRcvQueue->setClosing();
-      mx.destroy();
-      m_mMultiplexer.erase(m);
+       auto m = *it;
+       CMultiplexer& mx = m->second;
+       mx.m_iRefCount--;
+       // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
+       //    u, mx.m_iRefCount);
+       
+       if (0 == mx.m_iRefCount)
+       {
+           HLOGC(smlog.Debug,
+                 log << "MUXER id=" << mx.m_iID << " lost last socket - deleting muxer bound to port "
+                     << mx.m_pChannel->bindAddressAny().hport());
+           // The channel has no access to the queues and
+           // it looks like the multiplexer is the master of all of them.
+           // The queues must be silenced before closing the channel
+           // because this will cause error to be returned in any operation
+           // being currently done in the queues, if any.
+           mx.m_pSndQueue->setClosing();
+           mx.m_pRcvQueue->setClosing();
+           mx.destroy();
+           m_mMultiplexer.erase(m);
+       }
    }
 }
 
@@ -3136,8 +3147,9 @@ void* srt::CUDTUnited::garbageCollect(void* p)
    while (!self->m_bClosing)
    {
        INCREMENT_THREAD_ITERATIONS();
-       self->checkBrokenSockets();
-
+       PlexerList PlexerstoDestroy;
+       self->checkBrokenSockets(PlexerstoDestroy);
+       self->tryDestroyMuxer(PlexerstoDestroy);
        HLOGC(inlog.Debug, log << "GC: sleep 1 s");
        self->m_GCStopCond.wait_for(gclock, seconds_from(1));
    }
@@ -3189,8 +3201,9 @@ void* srt::CUDTUnited::garbageCollect(void* p)
    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
    while (true)
    {
-      self->checkBrokenSockets();
-
+      PlexerList PlexerstoDestroy;
+      self->checkBrokenSockets(PlexerstoDestroy);
+      self->tryDestroyMuxer(PlexerstoDestroy);
       enterCS(self->m_GlobControlLock);
       bool empty = self->m_ClosedSockets.empty();
       leaveCS(self->m_GlobControlLock);
