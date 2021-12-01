@@ -645,7 +645,8 @@ bool CRcvLossList::remove(int32_t seqno)
     {
         LOGC(qrlog.Error,
              log << "IPE: Can not find " << seqno << " in the loss list: m_iLength=" << m_iLength
-                 << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << ", loc=" << loc);
+                 << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << ", loc=" << loc << ", m_caSeq[loc].seqstart="
+                 << m_caSeq[loc].seqstart << ", m_caSeq[loc].seqend=" << m_caSeq[loc].seqend);
         return false;
     }
 
