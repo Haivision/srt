@@ -509,11 +509,18 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
     // Data to be inserted must be larger than all those in the list
     if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
     {
-        LOGC(qrlog.Error,
-             log << "RCV-LOSS/insert: IPE: (" << seqno1 << "," << seqno2
-                 << ") to be inserted too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
-                 << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
-        return;
+        if (CSeqNo::seqcmp(seqno2, m_iLargestSeq) > 0)
+        {
+            seqno1 = CSeqNo::incseq(m_iLargestSeq);
+        }
+        else
+        {
+            LOGC(qrlog.Error,
+                 log << "RCV-LOSS/insert: IPE: (" << seqno1 << "," << seqno2
+                     << ") to be inserted too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
+                     << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
+            return;
+        }
     }
     m_iLargestSeq = seqno2;
 
