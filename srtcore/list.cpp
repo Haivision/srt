@@ -583,6 +583,8 @@ bool CRcvLossList::remove(int32_t seqno)
                 m_iHead = m_caSeq[m_iHead].inext;
                 if (-1 != m_iHead)
                     m_caSeq[m_iHead].iprior = -1;
+                else
+                    m_iTail = -1;
             }
             else
             {
