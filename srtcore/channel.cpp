@@ -265,7 +265,81 @@ void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 
 void srt::CChannel::setUDPSockOpt()
 {
-#if defined(BSD) || TARGET_OS_MAC
+#if defined(SUNOS)
+    {
+        socklen_t optSize;
+        // Retrieve starting SND/RCV Buffer sizes.
+        int startRCVBUF = 0;
+        optSize         = sizeof(startRCVBUF);
+        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&startRCVBUF, &optSize))
+        {
+            startRCVBUF = -1;
+        }
+        int startSNDBUF = 0;
+        optSize         = sizeof(startSNDBUF);
+        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&startSNDBUF, &optSize))
+        {
+            startSNDBUF = -1;
+        }
+
+        // SunOS will fail setsockopt() if the requested buffer size exceeds system
+        //   maximum value.
+        // However, do not reduce the buffer size.
+        const int maxsize = 64000;
+        if (0 !=
+            ::setsockopt(
+                m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
+        {
+            int currentRCVBUF = 0;
+            optSize           = sizeof(currentRCVBUF);
+            if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentRCVBUF, &optSize))
+            {
+                currentRCVBUF = -1;
+            }
+            if (maxsize > currentRCVBUF)
+            {
+                ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&maxsize, sizeof maxsize);
+            }
+        }
+        if (0 !=
+            ::setsockopt(
+                m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
+        {
+            int currentSNDBUF = 0;
+            optSize           = sizeof(currentSNDBUF);
+            if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentSNDBUF, &optSize))
+            {
+                currentSNDBUF = -1;
+            }
+            if (maxsize > currentSNDBUF)
+            {
+                ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&maxsize, sizeof maxsize);
+            }
+        }
+
+        // Retrieve ending SND/RCV Buffer sizes.
+        int endRCVBUF = 0;
+        optSize       = sizeof(endRCVBUF);
+        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&endRCVBUF, &optSize))
+        {
+            endRCVBUF = -1;
+        }
+        int endSNDBUF = 0;
+        optSize       = sizeof(endSNDBUF);
+        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&endSNDBUF, &optSize))
+        {
+            endSNDBUF = -1;
+        }
+        LOGC(kmlog.Debug,
+             log << "SO_RCVBUF:"
+                 << " startRCVBUF=" << startRCVBUF << " m_mcfg.iUDPRcvBufSize=" << m_mcfg.iUDPRcvBufSize
+                 << " endRCVBUF=" << endRCVBUF);
+        LOGC(kmlog.Debug,
+             log << "SO_SNDBUF:"
+                 << " startSNDBUF=" << startSNDBUF << " m_mcfg.iUDPSndBufSize=" << m_mcfg.iUDPSndBufSize
+                 << " endSNDBUF=" << endSNDBUF);
+    }
+#elif defined(BSD) || TARGET_OS_MAC
     // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
     int maxsize = 64000;
     if (0 != ::setsockopt(
