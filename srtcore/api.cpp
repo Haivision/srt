@@ -2821,6 +2821,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u, PlexerList& toDestroy)
 
 void srt::CUDTUnited::tryDestroyMuxer(PlexerList& toDestroy)
 {
+   ScopedLock cg(m_GlobControlLock);
    for (auto it = toDestroy.begin(); it != toDestroy.end(); ++it)
    {
        auto m = *it;
