@@ -2822,9 +2822,9 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u, PlexerList& toDestroy)
 void srt::CUDTUnited::tryDestroyMuxer(PlexerList& toDestroy)
 {
    ScopedLock cg(m_GlobControlLock);
-   for (auto it = toDestroy.begin(); it != toDestroy.end(); ++it)
+   for (PlexerList::iterator it = toDestroy.begin(); it != toDestroy.end(); ++it)
    {
-       auto m = *it;
+       std::map<int, CMultiplexer>::iterator m = *it;
        CMultiplexer& mx = m->second;
        mx.m_iRefCount--;
        // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
