@@ -487,6 +487,7 @@ CRcvLossList::CRcvLossList(int size)
     , m_iTail(-1)
     , m_iLength(0)
     , m_iSize(size)
+    , m_iLargestSeq(SRT_SEQNO_NONE)
 {
     m_caSeq = new Seq[m_iSize];
 
@@ -506,7 +507,15 @@ CRcvLossList::~CRcvLossList()
 void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
     // Data to be inserted must be larger than all those in the list
-    // guaranteed by the UDT receiver
+    if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
+    {
+        LOGC(qrlog.Error,
+             log << "RCV-LOSS/insert: IPE: (" << seqno1 << "," << seqno2
+                 << ") to be inserted too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
+                 << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
+        return;
+    }
+    m_iLargestSeq = seqno2;
 
     if (0 == m_iLength)
     {
@@ -561,6 +570,9 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
 bool CRcvLossList::remove(int32_t seqno)
 {
+    if (m_iLargestSeq == SRT_SEQNO_NONE || CSeqNo::seqcmp(seqno, m_iLargestSeq) > 0)
+        m_iLargestSeq = seqno;
+
     if (0 == m_iLength)
         return false;
 
