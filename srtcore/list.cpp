@@ -518,9 +518,9 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
         }
         else
         {
-            LOGC(qrlog.Error,
-                 log << "RCV-LOSS/insert: IPE: (" << seqno1 << "," << seqno2
-                     << ") to be inserted too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
+            LOGC(qrlog.Warn,
+                 log << "RCV-LOSS/insert: (" << seqno1 << "," << seqno2
+                     << ") to be inserted is too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
                      << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
             return;
         }
