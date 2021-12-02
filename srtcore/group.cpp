@@ -444,10 +444,19 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         HLOGC(gmlog.Debug, log << "... SPREADING to existing sockets.");
         // This means that there are sockets already, so apply
         // this option on them.
-        ScopedLock gg(m_GroupLock);
-        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        std::vector<CUDTSocket*> ps_vec;
         {
-            gi->ps->core().setOpt(optName, optval, optlen);
+            // Do copy to avoid deadlock. CUDT::setOpt() cannot be called directly inside this loop, because
+            // CUDT::setOpt() will lock m_ConnectionLock, which should be locked before m_GroupLock.
+            ScopedLock gg(m_GroupLock);
+            for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+            {
+                ps_vec.push_back(gi->ps);
+            }
+        }
+        for (std::vector<CUDTSocket*>::iterator it = ps_vec.begin(); it != ps_vec.end(); ++it)
+        {
+            (*it)->core().setOpt(optName, optval, optlen);
         }
     }
 
