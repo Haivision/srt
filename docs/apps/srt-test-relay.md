@@ -1,4 +1,4 @@
-## srt-test-relay
+# srt-test-relay
 
 **srt-test-relay** is a sample program that can utilize SRT connection for
 bidirectional traffic. Hence beside the SRT connection you can specify both

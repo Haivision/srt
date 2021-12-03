@@ -1,4 +1,4 @@
-## srt-test-multiplex
+# srt-test-multiplex
 
 **srt-test-multiplex** (formerly called "SIPLEX") is a sample program that can
 send multiple streams in one direction. This tool demonstrates two SRT features:
@@ -13,7 +13,7 @@ Note also that this application is intended for demonstration only. It can
 simply exit with error message in case of wrong usage or broken connection.
 
 
-#### Usage
+## Usage
 
 `srt-test-multiplex <SRT-URI> -i <INPUT-URI1>[id1] <INPUT-URI2>[id2]...`
 
@@ -59,7 +59,7 @@ can be read from it, with the result that it will be the same as was set on
 the caller side.
 
 
-#### Examples
+## Examples
 
   - **Sender:**  
     - `srt-test-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high`
