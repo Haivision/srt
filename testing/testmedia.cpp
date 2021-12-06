@@ -881,9 +881,9 @@ void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if (m_outgoing_port)
+    if (m_outgoing_port || m_adapter != "")
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter(m_adapter, m_outgoing_port);
     }
 
     ConnectClient(host, port);
@@ -2580,10 +2580,10 @@ void SrtModel::Establish(std::string& w_name)
             Verb() << "NO STREAM ID for SRT connection";
         }
 
-        if (m_outgoing_port)
+        if (m_outgoing_port || m_adapter != "")
         {
-            Verb() << "Setting outgoing port: " << m_outgoing_port;
-            SetupAdapter("", m_outgoing_port);
+            Verb() << "Setting outgoing port: " << m_outgoing_port << " adapter:" << m_adapter;
+            SetupAdapter(m_adapter, m_outgoing_port);
         }
 
         ConnectClient(m_host, m_port);
