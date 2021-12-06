@@ -2041,6 +2041,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This can only happen when 0 is passed as timeout and none is ready.
         // And 0 is passed only in non-blocking mode. So this is none ready in
         // non-blocking mode.
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
         throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
     }
 
@@ -2328,6 +2329,14 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         const vector<CUDTSocket*> ready_sockets = recv_WaitForReadReady(aliveMembers, broken);
         // m_GlobControlLock lifted, m_GroupLock still locked.
         // Now we can safely do this scoped way.
+
+        if (!m_bSynRecving && ready_sockets.empty())
+        {
+            HLOGC(grlog.Debug,
+                  log << "group/rcv $" << m_GroupID << ": Not available AT THIS TIME, NOT READ-READY now.");
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
+            throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
+        }
 
         // Ok, now we need to have some extra qualifications:
         // 1. If a socket has no registry yet, we read anyway, just
