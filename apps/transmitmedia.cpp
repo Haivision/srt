@@ -377,9 +377,9 @@ void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if ( m_outgoing_port )
+    if (m_outgoing_port || m_adapter != "")
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter(m_adapter, m_outgoing_port);
     }
 
     ConnectClient(host, port);
