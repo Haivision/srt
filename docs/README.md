@@ -46,12 +46,14 @@
 
 ## Sample Applications
 
-| Document Title                                               |            Folder             | File Name                                         | Description                                                  |
-| :----------------------------------------------------------- | :---------------------------- | :------------------------------------------------ | :----------------------------------------------------------- |
-| [Using the<br /> `srt-live-transmit` App](apps/srt-live-transmit.md) | [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md) | A sample application to transmit a live stream from<br />source medium (UDP/SRT/`stdin`) to the target medium<br />(UDP/SRT/`stdout`). |
-| [Using the<br /> `srt-multiplex` App](apps/srt-multiplex.md) |         [apps](apps/)         | [srt-multiplex.md](apps/srt-multiplex.md)         | Description of sample program for sending multiple streams.  |
-| [Using the<br /> `srt-tunnel` App](apps/srt-tunnel.md)       |         [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)               | A sample application to set up an SRT tunnel for TCP traffic. |
-| <img width=200px height=1px/>                                | <img width=100px height=1px/> | <img width=200px height=1px/>                     | <img width=500px height=1px/>                                |
+| Document Title                                                         |            Folder     | File Name                                           | Description                                                   |
+| :--------------------------------------------------------------------- | :-------------------- | :-------------------------------------------------- | :------------------------------------------------------------ |
+| [Using the<br /> `srt-live-transmit` App](apps/srt-live-transmit.md)   | [apps](apps/)         | [srt-live-transmit.md](apps/srt-live-transmit.md)   | A sample application to transmit a live stream from<br />source medium (UDP/SRT/`stdin`) to the target medium<br />(UDP/SRT/`stdout`). |
+| [Using the<br /> `srt-file-transmit` App](apps/srt-file-transmit.md)   | [apps](apps/)         | [srt-file-transmit.md](apps/srt-file-transmit.md)   | A sample application to transmit a file over SRT              |
+| [Using the<br /> `srt-tunnel` App](apps/srt-tunnel.md)                 | [apps](apps/)         | [srt-tunnel.md](apps/srt-tunnel.md)                 | A sample application to set up an SRT tunnel for TCP traffic. |
+| [Using the<br /> `srt-test-multiplex` App](apps/srt-test-multiplex.md) | [apps](apps/)         | [srt-test-multiplex.md](apps/srt-test-multiplex.md) | Testing application that allows to send multiple streams over one UDP link. |
+| [Using the<br /> `srt-test-relay` App](apps/srt-test-relay.md)         | [apps](apps/)         | [srt-test-relay.md](apps/srt-test-relay.md)         | Testing application for bidirectional stream sending over one connection.   |
+| <img width=200px height=1px/>                                  | <img width=100px height=1px/> | <img width=200px height=1px/>                       | <img width=500px height=1px/>                                      |
 
 ## Miscellaneous
 
