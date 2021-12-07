@@ -7750,7 +7750,7 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
         LOGC(xtlog.Error, log << "IPE: Acknowledged seqno %" << ack << " outruns the RCV buffer state %" << range.first
             << " - %" << range.second);
     }
-    return range.second;
+    return CSeqNo::decseq(range.second);
 #else
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
