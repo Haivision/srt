@@ -1043,7 +1043,13 @@ private: // Generation and processing of packets
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
+
+    /// @brief Acknowledge reading position up to the @p seq.
+    /// Updates m_iRcvLastAck and m_iRcvLastSkipAck to @p seq.
+    /// @param seq first unacknowledged packet sequence number.
+    /// @return 
     int32_t ackDataUpTo(int32_t seq);
+
     void handleKeepalive(const char* data, size_t lenghth);
 
     /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.

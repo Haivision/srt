@@ -163,8 +163,10 @@ public:
     ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
-    /// Get information on the packets available to be read
-    /// @returns a pair of sequence numbers
+    /// Get information on packets available to be read.
+    /// @returns a pair of sequence numbers (first available; first unavailable).
+    /// 
+    /// @note CSeqNo::seqoff(first, second) is 0 if nothing to read.
     std::pair<int, int> getAvailablePacketsRange() const;
 
     size_t countReadable() const;
