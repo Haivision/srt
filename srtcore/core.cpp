@@ -7757,14 +7757,8 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
     // were signed off for extraction.
     if (acksize > 0)
     {
-        const int distance = m_pRcvBuffer->ackData(acksize);
-        return CSeqNo::decseq(ack, distance);
+        m_pRcvBuffer->ackData(acksize);
     }
-
-    // If nothing was confirmed, then use the current buffer span
-    const int distance = m_pRcvBuffer->getRcvDataSize();
-    if (distance > 0)
-        return CSeqNo::decseq(ack, distance);
     return ack;
 #endif
 }
