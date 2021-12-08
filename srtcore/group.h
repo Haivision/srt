@@ -341,7 +341,12 @@ public:
     void         addEPoll(int eid);
     void         removeEPollEvents(const int eid);
     void         removeEPollID(const int eid);
+
+    /// @brief Update read-ready state.
+    /// @param sock member socket ID (unused)
+    /// @param sequence the latest packet sequence number available for reading.
     void         updateReadState(SRTSOCKET sock, int32_t sequence);
+
     void         updateWriteState();
     void         updateFailedLink();
     void         activateUpdateEvent(bool still_have_items);

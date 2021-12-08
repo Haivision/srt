@@ -7734,7 +7734,7 @@ void srt::CUDT::releaseSynch()
 // [[using locked(m_RcvBufferLock)]];
 int32_t srt::CUDT::ackDataUpTo(int32_t ack)
 {
-    const int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
+    const int acksize SRT_ATR_UNUSED = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
     HLOGC(xtlog.Debug, log << "ackDataUpTo: %" << m_iRcvLastSkipAck << " -> %" << ack
             << " (" << acksize << " packets)");
@@ -7750,21 +7750,15 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
         LOGC(xtlog.Error, log << "IPE: Acknowledged seqno %" << ack << " outruns the RCV buffer state %" << range.first
             << " - %" << range.second);
     }
-    return acksize;
+    return CSeqNo::decseq(range.second);
 #else
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
     // were signed off for extraction.
     if (acksize > 0)
     {
-        const int distance = m_pRcvBuffer->ackData(acksize);
-        return CSeqNo::decseq(ack, distance);
+        m_pRcvBuffer->ackData(acksize);
     }
-
-    // If nothing was confirmed, then use the current buffer span
-    const int distance = m_pRcvBuffer->getRcvDataSize();
-    if (distance > 0)
-        return CSeqNo::decseq(ack, distance);
     return ack;
 #endif
 }
@@ -8006,7 +8000,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // IF ack %> m_iRcvLastAck
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
-        const int32_t first_seq SRT_ATR_UNUSED = ackDataUpTo(ack);
+        const int32_t group_read_seq SRT_ATR_UNUSED = ackDataUpTo(ack);
         InvertedLock un_bufflock (m_RcvBufferLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -8101,7 +8095,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     // The current "APP reader" needs to simply decide as to whether
                     // the next CUDTGroup::recv() call should return with no blocking or not.
                     // When the group is read-ready, it should update its pollers as it sees fit.
-                    m_parent->m_GroupOf->updateReadState(m_SocketID, first_seq);
+                    m_parent->m_GroupOf->updateReadState(m_SocketID, group_read_seq);
                 }
             }
 #endif
