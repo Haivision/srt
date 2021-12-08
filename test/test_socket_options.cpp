@@ -110,8 +110,6 @@ protected:
     }
 
 protected:
-    // put in any custom data members that you need
-
     sockaddr_in m_sa;
     SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
@@ -982,6 +980,8 @@ TEST_F(TestSocketOptions, StreamIDFull)
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
 
+// Check that StreamID assigned to a listener socket is not inherited by accepted sockets,
+// and is not derived by a caller socket.
 TEST_F(TestSocketOptions, StreamIDLenListener)
 {
     string stream_id_13 = "something1234";
@@ -991,18 +991,19 @@ TEST_F(TestSocketOptions, StreamIDLenListener)
     char buffer[648];
     int buffer_len = sizeof buffer;
     EXPECT_EQ(srt_getsockopt(m_listen_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
+    EXPECT_EQ(string(buffer), stream_id_13);
+    EXPECT_EQ(size_t(buffer_len), stream_id_13.size());
 
     StartListener();
     const SRTSOCKET accepted_sock = EstablishConnection();
 
-    // Check accepted socket inherits values
+    // Check accepted and caller sockets do not inherit StreamID.
     for (SRTSOCKET sock : { m_caller_sock, accepted_sock })
     {
-        for (size_t i = 0; i < sizeof buffer; ++i)
-            buffer[i] = 'a';
         buffer_len = (int)(sizeof buffer);
+        fill_n(buffer, buffer_len, 'a');
         EXPECT_EQ(srt_getsockopt(sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
-        EXPECT_EQ(buffer_len, 0) << (sock == accepted_sock ? "ACCEPTED" : "LISTENER");
+        EXPECT_EQ(buffer_len, 0) << (sock == accepted_sock ? "ACCEPTED" : "CALLER");
     }
 
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
