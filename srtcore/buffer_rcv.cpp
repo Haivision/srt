@@ -274,8 +274,6 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::readMessage. m_iStartSeqNo " << m_iStartSeqNo);
 
     const int readPos = canReadInOrder ? m_iStartPos : m_iFirstReadableOutOfOrder;
-    // Remember if we actually read out of order packet.
-    const bool readingOutOfOrderPacket = !canReadInOrder || m_iStartPos == m_iFirstReadableOutOfOrder;
 
     size_t remain = len;
     char* dst = data;
@@ -313,13 +311,14 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         const bool pbLast  = packet.getMsgBoundary() & PB_LAST;
         if (msgctrl && (packet.getMsgBoundary() & PB_FIRST))
         {
-            msgctrl->pktseq = pktseqno;
             msgctrl->msgno  = packet.getMsgSeq(m_bPeerRexmitFlag);
         }
         if (msgctrl && pbLast)
         {
             msgctrl->srctime = count_microseconds(getPktTsbPdTime(packet.getMsgTimeStamp()).time_since_epoch());
         }
+        if (msgctrl)
+            msgctrl->pktseq = pktseqno;
 
         releaseUnitInPos(i);
         if (updateStartPos)
@@ -344,8 +343,6 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     }
 
     countBytes(-pkts_read, -bytes_extracted);
-    if (!m_tsbpd.isEnabled() && readingOutOfOrderPacket)
-        updateFirstReadableOutOfOrder();
 
     releaseNextFillerEntries();
 
@@ -354,6 +351,11 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         m_iFirstNonreadPos = m_iStartPos;
         //updateNonreadPos();
     }
+
+    if (!m_tsbpd.isEnabled())
+        // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
+        // incase readable inorder packets are all read out.
+        updateFirstReadableOutOfOrder();
 
     const int bytes_read = dst - data;
     if (bytes_read < bytes_extracted)
@@ -586,6 +588,41 @@ bool CRcvBufferNew::isRcvDataReady(time_point time_now) const
     const PacketInfo info = getFirstValidPacketInfo();
 
     return info.tsbpd_time <= time_now;
+}
+
+CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstReadablePacketInfo(time_point time_now) const
+{
+    const PacketInfo unreadableInfo    = {SRT_SEQNO_NONE, false, time_point()};
+    const bool       hasInorderPackets = hasReadableInorderPkts();
+
+    if (!m_tsbpd.isEnabled())
+    {
+        if (hasInorderPackets)
+        {
+            const CPacket&   packet = m_entries[m_iStartPos].pUnit->m_Packet;
+            const PacketInfo info   = {packet.getSeqNo(), false, time_point()};
+            return info;
+        }
+        SRT_ASSERT((!m_bMessageAPI && m_numOutOfOrderPackets == 0) || m_bMessageAPI);
+        if (m_iFirstReadableOutOfOrder >= 0)
+        {
+            SRT_ASSERT(m_numOutOfOrderPackets > 0);
+            const CPacket&   packet = m_entries[m_iFirstReadableOutOfOrder].pUnit->m_Packet;
+            const PacketInfo info   = {packet.getSeqNo(), true, time_point()};
+            return info;
+        }
+        return unreadableInfo;
+    }
+
+    if (!hasInorderPackets)
+        return unreadableInfo;
+
+    const PacketInfo info = getFirstValidPacketInfo();
+
+    if (info.tsbpd_time <= time_now)
+        return info;
+    else
+        return unreadableInfo;
 }
 
 void CRcvBufferNew::countBytes(int pkts, int bytes)
