@@ -164,6 +164,8 @@ public:
     ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
+    PacketInfo getFirstReadablePacketInfo(time_point time_now) const;
+
     /// Get information on packets available to be read.
     /// @returns a pair of sequence numbers (first available; first unavailable).
     /// 
