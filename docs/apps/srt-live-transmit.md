@@ -107,6 +107,16 @@ The specification and meaning of the fields in the URI depend on the mode.
 The **PORT** part is always mandatory and it designates either the port number
 for the target host or the port number to be bound to read from.
 
+The following options are available through URI parameters:
+
+- **iptos**: sets the `IP_TOS` socket option
+- **ttl**: sets the `IP_TTL` or `IP_MULTICAST_TTL` option, depending on mode
+- **mcloop**: sets the `IP_MULTICAST_LOOP` option (multicast mode only)
+- **rcvbuf**: sets the `SO_RCVBUF` socket option
+- **sndbuf**: sets the `SO_SNDBUF` socket option
+- **adapter**: sets the local binding address
+- **source**: uses `IP_ADD_SOURCE_MEMBERSHIP`, see below for details
+
 For sending to unicast:
 
 ```yaml
@@ -173,7 +183,7 @@ options that can be set through the parameters.
 SRT can be connected using one of three connection modes:
 
 - **caller**: the "agent" (this application) sends the connection request to
-  the peer, which must be **listener**, and this way it initiates the
+the peer, which must be **listener**, and this way it initiates the
 connection.
 
 - **listener**: the "agent" waits to be contacted by any peer **caller**.
@@ -182,50 +192,52 @@ does not use this ability; after the first connection, it no longer
 accepts new connections.
 
 - **rendezvous**: A one-to-one only connection where both parties are
-  equivalent and both connect to one another simultaneously. Whoever happened
+equivalent and both connect to one another simultaneously. Whoever happened
 to start first (or succeeded to punch through the firewall) is meant to have
 initiated the connection.
 
 This mode can be specified explicitly using the **mode** parameter. When it's
-not specified, then it is "deduced" the following way:
+not specified, then it is "deduced" basing on the *host* part in the URI and
+the presence of the **adapter** parameter:
 
-- `srt://:1234` - the *port* is specified (1234), but *host* is empty. This assumes **listener** mode.
-- `srt://remote.host.com:1234` - both *host* and *port* are specified. This assumes **caller** mode.
+* Listener mode: if you leave the *host* part empty (**adapter** may be specified):
+   - `srt://:1234`
+* Caller mode: if you specify *host* part, but not **adapter** parameter:
+   - `srt://remote.host.com:1234`
+* Rendezvous mode: if you specify *host* AND **adapter** parameter:
+   - `srt://remote.host.com:1234&adapter=my.remote.addr`
 
-When the `mode` parameter is specified explicitly, then the interpretation of the `host` part is the following:
+Sometimes the required parameter specification results in a different mode
+than desired; in this case you should specify the mode explicitly.
 
-- For caller, it's always the destination host address. If this is empty, it is
-resolved to 0.0.0.0, which usually should mean connecting to the local host
+The interpretation of the *host* and *port* parts is the following:
 
-- For listener, it defines the IP address of the local device on which the
-socket should listen, e.g.:
+- In **LISTENER** mode:
+   - *host* part: the local IP address to bind (default: 0.0.0.0 - "all devices")
+   - *port* part: the local port to bind (mandatory)
+   - **adapter** parameter: alternative for *host* part, e.g.:
 
 ```yaml
 srt://10.10.10.100:5001?mode=listener
 ```
 
-An alternative method to specify this IP address is the `adapter` parameter:
+or
 
 ```yaml
 srt://:5001?adapter=10.10.10.100
 ```
 
-The **rendezvous** mode is not deduced and it has to be specified
-explicitly. Note also special cases of the **host** and **port** parts
-specified in the URI:
+- In **CALLER** mode:
+   - *host* part: remote IP address to connect to (mandatory)
+   - *port* part: remote port to connect to (mandatory)
+   - **port** parameter: the local port to bind (default: 0 - "system autoselection")
+   - **adapter** parameter: the local IP address to bind (default: 0.0.0.0 - "system selected device")
 
-- **CALLER**: the *host* and *port* parts are mandatory and specify the remote host and port to be contacted.
-  - The **port** parameter can be used to enforce the local outgoing port (**not to be confused** with remote port!).
-  - The **adapter** parameter is not used.
-- **LISTENER**: the *port* part is mandatory and it specifies the local listening port.
-  - The **adapter** parameter can be used to specify the adapter.
-  - The *host* part, if specified, can be also used to set the adapter - although in this case **mode=listener** must be set explicitly.
-  - The **port** parameter is not used.
-- **RENDEZVOUS**: the *host* and *port* parts are mandatory.
-  - The *host* part specifies the remote host to contact.
-  - The *port* part specifies **both local and remote port**. Note that the local port is this way both listening port and outgoing port.
-  - The **adapter** parameter can be used to specify the adapter.
-  - The **port** parameter can be used to specify the local port to bind to.
+- In **RENDEZVOUS** mode:
+   - *host* part: remote IP address to connect to (mandatory)
+   - *port* part: remote port to connect to (mandatory)
+   - **port** parameter: the local port to bind (default: same as *port* part)
+   - **adapter** parameter: the local IP address to bind (mandatory)
 
 **IMPORTANT** information about IPv6.
 
@@ -238,14 +250,14 @@ the following restrictions:
 2. In listener mode, if you leave the host empty, the socket is bound to
 `INADDR_ANY` for IPv4 only. If you want to make it listen on IPv6, you need to
 specify the host as `::`.
-NOTE: Don't use square brackets syntax in the adapter specification, 
-as in this case only the host is expected.
+NOTE: Don't use square brackets syntax in the **adapter** parameter
+specification, as in this case only the host is expected.
 
 3. If you want to listen for connections from both IPv4 and IPv6, mind the
 `ipv6only` option. The default value for this option is system default (see
 system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
 enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
-connections in the same listener.
+connections in the same listener, or set to 1 to accept exclusively IPv6.
 
 4. In rendezvous mode you may only interconnect both parties using IPv4, 
 or both using IPv6. Unlike listener mode, if you want to leave the socket
@@ -271,21 +283,22 @@ Examples:
     connection with local address `inaddr6_any` (IPv6) and port 4000 to a
     destination with port 5000.
 
-* `srt://[::1]:5000?adapter=127.0.0.1&mode=rendezvous` - this URI is invalid
-    (different IP versions for binding and target address)
+* `srt://[::1]:5000?adapter=127.0.0.1` - this URI is invalid
+    (different IP versions for binding and target address in rendezvous mode)
 
 Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by `srt-live-transmit`:
 
 - **mode**: enforce caller, listener or rendezvous mode
-- **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). This can be used only in **caller mode**.
+- **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). Not used in **listener** mode.
 - **blocking**: sets the `SRTO_RCVSYN` for input medium or `SRTO_SNDSYN` for output medium
 - **timeout**: sets `SRTO_RCVTIMEO` for input medium or `SRTO_SNDTIMEO` for output medium
-- **adapter**: sets the adapter for listening in *listener* or *rendezvous* mode
+- **adapter**: sets the local IP address to bind
 
-All other parameters are SRT socket options. The following have the following value types:
+All other parameters are SRT socket options. The Values column uses the
+following type specification:
 
 - `bool`. Possible values: `yes`/`no`, `on`/`off`, `true`/`false`, `1`/`0`.
-- `bytes` positive integer [1; INT32_MAX].
+- `bytes` positive integer `[1; INT32_MAX]`.
 - `ms` - positive integer value of milliseconds.
 
 | URI param            | Values           | SRT Option                | Description |
