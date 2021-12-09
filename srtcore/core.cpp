@@ -8457,8 +8457,8 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
             if (crtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
             {
-                crttvar = avg_iir<4>(crttvar, abs(crtt - crtt));
-                crtt   = avg_iir<8>(crtt, crtt);
+                crttvar = avg_iir<4>(crttvar, abs(crtt - rtt));
+                crtt   = avg_iir<8>(crtt, rtt);
             }
             m_iSRTT = crtt;
             m_iRTTVar = crttvar;
