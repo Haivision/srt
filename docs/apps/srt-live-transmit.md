@@ -192,12 +192,12 @@ does not use this ability; after the first connection, it no longer
 accepts new connections.
 
 - **rendezvous**: A one-to-one only connection where both parties are
-equivalent and both connect to one another simultaneously. Whoever happened
-to start first (or succeeded to punch through the firewall) is meant to have
+equivalent and both attempt to initiate a connection simultaneously. Whichever party happens
+to start first (or succeeds in punching through the firewall first) is considered to have
 initiated the connection.
 
 This mode can be specified explicitly using the **mode** parameter. When it's
-not specified, then it is "deduced" basing on the *host* part in the URI and
+not specified, then it is derived based on the *host* part in the URI and
 the presence of the **adapter** parameter:
 
 * Listener mode: if you leave the *host* part empty (**adapter** may be specified):
@@ -257,7 +257,7 @@ specification, as in this case only the host is expected.
 `ipv6only` option. The default value for this option is system default (see
 system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
 enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
-connections in the same listener, or set to 1 to accept exclusively IPv6.
+connections by the same listener, or set `ipv6only=1` to accept exclusively IPv6.
 
 4. In rendezvous mode you may only interconnect both parties using IPv4, 
 or both using IPv6. Unlike listener mode, if you want to leave the socket
@@ -286,7 +286,7 @@ Examples:
 * `srt://[::1]:5000?adapter=127.0.0.1` - this URI is invalid
     (different IP versions for binding and target address in rendezvous mode)
 
-Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled special way by `srt-live-transmit`:
+Some parameters handled for SRT medium are specific, all others are socket options. The following parameters are handled in a special way by `srt-live-transmit`:
 
 - **mode**: enforce caller, listener or rendezvous mode
 - **port**: enforce the **outgoing** port (the port number that will be set in the UDP packet as a source port when sent from this host). Not used in **listener** mode.
