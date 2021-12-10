@@ -8452,16 +8452,14 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             // TODO: The case of bidirectional transmission requires further
             // improvements and testing. Double smoothing is applied here to be
             // consistent with the previous behavior.
-
-            int crtt = m_iSRTT.load(), crttvar = m_iRTTVar.load();
-
-            if (crtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
+            if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
             {
-                crttvar = avg_iir<4>(crttvar, abs(crtt - rtt));
-                crtt   = avg_iir<8>(crtt, rtt);
+                int iSRTT = m_iSRTT.load(), iRTTVar = m_iRTTVar.load();
+                iRTTVar = avg_iir<4>(iRTTVar, abs(rtt - iSRTT));
+                iSRTT   = avg_iir<8>(iSRTT, rtt);
+                m_iSRTT = iSRTT;
+                m_iRTTVar = iRTTVar;
             }
-            m_iSRTT = crtt;
-            m_iRTTVar = crttvar;
         }
         else  // Transmission is unidirectional.
         {
