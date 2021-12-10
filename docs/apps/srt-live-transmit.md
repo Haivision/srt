@@ -233,11 +233,32 @@ srt://:5001?adapter=10.10.10.100
    - **port** parameter: the local port to bind (default: 0 - "system autoselection")
    - **adapter** parameter: the local IP address to bind (default: 0.0.0.0 - "system selected device")
 
-- In **RENDEZVOUS** mode:
-   - *host* part: remote IP address to connect to (mandatory)
-   - *port* part: remote port to connect to (mandatory)
-   - **port** parameter: the local port to bind (default: same as *port* part)
-   - **adapter** parameter: the local IP address to bind (mandatory)
+```yaml
+srt://remote.host.com:5001
+```
+
+```yaml
+srt://remote.host.com:5001?adapter=local1&port=4001&mode=caller
+```
+
+- In **RENDEZVOUS** mode: same as **CALLER** except that the local
+port, if not specified by the **port** parameter, defaults to the
+value of the remote port (specified in the *port* part in the URI).
+
+```yaml
+srt://remote.host.com:5001?mode=rendezvous
+```
+(uses `remote.host.com` port 5001 for a remote host and the default
+network device for routing to this host; the connection from the peer is
+expected on that device and port 5001)
+
+
+```yaml
+srt://remote.host.com:5001?port=4001&adapter=local1
+```
+(uses `remote.host.com` port 5001 for a remote host and the peer
+is expected to connect to `local1` address and port 4001)
+
 
 **IMPORTANT** information about IPv6.
 
