@@ -196,6 +196,8 @@ srt::CUDTUnited::CUDTUnited():
    // XXX An unlikely exception thrown from the below calls
    // might destroy the application before `main`. This shouldn't
    // be a problem in general.
+   setupMutex(m_GCStopLock, "GCStop");
+   setupCond(m_GCStopCond, "GCStop");
    setupMutex(m_GlobControlLock, "GlobControl");
    setupMutex(m_IDLock, "ID");
    setupMutex(m_InitLock, "Init");
@@ -216,6 +218,16 @@ srt::CUDTUnited::~CUDTUnited()
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
+    // XXX There's some weird bug here causing this
+    // to hangup on Windows. This might be either something
+    // bigger, or some problem in pthread-win32. As this is
+    // the application cleanup section, this can be temporarily
+    // tolerated with simply exit the application without cleanup,
+    // counting on that the system will take care of it anyway.
+#ifndef _WIN32
+    releaseCond(m_GCStopCond);
+#endif
+    releaseMutex(m_GCStopLock);
 
     delete m_pCache;
 }
@@ -254,15 +266,6 @@ int srt::CUDTUnited::startup()
 
    m_bClosing = false;
 
-   try
-   {
-       setupMutex(m_GCStopLock, "GCStop");
-       setupCond(m_GCStopCond, "GCStop");
-   }
-   catch (...)
-   {
-       return -1;
-   }
    if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
       return -1;
 
@@ -291,7 +294,10 @@ int srt::CUDTUnited::cleanup()
    if (!m_bGCStatus)
        return 0;
 
-   m_bClosing = true;
+   {
+       UniqueLock gclock(m_GCStopLock);
+       m_bClosing = true;
+   }
    // NOTE: we can do relaxed signaling here because
    // waiting on m_GCStopCond has a 1-second timeout,
    // after which the m_bClosing flag is cheched, which
@@ -299,16 +305,6 @@ int srt::CUDTUnited::cleanup()
    // pthread_join() call will block for 1 second.
    CSync::signal_relaxed(m_GCStopCond);
    m_GCThread.join();
-
-   // XXX There's some weird bug here causing this
-   // to hangup on Windows. This might be either something
-   // bigger, or some problem in pthread-win32. As this is
-   // the application cleanup section, this can be temporarily
-   // tolerated with simply exit the application without cleanup,
-   // counting on that the system will take care of it anyway.
-#ifndef _WIN32
-   releaseCond(m_GCStopCond);
-#endif
 
    m_bGCStatus = false;
 
