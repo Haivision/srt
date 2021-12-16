@@ -697,31 +697,29 @@ private:
         time_point tsActivateTime;   // Time when this group sent or received the first data packet
         time_point tsLastSampleTime; // Time reset when clearing stats
 
-        MetricUsage<PacketMetric> sent; // number of packets sent from the application
-        MetricUsage<PacketMetric> recv; // number of packets delivered from the group to the application
-        MetricUsage<PacketMetric>
-                                  recvDrop; // number of packets dropped by the group receiver (not received from any member)
-        MetricUsage<PacketMetric> recvDiscard; // number of packets discarded as already delivered
+        stats::Metric<stats::BytesPackets> sent; // number of packets sent from the application
+        stats::Metric<stats::BytesPackets> recv; // number of packets delivered from the group to the application
+        stats::Metric<stats::BytesPackets> recvDrop; // number of packets dropped by the group receiver (not received from any member)
+        stats::Metric<stats::BytesPackets> recvDiscard; // number of packets discarded as already delivered
 
         void init()
         {
             tsActivateTime = srt::sync::steady_clock::time_point();
-            sent.Init();
-            recv.Init();
-            recvDrop.Init();
-            recvDiscard.Init();
-
-            reset();
+            tsLastSampleTime = srt::sync::steady_clock::now();
+            sent.reset();
+            recv.reset();
+            recvDrop.reset();
+            recvDiscard.reset();
         }
 
         void reset()
         {
-            sent.Clear();
-            recv.Clear();
-            recvDrop.Clear();
-            recvDiscard.Clear();
-
             tsLastSampleTime = srt::sync::steady_clock::now();
+
+            sent.resetTrace();
+            recv.resetTrace();
+            recvDrop.resetTrace();
+            recvDiscard.resetTrace();
         }
     } m_stats;
 

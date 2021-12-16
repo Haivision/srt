@@ -503,13 +503,6 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
     return true;
 }
 
-uint64_t PacketMetric::fullBytes()
-{
-    static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    return bytes + pkts * PKT_HDR_SIZE;
-}
-
-
 namespace srt_logging
 {
 
