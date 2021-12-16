@@ -1071,12 +1071,14 @@ private: // Trace
         // Sender-side stats.
         struct
         {
-            stats::Metric<stats::PacketsBytes> sent;
-            stats::Metric<stats::PacketsBytes> sentUnique;
-            stats::Metric<stats::PacketsBytes> sentRetrans; // The number of data packets retransmitted by the sender.
+            stats::Metric<stats::BytesPackets> sent;
+            stats::Metric<stats::BytesPackets> sentUnique;
+            stats::Metric<stats::BytesPackets> sentRetrans; // The number of data packets retransmitted by the sender.
             stats::Metric<stats::Packets> lost; // The number of packets reported lost (including repeted reports) to the sender in NAKs.
-            stats::Metric<stats::PacketsBytes> dropped; // The number of data packets dropped by the sender.
+            stats::Metric<stats::BytesPackets> dropped; // The number of data packets dropped by the sender.
             
+            stats::Metric<stats::Packets> recvdAck; // The number of ACK packets received by the sender.
+            stats::Metric<stats::Packets> recvdNak; // The number of ACK packets received by the sender.
 
             void reset()
             {
@@ -1085,6 +1087,8 @@ private: // Trace
                 sentRetrans.reset();
                 lost.reset();
                 dropped.reset();
+                recvdAck.reset();
+                recvdNak.reset();
             }
 
             void resetTrace()
@@ -1094,20 +1098,23 @@ private: // Trace
                 sentRetrans.resetTrace();
                 lost.resetTrace();
                 dropped.resetTrace();
+                recvdAck.resetTrace();
+                recvdNak.resetTrace();
             }
         } sndr;
 
         // Receiver-side stats.
         struct
         {
-            stats::Metric<stats::PacketsBytes> recvd;
-            stats::Metric<stats::PacketsBytes> recvdUnique;
-            stats::Metric<stats::PacketsBytes> recvdRetrans; // The number of retransmitted data packets received by the receiver.
-            stats::Metric<stats::PacketsBytes> lost; // The number of packets detected by the receiver as lost.
-            stats::Metric<stats::PacketsBytes> dropped; // The number of packets dropped by the receiver (as too-late to be delivered).
-            stats::Metric<stats::PacketsBytes> recvdBelated; // The number of belated packets received (dropped as too late but eventually received).
+            stats::Metric<stats::BytesPackets> recvd;
+            stats::Metric<stats::BytesPackets> recvdUnique;
+            stats::Metric<stats::BytesPackets> recvdRetrans; // The number of retransmitted data packets received by the receiver.
+            stats::Metric<stats::BytesPackets> lost; // The number of packets detected by the receiver as lost.
+            stats::Metric<stats::BytesPackets> dropped; // The number of packets dropped by the receiver (as too-late to be delivered).
+            stats::Metric<stats::BytesPackets> recvdBelated; // The number of belated packets received (dropped as too late but eventually received).
 
             stats::Metric<stats::Packets> sentAck; // The number of ACK packets sent by the receiver.
+            stats::Metric<stats::Packets> sentNak; // The number of NACK packets sent by the receiver.
 
             void reset()
             {
@@ -1118,6 +1125,7 @@ private: // Trace
                 dropped.reset();
                 recvdBelated.reset();
                 sentAck.reset();
+                sentNak.reset();
             }
 
             void resetTrace()
@@ -1129,16 +1137,12 @@ private: // Trace
                 dropped.resetTrace();
                 recvdBelated.resetTrace();
                 sentAck.resetTrace();
+                sentNak.resetTrace();
             }
         } rcvr;
 
         // Receiver-side stats.
         
-
-        int sentACKTotal;                   // total number of sent ACK packets
-        int recvACKTotal;                   // total number of received ACK packets
-        int sentNAKTotal;                   // total number of sent NAK packets
-        int recvNAKTotal;                   // total number of received NAK packets
         int m_rcvUndecryptTotal;
         uint64_t m_rcvBytesUndecryptTotal;
 
@@ -1150,13 +1154,6 @@ private: // Trace
         int64_t m_sndDurationTotal;         // total real time for sending
 
         time_point tsLastSampleTime;        // last performance sample time
-        int sentACK;                        // number of ACKs sent in the last trace interval
-        int recvACK;                        // number of ACKs received in the last trace interval
-        int sentNAK;                        // number of NAKs sent in the last trace interval
-        int recvNAK;                        // number of NAKs received in the last trace interval
-        int traceSndDrop;
-        int traceRcvDrop;
-        int traceRcvRetrans;
         int traceReorderDistance;
         double traceBelatedTime;
         

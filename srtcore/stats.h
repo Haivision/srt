@@ -48,20 +48,20 @@ private:
     uint32_t m_count;
 };
 
-class PacketsBytes
+class BytesPackets
 {
 public:
-    PacketsBytes()
+    BytesPackets()
         : m_bytes(0)
         , m_packets(0)
     {}
 
-    PacketsBytes(uint64_t bytes, size_t n = 1)
+    BytesPackets(uint64_t bytes, size_t n = 1)
         : m_bytes(bytes)
         , m_packets(n)
     {}
 
-    PacketsBytes& operator+= (const PacketsBytes& other)
+    BytesPackets& operator+= (const BytesPackets& other)
     {
         m_bytes   += other.m_bytes;
         m_packets += other.m_packets;
