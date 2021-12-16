@@ -1440,9 +1440,10 @@ struct MetricOp;
 template <class METRIC_TYPE>
 struct MetricUsage
 {
-    METRIC_TYPE local;
+    METRIC_TYPE local; // TODO: Rename to trace?
     METRIC_TYPE total;
 
+    // TODO: Rename to ClearTrace()
     void Clear()
     {
         MetricOp<METRIC_TYPE>::Clear(local);

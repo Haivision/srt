@@ -73,6 +73,8 @@ modified by
 #include "utilities.h"
 #include "logger_defs.h"
 
+#include "stats.h"
+
 #include <haicrypt.h>
 
 
@@ -1065,27 +1067,78 @@ private: // Trace
     struct CoreStats
     {
         time_point tsStartTime;             // timestamp when the UDT entity is started
-        int64_t sentTotal;                  // total number of sent data packets, including retransmissions
-        int64_t sentUniqTotal;              // total number of sent data packets, excluding rexmit and filter control
-        int64_t recvTotal;                  // total number of received packets
-        int64_t recvUniqTotal;              // total number of received and delivered packets
-        int sndLossTotal;                   // total number of lost packets (sender side)
-        int rcvLossTotal;                   // total number of lost packets (receiver side)
-        int retransTotal;                   // total number of retransmitted packets
+
+        // Sender-side stats.
+        struct
+        {
+            stats::Metric<stats::PacketsBytes> sent;
+            stats::Metric<stats::PacketsBytes> sentUnique;
+            stats::Metric<stats::PacketsBytes> sentRetrans; // The number of data packets retransmitted by the sender.
+            stats::Metric<stats::Packets> lost; // The number of packets reported lost (including repeted reports) to the sender in NAKs.
+            stats::Metric<stats::PacketsBytes> dropped; // The number of data packets dropped by the sender.
+            
+
+            void reset()
+            {
+                sent.reset();
+                sentUnique.reset();
+                sentRetrans.reset();
+                lost.reset();
+                dropped.reset();
+            }
+
+            void resetTrace()
+            {
+                sent.resetTrace();
+                sentUnique.resetTrace();
+                sentRetrans.resetTrace();
+                lost.resetTrace();
+                dropped.resetTrace();
+            }
+        } sndr;
+
+        // Receiver-side stats.
+        struct
+        {
+            stats::Metric<stats::PacketsBytes> recvd;
+            stats::Metric<stats::PacketsBytes> recvdUnique;
+            stats::Metric<stats::PacketsBytes> recvdRetrans; // The number of retransmitted data packets received by the receiver.
+            stats::Metric<stats::PacketsBytes> lost; // The number of packets detected by the receiver as lost.
+            stats::Metric<stats::PacketsBytes> dropped; // The number of packets dropped by the receiver (as too-late to be delivered).
+            stats::Metric<stats::PacketsBytes> recvdBelated; // The number of belated packets received (dropped as too late but eventually received).
+
+            stats::Metric<stats::Packets> sentAck; // The number of ACK packets sent by the receiver.
+
+            void reset()
+            {
+                recvd.reset();
+                recvdUnique.reset();
+                recvdRetrans.reset();
+                lost.reset();
+                dropped.reset();
+                recvdBelated.reset();
+                sentAck.reset();
+            }
+
+            void resetTrace()
+            {
+                recvd.resetTrace();
+                recvdUnique.resetTrace();
+                recvdRetrans.resetTrace();
+                lost.resetTrace();
+                dropped.resetTrace();
+                recvdBelated.resetTrace();
+                sentAck.resetTrace();
+            }
+        } rcvr;
+
+        // Receiver-side stats.
+        
+
         int sentACKTotal;                   // total number of sent ACK packets
         int recvACKTotal;                   // total number of received ACK packets
         int sentNAKTotal;                   // total number of sent NAK packets
         int recvNAKTotal;                   // total number of received NAK packets
-        int sndDropTotal;
-        int rcvDropTotal;
-        uint64_t bytesSentTotal;            // total number of bytes sent,  including retransmissions
-        uint64_t bytesSentUniqTotal;        // total number of bytes sent,  including retransmissions
-        uint64_t bytesRecvTotal;            // total number of received bytes
-        uint64_t bytesRecvUniqTotal;        // total number of received bytes
-        uint64_t rcvBytesLossTotal;         // total number of loss bytes (estimate)
-        uint64_t bytesRetransTotal;         // total number of retransmitted bytes
-        uint64_t sndBytesDropTotal;
-        uint64_t rcvBytesDropTotal;
         int m_rcvUndecryptTotal;
         uint64_t m_rcvBytesUndecryptTotal;
 
@@ -1097,13 +1150,6 @@ private: // Trace
         int64_t m_sndDurationTotal;         // total real time for sending
 
         time_point tsLastSampleTime;        // last performance sample time
-        int64_t traceSent;                  // number of packets sent in the last trace interval
-        int64_t traceSentUniq;              // number of original packets sent in the last trace interval
-        int64_t traceRecv;                  // number of packets received in the last trace interval
-        int64_t traceRecvUniq;              // number of packets received AND DELIVERED in the last trace interval
-        int traceSndLoss;                   // number of lost packets in the last trace interval (sender side)
-        int traceRcvLoss;                   // number of lost packets in the last trace interval (receiver side)
-        int traceRetrans;                   // number of retransmitted packets in the last trace interval
         int sentACK;                        // number of ACKs sent in the last trace interval
         int recvACK;                        // number of ACKs received in the last trace interval
         int sentNAK;                        // number of NAKs sent in the last trace interval
@@ -1113,15 +1159,7 @@ private: // Trace
         int traceRcvRetrans;
         int traceReorderDistance;
         double traceBelatedTime;
-        int64_t traceRcvBelated;
-        uint64_t traceBytesSent;            // number of bytes sent in the last trace interval
-        uint64_t traceBytesSentUniq;        // number of bytes sent in the last trace interval
-        uint64_t traceBytesRecv;            // number of bytes sent in the last trace interval
-        uint64_t traceBytesRecvUniq;        // number of bytes sent in the last trace interval
-        uint64_t traceRcvBytesLoss;         // number of bytes bytes lost in the last trace interval (estimate)
-        uint64_t traceBytesRetrans;         // number of bytes retransmitted in the last trace interval
-        uint64_t traceSndBytesDrop;
-        uint64_t traceRcvBytesDrop;
+        
         int traceRcvUndecrypt;
         uint64_t traceRcvBytesUndecrypt;
 

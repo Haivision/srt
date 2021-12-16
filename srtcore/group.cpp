@@ -3165,7 +3165,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     }
 
     enterCS(u.m_StatsLock);
-    const int64_t drop_total = u.m_stats.sndDropTotal;
+    const int64_t drop_total = u.m_stats.sndr.dropped.total.count();
     leaveCS(u.m_StatsLock);
 
     const bool have_new_drops = d->pktSndDropTotal != drop_total;
