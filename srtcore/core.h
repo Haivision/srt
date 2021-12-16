@@ -1076,6 +1076,8 @@ private: // Trace
             stats::Metric<stats::BytesPackets> sentRetrans; // The number of data packets retransmitted by the sender.
             stats::Metric<stats::Packets> lost; // The number of packets reported lost (including repeted reports) to the sender in NAKs.
             stats::Metric<stats::BytesPackets> dropped; // The number of data packets dropped by the sender.
+
+            stats::Metric<stats::Packets> sentFilterExtra; // The number of packets generate by the packet filter and sent by the sender.
             
             stats::Metric<stats::Packets> recvdAck; // The number of ACK packets received by the sender.
             stats::Metric<stats::Packets> recvdNak; // The number of ACK packets received by the sender.
@@ -1089,6 +1091,7 @@ private: // Trace
                 dropped.reset();
                 recvdAck.reset();
                 recvdNak.reset();
+                sentFilterExtra.reset();
             }
 
             void resetTrace()
@@ -1100,6 +1103,7 @@ private: // Trace
                 dropped.resetTrace();
                 recvdAck.resetTrace();
                 recvdNak.resetTrace();
+                sentFilterExtra.resetTrace();
             }
         } sndr;
 
@@ -1113,6 +1117,10 @@ private: // Trace
             stats::Metric<stats::BytesPackets> dropped; // The number of packets dropped by the receiver (as too-late to be delivered).
             stats::Metric<stats::BytesPackets> recvdBelated; // The number of belated packets received (dropped as too late but eventually received).
 
+            stats::Metric<stats::Packets> recvdFilterExtra; // The number of filter packets (e.g. FEC) received by the receiver.
+            stats::Metric<stats::Packets> suppliedByFilter; // The number of lost packets got from the packet filter at the receiver side (e.g. loss recovered by FEC).
+            stats::Metric<stats::Packets> lossFilter; // The number of lost DATA packets not recovered by the packet filter at the receiver side.
+
             stats::Metric<stats::Packets> sentAck; // The number of ACK packets sent by the receiver.
             stats::Metric<stats::Packets> sentNak; // The number of NACK packets sent by the receiver.
 
@@ -1124,6 +1132,9 @@ private: // Trace
                 lost.reset();
                 dropped.reset();
                 recvdBelated.reset();
+                recvdFilterExtra.reset();
+                suppliedByFilter.reset();
+                lossFilter.reset();
                 sentAck.reset();
                 sentNak.reset();
             }
@@ -1136,6 +1147,9 @@ private: // Trace
                 lost.resetTrace();
                 dropped.resetTrace();
                 recvdBelated.resetTrace();
+                recvdFilterExtra.resetTrace();
+                suppliedByFilter.resetTrace();
+                lossFilter.resetTrace();
                 sentAck.resetTrace();
                 sentNak.resetTrace();
             }
@@ -1146,11 +1160,6 @@ private: // Trace
         int m_rcvUndecryptTotal;
         uint64_t m_rcvBytesUndecryptTotal;
 
-        int sndFilterExtraTotal;
-        int rcvFilterExtraTotal;
-        int rcvFilterSupplyTotal;
-        int rcvFilterLossTotal;
-
         int64_t m_sndDurationTotal;         // total real time for sending
 
         time_point tsLastSampleTime;        // last performance sample time
@@ -1159,11 +1168,6 @@ private: // Trace
         
         int traceRcvUndecrypt;
         uint64_t traceRcvBytesUndecrypt;
-
-        int sndFilterExtra;
-        int rcvFilterExtra;
-        int rcvFilterSupply;
-        int rcvFilterLoss;
 
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;         // timers to record the sending Duration

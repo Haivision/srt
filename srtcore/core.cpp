@@ -884,11 +884,6 @@ void srt::CUDT::clearData()
         m_stats.m_rcvUndecryptTotal = 0;
         m_stats.traceRcvUndecrypt   = 0;
 
-        m_stats.sndFilterExtra    = 0;
-        m_stats.rcvFilterExtra    = 0;
-        m_stats.rcvFilterSupply   = 0;
-        m_stats.rcvFilterLoss     = 0;
-
         m_stats.m_rcvBytesUndecryptTotal = 0;
         m_stats.traceRcvBytesUndecrypt   = 0;
 
@@ -7350,10 +7345,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
         perf->pktRcvBelated        = m_stats.rcvr.recvdBelated.trace.count();
 
-        perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
-        perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
-        perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
-        perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
+        perf->pktSndFilterExtra  = m_stats.sndr.sentFilterExtra.trace.count();
+        perf->pktRcvFilterExtra  = m_stats.rcvr.recvdFilterExtra.trace.count();
+        perf->pktRcvFilterSupply = m_stats.rcvr.suppliedByFilter.trace.count();
+        perf->pktRcvFilterLoss   = m_stats.rcvr.lossFilter.trace.count();
 
         /* perf byte counters include all headers (SRT+UDP+IP) */
         perf->byteSent       = m_stats.sndr.sent.trace.bytesWithHdr();
@@ -7388,10 +7383,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRecvTotal           = m_stats.rcvr.recvd.total.bytesWithHdr();
         perf->byteRecvUniqueTotal     = m_stats.rcvr.recvdUnique.total.bytesWithHdr();
         perf->byteRetransTotal        = m_stats.sndr.sentRetrans.total.bytesWithHdr();
-        perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-        perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-        perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-        perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+        perf->pktSndFilterExtraTotal  = m_stats.sndr.sentFilterExtra.total.count();
+        perf->pktRcvFilterExtraTotal  = m_stats.rcvr.recvdFilterExtra.total.count();
+        perf->pktRcvFilterSupplyTotal = m_stats.rcvr.suppliedByFilter.total.count();
+        perf->pktRcvFilterLossTotal   = m_stats.rcvr.lossFilter.total.count();
 
         perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr();
         perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
@@ -7427,13 +7422,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             m_stats.traceRcvBytesUndecrypt = 0;
 
             m_stats.sndDuration = 0;
-            
-            m_stats.sndFilterExtra = 0;
-            m_stats.rcvFilterExtra = 0;
-
-            m_stats.rcvFilterSupply = 0;
-            m_stats.rcvFilterLoss   = 0;
-
             m_stats.tsLastSampleTime = currtime;
         }
     }
@@ -9245,8 +9233,7 @@ std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         // Stats
         {
             ScopedLock lg(m_StatsLock);
-            ++m_stats.sndFilterExtra;
-            ++m_stats.sndFilterExtraTotal;
+            m_stats.sndr.sentFilterExtra.count(1);
         }
     }
     else
