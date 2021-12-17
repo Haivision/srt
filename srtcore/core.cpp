@@ -880,13 +880,6 @@ void srt::CUDT::clearData()
 
         m_stats.tsLastSampleTime = steady_clock::now();
         m_stats.traceReorderDistance = 0;
-
-        m_stats.m_rcvUndecryptTotal = 0;
-        m_stats.traceRcvUndecrypt   = 0;
-
-        m_stats.m_rcvBytesUndecryptTotal = 0;
-        m_stats.traceRcvBytesUndecrypt   = 0;
-
         m_stats.sndDuration = m_stats.m_sndDurationTotal = 0;
     }
 
@@ -7359,11 +7352,11 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRcvLoss    = m_stats.rcvr.recvd.trace.bytesWithHdr();
 
         perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
-        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.traceRcvUndecrypt;
+        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();
         perf->byteSndDrop = m_stats.sndr.dropped.trace.bytesWithHdr();
         perf->byteRcvDrop = m_stats.rcvr.dropped.trace.bytesWithHdr();
-        perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
-        perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
+        perf->pktRcvUndecrypt  = m_stats.rcvr.undecrypted.trace.count();
+        perf->byteRcvUndecrypt = m_stats.rcvr.undecrypted.trace.bytes();
 
         perf->pktSentTotal       = m_stats.sndr.sent.total.count();
         perf->pktSentUniqueTotal = m_stats.sndr.sentUnique.total.count();
@@ -7390,11 +7383,12 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr();
         perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
-        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count() + m_stats.m_rcvUndecryptTotal;
+        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count() + m_stats.rcvr.undecrypted.total.count();
+        // TODO: The payload is dropped. Probably header sizes should not be counted?
         perf->byteSndDropTotal = m_stats.sndr.dropped.total.bytesWithHdr();
-        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr() + m_stats.m_rcvBytesUndecryptTotal;
-        perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
-        perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr() + m_stats.rcvr.undecrypted.total.bytesWithHdr();
+        perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
+        perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
 
         // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
         const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
@@ -7417,9 +7411,6 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         {
             m_stats.sndr.resetTrace();
             m_stats.rcvr.resetTrace();
-
-            m_stats.traceRcvUndecrypt      = 0;
-            m_stats.traceRcvBytesUndecrypt = 0;
 
             m_stats.sndDuration = 0;
             m_stats.tsLastSampleTime = currtime;
@@ -9926,22 +9917,13 @@ int srt::CUDT::processData(CUnit* in_unit)
                     EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
                     if (rc != ENCS_CLEAR)
                     {
-                        // Could not decrypt
-                        // Keep packet in received buffer
-                        // Crypto flags are still set
-                        // It will be acknowledged
-                        {
-                            ScopedLock lg(m_StatsLock);
-                            m_stats.traceRcvUndecrypt += 1;
-                            m_stats.traceRcvBytesUndecrypt += pktsz;
-                            m_stats.m_rcvUndecryptTotal += 1;
-                            m_stats.m_rcvBytesUndecryptTotal += pktsz;
-                        }
-
-                        // Log message degraded to debug because it may happen very often
+                        // Heavy log message because if seen once the message may happen very often.
                         HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                         adding_successful = false;
                         IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                        ScopedLock lg(m_StatsLock);
+                        m_stats.rcvr.undecrypted.count(stats::BytesPackets(pktsz, 1));
                     }
                 }
             }

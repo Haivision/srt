@@ -1116,6 +1116,7 @@ private: // Trace
             stats::Metric<stats::BytesPackets> lost; // The number of packets detected by the receiver as lost.
             stats::Metric<stats::BytesPackets> dropped; // The number of packets dropped by the receiver (as too-late to be delivered).
             stats::Metric<stats::BytesPackets> recvdBelated; // The number of belated packets received (dropped as too late but eventually received).
+            stats::Metric<stats::BytesPackets> undecrypted; // The number of packets received by the receiver that failed to be decrypted.
 
             stats::Metric<stats::Packets> recvdFilterExtra; // The number of filter packets (e.g. FEC) received by the receiver.
             stats::Metric<stats::Packets> suppliedByFilter; // The number of lost packets got from the packet filter at the receiver side (e.g. loss recovered by FEC).
@@ -1132,6 +1133,7 @@ private: // Trace
                 lost.reset();
                 dropped.reset();
                 recvdBelated.reset();
+                undecrypted.reset();
                 recvdFilterExtra.reset();
                 suppliedByFilter.reset();
                 lossFilter.reset();
@@ -1147,6 +1149,7 @@ private: // Trace
                 lost.resetTrace();
                 dropped.resetTrace();
                 recvdBelated.resetTrace();
+                undecrypted.resetTrace();
                 recvdFilterExtra.resetTrace();
                 suppliedByFilter.resetTrace();
                 lossFilter.resetTrace();
@@ -1155,22 +1158,14 @@ private: // Trace
             }
         } rcvr;
 
-        // Receiver-side stats.
-        
-        int m_rcvUndecryptTotal;
-        uint64_t m_rcvBytesUndecryptTotal;
-
         int64_t m_sndDurationTotal;         // total real time for sending
 
         time_point tsLastSampleTime;        // last performance sample time
         int traceReorderDistance;
         double traceBelatedTime;
         
-        int traceRcvUndecrypt;
-        uint64_t traceRcvBytesUndecrypt;
-
         int64_t sndDuration;                // real time for sending
-        time_point sndDurationCounter;         // timers to record the sending Duration
+        time_point sndDurationCounter;      // timers to record the sending Duration
     } m_stats;
 
 public:

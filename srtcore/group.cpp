@@ -2681,7 +2681,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 const int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
                 if (jump > 0)
                 {
-                    m_stats.recvDrop.count(stats::BytesPackets(jump * avgRcvPacketSize(), jump));
+                    m_stats.recvDrop.count(stats::BytesPackets(jump * static_cast<uint64_t>(avgRcvPacketSize()), jump));
                     LOGC(grlog.Warn,
                          log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
                              << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
