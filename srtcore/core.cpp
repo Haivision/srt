@@ -8465,7 +8465,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
-    m_stats.sndr.recvdNak.count(1);
+    m_stats.sndr.recvdAck.count(1);
     leaveCS(m_StatsLock);
 }
 

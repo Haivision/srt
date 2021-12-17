@@ -11,9 +11,7 @@
 #ifndef INC_SRT_STATS_H
 #define INC_SRT_STATS_H
 
-#include <cstdint>
-#include <cstddef>
-
+#include "platform_sys.h"
 #include "packet.h"
 
 namespace srt
