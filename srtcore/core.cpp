@@ -875,49 +875,11 @@ void srt::CUDT::clearData()
         ScopedLock stat_lock(m_StatsLock);
 
         m_stats.tsStartTime = steady_clock::now();
-        m_stats.sentTotal = m_stats.sentUniqTotal = m_stats.recvTotal = m_stats.recvUniqTotal
-            = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal
-            = m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
+        m_stats.sndr.reset();
+        m_stats.rcvr.reset();
+
         m_stats.tsLastSampleTime = steady_clock::now();
-        m_stats.traceSent = m_stats.traceSentUniq = m_stats.traceRecv = m_stats.traceRecvUniq
-            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceReorderDistance                                              = 0;
-        m_stats.traceBelatedTime                                                  = 0.0;
-        m_stats.traceRcvBelated                                                   = 0;
-
-        m_stats.sndDropTotal = 0;
-        m_stats.traceSndDrop = 0;
-        m_stats.rcvDropTotal = 0;
-        m_stats.traceRcvDrop = 0;
-
-        m_stats.m_rcvUndecryptTotal = 0;
-        m_stats.traceRcvUndecrypt   = 0;
-
-        m_stats.bytesSentTotal    = 0;
-        m_stats.bytesSentUniqTotal    = 0;
-        m_stats.bytesRecvTotal    = 0;
-        m_stats.bytesRecvUniqTotal    = 0;
-        m_stats.bytesRetransTotal = 0;
-        m_stats.traceBytesSent    = 0;
-        m_stats.traceBytesSentUniq    = 0;
-        m_stats.traceBytesRecv    = 0;
-        m_stats.traceBytesRecvUniq    = 0;
-        m_stats.sndFilterExtra    = 0;
-        m_stats.rcvFilterExtra    = 0;
-        m_stats.rcvFilterSupply   = 0;
-        m_stats.rcvFilterLoss     = 0;
-
-        m_stats.traceBytesRetrans = 0;
-        m_stats.traceRcvBytesLoss = 0;
-        m_stats.sndBytesDropTotal        = 0;
-        m_stats.rcvBytesDropTotal        = 0;
-        m_stats.traceSndBytesDrop        = 0;
-        m_stats.traceRcvBytesDrop        = 0;
-        m_stats.m_rcvBytesUndecryptTotal = 0;
-        m_stats.traceRcvBytesUndecrypt   = 0;
-
+        m_stats.traceReorderDistance = 0;
         m_stats.sndDuration = m_stats.m_sndDurationTotal = 0;
     }
 
@@ -5579,14 +5541,10 @@ void * srt::CUDT::tsbpd(void *param)
 
 void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
 {
-    /* Update drop/skip stats */
     enterCS(m_StatsLock);
-    m_stats.rcvDropTotal += seqlen;
-    m_stats.traceRcvDrop += seqlen;
-    /* Estimate dropped/skipped bytes from average payload */
+    // Estimate dropped bytes from average payload size.
     const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-    m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
-    m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
+    m_stats.rcvr.dropped.count(stats::BytesPackets(seqlen * avgpayloadsz, (size_t) seqlen));
     leaveCS(m_StatsLock);
 
     dropFromLossLists(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
@@ -6401,10 +6359,7 @@ bool srt::CUDT::checkNeedDrop()
         if (dpkts > 0)
         {
             enterCS(m_StatsLock);
-            m_stats.traceSndDrop += dpkts;
-            m_stats.sndDropTotal += dpkts;
-            m_stats.traceSndBytesDrop += dbytes;
-            m_stats.sndBytesDropTotal += dbytes;
+            m_stats.sndr.dropped.count(stats::BytesPackets(dbytes, dpkts));
             leaveCS(m_StatsLock);
 
             IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
@@ -7364,76 +7319,76 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         const steady_clock::time_point currtime = steady_clock::now();
 
         perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
-        perf->pktSent              = m_stats.traceSent;
-        perf->pktSentUnique        = m_stats.traceSentUniq;
-        perf->pktRecv              = m_stats.traceRecv;
-        perf->pktRecvUnique        = m_stats.traceRecvUniq;
-        perf->pktSndLoss           = m_stats.traceSndLoss;
-        perf->pktRcvLoss           = m_stats.traceRcvLoss;
-        perf->pktRetrans           = m_stats.traceRetrans;
-        perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
-        perf->pktSentACK           = m_stats.sentACK;
-        perf->pktRecvACK           = m_stats.recvACK;
-        perf->pktSentNAK           = m_stats.sentNAK;
-        perf->pktRecvNAK           = m_stats.recvNAK;
+        perf->pktSent              = m_stats.sndr.sent.trace.count();
+        perf->pktSentUnique        = m_stats.sndr.sentUnique.trace.count();
+        perf->pktRecv              = m_stats.rcvr.recvd.trace.count();
+        perf->pktRecvUnique        = m_stats.rcvr.recvdUnique.trace.count();
+
+        perf->pktSndLoss           = m_stats.sndr.lost.trace.count();
+        perf->pktRcvLoss           = m_stats.rcvr.lost.trace.count();
+        perf->pktRetrans           = m_stats.sndr.sentRetrans.trace.count();
+        perf->pktRcvRetrans        = m_stats.rcvr.recvdRetrans.trace.count();
+        perf->pktSentACK           = m_stats.rcvr.sentAck.trace.count();
+        perf->pktRecvACK           = m_stats.sndr.recvdAck.trace.count();
+        perf->pktSentNAK           = m_stats.rcvr.sentNak.trace.count();
+        perf->pktRecvNAK           = m_stats.sndr.recvdNak.trace.count();
         perf->usSndDuration        = m_stats.sndDuration;
         perf->pktReorderDistance   = m_stats.traceReorderDistance;
         perf->pktReorderTolerance  = m_iReorderTolerance;
         perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
-        perf->pktRcvBelated        = m_stats.traceRcvBelated;
+        perf->pktRcvBelated        = m_stats.rcvr.recvdBelated.trace.count();
 
-        perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
-        perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
-        perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
-        perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
+        perf->pktSndFilterExtra  = m_stats.sndr.sentFilterExtra.trace.count();
+        perf->pktRcvFilterExtra  = m_stats.rcvr.recvdFilterExtra.trace.count();
+        perf->pktRcvFilterSupply = m_stats.rcvr.suppliedByFilter.trace.count();
+        perf->pktRcvFilterLoss   = m_stats.rcvr.lossFilter.trace.count();
 
         /* perf byte counters include all headers (SRT+UDP+IP) */
-        perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
-        perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
-        perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
-        perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
-        perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
-        perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
+        perf->byteSent       = m_stats.sndr.sent.trace.bytesWithHdr();
+        perf->byteSentUnique = m_stats.sndr.sentUnique.trace.bytesWithHdr();
+        perf->byteRecv       = m_stats.rcvr.recvd.trace.bytesWithHdr();
+        perf->byteRecvUnique = m_stats.rcvr.recvdUnique.trace.bytesWithHdr();
+        perf->byteRetrans    = m_stats.sndr.sentRetrans.trace.bytesWithHdr();
+        perf->byteRcvLoss    = m_stats.rcvr.recvd.trace.bytesWithHdr();
 
-        perf->pktSndDrop  = m_stats.traceSndDrop;
-        perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
-        perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
-        perf->byteRcvDrop =
-            m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
-        perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
-        perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
+        perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
+        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();
+        perf->byteSndDrop = m_stats.sndr.dropped.trace.bytesWithHdr();
+        perf->byteRcvDrop = m_stats.rcvr.dropped.trace.bytesWithHdr();
+        perf->pktRcvUndecrypt  = m_stats.rcvr.undecrypted.trace.count();
+        perf->byteRcvUndecrypt = m_stats.rcvr.undecrypted.trace.bytes();
 
-        perf->pktSentTotal       = m_stats.sentTotal;
-        perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
-        perf->pktRecvTotal       = m_stats.recvTotal;
-        perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
-        perf->pktSndLossTotal    = m_stats.sndLossTotal;
-        perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
-        perf->pktRetransTotal    = m_stats.retransTotal;
-        perf->pktSentACKTotal    = m_stats.sentACKTotal;
-        perf->pktRecvACKTotal    = m_stats.recvACKTotal;
-        perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
-        perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
+        perf->pktSentTotal       = m_stats.sndr.sent.total.count();
+        perf->pktSentUniqueTotal = m_stats.sndr.sentUnique.total.count();
+        perf->pktRecvTotal       = m_stats.rcvr.recvd.total.count();
+        perf->pktRecvUniqueTotal = m_stats.rcvr.recvdUnique.total.count();
+        perf->pktSndLossTotal    = m_stats.sndr.lost.total.count();
+        perf->pktRcvLossTotal    = m_stats.rcvr.lost.total.count();
+        perf->pktRetransTotal    = m_stats.sndr.sentRetrans.total.count();
+        perf->pktSentACKTotal    = m_stats.rcvr.sentAck.total.count();
+        perf->pktRecvACKTotal    = m_stats.sndr.recvdAck.total.count();
+        perf->pktSentNAKTotal    = m_stats.rcvr.sentNak.total.count();
+        perf->pktRecvNAKTotal    = m_stats.sndr.recvdNak.total.count();
         perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
 
-        perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
-        perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
-        perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
-        perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
-        perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
-        perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-        perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-        perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-        perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+        perf->byteSentTotal           = m_stats.sndr.sent.total.bytesWithHdr();
+        perf->byteSentUniqueTotal     = m_stats.sndr.sentUnique.total.bytesWithHdr();
+        perf->byteRecvTotal           = m_stats.rcvr.recvd.total.bytesWithHdr();
+        perf->byteRecvUniqueTotal     = m_stats.rcvr.recvdUnique.total.bytesWithHdr();
+        perf->byteRetransTotal        = m_stats.sndr.sentRetrans.total.bytesWithHdr();
+        perf->pktSndFilterExtraTotal  = m_stats.sndr.sentFilterExtra.total.count();
+        perf->pktRcvFilterExtraTotal  = m_stats.rcvr.recvdFilterExtra.total.count();
+        perf->pktRcvFilterSupplyTotal = m_stats.rcvr.suppliedByFilter.total.count();
+        perf->pktRcvFilterLossTotal   = m_stats.rcvr.lossFilter.total.count();
 
-        perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
-        perf->pktSndDropTotal  = m_stats.sndDropTotal;
-        perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
-        perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
-        perf->byteRcvDropTotal =
-            m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
-        perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
-        perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+        perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr();
+        perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
+        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count() + m_stats.rcvr.undecrypted.total.count();
+        // TODO: The payload is dropped. Probably header sizes should not be counted?
+        perf->byteSndDropTotal = m_stats.sndr.dropped.total.bytesWithHdr();
+        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr() + m_stats.rcvr.undecrypted.total.bytesWithHdr();
+        perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
+        perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
 
         // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
         const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
@@ -7454,29 +7409,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         if (clear)
         {
-            m_stats.traceSndDrop           = 0;
-            m_stats.traceRcvDrop           = 0;
-            m_stats.traceSndBytesDrop      = 0;
-            m_stats.traceRcvBytesDrop      = 0;
-            m_stats.traceRcvUndecrypt      = 0;
-            m_stats.traceRcvBytesUndecrypt = 0;
-            m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
-            m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
-            m_stats.traceSent = m_stats.traceRecv
-                = m_stats.traceSentUniq = m_stats.traceRecvUniq
-                = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-                = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-            m_stats.sndDuration                                                       = 0;
-            m_stats.traceRcvRetrans                                                   = 0;
-            m_stats.traceRcvBelated                                                   = 0;
-            m_stats.traceRcvBytesLoss = 0;
+            m_stats.sndr.resetTrace();
+            m_stats.rcvr.resetTrace();
 
-            m_stats.sndFilterExtra = 0;
-            m_stats.rcvFilterExtra = 0;
-
-            m_stats.rcvFilterSupply = 0;
-            m_stats.rcvFilterLoss   = 0;
-
+            m_stats.sndDuration = 0;
             m_stats.tsLastSampleTime = currtime;
         }
     }
@@ -7833,8 +7769,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
             nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
             enterCS(m_StatsLock);
-            ++m_stats.sentNAK;
-            ++m_stats.sentNAKTotal;
+            m_stats.rcvr.sentNak.count(1);
             leaveCS(m_StatsLock);
         }
         // Call with no arguments - get loss list from internal data.
@@ -7855,8 +7790,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
                 nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
 
                 enterCS(m_StatsLock);
-                ++m_stats.sentNAK;
-                ++m_stats.sentNAKTotal;
+                m_stats.rcvr.sentNak.count(1);
                 leaveCS(m_StatsLock);
             }
 
@@ -8183,8 +8117,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
         enterCS(m_StatsLock);
-        ++m_stats.sentACK;
-        ++m_stats.sentACKTotal;
+        m_stats.rcvr.sentAck.count(1);
         leaveCS(m_StatsLock);
     }
     else
@@ -8439,7 +8372,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // Suppose transmission is bidirectional if sender is also receiving
         // data packets.
         enterCS(m_StatsLock);
-        const bool bPktsReceived = m_stats.recvTotal != 0;
+        const bool bPktsReceived = m_stats.rcvr.recvd.total.count() != 0;
         leaveCS(m_StatsLock);
 
         if (bPktsReceived)  // Transmission is bidirectional.
@@ -8532,8 +8465,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
-    ++m_stats.recvACK;
-    ++m_stats.recvACKTotal;
+    m_stats.sndr.recvdAck.count(1);
     leaveCS(m_StatsLock);
 }
 
@@ -8719,8 +8651,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 }
 
                 enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
+                m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
             else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
@@ -8740,8 +8671,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
 
                 enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
+                m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
         }
@@ -8764,8 +8694,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
 
     enterCS(m_StatsLock);
-    ++m_stats.recvNAK;
-    ++m_stats.recvNAKTotal;
+    m_stats.sndr.recvdNak.count(1);
     leaveCS(m_StatsLock);
 }
 
@@ -9231,10 +9160,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
         ackguard.unlock();
 
         enterCS(m_StatsLock);
-        ++m_stats.traceRetrans;
-        ++m_stats.retransTotal;
-        m_stats.traceBytesRetrans += payload;
-        m_stats.bytesRetransTotal += payload;
+        m_stats.sndr.sentRetrans.count(payload);
         leaveCS(m_StatsLock);
 
         // Despite the contextual interpretation of packet.m_iMsgNo around
@@ -9298,8 +9224,7 @@ std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         // Stats
         {
             ScopedLock lg(m_StatsLock);
-            ++m_stats.sndFilterExtra;
-            ++m_stats.sndFilterExtraTotal;
+            m_stats.sndr.sentFilterExtra.count(1);
         }
     }
     else
@@ -9500,17 +9425,9 @@ std::pair<int, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     // m_pSndTimeWindow->onPktSent(w_packet.m_iTimeStamp);
 
     enterCS(m_StatsLock);
-    m_stats.traceBytesSent += payload;
-    m_stats.bytesSentTotal += payload;
-    ++m_stats.traceSent;
-    ++m_stats.sentTotal;
+    m_stats.sndr.sent.count(payload);
     if (new_packet_packed)
-    {
-        ++m_stats.traceSentUniq;
-        ++m_stats.sentUniqTotal;
-        m_stats.traceBytesSentUniq += payload;
-        m_stats.bytesSentUniqTotal += payload;
-    }
+        m_stats.sndr.sentUnique.count(payload);
     leaveCS(m_StatsLock);
 
     if (probe)
@@ -9707,7 +9624,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     {
         // This packet was retransmitted
         enterCS(m_StatsLock);
-        m_stats.traceRcvRetrans++;
+        m_stats.rcvr.recvdRetrans.count(packet.getLength());
         leaveCS(m_StatsLock);
 
 #if ENABLE_HEAVY_LOGGING
@@ -9767,10 +9684,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     enterCS(m_StatsLock);
-    m_stats.traceBytesRecv += pktsz;
-    m_stats.bytesRecvTotal += pktsz;
-    ++m_stats.traceRecv;
-    ++m_stats.recvTotal;
+    m_stats.rcvr.recvd.count(pktsz);
     leaveCS(m_StatsLock);
 
     loss_seqs_t                             filter_loss_seqs;
@@ -9809,14 +9723,11 @@ int srt::CUDT::processData(CUnit* in_unit)
        // >1 - jump over a packet loss (loss = seqdiff-1)
         if (diff > 1)
         {
+            const int loss = diff - 1; // loss is all that is above diff == 1
             ScopedLock lg(m_StatsLock);
-            int    loss = diff - 1; // loss is all that is above diff == 1
-            m_stats.traceRcvLoss += loss;
-            m_stats.rcvLossTotal += loss;
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-            const uint64_t lossbytes = loss * avgpayloadsz;
-            m_stats.traceRcvBytesLoss += lossbytes;
-            m_stats.rcvBytesLossTotal += lossbytes;
+            m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, loss));
+
             HLOGC(qrlog.Debug,
                   log << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "
                       << CSeqNo::decseq(packet.m_iSeqNo) << "]");
@@ -9927,7 +9838,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
                 enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = bltime / 1000.0;
-                m_stats.traceRcvBelated++;
+                m_stats.rcvr.recvdBelated.count(rpkt.getLength());
                 leaveCS(m_StatsLock);
                 HLOGC(qrlog.Debug,
                       log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset << " (BELATED/"
@@ -10006,22 +9917,13 @@ int srt::CUDT::processData(CUnit* in_unit)
                     EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
                     if (rc != ENCS_CLEAR)
                     {
-                        // Could not decrypt
-                        // Keep packet in received buffer
-                        // Crypto flags are still set
-                        // It will be acknowledged
-                        {
-                            ScopedLock lg(m_StatsLock);
-                            m_stats.traceRcvUndecrypt += 1;
-                            m_stats.traceRcvBytesUndecrypt += pktsz;
-                            m_stats.m_rcvUndecryptTotal += 1;
-                            m_stats.m_rcvBytesUndecryptTotal += pktsz;
-                        }
-
-                        // Log message degraded to debug because it may happen very often
+                        // Heavy log message because if seen once the message may happen very often.
                         HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                         adding_successful = false;
                         IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                        ScopedLock lg(m_StatsLock);
+                        m_stats.rcvr.undecrypted.count(stats::BytesPackets(pktsz, 1));
                     }
                 }
             }
@@ -10029,10 +9931,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             if (adding_successful)
             {
                 ScopedLock statslock(m_StatsLock);
-                ++m_stats.traceRecvUniq;
-                ++m_stats.recvUniqTotal;
-                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
-                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
+                m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
             }
 
 #if ENABLE_HEAVY_LOGGING
@@ -11247,8 +11146,7 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
         if (num > 0)
         {
             enterCS(m_StatsLock);
-            m_stats.traceSndLoss += num;
-            m_stats.sndLossTotal += num;
+            m_stats.sndr.lost.count(num);
             leaveCS(m_StatsLock);
 
             HLOGC(xtlog.Debug,

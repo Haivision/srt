@@ -72,6 +72,7 @@ queue.h
 congctl.h
 socketconfig.h
 srt_compat.h
+stats.h
 threadname.h
 tsbpd_time.h
 utilities.h

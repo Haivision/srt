@@ -1692,7 +1692,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     // Now that at least one link has succeeded, update sending stats.
-    m_stats.sent.Update(len);
+    m_stats.sent.count(len);
 
     // Pity that the blocking mode only determines as to whether this function should
     // block or not, but the epoll flags must be updated regardless of the mode.
@@ -2259,7 +2259,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 pos->packet.clear();
 
                 // Update stats as per delivery
-                m_stats.recv.Update(len);
+                m_stats.recv.count(len);
                 updateAvgPayloadSize(len);
 
                 // We predict to have only one packet ahead, others are pending to be reported by tsbpd.
@@ -2491,7 +2491,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               log << "group/recv: @" << id << " %" << mctrl.pktseq << " #" << mctrl.msgno
                                   << " BEHIND base=%" << m_RcvBaseSeqNo << " - discarding");
                         // The sequence is recorded, the packet has to be discarded.
-                        m_stats.recvDiscard.Update(stat);
+                        m_stats.recvDiscard.count(stat);
                         continue;
                     }
 
@@ -2527,7 +2527,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 fillGroupData((w_mc), mctrl);
 
                 // Update stats as per delivery
-                m_stats.recv.Update(output_size);
+                m_stats.recv.count(output_size);
                 updateAvgPayloadSize(output_size);
 
                 // Record, but do not update yet, until all sockets are handled.
@@ -2681,7 +2681,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 const int32_t jump = (CSeqNo(slowest_kangaroo->second.mctrl.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
                 if (jump > 0)
                 {
-                    m_stats.recvDrop.UpdateTimes(jump, avgRcvPacketSize());
+                    m_stats.recvDrop.count(stats::BytesPackets(jump * static_cast<uint64_t>(avgRcvPacketSize()), jump));
                     LOGC(grlog.Warn,
                          log << "@" << m_GroupID << " GROUP RCV-DROPPED " << jump << " packet(s): seqno %"
                              << m_RcvBaseSeqNo << " to %" << slowest_kangaroo->second.mctrl.pktseq);
@@ -2703,7 +2703,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 pkt.clear();
 
                 // Update stats as per delivery
-                m_stats.recv.Update(len);
+                m_stats.recv.count(len);
                 updateAvgPayloadSize(len);
 
                 // It is unlikely to have a packet ahead because usually having one packet jumped-ahead
@@ -2830,21 +2830,21 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 
     perf->msTimeStamp = count_milliseconds(currtime - m_tsStartTime);
 
-    perf->pktSentUnique = m_stats.sent.local.pkts;
-    perf->pktRecvUnique = m_stats.recv.local.pkts;
-    perf->pktRcvDrop    = m_stats.recvDrop.local.pkts;
+    perf->pktSentUnique = m_stats.sent.trace.count();
+    perf->pktRecvUnique = m_stats.recv.trace.count();
+    perf->pktRcvDrop    = m_stats.recvDrop.trace.count();
 
-    perf->byteSentUnique = m_stats.sent.local.fullBytes();
-    perf->byteRecvUnique = m_stats.recv.local.fullBytes();
-    perf->byteRcvDrop    = m_stats.recvDrop.local.fullBytes();
+    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr();
+    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr();
+    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr();
 
-    perf->pktSentUniqueTotal = m_stats.sent.total.pkts;
-    perf->pktRecvUniqueTotal = m_stats.recv.total.pkts;
-    perf->pktRcvDropTotal    = m_stats.recvDrop.total.pkts;
+    perf->pktSentUniqueTotal = m_stats.sent.total.count();
+    perf->pktRecvUniqueTotal = m_stats.recv.total.count();
+    perf->pktRcvDropTotal    = m_stats.recvDrop.total.count();
 
-    perf->byteSentUniqueTotal = m_stats.sent.total.fullBytes();
-    perf->byteRecvUniqueTotal = m_stats.recv.total.fullBytes();
-    perf->byteRcvDropTotal    = m_stats.recvDrop.total.fullBytes();
+    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr();
+    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr();
+    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr();
 
     const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
     perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
@@ -3165,7 +3165,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     }
 
     enterCS(u.m_StatsLock);
-    const int64_t drop_total = u.m_stats.sndDropTotal;
+    const int64_t drop_total = u.m_stats.sndr.dropped.total.count();
     leaveCS(u.m_StatsLock);
 
     const bool have_new_drops = d->pktSndDropTotal != drop_total;
@@ -4039,7 +4039,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     // At least one link has succeeded, update sending stats.
-    m_stats.sent.Update(len);
+    m_stats.sent.count(len);
 
     // Now fill in the socket table. Check if the size is enough, if not,
     // then set the pointer to NULL and set the correct size.
