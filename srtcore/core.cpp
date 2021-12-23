@@ -5175,38 +5175,38 @@ void * srt::CUDT::tsbpd(void* param)
             if (info.seq_gap)
             {
                 const int seq_gap_len = CSeqNo::seqoff(self->m_iRcvLastSkipAck, info.seqno);
-                SRT_ASSERT(seq_gap_len > 0);
-                /*if (!info.seq_gap)
+
+                // seq_gap_len can be <= 0 if a packet has been dropped by the sender.
+                if (seq_gap_len > 0)
                 {
-                    LOGC(brlog.Warn, log << "TSBPD worker: no gap. pktseqno=" << info.seqno
-                        << ", m_iRcvLastSkipAck=" << self->m_iRcvLastSkipAck
-                        << ", RBuffer start seqno=" << self->m_pRcvBuffer->getStartSeqNo()
-                        << ", m_iRcvLastAck=" << self->m_iRcvLastAck
-                        << ", init seqnoo=" << self->m_iISN);
-                }*/
+                    // Remove [from,to-inclusive]
+                    self->dropFromLossLists(self->m_iRcvLastSkipAck, CSeqNo::decseq(info.seqno));
+                    self->m_iRcvLastSkipAck = info.seqno;
+                }
 
-                // Drop too late packets
-                self->updateForgotten(seq_gap_len, self->m_iRcvLastSkipAck, info.seqno);
-                //if (info.seq_gap) // If there is no sequence gap, we are reading ahead of ACK.
-                //{
-                self->m_pRcvBuffer->dropUpTo(info.seqno);
-                //}
-
-                self->m_iRcvLastSkipAck = info.seqno;
+                const int iDropCnt = self->m_pRcvBuffer->dropUpTo(info.seqno);
+                if (iDropCnt > 0)
+                {
+                    enterCS(self->m_StatsLock);
+                    // Estimate dropped bytes from average payload size.
+                    const uint64_t avgpayloadsz = self->m_pRcvBuffer->getRcvAvgPayloadSize();
+                    self->m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t) iDropCnt));
+                    leaveCS(self->m_StatsLock);
+                }
+                
 #if ENABLE_EXPERIMENTAL_BONDING
                 shall_update_group = true;
 #endif
 
 #if ENABLE_LOGGING
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
-                // TODO: seq_gap_len is not the actual number of packets dropped.
 #if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
-                    << seq_gap_len << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
+                    << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
                     << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
 #endif
-                LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << seq_gap_len << " packet(s), packet seqno %" << info.seqno
+                LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                     << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
                     << (timediff_us % 1000) << " ms");
 #endif
@@ -7898,6 +7898,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // If there is no loss, the ACK is the current largest sequence number plus 1;
         // Otherwise it is the smallest sequence number in the receiver loss list.
         ScopedLock lock(m_RcvLossLock);
+        // TODO: Consider the Fresh Loss list as well!!!
         ack = m_pRcvLossList->getFirstLostSeq();
     }
 

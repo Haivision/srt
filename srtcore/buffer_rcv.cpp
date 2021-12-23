@@ -159,7 +159,7 @@ int CRcvBufferNew::insert(CUnit* unit)
     return 0;
 }
 
-void CRcvBufferNew::dropUpTo(int32_t seqno)
+int CRcvBufferNew::dropUpTo(int32_t seqno)
 {
     // Can drop only when nothing to read, and 
     // first unacknowledged packet is missing.
@@ -173,17 +173,15 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
-        return;
+        return 0;
     }
-
-    /*LOGC(rbuflog.Warn, log << "CRcvBufferNew.dropUpTo(): seqno=" << seqno << ", pkts=" << len
-        << ". Buffer start " << m_iStartSeqNo << ".");*/
 
     m_iMaxPosInc -= len;
     if (m_iMaxPosInc < 0)
         m_iMaxPosInc = 0;
 
     // Check that all packets being dropped are missing.
+    const int iDropCnt = len;
     while (len > 0)
     {
         if (m_entries[m_iStartPos].pUnit != NULL)
@@ -210,6 +208,7 @@ void CRcvBufferNew::dropUpTo(int32_t seqno)
     // because start position was increased, and preceeding packets are invalid. 
     m_iFirstNonreadPos = m_iStartPos;
     updateNonreadPos();
+    return iDropCnt;
 }
 
 void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
