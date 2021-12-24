@@ -69,8 +69,9 @@ public:
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
+    /// @return  number of dropped packets.
     ///
-    void dropUpTo(int32_t seqno);
+    int dropUpTo(int32_t seqno);
 
     /// @brief Drop the whole message from the buffer.
     /// If message number is 0, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].

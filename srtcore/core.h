@@ -705,6 +705,12 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
+    /// Drop too late packets. Updaet loss lists and ACK positions.
+    /// The @a seqno packet itself is not dropped.
+    /// @param seqno [in] The sequence number of the first packets following those to be dropped.
+    /// @return The number of packets dropped.
+    int dropTooLateUpTo(int seqno);
+
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
