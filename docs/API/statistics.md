@@ -235,6 +235,8 @@ where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds
 The total number of _dropped_ by the SRT receiver and, as a result, not delivered to the upstream application DATA packets (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for receiver.
 
 This statistic counts
+
+- not arrived packets including those signalled for dropping by the sender, that were dropped in favor of the subsequent existing packets,
 - arrived too late packets (retransmitted or original packets arrived out of order),
 - arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
 
