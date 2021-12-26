@@ -5302,6 +5302,31 @@ void * srt::CUDT::tsbpd(void* param)
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
 }
+
+int srt::CUDT::dropTooLateUpTo(int seqno)
+{
+    const int seq_gap_len = CSeqNo::seqoff(m_iRcvLastSkipAck, seqno);
+
+    // seq_gap_len can be <= 0 if a packet has been dropped by the sender.
+    if (seq_gap_len > 0)
+    {
+        // Remove [from,to-inclusive]
+        dropFromLossLists(m_iRcvLastSkipAck, CSeqNo::decseq(seqno));
+        m_iRcvLastSkipAck = seqno;
+    }
+
+    const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
+    if (iDropCnt > 0)
+    {
+        enterCS(m_StatsLock);
+        // Estimate dropped bytes from average payload size.
+        const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+        leaveCS(m_StatsLock);
+    }
+    return iDropCnt;
+}
+
 #else
 void * srt::CUDT::tsbpd(void *param)
 {
@@ -5520,30 +5545,6 @@ void * srt::CUDT::tsbpd(void *param)
     return NULL;
 }
 #endif // ENABLE_NEW_RCVBUFFER
-
-int srt::CUDT::dropTooLateUpTo(int seqno)
-{
-    const int seq_gap_len = CSeqNo::seqoff(m_iRcvLastSkipAck, seqno);
-
-    // seq_gap_len can be <= 0 if a packet has been dropped by the sender.
-    if (seq_gap_len > 0)
-    {
-        // Remove [from,to-inclusive]
-        dropFromLossLists(m_iRcvLastSkipAck, CSeqNo::decseq(seqno));
-        m_iRcvLastSkipAck = seqno;
-    }
-
-    const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
-    if (iDropCnt > 0)
-    {
-        enterCS(m_StatsLock);
-        // Estimate dropped bytes from average payload size.
-        const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t) iDropCnt));
-        leaveCS(m_StatsLock);
-    }
-    return iDropCnt;
-}
 
 void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
 {
