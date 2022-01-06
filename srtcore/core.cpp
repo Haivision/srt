@@ -7663,7 +7663,7 @@ void srt::CUDT::releaseSynch()
 }
 
 // [[using locked(m_RcvBufferLock)]];
-int32_t srt::CUDT::ackDataUpTo(int32_t ack)
+void srt::CUDT::ackDataUpTo(int32_t ack)
 {
     const int acksize SRT_ATR_UNUSED = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
 
@@ -7673,16 +7673,7 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
 
-#if ENABLE_NEW_RCVBUFFER
-    const std::pair<int, int> range = m_pRcvBuffer->getAvailablePacketsRange();
-    // Some packets acknowledged are not available in the buffer.
-    if (CSeqNo::seqcmp(range.second, ack) < 0)
-    {
-        LOGC(xtlog.Error, log << "IPE: Acknowledged seqno %" << ack << " outruns the RCV buffer state %" << range.first
-            << " - %" << range.second);
-    }
-    return CSeqNo::decseq(range.second);
-#else
+#if !ENABLE_NEW_RCVBUFFER
     // NOTE: This is new towards UDT and prevents spurious
     // wakeup of select/epoll functions when no new packets
     // were signed off for extraction.
@@ -7690,7 +7681,6 @@ int32_t srt::CUDT::ackDataUpTo(int32_t ack)
     {
         m_pRcvBuffer->ackData(acksize);
     }
-    return ack;
 #endif
 }
 
@@ -7930,7 +7920,16 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // IF ack %> m_iRcvLastAck
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
-        const int32_t group_read_seq SRT_ATR_UNUSED = ackDataUpTo(ack);
+        ackDataUpTo(ack);
+
+#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_NEW_RCVBUFFER
+        const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
+#else
+        const int32_t group_read_seq = CSeqNo::decseq(ack);
+#endif
+#endif
+
         InvertedLock un_bufflock (m_RcvBufferLock);
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -8015,7 +8014,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 }
             }
 #if ENABLE_EXPERIMENTAL_BONDING
-            if (m_parent->m_GroupOf)
+            if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
                 ScopedLock glock (uglobal().m_GlobControlLock);
