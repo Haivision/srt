@@ -1075,8 +1075,7 @@ private: // Generation and processing of packets
     /// @brief Acknowledge reading position up to the @p seq.
     /// Updates m_iRcvLastAck and m_iRcvLastSkipAck to @p seq.
     /// @param seq first unacknowledged packet sequence number.
-    /// @return 
-    int32_t ackDataUpTo(int32_t seq);
+    void ackDataUpTo(int32_t seq);
 
     void handleKeepalive(const char* data, size_t lenghth);
 
