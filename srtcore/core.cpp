@@ -8824,11 +8824,14 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     {
         UniqueLock rlock(m_RecvLock);
         const bool using_rexmit_flag = m_bPeerRexmitFlag;
+        {
+            ScopedLock rblock(m_RcvBufferLock);
 #if ENABLE_NEW_RCVBUFFER
-        m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+            m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
 #else
-        m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
+            m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
 #endif
+        }
         // When the drop request was received, it means that there are
         // packets for which there will never be ACK sent; if the TSBPD thread
         // is currently in the ACK-waiting state, it may never exit.
