@@ -614,6 +614,9 @@ void CRcvBufferNew::releaseNextFillerEntries()
         releaseUnitInPos(pos);
         pos = incPos(pos);
         m_iStartPos = pos;
+        --m_iMaxPosInc;
+        if (m_iMaxPosInc < 0)
+            m_iMaxPosInc = 0;
     }
 }
 
