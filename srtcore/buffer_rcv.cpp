@@ -507,7 +507,7 @@ int CRcvBufferNew::getTimespan_ms() const
         if (startpos == lastpos)
             break;
 
-        ++startpos;
+        startpos = incPos(startpos);
     }
 
     if (m_entries[startpos].pUnit == NULL)
