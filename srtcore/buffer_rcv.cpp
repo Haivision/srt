@@ -229,7 +229,7 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
             if (msgseq == msgno)
             {
-                dropUnit(i);
+                dropUnitInPos(i);
                 m_entries[i].status = EntryState_Drop;
                 if (minDroppedOffset == -1)
                     minDroppedOffset = offPos(m_iStartPos, i);
@@ -267,7 +267,7 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     int minDroppedOffset = -1;
     for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != last_pos; i = incPos(i))
     {
-        dropUnit(i);
+        dropUnitInPos(i);
         m_entries[i].status = EntryState_Drop;
         if (minDroppedOffset == -1)
             minDroppedOffset = offPos(m_iStartPos, i);
