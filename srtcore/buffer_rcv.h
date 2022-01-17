@@ -67,11 +67,6 @@ public:
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
-    /// @brief Drop a unit from the buffer.
-    /// @param pos position in the m_entries of the unit to drop.
-    /// @return false if nothing to drop, true if the unit was dropped successfully.
-    bool dropUnit(int pos);
-
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return  number of dropped packets.
@@ -225,6 +220,11 @@ private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
     void releaseUnitInPos(int pos);
+
+    /// @brief Drop a unit from the buffer.
+    /// @param pos position in the m_entries of the unit to drop.
+    /// @return false if nothing to drop, true if the unit was dropped successfully.
+    bool dropUnitInPos(int pos);
 
     /// Release entries following the current buffer position if they were already
     /// read out of order (EntryState_Read) or dropped (EntryState_Drop).
