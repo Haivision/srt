@@ -67,6 +67,11 @@ public:
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
+    /// @brief Drop a unit from the buffer.
+    /// @param pos position of the unit to drop.
+    /// @return false if nothing to drop, true if the unit was dropped successfully.
+    bool dropUnit(int pos);
+
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return  number of dropped packets.

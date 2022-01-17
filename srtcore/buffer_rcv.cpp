@@ -159,6 +159,23 @@ int CRcvBufferNew::insert(CUnit* unit)
     return 0;
 }
 
+bool CRcvBufferNew::dropUnit(int pos) {
+    if (!m_entries[pos].pUnit)
+        return false;
+    if (m_tsbpd.isEnabled())
+    {
+        updateTsbPdTimeBase(m_entries[pos].pUnit->m_Packet.getMsgTimeStamp());
+    }
+    else if (m_bMessageAPI && !m_entries[pos].pUnit->m_Packet.getMsgOrderFlag())
+    {
+        --m_numOutOfOrderPackets;
+        if (pos == m_iFirstReadableOutOfOrder)
+            m_iFirstReadableOutOfOrder = -1;
+    }
+    releaseUnitInPos(pos);
+    return true;
+}
+
 int CRcvBufferNew::dropUpTo(int32_t seqno)
 {
     // Can drop only when nothing to read, and 
