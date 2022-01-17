@@ -159,7 +159,8 @@ int CRcvBufferNew::insert(CUnit* unit)
     return 0;
 }
 
-bool CRcvBufferNew::dropUnit(int pos) {
+bool CRcvBufferNew::dropUnit(int pos)
+{
     if (!m_entries[pos].pUnit)
         return false;
     if (m_tsbpd.isEnabled())
