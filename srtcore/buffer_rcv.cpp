@@ -178,20 +178,7 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     const int iDropCnt = len;
     while (len > 0)
     {
-        if (m_entries[m_iStartPos].pUnit != NULL)
-        {
-            if (m_tsbpd.isEnabled())
-            {
-                updateTsbPdTimeBase(m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp());
-            }
-            else if (m_bMessageAPI && !m_entries[m_iStartPos].pUnit->m_Packet.getMsgOrderFlag())
-            {
-                --m_numOutOfOrderPackets;
-                if (m_iStartPos == m_iFirstReadableOutOfOrder)
-                    m_iFirstReadableOutOfOrder = -1;
-            }
-            releaseUnitInPos(m_iStartPos);
-        }
+        dropUnit(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
         m_iStartPos = incPos(m_iStartPos);
