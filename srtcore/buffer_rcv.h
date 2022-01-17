@@ -221,6 +221,11 @@ private:
     void updateNonreadPos();
     void releaseUnitInPos(int pos);
 
+    /// @brief Drop a unit from the buffer.
+    /// @param pos position in the m_entries of the unit to drop.
+    /// @return false if nothing to drop, true if the unit was dropped successfully.
+    bool dropUnitInPos(int pos);
+
     /// Release entries following the current buffer position if they were already
     /// read out of order (EntryState_Read) or dropped (EntryState_Drop).
     void releaseNextFillerEntries();
