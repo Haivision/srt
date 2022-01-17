@@ -68,7 +68,7 @@ public:
     int insert(CUnit* unit);
 
     /// @brief Drop a unit from the buffer.
-    /// @param pos position of the unit to drop.
+    /// @param pos position in the m_entries of the unit to drop.
     /// @return false if nothing to drop, true if the unit was dropped successfully.
     bool dropUnit(int pos);
 
