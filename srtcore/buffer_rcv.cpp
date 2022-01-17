@@ -181,8 +181,10 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
         if (m_entries[m_iStartPos].pUnit != NULL)
         {
             if (m_tsbpd.isEnabled())
+            {
                 updateTsbPdTimeBase(m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp());
-            if (!m_tsbpd.isEnabled() && m_bMessageAPI && !m_entries[m_iStartPos].pUnit->m_Packet.getMsgOrderFlag())
+            }
+            else if (m_bMessageAPI && !m_entries[m_iStartPos].pUnit->m_Packet.getMsgOrderFlag())
             {
                 --m_numOutOfOrderPackets;
                 if (m_iStartPos == m_iFirstReadableOutOfOrder)
