@@ -178,7 +178,7 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     const int iDropCnt = len;
     while (len > 0)
     {
-        dropUnit(m_iStartPos);
+        dropUnitInPos(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
         m_iStartPos = incPos(m_iStartPos);
