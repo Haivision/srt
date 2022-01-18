@@ -206,6 +206,7 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     if (msgno != 0)
     {
+        int minDroppedOffset = -1;
         for (int i = m_iStartPos; i != end_pos; i = incPos(i))
         {
             // TODO: Maybe check status?
@@ -215,11 +216,26 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
             if (msgseq == msgno)
             {
-                releaseUnitInPos(i);
+                dropUnitInPos(i);
                 m_entries[i].status = EntryState_Drop;
+                if (minDroppedOffset == -1)
+                    minDroppedOffset = offPos(m_iStartPos, i);
             }
         }
-
+        // Check if units before m_iFirstNonreadPos are dropped.
+        bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
+        releaseNextFillerEntries();
+        if (needUpdateNonreadPos)
+        {
+            m_iFirstNonreadPos = m_iStartPos;
+            updateNonreadPos();
+        }
+        if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+        {
+            if (!checkFirstReadableOutOfOrder())
+                m_iFirstReadableOutOfOrder = -1;
+            updateFirstReadableOutOfOrder();
+        }
         return;
     }
 
@@ -235,17 +251,32 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 
     const int start_off = max(0, offset_a);
     const int last_pos = incPos(m_iStartPos, offset_b);
+    int minDroppedOffset = -1;
     for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != last_pos; i = incPos(i))
     {
-        if (m_entries[i].pUnit)
-        {
-            releaseUnitInPos(i);
-        }
+        dropUnitInPos(i);
         m_entries[i].status = EntryState_Drop;
+        if (minDroppedOffset == -1)
+            minDroppedOffset = offPos(m_iStartPos, i);
     }
 
     LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): [" << seqnolo << "; "
         << seqnohi << "].");
+
+    // Check if units before m_iFirstNonreadPos are dropped.
+    bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
+    releaseNextFillerEntries();
+    if (needUpdateNonreadPos)
+    {
+        m_iFirstNonreadPos = m_iStartPos;
+        updateNonreadPos();
+    }
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+    {
+        if (!checkFirstReadableOutOfOrder())
+            m_iFirstReadableOutOfOrder = -1;
+        updateFirstReadableOutOfOrder();
+    }
 }
 
 int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
@@ -718,6 +749,34 @@ void CRcvBufferNew::onInsertNotInOrderPacket(int insertPos)
 
     m_iFirstReadableOutOfOrder = firstPktPos;
     return;
+}
+
+bool CRcvBufferNew::checkFirstReadableOutOfOrder()
+{
+    if (m_numOutOfOrderPackets <= 0 || m_iFirstReadableOutOfOrder < 0 || m_iMaxPosInc == 0)
+        return false;
+
+    const int endPos = incPos(m_iStartPos, m_iMaxPosInc);
+    int msgno = -1;
+    for (int pos = m_iFirstReadableOutOfOrder; pos != endPos; pos = incPos(pos))
+    {
+        if (!m_entries[pos].pUnit)
+            return false;
+
+        const CPacket& pkt = m_entries[pos].pUnit->m_Packet;
+        if (pkt.getMsgOrderFlag())
+            return false;
+
+        if (msgno == -1)
+            msgno = pkt.getMsgSeq(m_bPeerRexmitFlag);
+        else if (msgno != pkt.getMsgSeq(m_bPeerRexmitFlag))
+            return false;
+
+        if (pkt.getMsgBoundary() & PB_LAST)
+            return true;
+    }
+
+    return false;
 }
 
 void CRcvBufferNew::updateFirstReadableOutOfOrder()
