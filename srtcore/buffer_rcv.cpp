@@ -161,15 +161,10 @@ int CRcvBufferNew::insert(CUnit* unit)
 
 int CRcvBufferNew::dropUpTo(int32_t seqno)
 {
-    // Can drop only when nothing to read, and 
-    // first unacknowledged packet is missing.
-    SRT_ASSERT(m_iStartPos == m_iFirstNonreadPos);
-
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
 
     int len = CSeqNo::seqoff(m_iStartSeqNo, seqno);
-    SRT_ASSERT(len > 0);
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
@@ -180,21 +175,11 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     if (m_iMaxPosInc < 0)
         m_iMaxPosInc = 0;
 
-    // Check that all packets being dropped are missing.
     const int iDropCnt = len;
     while (len > 0)
     {
-        if (m_entries[m_iStartPos].pUnit != NULL)
-        {
-            releaseUnitInPos(m_iStartPos);
-        }
-
-        if (m_entries[m_iStartPos].status != EntryState_Empty)
-        {
-            SRT_ASSERT(m_entries[m_iStartPos].status == EntryState_Drop || m_entries[m_iStartPos].status == EntryState_Read);
-            m_entries[m_iStartPos].status = EntryState_Empty;
-        }
-
+        dropUnitInPos(m_iStartPos);
+        m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
         m_iStartPos = incPos(m_iStartPos);
         --len;
@@ -202,12 +187,14 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
 
     // Update positions
     m_iStartSeqNo = seqno;
-    // Move forward if there are "read" entries.
+    // Move forward if there are "read/drop" entries.
     releaseNextFillerEntries();
     // Set nonread position to the starting position before updating,
     // because start position was increased, and preceeding packets are invalid. 
     m_iFirstNonreadPos = m_iStartPos;
     updateNonreadPos();
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+        updateFirstReadableOutOfOrder();
     return iDropCnt;
 }
 
