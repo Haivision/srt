@@ -2414,7 +2414,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
     // We still believe it should work, let's check the flags.
-    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
+    const int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if (ext_flags == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
@@ -4019,15 +4019,16 @@ EConnectStatus srt::CUDT::processRendezvous(
     m_ConnReq.m_iReqType  = rsp_type;
     m_ConnReq.m_extension = needs_extension;
 
-    // This must be done before prepareConnectionObjects().
+    // This must be done before prepareConnectionObjects(), because it sets ISN and m_iMaxSRTPayloadSize needed to create buffers.
     if (!applyResponseSettings())
     {
         LOGC(cnlog.Error, log << "processRendezvous: rogue peer");
         return CONN_REJECT;
     }
 
-    // This must be done before interpreting and creating HSv5 extensions.
-    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
+    // The CryptoControl must be created by the prepareConnectionObjects() before interpreting and creating HSv5 extensions
+    // because the it will be used there.
+    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL))
     {
         // m_RejectReason already handled
         HLOGC(cnlog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
@@ -4536,6 +4537,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // however in this case the HSREQ extension will not be attached,
         // so it will simply go the "old way".
         // (&&: skip if failed already)
+        // Must be called before interpretSrtHandshake() to create the CryptoControl.
         ok = ok &&  prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
 
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
@@ -5568,11 +5570,8 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         return true;
     }
 
-    bool bidirectional = false;
-    if (hs.m_iVersion > HS_VERSION_UDT4)
-    {
-        bidirectional = true; // HSv5 is always bidirectional
-    }
+    // HSv5 is always bidirectional
+    const bool bidirectional = (hs.m_iVersion > HS_VERSION_UDT4);
 
     // HSD_DRAW is received only if this side is listener.
     // If this side is caller with HSv5, HSD_INITIATOR should be passed.
@@ -5595,7 +5594,7 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
 #if ENABLE_NEW_RCVBUFFER
         SRT_ASSERT(m_iISN != -1);
-        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, &(m_pRcvQueue->m_UnitQueue), m_bPeerRexmitFlag, m_config.bMessageAPI);
+        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, &(m_pRcvQueue->m_UnitQueue), m_config.bMessageAPI);
 #else
         m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_config.iRcvBufSize);
 #endif
@@ -8982,6 +8981,7 @@ void srt::CUDT::updateSrtRcvSettings()
         enterCS(m_RecvLock);
 #if ENABLE_NEW_RCVBUFFER
         m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
+        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 #else
         m_pRcvBuffer->setRcvTsbPdMode(m_tsRcvPeerStartTime, milliseconds_from(m_iTsbPdDelay_ms));
 #endif

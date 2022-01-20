@@ -51,7 +51,7 @@ class CRcvBufferNew
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool peerRexmit, bool bMessageAPI);
+    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
     ~CRcvBufferNew();
 
@@ -308,7 +308,7 @@ private:
     size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
     int m_iFirstReadableOutOfOrder; // In case of out ouf order packet, points to a position of the first such packet to
                                     // read
-    const bool m_bPeerRexmitFlag;   // Needed to read message number correctly
+    bool m_bPeerRexmitFlag;         // Needed to read message number correctly
     const bool m_bMessageAPI;       // Operation mode flag: message or stream.
 
 public: // TSBPD public functions
@@ -319,6 +319,8 @@ public: // TSBPD public functions
     ///
     /// @return 0
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
+
+    void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; } 
 
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 

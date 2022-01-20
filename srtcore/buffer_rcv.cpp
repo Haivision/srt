@@ -70,7 +70,7 @@ namespace {
  *    m_iMaxPosInc:     none? (modified on add and ack
  */
 
-CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool peerRexmit, bool bMessageAPI)
+CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI)
     : m_entries(size)
     , m_szSize(size) // TODO: maybe just use m_entries.size()
     , m_pUnitQueue(unitqueue)
@@ -81,7 +81,7 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     , m_iNotch(0)
     , m_numOutOfOrderPackets(0)
     , m_iFirstReadableOutOfOrder(-1)
-    , m_bPeerRexmitFlag(peerRexmit)
+    , m_bPeerRexmitFlag(true)
     , m_bMessageAPI(bMessageAPI)
     , m_iBytesCount(0)
     , m_iPktsCount(0)
