@@ -34,7 +34,8 @@ protected:
 #if ENABLE_NEW_RCVBUFFER
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_peer_rexmit, enable_msg_api));
+        m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
 #else
         m_rcv_buffer = unique_ptr<CRcvBuffer>(new CRcvBuffer(m_unit_queue.get(), m_buff_size_pkts));
 #endif
