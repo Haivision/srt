@@ -179,7 +179,9 @@ public:
     int  getAvgBufSize(int& bytes, int& timespan);
     int  getCurrBufSize(int& bytes, int& timespan);
 
-    time_point getOldestTime() const;
+    /// @brief Get the buffering delay of the oldest message in the buffer.
+    /// @return the delay value.
+    duration getBufferingDelay(const time_point& tnow) const;
 
     uint64_t getInRatePeriod() const { return m_InRatePeriod; }
 
@@ -207,7 +209,7 @@ private:                                                       // Constants
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
-    sync::Mutex m_BufLock; // used to synchronize buffer operation
+    mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
 
     struct Block
     {
@@ -216,7 +218,7 @@ private:
 
         int32_t    m_iMsgNoBitset; // message number
         int32_t    m_iSeqNo;       // sequence number for scheduling
-        time_point m_tsOriginTime; // block origin time (either provided from above or equials the time a message was submitted for sending.
+        time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
         time_point m_tsRexmitTime; // packet retransmission time
         int        m_iTTL; // time to live (milliseconds)
 

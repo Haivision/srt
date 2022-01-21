@@ -686,10 +686,14 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
     return m_iCount;
 }
 
-CSndBuffer::time_point CSndBuffer::getOldestTime() const
+CSndBuffer::duration CSndBuffer::getBufferingDelay(const time_point& tnow) const
 {
+    ScopedLock lck(m_BufLock);
     SRT_ASSERT(m_pFirstBlock);
-    return m_pFirstBlock->m_tsOriginTime;
+    if (m_iCount == 0)
+        return duration(0);
+
+    return tnow - m_pFirstBlock->m_tsOriginTime;
 }
 
 int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)

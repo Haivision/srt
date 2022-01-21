@@ -6338,9 +6338,8 @@ bool srt::CUDT::checkNeedDrop()
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
     }
 
-    int bytes, timespan_ms;
-    // (returns buffer size in buffer units, ignored)
-    m_pSndBuffer->getCurrBufSize((bytes), (timespan_ms));
+    const time_point tnow = steady_clock::now();
+    const int buffdelay_ms = count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
 
     // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
     // Minimum value must accomodate an I-Frame (~8 x average frame size)
@@ -6348,21 +6347,19 @@ bool srt::CUDT::checkNeedDrop()
     // >>using 1 sec for worse case 1 frame using all bit budget.
     // picture rate would be useful in auto SRT setting for min latency
     // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
-    int threshold_ms = 0;
-    if (m_config.iSndDropDelay >= 0)
-    {
-        threshold_ms = std::max(m_iPeerTsbPdDelay_ms + m_config.iSndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS) +
-                       (2 * COMM_SYN_INTERVAL_US / 1000);
-    }
+    const int threshold_ms = (m_config.iSndDropDelay >= 0)
+        ? std::max(m_iPeerTsbPdDelay_ms + m_config.iSndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS)
+            + (2 * COMM_SYN_INTERVAL_US / 1000)
+        : 0;
 
     bool bCongestion = false;
-    if (threshold_ms && timespan_ms > threshold_ms)
+    if (threshold_ms && buffdelay_ms > threshold_ms)
     {
         // protect packet retransmission
         enterCS(m_RecvAckLock);
         int dbytes;
         int32_t first_msgno;
-        int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), steady_clock::now() - milliseconds_from(threshold_ms));
+        int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), tnow - milliseconds_from(threshold_ms));
         if (dpkts > 0)
         {
             enterCS(m_StatsLock);
@@ -6385,7 +6382,7 @@ bool srt::CUDT::checkNeedDrop()
             }
 
             HLOGC(aslog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
-                    << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms, FIRST #" << first_msgno);
+                    << dpkts << "pkt " <<  dbytes << "B, span=" <<  buffdelay_ms << " ms, FIRST #" << first_msgno);
 
 #if ENABLE_EXPERIMENTAL_BONDING
             // This is done with a presumption that the group
@@ -6413,10 +6410,10 @@ bool srt::CUDT::checkNeedDrop()
         bCongestion = true;
         leaveCS(m_RecvAckLock);
     }
-    else if (timespan_ms > (m_iPeerTsbPdDelay_ms / 2))
+    else if (buffdelay_ms > (m_iPeerTsbPdDelay_ms / 2))
     {
         HLOGC(aslog.Debug,
-              log << "cong, BYTES " << bytes << ", TMSPAN " << timespan_ms << "ms");
+              log << "cong TIMESPAN " << buffdelay_ms << "ms");
 
         bCongestion = true;
     }
