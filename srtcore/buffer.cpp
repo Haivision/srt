@@ -402,6 +402,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     int readlen = 0;
     w_seqnoinc = 0;
 
+    ScopedLock bufferguard(m_BufLock);
     while (m_pCurrBlock != m_pLastBlock)
     {
         // Make the packet REFLECT the data stored in the buffer.
