@@ -1030,15 +1030,23 @@ private: // Generation and processing of packets
     /// @return payload size on success, <=0 on failure
     int packLostData(CPacket &packet, time_point &origintime);
 
+    /// Pack a unique data packet (never sent so far) in CPacket for sending.
+    ///
+    /// @param packet [in, out] a CPacket structure to fill.
+    /// @param origintime [in, out] origin timestamp of the packet.
+    ///
+    /// @return true if a packet has been packets; false otherwise.
+    bool packUniqueData(CPacket& packet, time_point& origintime);
+
     /// Pack in CPacket the next data to be send.
     ///
     /// @param packet [in, out] a CPacket structure to fill
     ///
-    /// @return A pair of values is returned (payload, timestamp).
-    ///         The payload tells the size of the payload, packed in CPacket.
+    /// @return A pair of values is returned (is_payload_valid, timestamp).
+    ///         If is_payload_valid is false, there was nothing packed for sending,
+    ///         and the timestamp value should be ignored.
     ///         The timestamp is the full source/origin timestamp of the data.
-    ///         If payload is <= 0, consider the timestamp value invalid.
-    std::pair<int, time_point> packData(CPacket& packet);
+    std::pair<bool, time_point> packData(CPacket& packet);
 
     int processData(CUnit* unit);
     void processClose();

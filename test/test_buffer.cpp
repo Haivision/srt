@@ -465,7 +465,7 @@ TEST_F(CRcvBufferReadMsg, SmallReadBuffer)
 }
 
 // BUG!!!
-// Checks signalling of read-readiness of a half-acknowledged message.
+// Checks signaling of read-readiness of a half-acknowledged message.
 // The RCV buffer implementation has an issue here: when only half of the message is
 // acknowledged, the RCV buffer signals read-readiness, even though
 // the message can't be read, and reading returns 0.
