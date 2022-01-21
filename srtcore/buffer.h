@@ -133,12 +133,14 @@ public:
     /// @param [in] data pointer to the user data block.
     /// @param [in] len size of the block.
     /// @param [inout] w_mctrl Message control data
+    SRT_ATTR_EXCLUDES(m_BufLock)
     void addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl);
 
     /// Read a block of data from file and insert it into the sending list.
     /// @param [in] ifs input file stream.
     /// @param [in] len size of the block.
     /// @return actual size of data added from the file.
+    SRT_ATTR_EXCLUDES(m_BufLock)
     int addBufferFromFile(std::fstream& ifs, int len);
 
     /// Find data position to pack a DATA packet from the furthest reading point.
@@ -147,6 +149,7 @@ public:
     /// @param [in] kflags Odd|Even crypto key flag
     /// @param [out] seqnoinc the number of packets skipped due to TTL, so that seqno should be incremented.
     /// @return Actual length of data read.
+    SRT_ATTR_EXCLUDES(m_BufLock)
     int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
 
     /// Find data position to pack a DATA packet for a retransmission.
@@ -155,12 +158,14 @@ public:
     /// @param [out] origintime origin time stamp of the message
     /// @param [out] msglen length of the message
     /// @return Actual length of data read (return 0 if offset too large, -1 if TTL exceeded).
+    SRT_ATTR_EXCLUDES(m_BufLock)
     int readData(const int offset, CPacket& w_packet, time_point& w_origintime, int& w_msglen);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
     ///
     /// @return Last time of the last retransmission event for the corresponding DATA packet.
+    SRT_ATTR_EXCLUDES(m_BufLock)
     time_point getPacketRexmitTime(const int offset);
 
     /// Update the ACK point and may release/unmap/return the user data according to the flag.
@@ -173,6 +178,7 @@ public:
     /// @return Current size of the data in the sending list.
     int getCurrBufSize() const;
 
+    SRT_ATTR_EXCLUDES(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
 
     void updAvgBufSize(const time_point& time);
@@ -181,6 +187,7 @@ public:
 
     /// @brief Get the buffering delay of the oldest message in the buffer.
     /// @return the delay value.
+    SRT_ATTR_EXCLUDES(m_BufLock)
     duration getBufferingDelay(const time_point& tnow) const;
 
     uint64_t getInRatePeriod() const { return m_InRatePeriod; }
