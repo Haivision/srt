@@ -635,10 +635,10 @@ void* srt::CSndQueue::worker(void* param)
 
         // pack a packet from the socket
         CPacket pkt;
-        const std::pair<int, steady_clock::time_point> res_time = u->packData((pkt));
+        const std::pair<bool, steady_clock::time_point> res_time = u->packData((pkt));
 
         // Check if payload size is invalid.
-        if (res_time.first <= 0)
+        if (res_time.first == false)
         {
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lNotReadyPop++;
