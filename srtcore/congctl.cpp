@@ -77,7 +77,7 @@ public:
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
-        if ( m_zMaxPayloadSize == 0 )
+        if (m_zMaxPayloadSize == 0)
             m_zMaxPayloadSize = parent->maxPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 

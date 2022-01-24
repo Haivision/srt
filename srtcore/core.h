@@ -543,7 +543,10 @@ private:
 
     void updateIdleLinkFrom(CUDT* source);
 
-    bool checkNeedDrop();
+    /// @brief Drop packets too late to be delivered if any.
+    /// @returns the number of packets actually dropped.
+    SRT_ATTR_REQUIRES(m_RecvAckLock, m_StatsLock)
+    int sndDropTooLate();
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
@@ -706,11 +709,11 @@ private:
     static void* tsbpd(void* param);
 
 #if ENABLE_NEW_RCVBUFFER
-    /// Drop too late packets. Updaet loss lists and ACK positions.
+    /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
-    int dropTooLateUpTo(int seqno);
+    int rcvDropTooLateUpTo(int seqno);
 #endif
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
