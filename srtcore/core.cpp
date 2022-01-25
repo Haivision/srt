@@ -9313,10 +9313,13 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         m_stats.sndr.sentUnique.count(payload);
     leaveCS(m_StatsLock);
 
+    const duration sendint = m_tdSendInterval;
     if (probe)
     {
         // sends out probing packet pair
         m_tsNextSendTime = enter_time;
+        // Sending earlier, need to adjust the pace later on.
+        m_tdSendTimeDiff = m_tdSendTimeDiff.load() - sendint;
         probe          = false;
     }
     else
@@ -9324,7 +9327,6 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
 #if USE_BUSY_WAITING
         m_tsNextSendTime = enter_time + m_tdSendInterval.load();
 #else
-        const duration sendint = m_tdSendInterval;
         const duration sendbrw = m_tdSendTimeDiff;
 
         if (sendbrw >= sendint)
