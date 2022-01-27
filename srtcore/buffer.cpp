@@ -455,6 +455,15 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     return readlen;
 }
 
+CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
+{
+    ScopedLock bufferguard(m_BufLock);
+    if (m_pCurrBlock == m_pLastBlock)
+        return time_point();
+
+    return m_pCurrBlock->m_tsOriginTime;
+}
+
 int32_t CSndBuffer::getMsgNoAt(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);

@@ -152,6 +152,11 @@ public:
     SRT_ATTR_EXCLUDES(m_BufLock)
     int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
 
+    /// Peek an information on the next original data packet to send.
+    /// @return origin time stamp of the next packet; epoch start time otherwise.
+    SRT_ATTR_EXCLUDES(m_BufLock)
+    time_point peekNextOriginal() const;
+
     /// Find data position to pack a DATA packet for a retransmission.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
     /// @param [out] packet the packet to read.

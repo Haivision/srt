@@ -548,6 +548,12 @@ private:
     SRT_ATTR_REQUIRES(m_RecvAckLock, m_StatsLock)
     int sndDropTooLate();
 
+    /// @bried Allow packet retransmission.
+    /// Depending on the configuration mode (live / file), retransmission
+    /// can be blocked if e.g. there are original packets pending to be sent.
+    /// @return true if retransmission is allowed; false otherwise.
+    bool isRetransmissionAllowed(const time_point& tnow);
+
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
     /// and then send the response back to the caller.
