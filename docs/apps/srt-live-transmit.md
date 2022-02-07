@@ -62,6 +62,16 @@ You should see the stream connect in `srt-live-transmit`.
 Now you can test in VLC (make sure you're using the latest version!) - just go to file -> open network stream and enter
 `srt://127.0.0.1:4201` and you should see bars and tone right away.
 
+Or you can test using ffplay or ffprobe to inspect the stream:
+
+```shell
+ffplay srt://127.0.0.1:4201
+```
+-or-
+```shell
+ffprobe srt://127.0.0.1:4201
+```
+
 If you're having trouble, make sure this works, then add complexity one step at a time (multicast, push vs listen, etc.).
 
 ## URI Syntax
