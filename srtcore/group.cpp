@@ -2267,7 +2267,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
                 // Drop here to make sure the getFirstReadablePacketInfo() below return fresher packet.
-                int cnt = ps->core().dropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
@@ -2359,7 +2359,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                int cnt = ps->core().dropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
