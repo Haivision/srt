@@ -7719,7 +7719,7 @@ void srt::CUDT::dropToGroupRecvBase() {
         return;
 
     ScopedLock lck(m_RcvBufferLock);
-    int cnt = dropTooLateUpTo(CSeqNo::incseq(group_recv_base));
+    int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base));
     if (cnt > 0)
     {
         HLOGC(grlog.Debug,
