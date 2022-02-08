@@ -51,7 +51,7 @@ class CRcvBufferNew
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool peerRexmit, bool bMessageAPI);
+    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
     ~CRcvBufferNew();
 
@@ -164,6 +164,8 @@ public:
     ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
+    PacketInfo getFirstReadablePacketInfo(time_point time_now) const;
+
     /// Get information on packets available to be read.
     /// @returns a pair of sequence numbers (first available; first unavailable).
     /// 
@@ -215,11 +217,17 @@ public: // Used for testing
 private:
     inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
+    inline int offPos(int pos1, int pos2) const { return (pos2 >= pos1) ? (pos2 - pos1) : (m_szSize + pos2 - pos1); }
 
 private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
     void releaseUnitInPos(int pos);
+
+    /// @brief Drop a unit from the buffer.
+    /// @param pos position in the m_entries of the unit to drop.
+    /// @return false if nothing to drop, true if the unit was dropped successfully.
+    bool dropUnitInPos(int pos);
 
     /// Release entries following the current buffer position if they were already
     /// read out of order (EntryState_Read) or dropped (EntryState_Drop).
@@ -232,6 +240,8 @@ private:
 
     /// Scan for availability of out of order packets.
     void onInsertNotInOrderPacket(int insertpos);
+    // Check if m_iFirstReadableOutOfOrder is still readable.
+    bool checkFirstReadableOutOfOrder();
     void updateFirstReadableOutOfOrder();
     int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
     int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
@@ -300,7 +310,7 @@ private:
     size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
     int m_iFirstReadableOutOfOrder; // In case of out ouf order packet, points to a position of the first such packet to
                                     // read
-    const bool m_bPeerRexmitFlag;   // Needed to read message number correctly
+    bool m_bPeerRexmitFlag;         // Needed to read message number correctly
     const bool m_bMessageAPI;       // Operation mode flag: message or stream.
 
 public: // TSBPD public functions
@@ -311,6 +321,8 @@ public: // TSBPD public functions
     ///
     /// @return 0
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
+
+    void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; } 
 
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 

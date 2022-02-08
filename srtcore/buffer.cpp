@@ -402,6 +402,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     int readlen = 0;
     w_seqnoinc = 0;
 
+    ScopedLock bufferguard(m_BufLock);
     while (m_pCurrBlock != m_pLastBlock)
     {
         // Make the packet REFLECT the data stored in the buffer.
@@ -410,30 +411,19 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         w_packet.setLength(readlen);
         w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
 
-        // XXX This is probably done because the encryption should happen
-        // just once, and so this sets the encryption flags to both msgno bitset
-        // IN THE PACKET and IN THE BLOCK. This is probably to make the encryption
-        // happen at the time when scheduling a new packet to send, but the packet
-        // must remain in the send buffer until it's ACKed. For the case of rexmit
-        // the packet will be taken "as is" (that is, already encrypted).
-        //
-        // The problem is in the order of things:
-        // 0. When the application stores the data, some of the flags for PH_MSGNO are set.
-        // 1. The readData() is called to get the original data sent by the application.
-        // 2. The data are original and must be encrypted. They WILL BE encrypted, later.
-        // 3. So far we are in readData() so the encryption flags must be updated NOW because
-        //    later we won't have access to the block's data.
-        // 4. After exiting from readData(), the packet is being encrypted. It's immediately
-        //    sent, however the data must remain in the sending buffer until they are ACKed.
-        // 5. In case when rexmission is needed, the second overloaded version of readData
-        //    is being called, and the buffer + PH_MSGNO value is extracted. All interesting
-        //    flags must be present and correct at that time.
-        //
-        // The only sensible way to fix this problem is to encrypt the packet not after
-        // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
-        // flags for PH_MSGNO will be applied directly there. Then here the value for setting
-        // PH_MSGNO will be set as is.
-
+        // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
+        // 2. The readData() is called to get the original (unique) payload not ever sent yet.
+        //    The payload must be encrypted for the first time if the encryption
+        //    is enabled (arg kflgs != EK_NOENC). The KK encryption flag of the data packet
+        //    header must be set and remembered accordingly (see EncryptionKeySpec).
+        // 3. The next time this packet is read (only for retransmission), the payload is already
+        //    encrypted, and the proper flag value is already stored.
+        
+        // TODO: Alternatively, encryption could happen before the packet is submitted to the buffer
+        // (before the addBuffer() call), and corresponding flags could be set accordingly.
+        // This may also put an encryption burden on the application thread, rather than the sending thread,
+        // which could be more efficient. Note that packet sequence number must be properly set in that case,
+        // as it is used as a counter for the AES encryption.
         if (kflgs == -1)
         {
             HLOGC(bslog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
@@ -463,6 +453,15 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     }
 
     return readlen;
+}
+
+CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
+{
+    ScopedLock bufferguard(m_BufLock);
+    if (m_pCurrBlock == m_pLastBlock)
+        return time_point();
+
+    return m_pCurrBlock->m_tsOriginTime;
 }
 
 int32_t CSndBuffer::getMsgNoAt(const int offset)
@@ -686,10 +685,14 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
     return m_iCount;
 }
 
-CSndBuffer::time_point CSndBuffer::getOldestTime() const
+CSndBuffer::duration CSndBuffer::getBufferingDelay(const time_point& tnow) const
 {
+    ScopedLock lck(m_BufLock);
     SRT_ASSERT(m_pFirstBlock);
-    return m_pFirstBlock->m_tsOriginTime;
+    if (m_iCount == 0)
+        return duration(0);
+
+    return tnow - m_pFirstBlock->m_tsOriginTime;
 }
 
 int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)

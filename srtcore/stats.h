@@ -91,8 +91,7 @@ public:
 
     uint64_t bytesWithHdr() const
     {
-        static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-        return m_bytes + m_packets * PKT_HDR_SIZE;
+        return m_bytes + m_packets * CPacket::SRT_DATA_HDR_SIZE;
     }
 
 private:

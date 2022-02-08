@@ -489,6 +489,7 @@ private:
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
 
+    /// Create the CryptoControl object based on the HS packet. Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
 
@@ -543,7 +544,16 @@ private:
 
     void updateIdleLinkFrom(CUDT* source);
 
-    bool checkNeedDrop();
+    /// @brief Drop packets too late to be delivered if any.
+    /// @returns the number of packets actually dropped.
+    SRT_ATTR_REQUIRES(m_RecvAckLock, m_StatsLock)
+    int sndDropTooLate();
+
+    /// @bried Allow packet retransmission.
+    /// Depending on the configuration mode (live / file), retransmission
+    /// can be blocked if e.g. there are original packets pending to be sent.
+    /// @return true if retransmission is allowed; false otherwise.
+    bool isRetransmissionAllowed(const time_point& tnow);
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
@@ -706,11 +716,11 @@ private:
     static void* tsbpd(void* param);
 
 #if ENABLE_NEW_RCVBUFFER
-    /// Drop too late packets. Updaet loss lists and ACK positions.
+    /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
-    int dropTooLateUpTo(int seqno);
+    int rcvDropTooLateUpTo(int seqno);
 #endif
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
@@ -1030,15 +1040,23 @@ private: // Generation and processing of packets
     /// @return payload size on success, <=0 on failure
     int packLostData(CPacket &packet, time_point &origintime);
 
+    /// Pack a unique data packet (never sent so far) in CPacket for sending.
+    ///
+    /// @param packet [in, out] a CPacket structure to fill.
+    /// @param origintime [in, out] origin timestamp of the packet.
+    ///
+    /// @return true if a packet has been packets; false otherwise.
+    bool packUniqueData(CPacket& packet, time_point& origintime);
+
     /// Pack in CPacket the next data to be send.
     ///
     /// @param packet [in, out] a CPacket structure to fill
     ///
-    /// @return A pair of values is returned (payload, timestamp).
-    ///         The payload tells the size of the payload, packed in CPacket.
+    /// @return A pair of values is returned (is_payload_valid, timestamp).
+    ///         If is_payload_valid is false, there was nothing packed for sending,
+    ///         and the timestamp value should be ignored.
     ///         The timestamp is the full source/origin timestamp of the data.
-    ///         If payload is <= 0, consider the timestamp value invalid.
-    std::pair<int, time_point> packData(CPacket& packet);
+    std::pair<bool, time_point> packData(CPacket& packet);
 
     int processData(CUnit* unit);
     void processClose();
