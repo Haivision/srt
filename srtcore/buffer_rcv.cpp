@@ -244,8 +244,8 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     const int offset_b = CSeqNo::seqoff(m_iStartSeqNo, seqnohi);
     if (offset_b < 0)
     {
-        LOGC(rbuflog.Warn, log << "CRcvBufferNew.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
-                               << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
+        LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
+                                << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
         return;
     }
 
