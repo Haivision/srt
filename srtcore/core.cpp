@@ -8814,7 +8814,20 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         {
             ScopedLock rblock(m_RcvBufferLock);
 #if ENABLE_NEW_RCVBUFFER
-            m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+
+            if (iDropCnt > 0)
+            {
+                LOGC(brlog.Warn, log << CONID() << "RCV-DROPPED " << iDropCnt << " packet(s), seqno range %"
+                    << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
+                    << " (SND DROP REQUEST).");
+
+                enterCS(m_StatsLock);
+                // Estimate dropped bytes from average payload size.
+                const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+                leaveCS(m_StatsLock);
+            }
 #else
             m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
 #endif

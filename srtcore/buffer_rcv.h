@@ -79,7 +79,8 @@ public:
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
-    void dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
+    /// @return the number of packets actually dropped.
+    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
 
     /// Read the whole message from one or several packets.
     ///

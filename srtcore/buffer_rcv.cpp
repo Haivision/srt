@@ -110,7 +110,9 @@ int CRcvBufferNew::insert(CUnit* unit)
     const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::insert: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::insert: seqno " << seqno);
+    IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+    IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
     if (offset < 0)
     {
@@ -198,7 +200,7 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     return iDropCnt;
 }
 
-void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
+int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi << " m_iStartSeqNo " << m_iStartSeqNo);
@@ -206,7 +208,9 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     if (msgno != 0)
     {
+        IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << msgno);
         int minDroppedOffset = -1;
+        int iDropCnt = 0;
         for (int i = m_iStartPos; i != end_pos; i = incPos(i))
         {
             // TODO: Maybe check status?
@@ -216,12 +220,14 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
             if (msgseq == msgno)
             {
+                ++iDropCnt;
                 dropUnitInPos(i);
                 m_entries[i].status = EntryState_Drop;
                 if (minDroppedOffset == -1)
                     minDroppedOffset = offPos(m_iStartPos, i);
             }
         }
+        IF_RCVBUF_DEBUG(scoped_log.ss << " iDropCnt " << iDropCnt);
         // Check if units before m_iFirstNonreadPos are dropped.
         bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
         releaseNextFillerEntries();
@@ -236,7 +242,7 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
                 m_iFirstReadableOutOfOrder = -1;
             updateFirstReadableOutOfOrder();
         }
-        return;
+        return iDropCnt;
     }
 
     // Drop by packet seqno range.
@@ -246,15 +252,17 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     {
         LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
                                 << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
-        return;
+        return 0;
     }
 
     const int start_off = max(0, offset_a);
     const int last_pos = incPos(m_iStartPos, offset_b);
     int minDroppedOffset = -1;
+    int iDropCnt = 0;
     for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != last_pos; i = incPos(i))
     {
         dropUnitInPos(i);
+        ++iDropCnt;
         m_entries[i].status = EntryState_Drop;
         if (minDroppedOffset == -1)
             minDroppedOffset = offPos(m_iStartPos, i);
@@ -277,6 +285,8 @@ void CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             m_iFirstReadableOutOfOrder = -1;
         updateFirstReadableOutOfOrder();
     }
+
+    return iDropCnt;
 }
 
 int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
@@ -288,10 +298,10 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         return 0;
     }
 
-    IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::readMessage. m_iStartSeqNo " << m_iStartSeqNo);
-
     const int readPos = canReadInOrder ? m_iStartPos : m_iFirstReadableOutOfOrder;
+
+    IF_RCVBUF_DEBUG(ScopedLog scoped_log);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::readMessage. m_iStartSeqNo " << m_iStartSeqNo << " m_iStartPos " << m_iStartPos << " readPos " << readPos);
 
     size_t remain = len;
     char* dst = data;
@@ -380,6 +390,8 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     {
         LOGC(rbuflog.Error, log << "readMessage: small dst buffer, copied only " << bytes_read << "/" << bytes_extracted << " bytes.");
     }
+
+    IF_RCVBUF_DEBUG(scoped_log.ss << " pldi64 " << *reinterpret_cast<uint64_t*>(data));
 
     return bytes_read;
 }
