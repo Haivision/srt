@@ -217,6 +217,7 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             if (!m_entries[i].pUnit)
                 continue;
 
+            // TODO: Break the loop if a massege has been found. No need to search further.
             const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
             if (msgseq == msgno)
             {
@@ -261,6 +262,11 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     int iDropCnt = 0;
     for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != last_pos; i = incPos(i))
     {
+        // Don't drop messages, if all its packets are already in the buffer.
+        // TODO: Don't drop a several-packet message if all packets are in the buffer.
+        if (m_entries[i].pUnit && m_entries[i].pUnit->m_Packet.getMsgBoundary() == PB_SOLO)
+            continue;
+
         dropUnitInPos(i);
         ++iDropCnt;
         m_entries[i].status = EntryState_Drop;
