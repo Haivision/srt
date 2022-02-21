@@ -8810,8 +8810,13 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 
     {
         UniqueLock rlock(m_RecvLock);
-        const bool using_rexmit_flag = m_bPeerRexmitFlag;
+        // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.
+        // It will be dropped as too late anyway. Not dropping it from the receiver buffer
+        // in advance reduces false drops if the packet somehow manages to arrive.
+        // Still remove the record from the loss list to cease further retransmission requests.
+        if (!m_bTLPktDrop || !m_bTsbPd)
         {
+            const bool using_rexmit_flag = m_bPeerRexmitFlag;
             ScopedLock rblock(m_RcvBufferLock);
 #if ENABLE_NEW_RCVBUFFER
             const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
@@ -8845,10 +8850,8 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 
     dropFromLossLists(dropdata[0], dropdata[1]);
 
-    // move forward with current recv seq no.
-    // SYMBOLIC:
-    // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
-    //   && dropdata[1] >% m_iRcvCurrSeqNo )
+    // If dropping ahead of the current largest sequence number,
+    // move the recv seq number forward.
     if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
         && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
     {
