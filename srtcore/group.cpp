@@ -387,6 +387,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
+    // The CUDTGroup is included in the build even when bonding is disabled.
+#if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPMINSTABLETIMEO:
     {
         const int val_ms = cast_optval<int>(optval, optlen);
@@ -417,6 +419,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     }
 
     break;
+#endif
 
         // XXX Currently no socket groups allow any other
         // congestion control mode other than live.
