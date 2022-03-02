@@ -9887,8 +9887,6 @@ int srt::CUDT::processData(CUnit* in_unit)
         }
     }
 
-    bool need_notify_loss = true;
-
     // [[using locked()]];  // (NOTHING locked)
 
 #if ENABLE_EXPERIMENTAL_BONDING
@@ -9916,10 +9914,6 @@ int srt::CUDT::processData(CUnit* in_unit)
                         << srt_log_grp_state[gi->rcvstate]
                         << " -> RUNNING. NOT checking for loss");
                 gi->rcvstate = SRT_GST_RUNNING;
-
-                // The function unfortunately can't return here.
-                // We just need to skip loss reporting.
-                need_notify_loss = false;
             }
             else
             {
@@ -10112,7 +10106,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 HLOGC(qrlog.Debug,
                       log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
 
-                if (need_notify_loss && CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
+                if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
                 {
                     int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                     int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
