@@ -8,7 +8,7 @@ by trying to automatically detect the OpenSSL path in a system. Note that you mu
 have the Tcl interpreter installed to use this script.
 
 
-Here is a link to a demo showing how `configure` and CMake can be used to build SRT:
+Here is a link to a demo showing how CMake can be used to build SRT:
 [Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s)
 
 
@@ -38,14 +38,14 @@ Option details are given further below.
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode. |
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address. |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors. |
-| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | OFF        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.  |
+| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.  |
 | [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.4.5 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements (in dev build 1.4.5 only). |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).  |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.  |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library  |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.4.5 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step  (in dev build 1.4.5 only).  |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a tatic library  |
-| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | OFF        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.  |
+| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON*        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.  |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (srt-test-live, etc.).  |
 | [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.  |
 | [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.  |
@@ -68,7 +68,7 @@ Option details are given further below.
 | <img width=425px height=1px/>                                |       |           |            |                                                      |
 
  
-
+\* See the option description for more details.
 
 ## Using CMake
 
@@ -303,6 +303,12 @@ option may be useful if you suspect the logging system of impairing performance.
 #### ENABLE_MONOTONIC_CLOCK
 **`--enable-monotonic-clock`** (default: OFF)
 
+**NOTE**: The library can get stuck if the system clock is used instead of 
+monotonic or C++11 steady. Since v1.4.4 `ENABLE_MONOTONIC_CLOCK` is enabled by 
+default on POSIX-type systems if support for CLOCK_MONOTONIC is detected. 
+On Windows `ENABLE_STDCXX_SYNC` is enabled by default. It is highly recommended 
+to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
+
 When ON, this option enforces the use of `clock_gettime` to get the current
 time, instead of `gettimeofday`. This function forces the use of a monotonic
 clock that is independent of the currently set time in the system.
@@ -324,11 +330,6 @@ However the current time of the monotonic clock can only be obtained by
 the `clock_gettime` function.
 
 
-**NOTE**: The library can get stuck if the system clock is used instead of 
-monotonic or C++11 steady. Since v1.4.4 `ENABLE_MONOTONIC_CLOCK` is enabled by 
-default on POSIX-type systems if support for CLOCK_MONOTONIC is detected. 
-On Windows `ENABLE_STDCXX_SYNC` is enabled by default. So it is highly recommended 
-to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
 
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
@@ -396,6 +397,11 @@ configuration step of the build process.
 
 #### ENABLE_STDCXX_SYNC
 **`--enable-stdcxx-sync`** (default: OFF)
+
+**NOTE**: The library can get stuck if the system clock is used instead of 
+monotonic or C++11 steady. Since v1.4.4 `ENABLE_STDCXX_SYNC`is enabled by 
+default on Windows. On POSIX-type systems, an alternative `ENABLE_MONOTONIC_CLOCK` option is enabled by default if support for CLOCK_MONOTONIC is detected. It is highly recommended 
+to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
 
 When ON, this option enables the standard C++ `thread` and `chrono` libraries 
 (available since C++11) to be used by SRT instead of the `pthreads` libraries.
