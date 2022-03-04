@@ -864,6 +864,7 @@ struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
         }
 
         co.uMinStabilityTimeout_ms = val_ms;
+        LOGC(smlog.Error, log << "SRTO_GROUPMINSTABLETIMEO set " << val_ms);
     }
 };
 #endif

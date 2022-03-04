@@ -387,8 +387,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
-    // The CUDTGroup is included in the build even when bonding is disabled.
-#if ENABLE_EXPERIMENTAL_BONDING
     case SRTO_GROUPMINSTABLETIMEO:
     {
         const int val_ms = cast_optval<int>(optval, optlen);
@@ -419,17 +417,12 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     }
 
     break;
-#endif
 
-        // XXX Currently no socket groups allow any other
-        // congestion control mode other than live.
     case SRTO_CONGESTION:
-    {
+        // Currently no socket groups allow any other
+        // congestion control mode other than live.
         LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-        // Other options to be specifically interpreted by group may follow.
 
     default:
         break;
@@ -438,7 +431,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     // All others must be simply stored for setting on a socket.
     // If the group is already open and any post-option is about
     // to be modified, it must be allowed and applied on all sockets.
-
     if (m_bOpened)
     {
         // There's at least one socket in the group, so only
@@ -523,6 +515,9 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // SRTO_SNDTIMEO
     m_iSndTimeOut = u->m_config.iSndTimeOut;
 
+    // SRTO_GROUPMINSTABLETIMEO
+    m_uOPT_MinStabilityTimeout_us = 1000 * u->m_config.uMinStabilityTimeout_ms;
+
     // Ok, this really is disgusting, but there's only one way
     // to properly do it. Would be nice to have some more universal
     // connection between an option symbolic name and the internals
@@ -573,7 +568,6 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_ENFORCEDENCRYPTION, bEnforcedEnc);
     IM(SRTO_IPV6ONLY, iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout_ms);
-    IM(SRTO_GROUPMINSTABLETIMEO, uMinStabilityTimeout_ms * 1000);
 
     importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
@@ -3342,6 +3336,8 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     const int32_t min_stability_us = m_uOPT_MinStabilityTimeout_us;
     const int64_t initial_stabtout_us = max<int64_t>(min_stability_us, latency_us);
     const int64_t probing_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
+
+    LOGC(smlog.Warn, log << "sendBackup_QualifyActiveState min_stability_us " << min_stability_us);
 
     // RTT and RTTVar values are still being refined during the probing period,
     // therefore the dymanic timeout should not be used during the probing period.
