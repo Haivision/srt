@@ -467,14 +467,14 @@ The actual timeout value is determined in runtime based on the RTT estimate of a
 If there is no response from the peer for the calculated timeout,
 the member is considered unstable, triggering activation of an idle backup member.
 
-The samller the value is, the earlier a backup member might be activated to prepare transision to that path.
+The smaller the value is, the earlier a backup member might be activated to prepare transition to that path.
 However, it may also lead to spurious activations of backup paths.
-The higher the value is, the later would a backup link be activated. All unacknowledged payload packets
+The higher the value is, the later the backup link would be activated. All unacknowledged payload packets
 have to be retransmitted through the backup path. If they don't reach the receiver in time, they would be dropped.
 Therefore, an appropriate adjustment of the SRT buffering delay
 (`SRTO_PEERLATENCY` on sender, `SRTO_RCVLATENCY` on receiver) should also be considered.
 
-Normally the receiver should send an ACK back to sender every 10 ms. In case of congestion,
+Normally the receiver should send an ACK back to the sender every 10 ms. In the case of congestion,
 in the live streaming configuration of SRT a loss report is expected to be sent every RTT/2.
 The network jitter and increase of RTT on the public internet causes
 these intervals to be stretched.
