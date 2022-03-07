@@ -846,7 +846,7 @@ struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
         const int val_ms = cast_optval<int>(optval, optlen);
         const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
 
-        if (val_ms < (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
+        if (val_ms < min_timeo_ms)
         {
             LOGC(qmlog.Error,
                 log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is "
