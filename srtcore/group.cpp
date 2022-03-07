@@ -3338,8 +3338,6 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     const int64_t initial_stabtout_us = max<int64_t>(min_stability_us, latency_us);
     const int64_t probing_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
 
-    LOGC(smlog.Warn, log << "sendBackup_QualifyActiveState min_stability_us " << min_stability_us);
-
     // RTT and RTTVar values are still being refined during the probing period,
     // therefore the dymanic timeout should not be used during the probing period.
     const bool is_activation_phase = !is_zero(u.freshActivationStart())

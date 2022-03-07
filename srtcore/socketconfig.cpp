@@ -209,7 +209,7 @@ struct CSrtConfigSetter<SRTO_RCVSYN>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.bSynRecving = cast_optval<bool>(optval, optlen); 
+        co.bSynRecving = cast_optval<bool>(optval, optlen);
     }
 };
 
