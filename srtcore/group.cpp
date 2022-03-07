@@ -390,10 +390,11 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_GROUPMINSTABLETIMEO:
     {
         const int val_ms = cast_optval<int>(optval, optlen);
-        if (val_ms < (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
+        const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
+        if (val_ms < min_timeo_ms)
         {
             LOGC(qmlog.Error,
-                log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS << " ms.");
+                 log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 

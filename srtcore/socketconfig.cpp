@@ -209,7 +209,7 @@ struct CSrtConfigSetter<SRTO_RCVSYN>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.bSynRecving = cast_optval<bool>(optval, optlen);
+        co.bSynRecving = cast_optval<bool>(optval, optlen); 
     }
 };
 
@@ -263,7 +263,6 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
         using namespace srt_logging;
 #ifdef SRT_ENABLE_BINDTODEVICE
         using namespace std;
-        using namespace srt_logging;
 
         string val;
         if (optlen == -1)
@@ -843,14 +842,15 @@ struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
         // This option is meaningless for the socket itself.
         // It's set here just for the sake of setting it on a listener
         // socket so that it is then applied on the group when a
-        // group connection is configuired.
+        // group connection is configured.
         const int val_ms = cast_optval<int>(optval, optlen);
+        const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
 
         if (val_ms < (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
         {
             LOGC(qmlog.Error,
                 log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is "
-                    << CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS << " ms.");
+                    << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
