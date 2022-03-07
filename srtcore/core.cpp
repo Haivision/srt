@@ -9704,7 +9704,7 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
-        LOGC(gslog.Error, log << CONID() << "IPE: Overridding with seq %" << seq << " DISCREPANCY against current %"
+        LOGC(gslog.Error, log << CONID() << "IPE: Overriding with seq %" << seq << " DISCREPANCY against current %"
                 << m_iSndCurrSeqNo << " and next sched %" << m_iSndNextSeqNo << " - diff=" << diff);
         return false;
     }
