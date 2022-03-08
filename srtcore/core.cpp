@@ -7449,7 +7449,8 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         if (m_pRcvBuffer)
         {
-            perf->byteAvailRcvBuf = getAvailRcvBufferSizeLock() * m_config.iMSS;
+            ScopedLock lck(m_RcvBufferLock);
+            perf->byteAvailRcvBuf = getAvailRcvBufferSizeNoLock() * m_config.iMSS;
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
