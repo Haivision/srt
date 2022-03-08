@@ -340,7 +340,7 @@ following type specification:
 | `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
 | `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |
 | `groupconnect`       | {`0`, `1`}       | `SRTO_GROUPCONNECT`       | Accept group connections. |
-| `groupstabtimeo`     | `ms`             | `SRTO_GROUPSTABTIMEO`     | Group stability timeout. |
+| `groupminstabletimeo`| 60.. `ms`        | `SRTO_GROUPMINSTABLETIMEO`| Group minimum stability timeout. |
 | `inputbw`            | `bytes`          | `SRTO_INPUTBW`            | Input bandwidth. |
 | `iptos`              | 0..255           | `SRTO_IPTOS`              | IP socket type of service |
 | `ipttl`              | 1..255           | `SRTO_IPTTL`              | Defines IP socket "time to live" option. |

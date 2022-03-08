@@ -258,7 +258,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
-    , m_uOPT_StabilityTimeout(CSrtConfig::COMM_DEF_STABILITY_TIMEOUT_US)
+    , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
     , m_bSynRecving(true)
@@ -387,12 +387,19 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break;
 
-    case SRTO_GROUPSTABTIMEO:
+    case SRTO_GROUPMINSTABLETIMEO:
     {
-        const int val = cast_optval<int>(optval, optlen);
+        const int val_ms = cast_optval<int>(optval, optlen);
+        const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
+        if (val_ms < min_timeo_ms)
+        {
+            LOGC(qmlog.Error,
+                 log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << min_timeo_ms << " ms.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
         // Search if you already have SRTO_PEERIDLETIMEO set
-        int                          idletmo = CSrtConfig::COMM_RESPONSE_TIMEOUT_MS;
+        int idletmo = CSrtConfig::COMM_RESPONSE_TIMEOUT_MS;
         vector<ConfigItem>::iterator f =
             find_if(m_config.begin(), m_config.end(), ConfigItem::OfType(SRTO_PEERIDLETIMEO));
         if (f != m_config.end())
@@ -400,28 +407,23 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             f->get(idletmo); // worst case, it will leave it unchanged.
         }
 
-        if (val >= idletmo)
+        if (val_ms > idletmo)
         {
             LOGC(qmlog.Error,
-                 log << "group option: SRTO_GROUPSTABTIMEO(" << val << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo
-                     << ")");
+                 log << "group option: SRTO_GROUPMINSTABLETIMEO=" << val_ms << " exceeds SRTO_PEERIDLETIMEO=" << idletmo);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        m_uOPT_StabilityTimeout = val * 1000;
+        m_uOPT_MinStabilityTimeout_us = 1000 * val_ms;
     }
 
     break;
 
-        // XXX Currently no socket groups allow any other
-        // congestion control mode other than live.
     case SRTO_CONGESTION:
-    {
+        // Currently no socket groups allow any other
+        // congestion control mode other than live.
         LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-        // Other options to be specifically interpreted by group may follow.
 
     default:
         break;
@@ -430,7 +432,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     // All others must be simply stored for setting on a socket.
     // If the group is already open and any post-option is about
     // to be modified, it must be allowed and applied on all sockets.
-
     if (m_bOpened)
     {
         // There's at least one socket in the group, so only
@@ -515,6 +516,9 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // SRTO_SNDTIMEO
     m_iSndTimeOut = u->m_config.iSndTimeOut;
 
+    // SRTO_GROUPMINSTABLETIMEO
+    m_uOPT_MinStabilityTimeout_us = 1000 * u->m_config.uMinStabilityTimeout_ms;
+
     // Ok, this really is disgusting, but there's only one way
     // to properly do it. Would be nice to have some more universal
     // connection between an option symbolic name and the internals
@@ -564,8 +568,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_MINVERSION, uMinimumPeerSrtVersion);
     IM(SRTO_ENFORCEDENCRYPTION, bEnforcedEnc);
     IM(SRTO_IPV6ONLY, iIpV6Only);
-    IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout);
-    IM(SRTO_GROUPSTABTIMEO, uStabilityTimeout);
+    IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout_ms);
 
     importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
@@ -760,6 +763,8 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(true);
     case SRTO_PAYLOADSIZE:
         RD(0);
+    case SRTO_GROUPMINSTABLETIMEO:
+        RD(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS);
     }
 
 #undef RD
@@ -3328,7 +3333,8 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     const CUDT& u = d->ps->core();
 
     const uint32_t latency_us = u.peerLatency_us();
-    const int32_t min_stability_us = 60000; // Minimum Link Stability Timeout: 60ms.
+
+    const int32_t min_stability_us = m_uOPT_MinStabilityTimeout_us;
     const int64_t initial_stabtout_us = max<int64_t>(min_stability_us, latency_us);
     const int64_t probing_period_us = initial_stabtout_us + 5 * CUDT::COMM_SYN_INTERVAL_US;
 

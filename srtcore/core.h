@@ -327,7 +327,7 @@ public: // internal API
     int         MSS()               const { return m_config.iMSS; }
 
     uint32_t        peerLatency_us()        const { return m_iPeerTsbPdDelay_ms * 1000; }
-    int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout; }
+    int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }

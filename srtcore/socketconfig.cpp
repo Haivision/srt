@@ -263,7 +263,6 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
         using namespace srt_logging;
 #ifdef SRT_ENABLE_BINDTODEVICE
         using namespace std;
-        using namespace srt_logging;
 
         string val;
         if (optlen == -1)
@@ -782,7 +781,7 @@ struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
         if (val < 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iPeerIdleTimeout = val;
+        co.iPeerIdleTimeout_ms = val;
     }
 };
 
@@ -835,7 +834,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
 
 #if ENABLE_EXPERIMENTAL_BONDING
 template<>
-struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
+struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
@@ -843,25 +842,29 @@ struct CSrtConfigSetter<SRTO_GROUPSTABTIMEO>
         // This option is meaningless for the socket itself.
         // It's set here just for the sake of setting it on a listener
         // socket so that it is then applied on the group when a
-        // group connection is configuired.
-        const int val = cast_optval<int>(optval, optlen);
+        // group connection is configured.
+        const int val_ms = cast_optval<int>(optval, optlen);
+        const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
 
-        // Search if you already have SRTO_PEERIDLETIMEO set
-
-        const int idletmo = co.iPeerIdleTimeout;
-
-        // Both are in milliseconds.
-        // This option is RECORDED in microseconds, while
-        // idletmo is recorded in milliseconds, only translated to
-        // microseconds directly before use.
-        if (val >= idletmo)
+        if (val_ms < min_timeo_ms)
         {
-            LOGC(aclog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
-                                  << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
+            LOGC(qmlog.Error,
+                log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is "
+                    << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        co.uStabilityTimeout = val * 1000;
+        const int idletmo_ms = co.iPeerIdleTimeout_ms;
+
+        if (val_ms > idletmo_ms)
+        {
+            LOGC(aclog.Error, log << "group option: SRTO_GROUPMINSTABLETIMEO(" << val_ms
+                                  << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo_ms << ")");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        co.uMinStabilityTimeout_ms = val_ms;
+        LOGC(smlog.Error, log << "SRTO_GROUPMINSTABLETIMEO set " << val_ms);
     }
 };
 #endif
@@ -927,6 +930,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_TRANSTYPE);
 #if ENABLE_EXPERIMENTAL_BONDING
         DISPATCH(SRTO_GROUPCONNECT);
+        DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
         DISPATCH(SRTO_KMREFRESHRATE);
         DISPATCH(SRTO_KMPREANNOUNCE);
@@ -934,9 +938,6 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_PEERIDLETIMEO);
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
-#if ENABLE_EXPERIMENTAL_BONDING
-        DISPATCH(SRTO_GROUPSTABTIMEO);
-#endif
         DISPATCH(SRTO_RETRANSMITALGO);
 
 #undef DISPATCH
@@ -964,7 +965,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     case SRTO_CONNTIMEO:
     case SRTO_DRIFTTRACER:
         //SRTO_FC - not allowed to be different among group members
-    case SRTO_GROUPSTABTIMEO:
+    case SRTO_GROUPMINSTABLETIMEO:
         //SRTO_INPUTBW - per transmission setting
     case SRTO_IPTOS:
     case SRTO_IPTTL:
