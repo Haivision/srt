@@ -7551,7 +7551,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
     // This part is also required only by LiveCC, however not
     // moved there due to that it needs access to CSndBuffer.
-    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER)
+    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER || evt == TEV_SYNC)
     {
         // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
         // This requests internal input rate sampling.

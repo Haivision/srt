@@ -110,11 +110,16 @@ namespace groups
 
         std::string printMembers() const;
 
+        void setRateEstimate(const CRateEstimator& rate) { m_rateEstimate = rate; }
+
+        const CRateEstimator& getRateEstimate() const { return m_rateEstimate; }
+
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?
         unsigned m_stateCounter[BKUPST_E_SIZE];
         uint16_t m_activeMaxWeight;
         uint16_t m_standbyMaxWeight;
+        CRateEstimator m_rateEstimate; // The rate estimator state of the active link to copy to a backup on activation.
     };
 
 } // namespace groups

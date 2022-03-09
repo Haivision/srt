@@ -290,6 +290,7 @@ enum ETransmissionEvent
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
+    TEV_SYNC,       // --> Backup group. When rate estimation is derived from an active member, and update is needed.
 
     TEV_E_SIZE
 };
