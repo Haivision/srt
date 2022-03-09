@@ -3525,8 +3525,8 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
         return 0;
     }
 
-    const unsigned num_stable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_FRESH);
-    const unsigned num_fresh  = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_STABLE);
+    const unsigned num_stable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_STABLE);
+    const unsigned num_fresh  = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_FRESH);
 
     if (num_stable + num_fresh == 0)
     {
@@ -3571,6 +3571,10 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
 
         try
         {
+            CUDT& cudt = d->ps->core();
+            // Take source rate estimation from an active member (needed for the input rate estimation mode).
+            cudt.setRateEstimator(w_sendBackupCtx.getRateEstimate());
+
             // TODO: At this point all packets that could be sent
             // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
             if (w_curseq == SRT_SEQNO_NONE)
@@ -3582,7 +3586,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
                 HLOGC(gslog.Debug,
                     log << "grp/sendBackup: ... trying @" << d->id << " - sending the VERY FIRST message");
 
-                stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                stat = cudt.sendmsg2(buf, len, (w_mc));
                 if (stat != -1)
                 {
                     // This will be no longer used, but let it stay here.
@@ -3599,7 +3603,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
                     << " collected messages...");
                 // Note: this will set the currently required packet
                 // because it has been just freshly added to the sender buffer
-                stat = sendBackupRexmit(d->ps->core(), (w_mc));
+                stat = sendBackupRexmit(cudt, (w_mc));
             }
             ++num_activated;
         }
@@ -4384,6 +4388,9 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         {
             ++w_nsuccessful;
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
+
+            if (u.m_pSndBuffer)
+                w_sendBackupCtx.setRateEstimate(u.m_pSndBuffer->getRateEstimator());
         }
         else if (erc == SRT_EASYNCSND)
         {

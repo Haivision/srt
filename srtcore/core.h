@@ -728,6 +728,22 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
+    CRateEstimator getRateEstimator() const
+    {
+        if (!m_pSndBuffer)
+            return CRateEstimator();
+        return m_pSndBuffer->getRateEstimator();
+    }
+
+    void setRateEstimator(const CRateEstimator& rate)
+    {
+        if (!m_pSndBuffer)
+            return;
+
+        m_pSndBuffer->setRateEstimator(rate);
+        updateCC(TEV_SYNC, EventVariant(0));
+    }
+
 
 private: // Identification
     CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT

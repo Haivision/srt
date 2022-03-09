@@ -438,7 +438,8 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
         "checktimer",
         "send",
         "receive",
-        "custom"
+        "custom",
+        "sync"
     };
 
     size_t vals_size = Size(vals);
