@@ -54,6 +54,7 @@ set cmake_options {
     enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
     enable-unittests "Enable unit tests (default: OFF)"
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
+    enable-experimental-bonding "Enable experimental bonding (default: OFF)"
     openssl-crypto-library=<filepath> "Path to a library."
     openssl-include-dir=<path> "Path to a file."
     openssl-ssl-library=<filepath> "Path to a library."

@@ -635,10 +635,10 @@ void* srt::CSndQueue::worker(void* param)
 
         // pack a packet from the socket
         CPacket pkt;
-        const std::pair<int, steady_clock::time_point> res_time = u->packData((pkt));
+        const std::pair<bool, steady_clock::time_point> res_time = u->packData((pkt));
 
         // Check if payload size is invalid.
-        if (res_time.first <= 0)
+        if (res_time.first == false)
         {
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
             self->m_WorkerStats.lNotReadyPop++;
@@ -1004,7 +1004,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         // be normally closed by the application, after it is done with them.
 
         // app can call any UDT API to learn the connection_broken error
-        CUDT::s_UDTUnited.m_EPoll.update_events(
+        CUDT::uglobal().m_EPoll.update_events(
             i->u->m_SocketID, i->u->m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
 
         i->u->completeBrokenConnectionDependencies(i->errorcode);

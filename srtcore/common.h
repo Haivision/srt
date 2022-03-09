@@ -616,7 +616,7 @@ public:
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
-   /// That is, it returns a negative value if seq1 < seq2,
+   /// Returns a negative value if seq1 < seq2,
    /// positive if seq1 > seq2, and zero if they are equal.
    /// The only correct application of this function is when you
    /// compare two values and it works faster than seqoff. However
@@ -634,12 +634,16 @@ public:
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test
-   /// if this distance is larger). Prior to calling this function the
-   /// caller must be certain that @a seq2 is a sequence coming from a
-   /// later time than @a seq1, and still, of course, this distance didn't
-   /// exceed m_iMaxSeqNo.
+   /// if this distance is larger).
+   /// Prior to calling this function the caller must be certain that
+   /// @a seq2 is a sequence coming from a later time than @a seq1,
+   /// and that the distance does not exceed m_iMaxSeqNo.
    inline static int seqlen(int32_t seq1, int32_t seq2)
-   {return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);}
+   {
+       SRT_ASSERT(seq1 >= 0 && seq1 <= m_iMaxSeqNo);
+       SRT_ASSERT(seq2 >= 0 && seq2 <= m_iMaxSeqNo);
+       return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);
+   }
 
    /// This behaves like seq2 - seq1, with the precondition that the true
    /// distance between two sequence numbers never exceeds m_iSeqNoTH.
@@ -1409,91 +1413,5 @@ inline std::string SrtVersionString(int version)
 }
 
 bool SrtParseConfig(std::string s, srt::SrtConfig& w_config);
-
-struct PacketMetric
-{
-    uint32_t pkts;
-    uint64_t bytes;
-
-    void update(uint64_t size)
-    {
-        ++pkts;
-        bytes += size;
-    }
-
-    void update(size_t mult, uint64_t value)
-    {
-        pkts += (uint32_t) mult;
-        bytes += mult * value;
-    }
-
-    uint64_t fullBytes();
-};
-
-template <class METRIC_TYPE>
-struct MetricOp;
-
-template <class METRIC_TYPE>
-struct MetricUsage
-{
-    METRIC_TYPE local;
-    METRIC_TYPE total;
-
-    void Clear()
-    {
-        MetricOp<METRIC_TYPE>::Clear(local);
-    }
-
-    void Init()
-    {
-        MetricOp<METRIC_TYPE>::Clear(total);
-        Clear();
-    }
-
-    void Update(uint64_t value)
-    {
-        local += value;
-        total += value;
-    }
-
-    void UpdateTimes(size_t mult, uint64_t value)
-    {
-        local += mult * value;
-        total += mult * value;
-    }
-};
-
-template <>
-inline void MetricUsage<PacketMetric>::Update(uint64_t value)
-{
-    local.update(value);
-    total.update(value);
-}
-
-template <>
-inline void MetricUsage<PacketMetric>::UpdateTimes(size_t mult, uint64_t value)
-{
-    local.update(mult, value);
-    total.update(mult, value);
-}
-
-template <class METRIC_TYPE>
-struct MetricOp
-{
-    static void Clear(METRIC_TYPE& m)
-    {
-        m = 0;
-    }
-};
-
-template <>
-struct MetricOp<PacketMetric>
-{
-    static void Clear(PacketMetric& p)
-    {
-        p.pkts = 0;
-        p.bytes = 0;
-    }
-};
 
 #endif

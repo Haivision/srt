@@ -18,9 +18,11 @@
 
 #include "srt.h"
 
+#include <array>
 #include <thread>
 #include <fstream>
 #include <ctime>
+#include <random>
 #include <vector>
 
 //#pragma comment (lib, "ws2_32.lib")
@@ -35,7 +37,7 @@ TEST(Transmission, FileUpload)
 
     SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
 
-    int tt = SRTT_FILE;
+    const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
 
@@ -75,11 +77,13 @@ TEST(Transmission, FileUpload)
         std::ofstream outfile("file.source", std::ios::out | std::ios::binary);
         ASSERT_EQ(!!outfile, true) << srt_getlasterror_str();
 
-        srand(time(0));
+        std::random_device rd;
+        std::mt19937 mtrd(rd());
+        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
         for (size_t i = 0; i < filesize; ++i)
         {
-            char outbyte = rand() % 255;
+            char outbyte = dis(mtrd);
             outfile.write(&outbyte, 1);
         }
     }

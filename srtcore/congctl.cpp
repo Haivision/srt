@@ -77,7 +77,7 @@ public:
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
-        if ( m_zMaxPayloadSize == 0 )
+        if (m_zMaxPayloadSize == 0)
             m_zMaxPayloadSize = parent->maxPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 
@@ -535,8 +535,7 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization.
-            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            m_iDecRandom = m_iAvgNAKNum > 1 ? genRandomInt(1, m_iAvgNAKNum) : 1;
             SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq

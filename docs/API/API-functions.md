@@ -1703,11 +1703,8 @@ called function should work.
 - `msgttl`: [IN]. In **message** and **live mode** only, specifies the TTL for 
 sending messages (in `[ms]`). Not used for receiving messages. If this value
 is not negative, it defines the maximum time up to which this message should
-stay scheduled for sending for the sake of later retransmission. A message
-is always sent for the first time, but the UDP packet carrying it may be
-(also partially) lost, and if so, lacking packets will be retransmitted. If
-the message is not successfully resent before TTL expires, further retransmission
-is given up and the message is discarded.
+stay scheduled for sending. If TTL has expired, the message sending and further retransmissions are discarded, even
+if it has never been sent so far.
 
 - `inorder`: [IN]. In **message mode** only, specifies that sent messages should 
 be extracted by the receiver in the order of sending. This can be meaningful if 

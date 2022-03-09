@@ -112,11 +112,31 @@ int CEPoll::create(CEPollDesc** pout)
    int localid = 0;
 
    #ifdef LINUX
-   int flags = 0;
-#if ENABLE_SOCK_CLOEXEC
-   flags |= EPOLL_CLOEXEC;
-#endif
-   localid = epoll_create1(flags);
+
+   // NOTE: epoll_create1() and EPOLL_CLOEXEC were introduced in GLIBC-2.9.
+   //    So earlier versions of GLIBC, must use epoll_create() and set
+   //       FD_CLOEXEC on the file descriptor returned by it after the fact.
+   #if defined(EPOLL_CLOEXEC)
+      int flags = 0;
+      #if ENABLE_SOCK_CLOEXEC
+      flags |= EPOLL_CLOEXEC;
+      #endif
+      localid = epoll_create1(flags);
+   #else
+      localid = epoll_create(1);
+      #if ENABLE_SOCK_CLOEXEC
+      if (localid != -1)
+      {
+         int fdFlags = fcntl(localid, F_GETFD);
+         if (fdFlags != -1)
+         {
+            fdFlags |= FD_CLOEXEC;
+            fcntl(localid, F_SETFD, fdFlags);
+         }
+      }
+      #endif
+   #endif
+
    /* Possible reasons of -1 error:
 EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys/fs/epoll/max_user_instances was encountered.
 ENFILE: The system limit on the total number of open files has been reached.
@@ -129,7 +149,8 @@ ENOMEM: There was insufficient memory to create the kernel object.
    if (localid < 0)
       throw CUDTException(MJ_SETUP, MN_NONE, errno);
    #else
-   // on Solaris, use /dev/poll
+   // TODO: Solaris, use port_getn()
+   //    https://docs.oracle.com/cd/E86824_01/html/E54766/port-get-3c.html
    // on Windows, select
    #endif
 

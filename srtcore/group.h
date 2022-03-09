@@ -341,7 +341,12 @@ public:
     void         addEPoll(int eid);
     void         removeEPollEvents(const int eid);
     void         removeEPollID(const int eid);
+
+    /// @brief Update read-ready state.
+    /// @param sock member socket ID (unused)
+    /// @param sequence the latest packet sequence number available for reading.
     void         updateReadState(SRTSOCKET sock, int32_t sequence);
+
     void         updateWriteState();
     void         updateFailedLink();
     void         activateUpdateEvent(bool still_have_items);
@@ -395,7 +400,7 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
-    class srt::CUDTUnited* m_pGlobal;
+    srt::CUDTUnited&  m_Global;
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
@@ -609,7 +614,7 @@ private:
     senderBuffer_t   m_SenderBuffer;
     int32_t          m_iSndOldestMsgNo; // oldest position in the sender buffer
     volatile int32_t m_iSndAckedMsgNo;
-    uint32_t         m_uOPT_StabilityTimeout;
+    uint32_t         m_uOPT_MinStabilityTimeout_us;
 
     // THIS function must be called only in a function for a group type
     // that does use sender buffer.
@@ -655,7 +660,7 @@ private:
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
     /// The function polls alive member sockets and retrieves a list of read-ready.
-    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
     ///
     /// @returns list of read-ready sockets
@@ -692,31 +697,29 @@ private:
         time_point tsActivateTime;   // Time when this group sent or received the first data packet
         time_point tsLastSampleTime; // Time reset when clearing stats
 
-        MetricUsage<PacketMetric> sent; // number of packets sent from the application
-        MetricUsage<PacketMetric> recv; // number of packets delivered from the group to the application
-        MetricUsage<PacketMetric>
-                                  recvDrop; // number of packets dropped by the group receiver (not received from any member)
-        MetricUsage<PacketMetric> recvDiscard; // number of packets discarded as already delivered
+        stats::Metric<stats::BytesPackets> sent; // number of packets sent from the application
+        stats::Metric<stats::BytesPackets> recv; // number of packets delivered from the group to the application
+        stats::Metric<stats::BytesPackets> recvDrop; // number of packets dropped by the group receiver (not received from any member)
+        stats::Metric<stats::BytesPackets> recvDiscard; // number of packets discarded as already delivered
 
         void init()
         {
             tsActivateTime = srt::sync::steady_clock::time_point();
-            sent.Init();
-            recv.Init();
-            recvDrop.Init();
-            recvDiscard.Init();
-
-            reset();
+            tsLastSampleTime = srt::sync::steady_clock::now();
+            sent.reset();
+            recv.reset();
+            recvDrop.reset();
+            recvDiscard.reset();
         }
 
         void reset()
         {
-            sent.Clear();
-            recv.Clear();
-            recvDrop.Clear();
-            recvDiscard.Clear();
-
             tsLastSampleTime = srt::sync::steady_clock::now();
+
+            sent.resetTrace();
+            recv.resetTrace();
+            recvDrop.resetTrace();
+            recvDiscard.resetTrace();
         }
     } m_stats;
 
@@ -798,7 +801,10 @@ public:
     // Live state synchronization
     bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
-    void synchronizeDrift(srt::CUDT* cu, duration udrift, time_point newtimebase);
+
+    /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
+    /// @param srcMember a reference for synchronization.
+    void synchronizeDrift(const srt::CUDT* srcMember);
 
     void updateLatestRcv(srt::CUDTSocket*);
 

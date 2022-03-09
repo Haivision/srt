@@ -44,6 +44,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 // -------------- UTILITIES ------------------------
 
@@ -115,7 +116,7 @@ written by
 
 #	include <sys/endian.h>
 
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
 
 #	include <sys/endian.h>
 
@@ -139,6 +140,46 @@ written by
 #ifndef le64toh
 #	define le64toh(x) letoh64(x)
 #endif
+
+#elif defined(SUNOS)
+
+   // SunOS/Solaris
+
+   #include <sys/byteorder.h>
+   #include <sys/isa_defs.h>
+
+   #define __LITTLE_ENDIAN 1234
+   #define __BIG_ENDIAN 4321
+
+   # if defined(_BIG_ENDIAN)
+   #define __BYTE_ORDER __BIG_ENDIAN
+   #define be64toh(x) (x)
+   #define be32toh(x) (x)
+   #define be16toh(x) (x)
+   #define le16toh(x) ((uint16_t)BSWAP_16(x))
+   #define le32toh(x) BSWAP_32(x)
+   #define le64toh(x) BSWAP_64(x)
+   #define htobe16(x) (x)
+   #define htole16(x) ((uint16_t)BSWAP_16(x))
+   #define htobe32(x) (x)
+   #define htole32(x) BSWAP_32(x)
+   #define htobe64(x) (x)
+   #define htole64(x) BSWAP_64(x)
+   # else
+   #define __BYTE_ORDER __LITTLE_ENDIAN
+   #define be64toh(x) BSWAP_64(x)
+   #define be32toh(x) ntohl(x)
+   #define be16toh(x) ntohs(x)
+   #define le16toh(x) (x)
+   #define le32toh(x) (x)
+   #define le64toh(x) (x)
+   #define htobe16(x) htons(x)
+   #define htole16(x) (x)
+   #define htobe32(x) htonl(x)
+   #define htole32(x) (x)
+   #define htobe64(x) BSWAP_64(x)
+   #define htole64(x) (x)
+   # endif
 
 #elif defined(__WINDOWS__)
 
@@ -369,6 +410,72 @@ struct DynamicStruct
     char* raw() { return (char*)inarray; }
 };
 
+
+/// Fixed-size array template class.
+namespace srt {
+
+template <class T>
+class FixedArray
+{
+public:
+    FixedArray(size_t size)
+        : m_strIndexErr("FixedArray: invalid index")
+        , m_size(size)
+        , m_entries(new T[size])
+    {
+    }
+
+    ~FixedArray()
+    {
+        delete [] m_entries;
+    }
+
+public:
+    const T& operator[](size_t index) const
+    {
+        if (index >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    T& operator[](size_t index)
+    {
+        if (index >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    const T& operator[](int index) const
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    T& operator[](int index)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            throw std::runtime_error(m_strIndexErr);
+
+        return m_entries[index];
+    }
+
+    size_t  size() const { return m_size; }
+
+private:
+    FixedArray(const FixedArray<T>& );
+    FixedArray<T>& operator=(const FixedArray<T>&);
+
+private:
+    const char* m_strIndexErr;
+    size_t      m_size;
+    T* const    m_entries;
+};
+
+} // namespace srt
 
 // ------------------------------------------------------------
 

@@ -98,7 +98,7 @@ const char* CUDTException::getErrorMessage() const ATR_NOTHROW
     return srt::strerror_get_message(m_iMajor, m_iMinor);
 }
 
-string CUDTException::getErrorString() const
+std::string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
@@ -502,13 +502,6 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
 
     return true;
 }
-
-uint64_t PacketMetric::fullBytes()
-{
-    static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    return bytes + pkts * PKT_HDR_SIZE;
-}
-
 
 namespace srt_logging
 {

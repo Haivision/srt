@@ -59,10 +59,11 @@ modified by
 #include "core.h" // provides some constants
 #include "logging.h"
 
+namespace srt {
+
 using namespace std;
 using namespace srt_logging;
-using namespace srt;
-using namespace srt::sync;
+using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.
 #if !defined(SRT_MAVG_SAMPLING_RATE)
@@ -192,20 +193,27 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     HLOGC(bslog.Debug,
           log << "addBuffer: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << size << " buffers for "
               << len << " bytes");
+    // Retrieve current time before locking the mutex to be closer to packet submission event.
+    const steady_clock::time_point tnow = steady_clock::now();
 
-    // dynamically increase sender buffer
+    ScopedLock bufferguard(m_BufLock);
+    // Dynamically increase sender buffer if there is not enough room.
     while (size + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug, log << "addBuffer: ... still lacking " << (size + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
-    const steady_clock::time_point time = steady_clock::now();
     const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
-
     HLOGC(bslog.Debug,
           log << CONID() << "addBuffer: adding " << size << " packets (" << len << " bytes) to send, msgno="
               << (w_msgno > 0 ? w_msgno : m_iNextMsgNo) << (inorder ? "" : " NOT") << " in order");
+
+    // Calculate origin time (same for all blocks of the message).
+    m_tsLastOriginTime = w_srctime ? time_point() + microseconds_from(w_srctime) : tnow;
+    // Rewrite back the actual value, even if it stays the same, so that the calling facilities can reuse it.
+    // May also be a subject to conversion error, thus the actual value is signalled back.
+    w_srctime = count_microseconds(m_tsLastOriginTime.time_since_epoch());
 
     // The sequence number passed to this function is the sequence number
     // that the very first packet from the packet series should get here.
@@ -252,33 +260,21 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_llSourceTime_us = w_srctime;
-        s->m_tsOriginTime = time;
-        s->m_tsRexmitTime = time_point();
         s->m_iTTL = ttl;
-        // Rewrite the actual sending time back into w_srctime
-        // so that the calling facilities can reuse it
-        if (!w_srctime)
-            w_srctime = count_microseconds(s->m_tsOriginTime.time_since_epoch());
-
-        // XXX unchecked condition: s->m_pNext == NULL.
+        s->m_tsRexmitTime = time_point();
+        s->m_tsOriginTime = m_tsLastOriginTime;
+        
         // Should never happen, as the call to increase() should ensure enough buffers.
         SRT_ASSERT(s->m_pNext);
         s = s->m_pNext;
     }
     m_pLastBlock = s;
 
-    enterCS(m_BufLock);
     m_iCount += size;
-
     m_iBytesCount += len;
-    m_tsLastOriginTime = time;
 
-    updateInputRate(time, size, len);
-
-    updAvgBufSize(time);
-
-    leaveCS(m_BufLock);
+    updateInputRate(m_tsLastOriginTime, size, len);
+    updAvgBufSize(m_tsLastOriginTime);
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
     // At least it's known that it's from some index inside til the end (to bit 0).
@@ -318,7 +314,7 @@ void CSndBuffer::updateInputRate(const steady_clock::time_point& time, int pkts,
     if (early_update || period_us > m_InRatePeriod)
     {
         // Required Byte/sec rate (payload + headers)
-        m_iInRateBytesCount += (m_iInRatePktsCount * srt::CPacket::SRT_DATA_HDR_SIZE);
+        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
         m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
         HLOGC(bslog.Debug,
               log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
@@ -401,69 +397,71 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-steady_clock::time_point CSndBuffer::getSourceTime(const CSndBuffer::Block& block)
+int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
-    if (block.m_llSourceTime_us)
+    int readlen = 0;
+    w_seqnoinc = 0;
+
+    ScopedLock bufferguard(m_BufLock);
+    while (m_pCurrBlock != m_pLastBlock)
     {
-        return steady_clock::time_point() + microseconds_from(block.m_llSourceTime_us);
+        // Make the packet REFLECT the data stored in the buffer.
+        w_packet.m_pcData = m_pCurrBlock->m_pcData;
+        readlen = m_pCurrBlock->m_iLength;
+        w_packet.setLength(readlen);
+        w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
+
+        // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
+        // 2. The readData() is called to get the original (unique) payload not ever sent yet.
+        //    The payload must be encrypted for the first time if the encryption
+        //    is enabled (arg kflgs != EK_NOENC). The KK encryption flag of the data packet
+        //    header must be set and remembered accordingly (see EncryptionKeySpec).
+        // 3. The next time this packet is read (only for retransmission), the payload is already
+        //    encrypted, and the proper flag value is already stored.
+        
+        // TODO: Alternatively, encryption could happen before the packet is submitted to the buffer
+        // (before the addBuffer() call), and corresponding flags could be set accordingly.
+        // This may also put an encryption burden on the application thread, rather than the sending thread,
+        // which could be more efficient. Note that packet sequence number must be properly set in that case,
+        // as it is used as a counter for the AES encryption.
+        if (kflgs == -1)
+        {
+            HLOGC(bslog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
+            readlen = 0;
+        }
+        else
+        {
+            m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
+        }
+
+        Block* p = m_pCurrBlock;
+        w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
+        w_srctime = m_pCurrBlock->m_tsOriginTime;
+        m_pCurrBlock = m_pCurrBlock->m_pNext;
+
+        if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - w_srctime) > p->m_iTTL))
+        {
+            LOGC(bslog.Warn, log << CONID() << "CSndBuffer: skipping packet %" << p->m_iSeqNo << " #" << p->getMsgSeq() << " with TTL=" << p->m_iTTL);
+            // Skip this packet due to TTL expiry.
+            readlen = 0;
+            ++w_seqnoinc;
+            continue;
+        }
+
+        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        break;
     }
-
-    return block.m_tsOriginTime;
-}
-
-int CSndBuffer::readData(srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs)
-{
-    // No data to read
-    if (m_pCurrBlock == m_pLastBlock)
-        return 0;
-
-    // Make the packet REFLECT the data stored in the buffer.
-    w_packet.m_pcData = m_pCurrBlock->m_pcData;
-    int readlen       = m_pCurrBlock->m_iLength;
-    w_packet.setLength(readlen);
-    w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
-
-    // XXX This is probably done because the encryption should happen
-    // just once, and so this sets the encryption flags to both msgno bitset
-    // IN THE PACKET and IN THE BLOCK. This is probably to make the encryption
-    // happen at the time when scheduling a new packet to send, but the packet
-    // must remain in the send buffer until it's ACKed. For the case of rexmit
-    // the packet will be taken "as is" (that is, already encrypted).
-    //
-    // The problem is in the order of things:
-    // 0. When the application stores the data, some of the flags for PH_MSGNO are set.
-    // 1. The readData() is called to get the original data sent by the application.
-    // 2. The data are original and must be encrypted. They WILL BE encrypted, later.
-    // 3. So far we are in readData() so the encryption flags must be updated NOW because
-    //    later we won't have access to the block's data.
-    // 4. After exiting from readData(), the packet is being encrypted. It's immediately
-    //    sent, however the data must remain in the sending buffer until they are ACKed.
-    // 5. In case when rexmission is needed, the second overloaded version of readData
-    //    is being called, and the buffer + PH_MSGNO value is extracted. All interesting
-    //    flags must be present and correct at that time.
-    //
-    // The only sensible way to fix this problem is to encrypt the packet not after
-    // extracting from here, but when the packet is stored into CSndBuffer. The appropriate
-    // flags for PH_MSGNO will be applied directly there. Then here the value for setting
-    // PH_MSGNO will be set as is.
-
-    if (kflgs == -1)
-    {
-        HLOGC(bslog.Debug, log << CONID() << " CSndBuffer: ERROR: encryption required and not possible. NOT SENDING.");
-        readlen = 0;
-    }
-    else
-    {
-        m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
-    }
-
-    w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
-    w_srctime         = getSourceTime(*m_pCurrBlock);
-    m_pCurrBlock      = m_pCurrBlock->m_pNext;
-
-    HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
 
     return readlen;
+}
+
+CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
+{
+    ScopedLock bufferguard(m_BufLock);
+    if (m_pCurrBlock == m_pLastBlock)
+        return time_point();
+
+    return m_pCurrBlock->m_tsOriginTime;
 }
 
 int32_t CSndBuffer::getMsgNoAt(const int offset)
@@ -512,7 +510,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
+int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
 {
     int32_t& msgno_bitset = w_packet.m_iMsgNo;
 
@@ -592,7 +590,7 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
     // the packet originally (the other overload of this function) must set these
     // flags.
     w_packet.m_iMsgNo = p->m_iMsgNoBitset;
-    w_srctime = getSourceTime(*p);
+    w_srctime = p->m_tsOriginTime;
 
     // This function is called when packet retransmission is triggered.
     // Therefore we are setting the rexmit time.
@@ -605,7 +603,7 @@ int CSndBuffer::readData(const int offset, srt::CPacket& w_packet, steady_clock:
     return readlen;
 }
 
-srt::sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
+sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
     const Block* p = m_pFirstBlock;
@@ -682,9 +680,19 @@ int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
      * Also, if there is only one pkt in buffer, the time difference will be 0.
      * Therefore, always add 1 ms if not empty.
      */
-    w_timespan = 0 < m_iCount ? count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
+    w_timespan = 0 < m_iCount ? (int) count_milliseconds(m_tsLastOriginTime - m_pFirstBlock->m_tsOriginTime) + 1 : 0;
 
     return m_iCount;
+}
+
+CSndBuffer::duration CSndBuffer::getBufferingDelay(const time_point& tnow) const
+{
+    ScopedLock lck(m_BufLock);
+    SRT_ASSERT(m_pFirstBlock);
+    if (m_iCount == 0)
+        return duration(0);
+
+    return tnow - m_pFirstBlock->m_tsOriginTime;
 }
 
 int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_clock::time_point& too_late_time)
@@ -791,6 +799,8 @@ void CSndBuffer::increase()
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#if (!ENABLE_NEW_RCVBUFFER)
+
 /*
  *   RcvBuffer (circular buffer):
  *
@@ -813,14 +823,6 @@ void CSndBuffer::increase()
  *    m_iMaxPos:     none? (modified on add and ack
  */
 
-// XXX Init values moved to in-class.
-// const uint32_t CRcvBuffer::TSBPD_WRAP_PERIOD = (30*1000000);    //30 seconds (in usec)
-// const int CRcvBuffer::TSBPD_DRIFT_MAX_VALUE   = 5000;  // usec
-// const int CRcvBuffer::TSBPD_DRIFT_MAX_SAMPLES = 1000;  // ACK-ACK packets
-#ifdef SRT_DEBUG_TSBPD_DRIFT
-// const int CRcvBuffer::TSBPD_DRIFT_PRT_SAMPLES = 200;   // ACK-ACK packets
-#endif
-
 CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     : m_pUnit(NULL)
     , m_iSize(bufsize_pkts)
@@ -838,11 +840,6 @@ CRcvBuffer::CRcvBuffer(CUnitQueue* queue, int bufsize_pkts)
     m_pUnit = new CUnit*[m_iSize];
     for (int i = 0; i < m_iSize; ++i)
         m_pUnit[i] = NULL;
-
-#ifdef SRT_DEBUG_TSBPD_DRIFT
-    memset(m_TsbPdDriftHisto100us, 0, sizeof(m_TsbPdDriftHisto100us));
-    memset(m_TsbPdDriftHisto1ms, 0, sizeof(m_TsbPdDriftHisto1ms));
-#endif
 
     setupMutex(m_BytesCountLock, "BytesCount");
 }
@@ -931,11 +928,11 @@ int CRcvBuffer::readBuffer(char* data, int len)
     {
         if (m_pUnit[p] == NULL)
         {
-            LOGC(brlog.Error, log << CONID() << " IPE readBuffer on null packet pointer");
+            LOGC(brlog.Error, log << CONID() << "IPE readBuffer on null packet pointer");
             return -1;
         }
 
-        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
 
         if (bTsbPdEnabled)
         {
@@ -1004,7 +1001,7 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
             continue;
         }
 
-        const srt::CPacket& pkt = m_pUnit[p]->m_Packet;
+        const CPacket& pkt = m_pUnit[p]->m_Packet;
 
 #if ENABLE_LOGGING
         trace_seq = pkt.getSeqNo();
@@ -1476,7 +1473,7 @@ bool CRcvBuffer::isRcvDataReady(steady_clock::time_point& w_tsbpdtime, int32_t& 
 
     if (m_tsbpd.isEnabled())
     {
-        const srt::CPacket* pkt = getRcvReadyPacket(seqdistance);
+        const CPacket* pkt = getRcvReadyPacket(seqdistance);
         if (!pkt)
         {
             HLOGC(brlog.Debug, log << "isRcvDataReady: packet NOT extracted.");
@@ -1549,8 +1546,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         HLOGC(brlog.Debug, log << "getRcvReadyPacket: Sequence offset=" << seqdistance << " IS NOT RECEIVED.");
         return 0;
     }
-    IF_HEAVY_LOGGING(int nskipped = 0);
 
+    IF_HEAVY_LOGGING(int nskipped = 0);
     for (int i = m_iStartPos, n = m_iLastAckPos; i != n; i = shiftFwd(i))
     {
         /*
@@ -1559,8 +1556,8 @@ CPacket* CRcvBuffer::getRcvReadyPacket(int32_t seqdistance)
         if (m_pUnit[i] && m_pUnit[i]->m_iFlag == CUnit::GOOD)
         {
             HLOGC(brlog.Debug,
-                  log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
-                      << nskipped << " empty cells skipped)");
+                log << "getRcvReadyPacket: Found next packet seq=%" << m_pUnit[i]->m_Packet.getSeqNo() << " ("
+                << nskipped << " empty cells skipped)");
             return &m_pUnit[i]->m_Packet;
         }
         IF_HEAVY_LOGGING(++nskipped);
@@ -1613,7 +1610,7 @@ void CRcvBuffer::reportBufferStats() const
     uint64_t lower_time = low_ts;
 
     if (lower_time > upper_time)
-        upper_time += uint64_t(srt::CPacket::MAX_TIMESTAMP) + 1;
+        upper_time += uint64_t(CPacket::MAX_TIMESTAMP) + 1;
 
     int32_t timespan = upper_time - lower_time;
     int     seqspan  = 0;
@@ -1881,12 +1878,9 @@ void CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const
     m_tsbpd.setTsbPdMode(timebase, no_wrap_check, delay);
 }
 
-bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t                  timestamp_us,
-                                        int                       rtt,
-                                        steady_clock::duration&   w_udrift,
-                                        steady_clock::time_point& w_newtimebase)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, int rtt)
 {
-    return m_tsbpd.addDriftSample(timestamp_us, rtt, w_udrift, w_newtimebase);
+    return m_tsbpd.addDriftSample(timestamp_us, rtt);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)
@@ -2290,3 +2284,7 @@ bool CRcvBuffer::scanMsg(int& w_p, int& w_q, bool& w_passack)
 
     return found;
 }
+
+#endif // !ENABLE_NEW_RCVBUFFER
+
+} // namespace srt

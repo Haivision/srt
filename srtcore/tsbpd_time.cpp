@@ -103,10 +103,7 @@ drift_logger g_drift_logger;
 
 #endif // SRT_DEBUG_TRACE_DRIFT
 
-bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
-                                int                       usRTTSample,
-                                steady_clock::duration&   w_udrift,
-                                steady_clock::time_point& w_newtimebase)
+bool CTsbpdTime::addDriftSample(uint32_t usPktTimestamp, int usRTTSample)
 {
     if (!m_bTsbPdMode)
         return false;
@@ -148,9 +145,6 @@ bool CTsbpdTime::addDriftSample(uint32_t                  usPktTimestamp,
         HLOGC(brlog.Debug,
               log << "DRIFT=" << FormatDuration(tdDrift) << " TB REMAINS: " << FormatTime(m_tsTsbPdTimeBase));
     }
-
-    w_udrift      = tdDrift;
-    w_newtimebase = m_tsTsbPdTimeBase;
 
 #if SRT_DEBUG_TRACE_DRIFT
     g_drift_logger.trace(usPktTimestamp,

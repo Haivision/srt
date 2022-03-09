@@ -23,7 +23,6 @@
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
-#include "atomic.h"
 
 // Defile clock type to use
 #ifdef IA32
@@ -61,7 +60,6 @@ namespace srt
 {
 namespace sync
 {
-using namespace std;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -72,7 +70,7 @@ using namespace std;
 #if ENABLE_STDCXX_SYNC
 
 template <class Clock>
-using Duration = chrono::duration<Clock>;
+using Duration = std::chrono::duration<Clock>;
 
 #else
 
@@ -131,13 +129,13 @@ private:
 
 #if ENABLE_STDCXX_SYNC
 
-using steady_clock = chrono::steady_clock;
+using steady_clock = std::chrono::steady_clock;
 
 template <class Clock, class Duration = typename Clock::duration>
-using time_point = chrono::time_point<Clock, Duration>;
+using time_point = std::chrono::time_point<Clock, Duration>;
 
 template <class Clock>
-using TimePoint = chrono::time_point<Clock>;
+using TimePoint = std::chrono::time_point<Clock>;
 
 template <class Clock, class Duration = typename Clock::duration>
 inline bool is_zero(const time_point<Clock, Duration> &tp)
@@ -213,8 +211,8 @@ public: // Assignment operators
     inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
-    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(numeric_limits<uint64_t>::min()); }
-    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(numeric_limits<uint64_t>::max()); }
+    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(std::numeric_limits<uint64_t>::min()); }
+    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(std::numeric_limits<uint64_t>::max()); }
 
 public:
     Duration<Clock> time_since_epoch() const;
@@ -233,72 +231,11 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 
 #endif // ENABLE_STDCXX_SYNC
 
-template <class Clock>
-class AtomicDuration
-{
-    atomic<int64_t> dur;
-    typedef typename Clock::duration duration_type;
-    typedef typename Clock::time_point time_point_type;
-public:
-
-    AtomicDuration() ATR_NOEXCEPT : dur(0) {}
-
-    duration_type load()
-    {
-        int64_t val = dur.load();
-        return duration_type(val);
-    }
-
-    void store(const duration_type& d)
-    {
-        dur.store(d.count());
-    }
-
-    AtomicDuration<Clock>& operator=(const duration_type& s)
-    {
-        dur = s.count();
-        return *this;
-    }
-
-    operator duration_type() const
-    {
-        return duration_type(dur);
-    }
-};
-
-template <class Clock>
-class AtomicClock
-{
-    atomic<uint64_t> dur;
-    typedef typename Clock::duration duration_type;
-    typedef typename Clock::time_point time_point_type;
-public:
-
-    AtomicClock() ATR_NOEXCEPT : dur(0) {}
-
-    time_point_type load() const
-    {
-        int64_t val = dur.load();
-        return time_point_type(duration_type(val));
-    }
-
-    void store(const time_point_type& d)
-    {
-        dur.store(uint64_t(d.time_since_epoch().count()));
-    }
-
-    AtomicClock& operator=(const time_point_type& s)
-    {
-        dur = s.time_since_epoch().count();
-        return *this;
-    }
-
-    operator time_point_type() const
-    {
-        return time_point_type(duration_type(dur.load()));
-    }
-};
-
+// NOTE: Moved the following class definitons to "atomic_clock.h"
+//   template <class Clock>
+//      class AtomicDuration;
+//   template <class Clock>
+//      class AtomicClock;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -373,9 +310,9 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 ///////////////////////////////////////////////////////////////////////////////
 
 #if ENABLE_STDCXX_SYNC
-using Mutex = mutex;
-using UniqueLock = unique_lock<mutex>;
-using ScopedLock = lock_guard<mutex>;
+using Mutex = std::mutex;
+using UniqueLock = std::unique_lock<std::mutex>;
+using ScopedLock = std::lock_guard<std::mutex>;
 #else
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
@@ -420,27 +357,25 @@ private:
 class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
+    int m_iLocked;
+    Mutex& m_Mutex;
 
 public:
-    SRT_ATTR_ACQUIRE(m_Mutex)
+    SRT_ATTR_ACQUIRE(m)
     UniqueLock(Mutex &m);
 
-    SRT_ATTR_RELEASE(m_Mutex)
+    SRT_ATTR_RELEASE()
     ~UniqueLock();
 
 public:
-    SRT_ATTR_ACQUIRE(m_Mutex)
+    SRT_ATTR_ACQUIRE()
     void lock();
 
-    SRT_ATTR_RELEASE(m_Mutex)
+    SRT_ATTR_RELEASE()
     void unlock();
 
     SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
-
-private:
-    int m_iLocked;
-    Mutex& m_Mutex;
 };
 #endif // ENABLE_STDCXX_SYNC
 
@@ -533,7 +468,7 @@ public:
 
 private:
 #if ENABLE_STDCXX_SYNC
-    condition_variable m_cv;
+    std::condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
 #endif
@@ -804,6 +739,7 @@ public:
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
+namespace this_thread = std::this_thread;
 #else // pthreads wrapper version
 typedef ::CUDTException CThreadException;
 
@@ -905,9 +841,9 @@ namespace this_thread
 ///
 #ifdef ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -938,5 +874,7 @@ int genRandomInt(int minVal, int maxVal);
 
 } // namespace sync
 } // namespace srt
+
+#include "atomic_clock.h"
 
 #endif // INC_SRT_SYNC_H

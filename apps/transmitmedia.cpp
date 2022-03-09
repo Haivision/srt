@@ -22,8 +22,11 @@
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
 #else
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <io.h>
+#endif
+#if defined(SUNOS)
+#include <sys/filio.h>
 #endif
 
 #include "netinet_any.h"
@@ -374,9 +377,9 @@ void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if ( m_outgoing_port )
+    if (m_outgoing_port || m_adapter != "")
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter(m_adapter, m_outgoing_port);
     }
 
     ConnectClient(host, port);
