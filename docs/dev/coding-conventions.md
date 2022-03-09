@@ -270,7 +270,7 @@ or if the pointer is intended to get passed a raw array to fill, the
 prefix is `aw_`.
 
 3. When a function is called, and it gets parameters passed by mutable
-pointer or reference, the expression, that results in the actualt pointer
+pointer or reference, the expression, that results in the actual pointer
 or reference to be passed to the function, must have extra parentheses
 around itself. This embraces almost all cases, including:
     * passing a variable to a function
