@@ -133,6 +133,11 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
         m_tsInRateStartTime = time;
         return;
     }
+    else if (time < m_tsInRateStartTime)
+    {
+        // Old packets are being submitted for estimation, e.g. during the backup link activation.
+        return;
+    }
 
     m_iInRatePktsCount  += pkts;
     m_iInRateBytesCount += bytes;
