@@ -9561,20 +9561,17 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             // Additionally send the drop request to the peer so that it
             // won't stupidly request the packets to be retransmitted.
             // Don't do it if the difference isn't positive or exceeds the threshold.
-            if (packetspan > 0)
-            {
-                int32_t seqpair[2];
-                seqpair[0]             = m_iSndCurrSeqNo;
-                seqpair[1]             = CSeqNo::decseq(w_packet.m_iSeqNo);
-                const int32_t no_msgno = 0;
-                LOGC(qslog.Debug,
-                     log << "packData: Sending DROPREQ (ISN FIX): SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
-                         << packetspan << " packets)");
-                sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
-                // In case when this message is lost, the peer will still get the
-                // UMSG_DROPREQ message when the agent realizes that the requested
-                // packet are not present in the buffer (preadte the send buffer).
-            }
+            int32_t seqpair[2];
+            seqpair[0]             = m_iSndCurrSeqNo;
+            seqpair[1]             = CSeqNo::decseq(w_packet.m_iSeqNo);
+            const int32_t no_msgno = 0;
+            LOGC(qslog.Debug,
+                 log << "packData: Sending DROPREQ (ISN FIX): SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
+                     << packetspan << " packets)");
+            sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+            // In case when this message is lost, the peer will still get the
+            // UMSG_DROPREQ message when the agent realizes that the requested
+            // packet are not present in the buffer (preadte the send buffer).
 
             // Override extraction sequence with scheduling sequence.
             m_iSndCurrSeqNo = w_packet.m_iSeqNo;
