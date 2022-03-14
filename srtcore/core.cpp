@@ -9566,7 +9566,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             seqpair[1]             = CSeqNo::decseq(w_packet.m_iSeqNo);
             const int32_t no_msgno = 0;
             LOGC(qslog.Debug,
-                 log << "packData: Sending DROPREQ (ISN FIX): SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
+                 log << CONID() << "packData: Sending DROPREQ: SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
                      << packetspan << " packets)");
             sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
             // In case when this message is lost, the peer will still get the
