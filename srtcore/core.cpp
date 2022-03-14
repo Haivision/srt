@@ -9584,7 +9584,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             m_iSndLastFullAck = w_packet.m_iSeqNo;
             m_iSndLastAck2    = w_packet.m_iSeqNo;
         }
-        else
+        else if (packetspan < 0)
         {
             LOGC(qslog.Error,
                  log << CONID() << "IPE: packData: SCHEDULING sequence " << w_packet.m_iSeqNo
