@@ -9590,6 +9590,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
                  log << CONID() << "IPE: packData: SCHEDULING sequence " << w_packet.m_iSeqNo
                      << " is behind of EXTRACTION sequence " << m_iSndCurrSeqNo << ", dropping this packet: DIFF="
                      << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            // XXX: Probably also change the socket state to broken?
             return false;
         }
     }
