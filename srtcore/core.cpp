@@ -9532,65 +9532,81 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
 
     // A CHANGE. The sequence number is currently added to the packet
     // when scheduling, not when extracting. This is a inter-migration form,
-    // so still override the value, but trace it.
+    // only override extraction sequence with scheduling sequence in group mode.
     m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
 
-    // Do this checking only for groups and only at the very first moment,
-    // when there's still nothing in the buffer. Otherwise there will be
-    // a serious data discrepancy between the agent and the peer.
-    // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
-    // if this is the very first packet to send.
 #if ENABLE_EXPERIMENTAL_BONDING
-    // Fortunately here is only the procedure that verifies if the extraction
-    // sequence is moved due to the difference between ISN caught during the existing
-    // transmission and the first sequence possible to be used at the first sending
-    // instruction. The group itself isn't being accessed.
-    if (m_parent->m_GroupOf && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
+    // Fortunately the group itself isn't being accessed.
+    if (m_parent->m_GroupOf)
     {
-        const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
-
-        HLOGC(qslog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
-                << " from SCHEDULING sequence " << w_packet.m_iSeqNo
-                << " DIFF: " << packetspan << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
-
-        // This is the very first packet to be sent; so there's nothing in
-        // the sending buffer yet, and therefore we are in a situation as just
-        // after connection. No packets in the buffer, no packets are sent,
-        // no ACK to be awaited. We can screw up all the variables that are
-        // initialized from ISN just after connection.
-        //
-        // Additionally send the drop request to the peer so that it
-        // won't stupidly request the packets to be retransmitted.
-        // Don't do it if the difference isn't positive or exceeds the threshold.
+        const int packetspan = CSeqNo::seqoff(m_iSndCurrSeqNo, w_packet.m_iSeqNo);
         if (packetspan > 0)
         {
-            int32_t seqpair[2];
-            seqpair[0] = m_iSndCurrSeqNo;
-            seqpair[1] = w_packet.m_iSeqNo;
-            HLOGC(qslog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << packetspan << " packets)");
-            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+            // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
+            // if this is the very first packet to send.
+            if (m_iSndCurrSeqNo == m_iISN)
+            {
+                // This is the very first packet to be sent; so there's nothing in
+                // the sending buffer yet, and therefore we are in a situation as just
+                // after connection. No packets in the buffer, no packets are sent,
+                // no ACK to be awaited. We can screw up all the variables that are
+                // initialized from ISN just after connection.
+                LOGC(qslog.Note,
+                     log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
+                         << " from SCHEDULING sequence " << w_packet.m_iSeqNo << " for the first packet: DIFF="
+                         << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            }
+            else
+            {
+                // There will be a serious data discrepancy between the agent and the peer.
+                LOGC(qslog.Error,
+                     log << CONID() << "IPE: packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
+                         << " from SCHEDULING sequence " << w_packet.m_iSeqNo << " in the middle of transition: DIFF="
+                         << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            }
 
+            // Additionally send the drop request to the peer so that it
+            // won't stupidly request the packets to be retransmitted.
+            // Don't do it if the difference isn't positive or exceeds the threshold.
+            int32_t seqpair[2];
+            seqpair[0]             = m_iSndCurrSeqNo;
+            seqpair[1]             = CSeqNo::decseq(w_packet.m_iSeqNo);
+            const int32_t no_msgno = 0;
+            LOGC(qslog.Debug,
+                 log << CONID() << "packData: Sending DROPREQ: SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
+                     << packetspan << " packets)");
+            sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
             // In case when this message is lost, the peer will still get the
             // UMSG_DROPREQ message when the agent realizes that the requested
             // packet are not present in the buffer (preadte the send buffer).
+
+            // Override extraction sequence with scheduling sequence.
+            m_iSndCurrSeqNo = w_packet.m_iSeqNo;
+            ScopedLock ackguard(m_RecvAckLock);
+            m_iSndLastAck     = w_packet.m_iSeqNo;
+            m_iSndLastDataAck = w_packet.m_iSeqNo;
+            m_iSndLastFullAck = w_packet.m_iSeqNo;
+            m_iSndLastAck2    = w_packet.m_iSeqNo;
+        }
+        else if (packetspan < 0)
+        {
+            LOGC(qslog.Error,
+                 log << CONID() << "IPE: packData: SCHEDULING sequence " << w_packet.m_iSeqNo
+                     << " is behind of EXTRACTION sequence " << m_iSndCurrSeqNo << ", dropping this packet: DIFF="
+                     << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            // XXX: Probably also change the socket state to broken?
+            return false;
         }
     }
     else
 #endif
     {
-        HLOGC(qslog.Debug, log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
-                << " over SCHEDULING sequence " << w_packet.m_iSeqNo
-                << " DIFF: " << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
-                << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
-
-#if ENABLE_EXPERIMENTAL_BONDING
-        HLOGC(qslog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_GroupOf ? "yes":"no")
-                << " extraction-seq=" << m_iSndCurrSeqNo << " scheduling-seq=" << w_packet.m_iSeqNo << " ISN=" << m_iISN);
-#endif
-
-        // Do this always when not in a group, 
+        HLOGC(qslog.Debug,
+              log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
+                  << " over SCHEDULING sequence " << w_packet.m_iSeqNo << " for socket not in group:"
+                  << " DIFF=" << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
+                  << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+        // Do this always when not in a group.
         w_packet.m_iSeqNo = m_iSndCurrSeqNo;
     }
 
