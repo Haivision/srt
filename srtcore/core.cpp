@@ -9933,9 +9933,9 @@ int srt::CUDT::processData(CUnit* in_unit)
         {
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
             {
-                HLOGC(qrlog.Debug, log << "processData: IN-GROUP rcv state transition "
-                        << srt_log_grp_state[gi->rcvstate]
-                        << " -> RUNNING. NOT checking for loss");
+                HLOGC(qrlog.Debug,
+                      log << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                          << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
             }
             else
