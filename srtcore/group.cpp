@@ -118,7 +118,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
 
             HLOGC(gmlog.Debug,
                   log << "applyGroupSequences: @" << target << " gets seq from @" << gi->id << " rcv %" << (w_rcv_isn)
-                      << " snd %" << (w_rcv_isn) << " as " << update_reason);
+                      << " snd %" << (w_snd_isn) << " as " << update_reason);
             return false;
         }
     }
@@ -1108,7 +1108,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     vector<gli_t> idleLinks;
     vector<SRTSOCKET> pendingSockets; // need sock ids as it will be checked out of lock
 
-    int32_t curseq = SRT_SEQNO_NONE;
+    int32_t curseq = SRT_SEQNO_NONE;  // The seqno of the first packet of this message.
+    int32_t nextseq = SRT_SEQNO_NONE;  // The seqno of the first packet of next message.
 
     int rstat = -1;
 
@@ -1247,6 +1248,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (stat != -1)
         {
             curseq = w_mc.pktseq;
+            nextseq = d->ps->core().schedSeqNo();
         }
 
         const Sendstate cstate = {d->id, &*d, stat, erc};
@@ -1340,6 +1342,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // Note: this will override the sequence number
             // for all next iterations in this loop.
             curseq = w_mc.pktseq;
+            nextseq = d->ps->core().schedSeqNo();
             HLOGC(gslog.Debug,
                     log << "@" << d->id << ":... sending SUCCESSFUL %" << curseq << " MEMBER STATUS: RUNNING");
         }
@@ -1351,10 +1354,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         sendstates.push_back(cstate);
     }
 
-    if (curseq != SRT_SEQNO_NONE)
+    if (nextseq != SRT_SEQNO_NONE)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: updating current scheduling sequence %" << curseq);
-        m_iLastSchedSeqNo = curseq;
+        HLOGC(gslog.Debug,
+              log << "grp/sendBroadcast: $" << id() << ": updating current scheduling sequence %" << nextseq);
+        m_iLastSchedSeqNo = nextseq;
     }
 
     // }
