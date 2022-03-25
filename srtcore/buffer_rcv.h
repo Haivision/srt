@@ -325,6 +325,8 @@ public: // TSBPD public functions
 
     void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; } 
 
+    void applyGroupISN(int rcv_isn) { m_iStartSeqNo = rcv_isn; }
+
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 
     void applyGroupDrift(const time_point& timebase, bool wrp, const duration& udrift);
