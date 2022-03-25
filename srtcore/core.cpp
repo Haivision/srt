@@ -3330,6 +3330,11 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
                     << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
             setInitialRcvSeq(rcv_isn);
             setInitialSndSeq(snd_isn);
+#if ENABLE_NEW_RCVBUFFER
+            enterCS(m_RecvLock);
+            m_pRcvBuffer->applyGroupISN(rcv_isn);
+            leaveCS(m_RecvLock);
+#endif
         }
         else
         {
