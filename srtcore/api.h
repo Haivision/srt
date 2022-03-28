@@ -381,6 +381,8 @@ private:
 
    sync::Mutex m_GlobControlLock;               // used to synchronize UDT API
 
+   sync::Mutex m_UpdateConnStatusLock;          // used to synchronize Garbage Collector and UpdateConnectionStatus
+
    sync::Mutex m_IDLock;                        // used to synchronize ID generation
 
    SRTSOCKET m_SocketIDGenerator;               // seed to generate a new unique socket ID
@@ -472,10 +474,10 @@ private:
 #if ENABLE_EXPERIMENTAL_BONDING
    groups_t m_ClosedGroups;
 #endif
-
-   void checkBrokenSockets();
-   void removeSocket(const SRTSOCKET u);
-
+   typedef std::list<std::map<int, CMultiplexer>::iterator> PlexerList;
+   void checkBrokenSockets(PlexerList& toDestroy);
+   void removeSocket(const SRTSOCKET u, PlexerList& toDestroy);
+   void tryDestroyMuxer(PlexerList& toDestroy);
    CEPoll m_EPoll;                                     // handling epoll data structures and events
 
 private:
