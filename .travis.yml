@@ -52,7 +52,7 @@ matrix:
                 - gcc-mingw-w64
                 - g++-mingw-w64-x86-64
           before_script:
-            - git clone -b OpenSSL_1_1_1-stable https://github.com/openssl/openssl.git openssl
+            - git clone -b OpenSSL_1_1_1g https://github.com/openssl/openssl.git openssl
             - cd openssl
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
