@@ -3295,6 +3295,9 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
         // time to not fill a network window.
         enterCS(m_RecvLock);
         m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000, rcv_buffer_udrift);
+#if ENABLE_NEW_RCVBUFFER
+        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
+#endif
         leaveCS(m_RecvLock);
 
         HLOGF(gmlog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03us GROUP TIME BASE: %s%s",
@@ -8995,25 +8998,27 @@ void srt::CUDT::updateSrtRcvSettings()
     // the packet can be retrieved from the buffer before its time to play comes
     // (unlike in normal situation when reading directly from socket), however
     // its time to play shall be properly defined.
+    ScopedLock lock(m_RecvLock);
+
+    // NOTE: remember to also update synchronizeWithGroup() if more settings are updated here.
+#if ENABLE_NEW_RCVBUFFER
+    m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
+#endif
 
     // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
     if (m_bTsbPd || m_bGroupTsbPd)
     {
-        /* We are TsbPd receiver */
-        enterCS(m_RecvLock);
 #if ENABLE_NEW_RCVBUFFER
         m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
-        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 #else
         m_pRcvBuffer->setRcvTsbPdMode(m_tsRcvPeerStartTime, milliseconds_from(m_iTsbPdDelay_ms));
 #endif
-        leaveCS(m_RecvLock);
 
         HLOGF(cnlog.Debug,
               "AFTER HS: Set Rcv TsbPd mode%s: delay=%u.%03us RCV START: %s",
               (m_bGroupTsbPd ? " (AS GROUP MEMBER)" : ""),
-              m_iTsbPdDelay_ms/1000, // XXX use FormatDuration ?
-              m_iTsbPdDelay_ms%1000,
+              m_iTsbPdDelay_ms / 1000,
+              m_iTsbPdDelay_ms % 1000,
               FormatTime(m_tsRcvPeerStartTime).c_str());
     }
     else
