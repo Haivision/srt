@@ -416,4 +416,37 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
+extern const char* const srt_rejectreason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter settings error",
+    "Group settings collision",
+    "Connection timeout"
+};
+
+const char* srt_rejectreason_str(int id)
+{
+    if (id >= SRT_REJC_PREDEFINED)
+    {
+        return "Application-defined rejection reason";
+    }
+
+    static const size_t ra_size = Size(srt_rejectreason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejectreason_msg[0];
+    return srt_rejectreason_msg[id];
+}
+
 }
