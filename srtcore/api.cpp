@@ -80,7 +80,6 @@ modified by
 using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
-extern LogConfig srt_logger_config;
 
 void srt::CUDTSocket::construct()
 {
