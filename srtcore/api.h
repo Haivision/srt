@@ -246,13 +246,16 @@ public:
     /// @return The new UDT socket ID, or INVALID_SOCK.
     SRTSOCKET newSocket(CUDTSocket** pps = NULL);
 
-    /// Create a new UDT connection.
-    /// @param [in] listen the listening UDT socket;
+    /// Create (listener-side) a new socket associated with the incoming connection request.
+    /// @param [in] listen the listening socket ID.
     /// @param [in] peer peer address.
     /// @param [in,out] hs handshake information from peer side (in), negotiated value (out);
-    /// @param [out] w_error error code when failed
-    /// @param [out] w_acpu entity of accepted socket, if connection already exists
-    /// @return If the new connection is successfully created: 1 success, 0 already exist, -1 error.
+    /// @param [out] w_error error code in case of failure.
+    /// @param [out] w_acpu reference to the existing associated socket if already exists.
+    /// @return  1: if the new connection was successfully created (accepted), @a w_acpu is NULL;
+    ///          0: the connection already exists (reference to the corresponding socket is returned in @a w_acpu).
+    ///         -1: The connection processing failed due to memory alloation error, exceeding listener's backlog,
+    ///             any error propagated from CUDT::open and CUDT::acceptAndRespond.
     int newConnection(const SRTSOCKET     listen,
                       const sockaddr_any& peer,
                       const CPacket&      hspkt,
