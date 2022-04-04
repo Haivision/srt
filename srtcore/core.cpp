@@ -3908,6 +3908,15 @@ EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatas
     int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
     if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
     {
+        // m_pCryptoControl can be NULL if the socket has been closed already. See issue #2231.
+        if (!m_pCryptoControl)
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(cnlog.Error, log << "IPE: craftKmResponse needs to send KM, but CryptoControl does not exist."
+                << " Socket state: connected=" << boolalpha << m_bConnected << ", connecting=" << m_bConnecting
+                << ", broken=" << m_bBroken << ", opened " << m_bOpened << ", closing=" << m_bClosing << ".");
+            return CONN_REJECT;
+        }
         // This is a periodic handshake update, so you need to extract the KM data from the
         // first message, provided that it is there.
         size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
