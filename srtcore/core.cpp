@@ -10748,8 +10748,8 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         HLOGC(cnlog.Debug, log << "processConnectRequest: ... NOT. Rejecting because broken.");
         return m_RejectReason;
     }
-    size_t exp_len =
-        CHandShake::m_iContentSize; // When CHandShake::m_iContentSize is used in log, the file fails to link!
+    // When CHandShake::m_iContentSize is used in log, the file fails to link!
+    size_t exp_len = CHandShake::m_iContentSize;
 
     // NOTE!!! Old version of SRT code checks if the size of the HS packet
     // is EQUAL to the above CHandShake::m_iContentSize.
@@ -10927,6 +10927,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     }
     else
     {
+        // IMPORTANT!!!
+        // If the newConnection() detects there is already a socket connection associated with the remote peer,
+        // it returns the socket via `acpu`, and the `result` returned is 0.
+        // Else if a new connection is successfully created, the conclusion handshake response
+        // is sent by the function itself (it calls the acceptAndRespond(..)), the `acpu` remains null, the `result` is 1.
         int error  = SRT_REJ_UNKNOWN;
         CUDT* acpu = NULL;
         int result = uglobal().newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
@@ -10944,41 +10949,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             LOGF(cnlog.Warn, "processConnectRequest: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
         }
 
-        // CONFUSION WARNING!
-        //
-        // The newConnection() will call acceptAndRespond() if the processing
-        // was successful - IN WHICH CASE THIS PROCEDURE SHOULD DO NOTHING.
-        // Ok, almost nothing - see update_events below.
-        //
-        // If newConnection() failed, acceptAndRespond() will not be called.
-        // Ok, more precisely, the thing that acceptAndRespond() is expected to do
-        // will not be done (this includes sending any response to the peer).
-        //
-        // Now read CAREFULLY. The newConnection() will return:
-        //
-        // - -1: The connection processing failed due to errors like:
-        //       - memory alloation error
-        //       - listen backlog exceeded
-        //       - any error propagated from CUDT::open and CUDT::acceptAndRespond
-        // - 0: The connection already exists
-        // - 1: Connection accepted.
-        //
-        // So, update_events is called only if the connection is established.
-        // Both 0 (repeated) and -1 (error) require that a response be sent.
-        // The CPacket object that has arrived as a connection request is here
-        // reused for the connection rejection response (see URQ_ERROR_REJECT set
-        // as m_iReqType).
-
-        // The 'acpu' should be set to a new socket, if found;
-        // this means simultaneously that result == 0, but it's safest to
-        // check this condition only. This means that 'newConnection' found
-        // that the connection attempt has already been accepted, just the
-        // caller side somehow didn't get the answer. The rule is that every
-        // connection request HS must be completed with a symmetric HS response,
-        // so craft one here.
-
-        // Note that this function runs in the listener socket context, while 'acpu'
-        // is the CUDT entity for the accepted socket.
+        // The `acpu` not NULL means connection exists, the `result` should be 0. It is not checked here though.
+        // The `newConnection(..)` only sends reponse for newly created connection.
+        // The connection already exists (no new connection has been created, no response sent).
+        // Send the conclusion response manually here in case the peer has missed the first one.
+        // The value  `result` here should be 0.
         if (acpu)
         {
             // This is an existing connection, so the handshake is only needed
@@ -11029,16 +11004,31 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
 
-        // send back a response if connection failed or connection already existed
-        // (or the above procedure failed)
-        if (result == -1)
+        if (result == 1)
         {
+            // BUG! There is no need to update write-readiness on the listener socket once new connection is accepted.
+            // Only read-readiness has to be updated, but it is done so in the newConnection(..) function.
+            // See PR #1831 and issue #1667.
+            HLOGC(cnlog.Debug, log << "processConnectRequest: @" << m_SocketID
+                   << " accepted connection, updating epoll to write-ready");
+
+            // New connection has been accepted or an existing one has been found. Update epoll write-readiness.
+            // a new connection has been created, enable epoll for write
+            // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
+            // executed for the accepted socket.
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        }
+        else if (result == -1)
+        {
+            // The new connection failed
+            // or the connection already existed, but manually sending the HS response above has failed.
+            // HSv4: Send the SHUTDOWN message to the peer (see PR #2010) in order to disallow the peer to connect.
+            //       The HSv4 clients do not interpret the error handshake response correctly.
+            // HSv5: Send a handshake with an error code (hs.m_iReqType set earlier) to the peer.
             if (hs.m_iVersion < HS_VERSION_SRT1)
             {
                 HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: HSv4 caller, sending SHUTDOWN after rejection with "
                         << RequestTypeStr(hs.m_iReqType));
-                // The HSv4 clients do not interpret the error handshake response correctly.
-                // In order to really disallow them to connect there's needed the shutdown response.
                 CPacket rsp;
                 setPacketTS((rsp), steady_clock::now());
                 rsp.pack(UMSG_SHUTDOWN);
@@ -11053,23 +11043,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
                 size_t size = CHandShake::m_iContentSize;
                 hs.store_to((packet.m_pcData), (size));
                 packet.setLength(size);
-                packet.m_iID        = id;
+                packet.m_iID = id;
                 setPacketTS(packet, steady_clock::now());
                 HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
                 m_pSndQueue->sendto(addr, packet);
             }
-        }
-        // new connection response should be sent in acceptAndRespond()
-        // turn the socket writable if this is the first time when this was found out.
-        else
-        {
-            // a new connection has been created, enable epoll for write
-           HLOGC(cnlog.Debug, log << "processConnectRequest: @" << m_SocketID
-                   << " connected, setting epoll to connect:");
-
-           // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
-           // executed for the accepted socket.
-           uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         }
     }
     LOGC(cnlog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
