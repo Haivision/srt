@@ -3,7 +3,6 @@
 #include <chrono>
 #include <thread>
 #include <future>
-#include <array>
 #include <numeric> // std::accumulate
 #include <regex>   // Used in FormatTime test
 #include "sync.h"
