@@ -18,7 +18,7 @@ namespace srt {
 namespace {
     struct ScopedLog
     {
-        ScopedLog() {};
+        ScopedLog() {}
 
         ~ScopedLog()
         {
