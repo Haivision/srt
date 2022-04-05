@@ -132,10 +132,6 @@ public:
     //~FileSource() { ifile.close(); }
 };
 
-#ifdef PLEASE_LOG
-#include "logging.h"
-#endif
-
 class FileTarget: public virtual Target
 {
     ofstream ofile;
