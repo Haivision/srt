@@ -66,7 +66,6 @@ modified by
 #include "epoll.h"
 #include "logging.h"
 #include "udt.h"
-#include "logging.h"
 
 using namespace std;
 using namespace srt::sync;
