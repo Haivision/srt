@@ -10,6 +10,8 @@
 
 #if ENABLE_HAICRYPT_LOGGING
 
+#include "haicrypt_log.h"
+
 #include "hcrypt.h"
 #include "haicrypt.h"
 #include "../srtcore/srt.h"
