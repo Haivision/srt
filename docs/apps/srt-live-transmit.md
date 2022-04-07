@@ -446,7 +446,7 @@ The dedicated research showed that at high and bursty data rates (~60 Mbps)
 the `epoll_wait(udp_socket)` is not fast enough to signal about the possibility
 of reading from a socket. It results in losing data when the input bitrate is very high (above 20 Mbps).
 
-PR [#1152](https://github.com/Haivision/srt/pull/1152) (v1.5.0 and above) adds the possibility
+PR [#1152](https://github.com/Haivision/srt/pull/1152) (SRT v1.4.2 and above) adds the possibility
 of setting the buffer size of the UDP socket in `srt-live-transmit`.
 Having a bigger buffer of UDP socket to store incoming data, `srt-live-transmit` handles higher bitrates.
 
