@@ -345,7 +345,7 @@ void srt::CSndUList::waitNonEmpty() const
 void srt::CSndUList::signalInterrupt() const
 {
     ScopedLock listguard(m_ListLock);
-    m_ListCond.notify_all();
+    m_ListCond.notify_one();
 }
 
 void srt::CSndUList::realloc_()
@@ -413,7 +413,7 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
     if (0 == m_iLastEntry)
     {
         // m_ListLock is assumed to be locked.
-        m_ListCond.notify_all();
+        m_ListCond.notify_one();
     }
 }
 
