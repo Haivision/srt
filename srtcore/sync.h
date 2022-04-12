@@ -344,7 +344,7 @@ class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
 {
 public:
     SRT_ATTR_ACQUIRE(m)
-    ScopedLock(Mutex& m);
+    explicit ScopedLock(Mutex& m);
 
     SRT_ATTR_RELEASE()
     ~ScopedLock();
@@ -362,7 +362,7 @@ class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 
 public:
     SRT_ATTR_ACQUIRE(m)
-    UniqueLock(Mutex &m);
+    explicit UniqueLock(Mutex &m);
 
     SRT_ATTR_RELEASE()
     ~UniqueLock();
