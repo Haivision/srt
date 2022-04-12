@@ -8485,7 +8485,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     {
         if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
         {
-            LOGC(inlog.Warn,
+            LOGC(inlog.Note,
                 log << CONID() << "ACKACK out of order, skipping RTT calculation "
                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
                 << ", RTT (EWMA): " << m_iSRTT << ")");
