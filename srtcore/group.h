@@ -611,10 +611,10 @@ public:
 
 private:
     // Fields required for SRT_GTYPE_BACKUP groups.
-    senderBuffer_t   m_SenderBuffer;
-    int32_t          m_iSndOldestMsgNo; // oldest position in the sender buffer
-    volatile int32_t m_iSndAckedMsgNo;
-    uint32_t         m_uOPT_MinStabilityTimeout_us;
+    senderBuffer_t        m_SenderBuffer;
+    int32_t               m_iSndOldestMsgNo; // oldest position in the sender buffer
+    sync::atomic<int32_t> m_iSndAckedMsgNo;
+    uint32_t              m_uOPT_MinStabilityTimeout_us;
 
     // THIS function must be called only in a function for a group type
     // that does use sender buffer.
@@ -671,7 +671,7 @@ private:
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
-    volatile int32_t m_RcvBaseSeqNo;
+    sync::atomic<int32_t> m_RcvBaseSeqNo;
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
@@ -685,10 +685,10 @@ private:
 
     // Signal for the blocking user thread that the packet
     // is ready to deliver.
-    srt::sync::Condition m_RcvDataCond;
-    srt::sync::Mutex     m_RcvDataLock;
-    volatile int32_t     m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
-    volatile int32_t     m_iLastSchedMsgNo;
+    sync::Condition       m_RcvDataCond;
+    sync::Mutex           m_RcvDataLock;
+    sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+    sync::atomic<int32_t> m_iLastSchedMsgNo;
     // Statistics
 
     struct Stats
