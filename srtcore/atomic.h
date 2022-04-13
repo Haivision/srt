@@ -63,10 +63,8 @@
 
 #if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
    // NOTE: Defined at the top level.
-#elif defined(__APPLE__) && (__cplusplus >= 201103L)
-   // NOTE: Does support c++11 std::atomic, but the compiler may or
-   //    may not support GCC atomic intrinsics. So go ahead and use the
-   //    std::atomic implementation.
+#elif __cplusplus >= 201103L
+   // NOTE: Prefer to use the c++11 std::atomic.
    #define ATOMIC_USE_CPP11_ATOMIC
 #elif (defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)) \
    || defined(__xlc__)
@@ -98,8 +96,6 @@
 #elif defined(_MSC_VER)
    #define ATOMIC_USE_MSVC_INTRINSICS
    #include "atomic_msvc.h"
-#elif __cplusplus >= 201103L
-   #define ATOMIC_USE_CPP11_ATOMIC
 #else
    #error Unsupported compiler / system.
 #endif
