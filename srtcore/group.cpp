@@ -85,7 +85,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
 
             // SndCurrSeqNo is initially set to ISN-1, this next one is
             // the sequence that is about to be stamped on the next sent packet
-            // over that socket. Using this field is safer because it is volatile
+            // over that socket. Using this field is safer because it is atomic
             // and its affinity is to the same thread as the sending function.
 
             // NOTE: the groupwise scheduling sequence might have been set
