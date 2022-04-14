@@ -24,7 +24,6 @@
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
 extern bool g_stats_are_printed_to_stdout;
-extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;

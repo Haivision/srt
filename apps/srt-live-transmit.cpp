@@ -100,8 +100,8 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> int_state;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     Verb() << "\n-------- REQUESTED INTERRUPT!\n";
