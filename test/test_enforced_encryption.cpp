@@ -348,7 +348,7 @@ public:
         const TResult &expect = test.expected_result;
 
         // Start testing
-        volatile bool caller_done = false;
+        srt::sync::atomic<bool> caller_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
