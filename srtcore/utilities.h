@@ -462,7 +462,18 @@ public:
         return m_entries[index];
     }
 
-    size_t  size() const { return m_size; }
+    size_t size() const { return m_size; }
+
+    typedef T* iterator;
+    typedef const T* const_iterator;
+
+    iterator begin() { return m_entries; }
+    iterator end() { return m_entries + m_size; }
+
+    const_iterator cbegin() const { return m_entries; }
+    const_iterator cend() const { return m_entries + m_size; }
+
+    T* data() { return m_entries; }
 
 private:
     FixedArray(const FixedArray<T>& );

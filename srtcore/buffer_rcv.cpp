@@ -92,14 +92,14 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
 
 CRcvBufferNew::~CRcvBufferNew()
 {
-    for (size_t i = 0; i < m_szSize; ++i)
+    // Can be optimized by only iterating m_iMaxPosInc from m_iStartPos.
+    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
     {
-        CUnit* unit = m_entries[i].pUnit;
-        if (unit != NULL)
-        {
-            m_pUnitQueue->makeUnitFree(unit);
-            m_entries[i].pUnit = NULL;
-        }
+        if (!it->pUnit)
+            continue;
+        
+        m_pUnitQueue->makeUnitFree(it->pUnit);
+        it->pUnit = NULL;
     }
 }
 
