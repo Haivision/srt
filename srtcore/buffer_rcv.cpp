@@ -1002,11 +1002,11 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
     ss << " pkts. ";
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
+        const PacketInfo nextValidPkt = getFirstValidPacketInfo();
         ss << " (TSBPD ready in ";
-        if (m_entries[m_iStartPos].pUnit)
+        if (!is_zero(nextValidPkt.tsbpd_time))
         {
-            const uint32_t usPktTimestamp = m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp();
-            ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - tsNow);
+            ss << count_milliseconds(nextValidPkt.tsbpd_time - tsNow);
         }
         else
         {
@@ -1017,7 +1017,7 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
         if (m_entries[iLastPos].pUnit)
         {
             ss << ":";
-            const uint32_t usPktTimestamp = m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp();
+            const uint32_t usPktTimestamp = m_entries[iLastPos].pUnit->m_Packet.getMsgTimeStamp();
             ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - tsNow);
             ss << " ms";
         }
