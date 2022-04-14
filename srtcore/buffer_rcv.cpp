@@ -1003,29 +1003,25 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
         const PacketInfo nextValidPkt = getFirstValidPacketInfo();
-        ss << " (TSBPD ready in ";
+        ss << "(TSBPD ready in ";
         if (!is_zero(nextValidPkt.tsbpd_time))
         {
-            ss << count_milliseconds(nextValidPkt.tsbpd_time - tsNow);
+            ss << count_milliseconds(nextValidPkt.tsbpd_time - tsNow) << "ms";
+            const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc - 1);
+            if (m_entries[iLastPos].pUnit)
+            {
+                ss << ", timespan ";
+                const uint32_t usPktTimestamp = m_entries[iLastPos].pUnit->m_Packet.getMsgTimeStamp();
+                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << " ms";
+            }
         }
         else
         {
             ss << "n/a";
         }
 
-        const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc - 1);
-        if (m_entries[iLastPos].pUnit)
-        {
-            ss << ":";
-            const uint32_t usPktTimestamp = m_entries[iLastPos].pUnit->m_Packet.getMsgTimeStamp();
-            ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - tsNow);
-            ss << " ms";
-        }
-        else
-        {
-            ss << ":n/a ms";
-        }
-        ss << ". ";
+        ss << "). ";
     }
 
     ss << SRT_SYNC_CLOCK_STR " drift " << getDrift() / 1000 << " ms.";
