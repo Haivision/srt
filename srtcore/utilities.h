@@ -418,8 +418,7 @@ class FixedArray
 {
 public:
     FixedArray(size_t size)
-        : m_strIndexErr("FixedArray: invalid index")
-        , m_size(size)
+        : m_size(size)
         , m_entries(new T[size])
     {
     }
@@ -433,7 +432,7 @@ public:
     const T& operator[](size_t index) const
     {
         if (index >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -441,7 +440,7 @@ public:
     T& operator[](size_t index)
     {
         if (index >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -449,7 +448,7 @@ public:
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -457,7 +456,7 @@ public:
     T& operator[](int index)
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -479,8 +478,14 @@ private:
     FixedArray(const FixedArray<T>& );
     FixedArray<T>& operator=(const FixedArray<T>&);
 
+    void raise_expection(int i) const
+    {
+        std::stringstream ss;
+        ss << "Index " << i << "out of range";
+        throw std::runtime_error(ss.str());
+    }
+
 private:
-    const char* m_strIndexErr;
     size_t      m_size;
     T* const    m_entries;
 };
