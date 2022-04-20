@@ -306,7 +306,7 @@ public: // internal API
 
     void addressAndSend(CPacket& pkt);
 
-    SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATTR_REQUIRES(m_ConnectionResources)
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
@@ -401,7 +401,7 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        sync::ScopedLock cg(m_ConnectionLock);
+        sync::CScopedResourceLock cg(m_ConnectionResources);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
@@ -466,7 +466,7 @@ private:
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
 
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
     // This function works in case of HSv5 rendezvous. It changes the state
@@ -486,14 +486,14 @@ private:
     /// @param response incoming handshake response packet to be interpreted
     /// @param serv_addr incoming packet's address
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
 
     /// Create the CryptoControl object based on the HS packet. Allocates sender and receiver buffers and loss lists.
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
 
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
 
     SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
@@ -507,7 +507,7 @@ private:
     SRT_ATR_NODISCARD size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
     SRT_ATR_NODISCARD size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int hs_version);
 
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     bool createSrtHandshake(int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen,
             CPacket& w_reqpkt, CHandShake& w_hs);
 
@@ -515,7 +515,7 @@ private:
 #if ENABLE_EXPERIMENTAL_BONDING
     SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
 #endif
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     size_t fillHsExtKMREQ(uint32_t *pcmdspec, size_t ki);
 
     SRT_ATR_NODISCARD size_t fillHsExtKMRSP(uint32_t *pcmdspec, const uint32_t *kmdata, size_t kmdata_wordsize);
@@ -763,7 +763,7 @@ private:
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
-    SRT_ATTR_PT_GUARDED_BY(m_ConnectionLock)
+    SRT_ATTR_PT_GUARDED_BY(m_ConnectionResources)
     UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
@@ -965,7 +965,7 @@ private:
 
 
 private: // synchronization: mutexes and conditions
-    sync::Mutex m_ConnectionLock;                // used to synchronize connection operation
+    sync::CSharedResource m_ConnectionResources; ///< Protects CUDT resources from simultaneous access, including creating and destroying dynamic objects.
 
     sync::Condition m_SendBlockCond;             // used to block "send" call
     sync::Mutex m_SendBlockLock;                 // lock associated to m_SendBlockCond
@@ -998,7 +998,7 @@ private: // Common connection Congestion Control setup
 
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionResources)
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets

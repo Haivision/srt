@@ -498,7 +498,7 @@ static const char* const socket_state_array[] = {
 const char* const* g_socket_state = socket_state_array + 1;
 
 #if 0
-// No socket option can be set in blocking mode because m_ConnectionLock is required by both srt_setsockopt and srt_connect
+// No socket option can be set in blocking mode because m_ConnectionResources is required by both srt_setsockopt and srt_connect
 // TODO: Use non-blocking mode
 TEST_F(TestSocketOptions, RestrictionCallerConnecting)
 {

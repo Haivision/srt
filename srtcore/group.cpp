@@ -448,7 +448,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         std::vector<CUDTSocket*> ps_vec;
         {
             // Do copy to avoid deadlock. CUDT::setOpt() cannot be called directly inside this loop, because
-            // CUDT::setOpt() will lock m_ConnectionLock, which should be locked before m_GroupLock.
+            // CUDT::setOpt() will lock m_ConnectionResources, which should be locked before m_GroupLock.
             ScopedLock gg(m_GroupLock);
             for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
             {

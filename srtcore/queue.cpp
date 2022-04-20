@@ -994,7 +994,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
         // and may crash on next pass.
         //
-        // TODO: maybe lock i->u->m_ConnectionLock?
+        // TODO: maybe lock i->u->m_ConnectionResources?
         i->u->m_bConnecting = false;
         remove(i->u->m_SocketID);
 
