@@ -785,6 +785,11 @@ public: // Observers
         {
             return pthread_equal(value, second.value) != 0;
         }
+
+        inline bool operator!=(const id& second) const
+        {
+            return pthread_equal(value, second.value) == 0;
+        }
     };
 
     /// Returns the id of the current thread.
@@ -960,7 +965,7 @@ public:
             m_rsrc.release();
     }
 
-    explicit operator bool() const { return m_isAcquired; }
+    operator bool() const { return m_isAcquired; }
 
     bool operator!() const { return !m_isAcquired; }
 
