@@ -770,11 +770,17 @@ public: // Observers
 
     struct id
     {
+        id()
+            : value()
+        {
+        }
+
         explicit id(const pthread_t t)
             : value(t)
         {}
 
-        const pthread_t value;
+        pthread_t value;
+
         inline bool operator==(const id& second) const
         {
             return pthread_equal(value, second.value) != 0;
@@ -871,6 +877,97 @@ CUDTException& GetThreadLocalError();
 /// @param[in] minVal minimum allowed value of the resulting random number.
 /// @param[in] maxVal maximum allowed value of the resulting random number.
 int genRandomInt(int minVal, int maxVal);
+    
+////////////////////////////////////////////////////////////////////////////////
+//
+// CSharedResource class
+//
+////////////////////////////////////////////////////////////////////////////////
+    
+/// The class to synchronize acces to a shared resource.
+/// Can be acquired multiple times by the same thread.
+class CSharedResource
+{
+public:
+    CSharedResource()
+        : m_iResourceTaken(0)
+    {
+    }
+
+    /// Releases the shared resource. Can taken several times by the same thread,
+    /// therefore notifies another thread once finally release by this thread.
+    void release();
+
+    /// Acquires the shared resource. Can be acquired multiple times from the same thread,
+    /// would just increase the reference count. It the resource is taken, waits on a CV for a notification.
+    void acquire();
+
+    /// Tries to acquire the shared resource.
+    /// @return true if the resource has been acquired, false otherwise.
+    bool tryAcquire();
+
+    /// @brief To follow POSIX Condition::init().
+    void init()
+    {
+        m_cond.init();
+    }
+
+    /// @brief To follow POSIX Condition::destroy().
+    void destroy()
+    {
+        m_cond.destroy();
+    }
+
+private:
+    Mutex       m_lock;
+    Condition   m_cond;
+    int         m_iResourceTaken;
+    CThread::id m_thid;
+};
+
+/// Acquires the shared resource on creation, releases upon destruction.
+class CScopedResourceLock
+{
+public:
+    CScopedResourceLock(CSharedResource& resource)
+        : m_rsrc(resource)
+    {
+        m_rsrc.acquire();
+    }
+
+    ~CScopedResourceLock()
+    {
+        m_rsrc.release();
+    }
+
+private:
+    CSharedResource& m_rsrc;
+};
+
+/// Tries to acquire the shared resource on creation, releases if was aquired upon destruction.
+class CScopedResourceTryLock
+{
+public:
+    CScopedResourceTryLock(CSharedResource& resource)
+        : m_rsrc(resource)
+    {
+        m_isAcquired = m_rsrc.tryAcquire();
+    }
+
+    ~CScopedResourceTryLock()
+    {
+        if (m_isAcquired)
+            m_rsrc.release();
+    }
+
+    explicit operator bool() const { return m_isAcquired; }
+
+    bool operator!() const { return !m_isAcquired; }
+
+private:
+    CSharedResource& m_rsrc;
+    bool m_isAcquired;
+};
 
 } // namespace sync
 } // namespace srt

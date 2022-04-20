@@ -353,3 +353,53 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CSharedResource class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+void srt::sync::CSharedResource::release()
+{
+    ScopedLock lock(m_lock);
+    SRT_ASSERT(m_iResourceTaken > 0);
+    --m_iResourceTaken;
+    if (m_iResourceTaken == 0)
+        m_cond.notify_one();
+}
+
+void srt::sync::CSharedResource::acquire()
+{
+    UniqueLock lock(m_lock);
+
+    // Allow reacquiring the resource from the same thread
+    if (m_iResourceTaken > 0 && this_thread::get_id() == m_thid)
+    {
+        ++m_iResourceTaken;
+        return;
+    }
+
+    while (m_iResourceTaken > 0)
+    {
+        m_cond.wait(lock);
+    }
+
+    SRT_ASSERT(m_iResourceTaken == 0);
+    ++m_iResourceTaken;
+    m_thid = this_thread::get_id();
+}
+
+bool srt::sync::CSharedResource::tryAcquire()
+{
+    ScopedLock lock(m_lock);
+
+    // Immediately withdraw from trying to acquire the taken resource from a different thread.
+    if (m_iResourceTaken > 0 && this_thread::get_id() != m_thid)
+    {
+        return false;
+    }
+
+    ++m_iResourceTaken;
+    m_thid = this_thread::get_id();
+    return true;
+}
