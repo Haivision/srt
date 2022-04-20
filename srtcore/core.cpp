@@ -8922,6 +8922,7 @@ void srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 {
+    CScopedResourceLock cg(m_ConnectionResources);
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
