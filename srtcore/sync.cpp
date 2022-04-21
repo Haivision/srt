@@ -345,7 +345,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
     // When rand_0_1 is 0.0 it's better to return early and prevents costly casting
     if (rand_0_1 == 0.0)
     {
-        return min(minVal, maxVal);
+        return minVal;
     }
 
     // Map onto [minVal, maxVal].
