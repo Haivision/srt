@@ -10029,8 +10029,8 @@ int srt::CUDT::processData(CUnit* in_unit)
                 continue;
             }
 
-            const int avail_bufsize = getAvailRcvBufferSizeNoLock();
-            if (offset >= avail_bufsize)
+            const size_t avail_bufsize = getAvailRcvBufferSizeNoLock();
+            if (size_t(offset) >= avail_bufsize)
             {
                 // This is already a sequence discrepancy. Probably there could be found
                 // some way to make it continue reception by overriding the sequence and
