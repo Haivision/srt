@@ -1963,6 +1963,7 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
+            CScopedResourceLock cg(m_ConnectionResources);
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
             res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4,
@@ -8922,7 +8923,6 @@ void srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 {
-    CScopedResourceLock cg(m_ConnectionResources);
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
