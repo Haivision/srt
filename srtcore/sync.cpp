@@ -341,6 +341,12 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
     // Therefore, rand_0_1 belongs to [0.0, 1.0].
     const double rand_0_1 = double(rand_r(getRandSeed())) / RAND_MAX;
 #endif
+    
+    // When rand_0_1 is 0.0 it's better to return early and prevents costly casting
+    if (rand_0_1 == 0.0)
+    {
+        return min(minVal, maxVal);
+    }
 
     // Map onto [minVal, maxVal].
     // Note. There is a minuscule probablity to get maxVal+1 as the result.
