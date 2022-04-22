@@ -218,6 +218,14 @@ int CRcvBufferNew::dropAll()
         ++iDropCnt;
     }
 
+    // Reset buffer state
+    m_iStartPos = 0;
+    m_iFirstNonreadPos = 0;
+    m_iMaxPosInc = 0;
+    m_iNotch = 0;
+    m_numOutOfOrderPackets = 0;
+    m_iFirstReadableOutOfOrder = -1;
+
     return iDropCnt;
 }
 
