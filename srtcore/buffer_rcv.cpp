@@ -200,6 +200,27 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     return iDropCnt;
 }
 
+int CRcvBufferNew::dropAll()
+{
+    if (empty())
+        return 0;
+
+    int iDropCnt = 0;
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
+    for (int i = m_iStartPos; i != end_pos; i = incPos(i))
+    {
+        CUnit* pUnit = m_entries[i].pUnit;
+        if (!pUnit)
+            continue;
+
+        m_pUnitQueue->makeUnitFree(pUnit);
+        m_entries[i].pUnit = NULL;
+        ++iDropCnt;
+    }
+
+    return iDropCnt;
+}
+
 int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);

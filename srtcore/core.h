@@ -887,16 +887,7 @@ private: // Timers
         m_iSndLastAck2 = isn;
     }
 
-    void setInitialRcvSeq(int32_t isn)
-    {
-        m_iRcvLastAck = isn;
-#ifdef ENABLE_LOGGING
-        m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-        m_iRcvLastSkipAck = m_iRcvLastAck;
-        m_iRcvLastAckAck = isn;
-        m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
-    }
+    void setInitialRcvSeq(int32_t isn);
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
