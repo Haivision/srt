@@ -70,10 +70,10 @@ public:
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return  number of dropped packets.
-    ///
     int dropUpTo(int32_t seqno);
 
-    /// @brief Drop all the packets in the receiver buffer. The starting position.
+    /// @brief Drop all the packets in the receiver buffer.
+    /// The starting position and seqno are shifted right after the last packet in the buffer.
     /// @return the number of dropped packets.
     int dropAll();
 

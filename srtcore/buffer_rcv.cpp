@@ -205,8 +205,8 @@ int CRcvBufferNew::dropAll()
     if (empty())
         return 0;
 
-    const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
-    return dropUpTo(end_pos);
+    const int end_seqno = CSeqNo::incseq(m_iStartSeqNo, m_iMaxPosInc);
+    return dropUpTo(end_seqno);
 }
 
 int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
