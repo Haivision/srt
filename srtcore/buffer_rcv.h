@@ -70,8 +70,12 @@ public:
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return  number of dropped packets.
-    ///
     int dropUpTo(int32_t seqno);
+
+    /// @brief Drop all the packets in the receiver buffer.
+    /// The starting position and seqno are shifted right after the last packet in the buffer.
+    /// @return the number of dropped packets.
+    int dropAll();
 
     /// @brief Drop the whole message from the buffer.
     /// If message number is 0, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
@@ -108,6 +112,10 @@ public:
 public:
     /// Get the starting position of the buffer as a packet sequence number.
     int getStartSeqNo() const { return m_iStartSeqNo; }
+
+    /// Sets the start seqno of the buffer.
+    /// Must be used with caution and only when the buffer is empty.
+    void setStartSeqNo(int seqno) { m_iStartSeqNo = seqno; }
 
     /// Given the sequence number of the first unacknowledged packet
     /// tells the size of the buffer available for packets.
@@ -324,8 +332,6 @@ public: // TSBPD public functions
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
 
     void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; } 
-
-    void applyGroupISN(int rcv_isn) { m_iStartSeqNo = rcv_isn; }
 
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 
