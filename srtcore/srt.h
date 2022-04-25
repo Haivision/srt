@@ -984,7 +984,9 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
-SRT_API extern const char* const srt_rejectreason_msg [];
+// The srt_rejectreason_msg[] array is deprecated (as unsafe).
+// Planned removal: v1.6.0.
+SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
 SRT_API const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
