@@ -68,7 +68,6 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmedia.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -101,7 +100,7 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool timer_state = false;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
@@ -376,37 +375,6 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     srt::setstreamid(acpsock, data->streaminfo);
 
     return -1;
-}
-
-void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
-{
-    std::ostringstream son, soff;
-
-    for (auto& s: speclist)
-    {
-        string name;
-        bool on = true;
-        if (s[0] == '+')
-            name = s.substr(1);
-        else if (s[0] == '~')
-        {
-            name = s.substr(1);
-            on = false;
-        }
-        else
-            name = s;
-
-        if (on)
-            son << "," << name;
-        else
-            soff << "," << name;
-    }
-
-    const string& sons = son.str();
-    const string& soffs = soff.str();
-
-    w_on = sons.empty() ? string() : sons.substr(1);
-    w_off = soffs.empty() ? string() : soffs.substr(1);
 }
 
 int main( int argc, char** argv )

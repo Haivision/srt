@@ -38,19 +38,23 @@ extern Logger cnlog;
 #endif
 }
 
+namespace srt
+{
+    class CUDT;
+}
+
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
 
 #define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
-const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(int32_t);
+const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
 
 class CCryptoControl
 {
-//public:
-    class CUDT* m_parent;
+    srt::CUDT*  m_parent;
     SRTSOCKET   m_SocketID;
 
     size_t      m_iSndKmKeyLen;        //Key length
@@ -192,7 +196,7 @@ public:
         return false;
     }
 
-    CCryptoControl(CUDT* parent, SRTSOCKET id);
+    CCryptoControl(srt::CUDT* parent, SRTSOCKET id);
 
     // DEBUG PURPOSES:
     std::string CONID() const;
@@ -254,14 +258,14 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(CPacket& w_packet);
+    EncryptionStatus encrypt(srt::CPacket& w_packet);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts
     /// only if the encryption correctly configured, otherwise it
     /// fails. After successful decryption, the ENCKEYSPEC part
     // in PH_MSGNO is set to EK_NOENC.
-    EncryptionStatus decrypt(CPacket& w_packet);
+    EncryptionStatus decrypt(srt::CPacket& w_packet);
 
     ~CCryptoControl();
 };

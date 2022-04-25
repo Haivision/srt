@@ -45,12 +45,15 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 
 ## Requirements
 
-* cmake (as build system)
-* Tcl 8.5 (optional for user-friendly build system)
-* OpenSSL
-* Pthreads (for POSIX systems it's builtin, for Windows there's a library)
+* C++03 (or above) compliant compiler.
+* CMake 2.8.12 or above (as build system).
+* OpenSSL 1.1 (to enable encryption, or build with `-DENABLE_ENCRYPTION=OFF`).
+* Multithreading is provided by either of the following:
+  * C++11: standard library (`std` by `-DENABLE_STDCXX_SYNC=ON` CMake option);
+  * C++03: Pthreads (for POSIX systems it's built in, for Windows there is a ported library).
+* Tcl 8.5 (optional, used by `./configure` script or use CMake directly).
 
-For detailed description of the build system and options, please read [SRT Build Options](docs/build/build-options.md).
+For a detailed description of the build system and options, please refer to [SRT Build Options](docs/build/build-options.md).
 
 ### Build on Linux
 

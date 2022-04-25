@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.4.3)
+set (SRT_VERSION 1.4.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -39,8 +39,10 @@ set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(GNU         ${CMAKE_SYSTEM_NAME} MATCHES "GNU")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR (CYGWIN AND CYGWIN_USE_POSIX))
-set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
+set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
+set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
 
 # Not sure what to do in case of compiling by MSVC.
 # This will make installdir in C:\Program Files\SRT then
@@ -92,7 +94,7 @@ endforeach()
 
 # SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
 # SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
-# SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
+# SRT_DEBUG_TRACE_DRIFT 1         /* Create a trace log for Encoder-Decoder Clock Drift */
 # SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
@@ -109,9 +111,23 @@ if (ENABLE_DEBUG)
 endif()
 
 
+set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
+set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+set(MONOTONIC_CLOCK_LINKLIB "")
+if (MICROSOFT)
+	set(ENABLE_STDCXX_SYNC_DEFAULT ON)
+elseif (POSIX)
+	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
+endif()
+
+
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
+else()
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
@@ -129,13 +145,24 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
-option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" OFF)
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
+option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SRT_VERSIONED_SO_WITH_MAJOR_MINOR "Make SRT versioned SO named with SONAME containing major and minor versions" ON)
+option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_NEW_RCVBUFFER "Enable new receiver buffer implementation" ON)
+
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
+# NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
+#  Atomic implemetation in srtcore/atomic.h.
+option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
+if (ATOMIC_USE_SRT_SYNC_MUTEX)
+   add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
+endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -180,7 +207,6 @@ if (NOT USE_ENCLIB)
 	else()
 		set (USE_ENCLIB openssl)
 	endif()
-
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
@@ -263,7 +289,15 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
+# Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
+include(FindPThreadGetSetName)
+FindPThreadGetSetName()
+
 if (ENABLE_MONOTONIC_CLOCK)
+	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
+		message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+	endif()
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
 	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
@@ -385,6 +419,20 @@ else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX
 	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
 
+# Check for GCC Atomic Intrinsics and C++11 Atomics.
+# Sets:
+#  HAVE_LIBATOMIC
+#  HAVE_LIBATOMIC_COMPILES
+#  HAVE_LIBATOMIC_COMPILES_STATIC
+#  HAVE_GCCATOMIC_INTRINSICS
+#  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
+include(CheckGCCAtomicIntrinsics)
+CheckGCCAtomicIntrinsics()
+#  HAVE_CXX_ATOMIC
+#  HAVE_CXX_ATOMIC_STATIC
+include(CheckCXXAtomic)
+CheckCXXAtomic()
+
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
 elseif( DEFINED ENABLE_CXX11 )
@@ -434,9 +482,18 @@ elseif (ENABLE_STDCXX_SYNC)
 endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+endif()
+
+if (ENABLE_NEW_RCVBUFFER)
+	add_definitions(-DENABLE_NEW_RCVBUFFER=1)
+	message(STATUS "RECEIVER_BUFFER: NEW")
+else()
+	remove_definitions(-DENABLE_NEW_RCVBUFFER)
+	message(STATUS "RECEIVER_BUFFER: OLD")
 endif()
 
 if (CMAKE_MAJOR_VERSION LESS 3)
@@ -525,14 +582,6 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
-# We need clock_gettime, but on some systems this is only provided
-# by librt. Check if librt is required.
-if (ENABLE_MONOTONIC_CLOCK AND LINUX)
-	# "requires" - exits on FATAL_ERROR when clock_gettime not available
-	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
-	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
-endif()
-
 
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
@@ -584,6 +633,9 @@ elseif(CYGWIN)
 elseif(GNU)
 	add_definitions(-DGNU=1)
 	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
+elseif(SUNOS)
+	add_definitions(-DSUNOS=1)
+	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
 else()
 	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
@@ -633,6 +685,11 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
+endif()
+
+if (ENABLE_CLANG_TSA)
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	message(STATUS "Clang TSA: Enabled")
 endif()
 
 if (ENABLE_PROFILE)
@@ -791,8 +848,13 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
@@ -843,13 +905,13 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
 		else()
 			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
 		endif()
 	elseif (MINGW)
-		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32 ws2_32)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
@@ -881,7 +943,7 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
 		endif()
 	elseif (MINGW)
@@ -894,8 +956,8 @@ endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-if (MICROSOFT)		
-	if (OPENSSL_USE_STATIC_LIBS)			
+if (MICROSOFT)
+	if (OPENSSL_USE_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
@@ -931,9 +993,26 @@ endif()
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
+	endif()
+endif()
+
+# Required by some toolchains when statically linking this library if the
+#  GCC Atomic Intrinsics are being used.
+if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+	if (srt_libspec_shared)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
+elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
+	# This is a workaround for ANDROID NDK<17 builds, which need to link
+	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
 endif()
 
@@ -1011,10 +1090,14 @@ else()
 	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
 endif()
 
-macro(srt_add_program name)
+macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+endmacro()
+
+macro(srt_add_program name)
+	srt_add_program_dont_install(${name} ${ARGN})
 	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endmacro()
 
@@ -1222,10 +1305,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	endif()
 
 	MafReadDir(test filelist.maf
+		HEADERS SOURCES_unittests
 		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test-srt ${SOURCES_unittests})
+	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
@@ -1261,4 +1345,9 @@ if (DEFINED SRT_EXTRA_APPS_INC)
 	include(${SRT_EXTRA_APPS_INC}.cmake)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
+endif()
+
+if (ENABLE_SHOW_PROJECT_CONFIG)
+	include(ShowProjectConfig)
+	ShowProjectConfig()
 endif()

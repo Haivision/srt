@@ -54,7 +54,7 @@ only unencrypted mode can be used.
 With the enabled SRT encryption,
 one of the following Crypto libraries is required:
 
-- `OpenSSL` (default)
+- `OpenSSL` (**default**)
 - `LibreSSL`
 - `MbedTLS`
 
@@ -62,8 +62,8 @@ one of the following Crypto libraries is required:
 
 SRT as of v1.4.2 supports two threading libraries:
 
-- `pthreads` (default)
-- Standard C++ thread library available in C++11 (recommended for Windows)
+- Standard C++ thread library available in C++11 (**default on Windows**)
+- `pthreads` (not recommended on Windows)
 
 The `pthreads` library is provided out-of-the-box on all POSIX-based systems.
 On Windows it can be provided as a 3rd party library (see below).
@@ -72,6 +72,10 @@ However the C++ standard thread library is recommended to be used on Windows.
 ### 1.3. Package Managers
 
 #### 1.3.1. VCpkg Packet Manager (optional)
+
+Can be used to:
+- build OpenSSL library (dependency of SRT).
+- build pthreads library (dependency of SRT).
 
 [vcpkg](https://github.com/microsoft/vcpkg) is a C++ library manager for Windows, Linux and MacOS.
 Consider its [prerequisites](https://github.com/microsoft/vcpkg/blob/master/README.md#quick-start) before proceeding.
@@ -181,8 +185,8 @@ to specify the directory that will contain the LibreSSL headers and libraries.
 
 SRT can use one of these two threading libraries:
 
-- C++11 threads (SRT v1.4.2 and above) - recommended for Windows
-- `pthreads` (default)
+- C++11 threads (SRT v1.4.2 and above) - recommended, default since SRT v1.4.4;
+- `pthreads` (not recommended on Windows).
 
 #### 2.2.1. Using C++11 Threading
 
@@ -192,6 +196,8 @@ This way there will be also no external dependency on the threading library.
 Otherwise the external PThreads for Windows wrapper library is required.
 
 #### 2.2.2. Building PThreads
+
+It is not recommended to use `pthreads` port on Windows. Consider using [C++11 instead](#221-using-c11-threading),
 
 ##### 2.2.2.1. Using vcpkg
 

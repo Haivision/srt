@@ -231,7 +231,7 @@ public:
    }
 
    /// Shortcut to test a packet for possible probe 1 or 2
-   void probeArrival(const CPacket& pkt, bool unordered)
+   void probeArrival(const srt::CPacket& pkt, bool unordered)
    {
        const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
 
@@ -252,7 +252,7 @@ public:
    }
 
    /// Record the arrival time of the first probing packet.
-   void probe1Arrival(const CPacket& pkt, bool unordered)
+   void probe1Arrival(const srt::CPacket& pkt, bool unordered)
    {
        if (unordered && pkt.m_iSeqNo == m_Probe1Sequence)
        {
@@ -269,7 +269,7 @@ public:
 
    /// Record the arrival time of the second probing packet and the interval between packet pairs.
 
-   void probe2Arrival(const CPacket& pkt)
+   void probe2Arrival(const srt::CPacket& pkt)
    {
        // Reject probes that don't refer to the very next packet
        // towards the one that was lately notified by probe1Arrival.
@@ -299,7 +299,7 @@ public:
        // record the probing packets interval
        // Adjust the time for what a complete packet would have take
        const int64_t timediff = srt::sync::count_microseconds(m_tsCurrArrTime - m_tsProbeTime);
-       const int64_t timediff_times_pl_size = timediff * CPacket::SRT_MAX_PAYLOAD_SIZE;
+       const int64_t timediff_times_pl_size = timediff * srt::CPacket::SRT_MAX_PAYLOAD_SIZE;
 
        // Let's take it simpler than it is coded here:
        // (stating that a packet has never zero size)

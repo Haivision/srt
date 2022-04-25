@@ -68,12 +68,12 @@ void srt::sync::Condition::wait(UniqueLock& lock)
 bool srt::sync::Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
-    return m_cv.wait_for(lock, rel_time) != cv_status::timeout;
+    return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
 bool srt::sync::Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
-    return m_cv.wait_until(lock, timeout_time) != cv_status::timeout;
+    return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 
 void srt::sync::Condition::notify_one()

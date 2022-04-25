@@ -100,13 +100,13 @@ void CSndLossList::traceState() const
     int pos = m_iHead;
     while (pos != SRT_SEQNO_NONE)
     {
-        ::cout << pos << ":[" << m_caSeq[pos].seqstart;
+        std::cout << pos << ":[" << m_caSeq[pos].seqstart;
         if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
-            ::cout << ", " << m_caSeq[pos].seqend;
-        ::cout << "], ";
+            std::cout << ", " << m_caSeq[pos].seqend;
+        std::cout << "], ";
         pos = m_caSeq[pos].inext;
     }
-    ::cout << "\n";
+    std::cout << "\n";
 }
 
 int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
@@ -487,6 +487,7 @@ CRcvLossList::CRcvLossList(int size)
     , m_iTail(-1)
     , m_iLength(0)
     , m_iSize(size)
+    , m_iLargestSeq(SRT_SEQNO_NONE)
 {
     m_caSeq = new Seq[m_iSize];
 
@@ -506,7 +507,25 @@ CRcvLossList::~CRcvLossList()
 void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
     // Data to be inserted must be larger than all those in the list
-    // guaranteed by the UDT receiver
+    if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
+    {
+        if (CSeqNo::seqcmp(seqno2, m_iLargestSeq) > 0)
+        {
+            LOGC(qrlog.Warn,
+                 log << "RCV-LOSS/insert: seqno1=" << seqno1 << " too small, adjust to "
+                     << CSeqNo::incseq(m_iLargestSeq));
+            seqno1 = CSeqNo::incseq(m_iLargestSeq);
+        }
+        else
+        {
+            LOGC(qrlog.Warn,
+                 log << "RCV-LOSS/insert: (" << seqno1 << "," << seqno2
+                     << ") to be inserted is too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
+                     << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
+            return;
+        }
+    }
+    m_iLargestSeq = seqno2;
 
     if (0 == m_iLength)
     {
@@ -561,6 +580,9 @@ void CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
 bool CRcvLossList::remove(int32_t seqno)
 {
+    if (m_iLargestSeq == SRT_SEQNO_NONE || CSeqNo::seqcmp(seqno, m_iLargestSeq) > 0)
+        m_iLargestSeq = seqno;
+
     if (0 == m_iLength)
         return false;
 
@@ -583,6 +605,8 @@ bool CRcvLossList::remove(int32_t seqno)
                 m_iHead = m_caSeq[m_iHead].inext;
                 if (-1 != m_iHead)
                     m_caSeq[m_iHead].iprior = -1;
+                else
+                    m_iTail = -1;
             }
             else
             {

@@ -3,6 +3,7 @@
 SOURCES
 api.cpp
 buffer.cpp
+buffer_rcv.cpp
 cache.cpp
 channel.cpp
 common.cpp
@@ -29,6 +30,7 @@ window.cpp
 
 SOURCES - ENABLE_EXPERIMENTAL_BONDING
 group.cpp
+group_backup.cpp
 group_common.cpp
 
 SOURCES - !ENABLE_STDCXX_SYNC
@@ -52,6 +54,7 @@ udt.h
 PRIVATE HEADERS
 api.h
 buffer.h
+buffer_rcv.h
 cache.h
 channel.h
 common.h
@@ -69,6 +72,7 @@ queue.h
 congctl.h
 socketconfig.h
 srt_compat.h
+stats.h
 threadname.h
 tsbpd_time.h
 utilities.h
@@ -76,4 +80,5 @@ window.h
 
 PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
 group.h
+group_backup.h
 group_common.h

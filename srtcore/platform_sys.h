@@ -30,7 +30,7 @@
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW__
+#ifndef __MINGW32__
    #include <intrin.h>
 #endif
 
@@ -41,11 +41,19 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
-      #pragma warning(disable:4251)
+      #pragma warning(disable: 4251 26812)
    #endif
 #else
 
-#if __APPLE__
+#if defined(__APPLE__) && __APPLE__
+// Warning: please keep this test as it is, do not make it
+// "#if __APPLE__" or "#ifdef __APPLE__". In applications with
+// a strict "no warning policy", "#if __APPLE__" triggers an "undef"
+// error. With GCC, an old & never fixed bug prevents muting this
+// warning (see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431).
+// Before this fix, the solution was to "#define __APPLE__ 0" before
+// including srt.h. So, don't use "#ifdef __APPLE__" either.
+
 // XXX Check if this condition doesn't require checking of
 // also other macros, like TARGET_OS_IOS etc.
 

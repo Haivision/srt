@@ -77,8 +77,6 @@ inline void SysCleanupNetwork() {}
 
 #endif
 
-#include "srt.h" // Required for stats module
-
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
 const int SysAGAIN = WSAEWOULDBLOCK;
@@ -90,6 +88,21 @@ const int SysAGAIN = EAGAIN;
 sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
+template <class VarType, class ValType>
+struct OnReturnSetter
+{
+    VarType& var;
+    ValType value;
+
+    OnReturnSetter(VarType& target, ValType v): var(target), value(v) {}
+    ~OnReturnSetter() { var = value; }
+};
+
+template <class VarType, class ValType>
+OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
+{ return OnReturnSetter<VarType, ValType>(target, v); }
+
+// ---- OPTIONS MODULE
 
 inline bool CheckTrue(const std::vector<std::string>& in)
 {
@@ -205,7 +218,7 @@ struct OptionScheme
 
     OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names();
+    const std::set<std::string>& names() const;
 };
 
 struct OptionName
@@ -250,7 +263,7 @@ private:
 };
 
 inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
-inline const std::set<std::string>& OptionScheme::names() { return pid->names; }
+inline const std::set<std::string>& OptionScheme::names() const { return pid->names; }
 
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
@@ -320,89 +333,7 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);
 
-// Statistics module
-
-enum SrtStatsPrintFormat
-{
-    SRTSTATS_PROFMAT_INVALID = -1,
-    SRTSTATS_PROFMAT_2COLS = 0,
-    SRTSTATS_PROFMAT_JSON,
-    SRTSTATS_PROFMAT_CSV
-};
-
-SrtStatsPrintFormat ParsePrintFormat(std::string pf, std::string& w_extras);
-
-enum SrtStatCat
-{
-    SSC_GEN, //< General
-    SSC_WINDOW, // flow/congestion window
-    SSC_LINK, //< Link data
-    SSC_SEND, //< Sending
-    SSC_RECV //< Receiving
-};
-
-struct SrtStatData
-{
-    SrtStatCat category;
-    std::string name;
-    std::string longname;
-
-    SrtStatData(SrtStatCat cat, std::string n, std::string l): category(cat), name(n), longname(l) {}
-    virtual ~SrtStatData() {}
-
-    virtual void PrintValue(std::ostream& str, const CBytePerfMon& mon) = 0;
-};
-
-template <class TYPE>
-struct SrtStatDataType: public SrtStatData
-{
-    typedef TYPE CBytePerfMon::*pfield_t;
-    pfield_t pfield;
-
-    SrtStatDataType(SrtStatCat cat, const std::string& name, const std::string& longname, pfield_t field)
-        : SrtStatData (cat, name, longname), pfield(field)
-    {
-    }
-
-    void PrintValue(std::ostream& str, const CBytePerfMon& mon) override
-    {
-        str << mon.*pfield;
-    }
-};
-
-class SrtStatsWriter
-{
-public:
-    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
-    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
-    virtual ~SrtStatsWriter() { };
-
-    // Only if HAS_PUT_TIME. Specified in the imp file.
-    std::string print_timestamp();
-
-    void Option(const std::string& key, const std::string& val)
-    {
-        options[key] = val;
-    }
-
-    bool Option(const std::string& key, std::string* rval = nullptr)
-    {
-        const std::string* out = map_getp(options, key);
-        if (!out)
-            return false;
-
-        if (rval)
-            *rval = *out;
-        return true;
-    }
-
-protected:
-    std::map<std::string, std::string> options;
-};
-
-extern std::vector<std::unique_ptr<SrtStatData>> g_SrtStatsTable;
-
-std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
-
+const char* SRTClockTypeStr();
+void PrintLibVersion();
 
 #endif // INC_SRT_APPCOMMON_H

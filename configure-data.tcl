@@ -54,6 +54,7 @@ set cmake_options {
     enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
     enable-unittests "Enable unit tests (default: OFF)"
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
+    enable-experimental-bonding "Enable experimental bonding (default: OFF)"
     openssl-crypto-library=<filepath> "Path to a library."
     openssl-include-dir=<path> "Path to a file."
     openssl-ssl-library=<filepath> "Path to a library."
@@ -343,8 +344,19 @@ proc postprocess {} {
 		# Otherwise don't set PKG_CONFIG_PATH and we'll see.
 	}
 
-	if { $::HAVE_DARWIN && !$toolchain_changed} {
-
+	set use_brew 0
+	if { $::HAVE_DARWIN && !$toolchain_changed } {
+		set use_brew 1
+	}
+	if { $use_brew } {
+		foreach item $::cmakeopt {
+			if { [string first "Android" $item] != -1 } {
+				set use_brew 0
+				break
+			}
+		}
+	}
+	if { $use_brew } {
 		if { $have_gnutls } {
 			# Use gnutls explicitly, as found in brew
 			set er [catch {exec brew info gnutls} res]

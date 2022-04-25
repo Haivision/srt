@@ -100,8 +100,8 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> int_state;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     Verb() << "\n-------- REQUESTED INTERRUPT!\n";
@@ -163,7 +163,6 @@ void PrintOptionHelp(const OptionName& opt_names, const string &value, const str
         cerr << ":"  << value;
     cerr << "\t- " << desc << "\n";
 }
-
 
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
@@ -269,12 +268,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         }
 
         cout << "SRT sample application to transmit live streaming.\n";
-        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
-        const uint32_t srtver = srt_getversion();
-        const int major = srtver / 0x10000;
-        const int minor = (srtver / 0x100) % 0x100;
-        const int patch = srtver % 0x100;
-        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 #ifndef _WIN32
@@ -313,7 +307,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_version)
     {
-        cerr << "SRT Library version: " <<  SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
@@ -434,7 +428,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 

@@ -171,4 +171,35 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
     return fas;
 }
 
+void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
+{
+    std::ostringstream son, soff;
+
+    for (auto& s: speclist)
+    {
+        string name;
+        bool on = true;
+        if (s[0] == '+')
+            name = s.substr(1);
+        else if (s[0] == '~')
+        {
+            name = s.substr(1);
+            on = false;
+        }
+        else
+            name = s;
+
+        if (on)
+            son << "," << name;
+        else
+            soff << "," << name;
+    }
+
+    const string& sons = son.str();
+    const string& soffs = soff.str();
+
+    w_on = sons.empty() ? string() : sons.substr(1);
+    w_off = soffs.empty() ? string() : soffs.substr(1);
+}
+
 

@@ -70,6 +70,7 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
+using namespace srt;
 using namespace srt::sync;
 
 namespace srt_logging {
@@ -97,7 +98,7 @@ const char* CUDTException::getErrorMessage() const ATR_NOTHROW
     return srt::strerror_get_message(m_iMajor, m_iMinor);
 }
 
-string CUDTException::getErrorString() const
+std::string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
@@ -437,7 +438,8 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
         "checktimer",
         "send",
         "receive",
-        "custom"
+        "custom",
+        "sync"
     };
 
     size_t vals_size = Size(vals);
@@ -445,39 +447,6 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     if (size_t(ev) >= vals_size)
         return "UNKNOWN";
     return vals[ev];
-}
-
-extern const char* const srt_rejectreason_msg [] = {
-    "Unknown or erroneous",
-    "Error in system calls",
-    "Peer rejected connection",
-    "Resource allocation failure",
-    "Rogue peer or incorrect parameters",
-    "Listener's backlog exceeded",
-    "Internal Program Error",
-    "Socket is being closed",
-    "Peer version too old",
-    "Rendezvous-mode cookie collision",
-    "Incorrect passphrase",
-    "Password required or unexpected",
-    "MessageAPI/StreamAPI collision",
-    "Congestion controller type collision",
-    "Packet Filter settings error",
-    "Group settings collision",
-    "Connection timeout"
-};
-
-const char* srt_rejectreason_str(int id)
-{
-    if (id >= SRT_REJC_PREDEFINED)
-    {
-        return "Application-defined rejection reason";
-    }
-
-    static const size_t ra_size = Size(srt_rejectreason_msg);
-    if (size_t(id) >= ra_size)
-        return srt_rejectreason_msg[0];
-    return srt_rejectreason_msg[id];
 }
 
 bool SrtParseConfig(string s, SrtConfig& w_config)
@@ -501,13 +470,6 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
 
     return true;
 }
-
-uint64_t PacketMetric::fullBytes()
-{
-    static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    return bytes + pkts * PKT_HDR_SIZE;
-}
-
 
 namespace srt_logging
 {
@@ -594,16 +556,20 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
 
-    char tmp_buf[512];
+    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
+                      "ThreadName::BUFSIZE is too small to be used for strftime");
+    char tmp_buf[ThreadName::BUFSIZE];
     if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
-        gettimeofday(&tv, 0);
+        gettimeofday(&tv, NULL);
         struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        strftime(tmp_buf, 512, "%X.", &tm);
-        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
+        {
+            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        }
     }
 
     string out_prefix;
