@@ -123,12 +123,12 @@ The SRT installation has the following folders:
 
 ## Versioning
 
-THe SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.
+The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.
 
 The patch version upgrade usually means improvements and/or bug fixes, that do not affect SRT API/ABI compatibility and do not significantly change the library behavior. Thus, an application can relatively safely update onto the next SRT patch release.
 
 Any minor version upgrade means SRT might be no longer fully compliant with the OLD API and/or old behavior or contains notable changes in the source code.
-A certain amount of care should be taken considering the upgrade to the new minor release. A proper testnig should be done, and the review of changes.
+A certain amount of care should be taken considering the upgrade to the new minor release. A proper testing should be done, and the review of changes.
 
 By default the SRT library SO/DLL name is suffixed with `major.minor` version (starting from SRT v1.4.3):
 - `libsrt.so.1.4`-> `libsrt.so.1.4.3`.
