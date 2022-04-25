@@ -5352,6 +5352,10 @@ void srt::CUDT::setInitialRcvSeq(int32_t isn)
 
 int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 {
+    // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
+    if (CSeqNo::seqcmp(seqno, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+        seqno = CSeqNo::incseq(m_iRcvCurrSeqNo);
+
     const int seq_gap_len = CSeqNo::seqoff(m_iRcvLastSkipAck, seqno);
 
     // seq_gap_len can be <= 0 if a packet has been dropped by the sender.
@@ -7731,6 +7735,38 @@ void srt::CUDT::ackDataUpTo(int32_t ack)
 #endif
 }
 
+#if ENABLE_EXPERIMENTAL_BONDING && ENABLE_NEW_RCVBUFFER
+void srt::CUDT::dropToGroupRecvBase() {
+    int32_t group_recv_base = SRT_SEQNO_NONE;
+    if (m_parent->m_GroupOf)
+    {
+        // Check is first done before locking to avoid unnecessary
+        // mutex locking. The condition for this field is that it
+        // can be either never set, already reset, or ever set
+        // and possibly dangling. The re-check after lock eliminates
+        // the dangling case.
+        ScopedLock glock (uglobal().m_GlobControlLock);
+
+        // Note that getRcvBaseSeqNo() will lock m_GroupOf->m_GroupLock,
+        // but this is an intended order.
+        if (m_parent->m_GroupOf)
+            group_recv_base = m_parent->m_GroupOf->getRcvBaseSeqNo();
+    }
+    if (group_recv_base == SRT_SEQNO_NONE)
+        return;
+
+    ScopedLock lck(m_RcvBufferLock);
+    int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base));
+    if (cnt > 0)
+    {
+        HLOGC(grlog.Debug,
+              log << "dropToGroupRecvBase: " << CONID() << " dropped " << cnt << " packets before ACK: group_recv_base="
+                  << group_recv_base << " m_iRcvLastSkipAck=" << m_iRcvLastSkipAck
+                  << " m_iRcvCurrSeqNo=" << m_iRcvCurrSeqNo << " m_bTsbPd=" << m_bTsbPd);
+    }
+}
+#endif
+
 namespace srt {
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
@@ -7924,6 +7960,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     local_prevack = m_iDebugPrevLastAck;
 
     string reason = "first lost"; // just for "a reason" of giving particular % for ACK
+#endif
+
+#if ENABLE_EXPERIMENTAL_BONDING && ENABLE_NEW_RCVBUFFER
+    dropToGroupRecvBase();
 #endif
 
     {

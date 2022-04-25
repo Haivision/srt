@@ -1084,6 +1084,12 @@ private: // Generation and processing of packets
     /// @param seq first unacknowledged packet sequence number.
     void ackDataUpTo(int32_t seq);
 
+#if ENABLE_EXPERIMENTAL_BONDING && ENABLE_NEW_RCVBUFFER
+    /// @brief Drop packets in the recv buffer behind group_recv_base.
+    /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
+    void dropToGroupRecvBase();
+#endif
+
     void handleKeepalive(const char* data, size_t lenghth);
 
     /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
