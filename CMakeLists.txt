@@ -129,7 +129,7 @@ else()
 	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
-option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -674,8 +674,13 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+# ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+	message(DEPRECATION "ENABLE_EXPERIMENTAL_BONDING is deprecated. Please use ENABLE_BONDING instead.")
+endif()
+
+if (ENABLE_BONDING OR ENABLE_EXPERIMENTAL_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -1222,7 +1227,7 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		if (ENABLE_EXPERIMENTAL_BONDING)
+		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
 		endif()
@@ -1257,7 +1262,7 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(test-c-server.c)
 
-if (ENABLE_EXPERIMENTAL_BONDING)
+if (ENABLE_BONDING)
 	srt_add_example(test-c-client-bonding.c)
 
 	srt_add_example(test-c-server-bonding.c)

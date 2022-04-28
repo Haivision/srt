@@ -36,7 +36,7 @@ int srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
@@ -88,7 +88,7 @@ int srt_connect_bind(SRTSOCKET u,
     return CUDT::connect(u, source, target, target_len);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
 {
     SRT_SOCKGROUPCONFIG data;

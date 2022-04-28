@@ -348,7 +348,7 @@ inline bool cast_optval(const void* optval, int optlen)
 
 } // namespace srt
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 struct SRT_SocketOptionObject
 {
     struct SingleOption
