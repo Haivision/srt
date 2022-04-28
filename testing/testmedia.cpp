@@ -46,7 +46,7 @@ using namespace srt;
 
 using srt_logging::KmStateStr;
 using srt_logging::SockStatusStr;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 using srt_logging::MemberStatusStr;
 #endif
 
@@ -220,7 +220,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
         path = path.substr(2);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (path == "group")
         {
             // Group specified, check type.
@@ -551,7 +551,7 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
@@ -666,7 +666,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             {
                 OpenClient(host, port);
             }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             else
             {
                 OpenGroupClient(); // Source data are in the fields already.
@@ -903,7 +903,7 @@ void SrtCommon::PrepareClient()
 
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     SrtCommon* that = (SrtCommon*)srtcommon;
@@ -1473,7 +1473,7 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
     if (!grpdata)
@@ -2278,7 +2278,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 
     do
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (have_group || m_listener_group)
         {
             mctrl.grpdata = m_group_data.data();
@@ -2380,7 +2380,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
@@ -2472,7 +2472,7 @@ Epoll_again:
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     bool have_group = !m_group_nodes.empty();
     if (have_group || m_listener_group)
     {
@@ -2499,7 +2499,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (have_group)
     {
         // For listener group this is not necessary. The group information

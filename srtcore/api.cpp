@@ -83,7 +83,7 @@ using namespace srt::sync;
 
 void srt::CUDTSocket::construct()
 {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     m_GroupOf         = NULL;
     m_GroupMemberData = NULL;
 #endif
@@ -356,7 +356,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
         {
             enterCS(m_GlobControlLock);
             const bool exists =
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
                 for_group
                 ? m_Groups.count(sockval | SRTGROUP_MASK)
                 :
@@ -658,7 +658,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         // could be requested deletion in the meantime. This will hold any possible
         // removal from group and resetting m_GroupOf field.
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (ns->m_GroupOf)
         {
             // XXX this might require another check of group type.
@@ -814,7 +814,7 @@ ERR_ROLLBACK:
         {
             ScopedLock cg(m_GlobControlLock);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             if (ns->m_GroupOf)
             {
                 HLOGC(smlog.Debug,
@@ -864,7 +864,7 @@ int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_
 {
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
             GroupKeeper k(*this, u, ERH_THROW);
@@ -1133,7 +1133,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
     // and the already accepted socket has successfully joined
     // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (ls->core().m_config.iGroupConnect == 1 && s->m_GroupOf)
     {
         // Put a lock to protect the group against accidental deletion
@@ -1192,7 +1192,7 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // Check affiliation of the socket. It's now allowed for it to be
     // a group or socket. For a group, add automatically a socket to
     // the group.
@@ -1226,7 +1226,7 @@ int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namele
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // Check affiliation of the socket. It's now allowed for it to be
     // a group or socket. For a group, add automatically a socket to
     // the group.
@@ -1250,7 +1250,7 @@ int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namele
     return connectIn(s, target_addr, forced_isn);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 int srt::CUDTUnited::singleMemberConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* gd)
 {
     int gstat = groupConnect(pg, gd, 1);
@@ -1878,7 +1878,7 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
 
 int srt::CUDTUnited::close(const SRTSOCKET u)
 {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (u & SRTGROUP_MASK)
     {
         GroupKeeper k(*this, u, ERH_THROW);
@@ -1894,7 +1894,7 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
     return close(s);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 void srt::CUDTUnited::deleteGroup(CUDTGroup* g)
 {
     using srt_logging::gmlog;
@@ -2008,7 +2008,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         s = i->second;
         s->setClosed();
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (s->m_GroupOf)
         {
             HLOGC(smlog.Debug,
@@ -2334,7 +2334,7 @@ int srt::CUDTUnited::epoll_clear_usocks(int eid)
 int srt::CUDTUnited::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
 {
     int ret = -1;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (u & SRTGROUP_MASK)
     {
         GroupKeeper k(*this, u, ERH_THROW);
@@ -2405,7 +2405,7 @@ int srt::CUDTUnited::epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* s)
     return epoll_remove_entity(eid, &s->core());
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 int srt::CUDTUnited::epoll_remove_group_INTERNAL(const int eid, CUDTGroup* g)
 {
     return epoll_remove_entity(eid, g);
@@ -2416,7 +2416,7 @@ int srt::CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 {
     CUDTSocket* s = 0;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     CUDTGroup* g = 0;
     if (u & SRTGROUP_MASK)
     {
@@ -2485,7 +2485,7 @@ srt::CUDTSocket* srt::CUDTUnited::locateSocket_LOCKED(SRTSOCKET u)
     return i->second;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 srt::CUDTGroup* srt::CUDTUnited::locateAcquireGroup(SRTSOCKET u, ErrorHandling erh)
 {
     ScopedLock cg(m_GlobControlLock);
@@ -2545,7 +2545,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 {
     ScopedLock cg(m_GlobControlLock);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<SRTSOCKET> delgids;
 
     for (groups_t::iterator i = m_ClosedGroups.begin(); i != m_ClosedGroups.end(); ++i)
@@ -2610,7 +2610,7 @@ void srt::CUDTUnited::checkBrokenSockets()
             }
         }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (s->m_GroupOf)
         {
             LOGC(smlog.Note,
@@ -2707,7 +2707,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     if (rn && rn->m_bOnList)
         return;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (s->m_GroupOf)
     {
         HLOGC(smlog.Debug,
@@ -3117,7 +3117,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
             CUDTSocket* s = i->second;
             s->breakSocket_LOCKED();
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             if (s->m_GroupOf)
             {
                 HLOGC(smlog.Debug,
@@ -3217,7 +3217,7 @@ srt::CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
     SetThreadLocalError(CUDTException(mj, mn, syserr));
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 // This is an internal function; 'type' should be pre-checked if it has a correct value.
 // This doesn't have argument of GroupType due to header file conflicts.
 
@@ -3485,7 +3485,7 @@ int srt::CUDT::connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname,
     }
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 int srt::CUDT::connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG targets[], int arraysize)
 {
     if (arraysize <= 0)
@@ -3601,7 +3601,7 @@ int srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optval
 
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
@@ -3632,7 +3632,7 @@ int srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* opt
 
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
@@ -3677,7 +3677,7 @@ int srt::CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 {
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
@@ -3721,7 +3721,7 @@ int srt::CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
 {
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
@@ -4058,7 +4058,7 @@ srt::CUDTException& srt::CUDT::getlasterror()
 
 int srt::CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
 {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (u & SRTGROUP_MASK)
         return groupsockbstats(u, perf, clear);
 #endif
@@ -4080,7 +4080,7 @@ int srt::CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instanta
     }
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 int srt::CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
 {
     try
@@ -4136,7 +4136,7 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 {
     try
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);

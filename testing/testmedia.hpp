@@ -70,7 +70,7 @@ protected:
 
     struct Connection: ConnectionBase
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         SRT_SOCKOPT_CONFIG* options = nullptr;
 #endif
         int error = SRT_SUCCESS;
@@ -79,7 +79,7 @@ protected:
         Connection(string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             if (old.options)
             {
                 options = old.options;
@@ -89,7 +89,7 @@ protected:
         }
         ~Connection()
         {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             srt_delete_config(options);
 #endif
         }
@@ -107,7 +107,7 @@ protected:
     vector<Connection> m_group_nodes;
     string m_group_type;
     string m_group_config;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;
@@ -157,7 +157,7 @@ protected:
     virtual int ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(string host, int port);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     void OpenGroupClient();
 #endif
     void PrepareClient();

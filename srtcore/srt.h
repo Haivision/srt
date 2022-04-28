@@ -157,8 +157,8 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    typedef int SYSSOCKET;
 #endif
 
-#ifndef ENABLE_EXPERIMENTAL_BONDING
-#define ENABLE_EXPERIMENTAL_BONDING 0
+#ifndef ENABLE_BONDING
+#define ENABLE_BONDING 0
 #endif
 
 typedef SYSSOCKET UDPSOCKET;
@@ -237,7 +237,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
    SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
    SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
@@ -765,7 +765,7 @@ SRT_API       SRTSOCKET srt_create_socket(void);
 
 typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 
 typedef enum SRT_GROUP_TYPE
 {
@@ -824,7 +824,7 @@ SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const
 SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
 SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
 
-#endif // ENABLE_EXPERIMENTAL_BONDING
+#endif // ENABLE_BONDING
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);

@@ -690,7 +690,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
     }
 };
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPCONNECT>
 {
@@ -833,7 +833,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
     }
 };
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
@@ -929,7 +929,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_MESSAGEAPI);
         DISPATCH(SRTO_PAYLOADSIZE);
         DISPATCH(SRTO_TRANSTYPE);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         DISPATCH(SRTO_GROUPCONNECT);
         DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
@@ -954,7 +954,7 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return dispatchSet(optName, *this, optval, optlen);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
 {
     // Check first if this option is allowed to be set
