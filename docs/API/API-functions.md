@@ -2015,6 +2015,19 @@ Reports the current statistics
 of the fields please refer to [SRT Statistics](statistics.md).
 
 
+|      Returns                  |                                                           |
+|:----------------------------- |:--------------------------------------------------------- |
+|         0                     | Success                                                   |
+|        -1                     | Failure                                                   |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+
+|       Errors                        |                                                                   |
+|:----------------------------------- |:----------------------------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)     | Invalid socket ID provided.
+| [`SRT_ECONNLOST`](#srt_econnlost)   | Connection lost (group socket).
+| [`SRT_ENOCONN`](#srt_enoconn)       | Not connected (group socket).
+| <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
+
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---
