@@ -12,7 +12,7 @@
 #elif defined(USE_GNUTLS)
 #include "cryspr-gnutls.h"
 #define cryspr4SRT()  crysprGnuTLS()
-#define CRYSPR_IMPL_DESC "GbuTLS"
+#define CRYSPR_IMPL_DESC "GnuTLS"
 #elif defined(USE_MBEDTLS)
 #include "cryspr-mbedtls.h"
 #define cryspr4SRT() crysprMbedtls()
