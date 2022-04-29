@@ -237,11 +237,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-#if ENABLE_BONDING
-   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
-   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds
-   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
-#endif
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (ENABLE_BONDING)
+   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
+   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61,  // An option to select packet retransmission algorithm
 
@@ -942,13 +940,7 @@ SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
 SRT_API int srt_clock_type(void);
 
-#ifdef __cplusplus
-}
-#endif
-
 // SRT Socket Groups API (ENABLE_BONDING)
-
-#if ENABLE_BONDING
 
 typedef enum SRT_GROUP_TYPE
 {
@@ -1007,6 +999,8 @@ SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const
 SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
 SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
-#endif // ENABLE_BONDING
+#ifdef __cplusplus
+}
+#endif
 
 #endif
