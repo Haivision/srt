@@ -416,7 +416,7 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
-extern const char* const srt_rejectreason_msg [] = {
+const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
     "Peer rejected connection",
@@ -436,6 +436,27 @@ extern const char* const srt_rejectreason_msg [] = {
     "Connection timeout"
 };
 
+// Deprecated, available in SRT API.
+extern const char* const srt_rejectreason_msg[] = {
+    srt_rejection_reason_msg[0],
+    srt_rejection_reason_msg[1],
+    srt_rejection_reason_msg[2],
+    srt_rejection_reason_msg[3],
+    srt_rejection_reason_msg[4],
+    srt_rejection_reason_msg[5],
+    srt_rejection_reason_msg[6],
+    srt_rejection_reason_msg[7],
+    srt_rejection_reason_msg[8],
+    srt_rejection_reason_msg[9],
+    srt_rejection_reason_msg[10],
+    srt_rejection_reason_msg[11],
+    srt_rejection_reason_msg[12],
+    srt_rejection_reason_msg[13],
+    srt_rejection_reason_msg[14],
+    srt_rejection_reason_msg[15],
+    srt_rejection_reason_msg[16]
+};
+
 const char* srt_rejectreason_str(int id)
 {
     if (id >= SRT_REJC_PREDEFINED)
@@ -443,10 +464,10 @@ const char* srt_rejectreason_str(int id)
         return "Application-defined rejection reason";
     }
 
-    static const size_t ra_size = Size(srt_rejectreason_msg);
+    static const size_t ra_size = Size(srt_rejection_reason_msg);
     if (size_t(id) >= ra_size)
-        return srt_rejectreason_msg[0];
-    return srt_rejectreason_msg[id];
+        return srt_rejection_reason_msg[0];
+    return srt_rejection_reason_msg[id];
 }
 
 }
