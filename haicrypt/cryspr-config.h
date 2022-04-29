@@ -8,14 +8,18 @@
 #if defined(USE_OPENSSL)
 #include "cryspr-openssl.h"
 #define cryspr4SRT()  crysprOpenSSL()
+#define CRYSPR_IMPL_DESC "OpenSSL-AES"
 #elif defined(USE_GNUTLS)
 #include "cryspr-gnutls.h"
 #define cryspr4SRT()  crysprGnuTLS()
+#define CRYSPR_IMPL_DESC "GnuTLS"
 #elif defined(USE_MBEDTLS)
 #include "cryspr-mbedtls.h"
 #define cryspr4SRT() crysprMbedtls()
+#define CRYSPR_IMPL_DESC "MbedTLS"
 #else
 #error Cryspr implementation not selected. Please define USE_* + OPENSSL/GNUTLS/MBEDTLS.
+#define CRYSPR_IMPL_DESC "No Cipher"
 #endif
 
 
