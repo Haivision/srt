@@ -400,7 +400,7 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         // incase readable inorder packets are all read out.
         updateFirstReadableOutOfOrder();
 
-    const int bytes_read = dst - data;
+    const int bytes_read = int(dst - data);
     if (bytes_read < bytes_extracted)
     {
         LOGC(rbuflog.Error, log << "readMessage: small dst buffer, copied only " << bytes_read << "/" << bytes_extracted << " bytes.");
@@ -535,7 +535,7 @@ int CRcvBufferNew::getRcvDataSize() const
     if (m_iFirstNonreadPos >= m_iStartPos)
         return m_iFirstNonreadPos - m_iStartPos;
 
-    return m_szSize + m_iFirstNonreadPos - m_iStartPos;
+    return int(m_szSize + m_iFirstNonreadPos - m_iStartPos);
 }
 
 int CRcvBufferNew::getTimespan_ms() const
@@ -573,7 +573,7 @@ int CRcvBufferNew::getTimespan_ms() const
 
     // One millisecond is added as a duration of a packet in the buffer.
     // If there is only one packet in the buffer, one millisecond is returned.
-    return count_milliseconds(endstamp - startstamp) + 1;
+    return static_cast<int>(count_milliseconds(endstamp - startstamp) + 1);
 }
 
 int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
@@ -604,7 +604,7 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
 
 std::pair<int, int> CRcvBufferNew::getAvailablePacketsRange() const
 {
-    const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, countReadable());
+    const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, (int) countReadable());
     return std::pair<int, int>(m_iStartSeqNo, seqno_last);
 }
 
@@ -852,7 +852,7 @@ void CRcvBufferNew::updateFirstReadableOutOfOrder()
         return;
 
     // TODO: unused variable outOfOrderPktsRemain?
-    int outOfOrderPktsRemain = m_numOutOfOrderPackets;
+    int outOfOrderPktsRemain = (int) m_numOutOfOrderPackets;
 
     // Search further packets to the right.
     // First check if there are packets to the right.
