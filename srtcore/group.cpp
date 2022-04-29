@@ -251,7 +251,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
-    , m_selfManaged(true)
     , m_bSyncOnMsgNo(false)
     , m_type(gtype)
     , m_listener()
@@ -291,29 +290,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     // two or more sockets start arguing about it.
     m_iLastSchedSeqNo = CUDT::generateISN();
 
-    // Configure according to type
-    switch (gtype)
-    {
-    case SRT_GTYPE_BROADCAST:
-        m_selfManaged = true;
-        break;
-
-    case SRT_GTYPE_BACKUP:
-        m_selfManaged = true;
-        break;
-
-    case SRT_GTYPE_BALANCING:
-        m_selfManaged  = true;
-        m_bSyncOnMsgNo = true;
-        break;
-
-    case SRT_GTYPE_MULTICAST:
-        m_selfManaged = false;
-        break;
-
-    default:
-        break;
-    }
+    m_bSyncOnMsgNo = (gtype == SRT_GTYPE_BALANCING);
 }
 
 CUDTGroup::~CUDTGroup()
@@ -936,16 +913,6 @@ void CUDTGroup::close()
     {
         ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
-
-        // A non-managed group may only be closed if there are no
-        // sockets in the group.
-
-        // XXX Fortunately there are currently no non-self-managed
-        // groups, so this error cannot ever happen, but this error
-        // has the overall code suggesting that it's about the listener,
-        // so either the name should be changed here, or a different code used.
-        if (!m_selfManaged && !m_Group.empty())
-            throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
 
         m_bClosing = true;
 
