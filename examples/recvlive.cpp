@@ -16,29 +16,26 @@
 
 using namespace std;
 
-// This function should extract what's needed from the options
-// and return the position where the options begin. The caller is
-// free to interpret anything from begin() up to (excluding) the returned size.
-size_t ParseOptions(const vector<string>& cmdline_args);
+struct Config
+{
+    bool quiet;
+    string service;
 
-bool opt_quiet = false;
+    Config()
+        : quiet(false)
+        , service("9000")
+    {}
+    void ParseOptions(const vector<string>& cmdline_args);
+};
 
 int main(int argc, char* argv[])
 {
    vector<string> args (argv + 1, argv + argc);
-   size_t optpos = 0;
-   string service;
+   Config config;
+
    try
    {
-       optpos = ParseOptions(args);
-       if (optpos > 0)
-       {
-           service = args[0];
-           if (service != "" && atoi(service.c_str()) == 0)
-               throw std::invalid_argument("Invalid port specification: " + service);
-       }
-       else if (optpos > 1)
-           throw invalid_argument("Too many arguments");
+       config.ParseOptions(args);
    }
    catch (const std::exception& e)
    {
@@ -47,15 +44,12 @@ int main(int argc, char* argv[])
       return 1;
    }
 
-   if (service == "")
-       service = "9000";
-
-#define IFLOUD(arg) if (!opt_quiet) { arg ; }
+#define IFLOUD(arg) if (!config.quiet) { arg ; }
 
    // use this function to initialize the UDT library
    srt_startup();
 
-   if (opt_quiet)
+   if (config.quiet)
    {
        srt_setloglevel(LOG_CRIT);
    }
@@ -73,9 +67,9 @@ int main(int argc, char* argv[])
    hints.ai_socktype = SOCK_DGRAM;
 
 
-   if (0 != getaddrinfo(NULL, service.c_str(), &hints, &res))
+   if (0 != getaddrinfo(NULL, config.service.c_str(), &hints, &res))
    {
-      cout << "illegal port number or port is busy: '" << service << "'.\n";
+      cout << "illegal port number or port is busy: '" << config.service << "'.\n";
       return 1;
    }
 
@@ -114,7 +108,7 @@ int main(int argc, char* argv[])
 
    freeaddrinfo(res);
 
-   IFLOUD(cout << "server is ready at port: " << service << endl);
+   IFLOUD(cout << "server is ready at port: " << config.service << endl);
 
    if (SRT_ERROR == srt_listen(sfd, 10))
    {
@@ -219,7 +213,7 @@ int main(int argc, char* argv[])
 }
 
 
-size_t ParseOptions(const vector<string>& args)
+void Config::ParseOptions(const vector<string>& args)
 {
    // Very simple options parsing:
    // 1. Walk through the parameters first;
@@ -247,6 +241,15 @@ size_t ParseOptions(const vector<string>& args)
        }
    }
 
+   if (optpos > 0)
+   {
+       this->service = args[0];
+       if (service != "" && atoi(service.c_str()) == 0)
+           throw std::invalid_argument("Invalid port specification: " + service);
+   }
+   else if (optpos > 1)
+       throw invalid_argument("Too many arguments");
+
    // Simplified option syntax, check parity
    if ((args.size() - optpos) % 2)
    {
@@ -259,12 +262,13 @@ size_t ParseOptions(const vector<string>& args)
        {
            string val = args[i+1];
            if (val == "quiet")
-               opt_quiet = true;
+               this->quiet = true;
            // For all other values leave default
+           continue;
        }
-   }
 
-   return optpos;
+       throw invalid_argument("Unknown option: " + args[i]);
+   }
 }
 
 // Local Variables:
