@@ -39,8 +39,6 @@ SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 #if ENABLE_EXPERIMENTAL_BONDING
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
-int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
-int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
 {

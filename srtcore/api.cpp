@@ -1276,14 +1276,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
     CUDTGroup& g = *pg;
     SRT_ASSERT(g.m_iBusy > 0);
 
-    // The group must be managed to use srt_connect on it,
-    // as it must create particular socket automatically.
-
-    // Non-managed groups can't be "connected" - at best you can connect
-    // every socket individually.
-    if (!g.managed())
-        throw CUDTException(MJ_NOTSUP, MN_INVAL);
-
     // Check and report errors on data brought in by srt_prepare_endpoint,
     // as the latter function has no possibility to report errors.
     for (int tii = 0; tii < arraysize; ++tii)
@@ -3264,75 +3256,6 @@ SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
     }
 
     return SRT_INVALID_SOCK;
-}
-
-int srt::CUDT::addSocketToGroup(SRTSOCKET socket, SRTSOCKET group)
-{
-    // Check if socket and group have been set correctly.
-    int32_t sid = socket & ~SRTGROUP_MASK;
-    int32_t gm  = group & SRTGROUP_MASK;
-
-    if (sid != socket || gm == 0)
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    // Find the socket and the group
-    CUDTSocket*             s = uglobal().locateSocket(socket);
-    CUDTUnited::GroupKeeper k(uglobal(), group, CUDTUnited::ERH_RETURN);
-
-    if (!s || !k.group)
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    // Check if the socket is already IN SOME GROUP.
-    if (s->m_GroupOf)
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    CUDTGroup* g = k.group;
-    if (g->managed())
-    {
-        // This can be changed as long as the group is empty.
-        if (!g->groupEmpty())
-        {
-            return APIError(MJ_NOTSUP, MN_INVAL, 0);
-        }
-        g->set_managed(false);
-    }
-
-    ScopedLock cg(s->m_ControlLock);
-    ScopedLock cglob(uglobal().m_GlobControlLock);
-    if (g->closing())
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    // Check if the socket already is in the group
-    srt::groups::SocketData* f;
-    if (g->contains(socket, (f)))
-    {
-        // XXX This is internal error. Report it, but continue
-        LOGC(aclog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-        s->m_GroupMemberData = f;
-        s->m_GroupOf         = g;
-        return 0;
-    }
-    s->m_GroupMemberData = g->add(srt::groups::prepareSocketData(s));
-    s->m_GroupOf         = g;
-
-    return 0;
-}
-
-// dead function as for now. This is only for non-managed
-// groups.
-int srt::CUDT::removeSocketFromGroup(SRTSOCKET socket)
-{
-    CUDTSocket* s = uglobal().locateSocket(socket);
-    if (!s)
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    if (!s->m_GroupOf)
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    ScopedLock cg(s->m_ControlLock);
-    ScopedLock glob_grd(uglobal().m_GlobControlLock);
-    s->removeFromGroup(false);
-    return 0;
 }
 
 // [[using locked(m_ControlLock)]]

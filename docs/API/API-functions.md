@@ -46,8 +46,6 @@
 | [SRT_SOCKGROUPDATA](#SRT_SOCKGROUPDATA)           | Most important structure for group member status                                                               |
 | [SRT_MEMBERSTATUS](#SRT_MEMBERSTATUS)             | Enumeration type that defines the state of a member connection in the group                                    |
 | [srt_create_group](#srt_create_group)             | Creates a new group of type `type`                                                                             |
-| [srt_include](#srt_include)                       | Adds a socket to a group                                                                                       |
-| [srt_exclude](#srt_exclude)                       | Removes a socket from a group to which it currently belongs                                                    |
 | [srt_groupof](#srt_groupof)                       | Returns the group ID of a socket, or `SRT_INVALID_SOCK`                                                        |
 | [srt_group_data](#srt_group_data)                 | Obtains the current member state of the group specified in `socketgroup`                                       |
 | [srt_connect_group](#srt_connect_group)           | Similar to calling [`srt_connect`](#srt_connect) or [`srt_connect_bind`](#srt_connect_bind) <br/> in a loop for every item in an array. |
@@ -1138,8 +1136,6 @@ become `SRT_GST_IDLE`).
 ### Functions to Be Used on Groups
 
   * [srt_create_group](#srt_create_group)
-  * [srt_include](#srt_include)
-  * [srt_exclude](#srt_exclude)
   * [srt_groupof](#srt_groupof)
   * [srt_group_data](#srt_group_data)
   * [srt_connect_group](#srt_connect_group)
@@ -1158,34 +1154,6 @@ Creates a new group of type `type`. This is typically called on the
 caller side to be next used for connecting to the listener peer side.
 The group ID is of the same domain as the socket ID, with the exception that
 the `SRTGROUP_MASK` bit is set on it, unlike for socket ID.
-
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
----  
-  
-#### srt_include
-
-```
-int srt_include(SRTSOCKET socket, SRTSOCKET group);
-```
-
-This function adds a socket to a group. This is only allowed for unmanaged
-groups. No such group type is currently implemented.
-
-
-[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
-
----  
-  
-#### srt_exclude
-
-```
-int srt_exclude(SRTSOCKET socket);
-```
-This function removes a socket from a group to which it currently belongs.
-This is only allowed for unmanaged groups. No such group type is currently
-implemented.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

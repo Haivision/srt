@@ -192,8 +192,6 @@ public: //API
     static SRTSOCKET socket();
 #if ENABLE_EXPERIMENTAL_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
-    static int addSocketToGroup(SRTSOCKET socket, SRTSOCKET group);
-    static int removeSocketFromGroup(SRTSOCKET socket);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
     static int configureGroup(SRTSOCKET groupid, const char* str);
