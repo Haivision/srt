@@ -289,8 +289,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     // Set this data immediately during creation before
     // two or more sockets start arguing about it.
     m_iLastSchedSeqNo = CUDT::generateISN();
-
-    m_bSyncOnMsgNo = (gtype == SRT_GTYPE_BALANCING);
 }
 
 CUDTGroup::~CUDTGroup()
@@ -578,36 +576,13 @@ void CUDTGroup::deriveSettings(CUDT* u)
 
 bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
 {
-    bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
-
-    if (m_type == SRT_GTYPE_BALANCING)
+    const bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
+    if (synconmsg)
     {
-        // We support only TRUE for this flag
-        if (!synconmsg)
-        {
-            HLOGP(gmlog.Debug, "GROUP: Balancing mode implemented only with sync on msgno - overridden request");
-            return true; // accept, but override
-        }
-
-        // We have this flag set; change it in yourself, if needed.
-        if (hsd == HSD_INITIATOR && !m_bSyncOnMsgNo)
-        {
-            // With this you can change in future the default value to false.
-            HLOGP(gmlog.Debug, "GROUP: Balancing requrested msgno-sync, OVERRIDING original setting");
-            m_bSyncOnMsgNo = true;
-            return true;
-        }
-    }
-    else
-    {
-        if (synconmsg)
-        {
-            LOGP(gmlog.Error, "GROUP: non-balancing type requested sync on msgno - IPE/EPE?");
-            return false;
-        }
+        LOGP(gmlog.Error, "GROUP: requested sync on msgno - not supported.");
+        return false;
     }
 
-    // Ignore the flag anyway. This can change in future versions though.
     return true;
 }
 
