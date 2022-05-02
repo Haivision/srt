@@ -9,6 +9,7 @@
 #include "common.h"
 
 using namespace std;
+using namespace srt;
 
 
 // To test CircularBuffer

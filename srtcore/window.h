@@ -233,7 +233,7 @@ public:
    /// Shortcut to test a packet for possible probe 1 or 2
    void probeArrival(const srt::CPacket& pkt, bool unordered)
    {
-       const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
+       const int inorder16 = pkt.m_iSeqNo & srt::PUMASK_SEQNO_PROBE;
 
        // for probe1, we want 16th packet
        if (inorder16 == 0)
@@ -279,7 +279,7 @@ public:
        // expected packet pair, behave as if the 17th packet was lost.
 
        // no start point yet (or was reset) OR not very next packet
-       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
+       if (m_Probe1Sequence == SRT_SEQNO_NONE || srt::CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
            return;
 
        // Grab the current time before trying to acquire

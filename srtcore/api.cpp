@@ -4051,7 +4051,7 @@ int srt::CUDT::epoll_release(const int eid)
     }
 }
 
-CUDTException& srt::CUDT::getlasterror()
+srt::CUDTException& srt::CUDT::getlasterror()
 {
     return GetThreadLocalError();
 }
@@ -4450,7 +4450,7 @@ int getlasterror_errno()
 // Get error string of a given error code
 const char* geterror_desc(int code, int err)
 {
-    CUDTException e(CodeMajor(code / 1000), CodeMinor(code % 1000), err);
+    srt::CUDTException e(CodeMajor(code / 1000), CodeMinor(code % 1000), err);
     return (e.getErrorMessage());
 }
 

@@ -21,6 +21,7 @@
 #include "srt.h"
 
 using namespace std;
+using namespace srt;
 
 
 class TestSocketOptions

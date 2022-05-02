@@ -243,8 +243,8 @@ int srt_getlasterror(int* loc_errno)
 
 const char* srt_strerror(int code, int err)
 {
-    static CUDTException e;
-    e = CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
+    static srt::CUDTException e;
+    e = srt::CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
     return(e.getErrorMessage());
 }
 

@@ -59,6 +59,13 @@ modified by
 #include <list>
 #include "udt.h"
 
+namespace srt
+{
+
+class CUDT;
+class CRendezvousQueue;
+class CUDTGroup;
+
 
 class CEPollDesc
 {
@@ -348,13 +355,6 @@ std::string DisplayEpollWatch();
    }
 };
 
-namespace srt
-{
-    class CUDT;
-    class CRendezvousQueue;
-    class CUDTGroup;
-}
-
 class CEPoll
 {
 friend class srt::CUDT;
@@ -499,6 +499,8 @@ private:
 #if ENABLE_HEAVY_LOGGING
 std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
 #endif
+
+} // namespace srt
 
 
 #endif
