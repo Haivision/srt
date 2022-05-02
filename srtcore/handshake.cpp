@@ -61,7 +61,7 @@ using namespace std;
 using namespace srt;
 
 
-CHandShake::CHandShake()
+srt::CHandShake::CHandShake()
     : m_iVersion(0)
     , m_iType(0) // Universal: UDT_UNDEFINED or no flags
     , m_iISN(0)
@@ -76,7 +76,7 @@ CHandShake::CHandShake()
       m_piPeerIP[i] = 0;
 }
 
-int CHandShake::store_to(char* buf, size_t& w_size)
+int srt::CHandShake::store_to(char* buf, size_t& w_size)
 {
    if (w_size < m_iContentSize)
       return -1;
@@ -98,7 +98,7 @@ int CHandShake::store_to(char* buf, size_t& w_size)
    return 0;
 }
 
-int CHandShake::load_from(const char* buf, size_t size)
+int srt::CHandShake::load_from(const char* buf, size_t size)
 {
    if (size < m_iContentSize)
       return -1;
@@ -121,6 +121,8 @@ int CHandShake::load_from(const char* buf, size_t size)
 
 #ifdef ENABLE_LOGGING
 
+namespace srt
+{
 const char* srt_rejectreason_name [] = {
     "UNKNOWN",
     "SYSTEM",
@@ -138,8 +140,9 @@ const char* srt_rejectreason_name [] = {
     "CONGESTION",
     "FILTER",
 };
+}
 
-std::string RequestTypeStr(UDTRequestType rq)
+std::string srt::RequestTypeStr(UDTRequestType rq)
 {
     if (rq >= URQ_FAILURE_TYPES)
     {
@@ -172,7 +175,7 @@ std::string RequestTypeStr(UDTRequestType rq)
     }
 }
 
-string CHandShake::RdvStateStr(CHandShake::RendezvousState s)
+string srt::CHandShake::RdvStateStr(CHandShake::RendezvousState s)
 {
     switch (s)
     {
@@ -188,7 +191,7 @@ string CHandShake::RdvStateStr(CHandShake::RendezvousState s)
 }
 #endif
 
-bool CHandShake::valid()
+bool srt::CHandShake::valid()
 {
     if (m_iVersion < CUDT::HS_VERSION_UDT4
             || m_iISN < 0 || m_iISN >= CSeqNo::m_iMaxSeqNo
@@ -199,7 +202,7 @@ bool CHandShake::valid()
     return true;
 }
 
-string CHandShake::show()
+string srt::CHandShake::show()
 {
     ostringstream so;
 
@@ -231,7 +234,7 @@ string CHandShake::show()
     return so.str();
 }
 
-string CHandShake::ExtensionFlagStr(int32_t fl)
+string srt::CHandShake::ExtensionFlagStr(int32_t fl)
 {
     std::ostringstream out;
     if ( fl & HS_EXT_HSREQ )
@@ -258,7 +261,7 @@ string CHandShake::ExtensionFlagStr(int32_t fl)
 // XXX This code isn't currently used. Left here because it can
 // be used in future, should any refactoring for the "manual word placement"
 // code be done.
-bool SrtHSRequest::serialize(char* buf, size_t size) const
+bool srt::SrtHSRequest::serialize(char* buf, size_t size) const
 {
     if (size < SRT_HS_SIZE)
         return false;
@@ -273,7 +276,7 @@ bool SrtHSRequest::serialize(char* buf, size_t size) const
 }
 
 
-bool SrtHSRequest::deserialize(const char* buf, size_t size)
+bool srt::SrtHSRequest::deserialize(const char* buf, size_t size)
 {
     m_iSrtVersion = 0; // just to let users recognize if it succeeded or not.
 
@@ -287,4 +290,36 @@ bool SrtHSRequest::deserialize(const char* buf, size_t size)
     m_iSrtTsbpd = (*p++);
     m_iSrtReserved = (*p++);
     return true;
+}
+
+std::string srt::SrtFlagString(int32_t flags)
+{
+#define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
+
+    std::string output;
+    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag", "StreamAPI" };
+
+    size_t i = 0;
+    for (; i < LEN(namera); ++i)
+    {
+        if ((flags & 1) == 1)
+        {
+            output += "+" + namera[i] + " ";
+        }
+        else
+        {
+            output += "-" + namera[i] + " ";
+        }
+
+        flags >>= 1;
+    }
+
+#undef LEN
+
+    if (flags != 0)
+    {
+        output += "+unknown";
+    }
+
+    return output;
 }
