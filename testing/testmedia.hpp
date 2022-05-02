@@ -61,8 +61,8 @@ protected:
         int port;
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
-        sockaddr_any source;
-        sockaddr_any target;
+        srt::sockaddr_any source;
+        srt::sockaddr_any target;
         int token = -1;
 
         ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
@@ -305,7 +305,7 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_any sadr;
+    srt::sockaddr_any sadr;
     std::string adapter;
     std::map<std::string, std::string> m_options;
     void Setup(std::string host, int port, std::map<std::string,std::string> attr);

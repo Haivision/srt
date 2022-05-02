@@ -8,6 +8,8 @@
 #include "srt.h"
 #include "udt.h"
 
+using srt::sockaddr_any;
+
 // Copied from ../apps/apputil.cpp, can't really link this file here.
 sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family = AF_INET)
 {
@@ -218,8 +220,8 @@ void serverSocket(std::string ip, int port, bool expect_success)
     int yes = 1;
     int no = 0;
 
-	SRTSOCKET m_bindsock = srt_create_socket();
-	ASSERT_NE(m_bindsock, SRT_ERROR);
+    SRTSOCKET m_bindsock = srt_create_socket();
+    ASSERT_NE(m_bindsock, SRT_ERROR);
 
     ASSERT_NE(srt_setsockopt(m_bindsock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(m_bindsock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
@@ -251,33 +253,33 @@ void serverSocket(std::string ip, int port, bool expect_success)
     std::thread client(clientSocket, ip, port, expect_success);
 
     { // wait for connection from client
-	    int rlen = 2;
-	    SRTSOCKET read[2];
+        int rlen = 2;
+        SRTSOCKET read[2];
 
-	    int wlen = 2;
-	    SRTSOCKET write[2];
+        int wlen = 2;
+        SRTSOCKET write[2];
 
         ASSERT_NE(srt_epoll_wait(server_pollid,
-	                                     read,  &rlen,
-	                                     write, &wlen,
-	                                     3000, // -1 is set for debuging purpose.
-	                                         // in case of production we need to set appropriate value
-	                                     0, 0, 0, 0), SRT_ERROR );
+                                         read,  &rlen,
+                                         write, &wlen,
+                                         3000, // -1 is set for debuging purpose.
+                                             // in case of production we need to set appropriate value
+                                         0, 0, 0, 0), SRT_ERROR );
 
 
-	    ASSERT_EQ(rlen, 1); // get exactly one read event without writes
-	    ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-	    ASSERT_EQ(read[0], m_bindsock); // read event is for bind socket    	
+        ASSERT_EQ(rlen, 1); // get exactly one read event without writes
+        ASSERT_EQ(wlen, 0); // get exactly one read event without writes
+        ASSERT_EQ(read[0], m_bindsock); // read event is for bind socket    	
     }
 
     sockaddr_any scl;
 
-	SRTSOCKET m_sock = srt_accept(m_bindsock, scl.get(), &scl.len);
+    SRTSOCKET m_sock = srt_accept(m_bindsock, scl.get(), &scl.len);
     if (m_sock == -1)
     {
         std::cout << "srt_accept: " << srt_getlasterror_str() << std::endl;
     }
-	ASSERT_NE(m_sock, SRT_INVALID_SOCK);
+    ASSERT_NE(m_sock, SRT_INVALID_SOCK);
 
     sockaddr_any showacp = (sockaddr*)&scl;
     std::cout << "Accepted from: " << showacp.str() << std::endl;
@@ -308,7 +310,7 @@ void serverSocket(std::string ip, int port, bool expect_success)
     char pattern[4] = {1, 2, 3, 4};
 
     ASSERT_EQ(srt_recvmsg(m_sock, buffer, sizeof buffer),
-    	      1316);
+              1316);
 
     EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
 
