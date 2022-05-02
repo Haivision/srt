@@ -56,6 +56,8 @@ modified by
 #include "udt.h"
 #include "common.h"
 
+namespace srt {
+
 class CSndLossList
 {
 public:
@@ -263,5 +265,7 @@ struct CRcvFreshLoss
     Emod revoke(int32_t sequence);
     Emod revoke(int32_t lo, int32_t hi);
 };
+
+} // namespace srt
 
 #endif
