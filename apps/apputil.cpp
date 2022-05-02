@@ -22,6 +22,7 @@
 #include "srt_compat.h"
 
 using namespace std;
+using namespace srt;
 
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
@@ -355,25 +356,25 @@ string OptionHelpItem(const OptionName& o)
 
 const char* SRTClockTypeStr()
 {
-	const int clock_type = srt_clock_type();
+    const int clock_type = srt_clock_type();
 
-	switch (clock_type)
-	{
-	case SRT_SYNC_CLOCK_STDCXX_STEADY:
-		return "CXX11_STEADY";
-	case SRT_SYNC_CLOCK_GETTIME_MONOTONIC:
-		return "GETTIME_MONOTONIC";
-	case SRT_SYNC_CLOCK_WINQPC:
-		return "WIN_QPC";
-	case SRT_SYNC_CLOCK_MACH_ABSTIME:
-		return "MACH_ABSTIME";
-	case SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY:
-		return "POSIX_GETTIMEOFDAY";
-	default:
-		break;
-	}
-	
-	return "UNKNOWN VALUE";
+    switch (clock_type)
+    {
+    case SRT_SYNC_CLOCK_STDCXX_STEADY:
+        return "CXX11_STEADY";
+    case SRT_SYNC_CLOCK_GETTIME_MONOTONIC:
+        return "GETTIME_MONOTONIC";
+    case SRT_SYNC_CLOCK_WINQPC:
+        return "WIN_QPC";
+    case SRT_SYNC_CLOCK_MACH_ABSTIME:
+        return "MACH_ABSTIME";
+    case SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY:
+        return "POSIX_GETTIMEOFDAY";
+    default:
+        break;
+    }
+    
+    return "UNKNOWN VALUE";
 }
 
 void PrintLibVersion()

@@ -5,6 +5,8 @@
 #include "utilities.h"
 #include "common.h"
 
+using namespace srt;
+
 void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[4])
 {
     const int port = 4200;

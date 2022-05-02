@@ -42,6 +42,7 @@
 #include "verbose.hpp"
 
 using namespace std;
+using namespace srt;
 
 using srt_logging::KmStateStr;
 using srt_logging::SockStatusStr;

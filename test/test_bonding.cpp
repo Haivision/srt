@@ -98,7 +98,7 @@ void listening_thread(bool should_read)
     ASSERT_GT(fds_len, 0);
     ASSERT_EQ(fds[0], server_sock);
 
-    sockaddr_any scl;
+    srt::sockaddr_any scl;
     int acp = srt_accept(server_sock, (scl.get()), (&scl.len));
     ASSERT_NE(acp & SRTGROUP_MASK, 0);
 

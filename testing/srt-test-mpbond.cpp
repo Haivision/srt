@@ -49,7 +49,7 @@ void OnINT_SetIntState(int)
     mpbond_int_state = true;
 }
 
-
+using namespace srt;
 
 
 int main( int argc, char** argv )

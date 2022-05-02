@@ -59,6 +59,7 @@ testmedia.cpp
 */
 
 using namespace std;
+using namespace srt;
 
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
 namespace srt_logging

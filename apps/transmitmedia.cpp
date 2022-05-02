@@ -38,6 +38,7 @@
 #include "verbose.hpp"
 
 using namespace std;
+using namespace srt;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
@@ -401,7 +402,7 @@ void SrtCommon::ConnectClient(string host, int port)
 {
 
     sockaddr_any sa = CreateAddr(host, port);
-	sockaddr* psa = sa.get();
+    sockaddr* psa = sa.get();
 
     Verb() << "Connecting to " << host << ":" << port;
 
