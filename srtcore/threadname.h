@@ -163,7 +163,7 @@ class ThreadName
         {
             // The default implementation will simply try to get the thread ID
             std::ostringstream bs;
-            bs << "T" << srt::sync::this_thread::get_id();
+            bs << "T" << sync::this_thread::get_id();
             size_t s  = bs.str().copy(output, BUFSIZE - 1);
             output[s] = '\0';
             return true;

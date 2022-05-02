@@ -401,12 +401,12 @@ void srt::CPacket::toHL()
 }
 
 
-IOVector* srt::CPacket::getPacketVector()
+srt::IOVector* srt::CPacket::getPacketVector()
 {
    return m_PacketVector;
 }
 
-UDTMessageType srt::CPacket::getType() const
+srt::UDTMessageType srt::CPacket::getType() const
 {
     return UDTMessageType(SEQNO_MSGTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]));
 }
@@ -434,7 +434,7 @@ uint16_t srt::CPacket::getControlFlags() const
     return SEQNO_EXTTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]);
 }
 
-PacketBoundary srt::CPacket::getMsgBoundary() const
+srt::PacketBoundary srt::CPacket::getMsgBoundary() const
 {
     return PacketBoundary(MSGNO_PACKET_BOUNDARY::unwrap(m_nHeader[SRT_PH_MSGNO]));
 }
@@ -462,7 +462,7 @@ bool srt::CPacket::getRexmitFlag() const
     return 0 !=  MSGNO_REXMIT::unwrap(m_nHeader[SRT_PH_MSGNO]);
 }
 
-EncryptionKeySpec srt::CPacket::getMsgCryptoFlags() const
+srt::EncryptionKeySpec srt::CPacket::getMsgCryptoFlags() const
 {
     return EncryptionKeySpec(MSGNO_ENCKEYSPEC::unwrap(m_nHeader[SRT_PH_MSGNO]));
 }

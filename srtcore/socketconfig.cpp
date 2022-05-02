@@ -52,6 +52,7 @@ written by
 #include "srt.h"
 #include "socketconfig.h"
 
+using namespace srt;
 extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
 namespace {
@@ -69,7 +70,7 @@ struct CSrtConfigSetter<SRTO_MSS>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         int ival = cast_optval<int>(optval, optlen);
-        if (ival < int(srt::CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
+        if (ival < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         co.iMSS = ival;
@@ -108,7 +109,7 @@ struct CSrtConfigSetter<SRTO_SNDBUF>
         if (bs <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iSndBufSize = bs / (co.iMSS - srt::CPacket::UDP_HDR_SIZE);
+        co.iSndBufSize = bs / (co.iMSS - CPacket::UDP_HDR_SIZE);
     }
 };
 
@@ -122,7 +123,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         // Mimimum recv buffer size is 32 packets
-        const int mssin_size = co.iMSS - srt::CPacket::UDP_HDR_SIZE;
+        const int mssin_size = co.iMSS - CPacket::UDP_HDR_SIZE;
 
         if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
             co.iRcvBufSize = val / mssin_size;
@@ -501,7 +502,7 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
         if (val < 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        using namespace srt::sync;
+        using namespace sync;
         co.tdConnTimeOut = milliseconds_from(val);
     }
 };
@@ -569,7 +570,7 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
         if (val == "vod")
             val = "file";
 
-        bool res = srt::SrtCongestion::exists(val);
+        bool res = SrtCongestion::exists(val);
         if (!res)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -609,8 +610,8 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             // This means that the filter might have been installed before,
             // and the fix to the maximum payload size was already applied.
             // This needs to be checked now.
-            srt::SrtFilterConfig fc;
-            if (!srt::ParseFilterConfig(co.sPacketFilterConfig.str(), fc))
+            SrtFilterConfig fc;
+            if (!ParseFilterConfig(co.sPacketFilterConfig.str(), fc))
             {
                 // Break silently. This should not happen
                 LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
@@ -802,9 +803,9 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
         using namespace srt_logging;
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
-        srt::SrtFilterConfig fc;
-        srt::PacketFilter::Factory* fax = 0;
-        if (!srt::ParseFilterConfig(arg, (fc), (&fax)))
+        SrtFilterConfig fc;
+        PacketFilter::Factory* fax = 0;
+        if (!ParseFilterConfig(arg, (fc), (&fax)))
         {
             LOGC(aclog.Error,
                  log << "SRTO_PACKETFILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "

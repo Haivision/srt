@@ -452,7 +452,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         string v = par["minversion"];
         if (v.find('.') != string::npos)
         {
-            int version = SrtParseVersion(v.c_str());
+            int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
                 throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
