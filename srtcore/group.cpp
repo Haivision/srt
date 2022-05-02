@@ -574,7 +574,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 #undef IMF
 }
 
-bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
+bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 {
     const bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
     if (synconmsg)
