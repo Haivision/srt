@@ -437,7 +437,7 @@ private:
         void erase(gli_t it);
     };
     GroupContainer m_Group;
-    bool           m_bSyncOnMsgNo;
+    const bool     m_bSyncOnMsgNo; // It goes into a dedicated HS field. Could be true for balancing groups (not implemented).
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
