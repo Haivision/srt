@@ -856,38 +856,3 @@ srt::CCryptoControl::~CCryptoControl()
     }
 #endif
 }
-
-
-std::string SrtFlagString(int32_t flags)
-{
-#define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
-
-    std::string output;
-    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag", "StreamAPI" };
-
-    size_t i = 0;
-    for ( ; i < LEN(namera); ++i )
-    {
-        if ( (flags & 1) == 1 )
-        {
-            output += "+" + namera[i] + " ";
-        }
-        else
-        {
-            output += "-" + namera[i] + " ";
-        }
-
-        flags >>= 1;
-       //if ( flags == 0 )
-       //    break;
-    }
-
-#undef LEN
-
-    if ( flags != 0 )
-    {
-        output += "+unknown";
-    }
-
-    return output;
-}
