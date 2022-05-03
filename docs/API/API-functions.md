@@ -38,6 +38,8 @@
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
 <h3 id="socket-group-management">Socket Group Management</h3>
+
+Since SRT v1.5.0.
   
 | *Function / Structure*                            | *Description*                                                                                                  |
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
@@ -1150,10 +1152,17 @@ become `SRT_GST_IDLE`).
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE type);
 ```
 
-Creates a new group of type `type`. This is typically called on the
-caller side to be next used for connecting to the listener peer side.
+Creates a new group of type `type`. Is typically called on the
+caller side to be next used for connecting to a remote SRT listener.
 The group ID is of the same domain as the socket ID, with the exception that
 the `SRTGROUP_MASK` bit is set on it, unlike for socket ID.
+
+|      Returns                  |                                                           |
+|:----------------------------- |:--------------------------------------------------------- |
+| `SRTSOCKET`                   | Group SRT socket ID.                                      |
+| `SRT_INVALID_SOCK`            | On error or if bonding API is disabled.                   |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                             |
+
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1163,11 +1172,17 @@ the `SRTGROUP_MASK` bit is set on it, unlike for socket ID.
 #### srt_groupof
 
 ```
-SRTSOCKET srt_groupof(SRTSOCKET socket);
+SRTSOCKET srt_groupof(SRTSOCKET member);
 ```
 
-Returns the group ID of the socket, or `SRT_INVALID_SOCK` if the socket
-doesn't exist or it's not a member of any group.
+Retrieves the group SRT socket ID that corresponds to the member socket ID `member`.
+
+
+|      Returns                  |                                                           |
+|:----------------------------- |:--------------------------------------------------------- |
+| `SRTSOCKET`                   | Corresponding group SRT socket ID of the member socket.   |
+| `SRT_INVALID_SOCK`            | The socket doesn't exist, it is not a member of any grou, or bonding API is disabled. |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1200,16 +1215,16 @@ the number of elements filled. Otherwise the array will not be filled and
 This function can be used to get the group size by setting `output` to `NULL`,
 and providing `socketgroup` and `inoutlen`.
 
-|      Returns                  |                                                           |
-|:----------------------------- |:--------------------------------------------------------- |
-|   # of elements               | The number of data elements filled, on success            |
-|         -1                    | Error                                                     |
+|      Returns                  |                                                    |
+|:----------------------------- |:-------------------------------------------------- |
+|   # of elements               | The number of data elements filled, on success     |
+|         -1                    | Error                                              |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 
 |      Errors                        |                                                           |
 |:---------------------------------- |:--------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam)  | Reported if `socketgroup` is not an existing group ID     |
+| [`SRT_EINVPARAM`](#srt_einvparam)  | Reported if `socketgroup` is not an existing group ID. Or if bonding API is disabled. |
 | [`SRT_ELARGEMSG`](#srt_elargemsg)  | Reported if `inoutlen` if less than the size of the group |
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
@@ -1237,19 +1252,18 @@ int srt_connect_group(SRTSOCKET group,
 This function does almost the same as calling [`srt_connect`](#srt_connect) or 
 [`srt_connect_bind`](#srt_connect_bind) (when the source was specified for 
 [`srt_prepare_endpoint`](#srt_prepare_endpoint)) in a loop for every item specified 
-in `name` array. However if you did this in blocking mode, the first call to 
+in the `name` array. However if blocking mode is being used, the first call to 
 [`srt_connect`](#srt_connect) would block until the connection is established, 
 whereas this function blocks until any of the specified connections is established.
 
-If you set the group nonblocking mode ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) 
+If the group nonblocking mode is set ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) 
 option), there's no difference, except that the [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) 
-structure allows you to add extra configuration data used by groups. Note also that 
+structure allows adding extra configuration data used by groups. Note also that 
 this function accepts only groups, not sockets.
 
 The elements of the `name` array need to be prepared with the use of the
 [`srt_prepare_endpoint`](#srt_prepare_endpoint) function. Note that it is
-**NOT** required that every target address you specify for it is of the same
-family.
+**NOT** required that every target address specified is of the same family.
 
 Return value and errors in this function are the same as in [`srt_connect`](#srt_connect),
 although this function reports success when at least one connection has
@@ -1278,6 +1292,19 @@ The fields of [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) structure have the f
 * `config`: unchanged (the object should be manually deleted upon return)
 * [`errorcode`](#error-codes): status of connection for that link ([`SRT_SUCCESS`](#srt_success) if succeeded)
 * `token`: same as in input, or a newly created token value if input was -1
+
+|      Returns                  |                                                    |
+|:----------------------------- |:-------------------------------------------------- |
+|   `SRT_SOCKET`                | The socket ID of the first connected member.       |
+|         -1                    | Error                                              |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+
+
+|      Errors                        |                                                           |
+|:---------------------------------- |:--------------------------------------------------------- |
+| [`SRT_EINVPARAM`](#srt_einvparam)  | Reported if `socketgroup` is not an existing group ID. Or if bonding API is disabled. |
+| [`SRT_ECONNLOST`](#srt_econnlost)  | Reported if none of member sockets has connected. |
+| <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
 The procedure of connecting for every connection definition specified
 in the `name` array is performed the following way:
@@ -1379,6 +1406,9 @@ would be reported only by [`srt_connect_group`](#srt_connect_group), separately
 for every individual connection, and the status can be obtained from
 the [`errorcode`](#error-codes) field.
 
+Note that the `errorcode` field of the `SRT_SOCKGROUPCONFIG` returned would be set to `SRT_EINVOP`
+if the bonding API is disabled (`ENABLE_BONDING=OFF`).
+
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -1399,6 +1429,7 @@ should delete it using [`srt_delete_config`](#srt_delete_config).
 |      Returns                  |                                                                    |
 |:----------------------------- |:------------------------------------------------------------------ |
 |      Pointer                  | The pointer to the created object (memory allocation errors apply) |
+|      NULL                     | If bonding API is disabled.                                        |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 
@@ -1459,7 +1490,7 @@ The following options are allowed to be set on the member socket:
 
 |       Errors                       |                                                                       |
 |:---------------------------------- |:--------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam)  | This option is not allowed to be set on a socket being a group member |
+| [`SRT_EINVPARAM`](#srt_einvparam)  | This option is not allowed to be set on a socket being a group member. Or if bonding API is disabled. |
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
 
