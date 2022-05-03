@@ -1250,10 +1250,10 @@ if (ENABLE_EXAMPLES)
 # Don't compile examples that do require C++11
 
 	if (ENABLE_CXX11)
-		srt_add_example(sendfile.cpp apps/logsupport.cpp)
+		srt_add_example(sendfile.cpp)
 		target_compile_options(sendfile PRIVATE ${CFLAGS_CXX_STANDARD})
-        
-		srt_add_example(recvfile.cpp apps/logsupport.cpp)
+		
+		srt_add_example(recvfile.cpp)
 		target_compile_options(recvfile PRIVATE ${CFLAGS_CXX_STANDARD})
 	endif()
 
