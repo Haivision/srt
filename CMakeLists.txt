@@ -1247,16 +1247,9 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(recvlive.cpp)
 
-# Don't compile examples that do require C++11
-
-	if (ENABLE_CXX11)
-		srt_add_example(sendfile.cpp)
-		target_compile_options(sendfile PRIVATE ${CFLAGS_CXX_STANDARD})
+	srt_add_example(sendfile.cpp)
 		
-		srt_add_example(recvfile.cpp)
-		target_compile_options(recvfile PRIVATE ${CFLAGS_CXX_STANDARD})
-	endif()
-
+	srt_add_example(recvfile.cpp)
 
 	srt_add_example(test-c-client.c)
 
