@@ -557,12 +557,8 @@ void SrtCommon::AcceptNewClient()
         m_listener_group = true;
         if (m_group_config != "")
         {
-            int stat = srt_group_configure(m_sock, m_group_config.c_str());
-            if (stat == SRT_ERROR)
-            {
-                // Don't break the connection basing on this, just ignore.
-                Verb() << " (error setting config: '" << m_group_config << "') " << VerbNoEOL;
-            }
+            // Don't break the connection basing on this, just ignore.
+            Verb() << " (ignoring setting group config: '" << m_group_config << "') " << VerbNoEOL;
         }
         // There might be added a poller, remove it.
         // We need it work different way.
@@ -971,9 +967,7 @@ void SrtCommon::OpenGroupClient()
     int stat = -1;
     if (m_group_config != "")
     {
-        stat = srt_group_configure(m_sock, m_group_config.c_str());
-        if (stat == SRT_ERROR)
-            Error("srt_group_configure");
+        Verb() << "Ignoring setting group config: '" << m_group_config;
     }
 
     stat = ConfigurePre(m_sock);
