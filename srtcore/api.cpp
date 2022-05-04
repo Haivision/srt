@@ -3302,22 +3302,6 @@ SRTSOCKET srt::CUDT::getGroupOfSocket(SRTSOCKET socket)
     return s->m_GroupOf->id();
 }
 
-int srt::CUDT::configureGroup(SRTSOCKET groupid, const char* str)
-{
-    if ((groupid & SRTGROUP_MASK) == 0)
-    {
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    CUDTUnited::GroupKeeper k(uglobal(), groupid, CUDTUnited::ERH_RETURN);
-    if (!k.group)
-    {
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return k.group->configure(str);
-}
-
 int srt::CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     if ((groupid & SRTGROUP_MASK) == 0 || !psize)

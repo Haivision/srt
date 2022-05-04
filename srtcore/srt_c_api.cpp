@@ -44,10 +44,6 @@ int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* ino
 {
     return CUDT::getGroupData(socketgroup, output, inoutlen);
 }
-int srt_group_configure(SRTSOCKET socketgroup, const char* str)
-{
-    return CUDT::configureGroup(socketgroup, str);
-}
 
 SRT_SOCKOPT_CONFIG* srt_create_config()
 {
@@ -101,7 +97,6 @@ int srt_connect_group(SRTSOCKET group,
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return SRT_INVALID_SOCK; }
 SRTSOCKET srt_groupof(SRTSOCKET) { return SRT_INVALID_SOCK; }
 int srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
-int srt_group_configure(SRTSOCKET, const char*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
 void srt_delete_config(SRT_SOCKOPT_CONFIG*) { return; }
 int srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
