@@ -990,7 +990,6 @@ typedef struct SRT_GroupMemberConfig_
 SRT_API SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
 SRT_API SRTSOCKET srt_groupof(SRTSOCKET socket);
 SRT_API       int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
-SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
 
 SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
