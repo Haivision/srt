@@ -348,7 +348,6 @@ inline bool cast_optval(const void* optval, int optlen)
 
 } // namespace srt
 
-#if ENABLE_BONDING
 struct SRT_SocketOptionObject
 {
     struct SingleOption
@@ -357,7 +356,6 @@ struct SRT_SocketOptionObject
         uint16_t      length;
         unsigned char storage[1]; // NOTE: Variable length object!
     };
-
 
     std::vector<SingleOption*> options;
 
@@ -375,6 +373,5 @@ struct SRT_SocketOptionObject
 
     bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
 };
-#endif
 
 #endif
