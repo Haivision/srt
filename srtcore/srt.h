@@ -757,12 +757,6 @@ SRT_API       int srt_cleanup(void);
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API       SRTSOCKET srt_create_socket(void);
 
-// Group management
-
-// Stubs when off
-
-typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
-
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -790,6 +784,8 @@ SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+
+typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 
 typedef struct SRT_MsgCtrl_
 {
