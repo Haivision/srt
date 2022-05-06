@@ -997,10 +997,8 @@ typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, co
 
 The following group types are collected in an [`SRT_GROUP_TYPE`](#SRT_GROUP_TYPE) enum:
 
-* `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once
-* `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance
-* `SRT_GTYPE_BALANCING`: balancing type, share bandwidth usage between links
-
+* `SRT_GTYPE_BROADCAST`: broadcast type, all links are actively used at once;
+* `SRT_GTYPE_BACKUP`: backup type, idle links take over connection on disturbance.
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -1017,7 +1015,7 @@ typedef struct SRT_GroupMemberConfig_
     SRTSOCKET id;
     struct sockaddr_storage srcaddr;
     struct sockaddr_storage peeraddr;
-    int weight;
+    uint16_t weight;
     SRT_SOCKOPT_CONFIG* config;
     int errorcode;
     int token;
@@ -1040,7 +1038,6 @@ you can change the value of `weight` and `config` and `token` fields. The
 
 * BROADCAST: not used
 * BACKUP: positive value of link priority (the greater, the more preferred)
-* BALANCING: relative expected load on this link for fixed algorithm
 
 In any case, the allowed value for `weight` is between 0 and 32767.
 
@@ -1104,7 +1101,7 @@ without turning into `SRT_GST_IDLE`
 * `SRT_GST_IDLE`: The connection is established and ready to
 take over transmission, but it's not used for transmission at
 the moment. This state may last for a short moment in the case of
-broadcast or balancing groups. In backup groups this state
+broadcast group. In backup group this state
 defines a backup link that is ready to take over when the
 currently active (running) link becomes unstable.
 
