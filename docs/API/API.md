@@ -427,10 +427,10 @@ example, it only supports level-triggered events for system sockets.
 
 ## Transmission Types
 
-**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
-Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
-and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
-sections of the RFC additionally. The current section is going to be reworked accordingly.
+**NOTE:** There might be a difference in terminology used in [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-7)
+sections of the Internet Draft additionally. The current section is going to be reworked accordingly.
 
 SRT was originally intended to be used for Live Streaming and therefore its main
 and default transmission type is "live". However, SRT supports the modes that

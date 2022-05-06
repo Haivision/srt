@@ -1668,10 +1668,10 @@ readable form, where x = ("%d", (version>>16) & 0xff), etc.
 
 * [SRT_MSGCTRL](#SRT_MSGCTRL)
 
-**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
-Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
-and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
-sections of the RFC additionally. The current section is going to be reworked accordingly.
+**NOTE:** There might be a difference in terminology used in [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-7)
+sections of the Internet Draft additionally. The current section is going to be reworked accordingly.
 
 ### SRT_MSGCTRL
 
@@ -1768,10 +1768,10 @@ to be mutable, as they use some fields to output values.
 * [srt_recv, srt_recvmsg, srt_recvmsg2](#srt_recv-srt_recvmsg-srt_recvmsg2)
 * [srt_sendfile, srt_recvfile](#srt_sendfile-srt_recvfile)
 
-**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
-Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
-and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
-sections of the RFC additionally. The current section is going to be reworked accordingly.
+**NOTE:** There might be a difference in terminology used in [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-7)
+sections of the Internet Draft additionally. The current section is going to be reworked accordingly.
 
 
 ### srt_send

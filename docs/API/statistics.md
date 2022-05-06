@@ -222,7 +222,7 @@ The total accumulated time in microseconds, during which the SRT sender has some
 
 #### pktSndDropTotal
 
-The total number of _dropped_ by the SRT sender DATA packets that have no chance to be delivered in time (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for sender.
+The total number of _dropped_ by the SRT sender DATA packets that have no chance to be delivered in time (refer to [Too-Late Packet Drop](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-4.6) mechanism). Available for sender.
 
 Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [SRT API Socket Options](API-socket-options.md).
 
@@ -232,7 +232,7 @@ where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds
 
 #### pktRcvDropTotal
 
-The total number of _dropped_ by the SRT receiver and, as a result, not delivered to the upstream application DATA packets (refer to [TLPKTDROP](https://github.com/Haivision/srt-rfc/blob/master/draft-sharabayko-mops-srt.md#too-late-packet-drop-too-late-packet-drop) mechanism). Available for receiver.
+The total number of _dropped_ by the SRT receiver and, as a result, not delivered to the upstream application DATA packets (refer to [Too-Late Packet Drop](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-4.6) mechanism). Available for receiver.
 
 This statistic counts
 
@@ -544,7 +544,7 @@ at that moment.
 Smoothed round-trip time (SRTT), an exponentially-weighted moving average (EWMA) of an endpoint's RTT samples, in milliseconds.
 Available both for sender and receiver.
 
-See [Section 4.10. Round-Trip Time Estimation](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.10) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and [[RFC6298] Paxson, V., Allman, M., Chu, J., and M. Sargent, "Computing TCP's Retransmission Timer"](https://datatracker.ietf.org/doc/html/rfc6298) for more details.
+See [Section 4.10. Round-Trip Time Estimation](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.10) of the [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) and [[RFC6298] Paxson, V., Allman, M., Chu, J., and M. Sargent, "Computing TCP's Retransmission Timer"](https://datatracker.ietf.org/doc/html/rfc6298) for more details.
 
 #### mbpsBandwidth
 
