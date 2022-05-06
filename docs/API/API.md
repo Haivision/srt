@@ -16,7 +16,7 @@ as examples of how data are read and written in SRT.
 - [Creating and Destroying a Socket](#creating-and-destroying-a-socket)
 - [Binding and Connecting](#binding-and-connecting)
 - [Sending and Receiving](#sending-and-receiving)
-- [Blocking and Non-blocking Modes](#blocking-and-non-blocking-mode)
+- [Blocking and Non-blocking Modes](#blocking-and-non-blocking-modes)
   - [EPoll (Non-blocking Mode Events)](#epoll-non-blocking-mode-events)
 - [Transmission Types](#transmission-types)
   - [Transmission Method: Live](#transmission-method-live)
