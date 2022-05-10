@@ -3236,6 +3236,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 
     s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
     s->m_GroupOf = gp;
+    m_HSGroupType = gtp;
 
     // Record the remote address in the group data.
 
