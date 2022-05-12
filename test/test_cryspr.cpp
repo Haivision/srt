@@ -574,6 +574,9 @@ void test_AESecb(
         ASSERT_NE(cryspr_m->aes_ecb_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+#if defined(CRYSPR2)
+            HCRYPT_CTX_MODE_AESECB,
+#endif
             bEncrypt,
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
@@ -729,6 +732,9 @@ void test_AESctr(
         ASSERT_NE(cryspr_m->aes_ctr_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+#if defined(CRYSPR2)
+            HCRYPT_CTX_MODE_AESCTR,
+#endif
             true,       //For CTR, Encrypt key is used for both encryption and decryption
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
