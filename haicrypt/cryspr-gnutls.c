@@ -24,6 +24,10 @@ written by
 typedef struct tag_crysprGnuTLS_AES_cb {
         CRYSPR_cb       ccb;        /* CRYSPR control block */
         /* Add other cryptolib specific data here */
+#ifdef CRYSPR2
+        CRYSPR_AESCTX   aes_kek_buf;		/* Key Encrypting Key (KEK) */
+        CRYSPR_AESCTX   aes_sek_buf[2];		/* even/odd Stream Encrypting Key (SEK) */
+#endif
 } crysprGnuTLS_cb;
 
 
@@ -33,11 +37,18 @@ int crysprGnuTLS_Prng(unsigned char *rn, int len)
 }
 
 int crysprGnuTLS_AES_SetKey(
+#ifdef CRYSPR2
+    int cipher_type,
+#endif
     bool bEncrypt,              /* true:encrypt key, false:decrypt key*/
     const unsigned char *kstr,  /* key string */
     size_t kstr_len,            /* kstr length in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
     CRYSPR_AESCTX *aes_key)     /* Cryptolib Specific AES key context */
 {
+#ifdef CRYSPR2
+    (void)cipher_type;
+#endif
+
     if (bEncrypt) {        /* Encrypt key */
         if (!(kstr_len == 16 || kstr_len == 24 || kstr_len == 32)) {
             HCRYPT_LOG(LOG_ERR, "%s", "AES_set_encrypt_key(kek) bad length\n");
@@ -114,6 +125,31 @@ int crysprGnuTLS_AES_CtrCipher( /* AES-CTR128 Encryption */
     return 0;
 }
 
+#ifdef CRYSPR2
+static CRYSPR_cb *crysprGnuTLS_Open(CRYSPR_methods *cryspr, size_t max_len)
+{
+    crysprGnuTLS_cb *aes_data;
+    CRYSPR_cb *cryspr_cb;
+
+    aes_data = (crysprGnuTLS_cb *)crysprHelper_Open(cryspr, sizeof(crysprGnuTLS_cb), max_len);
+    if (NULL == aes_data) {
+        HCRYPT_LOG(LOG_ERR, "crysprHelper_Open(%p, %zd, %zd) failed\n", cryspr, sizeof(crysprGnuTLS_cb), max_len);
+        return(NULL);
+    }
+
+    aes_data->ccb.aes_kek = &aes_data->aes_kek_buf; //key encrypting key
+    aes_data->ccb.aes_sek[0] = &aes_data->aes_sek_buf[0]; //stream encrypting key
+    aes_data->ccb.aes_sek[1] = &aes_data->aes_sek_buf[1]; //stream encrypting key
+
+    return(&aes_data->ccb);
+}
+
+static int crysprGnuTLS_Close(CRYSPR_cb *cryspr_cb)
+{
+    return(crysprHelper_Close(cryspr_cb));
+}
+#endif /* CRYSPR2 */
+
 #ifdef CRYSPR_HAS_PBKDF2
 /*
 * Password-based Key Derivation Function
@@ -157,8 +193,13 @@ CRYSPR_methods *crysprGnuTLS(void)
     #endif
 
     //--Crypto Session (Top API)
+    #ifdef CRYSPR2
+        crysprGnuTLS_methods.open     = crysprGnuTLS_Open;
+        crysprGnuTLS_methods.close    = crysprGnuTLS_Close;
+    #else /* CRYSPR2 */
     //  crysprGnuTLS_methods.open     =
     //  crysprGnuTLS_methods.close    =
+    #endif /* CRYSPR2 */
     //--Keying material (km) encryption
 #if CRYSPR_HAS_PBKDF2
     	crysprGnuTLS_methods.km_pbkdf2  = crysprGnuTLS_KmPbkdf2;

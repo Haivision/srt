@@ -21,10 +21,13 @@ written by
 
 #include <string.h>
 
-
 typedef struct tag_crysprOpenSSL_AES_cb {
-        CRYSPR_cb       ccb;
-        /* Add cryptolib specific data here */
+    CRYSPR_cb       ccb;
+    /* Add cryptolib specific data here */
+#ifdef CRYSPR2
+    CRYSPR_AESCTX   aes_kek_buf;		/* Key Encrypting Key (KEK) */
+    CRYSPR_AESCTX   aes_sek_buf[2];		/* even/odd Stream Encrypting Key (SEK) */
+#endif
 } crysprOpenSSL_cb;
 
 
@@ -34,11 +37,18 @@ int crysprOpenSSL_Prng(unsigned char *rn, int len)
 }
 
 int crysprOpenSSL_AES_SetKey(
+#ifdef CRYSPR2
+    int cipher_type,            /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR] */
+#endif
     bool bEncrypt,              /* true Enxcrypt key, false: decrypt */
     const unsigned char *kstr,  /* key sttring*/
     size_t kstr_len,            /* kstr len in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
     CRYSPR_AESCTX *aes_key)     /* CRYpto Service PRovider AES Key context */
 {
+#ifdef CRYSPR2
+    (void)cipher_type;
+#endif
+
     if (bEncrypt) {        /* Encrypt key */
         if (AES_set_encrypt_key(kstr, kstr_len * 8, aes_key)) {
             HCRYPT_LOG(LOG_ERR, "%s", "AES_set_encrypt_key(kek) failed\n");
@@ -123,7 +133,30 @@ int crysprOpenSSL_AES_CtrCipher(
 #endif
     return 0;
 }
+#ifdef CRYSPR2
+static CRYSPR_cb *crysprOpenSSL_Open(CRYSPR_methods *cryspr, size_t max_len)
+{
+    crysprOpenSSL_cb *aes_data;
+    CRYSPR_cb *cryspr_cb;
 
+    aes_data = (crysprOpenSSL_cb *)crysprHelper_Open(cryspr, sizeof(crysprOpenSSL_cb), max_len);
+    if (NULL == aes_data) {
+        HCRYPT_LOG(LOG_ERR, "crysprHelper_Open(%p, %zd, %zd) failed\n", cryspr, sizeof(crysprOpenSSL_cb), max_len);
+        return(NULL);
+    }
+
+    aes_data->ccb.aes_kek = &aes_data->aes_kek_buf; //key encrypting key
+    aes_data->ccb.aes_sek[0] = &aes_data->aes_sek_buf[0]; //stream encrypting key
+    aes_data->ccb.aes_sek[1] = &aes_data->aes_sek_buf[1]; //stream encrypting key
+
+    return(&aes_data->ccb);
+}
+
+static int crysprOpenSSL_Close(CRYSPR_cb *cryspr_cb)
+{
+    return(crysprHelper_Close(cryspr_cb));
+}
+#endif /* CRYSPR2 */
 /*
 * Password-based Key Derivation Function
 */
@@ -149,7 +182,11 @@ int crysprOpenSSL_KmWrap(CRYSPR_cb *cryspr_cb,
         unsigned int seklen)
 {
     crysprOpenSSL_cb *aes_data = (crysprOpenSSL_cb *)cryspr_cb;
+#ifdef CRYSPR2
+    AES_KEY *kek = aes_data->ccb.aes_kek; //key encrypting key
+#else
     AES_KEY *kek = &aes_data->ccb.aes_kek; //key encrypting key
+#endif
 
     return(((seklen + HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_wrap_key(kek, NULL, wrap, sek, seklen)) ? 0 : -1);
 }
@@ -161,7 +198,11 @@ int crysprOpenSSL_KmUnwrap(
         unsigned int wraplen)
 {
     crysprOpenSSL_cb *aes_data = (crysprOpenSSL_cb *)cryspr_cb;
+#ifdef CRYSPR2
+    AES_KEY *kek = aes_data->ccb.aes_kek; //key encrypting key
+#else
     AES_KEY *kek = &aes_data->ccb.aes_kek; //key encrypting key
+#endif
 
     return(((wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_unwrap_key(kek, NULL, sek, wrap, wraplen)) ? 0 : -1);
 }
@@ -192,8 +233,13 @@ CRYSPR_methods *crysprOpenSSL(void)
     #endif
 
     //--Crypto Session API-----------------------------------------
+#ifdef CRYSPR2
+        crysprOpenSSL_methods.open     = crysprOpenSSL_Open;
+        crysprOpenSSL_methods.close    = crysprOpenSSL_Close;
+#else
     //  crysprOpenSSL_methods.open     =
     //  crysprOpenSSL_methods.close    =
+#endif
     //--Keying material (km) encryption
 
 #if CRYSPR_HAS_PBKDF2
