@@ -1553,6 +1553,18 @@ port number after it has been autoselected.
 | [`SRT_ENOCONN`](#srt_enoconn)   | Socket [`u`](#u) isn't bound, so there's no local address to return <br/>(:warning: &nbsp; **BUG?** It should rather be [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock))        |
 | <img width=240px height=1px/>   | <img width=710px height=1px/>                      |
 
+Example
+
+```c++
+sockaddr_storage name;
+int namelen = sizeof sockaddr_storage;
+int res = srt_getsockname(m_listener_sock, (sockaddr*) &name, &namelen);
+// IPv4: namelen == sockaddr_in.
+// IPv6: namelen == sockaddr_in6.
+if (res < 0) {
+    std::cerr << "Error " << srt_getlasterror_str() << '\n';
+}
+```
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
