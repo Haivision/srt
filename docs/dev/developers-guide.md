@@ -5,6 +5,7 @@
   * [Forking SRT on GitHub](#forking-srt-on-github)
   * [Building SRT](#building-srt)
 * [Project Structure](#project-structure)
+* [Versioning](#versioning)
 * [Coding Rules](#coding-rules)
 * [Submitting an Issue](#submitting-an-issue)
 * [Submitting a Pull Request](#submitting-a-pull-request)
@@ -120,6 +121,31 @@ The SRT installation has the following folders:
 * *srtcore - the main source code of the SRT library.
 * *test - unit tests for the library.
 * *testing - the folder contains applications used during development: `srt-test-live`, `srt-test-file`, etc. Use `-DENABLE_TESTING=ON` to include in the build.
+
+## Versioning
+
+The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.  
+Due to legacy reasons SRT library version also defines SRT protocol version, announced in the dedicated field of the handshake packet (see the Handshake section of the [SRT Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-3.2.1).
+
+The patch version upgrade usually means improvements and/or bug fixes, that do not affect SRT [API/ABI compatibility](https://community.kde.org/Policies/Binary_Compatibility_Issues_With_C++) and do not significantly change the library behavior. Thus, an application can relatively safely update onto the next SRT patch release.
+
+Any minor version upgrade means SRT might be no longer **fully** compliant with the OLD API/ABI and/or old behavior or contains notable changes in the source code.
+A certain amount of care should be taken considering the upgrade to the new minor release. A proper testing should be done, and the review of changes listed in the release notes.
+
+By default the SRT library `SO`/`DYLIB` name is suffixed with `major.minor` version (starting from SRT v1.4.3):
+- `libsrt.so.1.4`-> `libsrt.so.1.4.3`.
+- `libsrt.so.1.4`-> `libsrt.so.1.4.4`
+- `libsrt.so.1.5`-> `libsrt.so.1.5.0`
+- ...
+
+This way upgrading the app with dynamic SRT linking to the latest patch release is quite easy, while upgrading to the new minor release must happen with awareness and thus might require rebuilding certain modules of the solution.
+
+All SRT versions prior to SRT v1.4.3 had a single `SO`/`DYLIB` name `libsrt.so.1`, while ABI incompatibility could be broken. Thus it was not safe to perform wide deployment of different SRT library versions with the same ABI version:
+- `libsrt.so.1`-> `libsrt.so.1.4.2`.
+- `libsrt.so.1`-> `libsrt.so.1.3.4`
+- `libsrt.so.1`-> `libsrt.so.1.3.0`
+- ...
+
 
 ## Coding Rules
 

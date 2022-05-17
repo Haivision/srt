@@ -146,7 +146,7 @@ class CCryptoControl;
 namespace srt {
 class CUDTUnited;
 class CUDTSocket;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 class CUDTGroup;
 #endif
 
@@ -190,11 +190,10 @@ public: //API
     static int startup();
     static int cleanup();
     static SRTSOCKET socket();
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    static int configureGroup(SRTSOCKET groupid, const char* str);
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
 #endif
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
@@ -204,7 +203,7 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
     static int close(SRTSOCKET u);
@@ -237,7 +236,7 @@ public: //API
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
@@ -510,7 +509,7 @@ private:
             CPacket& w_reqpkt, CHandShake& w_hs);
 
     SRT_ATR_NODISCARD size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
 #endif
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
@@ -526,7 +525,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
@@ -645,7 +644,7 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
@@ -752,7 +751,7 @@ private: // Identification
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
     int         m_iSndHsRetryCnt;                       // SRT handshake retries left
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // Group type about-to-be-set in the handshake
 #endif
 
@@ -1082,7 +1081,7 @@ private: // Generation and processing of packets
     /// @param seq first unacknowledged packet sequence number.
     void ackDataUpTo(int32_t seq);
 
-#if ENABLE_EXPERIMENTAL_BONDING && ENABLE_NEW_RCVBUFFER
+#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
     void dropToGroupRecvBase();

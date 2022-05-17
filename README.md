@@ -38,7 +38,7 @@ As audio/video packets are streamed from a source to a destination device, SRT d
 * [SRT Developer's Guide](docs/dev/developers-guide.md)
 * [Contributing](CONTRIBUTING.md)
 * [Reporting Issues](docs/dev/making-srt-better.md)
-* SRT RFC: [Latest IETF Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00), [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html), [GitHub Repo](https://github.com/Haivision/srt-rfc)
+* Internet Draft: [Latest Version](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01), [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html), [GitHub Repo](https://github.com/Haivision/srt-rfc)
 * SRT CookBook: [Website](https://srtlab.github.io/srt-cookbook), [GitHub Repo](https://github.com/SRTLab/srt-cookbook)
 * [SRT Protocol Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)
 * [Why SRT Was Created](docs/misc/why-srt-was-created.md)

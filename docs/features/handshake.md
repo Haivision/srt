@@ -3,7 +3,7 @@
 Published: 2018-06-28  
 Last updated: 2018-06-28
 
-**NOTE:** This document might be outdated, please consult [Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-3.2.1) and [Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) additionally.
+**NOTE:** This document might be outdated, please consult [Section 3.2.1 Handshake](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-3.2.1) and [Section 4.3 Handshake Messages](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00#section-4.3) of the [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) additionally.
 
 **Contents**
 

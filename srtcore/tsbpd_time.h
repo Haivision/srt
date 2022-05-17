@@ -20,7 +20,7 @@ namespace srt
 
 /// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic.
 /// Used by the receiver to calculate delivery time of data packets.
-/// See SRT RFC Section "Timestamp-Based Packet Delivery".
+/// See SRT Internet Draft Section "Timestamp-Based Packet Delivery".
 class CTsbpdTime
 {
     typedef srt::sync::steady_clock  steady_clock;

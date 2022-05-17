@@ -64,7 +64,7 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 #include "group.h"
 #endif
 
@@ -86,7 +86,7 @@ public:
         , m_SocketID(0)
         , m_ListenSocket(0)
         , m_PeerID(0)
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -105,7 +105,7 @@ public:
         , m_SocketID(0)
         , m_ListenSocket(0)
         , m_PeerID(0)
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -140,7 +140,7 @@ public:
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
     SRTSOCKET m_PeerID; //< peer socket ID
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
@@ -281,7 +281,7 @@ public:
     int       connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
     int       connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     int       connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
     int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
@@ -304,7 +304,7 @@ public:
     template <class EntityType>
     int epoll_remove_entity(const int eid, EntityType* ent);
     int epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     int epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
 #endif
     int     epoll_remove_ssock(const int eid, const SYSSOCKET s);
@@ -313,7 +313,7 @@ public:
     int32_t epoll_set(const int eid, int32_t flags);
     int     epoll_release(const int eid);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // [[using locked(m_GlobControlLock)]]
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
@@ -377,7 +377,7 @@ private:
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
     sockets_t                                m_Sockets;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
     groups_t                                m_Groups;
 #endif
@@ -402,7 +402,7 @@ private:
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTGroup* acquireSocketsGroup(CUDTSocket* s);
 
@@ -467,7 +467,7 @@ private:
     static void*  garbageCollect(void*);
 
     sockets_t m_ClosedSockets; // temporarily store closed sockets
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     groups_t m_ClosedGroups;
 #endif
 
