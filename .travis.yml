@@ -9,7 +9,7 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
-        - mbedtls-dev
+        - libmbedtls-dev
     sonarcloud:
         organization: "haivision"
         token:
