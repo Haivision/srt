@@ -5323,34 +5323,6 @@ void * srt::CUDT::tsbpd(void* param)
     return NULL;
 }
 
-void srt::CUDT::setInitialRcvSeq(int32_t isn)
-{
-    m_iRcvLastAck = isn;
-#ifdef ENABLE_LOGGING
-    m_iDebugPrevLastAck = m_iRcvLastAck;
-#endif
-    m_iRcvLastSkipAck = m_iRcvLastAck;
-    m_iRcvLastAckAck = isn;
-    m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
-
-#if ENABLE_NEW_RCVBUFFER
-    sync::ScopedLock rb(m_RcvBufferLock);
-    if (m_pRcvBuffer)
-    {
-        if (!m_pRcvBuffer->empty())
-        {
-            LOGC(cnlog.Error, log << "IPE: setInitialRcvSeq expected empty RCV buffer. Dropping all.");
-            const int iDropCnt = m_pRcvBuffer->dropAll();
-            const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-            sync::ScopedLock sl(m_StatsLock);
-            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
-        }
-
-        m_pRcvBuffer->setStartSeqNo(m_iRcvLastSkipAck);
-    }
-#endif
-}
-
 int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 {
     // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
@@ -5597,6 +5569,34 @@ void * srt::CUDT::tsbpd(void *param)
     return NULL;
 }
 #endif // ENABLE_NEW_RCVBUFFER
+
+void srt::CUDT::setInitialRcvSeq(int32_t isn)
+{
+    m_iRcvLastAck = isn;
+#ifdef ENABLE_LOGGING
+    m_iDebugPrevLastAck = m_iRcvLastAck;
+#endif
+    m_iRcvLastSkipAck = m_iRcvLastAck;
+    m_iRcvLastAckAck = isn;
+    m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
+
+#if ENABLE_NEW_RCVBUFFER
+    sync::ScopedLock rb(m_RcvBufferLock);
+    if (m_pRcvBuffer)
+    {
+        if (!m_pRcvBuffer->empty())
+        {
+            LOGC(cnlog.Error, log << "IPE: setInitialRcvSeq expected empty RCV buffer. Dropping all.");
+            const int iDropCnt = m_pRcvBuffer->dropAll();
+            const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+            sync::ScopedLock sl(m_StatsLock);
+            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+        }
+
+        m_pRcvBuffer->setStartSeqNo(m_iRcvLastSkipAck);
+    }
+#endif
+}
 
 void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
 {
