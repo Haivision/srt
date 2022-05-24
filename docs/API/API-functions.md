@@ -406,7 +406,7 @@ int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock);
 
 A version of [`srt_bind`](#srt_bind) that acquires a given UDP socket instead of creating one.
 
-The UDP socket being acquired MUST be a not [connected socket](https://man7.org/linux/man-pages/man2/connect.2.html)
+The UDP socket being acquired MUST NOT be a [connected socket](https://man7.org/linux/man-pages/man2/connect.2.html)
 (not associated with the socket name of a peer),
 because SRT needs to be able to set the destination address by itself.  
 See [#2178](https://github.com/Haivision/srt/issues/2178) for more information.
