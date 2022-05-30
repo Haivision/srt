@@ -73,6 +73,9 @@ written by
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
 
+namespace srt
+{
+
 struct CSrtMuxerConfig
 {
     static const int DEF_UDP_BUFFER_SIZE = 65536;
@@ -308,37 +311,6 @@ struct CSrtConfig: CSrtMuxerConfig
     int set(SRT_SOCKOPT optName, const void* val, int size);
 };
 
-
-#if ENABLE_EXPERIMENTAL_BONDING
-
-struct SRT_SocketOptionObject
-{
-    struct SingleOption
-    {
-        uint16_t      option;
-        uint16_t      length;
-        unsigned char storage[1]; // NOTE: Variable length object!
-    };
-
-
-    std::vector<SingleOption*> options;
-
-    SRT_SocketOptionObject() {}
-
-    ~SRT_SocketOptionObject()
-    {
-        for (size_t i = 0; i < options.size(); ++i)
-        {
-            // Convert back
-            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
-            delete[] mem;
-        }
-    }
-
-    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
-};
-#endif
-
 template <typename T>
 inline T cast_optval(const void* optval)
 {
@@ -373,5 +345,33 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+} // namespace srt
+
+struct SRT_SocketOptionObject
+{
+    struct SingleOption
+    {
+        uint16_t      option;
+        uint16_t      length;
+        unsigned char storage[1]; // NOTE: Variable length object!
+    };
+
+    std::vector<SingleOption*> options;
+
+    SRT_SocketOptionObject() {}
+
+    ~SRT_SocketOptionObject()
+    {
+        for (size_t i = 0; i < options.size(); ++i)
+        {
+            // Convert back
+            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
+            delete[] mem;
+        }
+    }
+
+    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
+};
 
 #endif

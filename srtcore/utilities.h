@@ -35,7 +35,6 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
-#include <iomanip>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -419,8 +418,7 @@ class FixedArray
 {
 public:
     FixedArray(size_t size)
-        : m_strIndexErr("FixedArray: invalid index")
-        , m_size(size)
+        : m_size(size)
         , m_entries(new T[size])
     {
     }
@@ -434,7 +432,7 @@ public:
     const T& operator[](size_t index) const
     {
         if (index >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -442,7 +440,7 @@ public:
     T& operator[](size_t index)
     {
         if (index >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -450,7 +448,7 @@ public:
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
@@ -458,19 +456,36 @@ public:
     T& operator[](int index)
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw std::runtime_error(m_strIndexErr);
+            raise_expection(index);
 
         return m_entries[index];
     }
 
-    size_t  size() const { return m_size; }
+    size_t size() const { return m_size; }
+
+    typedef T* iterator;
+    typedef const T* const_iterator;
+
+    iterator begin() { return m_entries; }
+    iterator end() { return m_entries + m_size; }
+
+    const_iterator cbegin() const { return m_entries; }
+    const_iterator cend() const { return m_entries + m_size; }
+
+    T* data() { return m_entries; }
 
 private:
     FixedArray(const FixedArray<T>& );
     FixedArray<T>& operator=(const FixedArray<T>&);
 
+    void raise_expection(int i) const
+    {
+        std::stringstream ss;
+        ss << "Index " << i << "out of range";
+        throw std::runtime_error(ss.str());
+    }
+
 private:
-    const char* m_strIndexErr;
     size_t      m_size;
     T* const    m_entries;
 };

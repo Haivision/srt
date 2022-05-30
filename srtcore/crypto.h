@@ -40,8 +40,7 @@ extern Logger cnlog;
 
 namespace srt
 {
-    class CUDT;
-}
+class CUDT;
 
 
 // For KMREQ/KMRSP. Only one field is used.
@@ -54,11 +53,11 @@ enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
 
 class CCryptoControl
 {
-    srt::CUDT*  m_parent;
-    SRTSOCKET   m_SocketID;
+    CUDT*     m_parent;
+    SRTSOCKET m_SocketID;
 
-    size_t      m_iSndKmKeyLen;        //Key length
-    size_t      m_iRcvKmKeyLen;        //Key length from rx KM
+    size_t    m_iSndKmKeyLen;        //Key length
+    size_t    m_iRcvKmKeyLen;        //Key length from rx KM
 
     // Temporarily allow these to be accessed.
 public:
@@ -73,7 +72,7 @@ private:
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
-    srt::sync::steady_clock::time_point     m_SndKmLastTime;
+    sync::steady_clock::time_point m_SndKmLastTime;
     struct {
         unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
         size_t MsgLen;
@@ -166,7 +165,7 @@ public:
         using srt_logging::cnlog;
 #endif
 
-        m_SndKmLastTime = srt::sync::steady_clock::now();
+        m_SndKmLastTime = sync::steady_clock::now();
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;
@@ -196,7 +195,7 @@ public:
         return false;
     }
 
-    CCryptoControl(srt::CUDT* parent, SRTSOCKET id);
+    CCryptoControl(CUDT* parent, SRTSOCKET id);
 
     // DEBUG PURPOSES:
     std::string CONID() const;
@@ -258,16 +257,18 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(srt::CPacket& w_packet);
+    EncryptionStatus encrypt(CPacket& w_packet);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts
     /// only if the encryption correctly configured, otherwise it
     /// fails. After successful decryption, the ENCKEYSPEC part
     // in PH_MSGNO is set to EK_NOENC.
-    EncryptionStatus decrypt(srt::CPacket& w_packet);
+    EncryptionStatus decrypt(CPacket& w_packet);
 
     ~CCryptoControl();
 };
+
+} // namespace srt
 
 #endif // SRT_CONGESTION_CONTROL_H

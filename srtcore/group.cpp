@@ -85,7 +85,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
 
             // SndCurrSeqNo is initially set to ISN-1, this next one is
             // the sequence that is about to be stamped on the next sent packet
-            // over that socket. Using this field is safer because it is volatile
+            // over that socket. Using this field is safer because it is atomic
             // and its affinity is to the same thread as the sending function.
 
             // NOTE: the groupwise scheduling sequence might have been set
@@ -118,7 +118,7 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
 
             HLOGC(gmlog.Debug,
                   log << "applyGroupSequences: @" << target << " gets seq from @" << gi->id << " rcv %" << (w_rcv_isn)
-                      << " snd %" << (w_rcv_isn) << " as " << update_reason);
+                      << " snd %" << (w_snd_isn) << " as " << update_reason);
             return false;
         }
     }
@@ -251,7 +251,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
-    , m_selfManaged(true)
     , m_bSyncOnMsgNo(false)
     , m_type(gtype)
     , m_listener()
@@ -290,30 +289,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     // Set this data immediately during creation before
     // two or more sockets start arguing about it.
     m_iLastSchedSeqNo = CUDT::generateISN();
-
-    // Configure according to type
-    switch (gtype)
-    {
-    case SRT_GTYPE_BROADCAST:
-        m_selfManaged = true;
-        break;
-
-    case SRT_GTYPE_BACKUP:
-        m_selfManaged = true;
-        break;
-
-    case SRT_GTYPE_BALANCING:
-        m_selfManaged  = true;
-        m_bSyncOnMsgNo = true;
-        break;
-
-    case SRT_GTYPE_MULTICAST:
-        m_selfManaged = false;
-        break;
-
-    default:
-        break;
-    }
 }
 
 CUDTGroup::~CUDTGroup()
@@ -599,38 +574,15 @@ void CUDTGroup::deriveSettings(CUDT* u)
 #undef IMF
 }
 
-bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide hsd)
+bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 {
-    bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
-
-    if (m_type == SRT_GTYPE_BALANCING)
+    const bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
+    if (synconmsg)
     {
-        // We support only TRUE for this flag
-        if (!synconmsg)
-        {
-            HLOGP(gmlog.Debug, "GROUP: Balancing mode implemented only with sync on msgno - overridden request");
-            return true; // accept, but override
-        }
-
-        // We have this flag set; change it in yourself, if needed.
-        if (hsd == HSD_INITIATOR && !m_bSyncOnMsgNo)
-        {
-            // With this you can change in future the default value to false.
-            HLOGP(gmlog.Debug, "GROUP: Balancing requrested msgno-sync, OVERRIDING original setting");
-            m_bSyncOnMsgNo = true;
-            return true;
-        }
-    }
-    else
-    {
-        if (synconmsg)
-        {
-            LOGP(gmlog.Error, "GROUP: non-balancing type requested sync on msgno - IPE/EPE?");
-            return false;
-        }
+        LOGP(gmlog.Error, "GROUP: requested sync on msgno - not supported.");
+        return false;
     }
 
-    // Ignore the flag anyway. This can change in future versions though.
     return true;
 }
 
@@ -937,16 +889,6 @@ void CUDTGroup::close()
         ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
-        // A non-managed group may only be closed if there are no
-        // sockets in the group.
-
-        // XXX Fortunately there are currently no non-self-managed
-        // groups, so this error cannot ever happen, but this error
-        // has the overall code suggesting that it's about the listener,
-        // so either the name should be changed here, or a different code used.
-        if (!m_selfManaged && !m_Group.empty())
-            throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-
         m_bClosing = true;
 
         // Copy the list of IDs into the array.
@@ -1108,7 +1050,8 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     vector<gli_t> idleLinks;
     vector<SRTSOCKET> pendingSockets; // need sock ids as it will be checked out of lock
 
-    int32_t curseq = SRT_SEQNO_NONE;
+    int32_t curseq = SRT_SEQNO_NONE;  // The seqno of the first packet of this message.
+    int32_t nextseq = SRT_SEQNO_NONE;  // The seqno of the first packet of next message.
 
     int rstat = -1;
 
@@ -1247,6 +1190,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         if (stat != -1)
         {
             curseq = w_mc.pktseq;
+            nextseq = d->ps->core().schedSeqNo();
         }
 
         const Sendstate cstate = {d->id, &*d, stat, erc};
@@ -1340,6 +1284,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // Note: this will override the sequence number
             // for all next iterations in this loop.
             curseq = w_mc.pktseq;
+            nextseq = d->ps->core().schedSeqNo();
             HLOGC(gslog.Debug,
                     log << "@" << d->id << ":... sending SUCCESSFUL %" << curseq << " MEMBER STATUS: RUNNING");
         }
@@ -1351,10 +1296,11 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         sendstates.push_back(cstate);
     }
 
-    if (curseq != SRT_SEQNO_NONE)
+    if (nextseq != SRT_SEQNO_NONE)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: updating current scheduling sequence %" << curseq);
-        m_iLastSchedSeqNo = curseq;
+        HLOGC(gslog.Debug,
+              log << "grp/sendBroadcast: $" << id() << ": updating current scheduling sequence %" << nextseq);
+        m_iLastSchedSeqNo = nextseq;
     }
 
     // }
@@ -3525,8 +3471,8 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
         return 0;
     }
 
-    const unsigned num_stable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_FRESH);
-    const unsigned num_fresh  = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_STABLE);
+    const unsigned num_stable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_STABLE);
+    const unsigned num_fresh  = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_FRESH);
 
     if (num_stable + num_fresh == 0)
     {
@@ -3571,6 +3517,10 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
 
         try
         {
+            CUDT& cudt = d->ps->core();
+            // Take source rate estimation from an active member (needed for the input rate estimation mode).
+            cudt.setRateEstimator(w_sendBackupCtx.getRateEstimate());
+
             // TODO: At this point all packets that could be sent
             // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
             if (w_curseq == SRT_SEQNO_NONE)
@@ -3582,7 +3532,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
                 HLOGC(gslog.Debug,
                     log << "grp/sendBackup: ... trying @" << d->id << " - sending the VERY FIRST message");
 
-                stat = d->ps->core().sendmsg2(buf, len, (w_mc));
+                stat = cudt.sendmsg2(buf, len, (w_mc));
                 if (stat != -1)
                 {
                     // This will be no longer used, but let it stay here.
@@ -3599,7 +3549,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
                     << " collected messages...");
                 // Note: this will set the currently required packet
                 // because it has been just freshly added to the sender buffer
-                stat = sendBackupRexmit(d->ps->core(), (w_mc));
+                stat = sendBackupRexmit(cudt, (w_mc));
             }
             ++num_activated;
         }
@@ -4384,6 +4334,9 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         {
             ++w_nsuccessful;
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
+
+            if (u.m_pSndBuffer)
+                w_sendBackupCtx.setRateEstimate(u.m_pSndBuffer->getRateEstimator());
         }
         else if (erc == SRT_EASYNCSND)
         {
@@ -4575,47 +4528,6 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
-
-int CUDTGroup::configure(const char* str)
-{
-    string config = str;
-    switch (type())
-    {
-        /* TMP review stub case SRT_GTYPE_BALANCING:
-            // config contains the algorithm name
-            if (config == "" || config == "auto")
-            {
-                m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
-                HLOGC(gmlog.Debug, log << "group(balancing): WINDOW algorithm selected");
-            }
-            else if (config == "fixed")
-            {
-                m_cbSelectLink.set(this, &CUDTGroup::linkSelect_fixed_fw);
-                HLOGC(gmlog.Debug, log << "group(balancing): FIXED algorithm selected");
-            }
-            else
-            {
-                LOGC(gmlog.Error, log << "group(balancing): unknown selection algorithm '"
-                        << config << "'");
-                return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            break;*/
-    case SRT_GTYPE_BROADCAST:
-    case SRT_GTYPE_BACKUP:
-    default:
-        if (config == "")
-        {
-            // You can always call the config with empty string,
-            // it should set defaults or do nothing, if not supported.
-            return 0;
-        }
-        LOGC(gmlog.Error, log << "this group type doesn't support any configuration");
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return 0;
-}
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()

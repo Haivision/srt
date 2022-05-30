@@ -94,14 +94,14 @@ void srt::sync::Condition::notify_all()
 
 // Threal local error will be used by CUDTUnited
 // with a static scope, therefore static thread_local
-static thread_local CUDTException s_thErr;
+static thread_local srt::CUDTException s_thErr;
 
-void srt::sync::SetThreadLocalError(const CUDTException& e)
+void srt::sync::SetThreadLocalError(const srt::CUDTException& e)
 {
     s_thErr = e;
 }
 
-CUDTException& srt::sync::GetThreadLocalError()
+srt::CUDTException& srt::sync::GetThreadLocalError()
 {
     return s_thErr;
 }

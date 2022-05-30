@@ -161,7 +161,7 @@ This error indicates that there was not enough free space in the sender's buffer
 
 #### Unstable due to sender-side packet drops
 
-If a member has dropped a packet (see SRT RFC [Too-Late Packet Drop](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.6) section) **since the previous submission of a data packet** for sending (previous call to `srt_sendmsg2(..)`), it transitions to the **q3** (**SRT_GST_RUNNING**: **Unstable**) state.
+If a member has dropped a packet (see [Too-Late Packet Drop](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.6) section of the Internet Draft) **since the previous submission of a data packet** for sending (previous call to `srt_sendmsg2(..)`), it transitions to the **q3** (**SRT_GST_RUNNING**: **Unstable**) state.
 
 #### Unstable due to receiver-side packet drops (TBD)
 

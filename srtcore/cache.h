@@ -48,6 +48,9 @@ written by
 #include "netinet_any.h"
 #include "udt.h"
 
+namespace srt
+{
+
 class CCacheItem
 {
 public:
@@ -265,5 +268,6 @@ public:
    static void convert(const sockaddr_any& addr, uint32_t ip[4]);
 };
 
+} // namespace srt
 
 #endif

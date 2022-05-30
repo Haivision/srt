@@ -93,6 +93,17 @@ modified by
 
 #include <exception>
 
+namespace srt_logging
+{
+    std::string SockStatusStr(SRT_SOCKSTATUS s);
+#if ENABLE_BONDING
+    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+#endif
+}
+
+namespace srt
+{
+
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
 // however there's no such API so far. The current C++ API for UDT/SRT
@@ -290,6 +301,7 @@ enum ETransmissionEvent
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
+    TEV_SYNC,       // --> Backup group. When rate estimation is derived from an active member, and update is needed.
 
     TEV_E_SIZE
 };
@@ -311,9 +323,7 @@ enum EInitEvent
     TEV_INIT_OHEADBW
 };
 
-namespace srt {
-    class CPacket;
-}
+class CPacket;
 
 // XXX Use some more standard less hand-crafted solution, if possible
 // XXX Consider creating a mapping between TEV_* values and associated types,
@@ -1374,14 +1384,6 @@ public:
     }
 };
 
-namespace srt_logging
-{
-std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_EXPERIMENTAL_BONDING
-std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
-}
-
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 {
@@ -1412,6 +1414,8 @@ inline std::string SrtVersionString(int version)
     return buf;
 }
 
-bool SrtParseConfig(std::string s, srt::SrtConfig& w_config);
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
+
+} // namespace srt
 
 #endif

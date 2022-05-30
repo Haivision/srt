@@ -157,8 +157,8 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    typedef int SYSSOCKET;
 #endif
 
-#ifndef ENABLE_EXPERIMENTAL_BONDING
-#define ENABLE_EXPERIMENTAL_BONDING 0
+#ifndef ENABLE_BONDING
+#define ENABLE_BONDING 0
 #endif
 
 typedef SYSSOCKET UDPSOCKET;
@@ -237,11 +237,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-#if ENABLE_EXPERIMENTAL_BONDING
-   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection
-   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds
-   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake
-#endif
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (ENABLE_BONDING)
+   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
+   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61,  // An option to select packet retransmission algorithm
 
@@ -759,77 +757,6 @@ SRT_API       int srt_cleanup(void);
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API       SRTSOCKET srt_create_socket(void);
 
-// Group management
-
-// Stubs when off
-
-typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
-
-#if ENABLE_EXPERIMENTAL_BONDING
-
-typedef enum SRT_GROUP_TYPE
-{
-    SRT_GTYPE_UNDEFINED,
-    SRT_GTYPE_BROADCAST,
-    SRT_GTYPE_BACKUP,
-    SRT_GTYPE_BALANCING,
-    SRT_GTYPE_MULTICAST,
-    // ...
-    SRT_GTYPE_E_END
-} SRT_GROUP_TYPE;
-
-// Free-form flags for groups
-// Flags may be type-specific!
-static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
-
-typedef enum SRT_MemberStatus
-{
-    SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
-    SRT_GST_IDLE,     // The socket is ready to be activated
-    SRT_GST_RUNNING,  // The socket was already activated and is in use
-    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
-} SRT_MEMBERSTATUS;
-
-struct SRT_SocketGroupData_
-{
-    SRTSOCKET id;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    SRT_SOCKSTATUS sockstate;
-    uint16_t weight;
-    SRT_MEMBERSTATUS memberstate;
-    int result;
-    int token;
-};
-
-typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
-
-typedef struct SRT_GroupMemberConfig_
-{
-    SRTSOCKET id;
-    struct sockaddr_storage srcaddr;
-    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
-    uint16_t weight;
-    SRT_SOCKOPT_CONFIG* config;
-    int errorcode;
-    int token;
-} SRT_SOCKGROUPCONFIG;
-
-SRT_API SRTSOCKET srt_create_group (SRT_GROUP_TYPE);
-SRT_API       int srt_include      (SRTSOCKET socket, SRTSOCKET group);
-SRT_API       int srt_exclude      (SRTSOCKET socket);
-SRT_API SRTSOCKET srt_groupof      (SRTSOCKET socket);
-SRT_API       int srt_group_data   (SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
-SRT_API       int srt_group_configure(SRTSOCKET socketgroup, const char* str);
-
-SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
-SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
-SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
-
-SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
-SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name [], int arraysize);
-
-#endif // ENABLE_EXPERIMENTAL_BONDING
-
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
 SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
@@ -857,6 +784,8 @@ SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+
+typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 
 typedef struct SRT_MsgCtrl_
 {
@@ -984,7 +913,9 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
-SRT_API extern const char* const srt_rejectreason_msg [];
+// The srt_rejectreason_msg[] array is deprecated (as unsafe).
+// Planned removal: v1.6.0.
+SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
 SRT_API const char* srt_rejectreason_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
@@ -1004,6 +935,64 @@ SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 #define SRT_SYNC_CLOCK_IA64_ITC           7
 
 SRT_API int srt_clock_type(void);
+
+// SRT Socket Groups API (ENABLE_BONDING)
+
+typedef enum SRT_GROUP_TYPE
+{
+    SRT_GTYPE_UNDEFINED,
+    SRT_GTYPE_BROADCAST,
+    SRT_GTYPE_BACKUP,
+    // ...
+    SRT_GTYPE_E_END
+} SRT_GROUP_TYPE;
+
+// Free-form flags for groups
+// Flags may be type-specific!
+static const uint32_t SRT_GFLAG_SYNCONMSG = 1;
+
+typedef enum SRT_MemberStatus
+{
+    SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
+    SRT_GST_IDLE,     // The socket is ready to be activated
+    SRT_GST_RUNNING,  // The socket was already activated and is in use
+    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
+} SRT_MEMBERSTATUS;
+
+struct SRT_SocketGroupData_
+{
+    SRTSOCKET id;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    SRT_SOCKSTATUS sockstate;
+    uint16_t weight;
+    SRT_MEMBERSTATUS memberstate;
+    int result;
+    int token;
+};
+
+typedef struct SRT_SocketOptionObject SRT_SOCKOPT_CONFIG;
+
+typedef struct SRT_GroupMemberConfig_
+{
+    SRTSOCKET id;
+    struct sockaddr_storage srcaddr;
+    struct sockaddr_storage peeraddr; // Don't want to expose sockaddr_any to public API
+    uint16_t weight;
+    SRT_SOCKOPT_CONFIG* config;
+    int errorcode;
+    int token;
+} SRT_SOCKGROUPCONFIG;
+
+SRT_API SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
+SRT_API SRTSOCKET srt_groupof(SRTSOCKET socket);
+SRT_API       int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+
+SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
+SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
+SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
+
+SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
+SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
 #ifdef __cplusplus
 }

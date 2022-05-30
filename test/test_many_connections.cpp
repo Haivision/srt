@@ -22,6 +22,7 @@ typedef int SOCKET;
 #include "api.h"
 
 using namespace std;
+using srt::sockaddr_any;
 
 
 class TestConnection

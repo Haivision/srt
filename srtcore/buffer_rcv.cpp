@@ -18,7 +18,7 @@ namespace srt {
 namespace {
     struct ScopedLog
     {
-        ScopedLog() {};
+        ScopedLog() {}
 
         ~ScopedLog()
         {
@@ -92,14 +92,14 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
 
 CRcvBufferNew::~CRcvBufferNew()
 {
-    for (size_t i = 0; i < m_szSize; ++i)
+    // Can be optimized by only iterating m_iMaxPosInc from m_iStartPos.
+    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
     {
-        CUnit* unit = m_entries[i].pUnit;
-        if (unit != NULL)
-        {
-            m_pUnitQueue->makeUnitFree(unit);
-            m_entries[i].pUnit = NULL;
-        }
+        if (!it->pUnit)
+            continue;
+        
+        m_pUnitQueue->makeUnitFree(it->pUnit);
+        it->pUnit = NULL;
     }
 }
 
@@ -198,6 +198,15 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableOutOfOrder();
     return iDropCnt;
+}
+
+int CRcvBufferNew::dropAll()
+{
+    if (empty())
+        return 0;
+
+    const int end_seqno = CSeqNo::incseq(m_iStartSeqNo, m_iMaxPosInc);
+    return dropUpTo(end_seqno);
 }
 
 int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
@@ -391,7 +400,7 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         // incase readable inorder packets are all read out.
         updateFirstReadableOutOfOrder();
 
-    const int bytes_read = dst - data;
+    const int bytes_read = int(dst - data);
     if (bytes_read < bytes_extracted)
     {
         LOGC(rbuflog.Error, log << "readMessage: small dst buffer, copied only " << bytes_read << "/" << bytes_extracted << " bytes.");
@@ -526,7 +535,7 @@ int CRcvBufferNew::getRcvDataSize() const
     if (m_iFirstNonreadPos >= m_iStartPos)
         return m_iFirstNonreadPos - m_iStartPos;
 
-    return m_szSize + m_iFirstNonreadPos - m_iStartPos;
+    return int(m_szSize + m_iFirstNonreadPos - m_iStartPos);
 }
 
 int CRcvBufferNew::getTimespan_ms() const
@@ -564,7 +573,7 @@ int CRcvBufferNew::getTimespan_ms() const
 
     // One millisecond is added as a duration of a packet in the buffer.
     // If there is only one packet in the buffer, one millisecond is returned.
-    return count_milliseconds(endstamp - startstamp) + 1;
+    return static_cast<int>(count_milliseconds(endstamp - startstamp) + 1);
 }
 
 int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
@@ -595,7 +604,7 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
 
 std::pair<int, int> CRcvBufferNew::getAvailablePacketsRange() const
 {
-    const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, countReadable());
+    const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, (int) countReadable());
     return std::pair<int, int>(m_iStartSeqNo, seqno_last);
 }
 
@@ -843,7 +852,7 @@ void CRcvBufferNew::updateFirstReadableOutOfOrder()
         return;
 
     // TODO: unused variable outOfOrderPktsRemain?
-    int outOfOrderPktsRemain = m_numOutOfOrderPackets;
+    int outOfOrderPktsRemain = (int) m_numOutOfOrderPackets;
 
     // Search further packets to the right.
     // First check if there are packets to the right.
@@ -1002,30 +1011,26 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
     ss << " pkts. ";
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
-        ss << " (TSBPD ready in ";
-        if (m_entries[m_iStartPos].pUnit)
+        const PacketInfo nextValidPkt = getFirstValidPacketInfo();
+        ss << "(TSBPD ready in ";
+        if (!is_zero(nextValidPkt.tsbpd_time))
         {
-            const uint32_t usPktTimestamp = m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp();
-            ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - tsNow);
+            ss << count_milliseconds(nextValidPkt.tsbpd_time - tsNow) << "ms";
+            const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc - 1);
+            if (m_entries[iLastPos].pUnit)
+            {
+                ss << ", timespan ";
+                const uint32_t usPktTimestamp = m_entries[iLastPos].pUnit->m_Packet.getMsgTimeStamp();
+                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << " ms";
+            }
         }
         else
         {
             ss << "n/a";
         }
 
-        const int iLastPos = incPos(m_iStartPos, m_iMaxPosInc - 1);
-        if (m_entries[iLastPos].pUnit)
-        {
-            ss << ":";
-            const uint32_t usPktTimestamp = m_entries[m_iStartPos].pUnit->m_Packet.getMsgTimeStamp();
-            ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - tsNow);
-            ss << " ms";
-        }
-        else
-        {
-            ss << ":n/a ms";
-        }
-        ss << ". ";
+        ss << "). ";
     }
 
     ss << SRT_SYNC_CLOCK_STR " drift " << getDrift() / 1000 << " ms.";

@@ -4,6 +4,8 @@
 #include "srt.h"
 #include "netinet_any.h"
 
+using srt::sockaddr_any;
+
 class TestIPv6
     : public ::testing::Test
 {

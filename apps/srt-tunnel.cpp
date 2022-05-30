@@ -59,6 +59,7 @@ testmedia.cpp
 */
 
 using namespace std;
+using namespace srt;
 
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
 namespace srt_logging
@@ -286,7 +287,7 @@ class Tunnel
     Tunnelbox* parent_box;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
-    volatile bool running = true;
+    srt::sync::atomic<bool> running{true};
     std::mutex access;
 
 public:

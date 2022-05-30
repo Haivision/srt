@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.4.4)
+set (SRT_VERSION 1.5.0)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -129,7 +129,7 @@ else()
 	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
-option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -674,8 +674,16 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+# ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+	message(DEPRECATION "ENABLE_EXPERIMENTAL_BONDING is deprecated. Please use ENABLE_BONDING instead.")
+endif()
+
+if (ENABLE_BONDING OR ENABLE_EXPERIMENTAL_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
+	message(STATUS "ENABLE_BONDING: ON")
+else()
+	message(STATUS "ENABLE_BONDING: OFF")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -1222,7 +1230,7 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		if (ENABLE_EXPERIMENTAL_BONDING)
+		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
 		endif()
@@ -1242,36 +1250,28 @@ if (ENABLE_EXAMPLES)
 	macro(srt_add_example mainsrc)
 		get_filename_component(name ${mainsrc} NAME_WE)
 		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+		target_link_libraries(${name} ${srt_link_library} ${DEPENDS_srt})
 	endmacro()
 
-	srt_add_example(sendfile.cpp)
-	srt_make_application(sendfile)
-
-	srt_add_example(recvfile.cpp)
-	srt_make_application(recvfile)
-
 	srt_add_example(recvlive.cpp)
-	srt_make_application(recvlive)
+
+	srt_add_example(sendfile.cpp)
+		
+	srt_add_example(recvfile.cpp)
 
 	srt_add_example(test-c-client.c)
-	srt_make_application(test-c-client)
 
 	srt_add_example(example-client-nonblock.c)
-	srt_make_application(example-client-nonblock)
 
 	srt_add_example(test-c-server.c)
-	srt_make_application(test-c-server)
 
-if (ENABLE_EXPERIMENTAL_BONDING)
+if (ENABLE_BONDING)
 	srt_add_example(test-c-client-bonding.c)
-	srt_make_application(test-c-client-bonding)
 
 	srt_add_example(test-c-server-bonding.c)
-	srt_make_application(test-c-server-bonding)
 endif()
 
 	srt_add_example(testcapi-connect.c)
-	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 endif()
 
 

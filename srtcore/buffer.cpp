@@ -110,6 +110,58 @@ int round_val(double val)
     return static_cast<int>(round(val));
 }
 
+CRateEstimator::CRateEstimator()
+    : m_iInRatePktsCount(0)
+    , m_iInRateBytesCount(0)
+    , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
+    , m_iInRateBps(INPUTRATE_INITIAL_BYTESPS)
+{}
+
+void CRateEstimator::setInputRateSmpPeriod(int period)
+{
+    m_InRatePeriod = (uint64_t)period; //(usec) 0=no input rate calculation
+}
+
+void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes)
+{
+    // no input rate calculation
+    if (m_InRatePeriod == 0)
+        return;
+
+    if (is_zero(m_tsInRateStartTime))
+    {
+        m_tsInRateStartTime = time;
+        return;
+    }
+    else if (time < m_tsInRateStartTime)
+    {
+        // Old packets are being submitted for estimation, e.g. during the backup link activation.
+        return;
+    }
+
+    m_iInRatePktsCount  += pkts;
+    m_iInRateBytesCount += bytes;
+
+    // Trigger early update in fast start mode
+    const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
+
+    const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
+    if (early_update || period_us > m_InRatePeriod)
+    {
+        // Required Byte/sec rate (payload + headers)
+        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
+        m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
+        HLOGC(bslog.Debug,
+              log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
+                  << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
+        m_iInRatePktsCount  = 0;
+        m_iInRateBytesCount = 0;
+        m_tsInRateStartTime = time;
+
+        setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
+    }
+}
+
 CSndBuffer::CSndBuffer(int size, int mss)
     : m_BufLock()
     , m_pBlock(NULL)
@@ -122,10 +174,6 @@ CSndBuffer::CSndBuffer(int size, int mss)
     , m_iMSS(mss)
     , m_iCount(0)
     , m_iBytesCount(0)
-    , m_iInRatePktsCount(0)
-    , m_iInRateBytesCount(0)
-    , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
-    , m_iInRateBps(INPUTRATE_INITIAL_BYTESPS)
 {
     // initial physical buffer of "size"
     m_pBuffer           = new Buffer;
@@ -273,7 +321,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     m_iCount += size;
     m_iBytesCount += len;
 
-    updateInputRate(m_tsLastOriginTime, size, len);
+    m_rateEstimator.updateInputRate(m_tsLastOriginTime, size, len);
     updAvgBufSize(m_tsLastOriginTime);
 
     // MSGNO_SEQ::mask has a form: 00000011111111...
@@ -285,46 +333,6 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int nextmsgno = ++MsgNo(m_iNextMsgNo);
     HLOGC(bslog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
     m_iNextMsgNo = nextmsgno;
-}
-
-void CSndBuffer::setInputRateSmpPeriod(int period)
-{
-    m_InRatePeriod = (uint64_t)period; //(usec) 0=no input rate calculation
-}
-
-void CSndBuffer::updateInputRate(const steady_clock::time_point& time, int pkts, int bytes)
-{
-    // no input rate calculation
-    if (m_InRatePeriod == 0)
-        return;
-
-    if (is_zero(m_tsInRateStartTime))
-    {
-        m_tsInRateStartTime = time;
-        return;
-    }
-
-    m_iInRatePktsCount += pkts;
-    m_iInRateBytesCount += bytes;
-
-    // Trigger early update in fast start mode
-    const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
-
-    const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
-    if (early_update || period_us > m_InRatePeriod)
-    {
-        // Required Byte/sec rate (payload + headers)
-        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
-        m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
-        HLOGC(bslog.Debug,
-              log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
-                  << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
-        m_iInRatePktsCount  = 0;
-        m_iInRateBytesCount = 0;
-        m_tsInRateStartTime = time;
-
-        setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
-    }
 }
 
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)

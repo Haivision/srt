@@ -27,5 +27,5 @@ test_reuseaddr.cpp
 
 # Tests for bonding only - put here!
 
-SOURCES - ENABLE_EXPERIMENTAL_BONDING
+SOURCES - ENABLE_BONDING
 

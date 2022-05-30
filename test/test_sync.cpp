@@ -3,7 +3,6 @@
 #include <chrono>
 #include <thread>
 #include <future>
-#include <array>
 #include <numeric> // std::accumulate
 #include <regex>   // Used in FormatTime test
 #include "sync.h"
@@ -430,7 +429,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
-    volatile bool resource_ready = true;
+    srt::sync::atomic<bool> resource_ready(true);
 
     auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
         UniqueLock lock(*mutex);
@@ -594,7 +593,7 @@ void* dummythread(void* param)
 TEST(SyncThread, Joinable)
 {
     CThread foo;
-    volatile bool thread_finished = false;
+    srt::sync::atomic<bool> thread_finished;
 
     StartThread(foo, dummythread, (void*)&thread_finished, "DumyThread");
 

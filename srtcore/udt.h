@@ -148,12 +148,12 @@ typedef SRTSOCKET UDTSOCKET; //legacy alias
 
 #ifdef __cplusplus
 
-class CUDTException;
+namespace srt { class CUDTException; }
 
 namespace UDT
 {
 
-typedef CUDTException ERRORINFO;
+typedef srt::CUDTException ERRORINFO;
 typedef CPerfMon TRACEINFO;
 
 // This facility is used only for select() function.

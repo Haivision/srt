@@ -54,10 +54,12 @@
 #include "utilities.h"
 #include "srt_attr_defs.h"
 
-class CUDTException;    // defined in common.h
 
 namespace srt
 {
+
+class CUDTException;    // defined in common.h
+
 namespace sync
 {
 
@@ -344,7 +346,7 @@ class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
 {
 public:
     SRT_ATTR_ACQUIRE(m)
-    ScopedLock(Mutex& m);
+    explicit ScopedLock(Mutex& m);
 
     SRT_ATTR_RELEASE()
     ~ScopedLock();
@@ -362,7 +364,7 @@ class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 
 public:
     SRT_ATTR_ACQUIRE(m)
-    UniqueLock(Mutex &m);
+    explicit UniqueLock(Mutex &m);
 
     SRT_ATTR_RELEASE()
     ~UniqueLock();
@@ -741,7 +743,7 @@ typedef std::system_error CThreadException;
 using CThread = std::thread;
 namespace this_thread = std::this_thread;
 #else // pthreads wrapper version
-typedef ::CUDTException CThreadException;
+typedef CUDTException CThreadException;
 
 class CThread
 {

@@ -247,6 +247,11 @@ public:
             return *this;
         }
 
+        DummyProxy& vform(const char*, va_list)
+        {
+            return *this;
+        }
+
         DummyProxy& setloc(const char* , int , std::string)
         {
             return *this;
