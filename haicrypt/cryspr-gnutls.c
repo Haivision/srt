@@ -39,17 +39,13 @@ int crysprGnuTLS_Prng(unsigned char *rn, int len)
 }
 
 int crysprGnuTLS_AES_SetKey(
-#ifdef CRYSPR2
-    int cipher_type,
-#endif
+    int cipher_type,            /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR] */
     bool bEncrypt,              /* true:encrypt key, false:decrypt key*/
     const unsigned char *kstr,  /* key string */
     size_t kstr_len,            /* kstr length in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
     CRYSPR_AESCTX *aes_key)     /* Cryptolib Specific AES key context */
 {
-#ifdef CRYSPR2
     (void)cipher_type;
-#endif
 
     if (bEncrypt) {        /* Encrypt key */
         if (!(kstr_len == 16 || kstr_len == 24 || kstr_len == 32)) {

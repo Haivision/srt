@@ -55,14 +55,14 @@ int crysprMbedtls_Prng(unsigned char *rn, int len)
 }
 
 int crysprMbedtls_AES_SetKey(
-#ifdef CRYSPR2
         int cipher_type,            /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR] */
-#endif
         bool bEncrypt,              /* true:encrypt key, false:decrypt key*/
         const unsigned char *kstr,  /* key string */
         size_t kstr_len,            /* kstr length in  bytes (16, 24, or 32 bytes, for AES128,AES192, or AES256) */
         CRYSPR_AESCTX *aes_key)     /* Cryptolib Specific AES key context */
 {
+    (void)cipher_type;
+
     if (!(kstr_len == 16 || kstr_len == 24 || kstr_len == 32)) {
         HCRYPT_LOG(LOG_ERR, "%s", "AES_set_encrypt_key(kek) bad length\n");
         return -1;

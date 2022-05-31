@@ -39,17 +39,13 @@ int crysprOpenSSL_Prng(unsigned char *rn, int len)
 }
 
 int crysprOpenSSL_AES_SetKey(
-#ifdef CRYSPR2
     int cipher_type,            /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR] */
-#endif
     bool bEncrypt,              /* true Enxcrypt key, false: decrypt */
     const unsigned char *kstr,  /* key sttring*/
     size_t kstr_len,            /* kstr len in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
     CRYSPR_AESCTX *aes_key)     /* CRYpto Service PRovider AES Key context */
 {
-#ifdef CRYSPR2
     (void)cipher_type;
-#endif
 
     if (bEncrypt) {        /* Encrypt key */
         if (AES_set_encrypt_key(kstr, kstr_len * 8, aes_key)) {

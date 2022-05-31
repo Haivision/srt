@@ -78,9 +78,7 @@ typedef struct tag_CRYSPR_methods {
             int rn_len);
 
         int (*aes_set_key)(
-#ifdef CRYSPR2
             int cipher_type,        /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR|AESGDM] */
-#endif
             bool bEncrypt,          /* true Enxcrypt key, false: decrypt */
             const unsigned char *kstr,/* key string*/
             size_t kstr_len,        /* kstr len in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
