@@ -42,9 +42,13 @@ typedef struct tag_CRYSPR_cb {
 #ifdef CRYSPR2
 	CRYSPR_AESCTX  *aes_kek;		/* Key Encrypting Key (KEK) */
 	CRYSPR_AESCTX  *aes_sek[2];		/* even/odd Stream Encrypting Key (SEK) */
+#define CRYSPR_GETKEK(cb)       ((cb)->aes_kek)
+#define CRYSPR_GETSEK(cb,kk)    ((cb)->aes_sek[kk])
 #else /*CRYSPR2*/
 	CRYSPR_AESCTX   aes_kek;		/* Key Encrypting Key (KEK) */
 	CRYSPR_AESCTX   aes_sek[2];		/* even/odd Stream Encrypting Key (SEK) */
+#define CRYSPR_GETKEK(cb)       (&((cb)->aes_kek))
+#define CRYSPR_GETSEK(cb,kk)    (&((cb)->aes_sek[kk]))
 #endif /*CRYSPR2*/
 
 	struct tag_CRYSPR_methods *cryspr;

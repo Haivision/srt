@@ -13,8 +13,8 @@
 written by
    Haivision Systems Inc.
 
-   2019-06-26 (jdube)
-        OpenSSL Direct AES CRYSPR/4SRT (CRYypto Service PRovider for SRT).
+   2022-05-19 (jdube)
+        OpenSSL EVP AES CRYSPR/4SRT (CRYypto Service PRovider for SRT).
 *****************************************************************************/
 
 #ifndef CRYSPR_OPENSSL_H
@@ -39,7 +39,7 @@ written by
    if not set to 0 to enable default/fallback crysprFallback_AES_WrapKey/crysprFallback_AES_UnwrapKey methods
    and provide the aes_ecb_cipher method  .
 */
-#if 1//(OPENSSL_VERSION_NUMBER < 0x0090808fL) //0.9.8h
+#if 1//Force internal AES-WRAP (using AES-ECB) until implemented with EVP (OPENSSL_VERSION_NUMBER < 0x00xxxxxxL)
 #define CRYSPR_HAS_AESKWRAP 0
 #else
 #define CRYSPR_HAS_AESKWRAP 1

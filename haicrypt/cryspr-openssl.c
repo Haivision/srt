@@ -13,8 +13,10 @@
 written by
    Haivision Systems Inc.
 
+   2022-05-19 (jdube)
+        CRYSPR2 adaptation
    2019-06-26 (jdube)
-        OpenSSL CRYSPR/4SRT (CRYypto Service PRovider for SRT).
+        OpenSSL Direct AES CRYSPR/4SRT (CRYypto Service PRovider for SRT).
 *****************************************************************************/
 
 #include "hcrypt.h"
@@ -137,7 +139,6 @@ int crysprOpenSSL_AES_CtrCipher(
 static CRYSPR_cb *crysprOpenSSL_Open(CRYSPR_methods *cryspr, size_t max_len)
 {
     crysprOpenSSL_cb *aes_data;
-    CRYSPR_cb *cryspr_cb;
 
     aes_data = (crysprOpenSSL_cb *)crysprHelper_Open(cryspr, sizeof(crysprOpenSSL_cb), max_len);
     if (NULL == aes_data) {
@@ -150,11 +151,6 @@ static CRYSPR_cb *crysprOpenSSL_Open(CRYSPR_methods *cryspr, size_t max_len)
     aes_data->ccb.aes_sek[1] = &aes_data->aes_sek_buf[1]; //stream encrypting key
 
     return(&aes_data->ccb);
-}
-
-static int crysprOpenSSL_Close(CRYSPR_cb *cryspr_cb)
-{
-    return(crysprHelper_Close(cryspr_cb));
 }
 #endif /* CRYSPR2 */
 /*
@@ -181,12 +177,7 @@ int crysprOpenSSL_KmWrap(CRYSPR_cb *cryspr_cb,
 		const unsigned char *sek,
         unsigned int seklen)
 {
-    crysprOpenSSL_cb *aes_data = (crysprOpenSSL_cb *)cryspr_cb;
-#ifdef CRYSPR2
-    AES_KEY *kek = aes_data->ccb.aes_kek; //key encrypting key
-#else
-    AES_KEY *kek = &aes_data->ccb.aes_kek; //key encrypting key
-#endif
+    AES_KEY *kek = CRYSPR_GETKEK(cryspr_cb); //key encrypting key
 
     return(((seklen + HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_wrap_key(kek, NULL, wrap, sek, seklen)) ? 0 : -1);
 }
@@ -197,12 +188,7 @@ int crysprOpenSSL_KmUnwrap(
 		const unsigned char *wrap,
         unsigned int wraplen)
 {
-    crysprOpenSSL_cb *aes_data = (crysprOpenSSL_cb *)cryspr_cb;
-#ifdef CRYSPR2
-    AES_KEY *kek = aes_data->ccb.aes_kek; //key encrypting key
-#else
-    AES_KEY *kek = &aes_data->ccb.aes_kek; //key encrypting key
-#endif
+    AES_KEY *kek = CRYSPR_GETKEK(cryspr_cb); //key encrypting key
 
     return(((wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_unwrap_key(kek, NULL, sek, wrap, wraplen)) ? 0 : -1);
 }
@@ -235,11 +221,10 @@ CRYSPR_methods *crysprOpenSSL(void)
     //--Crypto Session API-----------------------------------------
 #ifdef CRYSPR2
         crysprOpenSSL_methods.open     = crysprOpenSSL_Open;
-        crysprOpenSSL_methods.close    = crysprOpenSSL_Close;
 #else
     //  crysprOpenSSL_methods.open     =
-    //  crysprOpenSSL_methods.close    =
 #endif
+    //  crysprOpenSSL_methods.close    =
     //--Keying material (km) encryption
 
 #if CRYSPR_HAS_PBKDF2

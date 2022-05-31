@@ -13,8 +13,8 @@
 written by
    Haivision Systems Inc.
 
-   2019-06-26 (jdube)
-        OpenSSL CRYSPR/4SRT (CRYypto Service PRovider for SRT).
+   2022-05-19 (jdube)
+        OpenSSL EVP CRYSPR/4SRT (CRYypto Service PRovider for SRT).
 *****************************************************************************/
 
 #include "hcrypt.h"
@@ -80,12 +80,12 @@ int crysprOpenSSL_EVP_AES_SetKey(
     cipher = _crysprOpenSSL_EVP_cipher_fnptr[cipher_type][idxKlen]();
 
     if (bEncrypt) {        /* Encrypt key */
-        if(!EVP_CipherInit_ex(aes_key, cipher, NULL, kstr, NULL, 1)) {
+        if(!EVP_EncryptInit_ex(aes_key, cipher, NULL, kstr, NULL)) {
             HCRYPT_LOG(LOG_ERR, "%s", "EVP_CipherInit_ex(kek) failed\n");
             return(-1);
         }
     } else {               /* Decrypt key */
-        if(!EVP_CipherInit_ex(aes_key, cipher, NULL, kstr, NULL, 0)) {
+        if(!EVP_DecryptInit_ex(aes_key, cipher, NULL, kstr, NULL)) {
             HCRYPT_LOG(LOG_ERR, "%s", "EVP_CipherInit_ex(kek) failed\n");
             return(-1);
         }
@@ -252,11 +252,7 @@ int crysprOpenSSL_EVP_KmWrap(CRYSPR_cb *cryspr_cb,
         unsigned int seklen)
 {
     crysprOpenSSL_EVP_cb *aes_data = (crysprOpenSSL_EVP_cb *)cryspr_cb;
-#ifdef CRYSPR2
-    EVP_CIPHER_CTX *kek = aes_data->ccb.aes_kek; //key encrypting key
-#else /* CRYSPR2 */
-    EVP_CIPHER_CTX *kek = &aes_data->ccb.aes_kek; //key encrypting key
-#endif /* CRYSPR2 */
+    EVP_CIPHER_CTX *kek = CRYSPR_GETKEK(cryspr_cb); //key encrypting key
 
     return(((seklen + HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_wrap_key(kek, NULL, wrap, sek, seklen)) ? 0 : -1);
 }
@@ -268,11 +264,7 @@ int crysprOpenSSL_EVP_KmUnwrap(
         unsigned int wraplen)
 {
     crysprOpenSSL_EVP_cb *aes_data = (crysprOpenSSL_EVP_cb *)cryspr_cb;
-#ifdef CRYSPR2
-    EVP_CIPHER_CTX *kek = aes_data->ccb.aes_kek; //key encrypting key
-#else /* CRYSPR2 */
-    EVP_CIPHER_CTX *kek = &aes_data->ccb.aes_kek; //key encrypting key
-#endif /* CRYSPR2 */
+    EVP_CIPHER_CTX *kek = CRYSPR_GETKEK(cryspr_cb); //key encrypting key
 
     return(((wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) == (unsigned int)AES_unwrap_key(kek, NULL, sek, wrap, wraplen)) ? 0 : -1);
 }

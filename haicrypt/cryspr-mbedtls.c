@@ -13,6 +13,8 @@
 written by
    Haivision Systems Inc.
 
+   2022-05-19 (jdube)
+        CRYSPR2 adaptation
    2019-06-27 (jdube)
         GnuTLS/Nettle CRYSPR/4SRT (CRYypto Service PRovider for SRT)
 *****************************************************************************/
