@@ -9,12 +9,12 @@ have the Tcl interpreter installed to use this script.
 
 
 Here is a link to a demo showing how CMake can be used to build SRT:
-[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s)
+[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s).
 
 
-Additional information on building with Windows is available in the 
+Additional information on building for Windows is available in the 
 [Building SRT for Windows](https://github.com/Haivision/srt/blob/master/docs/build/build-win.md) 
-document and on the [SRT Cookbook web site](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
+document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
 
 
 ## List of Build Options
