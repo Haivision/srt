@@ -1368,7 +1368,7 @@ in which case the `token` value will be preserved.
 
 ```
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/,
-                                       const struct sockaddr* adr, int namelen);
+                                       const struct sockaddr* dst, int namelen);
 ```
 
 This function prepares a default [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) object as an element
@@ -1378,29 +1378,29 @@ additional data:
 **Arguments**:
 
 * `src`: address to which the newly created socket should be bound
-* `adr`: address to which the newly created socket should connect
-* `namelen`: size of both `src` and `adr`
+* `dst`: address to which the newly created socket should connect
+* `namelen`: size of both `src` and `dst`
 
 The following fields are set by this function:
 
 * `id`: -1 (unused for input)
 * `srcaddr`: default empty (see below) or copied from `src`
-* `peeraddr`: copied from `adr`
+* `peeraddr`: copied from `dst`
 * `weight`: 0
 * `config`: `NULL`
 * [`errorcode`](#error-codes): [`SRT_SUCCESS`](#srt_success)
 
 The default empty `srcaddr` is set the following way:
 
-* `ss_family` set to the same value as `adr->sa_family`
+* `ss_family` set to the same value as `dst->sa_family`
 * empty address (`INADDR_ANY` for IPv4 and `in6addr_any` for IPv6)
 * port number 0
 
 If `src` is not NULL, then `srcaddr` is copied from `src`. Otherwise
 it will remain as default empty.
 
-The `adr` parameter is obligatory. If `src` parameter is not NULL,
-then both `adr` and `src` must have the same value of `sa_family`.
+The `dst` parameter is obligatory. If `src` parameter is not NULL,
+then both `dst` and `src` must have the same value of `sa_family`.
 
 Note though that this function has no possibility of reporting errors - these
 would be reported only by [`srt_connect_group`](#srt_connect_group), separately 

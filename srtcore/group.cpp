@@ -150,7 +150,7 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
     // time when the connection process is done, until the first reading/writing happens.
     ScopedLock cg(m_GroupLock);
 
-    IF_LOGGING(SRTSOCKET mpeer);
+    IF_LOGGING(SRTSOCKET mpeer = SRT_INVALID_SOCK);
     IF_LOGGING(steady_clock::time_point start_time);
 
     bool found = false;
