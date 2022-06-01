@@ -1204,7 +1204,7 @@ if (ENABLE_APPS)
 			# For testing applications, every application has its exclusive
 			# list of source files in its own Manifest file.
 			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
-			srt_add_program(${name} ${SOURCES_app})
+			srt_add_program_dont_install(${name} ${SOURCES_app})
 		endmacro()
 
 		srt_add_testprogram(utility-test)
@@ -1249,7 +1249,7 @@ if (ENABLE_EXAMPLES)
 	# No examples should need C++11
 	macro(srt_add_example mainsrc)
 		get_filename_component(name ${mainsrc} NAME_WE)
-		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+		srt_add_program_dont_install(${name} examples/${mainsrc} ${ARGN})
 		target_link_libraries(${name} ${srt_link_library} ${DEPENDS_srt})
 	endmacro()
 
