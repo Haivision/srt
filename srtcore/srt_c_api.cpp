@@ -50,11 +50,6 @@ SRT_SOCKOPT_CONFIG* srt_create_config()
     return new SRT_SocketOptionObject;
 }
 
-void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
-{
-    delete in;
-}
-
 int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
 {
     if (!config)
@@ -64,26 +59,6 @@ int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* c
         return -1;
 
     return 0;
-}
-
-SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
-{
-    SRT_SOCKGROUPCONFIG data;
-    data.errorcode = SRT_SUCCESS;
-    data.id = -1;
-    data.token = -1;
-    data.weight = 0;
-    data.config = NULL;
-    if (src)
-        memcpy(&data.srcaddr, src, namelen);
-    else
-    {
-        memset(&data.srcaddr, 0, sizeof data.srcaddr);
-        // Still set the family according to the target address
-        data.srcaddr.ss_family = adr->sa_family;
-}
-    memcpy(&data.peeraddr, adr, namelen);
-    return data;
 }
 
 int srt_connect_group(SRTSOCKET group,
@@ -98,25 +73,40 @@ SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return SRT_INVALID_SOCK; }
 SRTSOCKET srt_groupof(SRTSOCKET) { return SRT_INVALID_SOCK; }
 int srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
-void srt_delete_config(SRT_SOCKOPT_CONFIG*) { return; }
 int srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
-
-SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr*, const struct sockaddr*, int)
-{
-    SRT_SOCKGROUPCONFIG data;
-    data.errorcode = SRT_EINVOP;
-    data.id = -1;
-    data.token = -1;
-    data.weight = 0;
-    data.config = NULL;
-    return data;
-}
 
 int srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 
 #endif
 
-// int srt_bind_multicast()
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
+{
+    SRT_SOCKGROUPCONFIG data;
+#if ENABLE_BONDING
+    data.errorcode = SRT_SUCCESS;
+#else
+    data.errorcode = SRT_EINVOP;
+#endif
+    data.id = -1;
+    data.token = -1;
+    data.weight = 0;
+    data.config = NULL;
+    if (src)
+        memcpy(&data.srcaddr, src, namelen);
+    else
+    {
+        memset(&data.srcaddr, 0, sizeof data.srcaddr);
+        // Still set the family according to the target address
+        data.srcaddr.ss_family = dst->sa_family;
+    }
+    memcpy(&data.peeraddr, dst, namelen);
+    return data;
+}
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
 
 // Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
