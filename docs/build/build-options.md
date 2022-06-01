@@ -39,11 +39,11 @@ Option details are given further below.
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address. |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors. |
 | [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.  |
-| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.4.5 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements (in dev build 1.4.5 only). |
+| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.5.0 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements. |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).  |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.  |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library  |
-| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.4.5 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step  (in dev build 1.4.5 only).  |
+| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.  |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a tatic library  |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON*        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.  |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (srt-test-live, etc.).  |
