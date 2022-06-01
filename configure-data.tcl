@@ -25,11 +25,11 @@
 
 # Options processed here internally, not passed to cmake
 set internal_options {
-	with-compiler-prefix=<prefix> "set C/C++ toolchains <prefix>gcc and <prefix>g++"
-	with-compiler-type=<name> "compiler type: gcc(default), cc, others simply add ++ for C++"
-	with-srt-name=<name> "Override srt library name"
-	with-haicrypt-name=<name> "Override haicrypt library name (if compiled separately)"
-	with-atomic=<spec> "Select implementation for atomics (compiler-intrinsics or sync-mutex)"
+    with-compiler-prefix=<prefix> "set C/C++ toolchains <prefix>gcc and <prefix>g++"
+    with-compiler-type=<name> "compiler type: gcc(default), cc, others simply add ++ for C++"
+    with-srt-name=<name> "Override srt library name"
+    with-haicrypt-name=<name> "Override haicrypt library name (if compiled separately)"
+    with-atomic=<spec> "Select implementation for atomics (compiler-intrinsics or sync-mutex)"
 }
 
 # Options that refer directly to variables used in CMakeLists.txt
@@ -47,7 +47,7 @@ set cmake_options {
     enable-static "Should libsrt be built as a static library (default: ON)"
     enable-relative-libpath "Should applications contain relative library paths, like ../lib (default: OFF)"
     enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
-	enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
+    enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
     enable-encryption "Should encryption features be enabled (default: ON)"
     enable-c++-deps "Extra library dependencies in srt.pc for C language (default: ON)"
     use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
@@ -55,19 +55,18 @@ set cmake_options {
     enable-code-coverage "Enable code coverage reporting (default: OFF)"
     enable-monotonic-clock "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/ (default: OFF)"
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
-	enable-stdc++-sync "Use standard C++11 chrono/threads instead of pthread wrapper (default: OFF, on Windows: ON)"
+    enable-stdc++-sync "Use standard C++11 chrono/threads instead of pthread wrapper (default: OFF, on Windows: ON)"
     use-openssl-pc "Use pkg-config to find OpenSSL libraries (default: ON)"
     use-busy-waiting "Enable more accurate sending times at a cost of potentially higher CPU load (default: OFF)"
     use-gnustl "Get c++ library/headers from the gnustl.pc"
-	enable-sock-cloexec "Enable setting SOCK_CLOEXEC on a socket (default: ON)"
-	enable-show-project-config "Enables use of ShowProjectConfig() in cmake (default: OFF)"
-	enable-new-rcvbuffer "Enables the new receiver buffer implementation (default: ON)"
-	enable-clang-tsa "Enable Clang's Thread-Safety-Analysis (default: OFF)"
-	atomic-use-srt-sync-mutex "Use mutex to implement atomics (alias: --with-atomic=sync-mutex) (default: OFF)"
+    enable-sock-cloexec "Enable setting SOCK_CLOEXEC on a socket (default: ON)"
+    enable-show-project-config "Enables use of ShowProjectConfig() in cmake (default: OFF)"
+    enable-new-rcvbuffer "Enables the new receiver buffer implementation (default: ON)"
+    enable-clang-tsa "Enable Clang's Thread-Safety-Analysis (default: OFF)"
+    atomic-use-srt-sync-mutex "Use mutex to implement atomics (alias: --with-atomic=sync-mutex) (default: OFF)"
 
     use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls"
     enable-debug=<0,1,2> "Enable debug mode (0=disabled, 1=debug, 2=rel-with-debug)"
-
     pkg-config-executable=<filepath> "pkg-config executable"
     openssl-crypto-library=<filepath> "OpenSSL: Path to a libcrypto library."
     openssl-include-dir=<path> "OpenSSL: Path to includes."
