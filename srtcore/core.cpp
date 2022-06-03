@@ -7406,6 +7406,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
                         : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
                                                 : 0;
 
+        perf->usDeliveryJitter = m_JitterTracer.deliveryJitter();
+        perf->usSendingJitter = m_JitterTracer.sendingJitter();
+        perf->usInterArrivalJitter = m_JitterTracer.jitter();
+
         if (clear)
         {
             m_stats.sndr.resetTrace();

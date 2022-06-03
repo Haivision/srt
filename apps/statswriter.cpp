@@ -67,6 +67,7 @@ struct SrtStatsTableInit
         STAT(SEND, msBuf, msSndBuf);
         STAT(SEND, mbitRate, mbpsSendRate);
         STAT(SEND, sendPeriod, usPktSndPeriod);
+        STAT(SEND, sendPeriod, usSendingJitter);
 
         STAT(RECV, packets, pktRecv);
         STAT(RECV, packetsUnique, pktRecvUnique);
@@ -85,6 +86,8 @@ struct SrtStatsTableInit
         STAT(RECV, msBuf, msRcvBuf);
         STAT(RECV, mbitRate, mbpsRecvRate);
         STAT(RECV, msTsbPdDelay, msRcvTsbPdDelay);
+        STAT(RECV, usInterArrivalJitter, usInterArrivalJitter);
+        STAT(RECV, usDeliveryJitter, usDeliveryJitter);
     }
 } g_SrtStatsTableInit (g_SrtStatsTable);
 
@@ -304,8 +307,9 @@ public:
         output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
         output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
         output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-        output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
+        output << "LINK         RTT: " << setw(9)  << mon.msRTT              << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
         output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
+        output << "Jitter (us): SND: " << setw(11) << mon.usSendingJitter    << "  RCV (TsbPd):" << setw(11) << mon.usDeliveryJitter << endl;
         return output.str();
     } 
 
