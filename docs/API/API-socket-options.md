@@ -216,7 +216,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_KMREFRESHRATE`](#SRTO_KMREFRESHRATE)             | 1.3.2 | pre      | `int32_t` | pkts    | 0: 2<sup>24</sup> | 0..      | RW  | GSD   |
 | [`SRTO_KMSTATE`](#SRTO_KMSTATE)                         | 1.0.2 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_LATENCY`](#SRTO_LATENCY)                         | 1.0.2 | pre      | `int32_t` | ms      | 120 \*            | 0..      | RW  | GSD   |
-| [`SRTO_LINGER`](#SRTO_LINGER)                           |       | post     | `linger`  | s       | on, 180           | 0..      | RW  | GSD   |
+| [`SRTO_LINGER`](#SRTO_LINGER)                           |       | post     | `linger`  | s       | off \*            | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                   | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                             |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                   | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
@@ -709,9 +709,13 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 | OptName              | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_LINGER`        |       | pre      | `linger`   | s      | on, 180  | 0..    | RW  | GSD    |
+| `SRTO_LINGER`        |       | pre      | `linger`   | s      | off \*   | 0..    | RW  | GSD    |
 
-Linger time on close (see [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
+SRT socket linger time on close (similar to [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
+The defulat value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
+to be delivered after a connection is closed.
+The default value in [the file transfer configuration](./API.md#transmission-types) is 180 s.
+
 
 *SRT recommended value*: off (0).
 
