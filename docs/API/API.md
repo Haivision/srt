@@ -525,6 +525,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [socket options](API-
 - [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 120
 - [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
 - [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = true
+- [`SRTO_LINGER`](API-socket-options.md#SRTO_LINGER) = 0
 - [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = true
 - [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = true
 - [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 1
@@ -607,6 +608,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [socket options](API-
 - [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 0
 - [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
 - [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = false
+- [`SRTO_LINGER`](API-socket-options.md#SRTO_LINGER) = 180 s
 - [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = false
 - [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = false
 - [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 0
