@@ -2,11 +2,11 @@
 
 ## Motivation
 
-One type of information that can be interchanged when a connection is being
-established in SRT is "Stream ID", which can be used in a caller-listener
-connection layout. This is a string of maximum 512 characters set on the caller
+One type of information that an SRT caller can share with an SRT listener during a connection negotiation
+is the "Stream ID". This is a string of maximum 512 characters set on the caller
 side. It can be retrieved at the listener side on the newly accepted socket
 through a socket option (see `SRTO_STREAMID` in [SRT API Socket Options](../API/API-socket-options.md)).
+**Only caller-listener connections are supported.**
 
 As of SRT version 1.3.3 a callback can be registered on the listener socket for
 an application to make decisions on incoming caller connections. This callback,
@@ -17,16 +17,20 @@ the connection.
 
 ## Purpose
 
-The Stream ID value can be used as free-form, but there is a recommended
-convention so that all SRT users speak the same language. The intent of the
-convention is to:
+There are two targen use-cases of the Stream ID:
+- identify a stream of a file name about to be sent (simple use case);
+- identify a user, the purpose of the connection (receive or send), identify the resource and more (advanced use case).
+
+The Stream ID value can be used as free-form, especially when targeting the simple use case.
+However, there is a recommended convention so that all SRT users speak the same language.
+The intent of the convention is to:
 
 - promote readability and consistency among free-form names
 - interpret some typical data in the key-value style
 
 In short,
 
-1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and state what it wants.
+1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and state its intent (send/receive, live/file, etc.).
 2. `srt_listen_callback(...)` function is used by a listener (server) to check what a caller (client) has provided in `SRTO_STREAMID` **before** the connection is established.
 For example, the listener (server) can check if it knows the user and set the corresponding passphrase for a connection to be accepted.
 3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
