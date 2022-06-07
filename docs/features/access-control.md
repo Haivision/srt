@@ -17,11 +17,11 @@ the connection.
 
 ## Purpose
 
-There are two targen use-cases of the Stream ID:
-- identify a stream of a file name about to be sent (simple use case);
-- identify a user, the purpose of the connection (receive or send), identify the resource and more (advanced use case).
+There are two target use-cases of the Stream ID:
+- identify the file name of a stream that is about to be sent (simple use case);
+- identify a user, the purpose of the connection (receive or send), the resources, and more (advanced use case).
 
-The Stream ID value can be used as free-form, especially when targeting the simple use case.
+The Stream ID can be provided as free-form value, especially when targeting the simple use case.
 However, there is a recommended convention so that all SRT users speak the same language.
 The intent of the convention is to:
 
@@ -30,7 +30,7 @@ The intent of the convention is to:
 
 In short,
 
-1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and state its intent (send/receive, live/file, etc.).
+1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and to state its intent (send/receive, live/file, etc.).
 2. `srt_listen_callback(...)` function is used by a listener (server) to check what a caller (client) has provided in `SRTO_STREAMID` **before** the connection is established.
 For example, the listener (server) can check if it knows the user and set the corresponding passphrase for a connection to be accepted.
 3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
