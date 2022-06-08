@@ -1,5 +1,6 @@
-# What are groups ?
+# Introduction to Connection Bonding
 
+## What are Groups ?
 
 A Group is an entity that binds multiple sockets, and is required to
 establish a "bonded connection". Groups can be used in the same way as
@@ -23,13 +24,12 @@ simplest type, broadcast, utilizes all links at once to send the same data.
 To learn more about socket groups and their abilities, please read the
 [SRT Socket Groups](socket-groups.md) document.
 
-# Reminder: Using sockets for establishing a connection
-
+## Reminder: Using Sockets for Establishing a Connection
 
 Before we begin, let's review first how to establish a connection for a
 single socket.
 
-## Important changes
+### Important changes
 
 Keep in mind these important changes to SRT:
 
@@ -45,8 +45,7 @@ or file mode. E.g. all 3 functions: `srt_send`, `srt_sendmsg` and
 `srt_sendmsg2` can be used for sending data in any mode - all depends on what
 your application needs.
 
-
-## Socket connection
+### Socket Connection
 
 Let's review quickly how to establish a socket connection in the
 caller-listener arrangement.
@@ -98,8 +97,7 @@ int size = srt_recvmsg2(connsock, packetdata.data(), packetdata.size(), &mc);
 packetdata.resize(size);
 ```
 
-
-# Group (bonded) connection
+## Group (Bonded) Connection
 
 Except for several details, most of the API used for sockets can be used for
 groups. Groups also have numeric identifiers, just like sockets, which
@@ -209,8 +207,7 @@ the same way as above for the sockets.
 There's one additional thing to be covered here: just how much
 should the application be involved with socket groups?
 
-
-# Controlling the member connections
+## Controlling Member Connections
 
 The object of type `SRT_MSGCTRL` is used to exchange some extra information with
 `srt_sendmsg2` and `srt_recvmsg2`. Of particular interest in this case are two fields:
