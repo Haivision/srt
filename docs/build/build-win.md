@@ -1,4 +1,4 @@
-# Building SRT for Windows
+# Building SRT on Windows
 
 <!-- TOC -->
 

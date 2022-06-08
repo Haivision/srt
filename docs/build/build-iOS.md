@@ -1,4 +1,4 @@
-# Building SRT for iOS
+# Building SRT on iOS
 
 ## Prerequisites
 * Xcode should be installed. Check in terminal whether `xcode-select -p` points to **/Applications/Xcode.app/Contents/Developer** 
