@@ -9704,7 +9704,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             // Encryption failed
             //>>Add stats for crypto failure
             LOGC(qslog.Warn, log << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
-            return -1;
+            return false;
         }
     }
 
