@@ -543,7 +543,7 @@ private:
 
     /// @brief Drop packets too late to be delivered if any.
     /// @returns the number of packets actually dropped.
-    SRT_ATTR_REQUIRES(m_RecvAckLock, m_StatsLock)
+    SRT_ATTR_REQUIRES2(m_RecvAckLock, m_StatsLock)
     int sndDropTooLate();
 
     /// @bried Allow packet retransmission.

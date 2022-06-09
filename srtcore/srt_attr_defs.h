@@ -101,6 +101,7 @@ used by SRT library internally.
 #define SRT_ATTR_ACQUIRED_BEFORE(...)
 #define SRT_ATTR_ACQUIRED_AFTER(...)
 #define SRT_ATTR_REQUIRES(expr) _Requires_lock_held_(expr)
+#define SRT_ATTR_REQUIRES2(expr1, expr2) _Requires_lock_held_(expr1) _Requires_lock_held_(expr2)
 #define SRT_ATTR_REQUIRES_SHARED(...)
 #define SRT_ATTR_ACQUIRE(expr) _Acquires_nonreentrant_lock_(expr)
 #define SRT_ATTR_ACQUIRE_SHARED(...)
@@ -141,6 +142,9 @@ used by SRT library internally.
   THREAD_ANNOTATION_ATTRIBUTE__(acquired_after(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
+
+#define SRT_ATTR_REQUIRES2(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES_SHARED(...) \
