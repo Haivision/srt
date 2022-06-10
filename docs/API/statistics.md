@@ -716,14 +716,9 @@ that is received late.
 
 ## SRT Group Statistics
 
-SRT group statistics are implemented for SRT Connection Bonding feature and available since SRT v1.5.0. Check the following documentation and code examples for details:
+SRT group statistics are implemented for [SRT Connection Bonding](../features/bonding-quick-start.md) feature and available since SRT v1.5.0.
 
-- Introduction in [SRT Connection Bonding](../features/bonding-intro.md),
-- The concept of [SRT Socket Groups](../features/socket-groups.md). Here you will also find the information regarding the `srt-test-live` application for testing Connection Bonding,
-- Check also [SRT API](API.md) and [SRT API Functions](API-functions.md) documentation for Connection Bonding related updates,
-- Code examples: simple [client](https://github.com/Haivision/srt/blob/master/examples/test-c-client-bonding.c) and [server](https://github.com/Haivision/srt/blob/master/examples/test-c-server-bonding.c) implementation.
-
-`srt_bistats(SRTSOCKET u, ...)`  function can be used with a socket group ID as a first argument to get statistics for a group. Most values of the `SRT_TRACEBSTATS` will be filled with zeros except for the fields listed in [Summary Table](#group-summary-table) below. Refer to the documentation of the [SRT API Functions](API-functions.md) for usage instructions.
+The `srt_bistats(SRTSOCKET u, ...)` function can be used with a socket group ID as the first argument to get statistics for a group. `SRT_TRACEBSTATS` values will mostly be zeros, except for the fields listed in the [Summary Table](#group-summary-table) below. Refer to the [SRT API Functions](../API/API-functions.md#socket-group-management) documentation for usage instructions.
 
 ### Summary Table <a name="group-summary-table"></a>
 

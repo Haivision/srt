@@ -28,7 +28,7 @@ Option details are given further below.
 | [`CMAKE_INSTALL_PREFIX`](#cmake_install_prefix)              | 1.3.0 | `STRING`  | OFF        | Standard CMake variable that establishes the root directory for installation, inside of which a GNU/POSIX compatible directory layout will be used. |
 | [`CYGWIN_USE_POSIX`](#cygwin_use_posix)                      | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.  |
 | [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (srt-live-trasnmit, etc.).  |
-| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | OFF        | Enables the [Connection Bonding](../features/bonding-intro.md) feature.  |
+| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | OFF        | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.  |
 | [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency. |
 | [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7 |
 | [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.  |
@@ -188,7 +188,7 @@ Enables compiling user applications.
 #### ENABLE_BONDING
 **`--enable-bonding`** (default: OFF)
 
-Enables the [Connection Bonding](../features/bonding-intro.md) feature.
+Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.
 
 Similar to SMPTE-2022-7 over managed networks, Connection Bonding adds seamless stream protection and hitless failover to the SRT protocol. This technology relies on more than one IP network path to prevent disruption to live video streams in the event of network congestion or outages, maintaining continuity of service.
 

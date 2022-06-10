@@ -1,4 +1,4 @@
-# Introduction to Connection Bonding
+# SRT Connection Bonding: Introduction
 
 ## What are Groups ?
 

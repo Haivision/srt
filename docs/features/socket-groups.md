@@ -1,4 +1,4 @@
-# SRT Socket Groups
+# SRT Connection Bonding: Socket Groups
 
 ## Introduction
 
