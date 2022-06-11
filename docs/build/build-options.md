@@ -61,6 +61,7 @@ Option details are given further below.
 | [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `gnutls`, `mbedtls`).  |
 | [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.  |
 | [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.  |
+| [`OPENSSL_USE_STATIC_LIBS`](#openssl_use_static_libs)        | 1.5.0 | `BOOL`    | OFF        | Use static libraries of openssl, affects `USE_OPENSSL_PC` found openssl or on Windows.  |
 | [`USE_STATIC_LIBSTDCXX`](#use_static_libstdcxx)              | 1.2.0 | `BOOL`    | OFF        | Enforces linking the SRT library against the static libstdc++ library. |
 | [`WITH_COMPILER_PREFIX`](#with_compiler_prefix)              | 1.3.0 | `STRING`  | OFF        | Sets C/C++ toolchains as `<prefix><c-compiler>` and `<prefix><c++-compiler>`, overriding the default compiler. |
 | [`WITH_COMPILER_TYPE`](#with_compiler_type)                  | 1.3.0 | `STRING`  | OFF        | Sets the compiler type to be used (values: gcc, cc, clang, etc.). |
@@ -551,6 +552,10 @@ built-in one).
 When ON, uses `pkg-config` to find OpenSSL libraries. You can turn this OFF to 
 force `cmake` to find OpenSSL by its own preferred method.
 
+### OPENSSL_USE_STATIC_LIBS
+**`--openssl-use-static-libs`** (default: OFF)
+
+When ON, static linking of openssl will be used, affects the openssl found by `pkg-config`(`-DUSE_OPENSSL_PC=ON`) or on Windows.      
 
 #### USE_STATIC_LIBSTDCXX
 **`--use-static-libstdc++`** (default: OFF)
