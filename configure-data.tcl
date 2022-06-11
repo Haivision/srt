@@ -57,7 +57,7 @@ set cmake_options {
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
     enable-stdc++-sync "Use standard C++11 chrono/threads instead of pthread wrapper (default: OFF, on Windows: ON)"
     use-openssl-pc "Use pkg-config to find OpenSSL libraries (default: ON)"
-	openssl-use-static-libs "Use static libraries of openssl, affects `USE_OPENSSL_PC` found openssl or on Windows (default: OFF)"
+    openssl-use-static-libs "Use static libraries of openssl, affects `USE_OPENSSL_PC` found openssl or on Windows (default: OFF)"
     use-busy-waiting "Enable more accurate sending times at a cost of potentially higher CPU load (default: OFF)"
     use-gnustl "Get c++ library/headers from the gnustl.pc"
     enable-sock-cloexec "Enable setting SOCK_CLOEXEC on a socket (default: ON)"
