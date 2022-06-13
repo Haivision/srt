@@ -161,7 +161,7 @@ Symbols around which spaces are never used are:
 # Conditionals
 
 There has been previously used a convention for conditional inversion
-(AKA *Yoda conditions*) and some examples of it can still be found in
+(AKA _Yoda-conditions_) and some examples of it can still be found in
 the source files. This should be no longer followed. More about that
 is discussed below in (EXPLANATIONS: (1)).
 
@@ -203,7 +203,7 @@ Against:
 ```
 
 2. A POSIX call that returns -1 as an error report can be more visible
-that the following condition is an error handler (or, conversely, **isn't**
+that the following condition is an error handler (or, conversely, __isn't__
 an error handler and is executed only on success), if the function name
 and the return value are close to one another. Consider:
 
@@ -292,9 +292,9 @@ int bytespeed = getSpeed((packetspeed));  // packetspeed will be filled
 
 int getSpeed(int& w_packetspeed)
 {
-	w_packetspeed = packets()/time(); // <--- here is the "function-external" variable written
+	w_packetspeed = packets() / time(); // <--- here is the "function-external" variable written
 
-	return (avg_pkt_size()*packet())/time();
+	return (avg_pkt_size() * packet()) / time();
 }
 
 getData((packet.m_pcData), (data_size)); // filling an array and size, too
@@ -310,8 +310,8 @@ recvmsg(sock, (mh), 0); // mh will be filled and ALSO ATTACHED OBJECTS.
 ```
 
 
-4. The variable passed to a function by reference must be **always
-initialized**, even if the designated function is going to fill in the
+4. The variable passed to a function by reference must be __always
+initialized__, even if the designated function is going to fill in the
 designated object from scratch. This is because conditions as to whether
 uninitialized objects are accepted by a function may change in time
 and one change here intended to be only in one call case can potentially
@@ -322,7 +322,7 @@ variant case with a possibility to pass NULL there. If the symbol through
 which the object is being passed is never intended to be NULL, always
 use reference.
 
-This convention should not be used when passing an object that is **not**
+This convention should not be used when passing an object that is __not__
 to be modified inside the call. There could be also cases when the passed
 object is not intended to be written, but the rule of having const there was
 needed to be broken. In that case also the rules of the prefix and extra
@@ -425,7 +425,7 @@ The `float` type is never used as it's completely useless.
 some more elaborate wrapper for it).
 
 9. The `a` and `ca` markers define a raw array (note: not any advanced C++
-container). This marker is **independent** of the real type used to implement
+container). This marker is __independent__ of the real type used to implement
 it (note: `p` marker just because it's a pointer type, is wrong, if the field
 actually designates an array). The `ca` marker is used in a special case when
 the field holding it is of pointer type and the array is to be dynamically
@@ -440,7 +440,7 @@ have an empty marker, just like objects.
 
 # EXPLANATIONS:
 
-## 1. CONDITIONAL INVERSION (aka *Yoda conditions*)
+## 1. CONDITIONAL INVERSION (aka _Yoda conditions_)
 
 This is a technique that had to be advantegous in mistake prevention,
 however in the end it was proven to cause more harm and trouble. This
