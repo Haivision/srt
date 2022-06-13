@@ -10067,9 +10067,9 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Loop over all incoming packets that were filtered out.
         // In case when there is no filter, there's just one packet in 'incoming',
         // the one that came in the input of this function.
-        for (vector<CUnit *>::iterator i = incoming.begin(); i != incoming.end(); ++i)
+        for (vector<CUnit *>::iterator unitIt = incoming.begin(); unitIt != incoming.end(); ++unitIt)
         {
-            CUnit *  u    = *i;
+            CUnit *  u    = *unitIt;
             CPacket &rpkt = u->m_Packet;
 
             // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
@@ -10151,9 +10151,9 @@ int srt::CUDT::processData(CUnit* in_unit)
 
             bool adding_successful = true;
 #if ENABLE_NEW_RCVBUFFER
-            if (m_pRcvBuffer->insert(*i) < 0)
+            if (m_pRcvBuffer->insert(u) < 0)
 #else
-            if (m_pRcvBuffer->addData(*i, offset) < 0)
+            if (m_pRcvBuffer->addData(u, offset) < 0)
 #endif
             {
                 // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
