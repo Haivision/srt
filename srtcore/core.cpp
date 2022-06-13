@@ -1367,7 +1367,7 @@ size_t srt::CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, siz
         {
             m_RejectReason = SRT_REJ_IPE;
             LOGC(cnlog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
-            return false;
+            return 0;
         }
         ra_size = kmdata_wordsize;
         keydata = reinterpret_cast<const uint32_t *>(kmdata);
@@ -1765,6 +1765,12 @@ bool srt::CUDT::createSrtHandshake(
             LOGC(cnlog.Fatal, log << "createSrtHandshake: IPE: wrong value of srtkm_cmd: " << srtkm_cmd);
             return false;
         }
+    }
+
+    if (ra_size == 0)
+    {
+        // m_RejectReason is expected to be set by fillHsExtKMRSP(..) in this case.
+        return false;
     }
 
     // ra_size + offset has a value in element unit.
@@ -5345,7 +5351,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
         enterCS(m_StatsLock);
         // Estimate dropped bytes from average payload size.
         const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
         leaveCS(m_StatsLock);
     }
     return iDropCnt;
@@ -5590,7 +5596,7 @@ void srt::CUDT::setInitialRcvSeq(int32_t isn)
             const int iDropCnt = m_pRcvBuffer->dropAll();
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
             sync::ScopedLock sl(m_StatsLock);
-            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
         }
 
         m_pRcvBuffer->setStartSeqNo(m_iRcvLastSkipAck);
@@ -5603,7 +5609,7 @@ void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno
     enterCS(m_StatsLock);
     // Estimate dropped bytes from average payload size.
     const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-    m_stats.rcvr.dropped.count(stats::BytesPackets(seqlen * avgpayloadsz, (size_t) seqlen));
+    m_stats.rcvr.dropped.count(stats::BytesPackets(seqlen * avgpayloadsz, (uint32_t) seqlen));
     leaveCS(m_StatsLock);
 
     dropFromLossLists(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
@@ -6388,7 +6394,7 @@ int srt::CUDT::sndDropTooLate()
     }
 
     const time_point tnow = steady_clock::now();
-    const int buffdelay_ms = count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
+    const int buffdelay_ms = (int) count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
 
     // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
     // Minimum value must accomodate an I-Frame (~8 x average frame size)
@@ -7495,7 +7501,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         if (m_pRcvBuffer)
         {
             ScopedLock lck(m_RcvBufferLock);
-            perf->byteAvailRcvBuf = getAvailRcvBufferSizeNoLock() * m_config.iMSS;
+            perf->byteAvailRcvBuf = (int) getAvailRcvBufferSizeNoLock() * m_config.iMSS;
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
@@ -8156,7 +8162,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
-        data[ACKD_BUFFERLEFT] = getAvailRcvBufferSizeNoLock();
+        data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         if (data[ACKD_BUFFERLEFT] < 2)
             data[ACKD_BUFFERLEFT] = 2;
@@ -8918,7 +8924,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                 enterCS(m_StatsLock);
                 // Estimate dropped bytes from average payload size.
                 const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (size_t)iDropCnt));
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
                 leaveCS(m_StatsLock);
             }
 #else
@@ -9979,7 +9985,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             const int loss = diff - 1; // loss is all that is above diff == 1
             ScopedLock lg(m_StatsLock);
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-            m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, loss));
+            m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, (uint32_t) loss));
 
             HLOGC(qrlog.Debug,
                   log << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "
@@ -10093,7 +10099,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 continue;
             }
 
-            const int avail_bufsize = getAvailRcvBufferSizeNoLock();
+            const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
             if (offset >= avail_bufsize)
             {
                 // This is already a sequence discrepancy. Probably there could be found
@@ -10113,7 +10119,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                             " seq=" << rpkt.m_iSeqNo
                             << " buffer=(" << m_iRcvLastSkipAck
                             << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                            << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
+                            << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
                             << "), " << (offset-avail_bufsize+1)
                             << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
