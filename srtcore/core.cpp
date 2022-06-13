@@ -7561,7 +7561,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         EInitEvent only_input = arg.get<EventVariant::INIT>();
         // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
 
-        if (only_input && m_config.llMaxBW)
+        if (only_input != TEV_INIT_RESET && m_config.llMaxBW)
         {
             HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_config.llMaxBW already set to " << m_config.llMaxBW);
             // Don't change
@@ -9705,7 +9705,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
         // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
         // Other fields of the data packet header (e.g. timestamp, destination socket ID) are not used for the counter.
         // Cypher may change packet length!
-        if (m_pCryptoControl->encrypt((w_packet)))
+        if (m_pCryptoControl->encrypt((w_packet)) != ENCS_CLEAR)
         {
             // Encryption failed
             //>>Add stats for crypto failure
@@ -10165,7 +10165,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             {
                 IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
                 excessive = false;
-                if (u->m_Packet.getMsgCryptoFlags())
+                if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
                 {
                     EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
                     if (rc != ENCS_CLEAR)
