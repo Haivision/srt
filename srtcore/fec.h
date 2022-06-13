@@ -70,6 +70,12 @@ public:
             SINGLE  // Horizontal-only with no recursion
         };
 
+        static Type FlipType(Type t)
+        {
+            SRT_ASSERT(t != SINGLE);
+            return (t == HORIZ) ? VERT : HORIZ;
+        }
+
     };
 
     struct RcvGroup: Group
