@@ -555,7 +555,9 @@ force `cmake` to find OpenSSL by its own preferred method.
 ### OPENSSL_USE_STATIC_LIBS
 **`--openssl-use-static-libs`** (default: OFF)
 
-When ON, static linking of openssl will be used, affects the openssl found by `pkg-config`(`-DUSE_OPENSSL_PC=ON`) or on Windows.      
+When ON, OpenSSL libraries are linked statically.
+When `pkg-config`(`-DUSE_OPENSSL_PC=ON`) is used, static OpenSSL libraries are listed in `SSL_STATIC_LIBRARIES`. See `<prefix>_STATIC` in [CMake's FindPkgConfig](https://cmake.org/cmake/help/latest/module/FindPkgConfig.html).
+On Windows additionally links `crypt32.lib`.
 
 #### USE_STATIC_LIBSTDCXX
 **`--use-static-libstdc++`** (default: OFF)
