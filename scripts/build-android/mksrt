@@ -17,7 +17,7 @@ done
 
 cd $SRC_DIR
 ./configure --use-enclib=$ENC_LIB \
---use-openssl-pc=OFF --OPENSSL_USE_STATIC_LIBS=TRUE \
+--use-openssl-pc=OFF \
 --OPENSSL_INCLUDE_DIR=$INSTALL_DIR/include \
 --OPENSSL_CRYPTO_LIBRARY=$INSTALL_DIR/lib/libcrypto.a --OPENSSL_SSL_LIBRARY=$INSTALL_DIR/lib/libssl.a \
 --STATIC_MBEDTLS=FALSE \
