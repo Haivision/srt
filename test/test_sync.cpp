@@ -166,14 +166,14 @@ TEST(SyncRandom, GenRandomInt)
     // Check the distribution is more or less uniform.
     // 100% uniform if each value is generated (n / (2 * mn.size())) times.
     // We expect at least half of that value for a random uniform distribution.
-    const int min_value = n / (2 * mn.size()) - 1;
-    cout << "min value: " << min_value << endl;
+    const int min_value = n / (2 * mn.size()) - 4; // Subtracting 4 to tolerate possible deviations.
     for (size_t i = 0; i < mn.size(); ++i)
     {
         EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
     }
 
     // Uncomment to see the distribution.
+    //cout << "min value: " << min_value << endl;
     //for (size_t i = 0; i < mn.size(); ++i)
     //{
     //    cout << i << '\t';
