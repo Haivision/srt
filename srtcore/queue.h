@@ -544,7 +544,7 @@ private:
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static int m_counter;
+    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:
