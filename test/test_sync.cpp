@@ -151,13 +151,13 @@ TEST(SyncDuration, OperatorMultIntEq)
 
 TEST(SyncRandom, GenRandomInt)
 {
-    array<int, 64> mn = {};
+    array<size_t, 64> mn = {};
 
     // Check generated values are in the specified range.
     const size_t n = 2048;
     for (size_t i = 0; i < n; ++i)
     {
-        const int rand_val = genRandomInt(0, mn.size() - 1);
+        const int rand_val = genRandomInt(0, int(mn.size()) - 1);
         ASSERT_GE(rand_val, 0);
         ASSERT_LT(rand_val, mn.size());
         ++mn[rand_val];
@@ -166,7 +166,8 @@ TEST(SyncRandom, GenRandomInt)
     // Check the distribution is more or less uniform.
     // 100% uniform if each value is generated (n / (2 * mn.size())) times.
     // We expect at least half of that value for a random uniform distribution.
-    const int min_value = n / (2 * mn.size()) - 4; // Subtracting 4 to tolerate possible deviations.
+    ASSERT_GT(n / (2 * mn.size()), 4u);
+    const size_t min_value = n / (2 * mn.size()) - 4u; // Subtracting 4 to tolerate possible deviations.
     for (size_t i = 0; i < mn.size(); ++i)
     {
         EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
