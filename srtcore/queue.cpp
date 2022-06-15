@@ -1181,7 +1181,7 @@ srt::CRcvQueue::~CRcvQueue()
 }
 
 #if ENABLE_LOGGING
-int srt::CRcvQueue::m_counter = 0;
+srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
 void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
@@ -1200,8 +1200,8 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     m_pRendezvousQueue = new CRendezvousQueue;
 
 #if ENABLE_LOGGING
-    ++m_counter;
-    const std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+    const int cnt = ++m_counter;
+    const std::string thrname = "SRT:RcvQ:w" + Sprint(cnt);
 #else
     const std::string thrname = "SRT:RcvQ:w";
 #endif
