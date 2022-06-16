@@ -20,7 +20,7 @@ param (
     [Parameter()][String]$UNIT_TESTS = "OFF",
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
-    [Parameter()][String]$ENABLE_BONDING = "OFF"
+    [Parameter()][String]$BONDING = "OFF"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
@@ -137,7 +137,7 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
-                "-DENABLE_BONDING=$ENABLE_BONDING " +
+                "-DENABLE_BONDING=$BONDING " +
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
