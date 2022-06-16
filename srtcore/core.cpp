@@ -3848,7 +3848,7 @@ void srt::CUDT::cookieContest()
     if (m_SrtHsSide != HSD_DRAW)
         return;
 
-    LOGC(cnlog.Error, log << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
+    LOGC(cnlog.Debug, log << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
 
     // Here m_ConnReq.m_iCookie is a local cookie value sent in connection request to the peer.
     // m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
