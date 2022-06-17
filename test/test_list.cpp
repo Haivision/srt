@@ -1,9 +1,10 @@
 #include <iostream>
 #include "gtest/gtest.h"
 #include "common.h"
+#include "list.h"
 
 using namespace std;
-#include "list.h"
+using namespace srt;
 
 class CSndLossListTest
     : public ::testing::Test

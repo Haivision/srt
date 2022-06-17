@@ -16,7 +16,7 @@ as examples of how data are read and written in SRT.
 - [Creating and Destroying a Socket](#creating-and-destroying-a-socket)
 - [Binding and Connecting](#binding-and-connecting)
 - [Sending and Receiving](#sending-and-receiving)
-- [Blocking and Non-blocking Modes](#blocking-and-non-blocking-mode)
+- [Blocking and Non-blocking Modes](#blocking-and-non-blocking-modes)
   - [EPoll (Non-blocking Mode Events)](#epoll-non-blocking-mode-events)
 - [Transmission Types](#transmission-types)
   - [Transmission Method: Live](#transmission-method-live)
@@ -427,10 +427,10 @@ example, it only supports level-triggered events for system sockets.
 
 ## Transmission Types
 
-**NOTE:** There might be a difference in terminology used in [SRT RFC](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-00) and current documentation.
-Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.2)
-and [Best Practices and Configuration Tips for Data Transmission via SRT](https://tools.ietf.org/html/draft-sharabayko-srt-00#page-71)
-sections of the RFC additionally. The current section is going to be reworked accordingly.
+**NOTE:** There might be a difference in terminology used in [Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) and current documentation.
+Please consult [Data Transmission Modes](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.2)
+and [Best Practices and Configuration Tips for Data Transmission via SRT](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-7)
+sections of the Internet Draft additionally. The current section is going to be reworked accordingly.
 
 SRT was originally intended to be used for Live Streaming and therefore its main
 and default transmission type is "live". However, SRT supports the modes that
@@ -525,6 +525,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_LIVE` sets the following [socket options](API-
 - [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 120
 - [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
 - [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = true
+- [`SRTO_LINGER`](API-socket-options.md#SRTO_LINGER) = 0
 - [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = true
 - [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = true
 - [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 1
@@ -607,6 +608,7 @@ Setting `SRTO_TRANSTYPE` to `SRTT_FILE` sets the following [socket options](API-
 - [`SRTO_RCVLATENCY`](API-socket-options.md#SRTO_RCVLATENCY) = 0
 - [`SRTO_PEERLATENCY`](API-socket-options.md#SRTO_PEERLATENCY) = 0
 - [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP) = false
+- [`SRTO_LINGER`](API-socket-options.md#SRTO_LINGER) = 180 s
 - [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) = false
 - [`SRTO_NAKREPORT`](API-socket-options.md#SRTO_NAKREPORT) = false
 - [`SRTO_RETRANSMITALGO`](API-socket-options.md#SRTO_RETRANSMITALGO) = 0

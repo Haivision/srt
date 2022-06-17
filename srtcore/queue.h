@@ -138,7 +138,7 @@ private:
     CUnit* m_pAvailUnit; // recent available unit
 
     int m_iSize;  // total size of the unit queue, in number of packets
-    srt::sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
+    sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
 
     int m_iMSS;       // unit buffer size
     int m_iIPversion; // IP version
@@ -153,7 +153,7 @@ struct CSNode
     CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp;
 
-    srt::sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
+    sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
 };
 
 class CSndUList
@@ -240,7 +240,7 @@ struct CRNode
     CRNode* m_pPrev; // previous link
     CRNode* m_pNext; // next link
 
-    srt::sync::atomic<bool> m_bOnList;              // if the node is already on the list
+    sync::atomic<bool> m_bOnList; // if the node is already on the list
 };
 
 class CRcvUList
@@ -394,10 +394,10 @@ private:
 private:
     struct CRL
     {
-        SRTSOCKET                           m_iID;      // SRT socket ID (self)
-        CUDT*                               m_pUDT;     // CUDT instance
-        sockaddr_any                        m_PeerAddr; // SRT sonnection peer address
-        srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
+        SRTSOCKET                      m_iID;      // SRT socket ID (self)
+        CUDT*                          m_pUDT;     // CUDT instance
+        sockaddr_any                   m_PeerAddr; // SRT sonnection peer address
+        sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
     };
     std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
 
@@ -424,7 +424,7 @@ public:
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t Timer
 
-    void init(CChannel* c, srt::sync::CTimer* t);
+    void init(CChannel* c, sync::CTimer* t);
 
     /// Send out a packet to a given address.
     /// @param [in] addr destination address
@@ -454,15 +454,15 @@ public:
     void setClosing() { m_bClosing = true; }
 
 private:
-    static void*       worker(void* param);
-    srt::sync::CThread m_WorkerThread;
+    static void*  worker(void* param);
+    sync::CThread m_WorkerThread;
 
 private:
-    CSndUList*         m_pSndUList; // List of UDT instances for data sending
-    CChannel*          m_pChannel;  // The UDP channel for data sending
-    srt::sync::CTimer* m_pTimer;    // Timing facility
+    CSndUList*    m_pSndUList; // List of UDT instances for data sending
+    CChannel*     m_pChannel;  // The UDP channel for data sending
+    sync::CTimer* m_pTimer;    // Timing facility
 
-    srt::sync::atomic<bool> m_bClosing;            // closing the worker
+    sync::atomic<bool> m_bClosing;            // closing the worker
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
     uint64_t m_ullDbgPeriod;
@@ -542,9 +542,9 @@ private:
 
     size_t m_szPayloadSize; // packet payload size
 
-    srt::sync::atomic<bool> m_bClosing;            // closing the worker
+    sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static int m_counter;
+    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:

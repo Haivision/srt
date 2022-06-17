@@ -61,6 +61,8 @@ modified by
 using namespace std;
 using namespace srt::sync;
 
+namespace srt
+{
 namespace ACKWindowTools
 {
 
@@ -138,11 +140,12 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
    return -1;
 }
 
-}
+} // namespace AckTools
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize)
+void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize)
 {
    for (size_t i = 0; i < asize; ++ i)
       r_pktWindow[i] = 1000000;   //1 sec -> 1 pkt/sec
@@ -155,7 +158,7 @@ void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeW
 }
 
 
-int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, int& bytesps)
+int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, int& bytesps)
 {
    // get median value, but cannot change the original value order in the window
    std::copy(window, window + asize, replica);
@@ -199,7 +202,7 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
    }
 }
 
-int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
+int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
     // This calculation does more-less the following:
     //

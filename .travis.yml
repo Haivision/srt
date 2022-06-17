@@ -9,6 +9,7 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
+        - libmbedtls-dev
     sonarcloud:
         organization: "haivision"
         token:
@@ -23,12 +24,12 @@ matrix:
         - os: linux
           env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
           - RUN_SONARCUBE=1
           - RUN_CODECOV=1
         - env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release
         - os: osx

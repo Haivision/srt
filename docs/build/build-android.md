@@ -1,4 +1,4 @@
-# Building SRT for Android
+# Building SRT on Android
 
 **NOTE:** The scripts have been moved to [scripts/build-android](../../scripts/build-android/) folder.
 

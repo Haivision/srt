@@ -1472,8 +1472,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     if (tp == Group::SINGLE)
         return;
 
-    // This flips HORIZ/VERT
-    Group::Type crosstype = Group::Type(!tp);
+    Group::Type crosstype = Group::FlipType(tp);
     EHangStatus stat;
 
     if (crosstype == Group::HORIZ)

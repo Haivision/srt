@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.4.4)
+set (SRT_VERSION 1.5.0)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -129,7 +129,7 @@ else()
 	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
-option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -148,6 +148,7 @@ option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
+option(OPENSSL_USE_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
@@ -346,6 +347,10 @@ if (ENABLE_ENCRYPTION)
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
+			if (OPENSSL_USE_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+			endif()
 		endif()
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
@@ -708,8 +713,17 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+# ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+	message(DEPRECATION "ENABLE_EXPERIMENTAL_BONDING is deprecated. Please use ENABLE_BONDING instead.")
+	set (ENABLE_BONDING ON)
+endif()
+
+if (ENABLE_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
+	message(STATUS "ENABLE_BONDING: ON")
+else()
+	message(STATUS "ENABLE_BONDING: OFF")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -1230,7 +1244,7 @@ if (ENABLE_APPS)
 			# For testing applications, every application has its exclusive
 			# list of source files in its own Manifest file.
 			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
-			srt_add_program(${name} ${SOURCES_app})
+			srt_add_program_dont_install(${name} ${SOURCES_app})
 		endmacro()
 
 		srt_add_testprogram(utility-test)
@@ -1256,7 +1270,7 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		if (ENABLE_EXPERIMENTAL_BONDING)
+		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
 		endif()
@@ -1275,22 +1289,15 @@ if (ENABLE_EXAMPLES)
 	# No examples should need C++11
 	macro(srt_add_example mainsrc)
 		get_filename_component(name ${mainsrc} NAME_WE)
-		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+		srt_add_program_dont_install(${name} examples/${mainsrc} ${ARGN})
 		target_link_libraries(${name} ${srt_link_library} ${DEPENDS_srt})
 	endmacro()
 
 	srt_add_example(recvlive.cpp)
 
-# Don't compile examples that do require C++11
-
-	if (ENABLE_CXX11)
-		srt_add_example(sendfile.cpp apps/logsupport.cpp)
-		target_compile_options(sendfile PRIVATE ${CFLAGS_CXX_STANDARD})
+	srt_add_example(sendfile.cpp)
 		
-		srt_add_example(recvfile.cpp apps/logsupport.cpp)
-		target_compile_options(recvfile PRIVATE ${CFLAGS_CXX_STANDARD})
-	endif()
-
+	srt_add_example(recvfile.cpp)
 
 	srt_add_example(test-c-client.c)
 
@@ -1298,7 +1305,7 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(test-c-server.c)
 
-if (ENABLE_EXPERIMENTAL_BONDING)
+if (ENABLE_BONDING)
 	srt_add_example(test-c-client-bonding.c)
 
 	srt_add_example(test-c-server-bonding.c)

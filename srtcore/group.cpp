@@ -150,7 +150,7 @@ void CUDTGroup::debugMasterData(SRTSOCKET slave)
     // time when the connection process is done, until the first reading/writing happens.
     ScopedLock cg(m_GroupLock);
 
-    IF_LOGGING(SRTSOCKET mpeer);
+    IF_LOGGING(SRTSOCKET mpeer = SRT_INVALID_SOCK);
     IF_LOGGING(steady_clock::time_point start_time);
 
     bool found = false;
@@ -4528,47 +4528,6 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
-
-int CUDTGroup::configure(const char* str)
-{
-    string config = str;
-    switch (type())
-    {
-        /* TMP review stub case SRT_GTYPE_BALANCING:
-            // config contains the algorithm name
-            if (config == "" || config == "auto")
-            {
-                m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
-                HLOGC(gmlog.Debug, log << "group(balancing): WINDOW algorithm selected");
-            }
-            else if (config == "fixed")
-            {
-                m_cbSelectLink.set(this, &CUDTGroup::linkSelect_fixed_fw);
-                HLOGC(gmlog.Debug, log << "group(balancing): FIXED algorithm selected");
-            }
-            else
-            {
-                LOGC(gmlog.Error, log << "group(balancing): unknown selection algorithm '"
-                        << config << "'");
-                return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            break;*/
-    case SRT_GTYPE_BROADCAST:
-    case SRT_GTYPE_BACKUP:
-    default:
-        if (config == "")
-        {
-            // You can always call the config with empty string,
-            // it should set defaults or do nothing, if not supported.
-            return 0;
-        }
-        LOGC(gmlog.Error, log << "this group type doesn't support any configuration");
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return 0;
-}
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()

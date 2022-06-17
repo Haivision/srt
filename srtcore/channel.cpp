@@ -700,7 +700,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
     return res;
 }
 
-EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
+srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;

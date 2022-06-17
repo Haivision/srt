@@ -9,12 +9,12 @@ have the Tcl interpreter installed to use this script.
 
 
 Here is a link to a demo showing how CMake can be used to build SRT:
-[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s)
+[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s).
 
 
-Additional information on building with Windows is available in the 
+Additional information on building for Windows is available in the 
 [Building SRT for Windows](https://github.com/Haivision/srt/blob/master/docs/build/build-win.md) 
-document and on the [SRT Cookbook web site](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
+document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
 
 
 ## List of Build Options
@@ -28,6 +28,7 @@ Option details are given further below.
 | [`CMAKE_INSTALL_PREFIX`](#cmake_install_prefix)              | 1.3.0 | `STRING`  | OFF        | Standard CMake variable that establishes the root directory for installation, inside of which a GNU/POSIX compatible directory layout will be used. |
 | [`CYGWIN_USE_POSIX`](#cygwin_use_posix)                      | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.  |
 | [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (srt-live-trasnmit, etc.).  |
+| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | OFF        | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.  |
 | [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency. |
 | [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7 |
 | [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.  |
@@ -39,11 +40,11 @@ Option details are given further below.
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address. |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors. |
 | [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.  |
-| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.4.5 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements (in dev build 1.4.5 only). |
+| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.5.0 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements. |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).  |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.  |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library  |
-| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.4.5 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step  (in dev build 1.4.5 only).  |
+| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.  |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a tatic library  |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON*        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.  |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (srt-test-live, etc.).  |
@@ -60,6 +61,7 @@ Option details are given further below.
 | [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1-dev), `gnutls`, `mbedtls`).  |
 | [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.  |
 | [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.  |
+| [`OPENSSL_USE_STATIC_LIBS`](#openssl_use_static_libs)        | 1.5.0 | `BOOL`    | OFF        | Link OpenSSL statically.  |
 | [`USE_STATIC_LIBSTDCXX`](#use_static_libstdcxx)              | 1.2.0 | `BOOL`    | OFF        | Enforces linking the SRT library against the static libstdc++ library. |
 | [`WITH_COMPILER_PREFIX`](#with_compiler_prefix)              | 1.3.0 | `STRING`  | OFF        | Sets C/C++ toolchains as `<prefix><c-compiler>` and `<prefix><c++-compiler>`, overriding the default compiler. |
 | [`WITH_COMPILER_TYPE`](#with_compiler_type)                  | 1.3.0 | `STRING`  | OFF        | Sets the compiler type to be used (values: gcc, cc, clang, etc.). |
@@ -182,6 +184,24 @@ Enables compiling user applications.
 
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
+
+
+#### ENABLE_BONDING
+**`--enable-bonding`** (default: OFF)
+
+Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.
+
+Similar to SMPTE-2022-7 over managed networks, Connection Bonding adds seamless stream protection and hitless failover to the SRT protocol. This technology relies on more than one IP network path to prevent disruption to live video streams in the event of network congestion or outages, maintaining continuity of service.
+
+This is accomplished using the [socket groups](../features/socket-groups.md) introduced in [SRT v1.5](https://github.com/Haivision/srt/releases/tag/v1.5.0). The general concept of socket groups means having a group that contains multiple sockets, where one operation for sending one data signal is applied to the group. Single sockets inside the group will take over this operation and do what is necessary to deliver the signal to the receiver.
+
+Two modes are supported:
+
+- [Broadcast](../features/socket-groups.md#1-broadcast) - In *Broadcast* mode, data is sent redundantly over all the member links in a group. If one of the links fails or experiences network jitter and/or packet loss, the missing data will be received over another link in the group. Redundant packets are simply discarded at the receiver side.
+
+- [Main/Backup](../features/bonding-main-backup.md) - In *Main/Backup* mode, only one (main) link at a time is used for data transmission while other (backup) connections are on standby to ensure the transmission will continue if the main link fails. The goal of Main/Backup mode is to identify a potential link break before it happens, thus providing a time window within which to seamlessly switch to one of the backup links.
+
+With the Connection Bonding feature disabled, [bonding API functions](../API/API-functions.md#socket-group-management) are present, but return an error.
 
 
 #### ENABLE_CXX_DEPS
@@ -528,6 +548,12 @@ built-in one).
 When ON, uses `pkg-config` to find OpenSSL libraries. You can turn this OFF to 
 force `cmake` to find OpenSSL by its own preferred method.
 
+### OPENSSL_USE_STATIC_LIBS
+**`--openssl-use-static-libs`** (default: OFF)
+
+When ON, OpenSSL libraries are linked statically.
+When `pkg-config`(`-DUSE_OPENSSL_PC=ON`) is used, static OpenSSL libraries are listed in `SSL_STATIC_LIBRARIES`. See `<prefix>_STATIC` in [CMake's FindPkgConfig](https://cmake.org/cmake/help/latest/module/FindPkgConfig.html).
+On Windows additionally links `crypt32.lib`.
 
 #### USE_STATIC_LIBSTDCXX
 **`--use-static-libstdc++`** (default: OFF)

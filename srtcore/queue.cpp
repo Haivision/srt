@@ -857,7 +857,7 @@ srt::CRendezvousQueue::~CRendezvousQueue()
     m_lRendezvousID.clear();
 }
 
-void srt::CRendezvousQueue::insert(const SRTSOCKET&                id,
+void srt::CRendezvousQueue::insert(const SRTSOCKET&           id,
                               CUDT*                           u,
                               const sockaddr_any&             addr,
                               const steady_clock::time_point& ttl)
@@ -1181,7 +1181,7 @@ srt::CRcvQueue::~CRcvQueue()
 }
 
 #if ENABLE_LOGGING
-int srt::CRcvQueue::m_counter = 0;
+srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
 void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
@@ -1200,8 +1200,8 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     m_pRendezvousQueue = new CRendezvousQueue;
 
 #if ENABLE_LOGGING
-    ++m_counter;
-    const std::string thrname = "SRT:RcvQ:w" + Sprint(m_counter);
+    const int cnt = ++m_counter;
+    const std::string thrname = "SRT:RcvQ:w" + Sprint(cnt);
 #else
     const std::string thrname = "SRT:RcvQ:w";
 #endif
@@ -1345,7 +1345,7 @@ void* srt::CRcvQueue::worker(void* param)
     return NULL;
 }
 
-EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
+srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 #if !USE_BUSY_WAITING
     // This might be not really necessary, and probably
@@ -1403,7 +1403,7 @@ EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, s
     return rst;
 }
 
-EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
 {
     HLOGC(cnlog.Debug,
           log << "Got sockID=0 from " << addr.str() << " - trying to resolve it as a connection request...");
@@ -1446,7 +1446,7 @@ EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, cons
     return worker_TryAsyncRend_OrStore(0, unit, addr); // 0 id because the packet came in with that very ID.
 }
 
-EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
 {
     CUDT* u = m_pHash->lookup(id);
     if (!u)
@@ -1498,7 +1498,7 @@ EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* 
 // This function then tries to manage the packet as a rendezvous connection
 // request in ASYNC mode; when this is not applicable, it stores the packet
 // in the "receiving queue" so that it will be picked up in the "main" thread.
-EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& addr)
 {
     // This 'retrieve' requires that 'id' be either one of those
     // stored in the rendezvous queue (see CRcvQueue::registerConnector)

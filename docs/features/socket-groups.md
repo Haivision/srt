@@ -1,4 +1,6 @@
-# Abstract
+# SRT Connection Bonding: Socket Groups
+
+## Introduction
 
 The general concept of the socket groups means that a separate entity,
 parallel to a socket, is provided, and the operation done on a group
@@ -9,34 +11,33 @@ The groups types generally split into two categories:
 
 1. Bonding groups.
 
-This group category is meant to utilize multiple connections in order
-to have a group-wise connection. How particular links are then utilized
-to make a group-wise sending, depends on the particular group type. Within
-this category we have the following group types:
+   This group category is meant to utilize multiple connections in order
+   to have a group-wise connection. How particular links are then utilized
+   to make a group-wise sending, depends on the particular group type. Within
+   this category we have the following group types:
 
-   - Broadcast: send the stream over all links simultaneously
-   - Backup: use one link, but be prepared for a quick switch if broken
-   - Balancing: utilize all links, but one payload is sent only over one link
+    - Broadcast: send the stream over all links simultaneously,
+    - Main/Backup: use one link, but be prepared for a quick switch if broken,
+    - Balancing: utilize all links, but one payload is sent only over one link (**UNDER DEVELOPMENT!**).
 
-Bonding category groups predict that a group is mirrored on the peer network
-node, so all particular links connect to the endpoint that always resolves to
-the same target application. Just possibly every link uses a different network
-path.
+   Bonding category groups predict that a group is mirrored on the peer network
+   node, so all particular links connect to the endpoint that always resolves to
+   the same target application. Just possibly every link uses a different network
+   path.
 
 2. Dispatch groups.
 
-This category contains currently only one Multicast type (**CONCEPT!**).
+   This category contains currently only one Multicast type (**CONCEPT! NOT IMPLEMENTED!**).
 
-Multicast group has a behavior dependent on the connection side and it is
-predicted to be only used in case when the listener side is a stream sender
-with possibly multiple callers being stream receivers. It utilizes the UDP
-multicast feature in order to send payloads, while the control communication
-is still sent over the unicast link.
+   Multicast group has a behavior dependent on the connection side and it is
+   predicted to be only used in case when the listener side is a stream sender
+   with possibly multiple callers being stream receivers. It utilizes the UDP
+   multicast feature in order to send payloads, while the control communication
+   is still sent over the unicast link.
 
-Details for the group types:
+## Details for the Group Types
 
-
-## 1. Broadcast
+### 1. Broadcast
 
 This is the simplest bonding group type. The payload sent for a group will be
 then sent over every single link in the group simultaneously. On the reception
@@ -52,8 +53,7 @@ A drawback of this method is that it always utilizes the full capacity of all
 links in the group, whereas only one link at a time delivers any useful data.
 Every next link in this group gives then another 100% overhead.
 
-
-## 2. Backup
+### 2. Main/Backup
 
 This solution is more complicated and more challenging for the settings,
 and in contradiction to Broadcast group, it costs some penalties.
@@ -139,8 +139,7 @@ withstand the initial high burst of packets, while then the bitrate will
 become stable - but still, some extra latency might be needed to compensate
 any quite probable packet loss that may occur during this process.
 
-
-## 3. Balancing
+### 3. Balancing (**UNDER DEVELOPMENT!**)
 
 The idea of balancing means that there are multiple network links used for
 carrying out the same transmission, however a single input signal should
@@ -185,8 +184,7 @@ the cost of sending by assigning so much of a share of the signal
 bitrte as it is represented by the share of the link in the sum of
 all maximum bandwidth values from every link.
 
-
-## 4. Multicast (NOT IMPLEMENTED - a concept)
+### 4. Multicast (**CONCEPT! NOT IMPLEMENTED!**)
 
 This group - unlike all others - is not intended to send one signal
 between two network nodes over multiple links, but rather a method of
@@ -303,8 +301,7 @@ The listener side will then send payload packets to the IGMP group,
 however all control packets will be still sent the same way as before,
 that is, over a direct connection.
 
-
-# Socket groups in SRT
+## Socket Groups in SRT
 
 The general idea of groups is that there can be multiple sockets belonging
 to a group, and various operations, normally done on single sockets, can
@@ -322,10 +319,10 @@ For groups you simply use the same operations as for single socket - it will
 be internally dispatched appropriate way, depending on what kind of entity
 was used. For example, when you send a payload, it will be effectively sent:
 
-- For Broadcast group, over all sockets
-- For Backup group, over all currently active links
-- For Balancing group, over a currently selected link
-- For Multicast group, over an extra socket to the multicast group
+- For Broadcast group, over all sockets,
+- For Main/Backup group, over all currently active links,
+- For Balancing group, over a currently selected link,
+- For Multicast group, over an extra socket to the multicast group.
 
 Similarly, the reading operation will read over all links and due to
 synchronized sequence numbers use them to decide the payload order: when
@@ -337,7 +334,7 @@ packet received over another link will be still earlier ready to play.
 
 The difference in reading between groups is that:
 
-- For Broadcast and Backup groups, sequence numbers are synchronized and
+- For Broadcast and Main/Backup groups, sequence numbers are synchronized and
 used to sort packets out
 
 - For Balancing group, message numbers are used to sort packets out
@@ -352,8 +349,7 @@ multicast link must have the target defined as the group ID so that all data in
 the header look exactly the same way depite being intended to be received by
 various different network nodes.
 
-
-# How to prepare connection for bonded links
+## How to Prepare Connection for Bonded Links
 
 In the listener-caller setup, you have to take care of the side separately.
 
@@ -364,7 +360,7 @@ handshake extension information concerning socket groups.
 The listener socket must have `SRTO_GROUPCONNECT` flag set. There are two
 reasons as to why it is required:
 
-1.  This flag **allows** the socket to accept bonded connections. Without this
+1. This flag **allows** the socket to accept bonded connections. Without this
 flag the connection that attempts to be bonded will be rejected.
 
 2. When `srt_accept` function is being called on a listener socket that has
@@ -390,8 +386,7 @@ to you.
 
 On the caller the matter is a little bit more complicated.
 
-
-# Connect bonded
+## Connect Bonded
 
 At first, please remember that the official function to create a socket is now
 `srt_create_socket` and it gets no arguments. All previous functions to create
@@ -472,8 +467,7 @@ procedure is done on the newly created socket for that connection (and that's
 the only way how you can define the outgoing port for a socket that belongs
 to a managed group).
 
-
-# Maintaining link activity
+## Maintaining Link Activity
 
 A link can get broken, and the only thing that the library does about it is
 make you aware of it. The bonding group, as managed, will simply delete the
@@ -515,9 +509,7 @@ result returned by `srt_group_data` - that is, sockets found broken during
 the operation will be only present if you review the array that was filled
 by `srt_sendmsg2` or `srt_recvmsg2`.
 
-
-
-# Writing data to a bonded link
+## Writing Data to a Bonded Link
 
 This is very simple. Call the sending function (recommended is `srt_sendmsg2`)
 to send the data, passing group ID in the place of socket ID. By recognizing
@@ -541,8 +533,7 @@ on particular link - and in this group type packets are distributed
 throughout the link and never go in the order of scheduling on one link.
 Therefore this group uses message numbers for ordering.
 
-
-# Reading data from a bonded link
+## Reading Data from a Bonded Link
 
 This is also simple from the user's perspective. Simply call the reading
 function, such as `srt_recvmsg2`, passing the group ID instead of socket
@@ -554,8 +545,7 @@ group reading facility will take care that you get your payload in the right
 order and at the time to play, and the redundant payloads retrieved over
 different links simultaneously will be discarded.
 
-
-# Checking the status
+## Checking the Status
 
 If you call `srt_sendmsg2` or `srt_recvmsg2`, you'll get the status of every
 socket in the group in a part of the `SRT_MSGCTRL` structure, where you should
@@ -588,7 +578,7 @@ on the socket group type:
 1. Broadcast: the data are being sent over all links anyway, so it doesn't make
 much difference except that the broken socket must be taken care of.
 
-2. Backup: usually when a socket is broken, there has been a disturbance
+2. Main/Backup: usually when a socket is broken, there has been a disturbance
 notified much earlier and therefore another link already active. The bonding
 group is allowed to keep as many active links as required for at least one
 link to remain stable. A broken socket is then simply a possible resolution for
@@ -624,8 +614,7 @@ the state of "idle", and will be deleted before it could be used.
 And finally, a group can be closed. In this case, it internally closes first
 all sockets that are members of this group, then the group itself is deleted.
 
-
-# Application support
+## Application Support
 
 Currently only the `srt-test-live` application is supporting a syntax for
 socket groups.
@@ -723,5 +712,3 @@ when this link is back online.
 The stability timeout can be configured through `groupstabtimeo` option.
 Note that with increased stability timeout, the necessary latency penalty
 grows as well.
-
-

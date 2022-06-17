@@ -70,7 +70,7 @@ inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 template<>
 inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
 {
@@ -247,7 +247,7 @@ const SocketOption srt_options [] {
     { "ipv6only", 0, SRTO_IPV6ONLY, SocketOption::PRE, SocketOption::INT, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
     { "groupminstabletimeo", 0, SRTO_GROUPMINSTABLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
 #endif

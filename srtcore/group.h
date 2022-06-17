@@ -375,7 +375,6 @@ public:
     void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    int  configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.

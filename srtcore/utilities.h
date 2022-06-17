@@ -301,7 +301,7 @@ template<size_t R>
 struct BitsetMask<R, R, true>
 {
     static const bool correct = true;
-    static const uint32_t value = 1 << R;
+    static const uint32_t value = 1u << R;
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition

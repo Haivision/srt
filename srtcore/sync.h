@@ -54,10 +54,12 @@
 #include "utilities.h"
 #include "srt_attr_defs.h"
 
-class CUDTException;    // defined in common.h
 
 namespace srt
 {
+
+class CUDTException;    // defined in common.h
+
 namespace sync
 {
 
@@ -741,7 +743,7 @@ typedef std::system_error CThreadException;
 using CThread = std::thread;
 namespace this_thread = std::this_thread;
 #else // pthreads wrapper version
-typedef ::CUDTException CThreadException;
+typedef CUDTException CThreadException;
 
 class CThread
 {

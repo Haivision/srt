@@ -54,7 +54,7 @@ public:
         , m_packets(0)
     {}
 
-    BytesPackets(uint64_t bytes, size_t n = 1)
+    BytesPackets(uint64_t bytes, uint32_t n = 1)
         : m_bytes(bytes)
         , m_packets(n)
     {}
