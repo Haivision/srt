@@ -31,11 +31,13 @@ int crysprStub_Prng(unsigned char *rn, int len)
 }
 
 int crysprStub_AES_SetKey(
+    int cipher_type,            /* One of HCRYPT_CTX_MODE_[CLRTXT|AESECB|AESCTR|AESGDM] */
     bool bEncrypt,              /* true Enxcrypt key, false: decrypt */
     const unsigned char *kstr,  /* key sttring*/
     size_t kstr_len,            /* kstr len in  bytes (16, 24, or 32 bytes (for AES128,AES192, or AES256) */
     CRYSPR_AESCTX *aes_key)     /* Cryptolib Specific AES key context */
 {
+    (void)cipher_type;
     (void)bEncrypt;
     (void)kstr;
     (void)kstr_len;
@@ -122,10 +124,10 @@ int crysprStub_KmPbkdf2(
 
 static int crysprFallback_KmSetKey(CRYSPR_cb *cryspr_cb, bool bWrap, const unsigned char *kek, size_t kek_len)
 {
-	CRYSPR_AESCTX *aes_kek = &cryspr_cb->aes_kek;
+    CRYSPR_AESCTX *aes_kek = CRYSPR_GETKEK(cryspr_cb);
 
-    if (cryspr_cb->cryspr->aes_set_key(bWrap, kek, kek_len, aes_kek)) {
-        HCRYPT_LOG(LOG_ERR, "AES_set_%s_key(kek) failed\n", bWrap? "encrypt": "decrypt");
+    if (cryspr_cb->cryspr->aes_set_key(HCRYPT_CTX_MODE_AESECB, bWrap, kek, kek_len, aes_kek)) {
+        HCRYPT_LOG(LOG_ERR, "aes_set_%s_key(kek) failed\n", bWrap? "encrypt": "decrypt");
         return(-1);
     }
 	return(0);
@@ -163,7 +165,9 @@ int crysprFallback_AES_WrapKey(CRYSPR_cb *cryspr_cb,
 			memcpy(B + 8, R, 8);
 			{
 				size_t outlen = 16;
-				cryspr_cb->cryspr->aes_ecb_cipher(true, &cryspr_cb->aes_kek, B, 16, B, &outlen);
+				CRYSPR_AESCTX *aes_kek = CRYSPR_GETKEK(cryspr_cb);
+
+				cryspr_cb->cryspr->aes_ecb_cipher(true, aes_kek, B, 16, B, &outlen);
 			}
 			A[7] ^= (unsigned char)(t & 0xff);
 			if (t > 0xff)	
@@ -211,7 +215,9 @@ int crysprFallback_AES_UnwrapKey(CRYSPR_cb *cryspr_cb,
 			memcpy(B + 8, R, 8);
 			{
 				size_t outlen = 16;
-				cryspr_cb->cryspr->aes_ecb_cipher(false, &cryspr_cb->aes_kek, B, 16, B, &outlen);
+				CRYSPR_AESCTX *aes_kek = CRYSPR_GETKEK(cryspr_cb);
+
+				cryspr_cb->cryspr->aes_ecb_cipher(false, aes_kek, B, 16, B, &outlen);
 			}
 			memcpy(R, B + 8, 8);
 		}
@@ -237,26 +243,32 @@ static unsigned char *_crysprFallback_GetOutbuf(CRYSPR_cb *cryspr_cb, size_t pfx
 	return(out_buf);
 }
 
-static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
+CRYSPR_cb *crysprHelper_Open(CRYSPR_methods *cryspr, size_t cb_len, size_t max_len)
 {
 	CRYSPR_cb *cryspr_cb;
 	unsigned char *membuf;
 	size_t memsiz, padded_len = hcryptMsg_PaddedLen(max_len, 128/8);
 
-	HCRYPT_LOG(LOG_DEBUG, "%s", "Using OpenSSL AES\n");
-
-	memsiz = sizeof(*cryspr_cb) + (CRYSPR_OUTMSGMAX * padded_len);
+    if(cb_len < sizeof(*cryspr_cb)) {
+        HCRYPT_LOG(LOG_ERR, "crysprHelper_Open() cb_len too small (%zd < %zd)n",
+                   cb_len, sizeof(*cryspr_cb));
+        return(NULL);
+    }
+    memsiz = cb_len + (CRYSPR_OUTMSGMAX * padded_len);
 #if !CRYSPR_HAS_AESCTR
 	memsiz += HCRYPT_CTR_STREAM_SZ;
 #endif /* !CRYSPR_HAS_AESCTR */
 
-	cryspr_cb = malloc(memsiz);
+	cryspr_cb = calloc(1, memsiz);
 	if (NULL == cryspr_cb) {
 		HCRYPT_LOG(LOG_ERR, "malloc(%zd) failed\n", memsiz);
 		return(NULL);
 	}
 	membuf = (unsigned char *)cryspr_cb;
 	membuf += sizeof(*cryspr_cb);
+
+    /*reserve cryspr's private data that caller will initialize */
+    membuf += (cb_len-sizeof(CRYSPR_cb));
 
 #if !CRYSPR_HAS_AESCTR
 	cryspr_cb->ctr_stream = membuf;
@@ -275,24 +287,37 @@ static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
 	return(cryspr_cb);
 }
 
+int crysprHelper_Close(CRYSPR_cb *cryspr_cb)
+{
+    free(cryspr_cb);
+    return(0);
+}
+
+static CRYSPR_cb *crysprFallback_Open(CRYSPR_methods *cryspr, size_t max_len)
+{
+    CRYSPR_cb *cryspr_cb;
+
+    cryspr_cb = crysprHelper_Open(cryspr, sizeof(CRYSPR_cb), max_len);
+    return(cryspr_cb);
+}
+
 static int crysprFallback_Close(CRYSPR_cb *cryspr_cb)
 {
-	free(cryspr_cb);
-	return(0);
+    return(crysprHelper_Close(cryspr_cb));
 }
 
 static int crysprFallback_MsSetKey(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx, const unsigned char *key, size_t key_len)
 {
-	CRYSPR_AESCTX *aes_sek = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)]; /* Ctx tells if it's for odd or even key */
+	CRYSPR_AESCTX *aes_sek = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx)); /* Ctx tells if it's for odd or even key */
 
 	if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT)        /* Encrypt key */
 	||  (ctx->mode == HCRYPT_CTX_MODE_AESCTR)) {   /* CTR mode decrypts using encryption methods */
-		if (cryspr_cb->cryspr->aes_set_key(true, key, key_len, aes_sek)) {
+		if (cryspr_cb->cryspr->aes_set_key(HCRYPT_CTX_MODE_AESCTR, true, key, key_len, aes_sek)) {
 			HCRYPT_LOG(LOG_ERR, "%s", "CRYSPR->set_encrypt_key(sek) failed\n");
 			return(-1);
 		}
 	} else {                                       /* Decrypt key */
-		if (cryspr_cb->cryspr->aes_set_key(false, key, key_len, aes_sek)) {
+		if (cryspr_cb->cryspr->aes_set_key(HCRYPT_CTX_MODE_AESCTR, false, key, key_len, aes_sek)) {
 			HCRYPT_LOG(LOG_ERR, "%s", "CRYSPR->set_decrypt_key(sek) failed\n");
 			return(-1);
 		}
@@ -380,7 +405,8 @@ static int crysprFallback_MsEncrypt(
 			{
 #if CRYSPR_HAS_AESCTR
 				/* Get current key (odd|even) from context */
-				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				CRYSPR_AESCTX *aes_key = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx)); /* Ctx tells if it's for odd or even key */
+
 				unsigned char iv[CRYSPR_AESBLKSZ];
 
 				/* Get input packet index (in network order) */
@@ -408,7 +434,7 @@ static int crysprFallback_MsEncrypt(
 						&out_msg[pfx_len]);
 #else /*CRYSPR_HAS_AESCTR*/
 				/* Get current key (odd|even) from context */
-				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				CRYSPR_AESCTX *aes_key = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx));
 				unsigned char iv[CRYSPR_AESBLKSZ];
 				int iret = 0;
 
@@ -535,7 +561,7 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 			{
 #if CRYSPR_HAS_AESCTR
 				/* Get current key (odd|even) from context */
-				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				CRYSPR_AESCTX *aes_key = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx));
 				unsigned char iv[CRYSPR_AESBLKSZ];
 
 				/* Get input packet index (in network order) */
@@ -564,7 +590,7 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 				out_len = in_data[0].len;
 #else  /*CRYSPR_HAS_AESCTR*/
 				/* Get current key (odd|even) from context */
-				CRYSPR_AESCTX *aes_key = &cryspr_cb->aes_sek[hcryptCtx_GetKeyIndex(ctx)];
+				CRYSPR_AESCTX *aes_key = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx));
 				unsigned char iv[CRYSPR_AESBLKSZ];
 				int iret = 0;
 
