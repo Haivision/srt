@@ -8,7 +8,6 @@
  *
  */
 
-
 /*****************************************************************************
 written by
    Haivision Systems Inc.
@@ -20,10 +19,10 @@ written by
 #ifndef CRYSPR_OPENSSL_H
 #define CRYSPR_OPENSSL_H
 
-#include <openssl/evp.h>	/* PKCS5_xxx() */
-#include <openssl/aes.h>	/* AES_xxx() */
+#include <openssl/evp.h> /* PKCS5_xxx() */
+#include <openssl/aes.h> /* AES_xxx() */
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(OPENSSL_IS_BORINGSSL))
-# include <openssl/modes.h>	/* CRYPTO_xxx() */
+#include <openssl/modes.h> /* CRYPTO_xxx() */
 #endif
 #include <openssl/rand.h>
 #include <openssl/err.h>
@@ -39,7 +38,7 @@ written by
    if not set to 0 to enable default/fallback crysprFallback_AES_WrapKey/crysprFallback_AES_UnwrapKey methods
    and provide the aes_ecb_cipher method  .
 */
-#if 1//Force internal AES-WRAP (using AES-ECB) until implemented with EVP (OPENSSL_VERSION_NUMBER < 0x00xxxxxxL)
+#if 1 // Force internal AES-WRAP (using AES-ECB) until implemented with EVP (OPENSSL_VERSION_NUMBER < 0x00xxxxxxL)
 #define CRYSPR_HAS_AESKWRAP 0
 #else
 #define CRYSPR_HAS_AESKWRAP 1
@@ -49,7 +48,7 @@ written by
    if not set to 0 to enable not-yet-implemented/fallback crysprFallback.km_pbkdf2 method
    and provide the sha1_msg_digest method.
 */
-#define CRYSPR_HAS_PBKDF2 1             /* Define to 1 if CRYSPR has Password-based Key Derivaion Function 2 */
+#define CRYSPR_HAS_PBKDF2 1 /* Define to 1 if CRYSPR has Password-based Key Derivaion Function 2 */
 
 /*
 #define CRYSPR_AESCTX to the CRYSPR specifix AES key context object.
@@ -57,9 +56,8 @@ This type reserves room in the CRYPSPR control block for Haicrypt KEK and SEK
 It is set from hte keystring through CRYSPR_methods.aes_set_key and passed
 to CRYSPR_methods.aes_*.
 */
-typedef EVP_CIPHER_CTX CRYSPR_AESCTX;   /* CRYpto Service PRovider AES key context */
+typedef EVP_CIPHER_CTX CRYSPR_AESCTX; /* CRYpto Service PRovider AES key context */
 
-struct tag_CRYSPR_methods *crysprOpenSSL_EVP(void);
+struct tag_CRYSPR_methods* crysprOpenSSL_EVP(void);
 
 #endif /* CRYSPR_OPENSSL_H */
-
