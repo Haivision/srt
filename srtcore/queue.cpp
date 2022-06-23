@@ -140,22 +140,6 @@ int srt::CUnitQueue::init(int size, int mss, int version)
 // Consider merging.
 int srt::CUnitQueue::increase()
 {
-    // adjust/correct m_iCount
-    int      real_count = 0;
-    CQEntry* p          = m_pQEntry;
-    while (p != NULL)
-    {
-        CUnit* u = p->m_pUnit;
-        for (CUnit* end = u + p->m_iSize; u != end; ++u)
-            if (u->m_iFlag != CUnit::FREE)
-                ++real_count;
-
-        if (p == m_pLastQueue)
-            p = NULL;
-        else
-            p = p->m_pNext;
-    }
-    m_iCount = real_count;
     if (double(m_iCount) / m_iSize < 0.9)
         return -1;
 
