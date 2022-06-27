@@ -574,14 +574,11 @@ void test_AESecb(
         ASSERT_NE(cryspr_m->aes_ecb_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+            HCRYPT_CTX_MODE_AESECB,
             bEncrypt,
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0]);
-#else
-            &cryspr_cb->aes_sek[0]);
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0));
         if(bEncrypt) {
             intxt=(unsigned char *)tv->cleartxt;
             outtxt=(unsigned char *)tv->ciphertxt;
@@ -592,11 +589,7 @@ void test_AESecb(
 
         rc2 = cryspr_m->aes_ecb_cipher(
             bEncrypt,                   /* true:encrypt, false:decrypt */
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#else
-            &cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0),/* CRYpto Service PRovider AES Key context */
             intxt,                      /* src */
             txtlen,                     /* length */
             result,                     /* dest */
@@ -729,14 +722,11 @@ void test_AESctr(
         ASSERT_NE(cryspr_m->aes_ctr_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+            HCRYPT_CTX_MODE_AESCTR,
             true,       //For CTR, Encrypt key is used for both encryption and decryption
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0]);
-#else
-            &cryspr_cb->aes_sek[0]);
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0));
         if(bEncrypt) {
             intxt=(unsigned char *)tv->cleartxt;
             outtxt=(unsigned char *)tv->ciphertxt;
@@ -748,11 +738,7 @@ void test_AESctr(
         memcpy(ivec, tv->iv, sizeof(ivec)); //cipher ivec not const
         rc2 = cryspr_m->aes_ctr_cipher(
             bEncrypt,                   /* true:encrypt, false:decrypt */
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#else
-            &cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0),/* CRYpto Service PRovider AES Key context */
             ivec,                       /* iv */
             intxt,                      /* src */
             txtlen,                     /* length */

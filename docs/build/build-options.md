@@ -58,7 +58,7 @@ Option details are given further below.
 | [`PTHREAD_LIBRARY`](#pthread_library)                        | 1.3.0 | `STRING`  | OFF        | Configures the path to a pthread library.  |
 | [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load. |
 | [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling. |
-| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `gnutls`, `mbedtls`).  |
+| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1-dev), `gnutls`, `mbedtls`).  |
 | [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.  |
 | [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.  |
 | [`OPENSSL_USE_STATIC_LIBS`](#openssl_use_static_libs)        | 1.5.0 | `BOOL`    | OFF        | Link OpenSSL statically.  |
@@ -456,12 +456,7 @@ will be run as part of the build process. This is intended for developers only.
 **`--openssl-crypto-library=<filepath>`**
 
 Used to configure the path to an OpenSSL crypto library. Ignored when encryption 
-is disabled (ENABLE_ENCRYPTION = OFF). Supported libraries are:
-
-  - openssl (default)
-  - gnutls
-  - mbedtls
-
+is disabled (ENABLE_ENCRYPTION = OFF). See [`USE_ENCLIB`](#use_enclib) for the list of supported libraries.
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
@@ -534,6 +529,7 @@ remember that:
 Encryption library to be used. Possible options for `<name>`:
 
 * openssl (default)
+* openssl-evp (OpenSSL EVP API, since 1.5.1-dev)
 * gnutls (with nettle)
 * mbedtls
 

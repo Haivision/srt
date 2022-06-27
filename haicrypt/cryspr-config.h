@@ -9,6 +9,10 @@
 #include "cryspr-openssl.h"
 #define cryspr4SRT()  crysprOpenSSL()
 #define CRYSPR_IMPL_DESC "OpenSSL-AES"
+#elif defined(USE_OPENSSL_EVP)
+#include "cryspr-openssl-evp.h"
+#define cryspr4SRT()  crysprOpenSSL_EVP()
+#define CRYSPR_IMPL_DESC "OpenSSL-EVP"
 #elif defined(USE_GNUTLS)
 #include "cryspr-gnutls.h"
 #define cryspr4SRT()  crysprGnuTLS()
