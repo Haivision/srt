@@ -1867,7 +1867,7 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
     {
         s->core().startConnect(target_addr, forced_isn);
     }
-    catch (CUDTException& e) // Interceptor, just to change the state.
+    catch (const CUDTException&) // Interceptor, just to change the state.
     {
         s->m_Status = SRTS_OPENED;
         throw;
