@@ -29,7 +29,7 @@ protected:
         // make_unique is unfortunatelly C++14
         m_unit_queue = unique_ptr<CUnitQueue>(new CUnitQueue);
         ASSERT_NE(m_unit_queue.get(), nullptr);
-        m_unit_queue->init(m_buff_size_pkts, 1500, AF_INET);
+        m_unit_queue->init(m_buff_size_pkts, 1500);
 
 #if ENABLE_NEW_RCVBUFFER
         const bool enable_msg_api = m_use_message_api;
