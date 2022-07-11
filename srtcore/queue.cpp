@@ -72,7 +72,6 @@ srt::CUnitQueue::CUnitQueue()
     , m_iSize(0)
     , m_iCount(0)
     , m_iMSS()
-    , m_iIPversion()
 {
 }
 
@@ -94,7 +93,7 @@ srt::CUnitQueue::~CUnitQueue()
     }
 }
 
-int srt::CUnitQueue::init(int size, int mss, int version)
+int srt::CUnitQueue::init(int size, int mss)
 {
     CQEntry* tempq = NULL;
     CUnit*   tempu = NULL;
@@ -131,7 +130,6 @@ int srt::CUnitQueue::init(int size, int mss, int version)
 
     m_iSize      = size;
     m_iMSS       = mss;
-    m_iIPversion = version;
 
     return 0;
 }
@@ -184,12 +182,6 @@ int srt::CUnitQueue::increase()
     m_iSize += size;
 
     return 0;
-}
-
-int srt::CUnitQueue::shrink()
-{
-    // currently queue cannot be shrunk.
-    return -1;
 }
 
 srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
@@ -1123,6 +1115,7 @@ srt::CRcvQueue::CRcvQueue()
     , m_pHash(NULL)
     , m_pChannel(NULL)
     , m_pTimer(NULL)
+    , m_iIPversion()
     , m_szPayloadSize()
     , m_bClosing(false)
     , m_LSLock()
@@ -1170,9 +1163,10 @@ srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 
 void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
 {
+    m_iIPversion    = version;
     m_szPayloadSize = payload;
 
-    m_UnitQueue.init(qsize, (int)payload, version);
+    m_UnitQueue.init(qsize, (int)payload);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1199,7 +1193,7 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
 void* srt::CRcvQueue::worker(void* param)
 {
     CRcvQueue*   self = (CRcvQueue*)param;
-    sockaddr_any sa(self->m_UnitQueue.getIPversion());
+    sockaddr_any sa(self->getIPversion());
     int32_t      id = 0;
 
 #if ENABLE_LOGGING

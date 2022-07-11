@@ -90,38 +90,28 @@ public:
     ~CUnitQueue();
 
 public: // Storage size operations
-        /// Initialize the unit queue.
-        /// @param [in] size queue size
-        /// @param [in] mss maximum segment size
-        /// @param [in] version IP version
-        /// @return 0: success, -1: failure.
-    int init(int size, int mss, int version);
+    /// Initialize the unit queue.
+    /// @param [in] size queue size
+    /// @param [in] mss maximum segment size
+    /// @return 0: success, -1: failure.
+    int init(int size, int mss);
 
     /// Increase (double) the unit queue size.
     /// @return 0: success, -1: failure.
-
     int increase();
-
-    /// Decrease (halve) the unit queue size.
-    /// @return 0: success, -1: failure.
-
-    int shrink();
 
 public:
     int size() const { return m_iSize - m_iCount; }
     int capacity() const { return m_iSize; }
 
 public: // Operations on units
-        /// find an available unit for incoming packet.
-        /// @return Pointer to the available unit, NULL if not found.
+    /// find an available unit for incoming packet.
+    /// @return Pointer to the available unit, NULL if not found.
     CUnit* getNextAvailUnit();
 
     void makeUnitFree(CUnit* unit);
 
     void makeUnitGood(CUnit* unit);
-
-public:
-    inline int getIPversion() const { return m_iIPversion; }
 
 private:
     struct CQEntry
@@ -141,7 +131,6 @@ private:
     sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
 
     int m_iMSS;       // unit buffer size
-    int m_iIPversion; // IP version
 
 private:
     CUnitQueue(const CUnitQueue&);
@@ -510,19 +499,19 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
-
     void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID
     /// @param [out] packet received packet
     /// @return Data size of the packet
-
     int recvfrom(int32_t id, CPacket& to_packet);
 
     void stopWorker();
 
     void setClosing() { m_bClosing = true; }
+
+    int getIPversion() { return m_iIPversion; }
 
 private:
     static void*  worker(void* param);
@@ -540,7 +529,8 @@ private:
     CChannel*     m_pChannel;  // UDP channel for receving packets
     sync::CTimer* m_pTimer;    // shared timer with the snd queue
 
-    size_t m_szPayloadSize; // packet payload size
+    int m_iIPversion;          // IP version
+    size_t m_szPayloadSize;    // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
