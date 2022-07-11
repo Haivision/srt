@@ -2189,7 +2189,7 @@ as level-triggered, you can do two separate subscriptions for the same socket.
 
 **IMPORTANT**: The [`srt_epoll_wait`](#srt_epoll_wait) function does not report
 [`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) events. If you need the ability to get 
-any possible flag, you must use [`srt_epoll_wait`](#srt_epoll_wait). Note that 
+any possible flag, you must use [`srt_epoll_uwait`](#srt_epoll_uwait). Note that 
 this function doesn't work with system file descriptors.
 
 |      Returns                  |                                                           |
