@@ -78,34 +78,29 @@ struct CUnit
         PASSACK = 2,
         DROPPED = 3
     };
-    Flag m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
-    // TODO: Transition to the new RcvBuffer allows to use bool here.
+
+    // TODO: The new RcvBuffer allows to use atomic_bool here.
+    sync::atomic<Flag> m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
 };
 
 class CUnitQueue
 {
-
 public:
-    CUnitQueue();
+    /// @brief Construct a unit queue.
+    /// @param mss Initial number of units to allocate.
+    /// @param mss Maximum segment size meaning the size of each unit.
+    /// @throws CUDTException SRT_ENOBUF.
+    CUnitQueue(int initNumUnits, int mss);
     ~CUnitQueue();
 
-public: // Storage size operations
-    /// Initialize the unit queue.
-    /// @param [in] size queue size
-    /// @param [in] mss maximum segment size
-    /// @return 0: success, -1: failure.
-    int init(int size, int mss);
-
-    /// Increase (double) the unit queue size.
-    /// @return 0: success, -1: failure.
-    int increase();
+public:
+    int capacity() const { return m_iSize; }
+    int size() const { return m_iSize - m_iNumTaken; }
 
 public:
-    int size() const { return m_iSize - m_iCount; }
-    int capacity() const { return m_iSize; }
-
-public: // Operations on units
-    /// find an available unit for incoming packet.
+    /// @brief Find an available unit for incoming packet. Allocate new units if 90% or more are in use.
+    /// @note This function is not thread-safe. Currently only CRcvQueue::worker thread calls it, thus
+    /// it is not an issue. However, must be protected if used from several threads in the future.
     /// @return Pointer to the available unit, NULL if not found.
     CUnit* getNextAvailUnit();
 
@@ -121,16 +116,28 @@ private:
         int    m_iSize;   // size of each queue
 
         CQEntry* m_pNext;
-    } * m_pQEntry,     // pointer to the first unit queue
-        *m_pCurrQueue, // pointer to the current available queue
-        *m_pLastQueue; // pointer to the last unit queue
+    };
 
+    /// Increase the unit queue size (by @a m_iBlockSize units).
+    /// Uses m_mtx to protect access and changes of the queue state.
+    /// @return 0: success, -1: failure.
+    int increase_();
+
+    /// @brief Allocated a CQEntry of iNumUnits with each unit of mss bytes.
+    /// @param iNumUnits a number of units to allocate
+    /// @param mss the size of each unit in bytes.
+    /// @return a pointer to a newly allocated entry on success, NULL otherwise.
+    static CQEntry* allocateEntry(const int iNumUnits, const int mss);
+
+private:
+    CQEntry* m_pQEntry;    // pointer to the first unit queue
+    CQEntry* m_pCurrQueue; // pointer to the current available queue
+    CQEntry* m_pLastQueue; // pointer to the last unit queue
     CUnit* m_pAvailUnit; // recent available unit
-
     int m_iSize;  // total size of the unit queue, in number of packets
-    sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
-
-    int m_iMSS;       // unit buffer size
+    sync::atomic<int> m_iNumTaken; // total number of valid (occupied) packets in the queue
+    const int m_iMSS; // unit buffer size
+    const int m_iBlockSize; // Number of units in each CQEntry.
 
 private:
     CUnitQueue(const CUnitQueue&);
@@ -523,14 +530,14 @@ private:
     EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
 
 private:
-    CUnitQueue    m_UnitQueue; // The received packet queue
-    CRcvUList*    m_pRcvUList; // List of UDT instances that will read packets from the queue
-    CHash*        m_pHash;     // Hash table for UDT socket looking up
-    CChannel*     m_pChannel;  // UDP channel for receving packets
-    sync::CTimer* m_pTimer;    // shared timer with the snd queue
+    CUnitQueue*   m_pUnitQueue; // The received packet queue
+    CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
+    CHash*        m_pHash;      // Hash table for UDT socket looking up
+    CChannel*     m_pChannel;   // UDP channel for receving packets
+    sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
-    int m_iIPversion;          // IP version
-    size_t m_szPayloadSize;    // packet payload size
+    int m_iIPversion;           // IP version
+    size_t m_szPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
