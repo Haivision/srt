@@ -65,14 +65,22 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
-srt::CUnitQueue::CUnitQueue()
-    : m_pQEntry(NULL)
-    , m_pCurrQueue(NULL)
-    , m_pLastQueue(NULL)
-    , m_iSize(0)
-    , m_iCount(0)
-    , m_iMSS()
+srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
+    : m_iNumTaken(0)
+    , m_iMSS(mss)
+    , m_iBlockSize(initNumUnits)
 {
+    CQEntry* tempq = allocateEntry(m_iBlockSize, m_iMSS);
+
+    if (tempq == NULL)
+        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY);
+
+    m_pQEntry = m_pCurrQueue = m_pLastQueue = tempq;
+    m_pQEntry->m_pNext = m_pQEntry;
+
+    m_pAvailUnit = m_pCurrQueue->m_pUnit;
+
+    m_iSize = m_iBlockSize;
 }
 
 srt::CUnitQueue::~CUnitQueue()
@@ -93,17 +101,17 @@ srt::CUnitQueue::~CUnitQueue()
     }
 }
 
-int srt::CUnitQueue::init(int size, int mss)
+srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, const int mss)
 {
     CQEntry* tempq = NULL;
-    CUnit*   tempu = NULL;
-    char*    tempb = NULL;
+    CUnit* tempu   = NULL;
+    char* tempb    = NULL;
 
     try
     {
         tempq = new CQEntry;
-        tempu = new CUnit[size];
-        tempb = new char[size * mss];
+        tempu = new CUnit[iNumUnits];
+        tempb = new char[iNumUnits * mss];
     }
     catch (...)
     {
@@ -111,86 +119,52 @@ int srt::CUnitQueue::init(int size, int mss)
         delete[] tempu;
         delete[] tempb;
 
-        return -1;
+        LOGC(rslog.Error, log << "CUnitQueue: failed to allocate " << iNumUnits << " units.");
+        return NULL;
     }
 
-    for (int i = 0; i < size; ++i)
+    for (int i = 0; i < iNumUnits; ++i)
     {
-        tempu[i].m_iFlag           = CUnit::FREE;
+        tempu[i].m_iFlag = CUnit::FREE;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
+
     tempq->m_pUnit   = tempu;
     tempq->m_pBuffer = tempb;
-    tempq->m_iSize   = size;
+    tempq->m_iSize   = iNumUnits;
 
-    m_pQEntry = m_pCurrQueue = m_pLastQueue = tempq;
-    m_pQEntry->m_pNext                      = m_pQEntry;
-
-    m_pAvailUnit = m_pCurrQueue->m_pUnit;
-
-    m_iSize      = size;
-    m_iMSS       = mss;
-
-    return 0;
+    return tempq;
 }
 
-// XXX Lots of common code with CUnitQueue:init.
-// Consider merging.
-int srt::CUnitQueue::increase()
+int srt::CUnitQueue::increase_()
 {
-    if (double(m_iCount) / m_iSize < 0.9)
+    const int numUnits = m_iBlockSize;
+    HLOGC(qrlog.Debug, log << "CUnitQueue::increase: Capacity" << capacity() << " + " << numUnits << " new units, " << m_iNumTaken << " in use.");
+
+    CQEntry* tempq = allocateEntry(numUnits, m_iMSS);
+    if (tempq == NULL)
         return -1;
-
-    CQEntry* tempq = NULL;
-    CUnit*   tempu = NULL;
-    char*    tempb = NULL;
-
-    // all queues have the same size
-    const int size = m_pQEntry->m_iSize;
-
-    try
-    {
-        tempq = new CQEntry;
-        tempu = new CUnit[size];
-        tempb = new char[size * m_iMSS];
-    }
-    catch (...)
-    {
-        delete tempq;
-        delete[] tempu;
-        delete[] tempb;
-
-        LOGC(rslog.Error,
-             log << "CUnitQueue:increase: failed to allocate " << size << " new units."
-                 << " Current size=" << m_iSize);
-        return -1;
-    }
-
-    for (int i = 0; i < size; ++i)
-    {
-        tempu[i].m_iFlag           = CUnit::FREE;
-        tempu[i].m_Packet.m_pcData = tempb + i * m_iMSS;
-    }
-    tempq->m_pUnit   = tempu;
-    tempq->m_pBuffer = tempb;
-    tempq->m_iSize   = size;
 
     m_pLastQueue->m_pNext = tempq;
     m_pLastQueue          = tempq;
     m_pLastQueue->m_pNext = m_pQEntry;
 
-    m_iSize += size;
+    m_iSize += numUnits;
 
     return 0;
 }
 
 srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
 {
-    if (m_iCount * 10 > m_iSize * 9)
-        increase();
+    const int iNumUnitsTotal = capacity();
+    if (m_iNumTaken * 10 > iNumUnitsTotal * 9) // 90% or more are in use.
+        increase_();
 
-    if (m_iCount >= m_iSize)
+    if (m_iNumTaken >= capacity())
+    {
+        LOGC(qrlog.Error, log << "CUnitQueue: No free units to take. Capacity" << capacity() << ".");
         return NULL;
+    }
 
     int units_checked = 0;
     do
@@ -208,8 +182,6 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
         m_pAvailUnit = m_pCurrQueue->m_pUnit;
     } while (units_checked < m_iSize);
 
-    increase();
-
     return NULL;
 }
 
@@ -217,18 +189,18 @@ void srt::CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
-    unit->m_iFlag = CUnit::FREE;
+    unit->m_iFlag.store(CUnit::FREE);
 
-    --m_iCount;
+    --m_iNumTaken;
 }
 
 void srt::CUnitQueue::makeUnitGood(CUnit* unit)
 {
-    ++m_iCount;
+    ++m_iNumTaken;
 
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
-    unit->m_iFlag = CUnit::GOOD;
+    unit->m_iFlag.store(CUnit::GOOD);
 }
 
 srt::CSndUList::CSndUList(sync::CTimer* pTimer)
@@ -1110,7 +1082,7 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
 //
 srt::CRcvQueue::CRcvQueue()
     : m_WorkerThread()
-    , m_UnitQueue()
+    , m_pUnitQueue(NULL)
     , m_pRcvUList(NULL)
     , m_pHash(NULL)
     , m_pChannel(NULL)
@@ -1140,6 +1112,7 @@ srt::CRcvQueue::~CRcvQueue()
     }
     releaseCond(m_BufferCond);
 
+    delete m_pUnitQueue;
     delete m_pRcvUList;
     delete m_pHash;
     delete m_pRendezvousQueue;
@@ -1166,7 +1139,8 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     m_iIPversion    = version;
     m_szPayloadSize = payload;
 
-    m_UnitQueue.init(qsize, (int)payload);
+    SRT_ASSERT(m_pUnitQueue == NULL);
+    m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1345,7 +1319,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
         }
     }
     // find next available slot for incoming packet
-    w_unit = m_UnitQueue.getNextAvailUnit();
+    w_unit = m_pUnitQueue->getNextAvailUnit();
     if (!w_unit)
     {
         // no space, skip this packet
