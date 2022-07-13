@@ -279,9 +279,10 @@ TEST(Bonding, CloseGroupAndSocket)
             0, 0, 0, 0);
 
         std::cout << "Epoll result: " << epoll_res << '\n';
-        ASSERT_GT(epoll_res, 0);
-
         std::cout << "Epoll rlen: " << rlen << ", wlen: " << wlen << '\n';
+        if (epoll_res < 0)
+            continue;
+
         for (int i = 0; i < rlen; ++i)
         {
             std::cout << "Epoll read[" << i << "]: " << read[i] << '\n';
