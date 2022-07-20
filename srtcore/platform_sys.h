@@ -41,7 +41,7 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
-      #pragma warning(disable: 4251 26812)
+      #pragma warning(disable: 4101 4133 4244 4251 4267 26812)
    #endif
 #else
 
@@ -71,6 +71,11 @@
    #include <unistd.h>
 #endif
 
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#endif
+
 #endif
 
 #ifdef BSD
@@ -95,6 +100,10 @@
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>
+#endif
+
+#if defined(__GNUC__) || defined(__GNUG__)
+#pragma GCC diagnostic ignored "-Wambiguous-reversed-operator"
 #endif
 
 #endif
