@@ -19,6 +19,8 @@ written by
 		Adaptation for SRT.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <string.h>		/* memcpy */
 #ifdef _WIN32
 	#include <winsock2.h>
