@@ -7401,7 +7401,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRecv       = m_stats.rcvr.recvd.trace.bytesWithHdr();
         perf->byteRecvUnique = m_stats.rcvr.recvdUnique.trace.bytesWithHdr();
         perf->byteRetrans    = m_stats.sndr.sentRetrans.trace.bytesWithHdr();
-        perf->byteRcvLoss    = m_stats.rcvr.recvd.trace.bytesWithHdr();
+        perf->byteRcvLoss    = m_stats.rcvr.lost.trace.bytesWithHdr();
 
         perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
         perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();
