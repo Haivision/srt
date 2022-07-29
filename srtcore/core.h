@@ -313,8 +313,10 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
+#if ENABLE_BONDING
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
+#endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
@@ -604,6 +606,8 @@ private:
     /// @return Actual size of data received.
 
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
+
+    SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
@@ -1055,12 +1059,11 @@ private: // Generation and processing of packets
     /// Pack in CPacket the next data to be send.
     ///
     /// @param packet [in, out] a CPacket structure to fill
+    /// @param nexttime [out] Time when this socket should be next time picked up for processing.
     ///
-    /// @return A pair of values is returned (is_payload_valid, timestamp).
-    ///         If is_payload_valid is false, there was nothing packed for sending,
-    ///         and the timestamp value should be ignored.
-    ///         The timestamp is the full source/origin timestamp of the data.
-    std::pair<bool, time_point> packData(CPacket& packet);
+    /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
+    /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
+    bool packData(CPacket& packet, time_point& nexttime);
 
     int processData(CUnit* unit);
     void processClose();
@@ -1081,7 +1084,7 @@ private: // Generation and processing of packets
     /// @param seq first unacknowledged packet sequence number.
     void ackDataUpTo(int32_t seq);
 
-#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
+#if ENABLE_NEW_BONDING
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
     void dropToGroupRecvBase();
@@ -1121,10 +1124,12 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
+#if ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
-    
+#endif
+
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

@@ -208,9 +208,16 @@ public:
 
     void setGroupConnected();
 
-    int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);
-    int            sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
-    int            sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc);
+
+    // XXX deprecated code
+    int sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc);
+
+    int sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select);
+
     static int32_t generateISN();
 
 private:
@@ -687,6 +694,49 @@ private:
     sync::Mutex           m_RcvDataLock;
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;
+
+    // Fields required for balancing groups
+#if ENABLE_NEW_RCVBUFFER
+    unsigned int m_uBalancingRoll;
+
+    /// This is initialized with some number that should be
+    /// decreased with every packet sent. Any decision and
+    /// analysis for a decision concerning bonding group behavior
+    /// should be taken only when this value is 0. During some
+    /// of the analysis steps this value may be reset to some
+    /// higer value so that for particular number of packets
+    /// no analysis is being done (this prevents taking measurement
+    /// data too early when the number of collected data was
+    /// too little and therefore any average is little reliable).
+    unsigned int m_RandomCredit;
+
+    struct BalancingLinkState
+    {
+        gli_t ilink; // previously used link
+        int status;  // 0 = normal first entry; -1 = repeated selection
+        int errorcode;
+    };
+    typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
+    CallbackHolder<selectLink_cb> m_cbSelectLink;
+
+    // Plain algorithm: simply distribute the load
+    // on all links equally.
+    gli_t linkSelect_plain(const BalancingLinkState&);
+    static gli_t linkSelect_plain_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_plain(st);
+    }
+
+    // Window algorihm: keep balance, but 
+    gli_t linkSelect_window(const BalancingLinkState&);
+    static gli_t linkSelect_window_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_window(st);
+    }
+#endif
+
     // Statistics
 
     struct Stats

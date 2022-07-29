@@ -949,9 +949,11 @@ void srt::CUDT::open()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
+#if ENABLE_BONDING
     m_tsUnstableSince   = steady_clock::time_point();
     m_tsFreshActivation = steady_clock::time_point();
     m_tsWarySince       = steady_clock::time_point();
+#endif
 
     m_iReXmitCount   = 1;
     m_iPktCount      = 0;
@@ -6473,13 +6475,18 @@ int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64
     mctrl.msgttl      = msttl;
     mctrl.inorder     = inorder;
     mctrl.srctime     = srctime;
-    return this->sendmsg2(data, len, (mctrl));
+    return this->sendMessageInternal(data, len, NULL, (mctrl));
+}
+
+int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
+{
+    return sendMessageInternal(data, len, NULL, (w_mctrl));
 }
 
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::send,
 // which is the only case when the m_parent->m_GroupOf is not NULL.
-int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
+int srt::CUDT::sendMessageInternal(const char *data, int len, void* selink, SRT_MSGCTRL& w_mctrl)
 {
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
@@ -6733,7 +6740,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
         // We need to supply to the output the value that was STAMPED ON THE PACKET,
         // which is seqno. In the output we'll get the next sequence number.
-        m_pSndBuffer->addBuffer(data, size, (w_mctrl));
+        m_pSndBuffer->addBuffer(data, size, selink, (w_mctrl));
         m_iSndNextSeqNo = w_mctrl.pktseq;
         w_mctrl.pktseq = seqno;
 
@@ -9414,7 +9421,7 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     return true;
 }
 
-std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
+bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime)
 {
     int payload = 0;
     bool probe = false;
@@ -9423,6 +9430,8 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     bool filter_ctl_pkt = false;
 
     const steady_clock::time_point enter_time = steady_clock::now();
+
+    w_nexttime = enter_time;
 
     if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
     {
@@ -9440,7 +9449,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     // start the dissolving process, this process will
     // not be started until this function is finished.
     if (!m_bOpened)
-        return std::make_pair(false, enter_time);
+        return false;
 
     payload = isRetransmissionAllowed(enter_time)
         ? packLostData((w_packet), (origintime))
@@ -9464,11 +9473,11 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     }
     else
     {
-        if (!packUniqueData(w_packet, origintime))
+        if (!packUniqueData((w_packet), (origintime)))
         {
             m_tsNextSendTime = steady_clock::time_point();
-            m_tdSendTimeDiff = steady_clock::duration();
-            return std::make_pair(false, enter_time);
+            m_tdSendTimeDiff = steady_clock::duration::zero();
+            return false;
         }
         new_packet_packed = true;
 
@@ -9499,11 +9508,11 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
              */
             if (origintime >= m_stats.tsStartTime)
             {
-                setPacketTS(w_packet, origintime);
+                setPacketTS((w_packet), origintime);
             }
             else
             {
-                setPacketTS(w_packet, steady_clock::now());
+                setPacketTS((w_packet), steady_clock::now());
                 LOGC(qslog.Warn, log << "packData: reference time=" << FormatTime(origintime)
                         << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
                         << " - setting NOW as reference time for the data packet");
@@ -9511,7 +9520,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         }
         else
         {
-            setPacketTS(w_packet, steady_clock::now());
+            setPacketTS((w_packet), steady_clock::now());
         }
     }
 
@@ -9585,7 +9594,9 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
 #endif
     }
 
-    return std::make_pair(payload >= 0, m_tsNextSendTime);
+    w_nexttime = m_tsNextSendTime;
+
+    return payload >= 0;
 }
 
 bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
@@ -9607,7 +9618,17 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
     const int kflg = m_pCryptoControl->getSndCryptoFlags();
     int pktskipseqno = 0;
-    const int pld_size = m_pSndBuffer->readData((w_packet), (w_origintime), kflg, (pktskipseqno));
+    void* link_marker = 0;
+#if ENABLE_BONDING
+    if (m_parent->m_GroupOf)
+    {
+        // This marker is required for a decision whether the packet
+        // stored in the buffer is intended to be sent over this very link.
+        // Otherwise it will be skipped.
+        link_marker = m_parent->m_GroupMemberData;
+    }
+#endif
+    const int pld_size = m_pSndBuffer->readData((w_packet), (w_origintime), kflg, (pktskipseqno), link_marker);
     if (pktskipseqno)
     {
         // Some packets were skipped due to TTL expiry.
@@ -10017,7 +10038,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
         // as gi is non-NULL iterator, the group does exist and it does contain
-        // this socket as member (that is, 'gi' cannot be a dangling iterator).
+        // this socket as member (that is, 'gi' cannot be a dangling pointer).
         if (gi != NULL)
         {
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely

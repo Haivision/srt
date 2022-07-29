@@ -68,6 +68,8 @@ namespace srt
 class CChannel;
 class CUDT;
 
+class CUnitQueue;
+
 struct CUnit
 {
     CPacket m_Packet; // packet
@@ -80,6 +82,7 @@ struct CUnit
     };
     Flag m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
     // TODO: Transition to the new RcvBuffer allows to use bool here.
+    CUnitQueue* m_pParentQueue;
 };
 
 class CUnitQueue

@@ -748,6 +748,12 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
     v.push_back(val);
 }
 
+template <class Type1, class Type2>
+inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+{
+    return std::pair<Type1&, Type2&>(var1, var2);
+}
+
 template <class Signature>
 struct CallbackHolder
 {
@@ -1058,11 +1064,11 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 // This relies only on a convention, which is the following:
 //
 // V x = object.prop(); <-- get the property's value
-// object.prop(x); <-- set the property a value
+// object.set_prop(x); <-- set the property a value
 //
 // Properties might be also chained when setting:
 //
-// object.prop1(v1).prop2(v2).prop3(v3);
+// object.set_prop1(v1).set_prop2(v2).set_prop3(v3);
 //
 // Properties may be defined various even very complicated
 // ways, which is simply providing a method with body. In order

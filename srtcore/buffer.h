@@ -175,7 +175,7 @@ public:
     /// @param [in] len size of the block.
     /// @param [inout] w_mctrl Message control data
     SRT_ATTR_EXCLUDES(m_BufLock)
-    void addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl);
+    void addBuffer(const char* data, int len, void* link, SRT_MSGCTRL& w_mctrl);
 
     /// Read a block of data from file and insert it into the sending list.
     /// @param [in] ifs input file stream.
@@ -191,7 +191,7 @@ public:
     /// @param [out] seqnoinc the number of packets skipped due to TTL, so that seqno should be incremented.
     /// @return Actual length of data read.
     SRT_ATTR_EXCLUDES(m_BufLock)
-    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
+    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc, void* member_marker);
 
     /// Peek an information on the next original data packet to send.
     /// @return origin time stamp of the next packet; epoch start time otherwise.
@@ -264,7 +264,17 @@ private:
         time_point m_tsRexmitTime; // packet retransmission time
         int        m_iTTL; // time to live (milliseconds)
 
+        void* m_pSelectedLink;
+
         Block* m_pNext; // next block
+
+        // This is only to assign fields that will be different
+        // only in specific situations, so normally these fields
+        // will not be overwritten.
+        Block()
+            : m_pSelectedLink(NULL)
+        {
+        }
 
         int32_t getMsgSeq()
         {
