@@ -88,7 +88,7 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     , m_iPktsCount(0)
     , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
-    SRT_ASSERT(size < std::numeric_limits<int>::max()); // All position pointers are integers
+    SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
 }
 
 CRcvBufferNew::~CRcvBufferNew()
