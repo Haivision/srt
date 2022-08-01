@@ -716,6 +716,8 @@ private:
         int status;  // 0 = normal first entry; -1 = repeated selection
         int errorcode;
     };
+
+    int configure(const char* str);
     typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
     CallbackHolder<selectLink_cb> m_cbSelectLink;
 

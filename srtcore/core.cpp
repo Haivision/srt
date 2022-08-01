@@ -295,6 +295,9 @@ void srt::CUDT::construct()
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
 
+    m_iSndMinFlightSpan = -1; // -1 value means "not measured". Normally all current values of -1 are rejected.
+    // (note that flight == 0 is still a valid value)
+
     // Initilize mutex and condition variables.
     initSynch();
 
@@ -8344,6 +8347,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             ScopedLock ack_lock(m_RecvAckLock);
             m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
+            m_iSndMinFlightSpan = getFlightSpan();
 
             // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
             // because the sendmsg2 may want to change it at the same time.
@@ -8396,6 +8400,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // Update Flow Window Size, must update before and together with m_iSndLastAck
         m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
         m_iSndLastAck     = ackdata_seqno;
+        m_iSndMinFlightSpan    = getFlightSpan();
         m_tsLastRspAckTime  = currtime;
         m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
     }

@@ -294,7 +294,9 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     // two or more sockets start arguing about it.
     m_iLastSchedSeqNo = CUDT::generateISN();
 
+#if ENABLE_NEW_RCVBUFFER
     m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+#endif
 }
 
 CUDTGroup::~CUDTGroup()
@@ -405,6 +407,12 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         // congestion control mode other than live.
         LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+#if ENABLE_NEW_RCVBUFFER
+    case SRTO_GROUPCONFIG:
+        configure((const char*)optval);
+        return;
+#endif
 
     default:
         break;
@@ -1048,7 +1056,7 @@ int CUDTGroup::sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc)
     return sendSelectable(buf, len, (w_mc), true);
 }
 
-int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select)
+int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select SRT_ATR_UNUSED)
 {
     // Avoid stupid errors in the beginning.
     if (len <= 0)
@@ -1183,10 +1191,12 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     if (w_mc.srctime == 0)
         w_mc.srctime = count_microseconds(steady_clock::now().time_since_epoch());
 
+    void* member_marker = NULL;
+#if ENABLE_NEW_RCVBUFFER
+
     BalancingLinkState lstate = { m_Group.active(), 0, 0 };
     gli_t selink = m_Group.end();
 
-    void* member_marker = NULL;
     if (use_select)
     {
         selink = CALLBACK_CALL(m_cbSelectLink, lstate);
@@ -1202,6 +1212,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         // identification to the packet sent to EVERY link.
         member_marker = &*selink;
     }
+#endif
 
     // Here we need to activate all links that are found as IDLE.
     // Some portion of logical exclusions:
@@ -4474,6 +4485,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     return stat;
 }
 
+#if ENABLE_NEW_RCVBUFFER
 int CUDTGroup::sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
     // Avoid stupid errors in the beginning.
@@ -4836,6 +4848,7 @@ int CUDTGroup::sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     return stat;
 }
+#endif
 
 
 // XXX DEAD CODE.
@@ -5119,6 +5132,332 @@ void CUDTGroup::updateFailedLink()
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
     }
 }
+
+#if ENABLE_NEW_RCVBUFFER
+
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(gmlog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(gmlog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(gmlog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(gmlog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
+}
+
+
+CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
+{
+    if (state.ilink == m_Group.end())
+    {
+        // Very first sending operation. Pick up the first link
+        return m_Group.begin();
+    }
+
+    gli_t this_link = state.ilink;
+
+    for (;;)
+    {
+        // Roll to the next link
+        ++this_link;
+        if (this_link == m_Group.end())
+            this_link = m_Group.begin(); // roll around
+
+        // Check the status. If the link is PENDING or BROKEN,
+        // skip it. If the link is IDLE, turn it to ACTIVE.
+        // If the rolling reached back to the original link,
+        // and this one isn't usable either, return m_Group.end().
+
+        if (this_link->sndstate == SRT_GST_IDLE)
+            this_link->sndstate = SRT_GST_RUNNING;
+
+        if (this_link->sndstate == SRT_GST_RUNNING)
+        {
+            // Found you, buddy. Go on.
+            return this_link;
+        }
+
+        if (this_link == state.ilink)
+        {
+            // No more links. Sorry.
+            return m_Group.end();
+        }
+
+        // Check maybe next link...
+    }
+
+    return this_link;
+}
+
+struct LinkCapableData
+{
+    CUDTGroup::gli_t link;
+    int flight;
+};
+
+CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkState& state)
+{
+    if (state.ilink == m_Group.end())
+    {
+        // Very first sending operation. Pick up the first link
+        return m_Group.begin();
+    }
+
+
+    gli_t this_link = m_Group.end();
+
+    if (m_RandomCredit <= 0)
+    {
+        vector<LinkCapableData> linkdata;
+        int total_flight = 0;
+        int number_links = 0;
+
+        // First, collect data required for selection
+        vector<gli_t> linkorder;
+
+        gli_t last = state.ilink;
+        ++last;
+        // NOTE: ++last could make it == m_Group.end() in which
+        // case the first loop will get 0 passes and the second
+        // one will be from begin() to end().
+        for (gli_t li = last; li != m_Group.end(); ++li)
+            linkorder.push_back(li);
+        for (gli_t li = m_Group.begin(); li != last; ++li)
+            linkorder.push_back(li);
+
+        // Sanity check
+        if (linkorder.empty())
+        {
+            LOGC(gslog.Error, log << "linkSelect_window: IPE: no links???");
+            return m_Group.end();
+        }
+
+        // Fallback
+        this_link = *linkorder.begin();
+
+        // This does the following:
+        // We have links: [ 1 2 3 4 5 ]
+        // Last used link was 4
+        // linkorder: [ (5) (1) (2) (3) (4) ]
+        for (vector<gli_t>::iterator i = linkorder.begin(); i != linkorder.end(); ++i)
+        {
+            gli_t li = *i;
+            int flight = li->ps->core().m_iSndMinFlightSpan;
+
+            HLOGC(gslog.Debug, log << "linkSelect_window: previous link was #" << distance(m_Group.begin(), state.ilink)
+                    << " Checking link #" << distance(m_Group.begin(), li)
+                    << "@" << li->id << " TO " << li->peer.str()
+                    << " flight=" << flight);
+
+            // Upgrade idle to running
+            if (li->sndstate == SRT_GST_IDLE)
+                li->sndstate = SRT_GST_RUNNING;
+
+            if (li->sndstate != SRT_GST_RUNNING)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... state=" << StateStr(li->sndstate) << " - skipping");
+                // Skip pending/broken links
+                continue;
+            }
+
+            // Check if this link was used at least once so far.
+            // If not, select it immediately.
+            if (li->load_factor == 0)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... load factor empty: SELECTING.");
+                this_link = li;
+                goto ReportLink;
+            }
+
+            ++number_links;
+            if (flight == -1)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+                        << " HAS NO FLIGHT COUNTED - selecting, deferring to next 18 * numberlinks=" << number_links << " packets.");
+                // Not measureable flight. Use this link.
+                this_link = li;
+
+                // Also defer next measurement point by 16 per link.
+                // Of course, number_links doesn't contain the exact
+                // number of active links (the loop is underway), but
+                // it doesn't matter much. The probability is on the
+                // side of later links, so it's unlikely that earlier
+                // links could enforce more often update (worst case
+                // scenario, the probing will happen again in 16 packets).
+                m_RandomCredit = 16 * number_links;
+
+                goto ReportLink;
+            }
+            flight += 2; // prevent having 0 used for equations
+
+            total_flight += flight;
+
+            linkdata.push_back( (LinkCapableData){li, flight} );
+        }
+
+        if (linkdata.empty())
+        {
+            HLOGC(gslog.Debug, log << "linkSelect_window: no capable links found - requesting transmission interrupt!");
+            return m_Group.end();
+        }
+
+        this_link = linkdata.begin()->link;
+        double least_load = linkdata.begin()->link->load_factor;
+        double biggest_unit_load = 0;
+
+        HLOGC(gslog.Debug, log << "linkSelect_window: total_flight (with fix): " << total_flight
+                << " - updating link load factors:");
+        // Now that linkdata list is ready, update the link span values
+        // If at least one link has the span value not yet measureable
+        for (vector<LinkCapableData>::iterator i = linkdata.begin();
+                i != linkdata.end(); ++i)
+        {
+            // Here update the unit load basing on the percentage
+            // of the link flight size.
+            //
+            // The sum of all flight window sizes from all links is
+            // the total number. The value of the flight size for
+            // each link shows how much of a percentage this link
+            // has as share.
+            //
+            // Example: in case when all links go totally equally,
+            // and there is 5 links, each having 10 packets in flight:
+            //
+            // total_flitht = 50
+            // share_load = link_flight / total_flight = 10/50 = 1/5
+            // link_load = share_load * number_links = 1/5 * 5 = 1.0
+            //
+            // If the links are not perfectly equivalent, some deviation
+            // towards 1.0 will result.
+            double share_load = double(i->flight) / total_flight;
+            double link_load = share_load * number_links;
+            i->link->unit_load = link_load;
+
+            HLOGC(gslog.Debug, log << "linkSelect_window: ... #" << distance(m_Group.begin(), i->link)
+                    << " flight=" << i->flight << " share_load=" << (100*share_load) << "% unit-load="
+                    << link_load << " current-load:" << i->link->load_factor);
+
+            if (link_load > biggest_unit_load)
+                biggest_unit_load = link_load;
+
+            if (i->link->load_factor < least_load)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... this link has currently smallest load");
+                this_link = i->link;
+                least_load = i->link->load_factor;
+            }
+        }
+
+        HLOGC(gslog.Debug, log << "linkSelect_window: selecting link #" << distance(m_Group.begin(), this_link));
+        // Now that a link is selected and all load factors updated,
+        // do a CUTOFF by the value of at least one size of unit load.
+
+
+        // This comparison can be used to recognize if all values of
+        // the load factor have already exceeded the value that should
+        // result in a cutoff.
+        if (biggest_unit_load > 0 && least_load > 2 * biggest_unit_load)
+        {
+            for (vector<LinkCapableData>::iterator i = linkdata.begin();
+                    i != linkdata.end(); ++i)
+            {
+                i->link->load_factor -= biggest_unit_load;
+            }
+            HLOGC(gslog.Debug, log << "linkSelect_window: cutting off value of " << biggest_unit_load
+                    << " from all load factors");
+        }
+
+        // The above loop certainly found something.
+        goto ReportLink;
+    }
+
+    HLOGC(gslog.Debug, log << "linkSelect_window: remaining credit: " << m_RandomCredit
+            << " - staying with equal balancing");
+
+    // This starts from 16, decreases here. As long as
+    // there is a credit given, simply roll over all links
+    // equally.
+    --m_RandomCredit;
+
+    this_link = state.ilink;
+    for (;;)
+    {
+        // Roll to the next link
+        ++this_link;
+        if (this_link == m_Group.end())
+            this_link = m_Group.begin(); // roll around
+
+        // Check the status. If the link is PENDING or BROKEN,
+        // skip it. If the link is IDLE, turn it to ACTIVE.
+        // If the rolling reached back to the original link,
+        // and this one isn't usable either, return m_Group.end().
+
+        if (this_link->sndstate == SRT_GST_IDLE)
+            this_link->sndstate = SRT_GST_RUNNING;
+
+        if (this_link->sndstate == SRT_GST_RUNNING)
+        {
+            // Found you, buddy. Go on.
+            break;
+        }
+
+        if (this_link == state.ilink)
+        {
+            // No more links. Sorry.
+            return m_Group.end();
+        }
+
+        // Check maybe next link...
+    }
+
+ReportLink:
+
+    // When a link is used for sending, the load factor is
+    // increased by this link's unit load, which is calculated
+    // basing on how big share among all flight sizes this link has.
+    // The larger the flight window, the bigger the unit load.
+    // This unit load then defines how much "it costs" to send
+    // a packet over that link. The bigger this value is then,
+    // the less often will this link be selected among others.
+
+    this_link->load_factor += this_link->unit_load;
+
+    HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+            << " selected, upd load_factor=" << this_link->load_factor);
+    return this_link;
+}
+#endif
+
 
 #if ENABLE_HEAVY_LOGGING
 // [[using maybe_locked(CUDT::uglobal()->m_GlobControlLock)]]

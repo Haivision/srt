@@ -44,6 +44,10 @@ namespace groups
         bool           ready_write;
         bool           ready_error;
 
+        // Balancing data
+        double load_factor;
+        double unit_load;
+
         // Configuration
         uint16_t       weight;
 

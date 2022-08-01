@@ -53,6 +53,8 @@ SocketData prepareSocketData(CUDTSocket* s)
         false,
         false,
         false,
+        0, // load_factor
+        0, // unit_load
         0, // weight
         0  // pktSndDropTotal
     };
