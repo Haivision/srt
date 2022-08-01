@@ -70,6 +70,9 @@ if (ENABLE_DEBUG EQUAL 2)
 	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
 elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
 	set (CMAKE_BUILD_TYPE "Debug")
+
+	# Add _DEBUG macro in debug mode only, to enable SRT_ASSERT().
+	add_definitions(-D_DEBUG)
 else()
 	set (CMAKE_BUILD_TYPE "Release")
 endif()

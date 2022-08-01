@@ -1,5 +1,6 @@
 #if ENABLE_NEW_RCVBUFFER
 #include <cmath>
+#include <limits>
 #include "buffer_rcv.h"
 #include "logging.h"
 
@@ -87,7 +88,7 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     , m_iPktsCount(0)
     , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
 {
-    SRT_ASSERT(size < INT_MAX); // All position pointers are integers
+    SRT_ASSERT(size < std::numeric_limits<int>::max()); // All position pointers are integers
 }
 
 CRcvBufferNew::~CRcvBufferNew()
@@ -135,7 +136,7 @@ int CRcvBufferNew::insert(CUnit* unit)
         m_iMaxPosInc = offset + 1;
 
     // Packet already exists
-    SRT_ASSERT(pos >= 0 && pos < m_szSize);
+    SRT_ASSERT(pos >= 0 && pos < int(m_szSize));
     if (m_entries[pos].status != EntryState_Empty)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
