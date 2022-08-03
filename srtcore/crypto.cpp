@@ -427,7 +427,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     return retstatus;
 }
 
-void srt::CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
+void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED, Whether2RegenKm regen SRT_ATR_UNUSED)
 {
     if ( !m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
     {
@@ -447,7 +447,7 @@ void srt::CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
      * then (re-)send handshake request.
      */
     if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-        && ((m_SndKmLastTime + srt::sync::microseconds_from((m_parent->SRTT() * 3)/2)) <= now))
+        && ((m_SndKmLastTime + srt::sync::microseconds_from((iSRTT * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {
@@ -457,7 +457,7 @@ void srt::CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
                 HLOGC(cnlog.Debug, log << "sendKeysToPeer: SENDING ki=" << ki << " len=" << m_SndKmMsg[ki].MsgLen
                         << " retry(updated)=" << m_SndKmMsg[ki].iPeerRetry);
                 m_SndKmLastTime = now;
-                m_parent->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
+                sock->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
             }
         }
     }
@@ -466,6 +466,7 @@ void srt::CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
     if (regen)
     {
         regenCryptoKm(
+            sock,
             true, // send UMSG_EXT + SRT_CMD_KMREQ to the peer, if regenerated the key
             false // Do not apply the regenerated key to the to the receiver context
         ); // regenerate and send
@@ -474,7 +475,7 @@ void srt::CCryptoControl::sendKeysToPeer(Whether2RegenKm regen SRT_ATR_UNUSED)
 }
 
 #ifdef SRT_ENABLE_ENCRYPTION
-void srt::CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
+void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool sendit, bool bidirectional)
 {
     if (!m_hSndCrypto)
         return;
@@ -530,7 +531,7 @@ void srt::CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
             {
                 HLOGC(cnlog.Debug, log << "regenCryptoKm: SENDING ki=" << ki << " len=" << m_SndKmMsg[ki].MsgLen
                         << " retry(updated)=" << m_SndKmMsg[ki].iPeerRetry);
-                m_parent->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
+                sock->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
                 sent++;
             }
         }
@@ -552,9 +553,8 @@ void srt::CCryptoControl::regenCryptoKm(bool sendit, bool bidirectional)
 }
 #endif
 
-srt::CCryptoControl::CCryptoControl(CUDT* parent, SRTSOCKET id)
-    : m_parent(parent) // should be initialized in createCC()
-    , m_SocketID(id)
+srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
+    : m_SocketID(id)
     , m_iSndKmKeyLen(0)
     , m_iRcvKmKeyLen(0)
     , m_SndKmState(SRT_KM_S_UNSECURED)
@@ -575,7 +575,7 @@ srt::CCryptoControl::CCryptoControl(CUDT* parent, SRTSOCKET id)
     m_hRcvCrypto = NULL;
 }
 
-bool srt::CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UNUSED)
+bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool bidirectional SRT_ATR_UNUSED)
 {
     // NOTE: initiator creates m_hSndCrypto. When bidirectional,
     // it creates also m_hRcvCrypto with the same key length.
@@ -592,8 +592,8 @@ bool srt::CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UN
     // Set security-pending state, if a password was set.
     m_SndKmState = hasPassphrase() ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
 
-    m_KmPreAnnouncePkt = m_parent->m_config.uKmPreAnnouncePkt;
-    m_KmRefreshRatePkt = m_parent->m_config.uKmRefreshRatePkt;
+    m_KmPreAnnouncePkt = cfg.uKmPreAnnouncePkt;
+    m_KmRefreshRatePkt = cfg.uKmRefreshRatePkt;
 
     if ( side == HSD_INITIATOR )
     {
@@ -628,6 +628,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, bool bidirectional SRT_ATR_UN
             }
 
             regenCryptoKm(
+                    NULL,
                     false,  // Do not send the key (will be attached it to the HSv5 handshake)
                     bidirectional // replicate the key to the receiver context, if bidirectional
                     );

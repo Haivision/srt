@@ -5889,7 +5889,7 @@ bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // Write back this value, when it was just determined.
     m_SrtHsSide = side;
 
-    m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
+    m_pCryptoControl.reset(new CCryptoControl(m_SocketID));
 
     // XXX These below are a little bit controversial.
     // These data should probably be filled only upon
@@ -5903,7 +5903,7 @@ bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
         m_pCryptoControl->setCryptoKeylen(m_config.iSndCryptoKeyLen);
     }
 
-    return m_pCryptoControl->init(side, bidirectional);
+    return m_pCryptoControl->init(side, m_config, bidirectional);
 }
 
 SRT_REJECT_REASON srt::CUDT::setupCC()
@@ -6063,7 +6063,7 @@ void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
         // if this side is RESPONDER. This shall be called only with
         // regeneration request, which is required by the sender.
         if (m_pCryptoControl)
-            m_pCryptoControl->sendKeysToPeer(regen);
+            m_pCryptoControl->sendKeysToPeer(this, SRTT(), regen);
     }
 }
 
