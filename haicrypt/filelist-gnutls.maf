@@ -15,7 +15,7 @@ haicrypt_log.h
 
 SOURCES
 cryspr.c
-cryspr-gnutls.c
+cryspr-gnutls.cpp
 hcrypt.c
 hcrypt_ctx_rx.c
 hcrypt_ctx_tx.c

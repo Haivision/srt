@@ -20,6 +20,7 @@ written by
 *****************************************************************************/
 
 #include "hcrypt.h"
+#include "sync.h"
 
 #include <string.h>
 
@@ -173,6 +174,9 @@ static CRYSPR_methods crysprGnuTLS_methods;
 
 CRYSPR_methods *crysprGnuTLS(void)
 {
+    static srt::sync::Mutex s_mtxCrysprInit;
+    srt::sync::ScopedLock lck(s_mtxCrysprInit);
+
     if(NULL == crysprGnuTLS_methods.open) {
         crysprInit(&crysprGnuTLS_methods); /* Set default methods */
 
