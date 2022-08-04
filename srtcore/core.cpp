@@ -5656,9 +5656,9 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
 #if ENABLE_NEW_RCVBUFFER
         SRT_ASSERT(m_iISN != -1);
-        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, &(m_pRcvQueue->m_UnitQueue), m_config.bMessageAPI);
+        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
 #else
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_config.iRcvBufSize);
+        m_pRcvBuffer = new CRcvBuffer(m_pRcvQueue->m_pUnitQueue, m_config.iRcvBufSize);
 #endif
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
@@ -5948,7 +5948,7 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
         {
             // The filter configurer is build the way that allows to quit immediately
             // exit by exception, but the exception is meant for the filter only.
-            status = m_PacketFilter.configure(this, &(m_pRcvQueue->m_UnitQueue), m_config.sPacketFilterConfig.str());
+            status = m_PacketFilter.configure(this, m_pRcvQueue->m_pUnitQueue, m_config.sPacketFilterConfig.str());
         }
         catch (CUDTException& )
         {
@@ -7411,7 +7411,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRecv       = m_stats.rcvr.recvd.trace.bytesWithHdr();
         perf->byteRecvUnique = m_stats.rcvr.recvdUnique.trace.bytesWithHdr();
         perf->byteRetrans    = m_stats.sndr.sentRetrans.trace.bytesWithHdr();
-        perf->byteRcvLoss    = m_stats.rcvr.recvd.trace.bytesWithHdr();
+        perf->byteRcvLoss    = m_stats.rcvr.lost.trace.bytesWithHdr();
 
         perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
         perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();

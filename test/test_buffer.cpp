@@ -27,17 +27,16 @@ protected:
     void SetUp() override
     {
         // make_unique is unfortunatelly C++14
-        m_unit_queue = unique_ptr<CUnitQueue>(new CUnitQueue);
+        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
-        m_unit_queue->init(m_buff_size_pkts, 1500, AF_INET);
 
 #if ENABLE_NEW_RCVBUFFER
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer = unique_ptr<CRcvBufferNew>(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
 #else
-        m_rcv_buffer = unique_ptr<CRcvBuffer>(new CRcvBuffer(m_unit_queue.get(), m_buff_size_pkts));
+        m_rcv_buffer.reset(new CRcvBuffer(m_unit_queue.get(), m_buff_size_pkts));
 #endif
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }

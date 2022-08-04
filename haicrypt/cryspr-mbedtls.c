@@ -31,7 +31,6 @@ written by
 // Static members of cryspr::mbedtls class.
 static mbedtls_ctr_drbg_context crysprMbedtls_ctr_drbg;
 static mbedtls_entropy_context crysprMbedtls_entropy;
-static mbedtls_md_context_t crysprMbedtls_mdctx;
 
 typedef struct tag_crysprGnuTLS_AES_cb {
         CRYSPR_cb       ccb;        /* CRYSPR control block */
@@ -197,9 +196,29 @@ int crysprMbedtls_KmPbkdf2(
 {
     (void)cryspr_cb;
 
-    int ret = mbedtls_pkcs5_pbkdf2_hmac(&crysprMbedtls_mdctx,
+    const mbedtls_md_info_t* ifo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA1);
+    if ( ifo == NULL ) {
+        // XXX report error, log?
+        return -1;
+    }
+
+    mbedtls_md_context_t mdctx;
+    mbedtls_md_init(&mdctx);
+
+    const int yes_use_hmac = 1;
+    int ret;
+    if ( (ret = mbedtls_md_setup(&mdctx, ifo, yes_use_hmac)) != 0 ) {
+        mbedtls_md_free(&mdctx);
+
+        // XXX report error, log?
+        return ret;
+    }
+
+    ret = mbedtls_pkcs5_pbkdf2_hmac(&mdctx,
             (unsigned char*)passwd, passwd_len, salt, salt_len,
             itr, key_len, out);
+
+    mbedtls_md_free(&mdctx);
 
     if (ret == 0)
         return 0;
@@ -260,14 +279,6 @@ CRYSPR_methods *crysprMbedtls(void)
         HCRYPT_LOG(LOG_CRIT, "crysprMbedtls: STATIC INIT FAILED on mbedtls_ctr_drbg_init: -0x%04x", -ret);
         return NULL;
     }
-
-    // Ok, mbedtls with all flexibility you couldn't make it more complicated.
-
-    mbedtls_md_init(&crysprMbedtls_mdctx);
-    const mbedtls_md_info_t* ifo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA1);
-    const int yes_use_hmac = 1;
-    mbedtls_md_setup(&crysprMbedtls_mdctx, ifo, yes_use_hmac);
-
 
     return(&crysprMbedtls_methods);
 }

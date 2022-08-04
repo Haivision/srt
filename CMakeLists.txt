@@ -63,15 +63,28 @@ if (NOT DEFINED ENABLE_DEBUG)
 	endif()
 endif()
 
-# Set CMAKE_BUILD_TYPE properly, now that you know
-# that ENABLE_DEBUG is set as it should.
+# XXX This is a kind of workaround - this part to set the build
+# type and associated other flags should not be done for build
+# systems (cmake generators) that generate a multi-configuration
+# build definition. At least it is known that MSVC does it and it
+# sets _DEBUG and NDEBUG flags itself, so this shouldn't be done
+# at all in this case.
+if (NOT MICROSOFT)
 
-if (ENABLE_DEBUG EQUAL 2)
-	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
-	set (CMAKE_BUILD_TYPE "Debug")
-else()
-	set (CMAKE_BUILD_TYPE "Release")
+	# Set CMAKE_BUILD_TYPE properly, now that you know
+	# that ENABLE_DEBUG is set as it should.
+	if (ENABLE_DEBUG EQUAL 2)
+		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+		add_definitions(-DNDEBUG)
+	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
+		set (CMAKE_BUILD_TYPE "Debug")
+
+		# Add _DEBUG macro in debug mode only, to enable SRT_ASSERT().
+		add_definitions(-D_DEBUG)
+	else()
+		set (CMAKE_BUILD_TYPE "Release")
+		add_definitions(-DNDEBUG)
+	endif()
 endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
