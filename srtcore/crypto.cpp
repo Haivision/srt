@@ -125,8 +125,6 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     HtoNLA((pw_srtdata_out), srtdata, w_srtlen);
     unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
 
-    std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
-
     // The side that has received KMREQ is always an HSD_RESPONDER, regardless of
     // what has called this function. The HSv5 handshake only enforces bidirectional
     // connection.
