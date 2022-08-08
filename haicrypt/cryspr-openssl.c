@@ -20,7 +20,6 @@ written by
 *****************************************************************************/
 
 #include "hcrypt.h"
-#include "sync.h"
 
 #include <string.h>
 
@@ -196,9 +195,6 @@ static CRYSPR_methods crysprOpenSSL_methods;
 
 CRYSPR_methods *crysprOpenSSL(void)
 {
-    static srt::sync::Mutex s_mtxCrysprInit;
-    srt::sync::ScopedLock lck(s_mtxCrysprInit);
-
     if(NULL == crysprOpenSSL_methods.open) {
         crysprInit(&crysprOpenSSL_methods);    //Default/fallback methods
 

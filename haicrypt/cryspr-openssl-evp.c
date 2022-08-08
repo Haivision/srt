@@ -17,7 +17,6 @@ written by
 *****************************************************************************/
 
 #include "hcrypt.h"
-#include "sync.h"
 
 #include <string.h>
 
@@ -291,9 +290,6 @@ static CRYSPR_methods crysprOpenSSL_EVP_methods;
 
 CRYSPR_methods* crysprOpenSSL_EVP(void)
 {
-    static srt::sync::Mutex s_mtxCrysprInit;
-    srt::sync::ScopedLock lck(s_mtxCrysprInit);
-
     if (NULL == crysprOpenSSL_EVP_methods.open)
     {
         crysprInit(&crysprOpenSSL_EVP_methods); // Default/fallback methods

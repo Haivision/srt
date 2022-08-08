@@ -174,6 +174,7 @@ srt::CUDTUnited::CUDTUnited()
     : m_Sockets()
     , m_GlobControlLock()
     , m_IDLock()
+    , m_CrysprInitLock()
     , m_mMultiplexer()
     , m_MultiplexerLock()
     , m_pCache(NULL)
@@ -195,6 +196,7 @@ srt::CUDTUnited::CUDTUnited()
     setupCond(m_GCStopCond, "GCStop");
     setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
+    setupMutex(m_CrysprInitLock, "CrysprInit");
     setupMutex(m_InitLock, "Init");
 
     m_pCache = new CCache<CInfoBlock>;
@@ -212,6 +214,7 @@ srt::CUDTUnited::~CUDTUnited()
 
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
+    releaseMutex(m_CrysprInitLock);
     releaseMutex(m_InitLock);
     // XXX There's some weird bug here causing this
     // to hangup on Windows. This might be either something

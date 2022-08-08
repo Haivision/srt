@@ -216,6 +216,7 @@ class CUDTUnited
     friend class CUDT;
     friend class CUDTGroup;
     friend class CRendezvousQueue;
+    friend class CCryptoControl;
 
 public:
     CUDTUnited();
@@ -385,6 +386,8 @@ private:
     sync::Mutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
+
+    sync::Mutex m_CrysprInitLock; // used to synchronize Cryspr initialization
 
     SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
     SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one

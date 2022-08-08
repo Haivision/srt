@@ -26,6 +26,7 @@ written by
 #include "crypto.h"
 #include "logging.h"
 #include "core.h"
+#include "api.h"
 
 using namespace srt_logging;
 
@@ -710,7 +711,10 @@ bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir
 #endif
     crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0);
     crypto_cfg.xport = HAICRYPT_XPT_SRT;
-    crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
+    {
+        sync::ScopedLock lock(CUDT::uglobal().m_CrysprInitLock);
+        crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
+    }
     crypto_cfg.key_len = (size_t)keylen;
     crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
     crypto_cfg.km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;
