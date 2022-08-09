@@ -86,6 +86,8 @@ private:
 
 public:
 
+    static void globalInit();
+
     bool sendingAllowed()
     {
         // This function is called to state as to whether the

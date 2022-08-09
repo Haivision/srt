@@ -26,6 +26,7 @@ written by
 #include "crypto.h"
 #include "logging.h"
 #include "core.h"
+#include "api.h"
 
 using namespace srt_logging;
 
@@ -68,6 +69,15 @@ std::string KmStateStr(SRT_KM_STATE state)
 } // namespace
 
 using srt_logging::KmStateStr;
+
+void srt::CCryptoControl::globalInit()
+{
+#ifdef SRT_ENABLE_ENCRYPTION
+    // We need to force the Cryspr to be initialized during startup to avoid the
+    // possibility of multiple threads initialzing the same static data later on.
+    HaiCryptCryspr_Get_Instance();
+#endif
+}
 
 #if ENABLE_LOGGING
 std::string srt::CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)

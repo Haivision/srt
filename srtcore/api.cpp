@@ -254,6 +254,8 @@ int srt::CUDTUnited::startup()
         throw CUDTException(MJ_SETUP, MN_NONE, WSAGetLastError());
 #endif
 
+    CCryptoControl::globalInit();
+
     PacketFilter::globalInit();
 
     if (m_bGCStatus)
