@@ -13,7 +13,7 @@ haicrypt_log.h
 
 SOURCES
 cryspr.c
-cryspr-openssl-evp.cpp
+cryspr-openssl-evp.c
 hcrypt.c
 hcrypt_ctx_rx.c
 hcrypt_ctx_tx.c
