@@ -70,6 +70,13 @@ std::string KmStateStr(SRT_KM_STATE state)
 
 using srt_logging::KmStateStr;
 
+void srt::CCryptoControl::globalInit()
+{
+    // We need to force the Cryspr to be initialized during startup to avoid the
+    // possibility of multiple threads initialzing the same static data later on.
+    HaiCryptCryspr_Get_Instance();
+}
+
 #if ENABLE_LOGGING
 std::string srt::CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)
 {
@@ -711,10 +718,7 @@ bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir
 #endif
     crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0);
     crypto_cfg.xport = HAICRYPT_XPT_SRT;
-    {
-        sync::ScopedLock lock(CUDT::uglobal().m_CrysprInitLock);
-        crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
-    }
+    crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
     crypto_cfg.key_len = (size_t)keylen;
     crypto_cfg.data_max_len = HAICRYPT_DEF_DATA_MAX_LENGTH;    //MTU
     crypto_cfg.km_tx_period_ms = 0;//No HaiCrypt KM inject period, handled in SRT;

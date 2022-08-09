@@ -387,8 +387,6 @@ private:
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
-    sync::Mutex m_CrysprInitLock; // used to synchronize Cryspr initialization
-
     SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
     SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one
 
