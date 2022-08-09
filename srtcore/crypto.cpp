@@ -72,9 +72,11 @@ using srt_logging::KmStateStr;
 
 void srt::CCryptoControl::globalInit()
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     // We need to force the Cryspr to be initialized during startup to avoid the
     // possibility of multiple threads initialzing the same static data later on.
     HaiCryptCryspr_Get_Instance();
+#endif
 }
 
 #if ENABLE_LOGGING
