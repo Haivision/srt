@@ -3785,18 +3785,6 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // TODO: all broken members are to be removed from the context now???
 }
 
-struct FByOldestActive
-{
-    typedef CUDTGroup::gli_t gli_t;
-    bool operator()(gli_t a, gli_t b)
-    {
-        CUDT& x = a->ps->core();
-        CUDT& y = b->ps->core();
-
-        return x.m_tsFreshActivation < y.m_tsFreshActivation;
-    }
-};
-
 // [[using locked(this->m_GroupLock)]]
 void CUDTGroup::sendBackup_RetryWaitBlocked(SendBackupCtx&       w_sendBackupCtx,
                                             int&                 w_final_stat,

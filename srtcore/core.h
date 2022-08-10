@@ -170,7 +170,6 @@ class CUDT
     friend class CRcvUList;
     friend class PacketFilter;
     friend class CUDTGroup;
-    friend struct FByOldestActive; // this functional will use private fields
     friend class TestMockCUDT; // unit tests
 
     typedef sync::steady_clock::time_point time_point;
