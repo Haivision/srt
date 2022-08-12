@@ -349,7 +349,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     while (iPktLen + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug,
-              log << "addBufferFromFile: ... still lacking " << (siPktLenize + m_iCount - m_iSize) << " buffers...");
+              log << "addBufferFromFile: ... still lacking " << (iPktLen + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
