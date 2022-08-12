@@ -429,7 +429,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
 
 void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED, Whether2RegenKm regen SRT_ATR_UNUSED)
 {
-    if ( !m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
+    if (!m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
     {
         HLOGC(cnlog.Debug, log << "sendKeysToPeer: NOT sending/regenerating keys: "
                 << (m_hSndCrypto ? "CONNECTION UNSECURED" : "NO TX CRYPTO CTX created"));
@@ -466,8 +466,7 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
     if (regen)
     {
         regenCryptoKm(
-            sock,
-            true, // send UMSG_EXT + SRT_CMD_KMREQ to the peer, if regenerated the key
+            sock, // send UMSG_EXT + SRT_CMD_KMREQ to the peer using this socket
             false // Do not apply the regenerated key to the to the receiver context
         ); // regenerate and send
     }
@@ -475,7 +474,7 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
 }
 
 #ifdef SRT_ENABLE_ENCRYPTION
-void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool sendit, bool bidirectional)
+void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
 {
     if (!m_hSndCrypto)
         return;
@@ -514,7 +513,7 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool sendit, bool bidirectio
             m_SndKmMsg[ki].MsgLen = out_len_p[i];
             m_SndKmMsg[ki].iPeerRetry = SRT_MAX_KMRETRY;  
 
-            if (bidirectional && !sendit)
+            if (bidirectional && !sock)
             {
                 // "Send" this key also to myself, just to be applied to the receiver crypto,
                 // exactly the same way how this key is interpreted on the peer side into its receiver crypto
@@ -527,7 +526,7 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool sendit, bool bidirectio
                 }
             }
 
-            if (sendit)
+            if (sock)
             {
                 HLOGC(cnlog.Debug, log << "regenCryptoKm: SENDING ki=" << ki << " len=" << m_SndKmMsg[ki].MsgLen
                         << " retry(updated)=" << m_SndKmMsg[ki].iPeerRetry);
@@ -628,10 +627,9 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
             }
 
             regenCryptoKm(
-                    NULL,
-                    false,  // Do not send the key (will be attached it to the HSv5 handshake)
-                    bidirectional // replicate the key to the receiver context, if bidirectional
-                    );
+                NULL, // Do not send the key (the KM msg will be attached to the HSv5 handshake)
+                bidirectional // replicate the key to the receiver context, if bidirectional
+            );
 #else
             // This error would be a consequence of setting the passphrase, while encryption
             // is turned off at compile time. Setting the password itself should be not allowed

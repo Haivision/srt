@@ -41,7 +41,7 @@ extern Logger cnlog;
 namespace srt
 {
 class CUDT;
-class CSrtConfig;
+struct CSrtConfig;
 
 
 // For KMREQ/KMRSP. Only one field is used.
@@ -85,7 +85,6 @@ private:
     bool m_bErrorReported;
 
 public:
-
     static void globalInit();
 
     bool sendingAllowed()
@@ -111,9 +110,11 @@ public:
     }
 
 private:
-
 #ifdef SRT_ENABLE_ENCRYPTION
-    void regenCryptoKm(CUDT* sock, bool sendit, bool bidirectional);
+    /// Regenerate cryptographic key material.
+    /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
+    /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
+    void regenCryptoKm(CUDT* sock, bool bidirectional);
 #endif
 
 public:
@@ -206,16 +207,15 @@ public:
     bool init(HandshakeSide, const CSrtConfig&, bool);
     void close();
 
-    // This function is used in:
-    // - HSv4 (initial key material exchange - in HSv5 it's attached to handshake)
-    // - case of key regeneration, which should be then exchanged again
+    /// @return True if the handshake is in progress.
+    /// This function is used in:
+    /// - HSv4 (initial key material exchange - in HSv5 it's attached to handshake)
+    /// - case of key regeneration, which should be then exchanged again.
     void sendKeysToPeer(CUDT* sock, int iSRTT, Whether2RegenKm regen);
-
 
     void setCryptoSecret(const HaiCrypt_Secret& secret)
     {
         m_KmSecret = secret;
-        //memcpy(&m_KmSecret, &secret, sizeof(m_KmSecret));
     }
 
     void setCryptoKeylen(size_t keylen)
