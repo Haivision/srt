@@ -318,7 +318,7 @@ static unsigned int* getRandSeed()
 int srt::sync::genRandomInt(int minVal, int maxVal)
 {
     // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
-    // A mutex to protect simulteneout access to the random device.
+    // A mutex to protect simultaneous access to the random device.
     // Thread-local storage could be used here instead to store the seed / random device.
     // However the generator is not used often (Initial Socket ID, Initial sequence number, FileCC),
     // so sharing a single seed among threads should not impact the performance.
