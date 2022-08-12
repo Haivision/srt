@@ -386,8 +386,8 @@ TEST(SyncEvent, WaitForNotifyOne)
     const steady_clock::duration timeout = seconds_from(5);
 
     auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+        CUniqueSync cc (*mutex, *cond);
+        return cc.wait_for(timeout);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 

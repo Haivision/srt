@@ -489,6 +489,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
 {
+protected:
     Condition* m_cond;
     UniqueLock* m_locker;
 
@@ -615,6 +616,7 @@ public:
 
 public:
     Mutex& mutex() { return m_lock; }
+    Condition& cond() { return m_cond; }
 
 public:
     /// Causes the current thread to block until
@@ -654,11 +656,66 @@ public:
 
     void notify_all();
 
+    void lock_notify_one()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_one();
+    }
+
+    void lock_notify_all()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_all();
+    }
+
 private:
     Mutex      m_lock;
     Condition  m_cond;
 };
 
+
+// This function binds together the functionality of
+// UniqueLock and CSync. It provides a simple interface of CSync
+// while having already the UniqueLock applied in the scope,
+// so a safe statement can be made about the mutex being locked.
+//
+// With this class you can also use CEvent class as a holder
+// for the mutex and condition pair.
+
+class CUniqueSync: public CSync
+{
+    UniqueLock m_ulock;
+
+public:
+
+    UniqueLock& locker() { return m_ulock; }
+
+    CUniqueSync(Mutex& mut, Condition& cnd)
+        : CSync(cnd, m_ulock)
+        , m_ulock(mut)
+    {
+    }
+
+    CUniqueSync(CEvent& event)
+        : CSync(event.cond(), m_ulock)
+        , m_ulock(event.mutex())
+    {
+    }
+
+    // These functions can be used safely because
+    // this whole class guarantees that whatever happens
+    // while its object exists is that the mutex is locked.
+
+    void notify_one()
+    {
+        m_cond->notify_one();
+    }
+
+    void notify_all()
+    {
+        m_cond->notify_all();
+    }
+};
 
 class CTimer
 {
