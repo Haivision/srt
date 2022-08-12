@@ -536,22 +536,46 @@ public:
     }
 
     // Static ad-hoc version
-    static void lock_signal(Condition& cond, Mutex& m)
+    SRT_ATR_DEPRECATED_PX static void lock_signal(Condition& cond, Mutex& m) SRT_ATR_DEPRECATED
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_one();
     }
 
-    static void lock_broadcast(Condition& cond, Mutex& m)
+    static void lock_notify_one(Condition& cond, Mutex& m)
+    {
+        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
+        cond.notify_one();
+    }
+
+
+    SRT_ATR_DEPRECATED_PX static void lock_broadcast(Condition& cond, Mutex& m) SRT_ATR_DEPRECATED
+    {
+        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
+        cond.notify_all();
+    }
+    static void lock_notify_all(Condition& cond, Mutex& m)
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_all();
     }
 
-    void signal_locked(UniqueLock& lk SRT_ATR_UNUSED)
+
+    SRT_ATR_DEPRECATED_PX  void signal_locked(UniqueLock& lk SRT_ATR_UNUSED) SRT_ATR_DEPRECATED
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();
+    }
+    void notify_one_locked(UniqueLock& lk SRT_ATR_UNUSED)
+    {
+        // EXPECTED: lk.mutex() is LOCKED.
+        m_cond->notify_one();
+    }
+
+    void notify_all_locked(UniqueLock& lk SRT_ATR_UNUSED)
+    {
+        // EXPECTED: lk.mutex() is LOCKED.
+        m_cond->notify_all();
     }
 
     // The signal_relaxed and broadcast_relaxed functions are to be used in case
@@ -567,9 +591,14 @@ public:
     // comment is provided to explain, why the use of the relaxed signaling is
     // correctly used.
 
-    void signal_relaxed() { signal_relaxed(*m_cond); }
-    static void signal_relaxed(Condition& cond) { cond.notify_one(); }
-    static void broadcast_relaxed(Condition& cond) { cond.notify_all(); }
+    SRT_ATR_DEPRECATED_PX void signal_relaxed() SRT_ATR_DEPRECATED { notify_one_relaxed(*m_cond); }
+    void notify_one_relaxed() { notify_one_relaxed(*m_cond); }
+
+    SRT_ATR_DEPRECATED_PX static void signal_relaxed(Condition& cond) SRT_ATR_DEPRECATED { cond.notify_one(); }
+    static void notify_one_relaxed(Condition& cond) { cond.notify_one(); }
+
+    SRT_ATR_DEPRECATED_PX static void broadcast_relaxed(Condition& cond) SRT_ATR_DEPRECATED { cond.notify_all(); }
+    static void notify_all_relaxed(Condition& cond) { cond.notify_all(); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////

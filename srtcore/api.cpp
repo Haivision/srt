@@ -300,7 +300,7 @@ int srt::CUDTUnited::cleanup()
     // after which the m_bClosing flag is cheched, which
     // is set here above. Worst case secenario, this
     // pthread_join() call will block for 1 second.
-    CSync::signal_relaxed(m_GCStopCond);
+    CSync::notify_one_relaxed(m_GCStopCond);
     m_GCThread.join();
 
     m_bGCStatus = false;
@@ -778,7 +778,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         }
 
         // wake up a waiting accept() call
-        CSync::lock_signal(ls->m_AcceptCond, ls->m_AcceptLock);
+        CSync::lock_notify_one(ls->m_AcceptCond, ls->m_AcceptLock);
     }
     else
     {
@@ -1975,7 +1975,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         s->core().notListening();
 
         // broadcast all "accept" waiting
-        CSync::lock_broadcast(s->m_AcceptCond, s->m_AcceptLock);
+        CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
     }
     else
     {

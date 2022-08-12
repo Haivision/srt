@@ -1737,7 +1737,7 @@ void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
     if (i == m_mBuffer.end())
     {
         m_mBuffer[id].push(pkt);
-        passcond.signal_locked(bufferlock);
+        passcond.notify_one_locked(bufferlock);
     }
     else
     {
