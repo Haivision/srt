@@ -184,14 +184,19 @@ CSndBuffer::CSndBuffer(int size, int maxpld)
     // circular linked list for out bound packets
     m_pBlock  = new Block;
     Block* pb = m_pBlock;
-    char* pc = m_pBuffer->m_pcData;
-    for (int i = 1; i < m_iSize; ++i)
+    char* pc  = m_pBuffer->m_pcData;
+
+    for (int i = 0; i < m_iSize; ++i)
     {
-        pb->m_pNext        = new Block;
         pb->m_iMsgNoBitset = 0;
         pb->m_pcData       = pc;
         pc                += m_iBlockLen;
-        pb                 = pb->m_pNext;
+
+        if (i < m_iSize - 1)
+        {
+            pb->m_pNext        = new Block;
+            pb                 = pb->m_pNext;
+        }
     }
     pb->m_pNext = m_pBlock;
 
