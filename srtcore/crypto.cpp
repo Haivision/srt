@@ -485,7 +485,7 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
     int sent = 0;
 
     HLOGC(cnlog.Debug, log << "regenCryptoKm: regenerating crypto keys nbo=" << nbo <<
-            " THEN=" << (sendit ? "SEND" : "KEEP") << " DIR=" << (bidirectional ? "BOTH" : "SENDER"));
+            " THEN=" << (sock ? "SEND" : "KEEP") << " DIR=" << (bidirectional ? "BOTH" : "SENDER"));
 
     for (int i = 0; i < nbo && i < 2; i++)
     {
