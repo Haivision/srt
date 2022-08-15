@@ -2545,6 +2545,7 @@ srt::CUDTSocket* srt::CUDTUnited::locatePeer(const sockaddr_any& peer, const SRT
 
 void srt::CUDTUnited::checkBrokenSockets()
 {
+    HLOGP(smlog.Debug, "checkBrokenSockets: locking global lock");
     ScopedLock cg(m_GlobControlLock);
 
 #if ENABLE_BONDING
@@ -2683,7 +2684,13 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
+    {
+        HLOGC(smlog.Debug, log << "wiping closed socket @" << (*l) << ": call removeSocket");
         removeSocket(*l);
+        HLOGC(smlog.Debug, log << "removeSocket(@" << (*l) << ") done");
+    }
+
+    HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
 
 // [[using locked(m_GlobControlLock)]]
@@ -2770,7 +2777,10 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     delete s;
 
     if (mid == -1)
+    {
+        HLOGC(smlog.Debug, log << "GC/removeSocket: no muxer found, finishing.");
         return;
+    }
 
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);
@@ -2783,8 +2793,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     CMultiplexer& mx = m->second;
 
     mx.m_iRefCount--;
-    // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
-    //    u, mx.m_iRefCount);
+    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
     if (0 == mx.m_iRefCount)
     {
         HLOGC(smlog.Debug,
