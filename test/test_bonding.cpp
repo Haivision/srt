@@ -68,6 +68,8 @@ TEST(Bonding, SRTConnectGroup)
     }
 
     srt_cleanup();
+
+    srt_setloglevel(LOG_ERR);
 }
 
 
