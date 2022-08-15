@@ -2785,6 +2785,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     s->core().closeInternal();
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
 
     if (mid == -1)
     {
@@ -2793,6 +2794,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     }
 
     map<int, CMultiplexer>::iterator m;
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " Finding muxer for " << mid);
     m = m_mMultiplexer.find(mid);
     if (m == m_mMultiplexer.end())
     {
