@@ -5170,9 +5170,8 @@ void * srt::CUDT::tsbpd(void* param)
     CUDTUnited::GroupKeeper gkeeper(self->uglobal(), self->m_parent);
 #endif
 
-    UniqueLock recv_lock(self->m_RecvLock);
-    CSync recvdata_cc(self->m_RecvDataCond, recv_lock);
-    CSync tsbpd_cc(self->m_RcvTsbPdCond, recv_lock);
+    CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
+    CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
     self->m_bTsbPdAckWakeup = true;
     while (!self->m_bClosing)
@@ -5235,7 +5234,7 @@ void * srt::CUDT::tsbpd(void* param)
              */
             if (self->m_config.bSynRecving)
             {
-                recvdata_cc.notify_one_locked(recv_lock);
+                recvdata_lcc.notify_one();
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -8070,17 +8069,15 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         if (m_bTsbPd)
         {
             /* Newly acknowledged data, signal TsbPD thread */
-            UniqueLock rcvlock(m_RecvLock);
-            CSync tscond(m_RcvTsbPdCond, rcvlock);
+            CUniqueSync cc (m_RecvLock, m_RcvTsbPdCond);
             // m_bTsbPdAckWakeup is protected by m_RecvLock in the tsbpd() thread
             if (m_bTsbPdAckWakeup)
-                tscond.notify_one_locked(rcvlock);
+                cc.notify_one();
         }
         else
         {
             {
-                UniqueLock rdlock (m_RecvLock);
-                CSync      rdcond (m_RecvDataCond, rdlock);
+                CUniqueSync rdcc (m_RecvLock, m_RecvDataCond);
 
 #if ENABLE_NEW_RCVBUFFER
                 // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
@@ -8091,7 +8088,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     if (m_config.bSynRecving)
                     {
                         // signal a waiting "recv" call if there is any data available
-                        rdcond.notify_one_locked(rdlock);
+                        rdcc.notify_one();
                     }
                     // acknowledge any waiting epolls to read
                     // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
@@ -8903,7 +8900,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     {
-        UniqueLock rlock(m_RecvLock);
+        CUniqueSync rcvtscc (m_RecvLock, m_RcvTsbPdCond);
         // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.
         // It will be dropped as too late anyway. Not dropping it from the receiver buffer
         // in advance reduces false drops if the packet somehow manages to arrive.
@@ -8937,8 +8934,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         if (m_bTsbPd)
         {
             HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-            CSync cc(m_RcvTsbPdCond, rlock);
-            cc.notify_one_locked(rlock);
+            rcvtscc.notify_one();
         }
     }
 
