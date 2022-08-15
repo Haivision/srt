@@ -954,7 +954,8 @@ private:
 private: // synchronization: mutexes and conditions
     sync::Mutex m_ConnectionLock;                // used to synchronize connection operation
 
-    sync::CEvent m_SendBlockEv;
+    sync::Condition m_SendBlockCond;             // used to block "send" call
+    sync::Mutex m_SendBlockLock;                 // lock associated to m_SendBlockCond
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck

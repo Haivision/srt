@@ -6588,12 +6588,12 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         {
             // wait here during a blocking sending
-            CUniqueSync sendblock_cc (m_SendBlockEv);
+            UniqueLock sendblock_lock (m_SendBlockLock);
 
             if (m_config.iSndTimeOut < 0)
             {
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
-                    sendblock_cc.wait();
+                    m_SendBlockCond.wait(sendblock_lock);
             }
             else
             {
@@ -6602,7 +6602,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 THREAD_PAUSED();
                 while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
                 {
-                    if (!sendblock_cc.wait_until(exptime))
+                    if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
                 }
                 THREAD_RESUMED();
@@ -7186,11 +7186,11 @@ int64_t srt::CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int blo
         unitsize = int((tosend >= block) ? block : tosend);
 
         {
-            CUniqueSync sendblock_cc(m_SendBlockEv);
+            UniqueLock lock(m_SendBlockLock);
 
             THREAD_PAUSED();
             while (stillConnected() && (sndBuffersLeft() <= 0) && m_bPeerHealth)
-                sendblock_cc.wait();
+                m_SendBlockCond.wait(lock);
             THREAD_RESUMED();
         }
 
@@ -7653,8 +7653,8 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
 void srt::CUDT::initSynch()
 {
-    setupMutex(m_SendBlockEv.mutex(), "SendBlock");
-    setupCond(m_SendBlockEv.cond(), "SendBlock");
+    setupMutex(m_SendBlockLock, "SendBlock");
+    setupCond(m_SendBlockCond, "SendBlock");
     setupCond(m_RecvDataCond, "RecvData");
     setupMutex(m_SendLock, "Send");
     setupMutex(m_RecvLock, "Recv");
@@ -7668,14 +7668,14 @@ void srt::CUDT::initSynch()
 
 void srt::CUDT::destroySynch()
 {
-    releaseMutex(m_SendBlockEv.mutex());
+    releaseMutex(m_SendBlockLock);
 
     // Just in case, signal the CV, on which some
     // other thread is possibly waiting, because a
     // process hanging on a pthread_cond_wait would
     // cause the call to destroy a CV hang up.
-    m_SendBlockEv.notify_all();
-    releaseCond(m_SendBlockEv.cond());
+    m_SendBlockCond.notify_all();
+    releaseCond(m_SendBlockCond);
 
     m_RecvDataCond.notify_all();
     releaseCond(m_RecvDataCond);
@@ -7695,7 +7695,7 @@ void srt::CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
     // wake up user calls
-    m_SendBlockEv.lock_notify_one();
+    CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
     enterCS(m_SendLock);
     leaveCS(m_SendLock);
@@ -8294,7 +8294,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
     if (m_config.bSynSending)
     {
-        m_SendBlockEv.lock_notify_one();
+        CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
     }
 
     // record total time used for sending
