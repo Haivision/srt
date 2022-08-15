@@ -139,11 +139,11 @@ TEST_F(TestCRYSPRmethods, SHA1)
 
 
 /* CRYSPR control block test */
-class TestCRYSPRcypto
+class TestCRYSPRcrypto
     : public ::testing::Test
 {
 protected:
-    TestCRYSPRcypto()
+    TestCRYSPRcrypto()
     {
         // initialization code here
         cryspr_m = NULL;
@@ -151,7 +151,7 @@ protected:
         cryspr_cb = NULL;
     }
 
-    ~TestCRYSPRcypto()
+    ~TestCRYSPRcrypto()
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
@@ -192,7 +192,7 @@ protected:
     CRYSPR_cb *cryspr_cb;       /* Control block */
 };
 
-TEST_F(TestCRYSPRcypto, CtrlBlock)
+TEST_F(TestCRYSPRcrypto, CtrlBlock)
 {
     EXPECT_EQ(cryspr_m, cryspr_cb->cryspr); //methods set in control block
 }
@@ -306,37 +306,37 @@ void test_pbkdf2(
 }
 
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k128)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k128)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 0);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k192)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k192)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 1);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k256)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k256)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 2);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i1)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i1)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 3);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i20)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i20)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 4);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i4096)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i4096)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 5);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv3_0)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv3_0)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 6);
 }
@@ -457,28 +457,28 @@ void test_kmunwrap(
 }
 
 
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k128)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k128)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 0);
 }
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k192)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k192)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 1);
 }
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k256)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k256)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 2);
 }
 
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k128)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k128)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 0);
 }
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k192)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k192)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 1);
 }
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k256)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k256)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 2);
 }
@@ -606,51 +606,51 @@ void test_AESecb(
 #define ENCRYPT true
 #define DECRYPT false
 
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 0, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 1, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 2, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 3, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 4, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 5, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 0, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 1, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 2, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 3, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 4, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 5, DECRYPT);
 }
@@ -754,27 +754,27 @@ void test_AESctr(
 #define ENCRYPT true
 #define DECRYPT false
 
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_128)
 {
     test_AESctr(cryspr_m, cryspr_cb, 0, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_192)
 {
     test_AESctr(cryspr_m, cryspr_cb, 1, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_256)
 {
     test_AESctr(cryspr_m, cryspr_cb, 2, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_128)
 {
     test_AESctr(cryspr_m, cryspr_cb, 0, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_192)
 {
     test_AESctr(cryspr_m, cryspr_cb, 1, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_256)
 {
     test_AESctr(cryspr_m, cryspr_cb, 2, DECRYPT);
 }
