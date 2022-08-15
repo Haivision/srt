@@ -94,9 +94,19 @@ void srt::CUDTSocket::construct()
 
 srt::CUDTSocket::~CUDTSocket()
 {
+    // Perform lock-signal-unlock cycle to make sure no one is waiting on cond.
+
+    HLOGP(smlog.Debug, "GC/~CUDTSocket: performing lock-signal-unlock cycle on AcceptCond");
+    m_AcceptLock.lock();
+    m_AcceptCond.notify_all();
+    m_AcceptLock.unlock();
+
+    HLOGP(smlog.Debug, "GC/~CUDTSocket: destroying m_AcceptCond");
     releaseMutex(m_AcceptLock);
     releaseCond(m_AcceptCond);
     releaseMutex(m_ControlLock);
+
+    HLOGP(smlog.Debug, "GC/~CUDTSocket: done.");
 }
 
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
