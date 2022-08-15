@@ -39,8 +39,6 @@ TEST(Bonding, SRTConnectGroup)
         targets.push_back(gd);
     }
 
-    srt_setloglevel(LOG_DEBUG);
-
     std::future<void> closing_promise = std::async(std::launch::async, [](int ss) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cerr << "Closing group" << std::endl;
@@ -68,8 +66,6 @@ TEST(Bonding, SRTConnectGroup)
     }
 
     srt_cleanup();
-
-    srt_setloglevel(LOG_ERR);
 }
 
 

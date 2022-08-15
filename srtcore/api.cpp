@@ -94,19 +94,9 @@ void srt::CUDTSocket::construct()
 
 srt::CUDTSocket::~CUDTSocket()
 {
-    // Perform lock-signal-unlock cycle to make sure no one is waiting on cond.
-
-    HLOGP(smlog.Debug, "GC/~CUDTSocket: performing lock-signal-unlock cycle on AcceptCond");
-    m_AcceptLock.lock();
-    m_AcceptCond.notify_all();
-    m_AcceptLock.unlock();
-
-    HLOGP(smlog.Debug, "GC/~CUDTSocket: destroying m_AcceptCond");
     releaseMutex(m_AcceptLock);
     releaseCond(m_AcceptCond);
     releaseMutex(m_ControlLock);
-
-    HLOGP(smlog.Debug, "GC/~CUDTSocket: done.");
 }
 
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
@@ -2555,7 +2545,6 @@ srt::CUDTSocket* srt::CUDTUnited::locatePeer(const sockaddr_any& peer, const SRT
 
 void srt::CUDTUnited::checkBrokenSockets()
 {
-    HLOGP(smlog.Debug, "checkBrokenSockets: locking global lock");
     ScopedLock cg(m_GlobControlLock);
 
 #if ENABLE_BONDING
@@ -2694,11 +2683,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
-    {
-        HLOGC(smlog.Debug, log << "wiping closed socket @" << (*l) << ": call removeSocket");
         removeSocket(*l);
-        HLOGC(smlog.Debug, log << "removeSocket(@" << (*l) << ") done");
-    }
 
     HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
@@ -2794,7 +2779,6 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     }
 
     map<int, CMultiplexer>::iterator m;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " Finding muxer for " << mid);
     m = m_mMultiplexer.find(mid);
     if (m == m_mMultiplexer.end())
     {
@@ -3176,8 +3160,6 @@ void* srt::CUDTUnited::garbageCollect(void* p)
     while (true)
     {
         self->checkBrokenSockets();
-
-        HLOGC(inlog.Debug, log << "GC: after checkBrokenSockets, check if all sockets were deleted:");
 
         enterCS(self->m_GlobControlLock);
         bool empty = self->m_ClosedSockets.empty();

@@ -585,6 +585,9 @@ public:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+// XXX Do not use this class now, there's an unknown issue
+// connected to object management with the use of release* functions.
+// Until this is solved, stay with separate *Cond and *Lock fields.
 class CEvent
 {
 public:
@@ -651,14 +654,11 @@ private:
 };
 
 
-// This function binds together the functionality of
+// This class binds together the functionality of
 // UniqueLock and CSync. It provides a simple interface of CSync
 // while having already the UniqueLock applied in the scope,
-// so a safe statement can be made about the mutex being locked.
-//
-// With this class you can also use CEvent class as a holder
-// for the mutex and condition pair.
-
+// so a safe statement can be made about the mutex being locked
+// when signalling or waiting.
 class CUniqueSync: public CSync
 {
     UniqueLock m_ulock;

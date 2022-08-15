@@ -8069,10 +8069,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         if (m_bTsbPd)
         {
             /* Newly acknowledged data, signal TsbPD thread */
-            CUniqueSync cc (m_RecvLock, m_RcvTsbPdCond);
+            CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
             // m_bTsbPdAckWakeup is protected by m_RecvLock in the tsbpd() thread
             if (m_bTsbPdAckWakeup)
-                cc.notify_one();
+                tslcc.notify_one();
         }
         else
         {
