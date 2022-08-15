@@ -3156,6 +3156,8 @@ void* srt::CUDTUnited::garbageCollect(void* p)
     {
         self->checkBrokenSockets();
 
+        HLOGC(inlog.Debug, log << "GC: after checkBrokenSockets, check if all sockets were deleted:");
+
         enterCS(self->m_GlobControlLock);
         bool empty = self->m_ClosedSockets.empty();
         leaveCS(self->m_GlobControlLock);
@@ -3163,6 +3165,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
         if (empty)
             break;
 
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
         srt::sync::this_thread::sleep_for(milliseconds_from(1));
     }
 
