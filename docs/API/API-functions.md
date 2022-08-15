@@ -1734,7 +1734,7 @@ delivered to the receiving application (in microseconds since SRT clock epoch).
   - [IN] Sender only. Specifies the application-provided timestamp to be associated
 with the packet. If not provided (specified as 0), the current time of 
 SRT internal clock is used.
-  - For details on how to use `srctime` please refer to the (Time Access)[#time-access] section.
+  - For details on how to use `srctime` please refer to the [Time Access](#time-access) section.
 
 - `pktseq`: Receiver only. Reports the sequence number for the packet carrying
 out the payload being returned. If the payload is carried out by more than one
