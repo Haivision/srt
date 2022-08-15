@@ -155,7 +155,10 @@ public:
     // Currently just "unimplemented".
     std::string CONID() const { return ""; }
 
-    CSndBuffer(int size = 32, int mss = 1500);
+    /// @brief CSndBuffer constructor.
+    /// @param size initial number of blocks (each block to store one packet payload).
+    /// @param maxpld maximum packet payload.
+    CSndBuffer(int size = 32, int maxpld = 1500);
     ~CSndBuffer();
 
 public:
@@ -256,7 +259,7 @@ private:
     struct Block
     {
         char* m_pcData;  // pointer to the data block
-        int   m_iLength; // length of the block
+        int   m_iLength; // payload length of the block.
 
         int32_t    m_iMsgNoBitset; // message number
         int32_t    m_iSeqNo;       // sequence number for scheduling
@@ -292,7 +295,7 @@ private:
     int32_t m_iNextMsgNo; // next message number
 
     int m_iSize; // buffer size (number of packets)
-    int m_iMSS;  // maximum seqment/packet size
+    const int m_iBlockLen;  // maximum length of a block holding packet payload (excluding packet header).
     int m_iCount; // number of used blocks
 
     int        m_iBytesCount; // number of payload bytes in queue
