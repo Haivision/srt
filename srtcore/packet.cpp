@@ -174,7 +174,8 @@ using namespace srt_logging;
 
 // Set up the aliases in the constructure
 srt::CPacket::CPacket()
-    : m_extra_pad()
+    : m_nHeader()
+    , m_extra_pad()
     , m_data_owned(false)
     , m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO]))
     , m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO]))
