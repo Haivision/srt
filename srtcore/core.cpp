@@ -8628,7 +8628,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
-        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), rtt);
+        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
 #if ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)
         {
@@ -9039,7 +9039,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
-        handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
+        processKeepalive(ctrlpkt, currtime);
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
@@ -11730,7 +11730,7 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
     return true;
 }
 
-void srt::CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
+void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
     // Here can be handled some protocol definition
     // for extra data sent through keepalive.
@@ -11750,8 +11750,13 @@ void srt::CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
             // Whether anything is to be done with this socket
             // about the fact that keepalive arrived, let the
             // group handle it
-            pg->handleKeepalive(m_parent->m_GroupMemberData);
+            pg->processKeepalive(m_parent->m_GroupMemberData);
         }
     }
 #endif
+
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+    if (m_config.bDriftTracer)
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
 }

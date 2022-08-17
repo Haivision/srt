@@ -449,8 +449,9 @@ public:
 
     /// Add packet timestamp for drift caclculation and compensation
     /// @param [in] timestamp packet time stamp
+    /// @param [in] tsPktArrival arrival time of the packet used to extract the drift sample.
     /// @param [in] rtt RTT sample
-    bool addRcvTsbPdDriftSample(uint32_t timestamp, int rtt);
+    bool addRcvTsbPdDriftSample(uint32_t timestamp, const time_point& tsPktArrival, int rtt);
 
 #ifdef SRT_DEBUG_TSBPD_DRIFT
     void printDriftHistogram(int64_t iDrift);

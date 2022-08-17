@@ -391,7 +391,7 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
-    void handleKeepalive(SocketData*);
+    void processKeepalive(SocketData*);
     void internalKeepalive(SocketData*);
 
 private:
