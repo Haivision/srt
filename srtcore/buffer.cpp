@@ -1886,9 +1886,9 @@ void CRcvBuffer::setRcvTsbPdMode(const steady_clock::time_point& timebase, const
     m_tsbpd.setTsbPdMode(timebase, no_wrap_check, delay);
 }
 
-bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, int rtt)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t timestamp_us, const time_point& tsPktArrival, int rtt)
 {
-    return m_tsbpd.addDriftSample(timestamp_us, rtt);
+    return m_tsbpd.addDriftSample(timestamp_us, tsPktArrival, rtt);
 }
 
 int CRcvBuffer::readMsg(char* data, int len)

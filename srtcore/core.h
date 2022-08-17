@@ -828,13 +828,13 @@ private: // Timers
     duration   m_tdNAKInterval;                  // NAK interval
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
-    time_point m_tsLastRspAckTime;               // Timestamp of last ACK from the peer
+    time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer
     atomic_time_point m_tsLastSndTime;           // Timestamp of last data/ctrl sent (in system ticks)
     time_point m_tsLastWarningTime;              // Last time that a warning message is sent
     atomic_time_point m_tsLastReqTime;           // last time when a connection request is sent
     time_point m_tsRcvPeerStartTime;
     time_point m_tsLingerExpiration;             // Linger expiration time (for GC to close a socket with data in sending buffer)
-    time_point m_tsLastAckTime;                  // Timestamp of last ACK
+    time_point m_tsLastAckTime;                  // (RCV) Timestamp of last ACK
     duration m_tdMinNakInterval;                 // NAK timeout lower bound; too small value can cause unnecessary retransmission
     duration m_tdMinExpInterval;                 // Timeout lower bound threshold: too small timeout can cause problem
 
@@ -914,9 +914,9 @@ private: // Receiving related data
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
-    int32_t m_iRcvLastAckAck;                    // Last sent ACK that has been acknowledged
+    int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
-    sync::atomic<int32_t> m_iRcvCurrSeqNo;       // Largest received sequence number
+    sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.
     int32_t m_iRcvCurrPhySeqNo;                  // Same as m_iRcvCurrSeqNo, but physical only (disregarding a filter)
 
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
@@ -1086,7 +1086,7 @@ private: // Generation and processing of packets
     void dropToGroupRecvBase();
 #endif
 
-    void handleKeepalive(const char* data, size_t lenghth);
+    void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
     /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)

@@ -969,9 +969,9 @@ int CRcvBufferNew::scanNotInOrderMessageLeft(const int startPos, int msgNo) cons
     return -1;
 }
 
-bool CRcvBufferNew::addRcvTsbPdDriftSample(uint32_t usTimestamp, int usRTTSample)
+bool CRcvBufferNew::addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample)
 {
-    return m_tsbpd.addDriftSample(usTimestamp, usRTTSample);
+    return m_tsbpd.addDriftSample(usTimestamp, tsPktArrival, usRTTSample);
 }
 
 void CRcvBufferNew::setTsbPdMode(const steady_clock::time_point& timebase, bool wrap, duration delay)
