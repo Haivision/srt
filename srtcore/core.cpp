@@ -11755,8 +11755,10 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     }
 #endif
 
+#if ENABLE_NEW_RCVBUFFER
     ScopedLock lck(m_RcvBufferLock);
     m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
     if (m_config.bDriftTracer)
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+#endif
 }
