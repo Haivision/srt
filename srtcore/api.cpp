@@ -300,7 +300,7 @@ int srt::CUDTUnited::cleanup()
     // after which the m_bClosing flag is cheched, which
     // is set here above. Worst case secenario, this
     // pthread_join() call will block for 1 second.
-    CSync::signal_relaxed(m_GCStopCond);
+    CSync::notify_one_relaxed(m_GCStopCond);
     m_GCThread.join();
 
     m_bGCStatus = false;
@@ -778,7 +778,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         }
 
         // wake up a waiting accept() call
-        CSync::lock_signal(ls->m_AcceptCond, ls->m_AcceptLock);
+        CSync::lock_notify_one(ls->m_AcceptCond, ls->m_AcceptLock);
     }
     else
     {
@@ -1975,7 +1975,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         s->core().notListening();
 
         // broadcast all "accept" waiting
-        CSync::lock_broadcast(s->m_AcceptCond, s->m_AcceptLock);
+        CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
     }
     else
     {
@@ -2684,6 +2684,8 @@ void srt::CUDTUnited::checkBrokenSockets()
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
         removeSocket(*l);
+
+    HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
 
 // [[using locked(m_GlobControlLock)]]
@@ -2768,9 +2770,13 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     s->core().closeInternal();
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
 
     if (mid == -1)
+    {
+        HLOGC(smlog.Debug, log << "GC/removeSocket: no muxer found, finishing.");
         return;
+    }
 
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);
@@ -2783,8 +2789,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     CMultiplexer& mx = m->second;
 
     mx.m_iRefCount--;
-    // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
-    //    u, mx.m_iRefCount);
+    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
     if (0 == mx.m_iRefCount)
     {
         HLOGC(smlog.Debug,
@@ -3163,6 +3168,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
         if (empty)
             break;
 
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
         srt::sync::this_thread::sleep_for(milliseconds_from(1));
     }
 

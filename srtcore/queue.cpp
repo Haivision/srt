@@ -1599,8 +1599,7 @@ void srt::CRcvQueue::stopWorker()
 
 int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 {
-    UniqueLock bufferlock(m_BufferLock);
-    CSync      buffercond(m_BufferCond, bufferlock);
+    CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
     map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
@@ -1729,15 +1728,14 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
 
 void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
-    UniqueLock bufferlock(m_BufferLock);
-    CSync      passcond(m_BufferCond, bufferlock);
+    CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
     map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
         m_mBuffer[id].push(pkt);
-        passcond.signal_locked(bufferlock);
+        passcond.notify_one();
     }
     else
     {
