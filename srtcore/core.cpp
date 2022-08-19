@@ -291,7 +291,7 @@ void srt::CUDT::construct()
     m_bPeerTsbPd          = false;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bTsbPd              = false;
-    m_bTsbPdAckWakeup     = false;
+    m_bWakeOnRecv     = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
 
@@ -1286,8 +1286,8 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // Note: if agent is a listener, and the current version supports
     // both sync methods, this flag might have been changed according to
     // the wish of the caller.
-    if (m_parent->m_GroupOf->synconmsgno())
-        flags |= SRT_GFLAG_SYNCONMSG;
+    // if (m_parent->m_GroupOf->synconmsgno())
+    //     flags |= SRT_GFLAG_SYNCONMSG;
 
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
@@ -3086,10 +3086,10 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
             pg->set_peerid(grpid);
             HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid() << ", copying characteristic data");
 
-            // The call to syncWithSocket is copying
+            // The call to syncWithFirstSocket is copying
             // some interesting data from the first connected
             // socket. This should be only done for the first successful connection.
-            pg->syncWithSocket(*this, HSD_INITIATOR);
+            pg->syncWithFirstSocket(*this, HSD_INITIATOR);
         }
         // Otherwise the peer id must be the same as existing, otherwise
         // this group is considered already bound to another peer group.
@@ -3223,7 +3223,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 
         if (was_empty)
         {
-            gp->syncWithSocket(s->core(), HSD_RESPONDER);
+            gp->syncWithFirstSocket(s->core(), HSD_RESPONDER);
         }
     }
 
@@ -3245,7 +3245,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         return 0;
     }
 
-    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
+    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s, gp->type()));
     s->m_GroupOf = gp;
     m_HSGroupType = gtp;
 
@@ -3328,11 +3328,13 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
 
+    /*
     if (gp->synconmsgno())
     {
         HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID << ": NOT synchronizing sequence numbers.");
     }
     else
+    */
     {
         // These are the values that are normally set initially by setters.
         int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
@@ -5167,26 +5169,15 @@ void * srt::CUDT::tsbpd(void* param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-#if ENABLE_BONDING
-    // Make the TSBPD thread a "client" of the group,
-    // which will ensure that the group will not be physically
-    // deleted until this thread exits.
-    // NOTE: DO NOT LEAD TO EVER CANCEL THE THREAD!!!
-    CUDTUnited::GroupKeeper gkeeper(self->uglobal(), self->m_parent);
-#endif
-
     UniqueLock recv_lock(self->m_RecvLock);
     CSync recvdata_cc(self->m_RecvDataCond, recv_lock);
     CSync tsbpd_cc(self->m_RcvTsbPdCond, recv_lock);
 
-    self->m_bTsbPdAckWakeup = true;
+    self->m_bWakeOnRecv = true;
     while (!self->m_bClosing)
     {
         steady_clock::time_point tsNextDelivery; // Next packet delivery time
         bool                     rxready = false;
-#if ENABLE_BONDING
-        bool shall_update_group = false;
-#endif
 
         enterCS(self->m_RcvBufferLock);
         const steady_clock::time_point tnow = steady_clock::now();
@@ -5207,9 +5198,6 @@ void * srt::CUDT::tsbpd(void* param)
             if (info.seq_gap)
             {
                 const int iDropCnt SRT_ATR_UNUSED = self->rcvDropTooLateUpTo(info.seqno);
-#if ENABLE_BONDING
-                shall_update_group = true;
-#endif
 
 #if ENABLE_LOGGING
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
@@ -5246,48 +5234,6 @@ void * srt::CUDT::tsbpd(void* param)
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
             self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
-#if ENABLE_BONDING
-            // If this is NULL, it means:
-            // - the socket never was a group member
-            // - the socket was a group member, but:
-            //    - was just removed as a part of closure
-            //    - and will never be member of the group anymore
-
-            // If this is not NULL, it means:
-            // - This socket is currently member of the group
-            // - This socket WAS a member of the group, though possibly removed from it already, BUT:
-            //   - the group that this socket IS OR WAS member of is in the GroupKeeper
-            //   - the GroupKeeper prevents the group from being deleted
-            //   - it is then completely safe to access the group here,
-            //     EVEN IF THE SOCKET THAT WAS ITS MEMBER IS BEING DELETED.
-
-            // It is ensured that the group object exists here because GroupKeeper
-            // keeps it busy, even if you just closed the socket, remove it as a member
-            // or even the group is empty and was explicitly closed.
-            if (gkeeper.group)
-            {
-                // Functions called below will lock m_GroupLock, which in hierarchy
-                // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
-                // m_GroupLock inside the calls.
-                InvertedLock unrecv(self->m_RecvLock);
-                // The current "APP reader" needs to simply decide as to whether
-                // the next CUDTGroup::recv() call should return with no blocking or not.
-                // When the group is read-ready, it should update its pollers as it sees fit.
-
-                // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
-                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << info.seqno << " makes group readable");
-                gkeeper.group->updateReadState(self->m_SocketID, info.seqno);
-
-                if (shall_update_group)
-                {
-                    // A group may need to update the parallelly used idle links,
-                    // should it have any. Pass the current socket position in order
-                    // to skip it from the group loop.
-                    // NOTE: SELF LOCKING.
-                    gkeeper.group->updateLatestRcv(self->m_parent);
-                }
-            }
-#endif
             CGlobEvent::triggerEvent();
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
@@ -5299,7 +5245,7 @@ void * srt::CUDT::tsbpd(void* param)
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bTsbPdAckWakeup = false;
+            self->m_bWakeOnRecv = false;
             HLOGC(tslog.Debug,
                 log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
                 << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms");
@@ -5321,7 +5267,7 @@ void * srt::CUDT::tsbpd(void* param)
              * - Closing the connection
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bTsbPdAckWakeup = true;
+            self->m_bWakeOnRecv = true;
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
@@ -5381,7 +5327,7 @@ void * srt::CUDT::tsbpd(void *param)
     CSync recvdata_cc (self->m_RecvDataCond, recv_lock);
     CSync tsbpd_cc    (self->m_RcvTsbPdCond, recv_lock);
 
-    self->m_bTsbPdAckWakeup = true;
+    self->m_bWakeOnRecv = true;
     while (!self->m_bClosing)
     {
         int32_t                  current_pkt_seq = 0;
@@ -5545,7 +5491,7 @@ void * srt::CUDT::tsbpd(void *param)
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bTsbPdAckWakeup = false;
+            self->m_bWakeOnRecv = false;
             HLOGC(tslog.Debug,
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
                       << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
@@ -5567,7 +5513,7 @@ void * srt::CUDT::tsbpd(void *param)
              * - Closing the connection
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bTsbPdAckWakeup = true;
+            self->m_bWakeOnRecv = true;
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
@@ -5654,14 +5600,25 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-#if ENABLE_NEW_RCVBUFFER
-        SRT_ASSERT(m_iISN != -1);
-        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
-#else
-        m_pRcvBuffer = new CRcvBuffer(m_pRcvQueue->m_pUnitQueue, m_config.iRcvBufSize);
-#endif
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
+
+#if ENABLE_NEW_BONDING
+        // Keep the per-socket receiver buffer and receiver loss list empty.
+        // Reception will be redirected to the group directly.
+        if (!m_parent->m_GroupOf)
+        {
+            SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
+            m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_config.bMessageAPI);
+        }
+#else
+  #if ENABLE_NEW_RCVBUFFER
+        SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
+        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_config.bMessageAPI);
+  #else
+        m_pRcvBuffer = new CRcvBuffer(m_pRcvQueue->m_pUnitQueue, m_config.iRcvBufSize);
+  #endif
+#endif
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
     }
     catch (...)
@@ -6478,18 +6435,13 @@ int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64
     mctrl.msgttl      = msttl;
     mctrl.inorder     = inorder;
     mctrl.srctime     = srctime;
-    return this->sendMessageInternal(data, len, NULL, (mctrl));
-}
-
-int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
-{
-    return sendMessageInternal(data, len, NULL, (w_mctrl));
+    return this->sendmsg2(data, len, (mctrl));
 }
 
 // [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::send,
 // which is the only case when the m_parent->m_GroupOf is not NULL.
-int srt::CUDT::sendMessageInternal(const char *data, int len, void* selink, SRT_MSGCTRL& w_mctrl)
+int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
@@ -6698,15 +6650,28 @@ int srt::CUDT::sendMessageInternal(const char *data, int len, void* selink, SRT_
         // NOTE: it's assumed that if this is a group member, then
         // an attempt to call srt_sendmsg2 has been rejected, and so
         // the pktseq field has been set by the internal group sender function.
-        if (m_parent->m_GroupOf
-                && w_mctrl.pktseq != SRT_SEQNO_NONE
-                && m_iSndNextSeqNo != SRT_SEQNO_NONE)
+        if (m_parent->m_GroupOf)
         {
-            if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+            if ( w_mctrl.pktseq != SRT_SEQNO_NONE
+                    && m_iSndNextSeqNo != SRT_SEQNO_NONE)
             {
-                HLOGC(aslog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
-                        << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
-                return size;
+                if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
+                {
+                    HLOGC(aslog.Debug, log << CONID() << "sock:SENDING (NOT): group-req %" << w_mctrl.pktseq
+                            << " OLDER THAN next expected %" << seqno << " - FAKE-SENDING.");
+                    return size;
+                }
+            }
+
+            // This synchronizes the fact of adding a new packet to the sender buffer.
+            // For groups that use active scheduling this will add the packet to the
+            // schedule, for all others it does nothing.
+            if (m_parent->m_GroupMemberData->use_send_schedule)
+            {
+                if (!m_parent->m_GroupOf->updateSendPacketUnique(seqno))
+                {
+                    throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
+                }
             }
         }
 #endif
@@ -6743,7 +6708,7 @@ int srt::CUDT::sendMessageInternal(const char *data, int len, void* selink, SRT_
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
         // We need to supply to the output the value that was STAMPED ON THE PACKET,
         // which is seqno. In the output we'll get the next sequence number.
-        m_pSndBuffer->addBuffer(data, size, selink, (w_mctrl));
+        m_pSndBuffer->addBuffer(data, size, (w_mctrl));
         m_iSndNextSeqNo = w_mctrl.pktseq;
         w_mctrl.pktseq = seqno;
 
@@ -7752,8 +7717,9 @@ void srt::CUDT::ackDataUpTo(int32_t ack)
 #endif
 }
 
-#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
-void srt::CUDT::dropToGroupRecvBase() {
+#if 0 // ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
+void srt::CUDT::dropToGroupRecvBase()
+{
     int32_t group_recv_base = SRT_SEQNO_NONE;
     if (m_parent->m_GroupOf)
     {
@@ -7979,7 +7945,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     string reason = "first lost"; // just for "a reason" of giving particular % for ACK
 #endif
 
-#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
+#if 0 // ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
     dropToGroupRecvBase();
 #endif
 
@@ -8026,12 +7992,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     {
         ackDataUpTo(ack);
 
-#if ENABLE_BONDING
-#if ENABLE_NEW_RCVBUFFER
-        const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
-#else
+#if ENABLE_OLD_BONDING
         const int32_t group_read_seq = CSeqNo::decseq(ack);
-#endif
 #endif
 
         InvertedLock un_bufflock (m_RcvBufferLock);
@@ -8079,18 +8041,26 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
         if (m_bTsbPd)
         {
-            /* Newly acknowledged data, signal TsbPD thread */
+            /*
+               There's no need to update TSBPD in the wake-on-recv state
+               from ACK because it is being done already in the receiver thread
+               when a newly inserted packet caused provision of a new candidate
+               that could be delivered soon. Also, this flag is only used in TSBPD
+               mode and can be only set to true in the TSBPD thread.
+               */
+#if !ENABLE_NEW_RCVBUFFER
+            // Newly acknowledged data, signal TsbPD thread //
             UniqueLock rcvlock(m_RecvLock);
             CSync tscond(m_RcvTsbPdCond, rcvlock);
-            // m_bTsbPdAckWakeup is protected by m_RecvLock in the tsbpd() thread
-            if (m_bTsbPdAckWakeup)
+            // m_bWakeOnRecv is protected by m_RecvLock in the tsbpd() thread
+            if (m_bWakeOnRecv)
                 tscond.signal_locked(rcvlock);
+#endif
         }
         else
         {
             {
-                UniqueLock rdlock (m_RecvLock);
-                CSync      rdcond (m_RecvDataCond, rdlock);
+                CUniqueSync rdcond (m_RecvLock, m_RecvDataCond);
 
 #if ENABLE_NEW_RCVBUFFER
                 // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
@@ -8101,7 +8071,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     if (m_config.bSynRecving)
                     {
                         // signal a waiting "recv" call if there is any data available
-                        rdcond.signal_locked(rdlock);
+                        rdcond.notify_one();
                     }
                     // acknowledge any waiting epolls to read
                     // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
@@ -8117,7 +8087,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
                 }
             }
-#if ENABLE_BONDING
+#if ENABLE_OLD_BONDING
             if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
@@ -8673,6 +8643,11 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     {
         ScopedLock ack_lock(m_RecvAckLock);
 
+#if ENABLE_NEW_BONDING
+        typedef vector< pair<int32_t, int32_t> > losses_t;
+        losses_t losses;
+#endif
+
         // decode loss list message and insert loss into the sender loss list
         for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
         {
@@ -8708,6 +8683,9 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(losslist_lo, losslist_hi);
+#if ENABLE_NEW_BONDING
+                    losses.push_back(make_pair(losslist_lo, losslist_hi));
+#endif
                 }
                 // ELSE IF losslist_hi %>= m_iSndLastAck
                 else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
@@ -8721,6 +8699,9 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+#if ENABLE_NEW_BONDING
+                    losses.push_back(make_pair(m_iSndLastAck.load(), losslist_hi));
+#endif
                 }
                 else
                 {
@@ -8770,12 +8751,30 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 HLOGC(inlog.Debug, log << CONID() << "rcv LOSSREPORT: %"
                     << losslist[i] << " (1 packet)");
                 const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+#if ENABLE_NEW_BONDING
+                    losses.push_back(make_pair(losslist[i], losslist[i]));
+#endif
 
                 enterCS(m_StatsLock);
                 m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
         }
+#if ENABLE_NEW_BONDING
+        if (m_parent->m_GroupMemberData)
+        {
+            groups::SocketData* d = m_parent->m_GroupMemberData;
+
+            if (d->use_send_schedule)
+            {
+                if (!m_parent->m_GroupOf->updateSendPacketLoss(losses))
+                {
+                    LOGC(inlog.Error, log << CONID() << "IPE: can't select link to send the loss, all broken???");
+                }
+            }
+        }
+#endif
+
     }
 
     updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
@@ -9456,42 +9455,134 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     if (!m_bOpened)
         return false;
 
-    payload = isRetransmissionAllowed(enter_time)
-        ? packLostData((w_packet), (origintime))
-        : 0;
+#if ENABLE_NEW_BONDING
+    if (m_parent->m_GroupMemberData && m_parent->m_GroupMemberData->use_send_schedule)
+    {
+        // If this socket is a group member of a group that uses send scheduler,
+        // do not extract packets from the existing resources, but instead pick up
+        // the sequence from the scheduler container and extract that sequence from
+        // the sender buffer.
 
-    if (payload > 0)
-    {
-        reason = "reXmit";
-    }
-    else if (m_PacketFilter &&
-             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
-    {
-        HLOGC(qslog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
-        payload        = (int) w_packet.getLength();
-        reason         = "filter";
-        filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
+        // Both lost packet and the fresh unique packet shall be able to be extracted
+        // from the sender buffer. Packet filter packets should be stored in a separate
+        // buffer (XXX not implemented yet) and delivered in order.
+        vector<groups::SchedSeq> seqs;
+        if (!m_parent->m_GroupOf->getSendSchedule(m_parent->m_GroupMemberData, (seqs)))
+            return false;
 
-        // Stats
-        ScopedLock lg(m_StatsLock);
-        m_stats.sndr.sentFilterExtra.count(1);
-    }
-    else
-    {
-        if (!packUniqueData((w_packet), (origintime)))
+        int nremoved = 0;
+        for (size_t i = 0; i < seqs.size(); ++i)
         {
+            groups::SchedSeq ss = seqs[i];
+            w_packet.m_iSeqNo = ss.seq;
+            if (ss.type == groups::SQT_FRESH)
+                new_packet_packed = true;
+
+            nremoved = i+1;
+
+            int msglen;
+            if (ss.type == groups::SQT_PFILTER)
+            {
+                // XXX packet filter extraction currently not implemented, do not use.
+                continue;
+                //filter_ctl_pkt = true;
+            }
+            else
+            {
+                const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
+                if (offset < 0)
+                {
+                    // Already removed from the buffer, cannot send.
+                    HLOGC(qslog.Debug, log << "sched seq %" << w_packet.m_iSeqNo << " past the buffer");
+                    continue;
+                }
+
+                // XXX If the sender buffer is made common for the whole group, this should
+                // simply extract a packet from the common sender buffer.
+
+                payload = m_pSndBuffer->readData(offset, (w_packet), (origintime), (msglen));
+
+                uint32_t msgno_field = w_packet.m_iMsgNo;
+
+                if (ss.type == groups::SQT_LOSS)
+                {
+                    msgno_field |= MSGNO_REXMIT::mask;
+                }
+                else
+                {
+                    msgno_field &= ~MSGNO_REXMIT::mask;
+                }
+                w_packet.m_iMsgNo = msgno_field;
+
+            }
+            if (payload == -1)
+            {
+                // To be dropped, ignore.
+                // XXX likely here 'msglen' should be used to send drop request to the other side.
+                payload = 0;
+                continue;
+            }
+            else if (payload == 0)
+            {
+                continue;
+            }
+        }
+
+        // Note: the sending schedule could have been updated in the meantime, but not
+        // by removing elements - only this function can remove elements from there, or
+        // when closing a socket. So this will always cover these sequences that have been
+        // extracted here above.
+        m_parent->m_GroupOf->discardSendSchedule(m_parent->m_GroupMemberData, nremoved);
+
+        if (!payload)
+        {
+            // XXX consider making that common for payload = 0
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration::zero();
             return false;
         }
-        new_packet_packed = true;
+    }
+    else
+#endif
+    {
 
-        // every 16 (0xF) packets, a packet pair is sent
-        if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
-            probe = true;
+        payload = isRetransmissionAllowed(enter_time)
+            ? packLostData((w_packet), (origintime))
+            : 0;
 
-        payload = (int) w_packet.getLength();
-        reason = "normal";
+        if (payload > 0)
+        {
+            reason = "reXmit";
+        }
+        else if (m_PacketFilter &&
+                m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
+        {
+            HLOGC(qslog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
+            payload        = (int) w_packet.getLength();
+            reason         = "filter";
+            filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
+
+            // Stats
+            ScopedLock lg(m_StatsLock);
+            m_stats.sndr.sentFilterExtra.count(1);
+        }
+        else
+        {
+            if (!packUniqueData((w_packet), (origintime)))
+            {
+                m_tsNextSendTime = steady_clock::time_point();
+                m_tdSendTimeDiff = steady_clock::duration::zero();
+                return false;
+            }
+            new_packet_packed = true;
+
+            // every 16 (0xF) packets, a packet pair is sent
+            if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
+                probe = true;
+
+            payload = (int) w_packet.getLength();
+            reason = "normal";
+        }
     }
 
     // Normally packet.m_iTimeStamp field is set exactly here,
@@ -9601,7 +9692,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
     w_nexttime = m_tsNextSendTime;
 
-    return payload >= 0;
+    return payload >= 0; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
 }
 
 bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
@@ -9623,17 +9714,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
     const int kflg = m_pCryptoControl->getSndCryptoFlags();
     int pktskipseqno = 0;
-    void* link_marker = 0;
-#if ENABLE_BONDING
-    if (m_parent->m_GroupOf)
-    {
-        // This marker is required for a decision whether the packet
-        // stored in the buffer is intended to be sent over this very link.
-        // Otherwise it will be skipped.
-        link_marker = m_parent->m_GroupMemberData;
-    }
-#endif
-    const int pld_size = m_pSndBuffer->readData((w_packet), (w_origintime), kflg, (pktskipseqno), link_marker);
+    const int pld_size = m_pSndBuffer->readData((w_packet), (w_origintime), kflg, (pktskipseqno));
     if (pktskipseqno)
     {
         // Some packets were skipped due to TTL expiry.
@@ -9859,20 +9940,24 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     return true;
 }
 
-int srt::CUDT::processData(CUnit* in_unit)
+int srt::CUDT::checkLazySpawnLatencyThread()
 {
-    if (m_bClosing)
-        return -1;
+#if ENABLE_NEW_BONDING
+    const bool need_tsbpd = m_bTsbPd;
+    const bool need_group_tsbpd = m_bGroupTsbPd && !m_bTsbPd;
 
-    CPacket &packet = in_unit->m_Packet;
+    // Just in case, make sure that they cannot be set
+    // together as one. The above statement contains a fallback
+    // for that case.
+    SRT_ASSERT(!(m_bTsbPd && m_bGroupTsbPd));
 
-    // Just heard from the peer, reset the expiration count.
-    m_iEXPCount = 1;
-    m_tsLastRspTime.store(steady_clock::now());
+    // Also, just in case, check if the socket is associated
+    // when group tsbpd is needed.
+    SRT_ASSERT(m_parent->m_GroupOf || !m_bGroupTsbPd);
+#else
+    const bool need_tsbpd = m_bTsbPd;
+#endif
 
-    const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
-
-    // We are receiving data, start tsbpd thread if TsbPd is enabled
     if (need_tsbpd && !m_RcvTsbPdThread.joinable())
     {
         ScopedLock lock(m_RcvTsbPdStartupLock);
@@ -9897,6 +9982,35 @@ int srt::CUDT::processData(CUnit* in_unit)
 #endif
         if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
             return -1;
+    }
+
+#if ENABLE_NEW_BONDING
+    if (need_group_tsbpd)
+    {
+        // Shipped to the group function because this will
+        // likely require groupwise locking.
+        return m_parent->m_GroupOf->checkLazySpawnLatencyThread();
+    }
+#endif
+
+    return 0;
+}
+
+int srt::CUDT::processData(CUnit* in_unit)
+{
+    if (m_bClosing)
+        return -1;
+
+    CPacket &packet = in_unit->m_Packet;
+
+    // Just heard from the peer, reset the expiration count.
+    m_iEXPCount = 1;
+    m_tsLastRspTime.store(steady_clock::now());
+
+    // We are receiving data, start tsbpd thread if TsbPd is enabled
+    if (-1 == checkLazySpawnLatencyThread())
+    {
+        return -1;
     }
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
@@ -10062,6 +10176,10 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 #endif
 
+    // NULL time by default
+    time_point next_tsbpd_avail;
+    bool new_inserted = false;
+
     {
         // Start of offset protected section
         // Prevent TsbPd thread from modifying Ack position while adding data
@@ -10176,11 +10294,50 @@ int srt::CUDT::processData(CUnit* in_unit)
             }
 
             bool adding_successful = true;
+
+            int buffer_add_result;
 #if ENABLE_NEW_RCVBUFFER
-            if (m_pRcvBuffer->insert(u) < 0)
+  #if ENABLE_BONDING
+
+            { // XXX superfluous lock, if this socket is not a group member; revise!
+                ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
+
+                if (m_parent->m_GroupOf)
+                {
+                    // NOTE: this will lock ALSO the receiver buffer lock in the group
+                    buffer_add_result = m_parent->m_GroupOf->addDataUnit(u);
+                }
+                else
+                {
+                    CRcvBufferNew::InsertInfo info = m_pRcvBuffer->insert(u);
+
+                    // Remember this value in order to CHECK if there's a need
+                    // to request triggering TSBPD in case when TSBPD is in the
+                    // state of waiting forever and wants to know if there's any
+                    // possible time to wake up known earlier than that.
+
+                    // Note that in case of the "builtin group reader" (its own
+                    // buffer), there's no need to do it here because it has also
+                    // its own TSBPD thread.
+
+                    if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
+                    {
+                        // This may happen multiple times in the loop, so update only if earlier.
+                        if (next_tsbpd_avail == time_point() || next_tsbpd_avail > info.first_time)
+                            next_tsbpd_avail = info.first_time;
+                        new_inserted = true;
+                    }
+                    buffer_add_result = int(info.result);
+                }
+
+            }
+  #else
+            buffer_add_result = m_pRcvBuffer->insert(u);
+  #endif
 #else
-            if (m_pRcvBuffer->addData(u, offset) < 0)
+            buffer_add_result = m_pRcvBuffer->addData(u, offset);
 #endif
+            if (buffer_add_result < 0)
             {
                 // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
                 // So this packet is "redundant".
@@ -10238,38 +10395,59 @@ int srt::CUDT::processData(CUnit* in_unit)
             // Otherwise it's an error.
             if (adding_successful)
             {
-                // XXX move this code do CUDT::defaultPacketArrival and call it from here:
+                // XXX move this code do CUDT::defaultPacketArrival and call it from here???
                 // srt_loss_seqs = CALLBACK_CALL(m_cbPacketArrival, rpkt);
 
                 HLOGC(qrlog.Debug,
                       log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
 
-                if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
+                bool handled = false;
+
+                // Lame way to make an optional variable.
+                bool have_loss = false;
+                typename loss_seqs_t::value_type this_loss;
+
+                {
+                    ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
+                    if (m_parent->m_GroupOf)
+                    {
+                        // This should take out assymmetric losses, and leave only
+                        // valid ones. This also reports the losses to the group.
+                        have_loss = m_parent->m_GroupOf->checkPacketArrivalLoss(rpkt, (this_loss));
+                        handled = true;
+                    }
+                }
+
+                if (!handled && CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
                 {
                     int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                     int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
 
-                    srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                    if (initial_loss_ttl)
-                    {
-                        // pack loss list for (possibly belated) NAK
-                        // The LOSSREPORT will be sent in a while.
-
-                        for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                        {
-                            m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                        }
-                        HLOGC(qrlog.Debug,
-                              log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
-                                  << " tolerance: " << initial_loss_ttl);
-                        reorder_prevent_lossreport = true;
-                    }
+                    this_loss = make_pair(seqlo, seqhi);
+                    have_loss = true;
                 }
+
+                if (initial_loss_ttl && have_loss)
+                {
+                    // pack loss list for (possibly belated) NAK
+                    // The LOSSREPORT will be sent in a while.
+
+                    m_FreshLoss.push_back(CRcvFreshLoss(this_loss.first, this_loss.second, initial_loss_ttl));
+                    HLOGC(qrlog.Debug,
+                            log << "FreshLoss: added sequences: %(" << this_loss.first << "-" << this_loss.second
+                            << ") tolerance: " << initial_loss_ttl);
+                    reorder_prevent_lossreport = true;
+                }
+
+                if (have_loss)
+                    srt_loss_seqs.push_back(this_loss);
             }
 
             // Update the current largest sequence number that has been received.
             // Or it is a retransmitted packet, remove it from receiver loss list.
+            //
+            // Group note: for the new group receiver the group hosts the receiver
+            // buffer, but the socket still maintains the losses.
             if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
             {
                 m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
@@ -10314,6 +10492,22 @@ int srt::CUDT::processData(CUnit* in_unit)
         // RcvQueue worker thread will not necessarily be deleted with this connection as it can be
         // used by others (socket multiplexer).
         return -1;
+    }
+
+    // 1. This is set to true in case when TSBPD during the last check
+    // has seen no packet candidate to ever deliver, hence it needs
+    // an update on that. Note that this is also false if TSBPD thread
+    // isn't running.
+    // 2. If next_tsbpd_avail is set, it means that in the buffer there is
+    // a new packet that precedes the previously earliest available packet.
+    // This means that if TSBPD was sleeping up to the time of this earliest
+    // delivery (after drop), this time we have received a packet to be delivered
+    // earlier than that, so we need to notify TSBPD immediately so that it
+    // updates this itself, not sleep until the previously set time.
+    if ((m_bWakeOnRecv && new_inserted) || next_tsbpd_avail != time_point())
+    {
+        CUniqueSync tsbpd_cc(m_RecvLock, m_RcvTsbPdCond);
+        tsbpd_cc.notify_all();
     }
 
     if (incoming.empty())
@@ -10730,6 +10924,28 @@ breakbreak:;
         // If hasn't increased tolerance, but the packet appeared at TTL less than 2, do nothing.
     }
 }
+
+// This is necessary to be called from the group that uses common receiver buffer,
+// after receiving a packet from any of the sockets.
+
+#if ENABLE_NEW_BONDING
+// This is because receiver loss is maintained by the socket that has detected it
+// and it has to be removed according to its rules. This is necessary because the
+// key field used here is m_iRcvLastSkipAck, which is private, and it better stay
+// this way.
+void srt::CUDT::skipMemberLoss(int32_t seqno)
+{
+    const int seq_gap_len = CSeqNo::seqoff(m_iRcvLastSkipAck, seqno);
+
+    // seq_gap_len can be <= 0 if a packet has been dropped by the sender.
+    if (seq_gap_len > 0)
+    {
+        // Remove [from,to-inclusive]
+        dropFromLossLists(m_iRcvLastSkipAck, CSeqNo::decseq(seqno));
+        m_iRcvLastSkipAck = seqno;
+    }
+}
+#endif
 
 void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
 {

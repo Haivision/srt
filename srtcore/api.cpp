@@ -298,7 +298,7 @@ int srt::CUDTUnited::cleanup()
     // after which the m_bClosing flag is cheched, which
     // is set here above. Worst case secenario, this
     // pthread_join() call will block for 1 second.
-    CSync::signal_relaxed(m_GCStopCond);
+    CSync::notify_one_relaxed(m_GCStopCond);
     m_GCThread.join();
 
     m_bGCStatus = false;
@@ -1404,7 +1404,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
+        srt::groups::SocketData data = srt::groups::prepareSocketData(ns, g.type());
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -1478,14 +1478,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         */
 
         int isn = g.currentSchedSequence();
-
-        // Don't synchronize ISN in case of synch on msgno. Every link
-        // may send their own payloads independently.
-        if (g.synconmsgno())
-        {
-            HLOGC(aclog.Debug, log << "groupConnect: NOT synchronizing sequence numbers: will sync on msgno");
-            isn = -1;
-        }
 
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->core().m_config.iGroupConnect = 1;
@@ -2596,10 +2588,11 @@ void srt::CUDTUnited::checkBrokenSockets()
         // this function is called (isRcvDataReady also checks if the
         // available data is "ready to play").
 #if ENABLE_NEW_RCVBUFFER
-                 && s->core().m_pRcvBuffer->hasAvailablePackets())
+                 && s->core().m_pRcvBuffer->hasAvailablePackets()
 #else
-                 && s->core().m_pRcvBuffer->isRcvDataAvailable())
+                 && s->core().m_pRcvBuffer->isRcvDataAvailable()
 #endif
+                )
         {
             const int bc = s->core().m_iBrokenCounter.load();
             if (bc > 0)

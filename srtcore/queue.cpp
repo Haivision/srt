@@ -126,6 +126,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
     for (int i = 0; i < iNumUnits; ++i)
     {
         tempu[i].m_iFlag = CUnit::FREE;
+        tempu[i].m_pParentQueue = this;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
 

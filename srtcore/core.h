@@ -667,6 +667,9 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+#if ENABLE_NEW_BONDING
+    void skipMemberLoss(int32_t seqno);
+#endif
 
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
     void handshakeDone()
@@ -936,7 +939,7 @@ private: // Receiving related data
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
+    sync::atomic<bool> m_bWakeOnRecv;                      // Signal TsbPd thread on Ack sent
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1068,6 +1071,8 @@ private: // Generation and processing of packets
     bool packData(CPacket& packet, time_point& nexttime);
 
     int processData(CUnit* unit);
+
+    int checkLazySpawnLatencyThread();
     void processClose();
 
     /// Process the request after receiving the handshake from caller.

@@ -16,17 +16,37 @@ Written by
 #ifndef INC_SRT_GROUP_COMMON_H
 #define INC_SRT_GROUP_COMMON_H
 
+#include <deque>
+#include <list>
+
 #include "srt.h"
 #include "common.h"
 #include "core.h"
-
-#include <list>
+#include "buffer.h"
 
 namespace srt
 {
 namespace groups
 {
     typedef SRT_MEMBERSTATUS GroupState;
+
+    enum SeqType
+    {
+        SQT_FRESH,
+        SQT_LOSS,
+        SQT_PFILTER
+    };
+
+    struct SchedSeq
+    {
+        int32_t seq;
+        SeqType type;
+
+        bool operator == (const SchedSeq& other) const
+        {
+            return seq == other.seq && type == other.type;
+        }
+    };
 
     struct SocketData
     {
@@ -45,17 +65,24 @@ namespace groups
         bool           ready_error;
 
         // Balancing data
+        bool          use_send_schedule;
         double load_factor;
         double unit_load;
+
 
         // Configuration
         uint16_t       weight;
 
         // Stats
         int64_t        pktSndDropTotal;
+
+        // This is used only in balancing mode and it defines
+        // sequence numbers of packets to be sent at the next request
+        // from packData() for a socket that belongs to a balancing group.
+        std::deque<SchedSeq> send_schedule;
     };
 
-    SocketData prepareSocketData(CUDTSocket* s);
+    SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type);
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;

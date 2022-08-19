@@ -33,7 +33,7 @@ protected:
 #if ENABLE_NEW_RCVBUFFER
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
 #else
         m_rcv_buffer.reset(new CRcvBuffer(m_unit_queue.get(), m_buff_size_pkts));
@@ -78,7 +78,10 @@ public:
         }
 
 #if ENABLE_NEW_RCVBUFFER
-        return m_rcv_buffer->insert(unit);
+        auto info = m_rcv_buffer->insert(unit);
+        // XXX extra checks?
+
+        return int(info.result);
 #else
         const int offset = CSeqNo::seqoff(m_first_unack_seqno, seqno);
         return m_rcv_buffer->addData(unit, offset);

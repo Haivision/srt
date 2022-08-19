@@ -23,7 +23,7 @@ namespace srt
 namespace groups
 {
 
-SocketData prepareSocketData(CUDTSocket* s)
+SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type)
 {
     // This uses default SRT_GST_BROKEN because when the group operation is done,
     // then the SRT_GST_IDLE state automatically turns into SRT_GST_RUNNING. This is
@@ -53,10 +53,12 @@ SocketData prepareSocketData(CUDTSocket* s)
         false,
         false,
         false,
+        type == SRT_GTYPE_BALANCING ? true : false, // use_send_schedule
         0, // load_factor
         0, // unit_load
         0, // weight
-        0  // pktSndDropTotal
+        0,  // pktSndDropTotal
+        {}
     };
     return sd;
 }

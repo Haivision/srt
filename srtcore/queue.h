@@ -130,7 +130,7 @@ private:
     /// @param iNumUnits a number of units to allocate
     /// @param mss the size of each unit in bytes.
     /// @return a pointer to a newly allocated entry on success, NULL otherwise.
-    static CQEntry* allocateEntry(const int iNumUnits, const int mss);
+    CQEntry* allocateEntry(const int iNumUnits, const int mss);
 
 private:
     CQEntry* m_pQEntry;    // pointer to the first unit queue

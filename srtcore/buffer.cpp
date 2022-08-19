@@ -228,7 +228,7 @@ CSndBuffer::~CSndBuffer()
     releaseMutex(m_BufLock);
 }
 
-void CSndBuffer::addBuffer(const char* data, int len, void* selink, SRT_MSGCTRL& w_mctrl)
+void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     int32_t&  w_msgno   = w_mctrl.msgno;
     int32_t&  w_seqno   = w_mctrl.pktseq;
@@ -308,7 +308,6 @@ void CSndBuffer::addBuffer(const char* data, int len, void* selink, SRT_MSGCTRL&
         // [PB_FIRST] [PB_LAST] - 2 packets per message
         // [PB_SOLO] - 1 packet per message
 
-        s->m_pSelectedLink = selink;
         s->m_iTTL = ttl;
         s->m_tsRexmitTime = time_point();
         s->m_tsOriginTime = m_tsLastOriginTime;
@@ -406,7 +405,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc, void* member_marker)
+int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
     int readlen = 0;
     w_seqnoinc = 0;
@@ -452,16 +451,6 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         {
             LOGC(bslog.Warn, log << CONID() << "CSndBuffer: skipping packet %" << p->m_iSeqNo << " #" << p->getMsgSeq() << " with TTL=" << p->m_iTTL);
             // Skip this packet due to TTL expiry.
-            readlen = 0;
-            ++w_seqnoinc;
-            continue;
-        }
-
-        if (member_marker && member_marker != m_pCurrBlock->m_pSelectedLink)
-        {
-            LOGC(bslog.Debug, log << CONID() << "CSndBuffer: skipping packet %" << p->m_iSeqNo << " #" << p->getMsgSeq()
-                    << " intendef for link " << m_pCurrBlock->m_pSelectedLink);
-            // Skip this packet due to not being set up to be sent over THIS link in balancing mode.
             readlen = 0;
             ++w_seqnoinc;
             continue;
