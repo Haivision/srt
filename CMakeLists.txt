@@ -484,6 +484,15 @@ CheckGCCAtomicIntrinsics()
 include(CheckCXXAtomic)
 CheckCXXAtomic()
 
+# Check for sd::put_time():
+# Sets:
+#  HAVE_CXX_STD_PUT_TIME
+include(CheckCXXStdPutTime)
+CheckCXXStdPutTime()
+if (HAVE_CXX_STD_PUT_TIME)
+	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
+endif()
+
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
 elseif( DEFINED ENABLE_CXX11 )
@@ -1067,6 +1076,11 @@ if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
 elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
 	# This is a workaround for ANDROID NDK<17 builds, which need to link
 	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
+	# This is a workaround for some older Linux Toolchains.
 	if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
