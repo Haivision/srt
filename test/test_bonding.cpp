@@ -47,14 +47,19 @@ TEST(Bonding, SRTConnectGroup)
 
     std::cout << "srt_connect_group calling " << std::endl;
     const int st = srt_connect_group(ss, targets.data(), (int) targets.size());
-    std::cout << "srt_connect_group returned " << st << std::endl;
+    std::cout << "srt_connect_group returned " << st << ", waiting for srt_close() to finish" << std::endl;
 
     closing_promise.wait();
+
+    std::cout << "TEST: closing future has exit. Deleting all other resources\n";
+
     // Delete config objects before prospective exception
     for (auto& gd: targets)
         srt_delete_config(gd.config);
 
     int res = srt_close(ss);
+
+    std::cout << "TEST: closing ss has exit. Cleaning up\n";
     if (res == SRT_ERROR)
     {
         std::cerr << "srt_close: " << srt_getlasterror_str() << std::endl;

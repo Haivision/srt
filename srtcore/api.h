@@ -216,6 +216,7 @@ class CUDTUnited
     friend class CUDT;
     friend class CUDTGroup;
     friend class CRendezvousQueue;
+    friend class CCryptoControl;
 
 public:
     CUDTUnited();

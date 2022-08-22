@@ -224,5 +224,5 @@ By contributing code to the SRT project, you agree to license your contribution 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
 
-[debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1/version.svg
-[debian-package]: https://packages.debian.org/testing/libsrt1
+[debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1.5-gnutls/version.svg
+[debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls

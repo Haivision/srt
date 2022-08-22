@@ -138,8 +138,8 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
                                     unsigned char* out_txt, /* dst (cipher text if encrypt, clear text otherwise) */
                                     size_t*        outlen_p)       /* in/out dst len */
 {
-    int    nblk   = inlen / CRYSPR_AESBLKSZ; /* complete blocks */
     int    nmore  = inlen % CRYSPR_AESBLKSZ; /* bytes in last incomplete block */
+    int    nblk   = inlen / CRYSPR_AESBLKSZ + (nmore ? 1 : 0); /* blocks including incomplete */
     size_t outsiz = (outlen_p ? *outlen_p : 0);
     int    c_len = 0, f_len = 0;
 
@@ -150,7 +150,7 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
         HCRYPT_LOG(LOG_ERR, "%s\n", "EcbCipher() no room for PKCS7 padding");
         return (-1); /* output buf size must be a multiple of AES block size (16) */
     }
-    if ((outsiz > 16) && ((int)outsiz < ((nblk + (nmore ? 1 : 0)) * CRYSPR_AESBLKSZ)))
+    if ((outsiz > 16) && ((int)outsiz < (nblk * CRYSPR_AESBLKSZ)))
     {
         HCRYPT_LOG(LOG_ERR, "%s\n", "EcbCipher() no room for PKCS7 padding");
         return (-1); /* output buf size must have room for PKCS7 padding */
@@ -191,7 +191,7 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
 #endif /*ENABLE_HAICRYPT_LOGGING*/
         return -1;
     }
-    // if (outlen_p != NULL) *outlen_p = nblk*CRYSPR_AESBLKSZ;
+    if (outlen_p != NULL) *outlen_p = nblk * CRYSPR_AESBLKSZ;
     return 0;
 }
 #endif /* !(CRYSPR_HAS_AESCTR && CRYSPR_HAS_AESKWRAP) */

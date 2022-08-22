@@ -41,6 +41,7 @@ extern Logger cnlog;
 namespace srt
 {
 class CUDT;
+struct CSrtConfig;
 
 
 // For KMREQ/KMRSP. Only one field is used.
@@ -53,7 +54,6 @@ enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
 
 class CCryptoControl
 {
-    CUDT*     m_parent;
     SRTSOCKET m_SocketID;
 
     size_t    m_iSndKmKeyLen;        //Key length
@@ -85,6 +85,7 @@ private:
     bool m_bErrorReported;
 
 public:
+    static void globalInit();
 
     bool sendingAllowed()
     {
@@ -109,9 +110,11 @@ public:
     }
 
 private:
-
 #ifdef SRT_ENABLE_ENCRYPTION
-    void regenCryptoKm(bool sendit, bool bidirectional);
+    /// Regenerate cryptographic key material.
+    /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
+    /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
+    void regenCryptoKm(CUDT* sock, bool bidirectional);
 #endif
 
 public:
@@ -195,25 +198,24 @@ public:
         return false;
     }
 
-    CCryptoControl(CUDT* parent, SRTSOCKET id);
+    CCryptoControl(SRTSOCKET id);
 
     // DEBUG PURPOSES:
     std::string CONID() const;
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
 
-    bool init(HandshakeSide, bool);
+    bool init(HandshakeSide, const CSrtConfig&, bool);
     void close();
 
-    // This function is used in:
-    // - HSv4 (initial key material exchange - in HSv5 it's attached to handshake)
-    // - case of key regeneration, which should be then exchanged again
-    void sendKeysToPeer(Whether2RegenKm regen);
-
+    /// @return True if the handshake is in progress.
+    /// This function is used in:
+    /// - HSv4 (initial key material exchange - in HSv5 it's attached to handshake)
+    /// - case of key regeneration, which should be then exchanged again.
+    void sendKeysToPeer(CUDT* sock, int iSRTT, Whether2RegenKm regen);
 
     void setCryptoSecret(const HaiCrypt_Secret& secret)
     {
         m_KmSecret = secret;
-        //memcpy(&m_KmSecret, &secret, sizeof(m_KmSecret));
     }
 
     void setCryptoKeylen(size_t keylen)

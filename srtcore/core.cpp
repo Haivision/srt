@@ -5169,9 +5169,8 @@ void * srt::CUDT::tsbpd(void* param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-    UniqueLock recv_lock(self->m_RecvLock);
-    CSync recvdata_cc(self->m_RecvDataCond, recv_lock);
-    CSync tsbpd_cc(self->m_RcvTsbPdCond, recv_lock);
+    CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
+    CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
     self->m_bWakeOnRecv = true;
     while (!self->m_bClosing)
@@ -5228,7 +5227,7 @@ void * srt::CUDT::tsbpd(void* param)
              */
             if (self->m_config.bSynRecving)
             {
-                recvdata_cc.signal_locked(recv_lock);
+                recvdata_lcc.notify_one();
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -5432,7 +5431,7 @@ void * srt::CUDT::tsbpd(void *param)
              */
             if (self->m_config.bSynRecving)
             {
-                recvdata_cc.signal_locked(recv_lock);
+                recvdata_cc.notify_one_locked(recv_lock);
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -5851,7 +5850,7 @@ bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // Write back this value, when it was just determined.
     m_SrtHsSide = side;
 
-    m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
+    m_pCryptoControl.reset(new CCryptoControl(m_SocketID));
 
     // XXX These below are a little bit controversial.
     // These data should probably be filled only upon
@@ -5865,7 +5864,7 @@ bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
         m_pCryptoControl->setCryptoKeylen(m_config.iSndCryptoKeyLen);
     }
 
-    return m_pCryptoControl->init(side, bidirectional);
+    return m_pCryptoControl->init(side, m_config, bidirectional);
 }
 
 SRT_REJECT_REASON srt::CUDT::setupCC()
@@ -6025,7 +6024,7 @@ void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
         // if this side is RESPONDER. This shall be called only with
         // regeneration request, which is required by the sender.
         if (m_pCryptoControl)
-            m_pCryptoControl->sendKeysToPeer(regen);
+            m_pCryptoControl->sendKeysToPeer(this, SRTT(), regen);
     }
 }
 
@@ -6323,7 +6322,7 @@ int srt::CUDT::receiveBuffer(char *data, int len)
     if (m_bTsbPd)
     {
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-        tscond.signal_locked(recvguard);
+        tscond.notify_one_locked(recvguard);
     }
     else
     {
@@ -6663,6 +6662,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 }
             }
 
+#if ENABLE_NEW_RCVBUFFER
             // This synchronizes the fact of adding a new packet to the sender buffer.
             // For groups that use active scheduling this will add the packet to the
             // schedule, for all others it does nothing.
@@ -6673,6 +6673,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                     throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
                 }
             }
+#endif
         }
 #endif
 
@@ -6864,7 +6865,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-            tscond.signal_locked(recvguard);
+            tscond.notify_one_locked(recvguard);
         }
         else
         {
@@ -6915,7 +6916,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             if (m_bTsbPd)
             {
                 HLOGP(arlog.Debug, "receiveMessage: nothing to read, kicking TSBPD, return AGAIN");
-                tscond.signal_locked(recvguard);
+                tscond.notify_one_locked(recvguard);
             }
             else
             {
@@ -6936,7 +6937,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             if (m_bTsbPd)
             {
                 HLOGP(arlog.Debug, "receiveMessage: DATA READ, but nothing more - kicking TSBPD.");
-                tscond.signal_locked(recvguard);
+                tscond.notify_one_locked(recvguard);
             }
             else
             {
@@ -6986,7 +6987,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
                 // bool spurious = (tstime != 0);
 
                 HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd");
-                tscond.signal_locked(recvguard);
+                tscond.notify_one_locked(recvguard);
             }
 
             THREAD_PAUSED();
@@ -7067,7 +7068,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-            tscond.signal_locked(recvguard);
+            tscond.notify_one_locked(recvguard);
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
@@ -7670,14 +7671,14 @@ void srt::CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
     // wake up user calls
-    CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
+    CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
     enterCS(m_SendLock);
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_signal(m_RecvDataCond, m_RecvLock);
-    CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_notify_one(m_RecvDataCond, m_RecvLock);
+    CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
@@ -8050,17 +8051,16 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                */
 #if !ENABLE_NEW_RCVBUFFER
             // Newly acknowledged data, signal TsbPD thread //
-            UniqueLock rcvlock(m_RecvLock);
-            CSync tscond(m_RcvTsbPdCond, rcvlock);
+            CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
             // m_bWakeOnRecv is protected by m_RecvLock in the tsbpd() thread
             if (m_bWakeOnRecv)
-                tscond.signal_locked(rcvlock);
+                tslcc.notify_one();
 #endif
         }
         else
         {
             {
-                CUniqueSync rdcond (m_RecvLock, m_RecvDataCond);
+                CUniqueSync rdcc (m_RecvLock, m_RecvDataCond);
 
 #if ENABLE_NEW_RCVBUFFER
                 // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
@@ -8071,7 +8071,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     if (m_config.bSynRecving)
                     {
                         // signal a waiting "recv" call if there is any data available
-                        rdcond.notify_one();
+                        rdcc.notify_one();
                     }
                     // acknowledge any waiting epolls to read
                     // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
@@ -8274,7 +8274,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
     if (m_config.bSynSending)
     {
-        CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
+        CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
     }
 
     // record total time used for sending
@@ -8610,7 +8610,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
-        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), rtt);
+        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
 #if ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)
         {
@@ -8914,7 +8914,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     {
-        UniqueLock rlock(m_RecvLock);
+        CUniqueSync rcvtscc (m_RecvLock, m_RcvTsbPdCond);
         // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.
         // It will be dropped as too late anyway. Not dropping it from the receiver buffer
         // in advance reduces false drops if the packet somehow manages to arrive.
@@ -8948,8 +8948,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         if (m_bTsbPd)
         {
             HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-            CSync cc(m_RcvTsbPdCond, rlock);
-            cc.signal_locked(rlock);
+            rcvtscc.notify_one();
         }
     }
 
@@ -9050,7 +9049,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
-        handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
+        processKeepalive(ctrlpkt, currtime);
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
@@ -9845,7 +9844,7 @@ void srt::CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(smlog.Debug, "processClose: lock-and-signal TSBPD");
-        CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+        CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
     }
 
     // Signal the sender and recver if they are waiting for data.
@@ -10407,6 +10406,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 bool have_loss = false;
                 typename loss_seqs_t::value_type this_loss;
 
+#if ENABLE_NEW_RCVBUFFER
                 {
                     ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
                     if (m_parent->m_GroupOf)
@@ -10417,6 +10417,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                         handled = true;
                     }
                 }
+#endif
 
                 if (!handled && CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
                 {
@@ -10545,7 +10546,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         if (m_bTsbPd)
         {
             HLOGC(qrlog.Debug, log << "loss: signaling TSBPD cond");
-            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
         }
         else
         {
@@ -10566,7 +10567,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         if (m_bTsbPd)
         {
             HLOGC(qrlog.Debug, log << "loss: signaling TSBPD cond");
-            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 
@@ -11972,7 +11973,7 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
     return true;
 }
 
-void srt::CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
+void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
     // Here can be handled some protocol definition
     // for extra data sent through keepalive.
@@ -11992,8 +11993,9 @@ void srt::CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
             // Whether anything is to be done with this socket
             // about the fact that keepalive arrived, let the
             // group handle it
-            pg->handleKeepalive(m_parent->m_GroupMemberData);
+            pg->processKeepalive(m_parent->m_GroupMemberData, ctrlpkt, tsArrival);
         }
     }
 #endif
+
 }

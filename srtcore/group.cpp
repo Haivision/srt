@@ -255,8 +255,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_type(gtype)
     , m_listener()
     , m_iBusy()
-    , m_pSndBuffer()
-    //, m_pRcvBuffer()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
@@ -273,6 +271,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iRcvTimeOut(-1)
     , m_bOPT_MessageAPI(true) // XXX currently not settable
     , m_iOPT_RcvBufSize(CSrtConfig::DEF_BUFFER_SIZE)
+    , m_bOPT_DriftTracer(true)
     , m_tsStartTime()
     , m_tsRcvPeerStartTime()
 #if !ENABLE_NEW_RCVBUFFER
@@ -305,6 +304,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 #endif
 }
 
+#if ENABLE_NEW_RCVBUFFER
 void CUDTGroup::createBuffers(int32_t isn)
 {
     // XXX NOT YET, but will be in use.
@@ -312,6 +312,7 @@ void CUDTGroup::createBuffers(int32_t isn)
 
     m_pRcvBuffer.reset(new srt::CRcvBufferNew(isn, m_iOPT_RcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_bOPT_MessageAPI));
 }
+#endif
 
 CUDTGroup::~CUDTGroup()
 {
@@ -384,6 +385,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         m_iRcvTimeOut = cast_optval<int>(optval, optlen);
         break; // passthrough to socket option
 
+#if ENABLE_NEW_RCVBUFFER
+
     case SRTO_RCVBUF:
         {
             // This requires to obtain the possibly set MSS and FC options.
@@ -416,6 +419,13 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
             m_iOPT_RcvBufSize = srt::RcvBufferSizeOptionToValue(val, fc, mss);
         }
         break; // Keep passthru. This is also required for Unit queue initial size.
+
+    case SRTO_DRIFTTRACER:
+        {
+            m_bOPT_DriftTracer = cast_optval<bool>(optval, optlen);
+            return; // no passthru.
+        }
+#endif
 
     case SRTO_GROUPMINSTABLETIMEO:
     {
@@ -1168,7 +1178,7 @@ void CUDTGroup::close()
     // XXX This looks like a dead code. Group receiver functions
     // do not use any lock on m_RcvDataLock, it is likely a remainder
     // of the old, internal impementation. 
-    // CSync::lock_signal(m_RcvDataCond, m_RcvDataLock);
+    // CSync::lock_notify_one(m_RcvDataCond, m_RcvDataLock);
 }
 
 // [[using locked(m_Global->m_GlobControlLock)]]
@@ -4224,18 +4234,6 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // TODO: all broken members are to be removed from the context now???
 }
 
-struct FByOldestActive
-{
-    typedef CUDTGroup::gli_t gli_t;
-    bool operator()(gli_t a, gli_t b)
-    {
-        CUDT& x = a->ps->core();
-        CUDT& y = b->ps->core();
-
-        return x.m_tsFreshActivation < y.m_tsFreshActivation;
-    }
-};
-
 // [[using locked(this->m_GroupLock)]]
 void CUDTGroup::sendBackup_RetryWaitBlocked(SendBackupCtx&       w_sendBackupCtx,
                                             int&                 w_final_stat,
@@ -5278,7 +5276,7 @@ void CUDTGroup::ackMessage(int32_t msgno)
     m_iSndAckedMsgNo = msgno;
 }
 
-void CUDTGroup::handleKeepalive(CUDTGroup::SocketData* gli)
+void CUDTGroup::processKeepalive(CUDTGroup::SocketData* gli, const CPacket& ctrlpkt SRT_ATR_UNUSED, const time_point& tsArrival SRT_ATR_UNUSED)
 {
     // received keepalive for that group member
     // In backup group it means that the link went IDLE.
@@ -5313,6 +5311,14 @@ void CUDTGroup::handleKeepalive(CUDTGroup::SocketData* gli)
                   log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
         }
     }
+
+#if ENABLE_NEW_RCVBUFFER
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+    if (m_bOPT_DriftTracer)
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+#endif
+
 }
 
 void CUDTGroup::internalKeepalive(SocketData* gli)

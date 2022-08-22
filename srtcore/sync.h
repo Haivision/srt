@@ -537,62 +537,45 @@ public:
     }
 
     // Static ad-hoc version
-    static void lock_signal(Condition& cond, Mutex& m) 
-    {
-        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
-        cond.notify_one();
-    }
-
     static void lock_notify_one(Condition& cond, Mutex& m)
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_one();
     }
 
-
-    static void lock_broadcast(Condition& cond, Mutex& m)
-    {
-        ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
-        cond.notify_all();
-    }
     static void lock_notify_all(Condition& cond, Mutex& m)
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_all();
     }
 
-
-    void signal_locked(UniqueLock& lk SRT_ATR_UNUSED)
-    {
-        // EXPECTED: lk.mutex() is LOCKED.
-        m_cond->notify_one();
-    }
     void notify_one_locked(UniqueLock& lk SRT_ATR_UNUSED)
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();
     }
 
-    // The signal_relaxed and broadcast_relaxed functions are to be used in case
-    // when you don't care whether the associated mutex is locked or not (you
-    // accept the case that a mutex isn't locked and the signal gets effectively
-    // missed), or you somehow know that the mutex is locked, but you don't have
-    // access to the associated UniqueLock object. This function, although it does
-    // the same thing as signal_locked() and broadcast_locked(), is here for
-    // the user to declare explicitly that the signal/broadcast is done without
-    // being prematurely certain that the associated mutex is locked.
+    void notify_all_locked(UniqueLock& lk SRT_ATR_UNUSED)
+    {
+        // EXPECTED: lk.mutex() is LOCKED.
+        m_cond->notify_all();
+    }
+
+    // The *_relaxed functions are to be used in case when you don't care
+    // whether the associated mutex is locked or not (you accept the case that
+    // a mutex isn't locked and the condition notification gets effectively
+    // missed), or you somehow know that the mutex is locked, but you don't
+    // have access to the associated UniqueLock object. This function, although
+    // it does the same thing as CSync::notify_one_locked etc. here for the
+    // user to declare explicitly that notifying is done without being
+    // prematurely certain that the associated mutex is locked.
     //
     // It is then expected that whenever these functions are used, an extra
-    // comment is provided to explain, why the use of the relaxed signaling is
-    // correctly used.
+    // comment is provided to explain, why the use of the relaxed notification
+    // is correctly used.
 
-    void signal_relaxed() { notify_one_relaxed(*m_cond); }
     void notify_one_relaxed() { notify_one_relaxed(*m_cond); }
-
-    static void signal_relaxed(Condition& cond) { cond.notify_one(); }
     static void notify_one_relaxed(Condition& cond) { cond.notify_one(); }
-
-    static void broadcast_relaxed(Condition& cond) { cond.notify_all(); }
     static void notify_all_relaxed(Condition& cond) { cond.notify_all(); }
 };
 
@@ -602,6 +585,9 @@ public:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+// XXX Do not use this class now, there's an unknown issue
+// connected to object management with the use of release* functions.
+// Until this is solved, stay with separate *Cond and *Lock fields.
 class CEvent
 {
 public:
@@ -650,20 +636,29 @@ public:
 
     void notify_all();
 
+    void lock_notify_one()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_one();
+    }
+
+    void lock_notify_all()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_all();
+    }
+
 private:
     Mutex      m_lock;
     Condition  m_cond;
 };
 
 
-// This function binds together the functionality of
+// This class binds together the functionality of
 // UniqueLock and CSync. It provides a simple interface of CSync
 // while having already the UniqueLock applied in the scope,
-// so a safe statement can be made about the mutex being locked.
-//
-// With this class you can also use CEvent class as a holder
-// for the mutex and condition pair.
-
+// so a safe statement can be made about the mutex being locked
+// when signalling or waiting.
 class CUniqueSync: public CSync
 {
     UniqueLock m_ulock;

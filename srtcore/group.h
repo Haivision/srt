@@ -114,7 +114,9 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
+#if ENABLE_NEW_RCVBUFFER
     void createBuffers(int32_t isn);
+#endif
 
     SocketData* add(SocketData data);
 
@@ -329,12 +331,16 @@ public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
     int recv_old(char* buf, int len, SRT_MSGCTRL& w_mc);
 
+#if ENABLE_NEW_RCVBUFFER
+
     // XXX not sure if taking time here is right
     bool isRcvBufferReady() const
     {
         srt::sync::ScopedLock lck(m_RcvBufferLock);
         return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
     }
+
+#endif
 
     void close();
 
@@ -408,7 +414,7 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
-    void handleKeepalive(SocketData*);
+    void processKeepalive(SocketData*, const CPacket&, const time_point& tsArrival);
     void internalKeepalive(SocketData*);
 
 private:
@@ -681,6 +687,7 @@ private:
 
     bool m_bOPT_MessageAPI; // XXX false not supported
     int m_iOPT_RcvBufSize;
+    bool m_bOPT_DriftTracer;
 
     // Start times for TsbPd. These times shall be synchronized
     // between all sockets in the group. The first connected one
@@ -746,15 +753,15 @@ private:
     // for setting later on a socket.
     std::vector<ConfigItem> m_config;
 
-#if ENABLE_NEW_RCVBUFFER
     // Signal for the blocking user thread that the packet
     // is ready to deliver.
-    sync::Mutex           m_RcvDataLock;
     sync::Condition       m_RcvDataCond;
+    sync::Mutex           m_RcvDataLock;
+#if ENABLE_NEW_RCVBUFFER
     sync::Condition       m_RcvTsbPdCond;
     sync::atomic<bool>    m_bWakeOnRecv;
-#endif
     mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
+#endif
 
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;

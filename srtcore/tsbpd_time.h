@@ -66,10 +66,11 @@ public:
     /// and can be used to estimate clock drift.
     /// 
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
-    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair.
+    /// @param [in] tsPktArrival packet arrival time.
+    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair. If no sample, pass '-1'.
     /// 
     /// @return true if TSBPD base time has changed, false otherwise.
-    bool addDriftSample(uint32_t pktTimestamp, int usRTTSample);
+    bool addDriftSample(uint32_t pktTimestamp, const time_point& tsPktArrival, int usRTTSample);
 
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be
