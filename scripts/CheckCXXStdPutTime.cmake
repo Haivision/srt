@@ -1,12 +1,12 @@
 #
-# SRT - Secure, Reliable, Transport Copyright (c) 2021 Haivision Systems Inc.
+# SRT - Secure, Reliable, Transport Copyright (c) 2022 Haivision Systems Inc.
 #
 # This Source Code Form is subject to the terms of the Mozilla Public License,
 # v. 2.0. If a copy of the MPL was not distributed with this file, You can
 # obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-# Check for GCC Atomic Intrinsics and whether libatomic is required.
+# Check for C++11 std::put_time().
 #
 # Sets:
 #   HAVE_CXX_STD_PUT_TIME
@@ -23,7 +23,6 @@ function(CheckCXXStdPutTime)
    unset(CMAKE_REQUIRED_LIBRARIES)
    unset(CMAKE_REQUIRED_LINK_OPTIONS)
 
-   # Example from: https://en.cppreference.com/w/cpp/io/manip/put_time
    set(CheckCXXStdPutTime_CODE
       "
       #include <iostream>
