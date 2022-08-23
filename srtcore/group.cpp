@@ -780,16 +780,6 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     return ps->core().getOpt(optname, (pw_optval), (w_optlen));
 }
 
-struct HaveState : public unary_function<pair<SRTSOCKET, SRT_SOCKSTATUS>, bool>
-{
-    SRT_SOCKSTATUS s;
-    HaveState(SRT_SOCKSTATUS ss)
-        : s(ss)
-    {
-    }
-    bool operator()(pair<SRTSOCKET, SRT_SOCKSTATUS> i) const { return i.second == s; }
-};
-
 SRT_SOCKSTATUS CUDTGroup::getStatus()
 {
     typedef vector<pair<SRTSOCKET, SRT_SOCKSTATUS> > states_t;
