@@ -484,7 +484,7 @@ CheckGCCAtomicIntrinsics()
 include(CheckCXXAtomic)
 CheckCXXAtomic()
 
-# Check for sd::put_time():
+# Check for std::put_time():
 # Sets:
 #  HAVE_CXX_STD_PUT_TIME
 include(CheckCXXStdPutTime)
