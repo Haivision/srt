@@ -6805,6 +6805,13 @@ int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 
 size_t srt::CUDT::getAvailRcvBufferSizeLock() const
 {
+#if ENABLE_NEW_BONDING
+    CUDTUnited::GroupKeeper gk (uglobal(), m_parent);
+    if (gk.group)
+    {
+        return gk.group->getAvailBufSize(m_iRcvLastAck);
+    }
+#endif
     ScopedLock lck(m_RcvBufferLock);
     return getAvailRcvBufferSizeNoLock();
 }
@@ -6812,6 +6819,13 @@ size_t srt::CUDT::getAvailRcvBufferSizeLock() const
 size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
 {
 #if ENABLE_NEW_RCVBUFFER
+
+// This function is to be used instrumentally for
+// cases under the socket's buffer lock. NOT TO BE USED
+// for new bonding.
+#if ENABLE_BONDING
+    SRT_ASSERT(m_parent->m_GroupOf == NULL);
+#endif
     return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
 #else
     return m_pRcvBuffer->getAvailBufSize();
@@ -6820,6 +6834,11 @@ size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
 
 bool srt::CUDT::isRcvBufferReady() const
 {
+#if ENABLE_NEW_BONDING
+    // In "new bonding" (new rcvbuf + bonding)
+    // this function should never be called for member sockets.
+    SRT_ASSERT(m_parent->m_GroupOf == NULL);
+#endif
     ScopedLock lck(m_RcvBufferLock);
 #if ENABLE_NEW_RCVBUFFER
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
@@ -8010,6 +8029,30 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         return nbsent;
     }
 
+    // Lock the group existence until this function ends. This will be useful
+    // also on other places.
+#if ENABLE_BONDING
+    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
+#if ENABLE_NEW_RCVBUFFER
+
+    // bonding + new rcvbuffer : group buffering if member
+    const bool group_buffering = gkeeper.group;
+#else
+    // bonding + old rcvbuffer : no group buffering
+    const bool group_buffering = false;
+#endif
+
+#else
+    // no bonding : no group buffering
+    const bool group_buffering = false;
+#endif
+
+    int avail_receiver_buffer_size = 0;
+#if ENABLE_NEW_BONDING
+    if (group_buffering)
+        avail_receiver_buffer_size = gkeeper.group->getAvailBufSize(ack);
+#endif
+
     // There are new received packets to acknowledge, update related information.
     /* tsbpd thread may also call ackData when skipping packet so protect code */
     UniqueLock bufflock(m_RcvBufferLock);
@@ -8037,13 +8080,17 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // required in the defined order. At present we only need the lock
         // on m_GlobControlLock to prevent the group from being deleted
         // in the meantime
-        if (m_parent->m_GroupOf)
+        if (gkeeper.group)
         {
             // Check is first done before locking to avoid unnecessary
             // mutex locking. The condition for this field is that it
             // can be either never set, already reset, or ever set
             // and possibly dangling. The re-check after lock eliminates
             // the dangling case.
+
+            // This lock is NOT necessary to keep the group existing,
+            // but is necessary for having the socket's membership not
+            // cleared in the meantime.
             ScopedLock glock (uglobal().m_GlobControlLock);
 
             // Note that updateLatestRcv will lock m_GroupOf->m_GroupLock,
@@ -8159,6 +8206,11 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // also known as ACKD_TOTAL_SIZE_VER100.
         int32_t data[ACKD_TOTAL_SIZE];
 
+        // For "new bonding", still get this size from buffer,
+        // but only unless we have a group
+        if (!group_buffering)
+            avail_receiver_buffer_size = (int) getAvailRcvBufferSizeNoLock();
+
         // Case you care, CAckNo::incack does exactly the same thing as
         // CSeqNo::incseq. Logically the ACK number is a different thing
         // than sequence number (it's a "journal" for ACK request-response,
@@ -8168,8 +8220,11 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
-        data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
+        data[ACKD_BUFFERLEFT] = avail_receiver_buffer_size;
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
+        // XXX This could be better fixed by having the receiver constantly send
+        // ACKs even with the same ACK number, while the buffer is still full, and
+        // stop only after sending at least one ACK with nonzero avail size.
         if (data[ACKD_BUFFERLEFT] < 2)
             data[ACKD_BUFFERLEFT] = 2;
 
@@ -10099,10 +10154,11 @@ int srt::CUDT::processData(CUnit* in_unit)
 
 #if ENABLE_HEAVY_LOGGING
 
-    steady_clock::time_point pts; // will be needed in further logging
+    steady_clock::time_point pts;
 
     {
         steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+        pts = tsbpddelay;
 
         // It's easier to remove the latency factor from this value than to add a function
         // that exposes the details basing on which this value is calculated.
@@ -10112,6 +10168,13 @@ int srt::CUDT::processData(CUnit* in_unit)
         if (gkeeper.group)
         {
             pts = gkeeper.group->getPktTsbPdTime(packet.getMsgTimeStamp());
+        }
+        else if (!m_pRcvBuffer)
+        {
+            // Somehow we have dispatched to a previous member socket,
+            // that was already removed from the group, which means that
+            // it is being closed now. Pretend nothing has been dispatched.
+            return -1;
         }
         else
 #endif

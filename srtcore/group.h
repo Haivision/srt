@@ -340,6 +340,12 @@ public:
         return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
     }
 
+    size_t getAvailBufSize(int32_t last_ack) const
+    {
+        srt::sync::ScopedLock lck(m_RcvBufferLock);
+        return m_pRcvBuffer->getAvailSize(last_ack);
+    }
+
 #endif
 
     void close();

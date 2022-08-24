@@ -58,7 +58,7 @@ SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type)
         0, // unit_load
         0, // weight
         0,  // pktSndDropTotal
-        {}
+        std::deque<SchedSeq>() // Could be {}, but in C++11.
     };
     return sd;
 }

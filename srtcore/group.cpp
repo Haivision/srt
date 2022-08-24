@@ -310,7 +310,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 void CUDTGroup::createBuffers(int32_t isn)
 {
     // XXX NOT YET, but will be in use.
-    m_pSndBuffer = NULL;
+    m_pSndBuffer.reset();
 
     m_pRcvBuffer.reset(new srt::CRcvBufferNew(isn, m_iOPT_RcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_bOPT_MessageAPI));
 }
@@ -949,7 +949,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     differ in sender and receiver.
     */
 
-    m_RcvLastSeqNo = core.ISN();
+    m_RcvLastSeqNo = CSeqNo::decseq(core.ISN());
     createBuffers(core.ISN());
 
 #else
@@ -1075,7 +1075,7 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_
 
     bool have = false;
 
-    if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_RcvLastSeqNo) > 0))
+    if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_RcvLastSeqNo)) > 0)
     {
         int32_t seqlo = CSeqNo::incseq(m_RcvLastSeqNo);
         int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);

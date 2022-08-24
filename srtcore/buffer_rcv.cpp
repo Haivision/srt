@@ -119,28 +119,6 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     int32_t avail_seq;
     int avail_range;
 
-    // Calculation done for the sake of possible discrepancy
-    // in order to inform the caller what to do.
-    if (m_entries[m_iStartPos].status == EntryState_Avail)
-    {
-        avail_seq = packetAt(m_iStartPos).getSeqNo();
-        avail_range = m_iEndPos - m_iStartPos;
-    }
-    else if (m_iDropPos != m_iEndPos)
-    {
-        avail_seq = SRT_SEQNO_NONE;
-        avail_range = 0;
-    }
-    else
-    {
-        avail_seq = packetAt(m_iDropPos).getSeqNo();
-
-        // We don't know how many packets follow it exactly,
-        // but in this case it doesn't matter. We know that
-        // at least one is there.
-        avail_range = 1;
-    }
-
     if (offset < 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
@@ -150,6 +128,29 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     if (offset >= (int)capacity())
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -3");
+
+        // Calculation done for the sake of possible discrepancy
+        // in order to inform the caller what to do.
+        if (m_entries[m_iStartPos].status == EntryState_Avail)
+        {
+            avail_seq = packetAt(m_iStartPos).getSeqNo();
+            avail_range = m_iEndPos - m_iStartPos;
+        }
+        else if (m_iDropPos == m_iEndPos)
+        {
+            avail_seq = SRT_SEQNO_NONE;
+            avail_range = 0;
+        }
+        else
+        {
+            avail_seq = packetAt(m_iDropPos).getSeqNo();
+
+            // We don't know how many packets follow it exactly,
+            // but in this case it doesn't matter. We know that
+            // at least one is there.
+            avail_range = 1;
+        }
+
         return InsertInfo(InsertInfo::DISCREPANCY, avail_seq, avail_range);
     }
 
@@ -304,7 +305,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
         avail_packet = &packetAt(m_iFirstRandomMsgPos);
         avail_range = 1;
     }
-    else if (m_iDropPos != m_iEndPos)
+    else if (m_iDropPos == m_iEndPos)
     {
         avail_packet = &packetAt(m_iDropPos);
         avail_range = 1;
@@ -856,7 +857,7 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
     if (m_entries[m_iStartPos].status == EntryState_Avail)
     {
         SRT_ASSERT(m_entries[m_iStartPos].pUnit);
-        return (PacketInfo) { m_iStartSeqNo, false /*no gap*/, getPktTsbPdTime(packetAt(m_iStartSeqNo).getMsgTimeStamp()) };
+        return (PacketInfo) { m_iStartSeqNo, false /*no gap*/, getPktTsbPdTime(packetAt(m_iStartPos).getMsgTimeStamp()) };
     }
     // If not, get the information from the drop
     if (m_iDropPos != m_iEndPos)

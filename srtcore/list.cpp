@@ -117,6 +117,9 @@ int srt::CSndLossList::insert(int32_t seqno1, int32_t seqno2)
         return 0;
     }
 
+    // Make sure that seqno2 isn't earlier than seqno1.
+    SRT_ASSERT(CSeqNo::seqcmp(seqno1, seqno2) <= 0);
+
     const int inserted_range = CSeqNo::seqlen(seqno1, seqno2);
     if (inserted_range <= 0 || inserted_range >= m_iSize) {
         LOGC(qslog.Error, log << "IPE: Tried to insert too big range of seqno: " << inserted_range <<  ". Ignoring. "
@@ -506,6 +509,9 @@ srt::CRcvLossList::~CRcvLossList()
 
 void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
+    // Make sure that seqno2 isn't earlier than seqno1.
+    SRT_ASSERT(CSeqNo::seqcmp(seqno1, seqno2) <= 0);
+
     // Data to be inserted must be larger than all those in the list
     if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
     {
