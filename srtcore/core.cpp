@@ -2179,7 +2179,7 @@ int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint
 
                 // SRT_HS_LATENCY_SND is the value that the peer proposes to be the
                 // value used by agent when receiving data. We take this as a local latency value.
-                peer_decl_latency = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
+                peer_decl_latency = SRT_HS_LATENCY_SND::unwrap(latencystr);
             }
 
             // Use the maximum latency out of latency from our settings and the latency
@@ -3286,6 +3286,8 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
                 << " PST=" << FormatTime(m_tsRcvPeerStartTime));
     }
 
+#if !ENABLE_NEW_RCVBUFFER
+
     steady_clock::time_point rcv_buffer_time_base;
     bool rcv_buffer_wrap_period = false;
     steady_clock::duration rcv_buffer_udrift(0);
@@ -3307,9 +3309,13 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
         // time to not fill a network window.
         enterCS(m_RecvLock);
         m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000, rcv_buffer_udrift);
-#if ENABLE_NEW_RCVBUFFER
-        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
-#endif
+
+// This didn't make sense anyway. The SRT clients from before version 1.3
+// do not support bonding, so this function wouldn't even be called when
+// connecting to them.
+//#if ENABLE_NEW_RCVBUFFER
+//        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
+//#endif
         leaveCS(m_RecvLock);
 
         HLOGF(gmlog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03us GROUP TIME BASE: %s%s",
@@ -3327,6 +3333,8 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // This function currently does nothing, just left for consistency
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
+
+#endif
 
     /*
     if (gp->synconmsgno())
@@ -5169,6 +5177,13 @@ void * srt::CUDT::tsbpd(void* param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
+    if (!self->m_pRcvBuffer)
+    {
+        LOGC(tslog.Fatal, log << "IPE: started CUDT::tsbpd() thread in a group mode without socket's receiver buffer");
+        THREAD_EXIT();
+        return 0;
+    }
+
     CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
     CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
@@ -5279,6 +5294,7 @@ void * srt::CUDT::tsbpd(void* param)
     return NULL;
 }
 
+// This is to be called from tsbpd().
 int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 {
     // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
@@ -5554,6 +5570,7 @@ void srt::CUDT::setInitialRcvSeq(int32_t isn)
 #endif
 }
 
+// Called from tsbpd().
 void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
 {
     enterCS(m_StatsLock);
@@ -6830,6 +6847,15 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
     // it's a bug to fix, so the exception is nothing wrong.
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_MESSAGE, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
+
+#if ENABLE_NEW_BONDING
+    // In this code configuration, this function shall not be used
+    // if the socket is a group member.
+
+    if (m_parent->m_GroupOf)
+        throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
+
+#endif
 
     UniqueLock recvguard (m_RecvLock);
     CSync tscond     (m_RcvTsbPdCond,  recvguard);
@@ -8602,23 +8628,35 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
 
     updateCC(TEV_ACKACK, EventVariant(ack));
 
+    bool giveup = false;
+
+#if ENABLE_BONDING
+    CUDTUnited::GroupKeeper gk (uglobal(), m_parent);
+#endif
+
+#if ENABLE_NEW_BONDING
+    // Group receiver in use - see if the drift update should
+    // be done in the group. If so, don't check anything in the socket
+    if (gk.group)
+    {
+        giveup = true;
+        gk.group->addGroupDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
+    }
+#endif
+
     // This function will put a lock on m_RecvLock by itself, as needed.
     // It must be done inside because this function reads the current time
     // and if waiting for the lock has caused a delay, the time will be
     // inaccurate. Additionally it won't lock if TSBPD mode is off, and
     // won't update anything. Note that if you set TSBPD mode and use
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-    if (m_config.bDriftTracer)
+    if (!giveup && m_config.bDriftTracer && m_pRcvBuffer)
     {
         const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
-#if ENABLE_BONDING
-        if (drift_updated && m_parent->m_GroupOf)
+#if ENABLE_OLD_BONDING
+        if (drift_updated && gk.group)
         {
-            ScopedLock glock(uglobal().m_GlobControlLock);
-            if (m_parent->m_GroupOf)
-            {
-                m_parent->m_GroupOf->synchronizeDrift(this);
-            }
+            m_parent->m_GroupOf->synchronizeDrift(this);
         }
 #endif
     }
@@ -8913,6 +8951,13 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
+#if ENABLE_NEW_BONDING
+
+    // NOTE: a connected socket that once had a buffer cannot
+    // lose it before being closed. An unconnected socket (including broken)
+    // cannot be dispatched the UMSG_DROPREQ message to.
+    if (!m_parent->m_GroupOf && m_pRcvBuffer)
+#endif
     {
         CUniqueSync rcvtscc (m_RecvLock, m_RcvTsbPdCond);
         // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.
@@ -9083,8 +9128,19 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
     }
 }
 
+// Called only for the old buffer with groups.
 void srt::CUDT::updateSrtRcvSettings()
 {
+#if ENABLE_NEW_BONDING
+    CUDTUnited::GroupKeeper gk(uglobal(), m_parent);
+
+    if (gk.group)
+    {
+        // TSBPD mode in case of groups will be set during syncWithFirstSocket.
+        return;
+    }
+
+#endif
     // CHANGED: we need to apply the tsbpd delay only for socket TSBPD.
     // For Group TSBPD the buffer will have to deliver packets always on request
     // by sequence number, although the buffer will have to solve all the TSBPD
@@ -9099,8 +9155,7 @@ void srt::CUDT::updateSrtRcvSettings()
     m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 #endif
 
-    // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
-    if (m_bTsbPd || m_bGroupTsbPd)
+    if (m_bTsbPd)
     {
 #if ENABLE_NEW_RCVBUFFER
         m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
@@ -10006,6 +10061,12 @@ int srt::CUDT::processData(CUnit* in_unit)
     m_iEXPCount = 1;
     m_tsLastRspTime.store(steady_clock::now());
 
+    // Keep the group alive until the end of this function.
+
+#if ENABLE_BONDING
+    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
+#endif
+
     // We are receiving data, start tsbpd thread if TsbPd is enabled
     if (-1 == checkLazySpawnLatencyThread())
     {
@@ -10037,21 +10098,35 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 
 #if ENABLE_HEAVY_LOGGING
-   {
-       steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
 
-       // It's easier to remove the latency factor from this value than to add a function
-       // that exposes the details basing on which this value is calculated.
-       steady_clock::time_point pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
-       steady_clock::time_point ets = pts - tsbpddelay;
+    steady_clock::time_point pts; // will be needed in further logging
 
-       HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
-           << " seq=" << packet.getSeqNo()
-           // XXX FIX IT. OTS should represent the original sending time, but it's relative.
-           //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
-           << " ETS=" << FormatTime(ets)
-           << " PTS=" << FormatTime(pts));
-   }
+    {
+        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+
+        // It's easier to remove the latency factor from this value than to add a function
+        // that exposes the details basing on which this value is calculated.
+
+#if ENABLE_NEW_BONDING
+        // Block this for a case of new-bonding group, as m_pRcvBuffer is NULL there.
+        if (gkeeper.group)
+        {
+            pts = gkeeper.group->getPktTsbPdTime(packet.getMsgTimeStamp());
+        }
+        else
+#endif
+        {
+            pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
+        }
+        steady_clock::time_point ets = pts - tsbpddelay;
+
+        HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
+                << " seq=" << packet.getSeqNo()
+                // XXX FIX IT. OTS should represent the original sending time, but it's relative.
+                //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
+                << " ETS=" << FormatTime(ets)
+                << " PTS=" << FormatTime(pts));
+    }
 #endif
 
     updateCC(TEV_RECEIVE, EventVariant(&packet));
@@ -10114,14 +10189,19 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (packet.getMsgSeq() != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
     {
         int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
-       // Difference between these two sequence numbers is expected to be:
-       // 0 - duplicated last packet (theory only)
-       // 1 - subsequent packet (alright)
-       // <0 - belated or recovered packet
-       // >1 - jump over a packet loss (loss = seqdiff-1)
-        if (diff > 1)
+        // Difference between these two sequence numbers is expected to be:
+        // 0 - duplicated last packet (theory only)
+        // 1 - subsequent packet (alright)
+        // <0 - belated or recovered packet
+        // >1 - jump over a packet loss (loss = seqdiff-1)
+
+        // Hook on non-NULL receiver buffer for a case of ENABLE_NEW_BONDING.
+        // XXX This is for stats only and for groups it can be done elsewhere.
+        if (m_pRcvBuffer && diff > 1)
         {
             const int loss = diff - 1; // loss is all that is above diff == 1
+
+
             ScopedLock lg(m_StatsLock);
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
             m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, (uint32_t) loss));
@@ -10148,9 +10228,8 @@ int srt::CUDT::processData(CUnit* in_unit)
     // accepted or rejected because if it was belated it may result in a
     // "runaway train" problem as the IDLE links are being updated the base
     // reception sequence pointer stating that this link is not receiving.
-    if (m_parent->m_GroupOf)
+    if (gkeeper.group)
     {
-        ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
         groups::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
@@ -10215,6 +10294,9 @@ int srt::CUDT::processData(CUnit* in_unit)
             CUnit *  u    = *unitIt;
             CPacket &rpkt = u->m_Packet;
 
+            int buffer_add_result;
+            bool adding_successful = true;
+
             // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
             // This is the offset in the buffer; if this is negative, it means that
             // this sequence is already in the past and the buffer is not interested.
@@ -10227,10 +10309,9 @@ int srt::CUDT::processData(CUnit* in_unit)
             if (offset < 0)
             {
                 IF_HEAVY_LOGGING(exc_type = "BELATED");
-                steady_clock::time_point tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
                 const double bltime = (double) CountIIR<uint64_t>(
                         uint64_t(m_stats.traceBelatedTime) * 1000,
-                        count_microseconds(steady_clock::now() - tsbpdtime), 0.2);
+                        count_microseconds(steady_clock::now() - pts), 0.2);
 
                 enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = bltime / 1000.0;
@@ -10242,100 +10323,114 @@ int srt::CUDT::processData(CUnit* in_unit)
                 continue;
             }
 
-            const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
-            if (offset >= avail_bufsize)
+            int avail_bufsize = 0; // needed in logging
+
+            // This is executed only when bonding is enabled and only
+            // with the new buffer (in which case the buffer is in the group).
+#if ENABLE_NEW_BONDING
+            if (gkeeper.group)
             {
-                // This is already a sequence discrepancy. Probably there could be found
-                // some way to make it continue reception by overriding the sequence and
-                // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
-                if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                // NOTE: this will lock ALSO the receiver buffer lock in the group
+                CRcvBufferNew::InsertInfo info = gkeeper.group->addDataUnit(u);
+                if (info.result == CRcvBufferNew::InsertInfo::DISCREPANCY)
                 {
-                    // Only in live mode. In File mode this shall not be possible
-                    // because the sender should stop sending in this situation.
-                    // In Live mode this means that there is a gap between the
-                    // lowest sequence in the empty buffer and the incoming sequence
-                    // that exceeds the buffer size. Receiving data in this situation
-                    // is no longer possible and this is a point of no return.
-
-                    LOGC(qrlog.Error, log << CONID() <<
-                            "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
-                            " seq=" << rpkt.m_iSeqNo
-                            << " buffer=(" << m_iRcvLastSkipAck
-                            << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                            << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
-                            << "), " << (offset-avail_bufsize+1)
-                            << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
-
-                    // This is a scoped lock with AckLock, but for the moment
-                    // when processClose() is called this lock must be taken out,
-                    // otherwise this will cause a deadlock. We don't need this
-                    // lock anymore, and at 'return' it will be unlocked anyway.
-                    recvbuf_acklock.unlock();
-                    processClose();
-                    return -1;
-                }
-                else
-                {
-#if ENABLE_NEW_RCVBUFFER
-                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << offset << ". "
-                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
-                    );
-#else
-                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << offset << ". "
-                        << m_pRcvBuffer->strFullnessState(steady_clock::now())
-                    );
-#endif
-
-                    return -1;
-                }
-            }
-
-            bool adding_successful = true;
-
-            int buffer_add_result;
-#if ENABLE_NEW_RCVBUFFER
-  #if ENABLE_BONDING
-
-            { // XXX superfluous lock, if this socket is not a group member; revise!
-                ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
-
-                if (m_parent->m_GroupOf)
-                {
-                    // NOTE: this will lock ALSO the receiver buffer lock in the group
-                    buffer_add_result = m_parent->m_GroupOf->addDataUnit(u);
-                }
-                else
-                {
-                    CRcvBufferNew::InsertInfo info = m_pRcvBuffer->insert(u);
-
-                    // Remember this value in order to CHECK if there's a need
-                    // to request triggering TSBPD in case when TSBPD is in the
-                    // state of waiting forever and wants to know if there's any
-                    // possible time to wake up known earlier than that.
-
-                    // Note that in case of the "builtin group reader" (its own
-                    // buffer), there's no need to do it here because it has also
-                    // its own TSBPD thread.
-
-                    if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
+                    if (m_bGroupTsbPd && info.avail_range == 0)
                     {
-                        // This may happen multiple times in the loop, so update only if earlier.
-                        if (next_tsbpd_avail == time_point() || next_tsbpd_avail > info.first_time)
-                            next_tsbpd_avail = info.first_time;
-                        new_inserted = true;
+                        LOGC(qrlog.Error, log << CONID() <<
+                                "SEQUENCE DISCREPANCY. BREAKING CONNECTION.");
+
+                        recvbuf_acklock.unlock();
+                        processClose();
                     }
-                    buffer_add_result = int(info.result);
+                    else
+                    {
+                        // Can't reach the buffer information because it's inside the group.
+                        // The log should be likely fully presented in the CUDTGroup::addDataUnit().
+                        LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo);
+                    }
+                    return -1;
                 }
 
+                buffer_add_result = int(info.result);
             }
-  #else
-            buffer_add_result = m_pRcvBuffer->insert(u);
-  #endif
-#else
-            buffer_add_result = m_pRcvBuffer->addData(u, offset);
+            else
 #endif
+            {
+                avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
+                if (offset >= avail_bufsize)
+                {
+                    // This is already a sequence discrepancy. Probably there could be found
+                    // some way to make it continue reception by overriding the sequence and
+                    // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+                    if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                    {
+                        // Only in live mode. In File mode this shall not be possible
+                        // because the sender should stop sending in this situation.
+                        // In Live mode this means that there is a gap between the
+                        // lowest sequence in the empty buffer and the incoming sequence
+                        // that exceeds the buffer size. Receiving data in this situation
+                        // is no longer possible and this is a point of no return.
+
+                        LOGC(qrlog.Error, log << CONID() <<
+                                "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
+                                " seq=" << rpkt.m_iSeqNo
+                                << " buffer=(" << m_iRcvLastSkipAck
+                                << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                                << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
+                                << "), " << (offset-avail_bufsize+1)
+                                << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
+
+                        // This is a scoped lock with AckLock, but for the moment
+                        // when processClose() is called this lock must be taken out,
+                        // otherwise this will cause a deadlock. We don't need this
+                        // lock anymore, and at 'return' it will be unlocked anyway.
+                        recvbuf_acklock.unlock();
+                        processClose();
+                        return -1;
+                    }
+                    else
+                    {
+#if ENABLE_NEW_RCVBUFFER
+                        LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
+                                << ", insert offset " << offset << ". "
+                                << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
+                            );
+#else
+                        LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
+                                << ", insert offset " << offset << ". "
+                                << m_pRcvBuffer->strFullnessState(steady_clock::now())
+                            );
+#endif
+
+                        return -1;
+                    }
+                }
+
+#if ENABLE_NEW_RCVBUFFER
+                CRcvBufferNew::InsertInfo info = m_pRcvBuffer->insert(u);
+
+                // Remember this value in order to CHECK if there's a need
+                // to request triggering TSBPD in case when TSBPD is in the
+                // state of waiting forever and wants to know if there's any
+                // possible time to wake up known earlier than that.
+
+                // Note that in case of the "builtin group reader" (its own
+                // buffer), there's no need to do it here because it has also
+                // its own TSBPD thread.
+
+                if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
+                {
+                    // This may happen multiple times in the loop, so update only if earlier.
+                    if (next_tsbpd_avail == time_point() || next_tsbpd_avail > info.first_time)
+                        next_tsbpd_avail = info.first_time;
+                    new_inserted = true;
+                }
+                buffer_add_result = int(info.result);
+#else
+                buffer_add_result = m_pRcvBuffer->addData(u, offset);
+#endif
+            }
+
             if (buffer_add_result < 0)
             {
                 // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
@@ -10376,14 +10471,24 @@ int srt::CUDT::processData(CUnit* in_unit)
             else
                 expectspec << "ACCEPTED";
 
-            LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                    << " offset=" << offset
-                    << " BUFr=" << avail_bufsize
+            std::ostringstream bufinfo;
+
+            if (m_pRcvBuffer)
+            {
+                bufinfo << " BUFr=" << avail_bufsize
                     << " avail=" << getAvailRcvBufferSizeNoLock()
                     << " buffer=(" << m_iRcvLastSkipAck
                     << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
                     << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
-                    << ") "
+                    << ")";
+            }
+
+            // Empty buffer info in case of groupwise receiver.
+            // There's no way to obtain this information here.
+
+            LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
+                    << " offset=" << offset
+                    << bufinfo.str()
                     << " RSL=" << expectspec.str()
                     << " SN=" << rexmitstat[pktrexmitflag]
                     << " FLAGS: "
@@ -10394,9 +10499,6 @@ int srt::CUDT::processData(CUnit* in_unit)
             // Otherwise it's an error.
             if (adding_successful)
             {
-                // XXX move this code do CUDT::defaultPacketArrival and call it from here???
-                // srt_loss_seqs = CALLBACK_CALL(m_cbPacketArrival, rpkt);
-
                 HLOGC(qrlog.Debug,
                       log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
 
@@ -10407,15 +10509,12 @@ int srt::CUDT::processData(CUnit* in_unit)
                 typename loss_seqs_t::value_type this_loss;
 
 #if ENABLE_NEW_RCVBUFFER
+                if (gkeeper.group)
                 {
-                    ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
-                    if (m_parent->m_GroupOf)
-                    {
-                        // This should take out assymmetric losses, and leave only
-                        // valid ones. This also reports the losses to the group.
-                        have_loss = m_parent->m_GroupOf->checkPacketArrivalLoss(rpkt, (this_loss));
-                        handled = true;
-                    }
+                    // This should take out assymmetric losses, and leave only
+                    // valid ones. This also reports the losses to the group.
+                    have_loss = gkeeper.group->checkPacketArrivalLoss(rpkt, (this_loss));
+                    handled = true;
                 }
 #endif
 
@@ -10672,6 +10771,37 @@ int srt::CUDT::processData(CUnit* in_unit)
 }
 
 #if ENABLE_BONDING
+#if ENABLE_NEW_RCVBUFFER
+void srt::CUDT::updateIdleLinkFrom(CUDT* source)
+{
+    ScopedLock lg (m_RecvLock);
+
+    // Same version as the one with the old receiver buffering,
+    // just this time don't check if the buffer is empty. The value
+    // will be rejected anyway if it's equal.
+
+    // XXX Try to optimize this. Note that here happens:
+    // - decseq just to have a value to compare directly
+    // - seqcmp with that value
+    // - if passed, in setInitialRcvSeq there's the same decseq again
+    int32_t new_last_rcv = CSeqNo::decseq(source->m_iRcvLastSkipAck);
+
+    // if (new_last_rcv <% m_iRcvCurrSeqNo)
+    if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) < 0)
+    {
+        // Reject the change because that would shift the reception pointer backwards.
+        HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID
+                << ": backward setting rejected: %" << m_iRcvCurrSeqNo
+                << " -> %" << new_last_rcv);
+        return;
+    }
+
+    HLOGC(grlog.Debug, log << "grp: updating rcv-seq in @" << m_SocketID
+            << " from @" << source->m_SocketID << ": %" << source->m_iRcvLastSkipAck);
+    setInitialRcvSeq(source->m_iRcvLastSkipAck);
+
+}
+#else
 void srt::CUDT::updateIdleLinkFrom(CUDT* source)
 {
     ScopedLock lg (m_RecvLock);
@@ -10702,6 +10832,7 @@ void srt::CUDT::updateIdleLinkFrom(CUDT* source)
             << " from @" << source->m_SocketID << ": %" << source->m_iRcvLastSkipAck);
     setInitialRcvSeq(source->m_iRcvLastSkipAck);
 }
+#endif
 
 // XXX This function is currently unused. It should be fixed and put into use.
 // See the blocked call in CUDT::processData().

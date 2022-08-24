@@ -230,15 +230,16 @@ public:
 
         int first_seq; // sequence of the first available readable packet
         time_point first_time; // Time of the new, earlier packet that appeared ready, or null-time if this didn't change.
+        int avail_range;
 
-        InsertInfo(Result r, int fp_seq = SRT_SEQNO_NONE,
+        InsertInfo(Result r, int fp_seq = SRT_SEQNO_NONE, int range = 0,
                 time_point fp_time = time_point())
-            : result(r), first_seq(fp_seq), first_time(fp_time)
+            : result(r), first_seq(fp_seq), first_time(fp_time), avail_range(range)
         {
         }
 
         InsertInfo()
-            : result(REDUNDANT), first_seq(SRT_SEQNO_NONE)
+            : result(REDUNDANT), first_seq(SRT_SEQNO_NONE), avail_range(0)
         {
         }
 
@@ -516,6 +517,10 @@ private:
     entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)
+
+    //XXX removed. In this buffer the units may come from various different
+    // queues, and the unit has a pointer pointing to the queue from which
+    // it comes, and it should be returned to the same queue.
     //CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
     int m_iStartSeqNo;
@@ -556,6 +561,8 @@ public: // TSBPD public functions
 
     time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;
     void       updateTsbPdTimeBase(uint32_t usPktTimestamp);
+
+    bool isTsbPd() const { return m_tsbpd.isEnabled(); }
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.

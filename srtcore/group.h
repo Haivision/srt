@@ -712,6 +712,11 @@ private:
 
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
+#if ENABLE_NEW_RCVBUFFER
+
+    sync::atomic<int32_t> m_RcvLastSeqNo;
+
+#else
     /// The function polls alive member sockets and retrieves a list of read-ready.
     /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
@@ -721,11 +726,6 @@ private:
     /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
     std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
 
-#if ENABLE_NEW_RCVBUFFER
-
-    sync::atomic<int32_t> m_RcvLastSeqNo;
-
-#else
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
@@ -895,9 +895,10 @@ public:
 
 #if ENABLE_NEW_RCVBUFFER
     int checkLazySpawnLatencyThread();
-    int addDataUnit(CUnit* u);
+    CRcvBufferNew::InsertInfo addDataUnit(CUnit* u);
     bool checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_seqs_t::value_type&);
     int rcvDropTooLateUpTo(int seqno);
+    void addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt);
 #endif
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
@@ -929,12 +930,14 @@ public:
     }
 
     // Live state synchronization
+#if !ENABLE_NEW_RCVBUFFER
     bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
-    bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
-
     /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
     /// @param srcMember a reference for synchronization.
     void synchronizeDrift(const srt::CUDT* srcMember);
+
+#endif
+    bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
     void updateLatestRcv(srt::CUDTSocket*);
 
@@ -944,6 +947,11 @@ public:
 
     SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
     void discardSendSchedule(SocketData* d, int ndiscard);
+
+    time_point getPktTsbPdTime(uint32_t usPktTimestamp) const
+    {
+        return m_pRcvBuffer->getPktTsbPdTime(usPktTimestamp);
+    }
 #endif
 
     // Property accessors

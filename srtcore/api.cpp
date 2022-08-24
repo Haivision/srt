@@ -148,6 +148,19 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
+#if ENABLE_NEW_BONDING
+
+    // In the "new bonding" the reading from a socket
+    // happens exclusively from the group and the socket is
+    // only used as a connection point, packet dispatching
+    // and single link management. Data buffering and hence
+    // ability to deliver a packet through API is exclusively
+    // the matter of group, therefore a single socket is never
+    // "read ready".
+
+    if (m_GroupOf)
+        return false;
+#endif
     // TODO: Use m_RcvBufferLock here (CUDT::isRcvReadReady())?
     if (m_UDT.m_bConnected && m_UDT.m_pRcvBuffer->isRcvDataReady())
         return true;
@@ -2249,6 +2262,8 @@ int srt::CUDTUnited::select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSE
     return count;
 }
 
+// XXX This may crash when a member socket is added to selectEx.
+// Consider revising to prevent a socket from being used.
 int srt::CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                               vector<SRTSOCKET>*       readfds,
                               vector<SRTSOCKET>*       writefds,
@@ -2589,6 +2604,12 @@ void srt::CUDTUnited::checkBrokenSockets()
         // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
         // this function is called (isRcvDataReady also checks if the
         // available data is "ready to play").
+
+        // Additional note on group receiver: with the new group
+        // receiver m_pRcvBuffer in the socket core is NULL always,
+        // but that's not a problem - you can close the member socket
+        // safely without worrying about reading data because they are
+        // in the group anyway.
 #if ENABLE_NEW_RCVBUFFER
                  && s->core().m_pRcvBuffer->hasAvailablePackets()
 #else

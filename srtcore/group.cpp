@@ -18,6 +18,7 @@ namespace srt {
 
 int32_t CUDTGroup::s_tokenGen = 0;
 
+#if !ENABLE_NEW_RCVBUFFER
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
                                   steady_clock::time_point& w_tb,
@@ -62,6 +63,7 @@ bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
     }
     return true;
 }
+#endif
 
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_t& w_rcv_isn)
@@ -967,16 +969,18 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
-    // and set it on the current socket.
+    // and set it on the group.
     set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
 }
 
 #if ENABLE_NEW_RCVBUFFER
 
-int CUDTGroup::addDataUnit(CUnit* u)
+CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
 {
-    // XXX Likely some other things need to be done here.
+    // If this returns false, the adding has failed and 
+
     CRcvBufferNew::InsertInfo info;
+    const CPacket& rpkt = u->m_Packet;
 
     {
         ScopedLock lk (m_RcvBufferLock);
@@ -996,8 +1000,18 @@ int CUDTGroup::addDataUnit(CUnit* u)
             tsbpd_cc.notify_all();
         }
     }
+    else if (info.result == CRcvBufferNew::InsertInfo::DISCREPANCY)
+    {
+        LOGC(qrlog.Error, log << CONID()
+                << "SEQUENCE DISCREPANCY. DISCARDING."
+                << " seq=" << rpkt.m_iSeqNo
+                << " buffer=(" << m_pRcvBuffer->getStartSeqNo()
+                << ":" << m_RcvLastSeqNo                   // -1 = size to last index
+                << "+" << CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), int(m_pRcvBuffer->capacity()) - 1)
+                << ")");
+    }
 
-    return int(info.result);
+    return info;
 }
 
 
@@ -2130,6 +2144,7 @@ void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTS
 #undef HCLOG
 }
 
+#if !ENABLE_NEW_RCVBUFFER
 vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& aliveMembers, set<CUDTSocket*>& w_broken)
 {
     if (aliveMembers.empty())
@@ -2253,7 +2268,6 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     return readReady;
 }
 
-#if !ENABLE_NEW_RCVBUFFER
 void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequence)
 {
     bool       ready = false;
@@ -2511,7 +2525,6 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
 
 // The REAL version for the new group receiver.
 // 
-
 int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     CUniqueSync tscond (m_RcvDataLock, m_RcvDataCond);
@@ -3366,6 +3379,7 @@ const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
     return unknown;
 }
 
+#if !ENABLE_NEW_RCVBUFFER
 void CUDTGroup::synchronizeDrift(const srt::CUDT* srcMember)
 {
     SRT_ASSERT(srcMember != NULL);
@@ -3400,6 +3414,7 @@ void CUDTGroup::synchronizeDrift(const srt::CUDT* srcMember)
         member.m_pRcvBuffer->applyGroupDrift(timebase, wrap_period, udrift);
     }
 }
+#endif
 
 void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 {
@@ -5320,6 +5335,17 @@ void CUDTGroup::processKeepalive(CUDTGroup::SocketData* gli, const CPacket& ctrl
 #endif
 
 }
+
+#if ENABLE_NEW_RCVBUFFER
+void CUDTGroup::addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt)
+{
+    if (!m_bOPT_DriftTracer)
+        return;
+
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->addRcvTsbPdDriftSample(timestamp, tsArrival, rtt);
+}
+#endif
 
 void CUDTGroup::internalKeepalive(SocketData* gli)
 {

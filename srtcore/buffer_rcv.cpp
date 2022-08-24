@@ -116,6 +116,31 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
+    int32_t avail_seq;
+    int avail_range;
+
+    // Calculation done for the sake of possible discrepancy
+    // in order to inform the caller what to do.
+    if (m_entries[m_iStartPos].status == EntryState_Avail)
+    {
+        avail_seq = packetAt(m_iStartPos).getSeqNo();
+        avail_range = m_iEndPos - m_iStartPos;
+    }
+    else if (m_iDropPos != m_iEndPos)
+    {
+        avail_seq = SRT_SEQNO_NONE;
+        avail_range = 0;
+    }
+    else
+    {
+        avail_seq = packetAt(m_iDropPos).getSeqNo();
+
+        // We don't know how many packets follow it exactly,
+        // but in this case it doesn't matter. We know that
+        // at least one is there.
+        avail_range = 1;
+    }
+
     if (offset < 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
@@ -125,7 +150,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     if (offset >= (int)capacity())
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -3");
-        return InsertInfo(InsertInfo::DISCREPANCY);
+        return InsertInfo(InsertInfo::DISCREPANCY, avail_seq, avail_range);
     }
 
     // TODO: Don't do assert here. Process this situation somehow.
@@ -268,6 +293,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     if (m_entries[m_iStartPos].pUnit && m_entries[m_iStartPos].status == EntryState_Avail)
     {
         avail_packet = &packetAt(m_iStartPos);
+        avail_range = m_iEndPos - m_iStartPos;
     }
     else if (!m_tsbpd.isEnabled() && m_iFirstRandomMsgPos != -1)
     {
@@ -276,16 +302,18 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
         // the only "next deliverable" is the first complete message that satisfies
         // the order requirement.
         avail_packet = &packetAt(m_iFirstRandomMsgPos);
+        avail_range = 1;
     }
     else if (m_iDropPos != m_iEndPos)
     {
         avail_packet = &packetAt(m_iDropPos);
+        avail_range = 1;
     }
 
     IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
 
     if (avail_packet)
-        return InsertInfo(InsertInfo::INSERTED, avail_packet->getSeqNo(), earlier_time);
+        return InsertInfo(InsertInfo::INSERTED, avail_packet->getSeqNo(), avail_range, earlier_time);
     else
         return InsertInfo(InsertInfo::INSERTED); // No packet candidate (NOTE: impossible in live mode)
 }
