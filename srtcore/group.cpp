@@ -2536,11 +2536,21 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
     {
         HLOGC(arlog.Debug, log << CONID() << "grp:recv: CONNECTION BROKEN - reading from recv buffer just for formality");
 
-        enterCS(m_RcvBufferLock);
-        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
-            ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
-            : 0;
-        leaveCS(m_RcvBufferLock);
+        int as_result = 0;
+        bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+
+        if (ready)
+        {
+            ScopedLock lk (m_RcvBufferLock);
+            as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl));
+        }
+
+        {
+            ScopedLock lk (m_GroupLock);
+            fillGroupData((w_mctrl), w_mctrl);
+        }
+
+        const int res = as_result;
 
         w_mctrl.srctime = 0;
 
@@ -2577,11 +2587,21 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
     {
         HLOGC(arlog.Debug, log << CONID() << "grp:recv: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
-        enterCS(m_RcvBufferLock);
-        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
-            ? m_pRcvBuffer->readMessage(data, len, (&w_mctrl), (&seqrange))
-            : 0;
-        leaveCS(m_RcvBufferLock);
+        int as_result = 0;
+        bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+
+        if (ready)
+        {
+            ScopedLock lk (m_RcvBufferLock);
+            as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl), (&seqrange));
+        }
+
+        {
+            ScopedLock lk (m_GroupLock);
+            fillGroupData((w_mctrl), w_mctrl);
+        }
+
+        const int res = as_result;
 
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
 
@@ -2695,6 +2715,12 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         res = m_pRcvBuffer->readMessage((data), len, &w_mctrl);
         leaveCS(m_RcvBufferLock);
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
+
+        {
+            ScopedLock lk (m_GroupLock);
+            fillGroupData((w_mctrl), w_mctrl);
+        }
+
 
         if (m_bClosing)
         {
