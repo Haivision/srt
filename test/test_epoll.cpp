@@ -6,7 +6,7 @@
 #include "gtest/gtest.h"
 #include "api.h"
 #include "epoll.h"
-
+#include "apputil.hpp"
 
 using namespace std;
 using namespace srt;
@@ -559,6 +559,76 @@ TEST(CEPoll, ThreadedUpdate)
 
 
     EXPECT_EQ(srt_cleanup(), 0);
+}
+
+TEST(CEPoll, LateListenerReady)
+{
+    int server_sock = srt_create_socket(), caller_sock = srt_create_socket();
+
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt_bind(server_sock, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(server_sock, 1);
+
+    srt::setopt(server_sock)[SRTO_RCVSYN] = false;
+
+    // Ok, the listener socket is ready; now make a call, but
+    // do not do anything on the listener socket yet.
+
+// This macro is to manipulate with the moment when the call is made
+// towards the eid subscription. If 1, then the call is made first,
+// and then subsciption after a 1s time. Set it to 0 to see how it
+// works when the subscription is made first, so the readiness is from
+// the listener changing the state.
+#define LATE_CALL 1
+
+#if LATE_CALL
+
+    // We don't need the caller to be async, it can hang up here.
+    auto connect_res = std::async(std::launch::async, [&caller_sock, &sa]() {
+        return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+    });
+
+#endif
+    this_thread::sleep_for(chrono::milliseconds(1000));
+
+    // What is important is that the accepted socket is now reporting in
+    // on the listener socket. So let's create an epoll.
+
+    int eid = srt_epoll_create();
+
+    // and add this listener to it
+    int modes = SRT_EPOLL_IN;
+    EXPECT_NE(srt_epoll_add_usock(eid, server_sock, &modes), SRT_ERROR);
+
+#if !LATE_CALL
+
+    // We don't need the caller to be async, it can hang up here.
+    auto connect_res = std::async(std::launch::async, [&caller_sock, &sa]() {
+        return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+    });
+
+#endif
+
+    // And see now if the waiting accepted socket reports it.
+    SRT_EPOLL_EVENT fdset[1];
+    EXPECT_EQ(srt_epoll_uwait(eid, fdset, 1, 5000), 1);
+
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+    SRTSOCKET sock = srt_accept(server_sock, (sockaddr*)& scl, &sclen);
+    EXPECT_NE(sock, SRT_INVALID_SOCK);
+
+    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    srt_epoll_release(eid);
+    srt_close(sock);
+    srt_close(server_sock);
+    srt_close(caller_sock);
 }
 
 

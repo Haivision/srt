@@ -20,6 +20,7 @@
 
 #include "netinet_any.h"
 #include "utilities.h"
+#include "srt.h"
 
 #if _WIN32
 
@@ -332,8 +333,42 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);
-
 const char* SRTClockTypeStr();
 void PrintLibVersion();
 
+
+namespace srt
+{
+
+struct OptionSetterProxy
+{
+    SRTSOCKET s = -1;
+    int result = 0;
+
+    struct OptionProxy
+    {
+        OptionSetterProxy& parent;
+        SRT_SOCKOPT opt;
+
+        template<class Type>
+        OptionProxy& operator=(Type&& val)
+        {
+            Type vc(val);
+            srt_setsockflag(parent.s, opt, &vc, sizeof vc);
+            return *this;
+        }
+    };
+
+    OptionProxy operator[](SRT_SOCKOPT opt)
+    {
+        return OptionProxy {*this, opt};
+    }
+};
+
+inline OptionSetterProxy setopt(SRTSOCKET socket)
+{
+    return OptionSetterProxy {socket};
+}
+
+}
 #endif // INC_SRT_APPCOMMON_H
