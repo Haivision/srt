@@ -333,6 +333,7 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);
+
 const char* SRTClockTypeStr();
 void PrintLibVersion();
 
@@ -342,12 +343,14 @@ namespace srt
 
 struct OptionSetterProxy
 {
-    SRTSOCKET s = -1;
-    int result = 0;
+    SRTSOCKET s;
+    int result = -1;
+
+    OptionSetterProxy(SRTSOCKET ss): s(ss) {}
 
     struct OptionProxy
     {
-        OptionSetterProxy& parent;
+        const OptionSetterProxy& parent;
         SRT_SOCKOPT opt;
 
         template<class Type>
@@ -359,7 +362,7 @@ struct OptionSetterProxy
         }
     };
 
-    OptionProxy operator[](SRT_SOCKOPT opt)
+    OptionProxy operator[](SRT_SOCKOPT opt) const
     {
         return OptionProxy {*this, opt};
     }
@@ -367,7 +370,7 @@ struct OptionSetterProxy
 
 inline OptionSetterProxy setopt(SRTSOCKET socket)
 {
-    return OptionSetterProxy {socket};
+    return OptionSetterProxy(socket);
 }
 
 }
