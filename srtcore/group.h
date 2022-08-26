@@ -206,6 +206,11 @@ public:
         return m_Group.empty();
     }
 
+    bool groupConnected()
+    {
+        return m_bConnected;
+    }
+
     void setGroupConnected();
 
     int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);

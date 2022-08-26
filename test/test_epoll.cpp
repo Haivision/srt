@@ -563,6 +563,8 @@ TEST(CEPoll, ThreadedUpdate)
 
 TEST(CEPoll, LateListenerReady)
 {
+    ASSERT_EQ(srt_startup(), 0);
+
     int server_sock = srt_create_socket(), caller_sock = srt_create_socket();
 
     sockaddr_in sa;
@@ -629,6 +631,8 @@ TEST(CEPoll, LateListenerReady)
     srt_close(sock);
     srt_close(server_sock);
     srt_close(caller_sock);
+
+    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 

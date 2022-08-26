@@ -835,6 +835,64 @@ ERR_ROLLBACK:
     return 1;
 }
 
+SRT_EPOLL_T srt::CUDTSocket::getListenerEvents()
+{
+    // You need to check EVERY socket that has been queued
+    // and verify its internals. With independent socket the
+    // matter is simple - if it's present, you light up the
+    // SRT_EPOLL_ACCEPT flag.
+
+//#if !ENABLE_BONDING
+#if 1
+    ScopedLock accept_lock (m_AcceptLock);
+
+    // Make it simplified here - nonempty container = have acceptable sockets.
+    // Might make sometimes spurious acceptance, but this can also happen when
+    // the incoming accepted socket was suddenly broken.
+    return m_QueuedSockets.empty() ? 0 : int(SRT_EPOLL_ACCEPT);
+
+#else // Could do #endif here, but the compiler would complain about unreachable code.
+
+    set<SRTSOCKET> sockets_copy;
+    {
+        ScopedLock accept_lock (m_AcceptLock);
+        sockets_copy = m_QueuedSockets;
+    }
+    return CUDT::uglobal().checkQueuedSocketsEvents(sockets_copy);
+
+#endif
+}
+
+#if ENABLE_BONDING
+int srt::CUDTUnited::checkQueuedSocketsEvents(const set<SRTSOCKET>& sockets)
+{
+    SRT_EPOLL_T flags = 0;
+
+    // But with the member sockets an appropriate check must be
+    // done first: if this socket belongs to a group that is
+    // already in the connected state, you should light up the
+    // SRT_EPOLL_UPDATE flag instead. This flag is only for
+    // internal informing the waiters on the listening sockets
+    // that they should re-read the group list and re-check readiness.
+
+    // Now we can do lock once and for all
+    //ScopedLock glk (m_GlobControlLock); // XXX DEADLOCKS
+
+    for (set<SRTSOCKET>::iterator i = sockets.begin(); i != sockets.end(); ++i)
+    {
+        CUDTSocket* s = locateSocket_LOCKED(*i);
+        if (!s)
+            continue; // wiped in the meantime - ignore
+        if (s->m_GroupOf && s->m_GroupOf->groupConnected())
+            flags |= SRT_EPOLL_UPDATE;
+        else
+            flags |= SRT_EPOLL_ACCEPT;
+    }
+
+    return flags;
+}
+#endif
+
 // static forwarder
 int srt::CUDT::installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
