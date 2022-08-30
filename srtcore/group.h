@@ -115,7 +115,7 @@ public:
     ~CUDTGroup();
 
 #if ENABLE_NEW_RCVBUFFER
-    void createBuffers(int32_t isn);
+    void createBuffers(int32_t isn, const time_point& tsbpd_start_time);
 #endif
 
     SocketData* add(SocketData data);
@@ -683,8 +683,10 @@ private:
     bool               m_bTsbPd;
     bool               m_bTLPktDrop;
     int64_t            m_iTsbPdDelay_us;
+#if !ENABLE_NEW_RCVBUFFER
     int                m_RcvEID;
     class CEPollDesc*  m_RcvEpolld;
+#endif
     int                m_SndEID;
     class CEPollDesc*  m_SndEpolld;
 
@@ -716,13 +718,13 @@ private:
 
     ReadPos* checkPacketAhead();
 
-    void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
-
 #if ENABLE_NEW_RCVBUFFER
 
     sync::atomic<int32_t> m_RcvLastSeqNo;
 
 #else
+    void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
+
     /// The function polls alive member sockets and retrieves a list of read-ready.
     /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
@@ -765,7 +767,8 @@ private:
     sync::Mutex           m_RcvDataLock;
 #if ENABLE_NEW_RCVBUFFER
     sync::Condition       m_RcvTsbPdCond;
-    sync::atomic<bool>    m_bWakeOnRecv;
+    sync::atomic<bool> m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
+    sync::atomic<bool> m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
     mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
 #endif
 
@@ -966,7 +969,7 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency_us, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 

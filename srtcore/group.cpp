@@ -292,7 +292,9 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
     setupCond(m_RcvDataCond, "RcvData");
+#if !ENABLE_NEW_RCVBUFFER
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
+#endif
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
 
     m_stats.init();
@@ -307,18 +309,25 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 }
 
 #if ENABLE_NEW_RCVBUFFER
-void CUDTGroup::createBuffers(int32_t isn)
+void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time)
 {
     // XXX NOT YET, but will be in use.
     m_pSndBuffer.reset();
 
     m_pRcvBuffer.reset(new srt::CRcvBufferNew(isn, m_iOPT_RcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_bOPT_MessageAPI));
+    if (tsbpd_start_time != time_point())
+    {
+        HLOGC(gmlog.Debug, log << "grp/createBuffers: setting rcv buf start time=" << FormatTime(tsbpd_start_time) << " lat=" << latency_us() << "us");
+        m_pRcvBuffer->setTsbPdMode(tsbpd_start_time, false, microseconds_from(latency_us()));
+    }
 }
 #endif
 
 CUDTGroup::~CUDTGroup()
 {
+#if !ENABLE_NEW_RCVBUFFER
     srt_epoll_release(m_RcvEID);
+#endif
     srt_epoll_release(m_SndEID);
     releaseMutex(m_GroupLock);
     releaseMutex(m_RcvDataLock);
@@ -924,6 +933,14 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
         set_currentSchedSequence(core.ISN());
     }
 
+    // Must be done here before createBuffers because the latency value
+    // will be used to set it to the buffer after creation.
+    HLOGC(gmlog.Debug, log << "grp/syncWithFirstSocket: setting group latency: " << core.m_iTsbPdDelay_ms << "ms");
+    // Get the latency (possibly fixed against the opposite side)
+    // from the first socket (core.m_iTsbPdDelay_ms),
+    // and set it on the group.
+    set_latency_us(core.m_iTsbPdDelay_ms * int64_t(1000));
+
 #if ENABLE_NEW_RCVBUFFER
     /*
     FIX: In this implementation we need to initialize the receiver buffer.
@@ -940,7 +957,16 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     */
 
     m_RcvLastSeqNo = CSeqNo::decseq(core.ISN());
-    createBuffers(core.ISN());
+
+    if (core.m_bGroupTsbPd)
+    {
+        m_tsRcvPeerStartTime = core.m_tsRcvPeerStartTime;
+    }
+
+    HLOGC(gmlog.Debug, log << "grp/syncWithFirstSocket: creating receiver buffer for ISN=%" << core.ISN()
+            << " TSBPD start: " << (core.m_bGroupTsbPd ? FormatTime(m_tsRcvPeerStartTime) : "not enabled"));
+
+    createBuffers(core.ISN(), m_tsRcvPeerStartTime);
 
 #else
     // XXX
@@ -957,10 +983,6 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     resetInitialRxSequence();
 #endif
 
-    // Get the latency (possibly fixed against the opposite side)
-    // from the first socket (core.m_iTsbPdDelay_ms),
-    // and set it on the group.
-    set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
 }
 
 #if ENABLE_NEW_RCVBUFFER
@@ -979,11 +1001,12 @@ CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
 
     if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
     {
-        // If m_bWakeOnRecv, then notify anyway.
+        // If m_bTsbpdWaitForNewPacket, then notify anyway.
         // Otherwise notify only if a "fresher" packet was added,
         // so TSBPD should interrupt its sleep earlier and re-check.
-        if (m_bWakeOnRecv || info.first_time != time_point())
+        if (m_bTsbpdWaitForNewPacket || info.first_time != time_point())
         {
+            HLOGC(gmlog.Debug, log << "grp/addDataUnit: got a packet [live], SIGNAL TSBPD");
             // Make a lock on data reception first, to protect the buffer.
             // Then notify TSBPD if required.
             CUniqueSync tsbpd_cc(m_RcvDataLock, m_RcvTsbPdCond);
@@ -2066,6 +2089,8 @@ struct FLookupSocketWithEvent_LOCKED
     }
 };
 
+#if !ENABLE_HEAVY_LOGGING
+
 void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {
 #if ENABLE_HEAVY_LOGGING
@@ -2134,7 +2159,6 @@ void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTS
 #undef HCLOG
 }
 
-#if !ENABLE_NEW_RCVBUFFER
 vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& aliveMembers, set<CUDTSocket*>& w_broken)
 {
     if (aliveMembers.empty())
@@ -2517,7 +2541,7 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
 // 
 int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    CUniqueSync tscond (m_RcvDataLock, m_RcvDataCond);
+    CUniqueSync tscond (m_RcvDataLock, m_RcvTsbPdCond);
 
     /* XXX DEBUG STUFF - enable when required
        char charbool[2] = {'0', '1'};
@@ -2557,7 +2581,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
         {
-            HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
+            HLOGP(tslog.Debug, "SIGNAL TSBPD thread to schedule wakeup FOR EXIT");
             tscond.notify_all();
         }
         else
@@ -2611,7 +2635,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
             {
-                HLOGP(arlog.Debug, "grp:recv: nothing to read, kicking TSBPD, return AGAIN");
+                HLOGC(arlog.Debug, log << "grp:recv: nothing to read, SIGNAL TSBPD (" << (m_bTsbpdWaitForExtraction ? "" : "un") << "expected), return AGAIN");
                 tscond.notify_all();
             }
             else
@@ -2630,7 +2654,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
             {
-                HLOGP(arlog.Debug, "grp:recv: DATA READ, but nothing more - kicking TSBPD.");
+                HLOGC(arlog.Debug, log << "grp:recv: ONE PACKET READ, but no more avail, SUGNAL TSBPD (" << (m_bTsbpdWaitForExtraction ? "" : "un") << "expected), return AGAIN");
                 tscond.notify_all();
             }
             else
@@ -2667,9 +2691,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
                 // would be "spurious". If a new packet comes ahead of the packet which's time is returned
                 // in tstime (as TSBPD sleeps up to then), the procedure that receives it is responsible
                 // of kicking TSBPD.
-                // bool spurious = (tstime != 0);
-
-                HLOGC(tslog.Debug, log << CONID() << "grp:recv: KICK tsbpd");
+                HLOGC(tslog.Debug, log << CONID() << "grp:recv: SIGNAL TSBPD" << (m_bTsbpdWaitForNewPacket ? " (spurious)" : ""));
                 tscond.notify_one();
             }
 
@@ -2744,7 +2766,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
         {
-            HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
+            HLOGP(tslog.Debug, "recvmsg: SIGNAL TSBPD (buffer empty)");
             tscond.notify_all();
         }
 
@@ -6033,7 +6055,7 @@ int CUDTGroup::checkLazySpawnLatencyThread()
 #else
         const string thname = "SRT:GLat";
 #endif
-        if (!StartThread(m_RcvTsbPdThread, &CUDTGroup::tsbpd, this, thname))
+        if (!StartThread(m_RcvTsbPdThread, CUDTGroup::tsbpd, this, thname))
             return -1;
     }
 
@@ -6052,15 +6074,13 @@ void* CUDTGroup::tsbpd(void* param)
     // NOTE: DO NOT LEAD TO EVER CANCEL THE THREAD!!!
     ScopedGroupKeeper gkeeper(self);
 
-    CUniqueSync recvdata_cc(self->m_RcvDataLock, self->m_RcvDataCond);
-    CSync       tsbpd_cc(self->m_RcvTsbPdCond, recvdata_cc.locker());
+    CUniqueSync recvdata_lcc(self->m_RcvDataLock, self->m_RcvDataCond);
+    CSync       tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
-    self->m_bWakeOnRecv = true;
+    self->m_bTsbpdWaitForNewPacket = true;
+    HLOGC(gmlog.Debug, log << "grp/TSBPD: START");
     while (!self->m_bClosing)
     {
-        steady_clock::time_point tsNextDelivery; // Next packet delivery time
-        bool                     rxready = false;
-
         enterCS(self->m_RcvBufferLock);
         const steady_clock::time_point tnow = steady_clock::now();
 
@@ -6068,7 +6088,14 @@ void* CUDTGroup::tsbpd(void* param)
         const srt::CRcvBufferNew::PacketInfo info = self->m_pRcvBuffer->getFirstValidPacketInfo();
 
         const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
-        tsNextDelivery                = info.tsbpd_time;
+        steady_clock::time_point tsNextDelivery = info.tsbpd_time;
+        bool                             rxready = false;
+
+        HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: packet check: T="
+                << FormatTime(tsNextDelivery) << " diff-in-late="
+                << FormatDuration(tnow - tsNextDelivery)
+                << " ready=" << is_time_to_deliver
+                << " ondrop=" << info.seq_gap);
 
         if (!self->m_bTLPktDrop)
         {
@@ -6084,7 +6111,7 @@ void* CUDTGroup::tsbpd(void* param)
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
 #if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug,
-                      log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
+                      log << self->CONID() << "grp/tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                           << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
                           << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000)
                           << " ms");
@@ -6103,7 +6130,7 @@ void* CUDTGroup::tsbpd(void* param)
         if (rxready)
         {
             HLOGC(tslog.Debug,
-                  log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
+                  log << self->CONID() << "grp/tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
                       << (count_milliseconds(steady_clock::now() - info.tsbpd_time)) << "ms)");
             /*
              * There are packets ready to be delivered
@@ -6111,7 +6138,8 @@ void* CUDTGroup::tsbpd(void* param)
              */
             if (self->m_bSynRecving)
             {
-                recvdata_cc.notify_one();
+                HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: SIGNAL blocking recv()");
+                recvdata_lcc.notify_one();
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
@@ -6120,7 +6148,26 @@ void* CUDTGroup::tsbpd(void* param)
             CGlobEvent::triggerEvent();
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
+        else
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: NEXT PACKET: "
+                    << (info.tsbpd_time == time_point() ? "NOT AVAILABLE" : FormatTime(info.tsbpd_time))
+                    << " vs. now=" << FormatTime(tnow));
+        }
 
+        SRT_ATR_UNUSED bool got_signal = true;
+
+        // None should be true in case when waiting for the next time.
+        // If there is a ready packet, but only to be extracted in some time,
+        // then sleep until this time and then retry triggering.
+        self->m_bTsbpdWaitForNewPacket = false;
+        self->m_bTsbpdWaitForExtraction = false;
+
+        // NOTE: if (rxready) then tsNextDelivery == 0. So this branch is for a situation
+        // when:
+        // - no packet is currently READY for delivery
+        // - but there is a packet candidate ready soon.
+        // So you have to sleep until it's ready and then trigger read-readiness.
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -6128,12 +6175,11 @@ void* CUDTGroup::tsbpd(void* param)
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bWakeOnRecv = false;
             HLOGC(tslog.Debug,
-                  log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
-                      << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms");
+                  log << self->CONID() << "grp/tsbpd: FUTURE PACKET seq=" << info.seqno
+                      << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms up to " << FormatTime(tsNextDelivery));
             THREAD_PAUSED();
-            tsbpd_cc.wait_until(tsNextDelivery);
+            got_signal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
         }
         else
@@ -6146,20 +6192,33 @@ void* CUDTGroup::tsbpd(void* param)
              * Block until woken up by one of the following event:
              * - All ready-to-play packets have been pulled and EPOLL_IN cleared (then loop to block until next pkt time
              * if any)
-             * - New buffers ACKed
+             * - New packet arrived
              * - Closing the connection
              */
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bWakeOnRecv = true;
+            HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: " << (rxready ? "expecting user's packet retrieval" : "no data to deliver") << ", scheduling wakeup on reception");
+
+            // If there was rxready, then epoll readiness was set, and recvdata_lcc was triggered
+            // - so it should remain sleeping until the user's thread has extracted EVERY ready packet and turned epoll back to not-ready.
+            // Otherwise the situation was that there's no ready packet at all.
+            // - so it should remain sleeping until a new packet arrives and it is potentially extractable.
+            if (rxready)
+            {
+                self->m_bTsbpdWaitForExtraction = true;
+            }
+            else
+            {
+                self->m_bTsbpdWaitForNewPacket = true;
+            }
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
         }
 
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
+        HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: WAKE UP on " << (got_signal ? "signal" : "timeout")
+                << "; now=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
-    HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
+    HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: EXITING");
     return NULL;
 }
 

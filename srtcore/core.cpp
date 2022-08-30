@@ -3045,6 +3045,15 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         return false;
     }
 
+#if ENABLE_NEW_RCVBUFFER
+    if (m_bTsbPd)
+    {
+        HLOGC(cnlog.Debug, log << "interpretGroup: socket TSBPD=on, switching to GROUP TSBPD");
+        m_bGroupTsbPd = true;
+        m_bTsbPd = false;
+    }
+#endif
+
     ScopedLock guard_group_existence (uglobal().m_GlobControlLock);
 
     if (m_SrtHsSide == HSD_INITIATOR)
@@ -4066,9 +4075,9 @@ EConnectStatus srt::CUDT::processRendezvous(
         return CONN_REJECT;
     }
 
-    // The CryptoControl must be created by the prepareConnectionObjects() before interpreting and creating HSv5 extensions
-    // because the it will be used there.
-    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL))
+    // The CryptoControl must be created before interpreting and creating HSv5
+    // extensions because the it will be used there.
+    if (!createCrypter(m_SrtHsSide, m_ConnRes.v5()))
     {
         // m_RejectReason already handled
         HLOGC(cnlog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
@@ -4097,6 +4106,13 @@ EConnectStatus srt::CUDT::processRendezvous(
             {
                 HLOGC(cnlog.Debug,
                       log << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
+                return CONN_REJECT;
+            }
+
+            if (!prepareBuffers(NULL))
+            {
+                HLOGC(cnlog.Debug,
+                      log << "processRendezvous: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
                 return CONN_REJECT;
             }
 
@@ -4161,6 +4177,13 @@ EConnectStatus srt::CUDT::processRendezvous(
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+            }
+
+            if (!prepareBuffers(NULL))
+            {
+                HLOGC(cnlog.Debug,
+                      log << "processRendezvous: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
+                return CONN_REJECT;
             }
         }
         // This should be false, make a kinda assert here.
@@ -4578,12 +4601,14 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // so it will simply go the "old way".
         // (&&: skip if failed already)
         // Must be called before interpretSrtHandshake() to create the CryptoControl.
-        ok = ok &&  prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
 
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
         // In this situation the interpretation of handshake was already done earlier.
         ok = ok && pResponse->isControl();
+
+        ok = ok && createCrypter(m_SrtHsSide, m_ConnRes.v5());
         ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
+        ok = ok && prepareBuffers(eout);
 
         if (!ok)
         {
@@ -5582,35 +5607,16 @@ void srt::CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno
     dropFromLossLists(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
 }
 
-bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
+bool srt::CUDT::prepareBuffers(CUDTException *eout)
 {
     // This will be lazily created due to being the common
     // code with HSv5 rendezvous, in which this will be run
     // in a little bit "randomly selected" moment, but must
     // be run once in the whole connection process.
-    if (m_pSndBuffer)
+    if (m_pSndLossList)
     {
         HLOGC(rslog.Debug, log << "prepareConnectionObjects: (lazy) already created.");
         return true;
-    }
-
-    // HSv5 is always bidirectional
-    const bool bidirectional = (hs.m_iVersion > HS_VERSION_UDT4);
-
-    // HSD_DRAW is received only if this side is listener.
-    // If this side is caller with HSv5, HSD_INITIATOR should be passed.
-    // If this is a rendezvous connection with HSv5, the handshake role
-    // is taken from m_SrtHsSide field.
-    if (hsd == HSD_DRAW)
-    {
-        if (bidirectional)
-        {
-            hsd = HSD_RESPONDER; // In HSv5, listener is always RESPONDER and caller always INITIATOR.
-        }
-        else
-        {
-            hsd = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-        }
     }
 
     try
@@ -5644,12 +5650,6 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         {
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
         }
-        m_RejectReason = SRT_REJ_RESOURCE;
-        return false;
-    }
-
-    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
-    {
         m_RejectReason = SRT_REJ_RESOURCE;
         return false;
     }
@@ -5712,10 +5712,11 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     HLOGC(cnlog.Debug, log << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
-    // Prepare all structures
-    if (!prepareConnectionObjects(w_hs, HSD_DRAW, 0))
+    HandshakeSide hsd = w_hs.v5() || !m_config.bDataSender ? HSD_RESPONDER : HSD_INITIATOR;
+
+    if (!createCrypter(hsd, w_hs.v5()))
     {
-        HLOGC(cnlog.Debug, log << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+        HLOGC(cnlog.Debug, log << "acceptAndRespond: createCrypter failed - responding with REJECT.");
         // If the SRT Handshake extension was provided and wasn't interpreted
         // correctly, the connection should be rejected.
         //
@@ -5758,6 +5759,18 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         // Respond with the rejection message and return false from
         // this function so that the caller will know that this new
         // socket should be deleted.
+        w_hs.m_iReqType = URQFailure(m_RejectReason);
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+
+    if (!prepareBuffers(NULL))
+    {
+        HLOGC(cnlog.Debug, log << "acceptAndRespond: prepareBuffers failed - responding with REJECT.");
+        // If the SRT Handshake extension was provided and wasn't interpreted
+        // correctly, the connection should be rejected.
+        //
+        // Respond with the rejection message and exit with exception
+        // so that the caller will know that this new socket should be deleted.
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
@@ -8138,7 +8151,15 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #if ENABLE_NEW_RCVBUFFER
                 // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
                 // Must check read-readiness under m_RecvLock to protect the epoll from concurrent changes in readBuffer()
-                if (isRcvBufferReady())
+
+                // DO NOT check nor enable reading when a group member - group member sockets are never ready to read.
+                // XXX This is for the case of a group connection that is not TSBPD; the same thing
+                // should be done in the group, if this socket is a member.
+
+                // Formally, for safety this should rather check the existence of m_pRcvBuffer.
+                SRT_ASSERT( bool(m_parent->m_GroupOf) != bool(m_pRcvBuffer) );
+
+                if (!m_parent->m_GroupOf && isRcvBufferReady())
 #endif
                 {
                     if (m_config.bSynRecving)
@@ -8160,6 +8181,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
                 }
             }
+
+            // This is done only for "old bonding" using the app-reader procedure.
+            // In the new bonding all buffer reception and reading ready state update
+            // happen exclusively inside the group.
 #if ENABLE_OLD_BONDING
             if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
@@ -10158,7 +10183,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     {
         steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
-        pts = tsbpddelay;
+        pts = steady_clock::time_point() + tsbpddelay;
 
         // It's easier to remove the latency factor from this value than to add a function
         // that exposes the details basing on which this value is calculated.
@@ -11960,7 +11985,10 @@ void srt::CUDT::addEPoll(const int eid)
         return;
 
     enterCS(m_RecvLock);
-    if (isRcvBufferReady())
+    // Check m_pRcvBuffer as now sockets can be also created
+    // without a receiver buffer, if they are new rcvbuffer group members.
+    // Such sockets never become readable.
+    if (m_pRcvBuffer && isRcvBufferReady())
     {
         uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
     }

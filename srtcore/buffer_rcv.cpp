@@ -305,7 +305,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
         avail_packet = &packetAt(m_iFirstRandomMsgPos);
         avail_range = 1;
     }
-    else if (m_iDropPos == m_iEndPos)
+    else if (m_iDropPos != m_iEndPos)
     {
         avail_packet = &packetAt(m_iDropPos);
         avail_range = 1;
@@ -648,6 +648,49 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pai
         m_iFirstNonreadPos = m_iStartPos;
         //updateNonreadPos();
     }
+
+    // Now that we have m_iStartPos potentially shifted, reinitialize
+    // m_iEndPos and m_iDropPos.
+
+    int pend_pos = incPos(m_iStartPos, m_iMaxPosOff);
+
+    // First check: is anything in the beginning
+    if (m_entries[m_iStartPos].status == EntryState_Avail)
+    {
+        // If so, shift m_iEndPos up to the first nonexistent unit
+        // XXX Try to optimize search by splitting into two loops if necessary.
+
+        m_iEndPos = incPos(m_iStartPos);
+        while (m_entries[m_iEndPos].status == EntryState_Avail)
+        {
+            m_iEndPos = incPos(m_iEndPos);
+            if (m_iEndPos == pend_pos)
+                break;
+        }
+
+        // If we had first packet available, then there's also no drop pos.
+        m_iDropPos = m_iEndPos;
+
+    }
+    else
+    {
+        // If not, reset m_iEndPos and search for the first after-drop candidate.
+        m_iEndPos = m_iStartPos;
+        m_iDropPos = m_iEndPos;
+
+        while (m_entries[m_iDropPos].status != EntryState_Avail)
+        {
+            m_iDropPos = incPos(m_iDropPos);
+            if (m_iDropPos == pend_pos)
+            {
+                // Nothing found - set drop pos equal to end pos,
+                // which means there's no drop
+                m_iDropPos = m_iEndPos;
+                break;
+            }
+        }
+    }
+
 
     if (!m_tsbpd.isEnabled())
         // We need updateFirstReadableRandom() here even if we are reading inorder,

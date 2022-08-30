@@ -719,6 +719,16 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                 g->m_bConnected = true;
             }
 
+            // In the new recvbuffer mode (and common receiver buffer) there's no waiting for reception
+            // on a socket and no reading from a socket directly is being done; instead the reading API
+            // is directly bound to the group and reading happens directly from the group's buffer.
+            // This includes also a situation of a newly connected socket, which will be delivering packets
+            // into the same common receiver buffer for the group, so readable will be the group itself
+            // when it has its own common buffer read-ready, by whatever reason. Packets to the buffer
+            // will be delivered by the sockets' receiver threads, so all these things happen strictly
+            // in the background.
+#if !ENABLE_NEW_RCVBUFFER
+
             // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
             // but groupwise connections could be accepted from multiple listeners for the same group!
             // m_listener MUST BE A CONTAINER, NOT POINTER!!!
@@ -746,8 +756,11 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             // Both first accepted socket that makes the group-accept and every next
             // socket that adds a new link.
             int read_modes  = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-            int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             epoll_add_usock_INTERNAL(g->m_RcvEID, ns, &read_modes);
+#endif
+
+            // Keep per-socket sender ready EID.
+            int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             epoll_add_usock_INTERNAL(g->m_SndEID, ns, &write_modes);
 
             // With app reader, do not set groupPacketArrival (block the
@@ -1510,7 +1523,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // connection succeeded or failed and whether the new socket is
         // ready to use or needs to be closed.
         epoll_add_usock_INTERNAL(g.m_SndEID, ns, &connect_modes);
+#if !ENABLE_NEW_RCVBUFFER
         epoll_add_usock_INTERNAL(g.m_RcvEID, ns, &connect_modes);
+#endif
 
         // Adding a socket on which we need to block to BOTH these tracking EIDs
         // and the blocker EID. We'll simply remove from them later all sockets that
@@ -1632,7 +1647,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 f->sndstate = SRT_GST_BROKEN;
                 f->rcvstate = SRT_GST_BROKEN;
                 epoll_remove_socket_INTERNAL(g.m_SndEID, ns);
+#if !ENABLE_NEW_RCVBUFFER
                 epoll_remove_socket_INTERNAL(g.m_RcvEID, ns);
+#endif
             }
             else
             {
@@ -1718,7 +1735,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, y->second);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, y->second);
+#if !ENABLE_NEW_RCVBUFFER
                 epoll_remove_socket_INTERNAL(g.m_RcvEID, y->second);
+#endif
             }
         }
 
@@ -1758,7 +1777,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, s);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, s);
+#if !ENABLE_NEW_RCVBUFFER
                 epoll_remove_socket_INTERNAL(g.m_RcvEID, s);
+#endif
 
                 continue;
             }

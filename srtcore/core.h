@@ -489,7 +489,7 @@ private:
 
     /// Create the CryptoControl object based on the HS packet. Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+    bool prepareBuffers(CUDTException *eout);
 
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
@@ -938,7 +938,7 @@ private: // Receiving related data
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    sync::atomic<bool> m_bWakeOnRecv;                      // Signal TsbPd thread on Ack sent
+    sync::atomic<bool> m_bWakeOnRecv;            // Expected to be woken up when received a packet
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
