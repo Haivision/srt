@@ -6849,8 +6849,16 @@ bool srt::CUDT::isRcvBufferReady() const
 {
 #if ENABLE_NEW_BONDING
     // In "new bonding" (new rcvbuf + bonding)
-    // this function should never be called for member sockets.
+    // the group member socket is never read-ready. This function is called
+    // from various parts, not always exactly necessary, but it's
+    // too complicated to untangle it without refaxing the epoll system.
+
+    // Make a crash in debug mode so that it can be easily detected,
+    // but simply ignore the problm in release mode.
     SRT_ASSERT(m_parent->m_GroupOf == NULL);
+
+    if (m_parent->m_GroupOf)
+        return false;
 #endif
     ScopedLock lck(m_RcvBufferLock);
 #if ENABLE_NEW_RCVBUFFER
