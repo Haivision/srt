@@ -45,14 +45,7 @@ set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYG
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
-# Not sure what to do in case of compiling by MSVC.
-# This will make installdir in C:\Program Files\SRT then
-# inside "bin" and "lib64" directories. At least this maintains
-# the current status. Shall this be not desired, override values
-# of CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR and CMAKE_INSTALL_INCLUDEDIR.
-if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
-	include(GNUInstallDirs)
-endif()
+include(GNUInstallDirs)
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
