@@ -878,7 +878,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     {
         HLOGC(krlog.Debug,
               log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << hex << msg_flags
-                  << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
+                  << ", possibly MSG_TRUNC)");
         status = RST_AGAIN;
         goto Return_error;
     }
