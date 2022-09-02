@@ -1030,36 +1030,32 @@ CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
     return info;
 }
 
-
+// [[using locked(m_RcvBufferLock)]]
 int CUDTGroup::rcvDropTooLateUpTo(int seqno)
 {
     int iDropCnt = 0;
 
+    // Nothing to drop from an empty buffer.
+    // Required to check first to secure size()-1 expression.
+    if (!m_pRcvBuffer->empty())
     {
-        ScopedLock lk (m_RcvBufferLock);
+        // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
+        int32_t last_seq = CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), m_pRcvBuffer->size() - 1);
+        if (CSeqNo::seqcmp(seqno, last_seq) > 0)
+            seqno = last_seq;
 
-        // Nothing to drop from an empty buffer.
-        // Required to check first to secure size()-1 expression.
-        if (!m_pRcvBuffer->empty())
-        {
-            // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
-            int32_t last_seq = CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), m_pRcvBuffer->size() - 1);
-            if (CSeqNo::seqcmp(seqno, last_seq) > 0)
-                seqno = last_seq;
+        iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
 
-            iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
-
-            /* not sure how to stats.
-            if (iDropCnt > 0)
-            {
-                enterCS(m_StatsLock);
-                // Estimate dropped bytes from average payload size.
-                const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
-                leaveCS(m_StatsLock);
-            }
-            */
+        /* not sure how to stats.
+           if (iDropCnt > 0)
+           {
+           enterCS(m_StatsLock);
+        // Estimate dropped bytes from average payload size.
+        const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+        leaveCS(m_StatsLock);
         }
+         */
     }
 
     // Update every member's loss lists
@@ -1097,7 +1093,7 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w
     ScopedLock gl (m_GroupLock);
 
     // For balancing groups, use some more complicated mechanism.
-    if (type() == SRT_GTYPE_BALANCING)
+    if (type() == SRT_GTYPE_BALANCING || type() == SRT_GTYPE_BROADCAST)
     {
         have = checkBalancingLoss(rpkt, (w_losses));
     }

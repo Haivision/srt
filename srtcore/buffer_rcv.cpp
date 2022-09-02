@@ -1435,12 +1435,14 @@ int32_t CRcvBufferNew::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     // We want also the end range, so continue from where you
     // stopped.
 
-    for (int off = ret_off; off < m_iMaxPosOff; ++off)
+    // Start from ret_off + 1 because we know already that ret_off
+    // points to an empty cell.
+    for (int off = ret_off + 1; off < m_iMaxPosOff; ++off)
     {
         int pos = incPos(m_iStartPos, off);
         if (m_entries[pos].status != EntryState_Empty)
         {
-            *pw_end = CSeqNo::incseq(m_iStartSeqNo, off);
+            *pw_end = CSeqNo::incseq(m_iStartSeqNo, off - 1);
             return ret_seq;
         }
     }
