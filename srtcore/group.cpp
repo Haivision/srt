@@ -2229,7 +2229,7 @@ struct FLookupSocketWithEvent_LOCKED
     }
 };
 
-#if !ENABLE_HEAVY_LOGGING
+#if !ENABLE_NEW_RCVBUFFER
 
 void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {

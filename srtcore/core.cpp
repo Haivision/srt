@@ -10185,13 +10185,12 @@ int srt::CUDT::processData(CUnit* in_unit)
 #endif
     }
 
+    steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+    steady_clock::time_point pts = steady_clock::time_point() + tsbpddelay;
+
 #if ENABLE_HEAVY_LOGGING
 
-    steady_clock::time_point pts;
-
     {
-        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
-        pts = steady_clock::time_point() + tsbpddelay;
 
         // It's easier to remove the latency factor from this value than to add a function
         // that exposes the details basing on which this value is calculated.
