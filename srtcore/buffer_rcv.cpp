@@ -1374,4 +1374,110 @@ void CRcvBufferNew::updRcvAvgDataSize(const steady_clock::time_point& now)
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
 
+int32_t CRcvBufferNew::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
+{
+    int offset = CSeqNo::seqoff(m_iStartSeqNo, fromseq);
+
+    // Check if it's still inside the buffer
+    if (offset < 0 || offset >= m_iMaxPosOff)
+        return SRT_SEQNO_NONE;
+
+    // Start position
+    int pos = incPos(m_iStartPos, offset);
+
+    // Ok; likely we should stand at the m_iEndPos position.
+    // If this given position is earlier than this, then
+    // m_iEnd stands on the first loss, unless it's equal
+    // to the position pointed by m_iMaxPosOff.
+
+    int32_t ret_seq = SRT_SEQNO_NONE;
+    int ret_off = m_iMaxPosOff;
+
+    int end_off = offPos(m_iStartPos, m_iEndPos);
+    if (pos < end_off)
+    {
+        // If m_iEndPos has such a value, then there are
+        // no loss packets at all.
+        if (end_off != m_iMaxPosOff)
+        {
+            ret_seq = CSeqNo::incseq(m_iStartSeqNo, end_off);
+            ret_off = end_off;
+        }
+    }
+    else
+    {
+        // Could be strange, but just as the caller wishes:
+        // find the first loss since this point on
+        // You can't rely on m_iEndPos, you are beyond that now.
+        // So simply find the next hole.
+
+        // REUSE offset as a control variable
+        for (; offset < m_iMaxPosOff; ++offset)
+        {
+            int pos = incPos(m_iStartPos, offset);
+            if (m_entries[pos].status == EntryState_Empty)
+            {
+                ret_off = offset;
+                ret_seq = CSeqNo::incseq(m_iStartSeqNo, offset);
+                break;
+            }
+        }
+    }
+
+    // If found no loss, just return this value and do not
+    // rewrite nor look for anything.
+
+    // Also no need to search anything if only the beginning was
+    // being looked for.
+    if (ret_seq == SRT_SEQNO_NONE || !pw_end)
+        return ret_seq;
+
+    // We want also the end range, so continue from where you
+    // stopped.
+
+    for (int off = ret_off; off < m_iMaxPosOff; ++off)
+    {
+        int pos = incPos(m_iStartPos, off);
+        if (m_entries[pos].status != EntryState_Empty)
+        {
+            *pw_end = CSeqNo::incseq(m_iStartSeqNo, off);
+            return ret_seq;
+        }
+    }
+
+    // Fallback - this should be impossible, so issue a log.
+    LOGC(rbuflog.Error, log << "IPE: empty cell pos=" << pos << " %" << CSeqNo::incseq(m_iStartSeqNo, ret_off) << " not followed by any valid cell");
+
+    // Return this in the last resort - this could only be a situation when
+    // a packet has somehow disappeared, but it contains empty cells up to the
+    // end of buffer occupied range. This shouldn't be possible at all because
+    // there must be a valid packet at least at the last occupied cell.
+    return SRT_SEQNO_NONE;
+}
+
+void CRcvBufferNew::getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<SRTSOCKET>& w_sources)
+{
+    const int offset = CSeqNo::seqoff(m_iStartSeqNo, fromseq);
+
+    // Check if it's still inside the buffer
+    if (offset < 0 || offset >= m_iMaxPosOff)
+        return;
+
+    // All you need to do is to check if there's a valid packet
+    // at given position
+    size_t pass = 0;
+    for (int off = offset; off < m_iMaxPosOff; ++off)
+    {
+        int pos = incPos(m_iStartPos, off);
+        if (m_entries[pos].pUnit)
+        {
+            w_sources.push_back(m_entries[pos].pUnit->m_pParentQueue->ownerID());
+            ++pass;
+            if (pass == maxsize)
+                break;
+        }
+    }
+}
+
+
 } // namespace srt

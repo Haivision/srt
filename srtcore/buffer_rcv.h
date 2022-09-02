@@ -371,6 +371,9 @@ public:
     /// @note CSeqNo::seqoff(first, second) is 0 if nothing to read.
     std::pair<int, int> getAvailablePacketsRange() const;
 
+    int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<SRTSOCKET>& w_sources);
+
     bool empty() const
     {
         return (m_iMaxPosOff == 0);

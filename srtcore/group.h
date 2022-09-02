@@ -466,7 +466,9 @@ private:
     };
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
+#if !ENABLE_NEW_RCVBUFFER
     CUDTSocket*    m_listener; // A "group" can only have one listener. XXX unsure what this is for actually
+#endif
     srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -662,6 +664,8 @@ private:
         }
     };
     friend ScopedGroupKeeper;
+
+    int32_t m_iRcvPossibleLossSeq;
 
 #endif
 
@@ -905,7 +909,8 @@ public:
 #if ENABLE_NEW_RCVBUFFER
     int checkLazySpawnLatencyThread();
     CRcvBufferNew::InsertInfo addDataUnit(CUnit* u);
-    bool checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_seqs_t::value_type&);
+    bool checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
+    bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
     int rcvDropTooLateUpTo(int seqno);
     void addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt);
 #endif

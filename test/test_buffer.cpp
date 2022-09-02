@@ -27,7 +27,7 @@ protected:
     void SetUp() override
     {
         // make_unique is unfortunatelly C++14
-        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
+        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500, 1 /*stub socket ID*/));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
 #if ENABLE_NEW_RCVBUFFER

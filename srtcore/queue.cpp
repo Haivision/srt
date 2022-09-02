@@ -65,10 +65,11 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
-srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
+srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss, UDPSOCKET owner)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)
+    , m_OwnerID(owner)
 {
     CQEntry* tempq = allocateEntry(m_iBlockSize, m_iMSS);
 
@@ -1124,13 +1125,13 @@ srt::CRcvQueue::~CRcvQueue()
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
-void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
+void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t, SRTSOCKET owner)
 {
     m_iIPversion    = version;
     m_szPayloadSize = payload;
 
     SRT_ASSERT(m_pUnitQueue == NULL);
-    m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
+    m_pUnitQueue = new CUnitQueue(qsize, (int)payload, owner);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);

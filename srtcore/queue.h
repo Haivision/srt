@@ -93,12 +93,14 @@ public:
     /// @param mss Initial number of units to allocate.
     /// @param mss Maximum segment size meaning the size of each unit.
     /// @throws CUDTException SRT_ENOBUF.
-    CUnitQueue(int initNumUnits, int mss);
+    CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner);
     ~CUnitQueue();
 
 public:
     int capacity() const { return m_iSize; }
     int size() const { return m_iSize - m_iNumTaken; }
+
+    SRTSOCKET ownerID() const { return m_OwnerID; }
 
 public:
     /// @brief Find an available unit for incoming packet. Allocate new units if 90% or more are in use.
@@ -141,6 +143,7 @@ private:
     sync::atomic<int> m_iNumTaken; // total number of valid (occupied) packets in the queue
     const int m_iMSS; // unit buffer size
     const int m_iBlockSize; // Number of units in each CQEntry.
+    SRTSOCKET m_OwnerID;
 
 private:
     CUnitQueue(const CUnitQueue&);
@@ -509,7 +512,7 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
-    void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
+    void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t, SRTSOCKET owner);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID

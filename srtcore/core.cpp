@@ -10405,11 +10405,11 @@ int srt::CUDT::processData(CUnit* in_unit)
             if (offset < 0)
             {
                 IF_HEAVY_LOGGING(exc_type = "BELATED");
+                enterCS(m_StatsLock);
                 const double bltime = (double) CountIIR<uint64_t>(
                         uint64_t(m_stats.traceBelatedTime) * 1000,
                         count_microseconds(steady_clock::now() - pts), 0.2);
 
-                enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = bltime / 1000.0;
                 m_stats.rcvr.recvdBelated.count(rpkt.getLength());
                 leaveCS(m_StatsLock);
@@ -10430,6 +10430,11 @@ int srt::CUDT::processData(CUnit* in_unit)
                 CRcvBufferNew::InsertInfo info = gkeeper.group->addDataUnit(u);
                 if (info.result == CRcvBufferNew::InsertInfo::DISCREPANCY)
                 {
+                    // XXX PROBABLY the new receiver buffer can give the possibility
+                    // of completely resetting itself at the moment when this happens,
+                    // so closing may be not necessary in case of TLPKTDROP, but instead
+                    // the whole buffer will be dropped and it will start over from the
+                    // newly incoming sequence number.
                     if (m_bGroupTsbPd && info.avail_range == 0)
                     {
                         LOGC(qrlog.Error, log << CONID() <<
@@ -10602,15 +10607,19 @@ int srt::CUDT::processData(CUnit* in_unit)
 
                 // Lame way to make an optional variable.
                 bool have_loss = false;
-                typename loss_seqs_t::value_type this_loss;
 
 #if ENABLE_NEW_RCVBUFFER
                 if (gkeeper.group)
                 {
                     // This should take out assymmetric losses, and leave only
                     // valid ones. This also reports the losses to the group.
-                    have_loss = gkeeper.group->checkPacketArrivalLoss(rpkt, (this_loss));
+                    have_loss = gkeeper.group->checkPacketArrivalLoss(rpkt, (srt_loss_seqs));
                     handled = true;
+
+                    if (have_loss)
+                    {
+                        HLOGC(qrlog.Debug, log << "grp/LOSS DETECTED: " << FormatLossArray(srt_loss_seqs));
+                    }
                 }
 #endif
 
@@ -10619,8 +10628,8 @@ int srt::CUDT::processData(CUnit* in_unit)
                     int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                     int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
 
-                    this_loss = make_pair(seqlo, seqhi);
                     have_loss = true;
+                    srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
                 }
 
                 if (initial_loss_ttl && have_loss)
@@ -10628,15 +10637,17 @@ int srt::CUDT::processData(CUnit* in_unit)
                     // pack loss list for (possibly belated) NAK
                     // The LOSSREPORT will be sent in a while.
 
-                    m_FreshLoss.push_back(CRcvFreshLoss(this_loss.first, this_loss.second, initial_loss_ttl));
-                    HLOGC(qrlog.Debug,
-                            log << "FreshLoss: added sequences: %(" << this_loss.first << "-" << this_loss.second
-                            << ") tolerance: " << initial_loss_ttl);
                     reorder_prevent_lossreport = true;
-                }
 
-                if (have_loss)
-                    srt_loss_seqs.push_back(this_loss);
+                    ScopedLock lg(m_RcvLossLock);
+                    for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
+                    {
+                        m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                        HLOGC(qrlog.Debug,
+                                log << "FreshLoss: added sequences: %(" << i->first << "-" << i->second
+                                << ") tolerance: " << initial_loss_ttl);
+                    }
+                }
             }
 
             // Update the current largest sequence number that has been received.
@@ -10738,6 +10749,10 @@ int srt::CUDT::processData(CUnit* in_unit)
             sendLossReport(srt_loss_seqs);
         }
 
+        // This should not be required with the new receiver buffer because
+        // signalling happens on every packet reception, if it has changed the
+        // earliest packet position.
+#if !ENABLE_NEW_RCVBUFFER
         if (m_bTsbPd)
         {
             HLOGC(qrlog.Debug, log << "loss: signaling TSBPD cond");
@@ -10747,6 +10762,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         {
             HLOGC(qrlog.Debug, log << "loss: socket is not TSBPD, not signaling");
         }
+#endif
     }
 
     // Separately report loss records of those reported by a filter.

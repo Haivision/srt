@@ -763,6 +763,13 @@ inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
     return std::pair<Type1&, Type2&>(var1, var2);
 }
 
+template <class Container, class Value>
+inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
+{
+    for (typename Container::const_iterator i = from.begin(); i != from.end(); ++i)
+        ++out[*i];
+}
+
 template <class Signature>
 struct CallbackHolder
 {

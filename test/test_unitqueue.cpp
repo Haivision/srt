@@ -16,7 +16,7 @@ using namespace srt;
 TEST(CUnitQueue, Increase)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue(buffer_size_pkts, 1500);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500, 1);
 
     vector<CUnit*> taken_units;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)
@@ -36,7 +36,7 @@ TEST(CUnitQueue, Increase)
 TEST(CUnitQueue, IncreaseAndFree)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue(buffer_size_pkts, 1500);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500, 1);
 
     CUnit* taken_unit = nullptr;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)
@@ -60,7 +60,7 @@ TEST(CUnitQueue, IncreaseAndFree)
 TEST(CUnitQueue, IncreaseAndFreeGrouped)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue(buffer_size_pkts, 1500);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500, 1);
 
     vector<CUnit*> taken_units;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)

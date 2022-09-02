@@ -255,8 +255,11 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
     , m_type(gtype)
+#if !ENABLE_NEW_RCVBUFFER
     , m_listener()
+#endif
     , m_iBusy()
+    , m_iRcvPossibleLossSeq(SRT_SEQNO_NONE)
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
@@ -1074,7 +1077,7 @@ int CUDTGroup::rcvDropTooLateUpTo(int seqno)
 }
 
 
-bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_seqs_t::value_type& w_loss)
+bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w_losses)
 {
     // This is called when the packet was added to the buffer and this
     // adding was successful. Here we need to:
@@ -1088,13 +1091,25 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_
 
     bool have = false;
 
-    if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_RcvLastSeqNo)) > 0)
+    // m_RcvLastSeqNo is atomic, so no need to protect it,
+    // but it's also being modified using R-M-W method, and
+    // this can potentially be interleft.
+    ScopedLock gl (m_GroupLock);
+
+    // For balancing groups, use some more complicated mechanism.
+    if (type() == SRT_GTYPE_BALANCING)
+    {
+        have = checkBalancingLoss(rpkt, (w_losses));
+    }
+    else if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_RcvLastSeqNo)) > 0)
     {
         int32_t seqlo = CSeqNo::incseq(m_RcvLastSeqNo);
         int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
 
-        w_loss = make_pair(seqlo, seqhi);
+        w_losses.push_back(make_pair(seqlo, seqhi));
         have = true;
+        HLOGC(gmlog.Debug, log << "grp:checkPacketArrivalLoss: loss detected: %("
+                << seqlo << " - " << seqhi << ")");
     }
 
     if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_RcvLastSeqNo) > 0)
@@ -1104,6 +1119,131 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, typename CUDT::loss_
 
     return have;
 }
+
+struct FFringeGreaterThan
+{
+    size_t baseval;
+    FFringeGreaterThan(size_t b): baseval(b) {}
+
+    template <class Value>
+    bool operator()(const pair<Value, size_t>& val)
+    {
+        return val.second > baseval;
+    }
+};
+
+bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_losses)
+{
+    // This is done in case of every incoming packet.
+
+    if (pkt.getSeqNo() == m_iRcvPossibleLossSeq)
+    {
+        // This seals the exact loss position.
+        // The returned value can be also NONE, which clears out the loss information.
+        m_iRcvPossibleLossSeq = m_pRcvBuffer->getFirstLossSeq(m_iRcvPossibleLossSeq);
+
+        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: %" << pkt.getSeqNo() << " SEALS A LOSS, shift to %" << m_iRcvPossibleLossSeq);
+        return false;
+    }
+
+    // We state that this is the oldest possible loss sequence; just formally check
+    int cmp = CSeqNo::seqcmp(pkt.m_iSeqNo, m_RcvLastSeqNo);
+    if (cmp < 0)
+    {
+        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: %" << pkt.getSeqNo() << " IN THE PAST");
+        return false;
+    }
+
+    // We need to check first, if we ALREADY have some older loss candidate,
+    // and if so, if the condition for having it "eclipsed" is satisfied.
+
+    bool found_reportable_losses = false, more_losses = false;
+
+    while (m_iRcvPossibleLossSeq != SRT_SEQNO_NONE)
+    {
+        // We do have a recorded loss before. Get unit information.
+        vector<SRTSOCKET> followers;
+        m_pRcvBuffer->getUnitSeriesInfo(m_iRcvPossibleLossSeq, m_Group.size(), (followers));
+
+        // The "eclipse" condition is one of two:
+        //
+        // When the loss (even if divided by other losses) is followed by some
+        // number of packets, among which:
+        //
+        // 1. There is at least one packet from every link.
+        // 2. There are at least two packets coming from one of the links.
+
+        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: existng %" << m_iRcvPossibleLossSeq << " followed by: "
+                << Printable(followers));
+
+        map<SRTSOCKET, size_t> nums;
+        FringeValues(followers, (nums));
+
+        if (nums.size() >= m_Group.size() // 1
+                || find_if(nums.begin(), nums.end(), FFringeGreaterThan(1)) != nums.end())
+        {
+            // Extract the whole first loss
+            typename CUDT::loss_seqs_t::value_type loss;
+            loss.first = m_pRcvBuffer->getFirstLossSeq(m_iRcvPossibleLossSeq, (&loss.second));
+            w_losses.push_back(loss);
+
+            found_reportable_losses = true;
+
+            // Save the next found loss
+            m_iRcvPossibleLossSeq = m_pRcvBuffer->getFirstLossSeq(CSeqNo::incseq(loss.second));
+
+            HLOGC(gmlog.Debug, log << "... qualified as loss: %(" << loss.first << " - " << loss.second
+                    << "), next loss: %" << m_iRcvPossibleLossSeq);
+
+            if (m_iRcvPossibleLossSeq == SRT_SEQNO_NONE)
+            {
+                // We extracted all losses
+                more_losses = false;
+                break;
+            }
+
+            // Found at least one reportable loss
+            more_losses = true;
+            continue;
+        }
+
+        break;
+    }
+
+    // found_reportable_losses = at least one of the so far POTENTIAL loss was confirmed as ACTUAL loss and we report it.
+    // more_losses = not all seen losses have been extracted (so don't try to register a new POTENTIAL loss)
+
+    // In case when the above procedure didn't set m_iRcvPossibleLossSeq,
+    // check now the CURRENT arrival if it doesn't create a new loss.
+
+    // HERE: if !more_losses, then m_iRcvPossibleLossSeq == SRT_SEQNO_NONE.
+    // This condition may change it or leave as is.
+
+    int32_t next_seqno = CSeqNo::incseq(m_RcvLastSeqNo);
+    if (!more_losses && CSeqNo::seqcmp(pkt.m_iSeqNo, next_seqno) > 0)
+    {
+        // NOTE: in case when you have (at least temporarily) only one link,
+        // then you have to do the same as with a general case. The above loop
+        // had to be performed anyway, but this only touches upon any earlier losses.
+        // In this case if we have one link only, do not notify it for the next time,
+        // but report it directly instead.
+        if (m_Group.size() == 1)
+        {
+            typename CUDT::loss_seqs_t::value_type loss = make_pair(next_seqno, CSeqNo::decseq(pkt.m_iSeqNo));
+            w_losses.push_back(loss);
+            HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.m_iSeqNo << " jumps over expected %" << next_seqno
+                    << " - with 1 link only, just reporting");
+            return true;
+        }
+
+        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.m_iSeqNo << " jumps over expected %" << next_seqno
+                << " - setting up as loss candidate");
+        m_iRcvPossibleLossSeq = next_seqno;
+    }
+
+    return found_reportable_losses;
+}
+
 #endif
 
 void CUDTGroup::close()
