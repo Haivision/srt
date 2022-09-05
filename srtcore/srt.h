@@ -46,17 +46,14 @@ written by
          // VC 6.0 does not support unsigned __int64: may cause potential problems.
          typedef __int64 uint64_t;
       #endif
-
-      #ifdef SRT_DYNAMIC
-         #ifdef SRT_EXPORTS
-            #define SRT_API __declspec(dllexport)
-         #else
-            #define SRT_API __declspec(dllimport)
-         #endif
+   #endif
+   #ifdef SRT_DYNAMIC
+      #ifdef SRT_EXPORTS
+         #define SRT_API __declspec(dllexport)
       #else
-         #define SRT_API
+         #define SRT_API __declspec(dllimport)
       #endif
-   #else // __MINGW32__
+   #else // !SRT_DYNAMIC
       #define SRT_API
    #endif
 #else
