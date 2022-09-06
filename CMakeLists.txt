@@ -1380,7 +1380,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 endif()
 
 
-install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT NEED_DESTINATION)
+	install(PROGRAMS scripts/srt-ffplay TYPE BIN)
+elseif (DEFINED CMAKE_INSTALL_BINDIR)
+	install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+	message(WARNING "No location to install scripts/srt-ffplay")
+endif()
 
 
 if (DEFINED SRT_EXTRA_APPS_INC)
