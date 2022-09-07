@@ -1130,11 +1130,13 @@ endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
-# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-configure_file(scripts/srt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+if (DEFINED CMAKE_INSTALL_LIBDIR)
+	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
+	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+	configure_file(scripts/srt.pc.in srt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+endif()
 
 # Applications
 
