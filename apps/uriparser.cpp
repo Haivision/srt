@@ -324,7 +324,12 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host = "";
     }
 
-    m_uriType = types[m_proto]; // default-constructed UNKNOWN will be used if not found (although also inserted)
+    const auto proto_it = s_types.find(m_proto);
+    // Default-constructed UNKNOWN will be used if not found.
+    if (proto_it != s_types.end())
+    {
+        m_uriType = proto_it->second;
+    }
     m_origUri = strUrl;
 }
 
