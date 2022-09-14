@@ -173,6 +173,18 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 For detailed descriptions of the build system and options, please read the [SRT Build Options](./docs/build/build-options.md) document.
 
+## Installing srt using vcpkg
+You can download and install srt using the [vcpkg](https://github.com/Microsoft/vcpkg) dependency manager:
+```bash
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh
+./vcpkg integrate install
+./vcpkg install libsrt
+```
+
+The libsrt port in vcpkg is kept up to date by Microsoft team members and community contributors. If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.
+
 ## Sample Applications and Tools
 
 The current repo provides [sample applications](./apps) and [code examples](./examples) that demonstrate the usage of the SRT library API. Among them are [`srt-live-transmit`](./apps/srt-live-transmit.cpp), [`srt-file-transmit`](./apps/srt-file-transmit.cpp), and other applications. The respective documentation can be found [here](./docs#sample-applications). Note that all samples are provided for instructional purposes, and should not be used in a production environment.
