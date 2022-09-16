@@ -74,6 +74,7 @@
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
 #endif
