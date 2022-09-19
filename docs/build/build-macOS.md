@@ -1,6 +1,6 @@
 # Building SRT on macOS
 
-[Homebrew](https://brew.sh/) supports the **srt** formula.
+[Homebrew](https://brew.sh/) supports the [`srt`](https://formulae.brew.sh/formula/srt) formula.
 
 ```shell
 brew update
