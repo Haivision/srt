@@ -47,21 +47,41 @@ def write_into_changelog(df, f):
     type=click.Path(exists=True)
 )
 def main(git_log):
-    """ Script designed to create changelog out of .csv SRT git log """
-
+    """
+    Script designed to generate release notes template with main sections,
+    contributors list, and detailed changelog out of .csv SRT git log file.
+    """
     df = pd.read_csv(git_log, sep = '|', names = ['commit', 'message', 'author', 'email'])
     df['area'] = df['message'].apply(define_area)
     df['message'] = df['message'].apply(delete_prefix)
 
-    core = df[df['area']=='core']
-    tests = df[df['area']=='tests']
-    build = df[df['area']=='build']
-    apps = df[df['area']=='apps']
-    docs = df[df['area']=='docs']
+    # Split commits by areas
+    core = df[df['area']==Area.core.value]
+    tests = df[df['area']==Area.tests.value]
+    build = df[df['area']==Area.build.value]
+    apps = df[df['area']==Area.apps.value]
+    docs = df[df['area']==Area.docs.value]
     other = df[df['area'].isna()]
 
-    with open('changelog.md', 'w') as f:
+    # Define individual contributors
+    contributors = df.groupby(['author', 'email'])
+    contributors = list(contributors.groups.keys())
+
+    with open('release-notes.md', 'w') as f:
         f.write('# Release Notes\n')
+
+        f.write('\n## API / ABI / Integration Changes\n')
+        f.write('\n**API/ABI version: 1.x.**\n')
+
+        f.write('\n## New Features and Improvements\n')
+        f.write('\n## Important Bug Fixes\n')
+        f.write('\n## Build\n')
+        f.write('\n## Documentation\n')
+
+        f.write('\n## Contributors\n')
+        for name, email in contributors:
+            f.write(f'\n{name} <{email}>')
+        f.write('\n')
 
         f.write('\n## Changelog\n')
         f.write('\n<details><summary>Click to expand/collapse</summary>')
