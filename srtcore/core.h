@@ -215,6 +215,7 @@ public: //API
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = SRT_MSGTTL_INF, bool inorder = false, int64_t srctime = 0);
     static int recvmsg(SRTSOCKET u, char* buf, int len, int64_t& srctime);
     static int sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& mctrl);
+    static int senduserdata(SRTSOCKET u, const char* buf, int len, SRT_USERDATACTRL& udctrl);
     static int recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_mctrl);
     static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_SENDFILE_BLOCK);
     static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_RECVFILE_BLOCK);
@@ -609,6 +610,9 @@ private:
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
     SRT_ATR_NODISCARD int receiveBuffer(char* data, int len);
 
+
+    SRT_ATR_NODISCARD int senduserdata(const char* buf, int len, SRT_USERDATACTRL& udctrl);
+
     size_t dropMessage(int32_t seqtoskip);
 
     /// Request UDT to send out a file described as "fd", starting from "offset", with size of "size".
@@ -934,11 +938,13 @@ private: // Receiving related data
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
+    CallbackHolder<srt_userdata_callback_fn> m_cbUserData;
 
     // FORWARDER
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static int installUserdataHook(SRTSOCKET u, srt_userdata_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -948,6 +954,11 @@ private:
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
         m_cbConnectHook.set(opaq, hook);
+    }
+
+    void installUserdataHook(srt_userdata_callback_fn* hook, void* opaq)
+    {
+        m_cbUserData.set(opaq, hook);
     }
 
 
@@ -989,7 +1000,7 @@ private: // Common connection Congestion Control setup
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
-    void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
+    void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, const void* rparam = NULL, int size = 0);
 
     /// Forms and sends ACK packet
     /// @note Assumes @ctrlpkt already has a timestamp.

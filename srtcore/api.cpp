@@ -862,6 +862,11 @@ int srt::CUDT::installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, 
     return uglobal().installConnectHook(lsn, hook, opaq);
 }
 
+int srt::CUDT::installUserdataHook(SRTSOCKET u, srt_userdata_callback_fn* hook, void* opaq)
+{
+    return uglobal().installUserdataHook(u, hook, opaq);
+}
+
 int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_fn* hook, void* opaq)
 {
     try
@@ -876,6 +881,28 @@ int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_
 #endif
         CUDTSocket* s = locateSocket(u, ERH_THROW);
         s->core().installConnectHook(hook, opaq);
+    }
+    catch (CUDTException& e)
+    {
+        SetThreadLocalError(e);
+        return SRT_ERROR;
+    }
+
+    return 0;
+}
+
+int srt::CUDTUnited::installUserdataHook(const SRTSOCKET u, srt_userdata_callback_fn* hook, void* opaq)
+{
+    try
+    {
+#if ENABLE_BONDING
+        if (u & SRTGROUP_MASK)
+        {
+            return APIError(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+#endif
+        CUDTSocket* s = locateSocket(u, ERH_THROW);
+        s->core().installUserdataHook(hook, opaq);
     }
     catch (CUDTException& e)
     {
@@ -3690,6 +3717,31 @@ int srt::CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+    }
+}
+
+int srt::CUDT::senduserdata(SRTSOCKET u, const char* buf, int len, SRT_USERDATACTRL& udctrl)
+{
+    try
+    {
+#if ENABLE_BONDING
+        return APIError(MJ_NOTSUP, MN_SIDINVAL, 0);
+#endif
+
+        return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().senduserdata(buf, len, (udctrl));
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (bad_alloc&)
+    {
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal, log << "senduserdata: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
         return APIError(MJ_UNKNOWN, MN_NONE, 0);
     }
 }

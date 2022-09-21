@@ -252,13 +252,13 @@ void srt::CPacket::setLength(size_t len)
     m_PacketVector[PV_DATA].setLength(len);
 }
 
-void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
+void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, const void* rparam, size_t size)
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
     setControl(pkttype);
     HLOGC(inlog.Debug,
           log << "pack: type=" << MessageTypeStr(pkttype) << " ARG=" << (lparam ? Sprint(*lparam) : std::string("NULL"))
-              << " [ " << (rparam ? Sprint(*(int32_t*)rparam) : std::string()) << " ]");
+              << " [ " << (rparam ? Sprint(*(const int32_t*)rparam) : std::string()) << " ]");
 
     // Set additional information and control information field
     switch (pkttype)
@@ -271,7 +271,7 @@ void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rpa
         // data ACK seq. no.
         // optional: RTT (microsends), RTT variance (microseconds) advertised flow window size (packets), and estimated
         // link capacity (packets per second)
-        m_PacketVector[PV_DATA].set(rparam, size);
+        m_PacketVector[PV_DATA].set(const_cast<void*>(rparam), size);
 
         break;
 
@@ -287,7 +287,7 @@ void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rpa
 
     case UMSG_LOSSREPORT: // 0011 - Loss Report (NAK)
         // loss list
-        m_PacketVector[PV_DATA].set(rparam, size);
+        m_PacketVector[PV_DATA].set(const_cast<void*>(rparam), size);
 
         break;
 
@@ -312,7 +312,7 @@ void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rpa
 
     case UMSG_HANDSHAKE: // 0000 - Handshake
         // control info filed is handshake info
-        m_PacketVector[PV_DATA].set(rparam, size);
+        m_PacketVector[PV_DATA].set(const_cast<void*>(rparam), size);
 
         break;
 
@@ -328,7 +328,7 @@ void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rpa
         m_nHeader[SRT_PH_MSGNO] = *lparam;
 
         // first seq no, last seq no
-        m_PacketVector[PV_DATA].set(rparam, size);
+        m_PacketVector[PV_DATA].set(const_cast<void*>(rparam), size);
 
         break;
 
@@ -350,7 +350,7 @@ void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rpa
 
         if (NULL != rparam)
         {
-            m_PacketVector[PV_DATA].set(rparam, size);
+            m_PacketVector[PV_DATA].set(const_cast<void*>(rparam), size);
         }
         else
         {
@@ -407,6 +407,12 @@ srt::IOVector* srt::CPacket::getPacketVector()
 srt::UDTMessageType srt::CPacket::getType() const
 {
     return UDTMessageType(SEQNO_MSGTYPE::unwrap(m_nHeader[SRT_PH_SEQNO]));
+}
+
+void srt::CPacket::setExtendedType(int ext_type)
+{
+    const int32_t v = m_nHeader[SRT_PH_SEQNO] & ~SEQNO_EXTTYPE::mask;
+    m_nHeader[SRT_PH_SEQNO] = v | SEQNO_EXTTYPE::wrap(ext_type);
 }
 
 int srt::CPacket::getExtendedType() const
@@ -470,7 +476,7 @@ srt::EncryptionKeySpec srt::CPacket::getMsgCryptoFlags() const
 // crypto flags after encrypting a packet.
 void srt::CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
 {
-    int32_t clr_msgno       = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_ENCKEYSPEC::mask;
+    const int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_ENCKEYSPEC::mask;
     m_nHeader[SRT_PH_MSGNO] = clr_msgno | EncryptionKeyBits(spec);
 }
 

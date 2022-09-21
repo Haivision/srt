@@ -22,6 +22,7 @@ test_sync.cpp
 test_threadname.cpp
 test_timer.cpp
 test_unitqueue.cpp
+test_userdata.cpp
 test_utilities.cpp
 test_reuseaddr.cpp
 

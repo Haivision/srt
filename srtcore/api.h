@@ -266,6 +266,7 @@ public:
 
     int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    int installUserdataHook(const SRTSOCKET u, srt_userdata_callback_fn* hook, void* opaq);
 
     /// Check the status of the UDT socket.
     /// @param [in] u the UDT socket ID.
