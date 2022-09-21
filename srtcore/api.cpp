@@ -898,7 +898,8 @@ int srt::CUDTUnited::installUserdataHook(const SRTSOCKET u, srt_userdata_callbac
 #if ENABLE_BONDING
         if (u & SRTGROUP_MASK)
         {
-            return APIError(MJ_NOTSUP, MN_SIDINVAL, 0);
+            SetThreadLocalError(CUDTException(MJ_NOTSUP, MN_SIDINVAL));
+            return SRT_ERROR;
         }
 #endif
         CUDTSocket* s = locateSocket(u, ERH_THROW);
@@ -3726,7 +3727,8 @@ int srt::CUDT::senduserdata(SRTSOCKET u, const char* buf, int len, SRT_USERDATAC
     try
     {
 #if ENABLE_BONDING
-        return APIError(MJ_NOTSUP, MN_SIDINVAL, 0);
+        if (u & SRTGROUP_MASK)
+            return APIError(MJ_NOTSUP, MN_SIDINVAL, 0);
 #endif
 
         return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().senduserdata(buf, len, (udctrl));
