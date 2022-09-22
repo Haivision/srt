@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.0)
+set (SRT_VERSION 1.5.1)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -43,15 +43,9 @@ set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
 set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
 set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
+set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
-# Not sure what to do in case of compiling by MSVC.
-# This will make installdir in C:\Program Files\SRT then
-# inside "bin" and "lib64" directories. At least this maintains
-# the current status. Shall this be not desired, override values
-# of CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR and CMAKE_INSTALL_INCLUDEDIR.
-if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
-	include(GNUInstallDirs)
-endif()
+include(GNUInstallDirs)
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
@@ -1080,15 +1074,29 @@ if (CYGWIN)
 endif()
 
 message(STATUS "INSTALL DIRS: bin=${CMAKE_INSTALL_BINDIR} lib=${CMAKE_INSTALL_LIBDIR} shlib=${INSTALL_SHARED_DIR} include=${CMAKE_INSTALL_INCLUDEDIR}")
-
-install(TARGETS ${INSTALL_TARGETS}
-		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-		ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+if (NEED_DESTINATION)
+	if (DEFINED CMAKE_INSTALL_BINDIR AND DEFINED CMAKE_INSTALL_LIBDIR AND NOT INSTALL_SHARED_DIR STREQUAL "")
+		install(TARGETS ${INSTALL_TARGETS}
+			RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+			ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+			LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
+		)
+	else()
+		message(WARNING "No location to install ${INSTALL_TARGETS}")
+	endif()
+elseif (NOT INSTALL_SHARED_DIR STREQUAL "")
+	install(TARGETS ${INSTALL_TARGETS}
 		LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
-)
-install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
-if (WIN32)
-	install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
+	)
+else()
+	install(TARGETS ${INSTALL_TARGETS})
+endif()
+
+if (DEFINED CMAKE_INSTALL_INCLUDEDIR)
+	install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
+	if (WIN32)
+		install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
+	endif()
 endif()
 
 # ---
@@ -1124,11 +1132,13 @@ endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
-# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-configure_file(scripts/srt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+if (DEFINED CMAKE_INSTALL_LIBDIR)
+	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
+	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+	configure_file(scripts/srt.pc.in srt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+endif()
 
 # Applications
 
@@ -1154,7 +1164,13 @@ endmacro()
 
 macro(srt_add_program name)
 	srt_add_program_dont_install(${name} ${ARGN})
-	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	if(NOT NEED_DESTINATION)
+		install(TARGETS ${name} RUNTIME)
+	elseif (DEFINED CMAKE_INSTALL_BINDIR)
+		install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	else()
+		message(WARNING "No location to install program ${name}")
+	endif()
 endmacro()
 
 macro(srt_make_application name)
@@ -1193,7 +1209,13 @@ endmacro()
 macro(srt_add_application name) # ARGN=sources...
 	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
-	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	if(NOT NEED_DESTINATION)
+		install(TARGETS ${name} RUNTIME)
+	elseif (DEFINED CMAKE_INSTALL_BINDIR)
+		install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	else()
+		message(WARNING "No location to install program ${name}")
+	endif()
 endmacro()
 
 ## FIXME: transmitmedia.cpp does not build on OpenBSD
@@ -1386,7 +1408,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 endif()
 
 
-install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT NEED_DESTINATION)
+	install(PROGRAMS scripts/srt-ffplay TYPE BIN)
+elseif (DEFINED CMAKE_INSTALL_BINDIR)
+	install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+	message(WARNING "No location to install scripts/srt-ffplay")
+endif()
 
 
 if (DEFINED SRT_EXTRA_APPS_INC)

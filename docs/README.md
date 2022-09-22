@@ -2,35 +2,36 @@
 
 ## SRT API Documents
 
-| Document Title                                         |            Folder             | File Name                                          | Description                                          |
-| :----------------------------------------------------- | :---------------------------- | :------------------------------------------------- | :--------------------------------------------------- |
-| [SRT API](API/API.md)                                  |          [API](API/)          | [API.md](API/API.md)                               | Detailed description of the SRT C API.               |
-| [SRT API Functions](API/API-functions.md)              |          [API](API/)          | [API-functions.md](API/API-functions.md)           | Reference document for SRT API functions.            |
-| [SRT API Socket Options](API/API-socket-options.md)    |          [API](API/)          | [API-socket-options.md](API/API-socket-options.md) | Instructions and list of socket options for SRT API. |
-| [SRT Statistics](API/statistics.md)                    |          [API](API/)          | [statistics.md](API/statistics.md)                 | How to use SRT socket and socket group statistics.   |
-| [Configuration Guidelines](API/configuration-guidelines.md) |     [API](API/)          | [configuration-guidelines.md](API/configuration-guidelines.md) | How to configure SRT buffers.            |
-| <img width=200px height=1px/>                          | <img width=100px height=1px/> | <img width=200px height=1px/>                      | <img width=500px height=1px/>                        |
+| Document Title                                              | Folder                        | File Name                                                      | Description                                          |
+| :---------------------------------------------------------- | :---------------------------- | :------------------------------------------------------------- | :--------------------------------------------------- |
+| [SRT API](API/API.md)                                       | [API](API/)                   | [API.md](API/API.md)                                           | Detailed description of the SRT C API.               |
+| [SRT API Functions](API/API-functions.md)                   | [API](API/)                   | [API-functions.md](API/API-functions.md)                       | Reference document for SRT API functions.            |
+| [SRT API Socket Options](API/API-socket-options.md)         | [API](API/)                   | [API-socket-options.md](API/API-socket-options.md)             | Instructions and list of socket options for SRT API. |
+| [SRT Statistics](API/statistics.md)                         | [API](API/)                   | [statistics.md](API/statistics.md)                             | How to use SRT socket and socket group statistics.   |
+| [Configuration Guidelines](API/configuration-guidelines.md) | [API](API/)                   | [configuration-guidelines.md](API/configuration-guidelines.md) | How to configure SRT buffers.                        |
+| <img width=200px height=1px/>                               | <img width=100px height=1px/> | <img width=200px height=1px/>                                  | <img width=500px height=1px/>                        |
 
 ## Build Instructions
 
-| Document Title                                               | Folder                        | File Name                                  | Description                                                  |
-| :----------------------------------------------------------- | :---------------------------- | :----------------------------------------- | :----------------------------------------------------------- |
-| [SRT Build Options](build/build-options.md)                  | [build](build/)               | [build-options.md](build/build-options.md) | Description of CMake build system, configure script, and build options. |
-| [Building SRT on Linux (Ubuntu/CentOS)](build/build-linux.md) | [build](build/)               | [build-linux.md](build/build-linux.md)     | Build instructions for Linux (Ubuntu/CentOS).                |
-| [Building SRT on Windows](build/build-win.md)               | [build](build/)               | [build-win.md](build/build-win.md)         | Build instructions for Windows.                              |
-| [Building SRT on macOS](build/build-macOS.md)               | [build](build/)               | [build-macOS.md](build/build-macOS.md)     | Build instructions for macOS.                                |
-| [Building SRT on iOS](build/build-iOS.md)                   | [build](build/)               | [build-iOS.md](build/build-iOS.md)         | Build instructions for iOS.                                  |
-| [Building SRT on Android](build/build-android.md)           | [build](build/)               | [build-android.md](build/build-android.md) | Build instructions for Android.                              |
-| <img width=200px height=1px/>                                | <img width=100px height=1px/> | <img width=200px height=1px/>              | <img width=500px height=1px/>                                |
+| Document Title                                                | Folder                        | File Name                                        | Description                                                             |
+| :------------------------------------------------------------ | :---------------------------- | :----------------------------------------------- | :---------------------------------------------------------------------- |
+| [SRT Build Options](build/build-options.md)                   | [build](build/)               | [build-options.md](build/build-options.md)       | Description of CMake build system, configure script, and build options. |
+| [Building SRT on Linux (Ubuntu/CentOS)](build/build-linux.md) | [build](build/)               | [build-linux.md](build/build-linux.md)           | Build instructions for Linux (Ubuntu/CentOS).                           |
+| [Building SRT on Windows](build/build-win.md)                 | [build](build/)               | [build-win.md](build/build-win.md)               | Build instructions for Windows.                                         |
+| [Building SRT on macOS](build/build-macOS.md)                 | [build](build/)               | [build-macOS.md](build/build-macOS.md)           | Build instructions for macOS.                                           |
+| [Building SRT on iOS](build/build-iOS.md)                     | [build](build/)               | [build-iOS.md](build/build-iOS.md)               | Build instructions for iOS.                                             |
+| [Building SRT on Android](build/build-android.md)             | [build](build/)               | [build-android.md](build/build-android.md)       | Build instructions for Android.                                         |
+| [Package Managers](build/package-managers.md)                 | [build](build/)               | [package-managers.md](build/package-managers.md) | Package managers supporting SRT library.                                |
+| <img width=200px height=1px/>                                 | <img width=100px height=1px/> | <img width=200px height=1px/>                    | <img width=500px height=1px/>                                           |
 
 ## Development Documents
 
-| Document Title                                   |            Folder             | File Name                                        | Description                                                  |
-| :----------------------------------------------- | :---------------------------- | :----------------------------------------------- | :----------------------------------------------------------- |
-| [SRT Developer's Guide](dev/developers-guide.md) |          [dev](dev/)          | [developers-guide.md](dev/developers-guide.md)   | Development setup, project structure, coding rules,<br />submitting issues & PRs, etc. |
-| [Low Level Info](dev/low-level-info.md)          |          [dev](dev/)          | [low-level-info.md](dev/low-level-info.md)       | Low level information for the SRT project (only<br />mutex locking). |
-| [Making SRT Better](dev/making-srt-better.md)    |          [dev](dev/)          | [making-srt-better.md](dev/making-srt-better.md) | Guidelines for problem reporting, collecting debug logs<br />and pcaps. |
-| <img width=200px height=1px/>                    | <img width=100px height=1px/> | <img width=200px height=1px/>                    | <img width=500px height=1px/>                                |
+| Document Title                                   | Folder                        | File Name                                        | Description                                                                            |
+| :----------------------------------------------- | :---------------------------- | :----------------------------------------------- | :------------------------------------------------------------------------------------- |
+| [SRT Developer's Guide](dev/developers-guide.md) | [dev](dev/)                   | [developers-guide.md](dev/developers-guide.md)   | Development setup, project structure, coding rules,<br />submitting issues & PRs, etc. |
+| [Low Level Info](dev/low-level-info.md)          | [dev](dev/)                   | [low-level-info.md](dev/low-level-info.md)       | Low level information for the SRT project (only<br />mutex locking).                   |
+| [Making SRT Better](dev/making-srt-better.md)    | [dev](dev/)                   | [making-srt-better.md](dev/making-srt-better.md) | Guidelines for problem reporting, collecting debug logs<br />and pcaps.                |
+| <img width=200px height=1px/>                    | <img width=100px height=1px/> | <img width=200px height=1px/>                    | <img width=500px height=1px/>                                                          |
 
 ## Features
 
