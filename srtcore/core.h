@@ -1062,6 +1062,12 @@ private: // Generation and processing of packets
     std::pair<bool, time_point> packData(CPacket& packet);
 
     int processData(CUnit* unit);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, bool& w_reorder_prevent_loss, CUDT::loss_seqs_t& w_srt_loss_seqs);
+
+    // Group passed here by void* because in the current imp it's
+    // unused and shall not be used in case when bonding is off
+    time_point getPacketPTS(void* grp, const CPacket& packet);
+    int checkLazySpawnLatencyThread();
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
