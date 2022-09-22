@@ -6201,7 +6201,7 @@ bool srt::CUDT::closeInternal()
 
     HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE. Acquiring connection lock");
 
-    // XXX m_ConnectionLock should preced m_GlobControlLock,
+    // XXX m_ConnectionLock should precede m_GlobControlLock,
     // so it could be a potential deadlock. Consider making sure that
     // any potential connection processing is impossible on a socket
     // that has m_bClosing flag set and so locking m_ConnectionLock is
@@ -9802,7 +9802,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
             }
             else if (ss.type == groups::SQT_LOSS)
             {
-                // This is scheduled retransmission request. The loss list may
+                // This is a scheduled retransmission request. The loss list may
                 // contain more packets specs than this socket needs to retransmit,
                 // as all sender loss lists should be synchronized in the group.
 
