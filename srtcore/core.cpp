@@ -295,7 +295,7 @@ void srt::CUDT::construct()
     m_bPeerTsbPd          = false;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bTsbPd              = false;
-    m_bWakeOnRecv     = false;
+    m_bWakeOnRecv         = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
 
@@ -1290,8 +1290,6 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // Note: if agent is a listener, and the current version supports
     // both sync methods, this flag might have been changed according to
     // the wish of the caller.
-    // if (m_parent->m_GroupOf->synconmsgno())
-    //     flags |= SRT_GFLAG_SYNCONMSG;
 
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
@@ -5289,6 +5287,48 @@ void * srt::CUDT::tsbpd(void* param)
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
             self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
+#if ENABLE_OLD_BONDING
+            // If this is NULL, it means:
+            // - the socket never was a group member
+            // - the socket was a group member, but:
+            //    - was just removed as a part of closure
+            //    - and will never be member of the group anymore
+
+            // If this is not NULL, it means:
+            // - This socket is currently member of the group
+            // - This socket WAS a member of the group, though possibly removed from it already, BUT:
+            //   - the group that this socket IS OR WAS member of is in the GroupKeeper
+            //   - the GroupKeeper prevents the group from being deleted
+            //   - it is then completely safe to access the group here,
+            //     EVEN IF THE SOCKET THAT WAS ITS MEMBER IS BEING DELETED.
+
+            // It is ensured that the group object exists here because GroupKeeper
+            // keeps it busy, even if you just closed the socket, remove it as a member
+            // or even the group is empty and was explicitly closed.
+            if (gkeeper.group)
+            {
+                // Functions called below will lock m_GroupLock, which in hierarchy
+                // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
+                // m_GroupLock inside the calls.
+                InvertedLock unrecv(self->m_RecvLock);
+                // The current "APP reader" needs to simply decide as to whether
+                // the next CUDTGroup::recv() call should return with no blocking or not.
+                // When the group is read-ready, it should update its pollers as it sees fit.
+
+                // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << info.seqno << " makes group readable");
+                gkeeper.group->updateReadState(self->m_SocketID, info.seqno);
+
+                if (shall_update_group)
+                {
+                    // A group may need to update the parallelly used idle links,
+                    // should it have any. Pass the current socket position in order
+                    // to skip it from the group loop.
+                    // NOTE: SELF LOCKING.
+                    gkeeper.group->updateLatestRcv(self->m_parent);
+                }
+            }
+#endif
             CGlobEvent::triggerEvent();
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
@@ -5640,25 +5680,24 @@ bool srt::CUDT::prepareBuffers(CUDTException *eout)
     try
     {
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-        // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
-        m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
-
 #if ENABLE_NEW_BONDING
         // Keep the per-socket receiver buffer and receiver loss list empty.
         // Reception will be redirected to the group directly.
         if (!m_parent->m_GroupOf)
         {
             SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-            m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_config.bMessageAPI);
+            m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, m_config.bMessageAPI);
         }
 #else
   #if ENABLE_NEW_RCVBUFFER
         SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, /*m_pRcvQueue->m_pUnitQueue, */ m_config.bMessageAPI);
+        m_pRcvBuffer = new srt::CRcvBufferNew(m_iISN, m_config.iRcvBufSize, m_config.bMessageAPI);
   #else
         m_pRcvBuffer = new CRcvBuffer(m_pRcvQueue->m_pUnitQueue, m_config.iRcvBufSize);
   #endif
 #endif
+        // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
+        m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
     }
     catch (...)
@@ -5732,14 +5771,14 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
 
     HandshakeSide hsd = w_hs.v5() || !m_config.bDataSender ? HSD_RESPONDER : HSD_INITIATOR;
 
+    // If the resources couldn't be properly created,
+    // the connection should be rejected.
+    //
+    // Respond with the rejection message and exit with exception
+    // so that the caller will know that this new socket should be deleted.
     if (!createCrypter(hsd, w_hs.v5()))
     {
         HLOGC(cnlog.Debug, log << "acceptAndRespond: createCrypter failed - responding with REJECT.");
-        // If the SRT Handshake extension was provided and wasn't interpreted
-        // correctly, the connection should be rejected.
-        //
-        // Respond with the rejection message and exit with exception
-        // so that the caller will know that this new socket should be deleted.
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
@@ -5784,11 +5823,6 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     if (!prepareBuffers(NULL))
     {
         HLOGC(cnlog.Debug, log << "acceptAndRespond: prepareBuffers failed - responding with REJECT.");
-        // If the SRT Handshake extension was provided and wasn't interpreted
-        // correctly, the connection should be rejected.
-        //
-        // Respond with the rejection message and exit with exception
-        // so that the caller will know that this new socket should be deleted.
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
@@ -6916,7 +6950,6 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
     if (m_parent->m_GroupOf)
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
-
 #endif
 
     UniqueLock recvguard (m_RecvLock);
@@ -8859,7 +8892,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
 #if ENABLE_OLD_BONDING
         if (drift_updated && gk.group)
         {
-            m_parent->m_GroupOf->synchronizeDrift(this);
+            gk.group->synchronizeDrift(this);
         }
 #endif
     }
@@ -9762,8 +9795,9 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
     // This part is being used in case of groups that use the scheduler
     // for sending packets. The scheduler is used in general for groups that
-    // pick up selectively the packets that will be sent. Not use for groups
-    // that simply pick up packets as they come in the scheduling order and priorities.
+    // pick up selectively the packets that will be sent (mainly balancing).
+    // Not in use for groups that simply pick up packets as they come in the
+    // scheduling order and priorities.
     if (m_parent->m_GroupMemberData && m_parent->m_GroupMemberData->use_send_schedule)
     {
         // If this socket is a group member of a group that uses the send scheduler,
@@ -9831,7 +9865,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                 // 1. You need to pick up the seq that is extracted from the schedule.
                 // 2. If this sequence is not in the "fresh range", simply skip this
                 // (and report IPE because this should never happen).
-                // 3. If this sequence is in the "fresh range" than it can be
+                // 3. If this sequence is in the "fresh range" then it can be
                 // exactly the packet with the required sequence number, or
                 // otherwise this packet should be simply discarded and the
                 // operation should be retried. We know that it won't roll in
@@ -9839,7 +9873,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                 // case scenario you'll have several packets to discard until
                 // you reach the end of buffer (which should always retrieve
                 // at least one last packet from the buffer provided that the
-                // sequence range was first verified.
+                // sequence range was first verified).
 
                 SRT_ASSERT( !(m_iSndCurrSeqNo == SRT_SEQNO_NONE || m_iSndNextSeqNo == SRT_SEQNO_NONE) );
                 if (m_iSndCurrSeqNo == SRT_SEQNO_NONE || m_iSndNextSeqNo == SRT_SEQNO_NONE)
@@ -12672,4 +12706,12 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt SRT_ATR_UNUSED, const ti
     }
 #endif
 
+    // XXX This is likely required, but the call in this place may cause
+    // a potential deadlock. Try maybe to schedule it somehow.
+#if 0 // ENABLE_NEW_RCVBUFFER
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+    if (m_config.bDriftTracer)
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+#endif
 }

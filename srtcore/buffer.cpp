@@ -310,7 +310,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         s->m_iTTL = ttl;
         s->m_tsRexmitTime = time_point();
         s->m_tsOriginTime = m_tsLastOriginTime;
-
+        
         // Should never happen, as the call to increase() should ensure enough buffers.
         SRT_ASSERT(s->m_pNext);
         s = s->m_pNext;

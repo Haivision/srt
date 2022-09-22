@@ -73,7 +73,6 @@ namespace {
 CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, /*CUnitQueue* unitqueue, */ bool bMessageAPI)
     : m_entries(size)
     , m_szSize(size) // TODO: maybe just use m_entries.size()
-    //, m_pUnitQueue(unitqueue)
     , m_iStartSeqNo(initSeqNo) // NOTE: SRT_SEQNO_NONE is allowed here.
     , m_iStartPos(0)
     , m_iEndPos(0)
@@ -470,13 +469,9 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
         bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
         releaseNextFillerEntries();
 
-        // Required update after shifted m_iStartPos
-        if (cmpPos(m_iDropPos, m_iStartPos) < 0)
-        {
-            // Start from here and search fort the next gap
-            m_iEndPos = m_iDropPos = m_iStartSeqNo;
-            updateGapInfo(end_pos);
-        }
+        // Start from here and search fort the next gap
+        m_iEndPos = m_iDropPos = m_iStartSeqNo;
+        updateGapInfo(end_pos);
 
         if (needUpdateNonreadPos)
         {
@@ -915,19 +910,6 @@ int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
 
 CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
 {
-    /*
-    const int end_pos = incPos(m_iStartPos, m_iMaxPosOff);
-    for (int i = m_iStartPos; i != end_pos; i = incPos(i))
-    {
-        // TODO: Maybe check status?
-        if (!m_entries[i].pUnit)
-            continue;
-
-        const CPacket& packet = m_entries[i].pUnit->m_Packet;
-        const PacketInfo info = { packet.getSeqNo(), i != m_iStartPos, getPktTsbPdTime(packet.getMsgTimeStamp()) };
-        return info;
-    }
-    */
     // Check the state of the very first packet first
     if (m_entries[m_iStartPos].status == EntryState_Avail)
     {
@@ -941,8 +923,7 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
         return (PacketInfo) { pkt.getSeqNo(), true, getPktTsbPdTime(pkt.getMsgTimeStamp()) };
     }
 
-    const PacketInfo info = { -1, false, time_point() };
-    return info;
+    return (PacketInfo) { SRT_SEQNO_NONE, false, time_point() };
 }
 
 std::pair<int, int> CRcvBufferNew::getAvailablePacketsRange() const
