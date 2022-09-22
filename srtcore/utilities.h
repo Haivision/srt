@@ -534,6 +534,34 @@ namespace srt_pair_op
     }
 }
 
+namespace any_op
+{
+    template <class T>
+    struct AnyProxy
+    {
+        const T& value;
+        bool result;
+
+        AnyProxy(const T& x, bool res): value(x), result(res) {}
+
+        AnyProxy<T>& operator,(const T& val)
+        {
+            if (result)
+                return *this;
+            result = value == val;
+            return *this;
+        }
+
+        operator bool() { return result; }
+    };
+
+    template <class T> inline
+    AnyProxy<T> EqualAny(const T& checked_val)
+    {
+        return AnyProxy<T>(checked_val, false);
+    }
+}
+
 #if HAVE_CXX11
 
 template <class In>

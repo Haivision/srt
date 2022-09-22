@@ -115,7 +115,7 @@ public:
     ~CUDTGroup();
 
 #if ENABLE_NEW_RCVBUFFER
-    void createBuffers(int32_t isn, const time_point& tsbpd_start_time);
+    void createBuffers(int32_t isn, const time_point& tsbpd_start_time, int flow_winsize);
 #endif
 
     SocketData* add(SocketData data);
@@ -641,7 +641,12 @@ private:
 
 #if ENABLE_NEW_RCVBUFFER
     UniquePtr<CSndBuffer>    m_pSndBuffer; // XXX for future.
+
+    SRT_ATTR_PT_GUARDED_BY(m_RcvBufferLock)
     UniquePtr<CRcvBufferNew> m_pRcvBuffer;
+
+    SRT_ATTR_PT_GUARDED_BY(m_LossAckLock)
+    UniquePtr<CSndLossList> m_pSndLossList;
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
 
@@ -725,6 +730,7 @@ private:
 #if ENABLE_NEW_RCVBUFFER
 
     sync::atomic<int32_t> m_RcvLastSeqNo;
+    sync::atomic<int32_t> m_SndLastDataAck;
 
 #else
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
@@ -774,6 +780,7 @@ private:
     sync::atomic<bool> m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
     sync::atomic<bool> m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
     mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
+    mutable sync::Mutex   m_LossAckLock;
 #endif
 
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
@@ -957,10 +964,12 @@ public:
 
 #if ENABLE_NEW_RCVBUFFER
     SRT_ATR_NODISCARD bool updateSendPacketUnique(int32_t single_seq);
-    SRT_ATR_NODISCARD bool updateSendPacketLoss(const std::vector< std::pair<int32_t, int32_t> >& seqlist);
+    SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);
 
     SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
     void discardSendSchedule(SocketData* d, int ndiscard);
+    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    int packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_point& w_origintime, int32_t exp_seq);
 
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const
     {

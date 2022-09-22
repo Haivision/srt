@@ -83,6 +83,9 @@ modified by
 #undef max
 #endif
 
+// XXX For testing: use common loss list for also broadcast groups.
+#define BROADCAST_COMMON_SND_LOSS 1
+
 using namespace std;
 using namespace srt;
 using namespace srt::sync;
@@ -8315,10 +8318,57 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
 #if ENABLE_BONDING
+    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-    bool is_group = m_parent->m_GroupOf;
+#endif
+
+#if ENABLE_NEW_BONDING
+
+    using namespace any_op;
+
+#ifdef BROADCAST_COMMON_SND_LOSS
+    if (gkeeper.group && (EqualAny(gkeeper.group->type()), SRT_GTYPE_BALANCING, SRT_GTYPE_BROADCAST))
+#else
+    if (gkeeper.group && gkeeper.group->type() == SRT_GTYPE_BALANCING)
+#endif
+    {
+        // XXX TEMPORARY added broadcast for testing.
+
+        // For groups of type BALANCING we use the common loss handling.
+
+        // XXX This method can be as well used for BROADCAST groups, if
+        // it is decided that a loss reported on whichever link should be
+        // then retransmitted using all links (while assymmetric losses
+        // will not be reported).
+
+        // For BACKUP we stick to the individual per-socket
+        // loss handling as any sending on a different link than the current
+        // one should happen in case of possible breakup detection, so this
+        // way it doesn't make any sense to handle losses any other way than
+        // per socket, as usual.
+        gkeeper.group->updateSndLossListOnACK(ackdata_seqno);
+
+        // m_RecvAckLock protects sender's loss list and epoll
+        ScopedLock ack_lock(m_RecvAckLock);
+
+        const int offset = CSeqNo::seqoff(m_iSndLastDataAck, ackdata_seqno);
+        // IF distance between m_iSndLastDataAck and ack is nonempty...
+        if (offset <= 0)
+            return;
+
+        // update sending variables
+        m_iSndLastDataAck = ackdata_seqno;
+
+        // acknowledge the sending buffer (remove data that predate 'ack')
+        m_pSndBuffer->ackData(offset);
+
+        // acknowledde any waiting epolls to write
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        CGlobEvent::triggerEvent();
+    }
+    else
 #endif
 
     // Update sender's loss list and acknowledge packets in the sender's buffer
@@ -8335,7 +8385,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         m_iSndLastDataAck = ackdata_seqno;
 
 #if ENABLE_BONDING
-        if (is_group)
+        if (gkeeper.group)
         {
             // Get offset-1 because 'offset' points actually to past-the-end
             // of the sender buffer. We have already checked that offset is
@@ -8359,7 +8409,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     }
 
 #if ENABLE_BONDING
-    if (is_group)
+    if (gkeeper.group)
     {
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
         // be done now that m_RecvAckLock is unlocked.
@@ -8765,18 +8815,30 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     // when logging is forcefully off.
     int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
 
-    // protect packet retransmission
     {
-        ScopedLock ack_lock(m_RecvAckLock);
-
 #if ENABLE_NEW_BONDING
+        // Keep group from disappearing in the meantime
+        CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
         typedef vector< pair<int32_t, int32_t> > losses_t;
         losses_t losses;
+#else
+        // This is off in the new-bonding because
+        // with new-bonding we'll be only collecting the losses
+        // in the temporary container and then add them all to
+        // the right loss list, and only there the locking will
+        // be necessary.
+
+        // protect packet retransmission
+        ScopedLock ack_lock(m_RecvAckLock);
 #endif
 
         // decode loss list message and insert loss into the sender loss list
         for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
         {
+#if !ENABLE_NEW_BONDING
+            int num = 0; // For stats
+#endif
+
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
                 // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
@@ -8802,15 +8864,15 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     break;
                 }
 
-                int num = 0;
                 //   IF losslist_lo %>= m_iSndLastAck
                 if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
                 {
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
-                    num = m_pSndLossList->insert(losslist_lo, losslist_hi);
 #if ENABLE_NEW_BONDING
                     losses.push_back(make_pair(losslist_lo, losslist_hi));
+#else
+                    num = m_pSndLossList->insert(losslist_lo, losslist_hi);
 #endif
                 }
                 // ELSE IF losslist_hi %>= m_iSndLastAck
@@ -8824,9 +8886,10 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     // more important, so simply drop the part that predates ACK.
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
-                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
 #if ENABLE_NEW_BONDING
                     losses.push_back(make_pair(m_iSndLastAck.load(), losslist_hi));
+#else
+                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
 #endif
                 }
                 else
@@ -8858,9 +8921,6 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
 
-                enterCS(m_StatsLock);
-                m_stats.sndr.lost.count(num);
-                leaveCS(m_StatsLock);
             }
             else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
             {
@@ -8876,28 +8936,54 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
                 HLOGC(inlog.Debug, log << CONID() << "rcv LOSSREPORT: %"
                     << losslist[i] << " (1 packet)");
-                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
 #if ENABLE_NEW_BONDING
-                    losses.push_back(make_pair(losslist[i], losslist[i]));
+                losses.push_back(make_pair(losslist[i], losslist[i]));
+#else
+                num = m_pSndLossList->insert(losslist[i], losslist[i]);
 #endif
 
-                enterCS(m_StatsLock);
-                m_stats.sndr.lost.count(num);
-                leaveCS(m_StatsLock);
             }
+#if !ENABLE_NEW_BONDING
+            enterCS(m_StatsLock);
+            m_stats.sndr.lost.count(num);
+            leaveCS(m_StatsLock);
+#endif
         }
+
 #if ENABLE_NEW_BONDING
-        if (m_parent->m_GroupMemberData)
+        int num = 0;
+
+        using namespace any_op;
+
+        if (gkeeper.group && m_parent->m_GroupMemberData
+                && (EqualAny(gkeeper.group->type()), SRT_GTYPE_BALANCING, SRT_GTYPE_BROADCAST))
         {
             groups::SocketData* d = m_parent->m_GroupMemberData;
 
-            if (d->use_send_schedule)
+            // This will:
+            // 1. Add the loss to the group loss list
+            // 2. If use_send_schedule, it will also schedule these packets.
+            if (!m_parent->m_GroupOf->updateSendPacketLoss(d->use_send_schedule, losses))
             {
-                if (!m_parent->m_GroupOf->updateSendPacketLoss(losses))
-                {
-                    LOGC(inlog.Error, log << CONID() << "IPE: can't select link to send the loss, all broken???");
-                }
+                LOGC(inlog.Error, log << CONID() << "IPE: can't select link to send the loss, all broken???");
             }
+        }
+        else
+        {
+            ScopedLock lk (m_RecvAckLock);
+            // In case of no-group-loss-handling, add them now to the
+            // socket's loss lists.
+            for (losses_t::const_iterator seqpair = losses.begin(); seqpair != losses.end(); ++seqpair)
+            {
+                num += m_pSndLossList->insert(seqpair->first, seqpair->second);
+            }
+
+        }
+
+        if (num)
+        {
+            ScopedLock lk (m_StatsLock);
+            m_stats.sndr.lost.count(num);
         }
 #endif
 
@@ -9342,7 +9428,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     }
 }
 
-int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime)
+int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime, int32_t exp_seq)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
@@ -9351,6 +9437,16 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
 
     while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
     {
+#if ENABLE_NEW_BONDING
+        if (exp_seq != SRT_SEQNO_NONE && w_packet.m_iSeqNo != exp_seq)
+        {
+            // This is not the sequence we are looking for.
+            HLOGC(qslog.Debug, log << "packLostData: expected %" << exp_seq << " extracted %" << w_packet.m_iSeqNo
+                    << " - skipping this.");
+            continue;
+        }
+#endif
+
         // XXX See the note above the m_iSndLastDataAck declaration in core.h
         // This is the place where the important sequence numbers for
         // sender buffer are actually managed by this field here.
@@ -9360,7 +9456,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             // XXX Likely that this will never be executed because if the upper
             // sequence is not in the sender buffer, then most likely the loss 
             // was completely ignored.
-            LOGC(qrlog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
+            LOGC(qslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
                 << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << m_iSndLastDataAck
                 << ")=" << offset << ". Continue");
 
@@ -9373,7 +9469,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             };
             w_packet.m_iMsgNo = 0; // Message number is not known, setting all 32 bits to 0.
 
-            HLOGC(qrlog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
+            HLOGC(qslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
 
@@ -9386,7 +9482,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
             if (tsLastRexmit >= time_nak)
             {
-                HLOGC(qrlog.Debug, log << CONID() << "REXMIT: ignoring seqno "
+                HLOGC(qslog.Debug, log << CONID() << "REXMIT: ignoring seqno "
                     << w_packet.m_iSeqNo << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
                     << " RTT=" << m_iSRTT << " RTTVar=" << m_iRTTVar
                     << " now=" << FormatTime(time_now));
@@ -9404,7 +9500,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
             SRT_ASSERT(msglen >= 1);
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
 
-            HLOGC(qrlog.Debug,
+            HLOGC(qslog.Debug,
                   log << "loss-reported packets expired in SndBuf - requesting DROP: "
                       << "msgno=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen
                       << " SEQ:" << seqpair[0] << " - " << seqpair[1]);
@@ -9598,9 +9694,14 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
         return false;
 
 #if ENABLE_NEW_BONDING
+
+    // This part is being used in case of groups that use the scheduler
+    // for sending packets. The scheduler is used in general for groups that
+    // pick up selectively the packets that will be sent. Not use for groups
+    // that simply pick up packets as they come in the scheduling order and priorities.
     if (m_parent->m_GroupMemberData && m_parent->m_GroupMemberData->use_send_schedule)
     {
-        // If this socket is a group member of a group that uses send scheduler,
+        // If this socket is a group member of a group that uses the send scheduler,
         // do not extract packets from the existing resources, but instead pick up
         // the sequence from the scheduler container and extract that sequence from
         // the sender buffer.
@@ -9610,7 +9711,10 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
         // buffer (XXX not implemented yet) and delivered in order.
         vector<groups::SchedSeq> seqs;
         if (!m_parent->m_GroupOf->getSendSchedule(m_parent->m_GroupMemberData, (seqs)))
+        {
+            HLOGP(qslog.Debug, "packData(sched): No scheduled packets yet, nothing to send");
             return false;
+        }
 
         int nremoved = 0;
         for (size_t i = 0; i < seqs.size(); ++i)
@@ -9622,41 +9726,110 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
             nremoved = i+1;
 
-            int msglen;
+            // XXX see below
+            //int msglen;
+
             if (ss.type == groups::SQT_PFILTER)
             {
                 // XXX packet filter extraction currently not implemented, do not use.
                 continue;
                 //filter_ctl_pkt = true;
             }
-            else
+            else if (ss.type == groups::SQT_LOSS)
             {
-                const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
-                if (offset < 0)
+                // This is scheduled retransmission request. The loss list may
+                // contain more packets specs than this socket needs to retransmit,
+                // as all sender loss lists should be synchronized in the group.
+
+                // payload = isRetransmissionAllowed(enter_time) ?
+                // XXX This condition is currently blocked because this was scheduled.
+                // In this case, as it was picked up and is going to be removed from
+                // the schedule, we can either execute it right now, or somehow put back
+                // to the schedule.
+                payload = m_parent->m_GroupOf->packLostData(this, (w_packet), (origintime), ss.seq);
+                if (payload == 0)
                 {
-                    // Already removed from the buffer, cannot send.
-                    HLOGC(qslog.Debug, log << "sched seq %" << w_packet.m_iSeqNo << " past the buffer");
+                    // If this happens, it means that there was a sequence found among
+                    // the loss list, was added to the schedule, and it disappeared,
+                    // without having the schedule updated, or somehow it never was in
+                    // the loss list. Ignore if found, but report an IPE.
+                    LOGC(qslog.Error, log << "packData(sched): IPE: %" << ss.seq
+                            << ":loss in the schedule is missing from the loss list");
+                    continue;
+                }
+            }
+            else if (ss.type == groups::SQT_FRESH)
+            {
+                // This procedure should pack the new packet, so it should be
+                // picked up from the top, so this should use the procedure that
+                // normally picks up the new packet. The difference is that
+                // 1. You need to pick up the seq that is extracted from the schedule.
+                // 2. If this sequence is not in the "fresh range", simply skip this
+                // (and report IPE because this should never happen).
+                // 3. If this sequence is in the "fresh range" than it can be
+                // exactly the packet with the required sequence number, or
+                // otherwise this packet should be simply discarded and the
+                // operation should be retried. We know that it won't roll in
+                // infinity because the range has been checked first, so worst
+                // case scenario you'll have several packets to discard until
+                // you reach the end of buffer (which should always retrieve
+                // at least one last packet from the buffer provided that the
+                // sequence range was first verified.
+
+                SRT_ASSERT( !(m_iSndCurrSeqNo == SRT_SEQNO_NONE || m_iSndNextSeqNo == SRT_SEQNO_NONE) );
+                if (m_iSndCurrSeqNo == SRT_SEQNO_NONE || m_iSndNextSeqNo == SRT_SEQNO_NONE)
+                    continue;
+
+                // Ok, FRESH packets must be contained between the last
+                // sent packet and the newest expected scheduled packet
+                if (CSeqNo::seqcmp(ss.seq, m_iSndCurrSeqNo) <= 0 // is already sent
+                        || CSeqNo::seqcmp(ss.seq, m_iSndNextSeqNo) >= 0) // wasn't ever scheduled
+                {
+                    LOGC(qslog.Error, log << "packData(sched): IPE: scheduled %" << ss.seq
+                            << " is outside the fresh range %(" << CSeqNo::incseq(m_iSndCurrSeqNo)
+                            << " - " << CSeqNo::decseq(m_iSndNextSeqNo) << ") - skipping");
                     continue;
                 }
 
-                // XXX If the sender buffer is made common for the whole group, this should
-                // simply extract a packet from the common sender buffer.
+                // After this condition we know that the situation is:
+                // The given sequence is one of the o below,
+                // and the very first call to packUniqueData() will pick
+                // up packets starting from the next towards m_iSndCurrSeqNo.
+                // As we know this is one of them, simply pick up packets until
+                // you get the right one.
+                //
+                // | x | x | x | o | o | o | o |   .
+                //
+                //           ^                   ^
+                // m_iSndCurrSeqNo           m_iSndNextSeqNo
 
-                payload = m_pSndBuffer->readData(offset, (w_packet), (origintime), (msglen));
-
-                uint32_t msgno_field = w_packet.m_iMsgNo;
-
-                if (ss.type == groups::SQT_LOSS)
+                if (!packUniqueData((w_packet), (origintime)))
                 {
-                    msgno_field |= MSGNO_REXMIT::mask;
+                    // Kinda impossible, but still handle it.
+                    payload = 0;
+                    break;
                 }
-                else
-                {
-                    msgno_field &= ~MSGNO_REXMIT::mask;
-                }
-                w_packet.m_iMsgNo = msgno_field;
 
+                if (w_packet.m_iSeqNo != ss.seq)
+                {
+                    // This is not the packet we are looking for.
+                    continue;
+                }
+
+                new_packet_packed = true;
+
+                // every 16 (0xF) packets, a packet pair is sent
+                if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
+                    probe = true;
+
+                payload = (int) w_packet.getLength();
+                reason = "normal";
             }
+            else // SQT_SKIP
+            {
+                continue;
+            }
+
             if (payload == -1)
             {
                 // To be dropped, ignore.
@@ -9687,10 +9860,25 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     else
 #endif
     {
-
-        payload = isRetransmissionAllowed(enter_time)
-            ? packLostData((w_packet), (origintime))
-            : 0;
+        if (isRetransmissionAllowed(enter_time))
+        {
+#if BROADCAST_COMMON_SND_LOSS
+            if (m_parent->m_GroupOf && m_parent->m_GroupOf->type() == SRT_GTYPE_BROADCAST)
+            {
+                // XXX Note: this is a simplified solution just to test it with broadcast groups.
+                // If the common losses for broadcast are to be implemented seriously,
+                // then the losses should be distributed to all member sockets and then
+                // retransmission should happen just like for single sockets.
+                payload = m_parent->m_GroupOf->packLostData(this, (w_packet), (origintime), SRT_SEQNO_NONE /* get any seq */);
+            }
+            else
+#endif
+            payload = packLostData((w_packet), (origintime));
+        }
+        else
+        {
+            payload = 0;
+        }
 
         if (payload > 0)
         {
@@ -11084,53 +11272,8 @@ void srt::CUDT::unlose(const CPacket &packet)
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
 
-    size_t i       = 0;
-    int    had_ttl = 0;
-    for (i = 0; i < m_FreshLoss.size(); ++i)
-    {
-        had_ttl = m_FreshLoss[i].ttl;
-        switch (m_FreshLoss[i].revoke(sequence))
-        {
-        case CRcvFreshLoss::NONE:
-            continue; // Not found. Search again.
-
-        case CRcvFreshLoss::STRIPPED:
-            goto breakbreak; // Found and the modification is applied. We're done here.
-
-        case CRcvFreshLoss::DELETE:
-            // No more elements. Kill it.
-            m_FreshLoss.erase(m_FreshLoss.begin() + i);
-            // Every loss is unique. We're done here.
-            goto breakbreak;
-
-        case CRcvFreshLoss::SPLIT:
-            // Oh, this will be more complicated. This means that it was in between.
-            {
-                // So create a new element that will hold the upper part of the range,
-                // and this one modify to be the lower part of the range.
-
-                // Keep the current end-of-sequence value for the second element
-                int32_t next_end = m_FreshLoss[i].seq[1];
-
-                // seq-1 set to the end of this element
-                m_FreshLoss[i].seq[1] = CSeqNo::decseq(sequence);
-                // seq+1 set to the begin of the next element
-                int32_t next_begin = CSeqNo::incseq(sequence);
-
-                // Use position of the NEXT element because insertion happens BEFORE pointed element.
-                // Use the same TTL (will stay the same in the other one).
-                m_FreshLoss.insert(m_FreshLoss.begin() + i + 1,
-                                   CRcvFreshLoss(next_begin, next_end, m_FreshLoss[i].ttl));
-            }
-            goto breakbreak;
-        }
-    }
-
-    // Could have made the "return" instruction instead of goto, but maybe there will be something
-    // to add in future, so keeping that.
-breakbreak:;
-
-    if (i != m_FreshLoss.size())
+    int had_ttl = 0;
+    if (CRcvFreshLoss::removeOne((m_FreshLoss), sequence, (&had_ttl)))
     {
         HLOGF(qrlog.Debug, "sequence %d removed from belated lossreport record", sequence);
     }

@@ -312,7 +312,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 }
 
 #if ENABLE_NEW_RCVBUFFER
-void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time)
+void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time, int flow_winsize)
 {
     // XXX NOT YET, but will be in use.
     m_pSndBuffer.reset();
@@ -323,6 +323,8 @@ void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time)
         HLOGC(gmlog.Debug, log << "grp/createBuffers: setting rcv buf start time=" << FormatTime(tsbpd_start_time) << " lat=" << latency_us() << "us");
         m_pRcvBuffer->setTsbPdMode(tsbpd_start_time, false, microseconds_from(latency_us()));
     }
+
+    m_pSndLossList.reset(new CSndLossList(flow_winsize * 2));
 }
 #endif
 
@@ -960,6 +962,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     */
 
     m_RcvLastSeqNo = CSeqNo::decseq(core.ISN());
+    m_SndLastDataAck = core.ISN();
 
     if (core.m_bGroupTsbPd)
     {
@@ -969,7 +972,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     HLOGC(gmlog.Debug, log << "grp/syncWithFirstSocket: creating receiver buffer for ISN=%" << core.ISN()
             << " TSBPD start: " << (core.m_bGroupTsbPd ? FormatTime(m_tsRcvPeerStartTime) : "not enabled"));
 
-    createBuffers(core.ISN(), m_tsRcvPeerStartTime);
+    createBuffers(core.ISN(), m_tsRcvPeerStartTime, core.m_iFlowWindowSize);
 
 #else
     // XXX
@@ -6092,40 +6095,176 @@ bool CUDTGroup::updateSendPacketUnique(int32_t single_seq)
 }
 
 // Update on received loss report or request to retransmit on NAKREPORT.
-bool CUDTGroup::updateSendPacketLoss(const std::vector< std::pair<int32_t, int32_t> >& seqlist)
+bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist)
 {
-    ScopedLock guard(m_GroupLock);
+    ScopedLock guard(m_LossAckLock);
 
     typedef std::vector< std::pair<int32_t, int32_t> > seqlist_t;
 
-    BalancingLinkState lstate = { m_Group.active(), 0, 0 };
+    int num = 0; // for stats
 
+    // Add the loss list to the groups loss list
     for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
     {
-        // These are loss ranges, so believe that they are in order.
-        pair<int32_t, int32_t> begin_end = *seqpair;
-        // The seqpair in the loss list is the first and last, both including,
-        // except when there's only one, in which case it's twice the same value.
-        // Increase the end seq by one to make it the "past the end seq".
-        begin_end.second = CSeqNo::incseq(begin_end.second);
-
-        for (int32_t seq = begin_end.first; seq != begin_end.second; seq = CSeqNo::incseq(seq))
-        {
-            // Select a link to use for every sequence.
-            gli_t selink = CALLBACK_CALL(m_cbSelectLink, lstate);
-            if (selink == m_Group.end())
-            {
-                // Interrupt all - we have no link candidates to send.
-                return false;
-            }
-
-            selink->send_schedule.push_back((SchedSeq){seq, groups::SQT_LOSS});
-            lstate.ilink = selink;
-        }
+        num += m_pSndLossList->insert(seqpair->first, seqpair->second);
     }
 
-    m_Group.set_active(lstate.ilink);
+    if (use_send_sched)
+    {
+        BalancingLinkState lstate = { m_Group.active(), 0, 0 };
+
+        for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
+        {
+            // These are loss ranges, so believe that they are in order.
+            pair<int32_t, int32_t> begin_end = *seqpair;
+            // The seqpair in the loss list is the first and last, both including,
+            // except when there's only one, in which case it's twice the same value.
+            // Increase the end seq by one to make it the "past the end seq".
+            begin_end.second = CSeqNo::incseq(begin_end.second);
+
+            for (int32_t seq = begin_end.first; seq != begin_end.second; seq = CSeqNo::incseq(seq))
+            {
+                // Select a link to use for every sequence.
+                gli_t selink = CALLBACK_CALL(m_cbSelectLink, lstate);
+                if (selink == m_Group.end())
+                {
+                    // Interrupt all - we have no link candidates to send.
+                    return false;
+                }
+
+                selink->send_schedule.push_back((SchedSeq){seq, groups::SQT_LOSS});
+                lstate.ilink = selink;
+            }
+        }
+
+        m_Group.set_active(lstate.ilink);
+    }
     return true;
+}
+
+void CUDTGroup::updateSndLossListOnACK(int32_t ackdata_seqno)
+{
+    ScopedLock guard(m_LossAckLock);
+    if (CSeqNo::seqcmp(m_SndLastDataAck, ackdata_seqno) < 0)
+    {
+        // remove any loss that predates 'ack' (not to be considered loss anymore)
+        m_pSndLossList->removeUpTo(CSeqNo::decseq(ackdata_seqno));
+        m_SndLastDataAck = ackdata_seqno;
+    }
+}
+
+// This is almost a copy of the CUDT::packLostData except that:
+// - it uses a separate mechanism to extract the selected sequence number
+// (which is known from the schedule, while the schedule is filled upon incoming loss request)
+// - it doesn't check if the loss was received too early (it's more complicated this time)
+int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_point& w_origintime, int32_t exp_seq)
+{
+    // protect m_iSndLastDataAck from updating by ACK processing
+    UniqueLock ackguard(m_LossAckLock);
+    //const steady_clock::time_point time_now = steady_clock::now();
+    //const steady_clock::time_point time_nak = time_now - microseconds_from(core->m_iSRTT - 4 * core->m_iRTTVar);
+
+    // XXX This is temporarily used for broadcast with common loss list.
+    bool have_extracted = false;
+    const char* as = "FIRST FOUND";
+    if (exp_seq == SRT_SEQNO_NONE)
+    {
+        exp_seq = m_pSndLossList->popLostSeq();
+        have_extracted = (exp_seq != SRT_SEQNO_NONE);
+    }
+    else
+    {
+        as = "EXPECTED";
+        have_extracted = m_pSndLossList->popLostSeq(exp_seq);
+    }
+
+    HLOGC(qslog.Debug, log << "CUDTGroup::packLostData: " << (have_extracted ? "" : "NOT") << " extracted "
+            << as << " %" << exp_seq);
+
+    if (have_extracted)
+    {
+        w_packet.m_iSeqNo = exp_seq;
+
+        // XXX See the note above the m_iSndLastDataAck declaration in core.h
+        // This is the place where the important sequence numbers for
+        // sender buffer are actually managed by this field here.
+        const int offset = CSeqNo::seqoff(core->m_iSndLastDataAck, w_packet.m_iSeqNo);
+        if (offset < 0)
+        {
+            // XXX Likely that this will never be executed because if the upper
+            // sequence is not in the sender buffer, then most likely the loss 
+            // was completely ignored.
+            LOGC(qslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
+                << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << core->m_iSndLastDataAck
+                << ")=" << offset << ". Continue");
+
+            // No matter whether this is right or not (maybe the attack case should be
+            // considered, and some LOSSREPORT flood prevention), send the drop request
+            // to the peer.
+            int32_t seqpair[2] = {
+                w_packet.m_iSeqNo,
+                CSeqNo::decseq(core->m_iSndLastDataAck)
+            };
+            w_packet.m_iMsgNo = 0; // Message number is not known, setting all 32 bits to 0.
+
+            HLOGC(qslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
+                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+
+            core->sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+            return 0;
+        }
+
+        int msglen;
+        const int payload = core->m_pSndBuffer->readData(offset, (w_packet), (w_origintime), (msglen));
+        if (payload == -1)
+        {
+            int32_t seqpair[2];
+            seqpair[0] = w_packet.m_iSeqNo;
+            SRT_ASSERT(msglen >= 1);
+            seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
+
+            HLOGC(qslog.Debug,
+                  log << "loss-reported packets expired in SndBuf - requesting DROP: "
+                      << "msgno=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen
+                      << " SEQ:" << seqpair[0] << " - " << seqpair[1]);
+            core->sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+
+            // skip all dropped packets
+            m_pSndLossList->removeUpTo(seqpair[1]);
+            core->m_iSndCurrSeqNo = CSeqNo::maxseq(core->m_iSndCurrSeqNo, seqpair[1]);
+            return 0;
+        }
+        else if (payload == 0)
+            return 0;
+
+        // At this point we no longer need the ACK lock,
+        // because we are going to return from the function.
+        // Therefore unlocking in order not to block other threads.
+        ackguard.unlock();
+
+        enterCS(core->m_StatsLock);
+        core->m_stats.sndr.sentRetrans.count(payload);
+        leaveCS(core->m_StatsLock);
+
+        // Despite the contextual interpretation of packet.m_iMsgNo around
+        // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
+        // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
+        // So, set here the rexmit flag if the peer understands it.
+        if (core->m_bPeerRexmitFlag)
+        {
+            w_packet.m_iMsgNo |= PACKET_SND_REXMIT;
+        }
+
+        return payload;
+    }
+    else
+    {
+        // This is not the sequence we are looking for.
+        HLOGC(qslog.Debug, log << "packLostData: expected %" << exp_seq << " not found in the group's loss list");
+    }
+
+    return 0;
 }
 
 SRT_ATR_NODISCARD bool CUDTGroup::getSendSchedule(SocketData* d, vector<groups::SchedSeq>& w_seqs)

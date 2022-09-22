@@ -1050,7 +1050,7 @@ private: // Generation and processing of packets
     /// @param origintime [in, out] origin timestamp of the packet
     ///
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, time_point &origintime);
+    int packLostData(CPacket &packet, time_point &origintime, int32_t exp_seq = SRT_SEQNO_NONE);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     ///
@@ -1068,6 +1068,8 @@ private: // Generation and processing of packets
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime);
+
+    void removeSndLossUpTo(int32_t seq);
 
     int processData(CUnit* unit);
 

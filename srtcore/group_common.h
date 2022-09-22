@@ -32,9 +32,19 @@ namespace groups
 
     enum SeqType
     {
+        /// Freshly first-time to be sent packets.
         SQT_FRESH,
+
+        /// Rexmit requests
         SQT_LOSS,
-        SQT_PFILTER
+
+        /// Packet filter requests
+        SQT_PFILTER,
+
+        /// Special value used in case when the request
+        /// has been exceptionally cancelled, but removal
+        /// of the element would violate the logics.
+        SQT_SKIP
     };
 
     struct SchedSeq
