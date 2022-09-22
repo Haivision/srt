@@ -656,6 +656,7 @@ srt::CRcvLossList::~CRcvLossList()
 
 void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
+    SRT_ASSERT(seqno1 != SRT_SEQNO_NONE && seqno2 != SRT_SEQNO_NONE);
     // Make sure that seqno2 isn't earlier than seqno1.
     SRT_ASSERT(CSeqNo::seqcmp(seqno1, seqno2) <= 0);
 

@@ -222,6 +222,8 @@ public:
 
 public:
 
+    void debugShowState(const char* source);
+
     struct InsertInfo
     {
         enum Result { INSERTED = 0, REDUNDANT = -1, BELATED = -2, DISCREPANCY = -3 } result;
@@ -275,6 +277,17 @@ public:
     /// @param msgno message number to drop (0 if unknown)
     /// @return the number of packets actually dropped.
     int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
+
+    /// Extract the "expected next" packet sequence.
+    /// Extract the past-the-end sequence for the first packet
+    /// that is expected to arrive next with preserving the packet order.
+    /// If the buffer is empty or the very first cell is lacking a packet,
+    /// it returns the sequence assigned to the first cell. Otherwise it
+    /// returns the sequence representing the first empty cell (the next
+    /// cell to the last received packet, if there are no loss-holes).
+    /// @param [out] w_seq: returns the sequence (always valid)
+    /// @return true if this sequence is followed by any valid packets
+    bool getContiguousEnd(int32_t& w_seq) const;
 
     /// Read the whole message from one or several packets.
     ///

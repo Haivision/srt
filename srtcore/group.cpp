@@ -259,7 +259,9 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_listener()
 #endif
     , m_iBusy()
+#if ENABLE_NEW_RCVBUFFER
     , m_iRcvPossibleLossSeq(SRT_SEQNO_NONE)
+#endif
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
@@ -293,8 +295,13 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 #endif
 {
     setupMutex(m_GroupLock, "Group");
-    setupMutex(m_RcvDataLock, "RcvData");
-    setupCond(m_RcvDataCond, "RcvData");
+    setupMutex(m_RcvDataLock, "G/RcvData");
+    setupCond(m_RcvDataCond, "G/RcvData");
+#if ENABLE_NEW_RCVBUFFER
+    setupCond(m_RcvTsbPdCond, "G/TSBPD");
+    setupMutex(m_RcvBufferLock, "G/Buffer");
+#endif
+
 #if !ENABLE_NEW_RCVBUFFER
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
 #endif
@@ -993,16 +1000,22 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
 #if ENABLE_NEW_RCVBUFFER
 
-CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
+CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
 {
     // If this returns false, the adding has failed and 
 
     CRcvBufferNew::InsertInfo info;
     const CPacket& rpkt = u->m_Packet;
+    w_have_loss = false;
 
     {
         ScopedLock lk (m_RcvBufferLock);
         info = m_pRcvBuffer->insert(u);
+
+        if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
+        {
+            w_have_loss = checkPacketArrivalLoss(u->m_Packet, (w_losses));
+        }
     }
 
     if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
@@ -1010,9 +1023,10 @@ CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
         // If m_bTsbpdWaitForNewPacket, then notify anyway.
         // Otherwise notify only if a "fresher" packet was added,
         // so TSBPD should interrupt its sleep earlier and re-check.
-        if (m_bTsbpdWaitForNewPacket || info.first_time != time_point())
+        if (m_bTsbPd && (m_bTsbpdWaitForNewPacket || info.first_time != time_point()))
         {
-            HLOGC(gmlog.Debug, log << "grp/addDataUnit: got a packet [live], SIGNAL TSBPD");
+            HLOGC(gmlog.Debug, log << CONID() << "grp/addDataUnit: got a packet [live], reason:"
+                   << (m_bTsbpdWaitForNewPacket ? "expected" : "sealing") << " - SIGNAL TSBPD");
             // Make a lock on data reception first, to protect the buffer.
             // Then notify TSBPD if required.
             CUniqueSync tsbpd_cc(m_RcvDataLock, m_RcvTsbPdCond);
@@ -1021,13 +1035,27 @@ CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u)
     }
     else if (info.result == CRcvBufferNew::InsertInfo::DISCREPANCY)
     {
-        LOGC(qrlog.Error, log << CONID()
+        LOGC(qrlog.Error, log << CONID() << "grp/addDataUnit: "
                 << "SEQUENCE DISCREPANCY. DISCARDING."
                 << " seq=" << rpkt.m_iSeqNo
                 << " buffer=(" << m_pRcvBuffer->getStartSeqNo()
                 << ":" << m_RcvLastSeqNo                   // -1 = size to last index
                 << "+" << CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), int(m_pRcvBuffer->capacity()) - 1)
                 << ")");
+    }
+    else
+    {
+#if ENABLE_HEAVY_LOGGING
+        static const char* const ival [] = { "inserted", "redundant", "belated", "discrepancy" };
+        if (int(info.result) > -4 && int(info.result) <= 0)
+        {
+            LOGC(qrlog.Debug, log << CONID() << "grp/addDataUnit: insert status: " << ival[-info.result]);
+        }
+        else
+        {
+            LOGC(qrlog.Debug, log << CONID() << "grp/addDataUnit: IPE: invalid insert status");
+        }
+#endif
     }
 
     return info;
@@ -1047,6 +1075,7 @@ int CUDTGroup::rcvDropTooLateUpTo(int seqno)
         if (CSeqNo::seqcmp(seqno, last_seq) > 0)
             seqno = last_seq;
 
+        // Skipping the sequence number of the new contiguous region
         iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
 
         /* not sure how to stats.
@@ -1061,21 +1090,21 @@ int CUDTGroup::rcvDropTooLateUpTo(int seqno)
          */
     }
 
-    // Update every member's loss lists
-    {
-        ScopedLock lk (m_GroupLock);
-
-        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-        {
-            CUDT& u = gi->ps->core();
-            u.skipMemberLoss(seqno);
-        }
-    }
-
     return iDropCnt;
 }
 
+void CUDTGroup::synchronizeLoss(int32_t seqno)
+{
+    ScopedLock lk (m_GroupLock);
 
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        CUDT& u = gi->ps->core();
+        u.skipMemberLoss(seqno);
+    }
+}
+
+// [[using locked(m_RcvBufferLock)]]
 bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w_losses)
 {
     // This is called when the packet was added to the buffer and this
@@ -1093,26 +1122,33 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w
     // m_RcvLastSeqNo is atomic, so no need to protect it,
     // but it's also being modified using R-M-W method, and
     // this can potentially be interleft.
-    ScopedLock gl (m_GroupLock);
+    //
+    // Also, if this packet is going to be sealed from another
+    // socket in the group, then this check should be done again
+    // from the beginning, regarding the already recorded loss candidate.
+
+    int32_t expected_seqno = m_RcvLastSeqNo;
+    expected_seqno = CSeqNo::incseq(expected_seqno);
 
     // For balancing groups, use some more complicated mechanism.
     if (type() == SRT_GTYPE_BALANCING || type() == SRT_GTYPE_BROADCAST)
     {
         have = checkBalancingLoss(rpkt, (w_losses));
     }
-    else if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_RcvLastSeqNo)) > 0)
+    else if (CSeqNo::seqcmp(rpkt.m_iSeqNo, expected_seqno) > 0)
     {
-        int32_t seqlo = CSeqNo::incseq(m_RcvLastSeqNo);
+        int32_t seqlo = expected_seqno;
         int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
 
         w_losses.push_back(make_pair(seqlo, seqhi));
         have = true;
-        HLOGC(gmlog.Debug, log << "grp:checkPacketArrivalLoss: loss detected: %("
+        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: loss detected: %("
                 << seqlo << " - " << seqhi << ")");
     }
 
     if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_RcvLastSeqNo) > 0)
     {
+        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest updated: %" << m_RcvLastSeqNo << " -> %" << rpkt.m_iSeqNo);
         m_RcvLastSeqNo = rpkt.m_iSeqNo;
     }
 
@@ -1131,12 +1167,16 @@ struct FFringeGreaterThan
     }
 };
 
+// [[using locked(m_RcvBufferLock)]]
 bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_losses)
 {
     // This is done in case of every incoming packet.
 
     if (pkt.getSeqNo() == m_iRcvPossibleLossSeq)
     {
+        // XXX WARNING: it's unknown so far as to whether this "first loss"
+        // hasn't been reported already.
+
         // This seals the exact loss position.
         // The returned value can be also NONE, which clears out the loss information.
         m_iRcvPossibleLossSeq = m_pRcvBuffer->getFirstLossSeq(m_iRcvPossibleLossSeq);
@@ -1184,6 +1224,12 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
             // Extract the whole first loss
             typename CUDT::loss_seqs_t::value_type loss;
             loss.first = m_pRcvBuffer->getFirstLossSeq(m_iRcvPossibleLossSeq, (&loss.second));
+            if (loss.first == SRT_SEQNO_NONE)
+            {
+                HLOGC(gmlog.Debug, log << "... LOSS SEALED (IPE) ???");
+                m_iRcvPossibleLossSeq = SRT_SEQNO_NONE;
+                break;
+            }
             w_losses.push_back(loss);
 
             found_reportable_losses = true;
@@ -1243,6 +1289,18 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
     return found_reportable_losses;
 }
 
+bool CUDTGroup::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
+{
+    ScopedLock buflock (m_RcvBufferLock);
+    bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
+    if (has_followers)
+        w_log_reason = "first lost";
+    else
+        w_log_reason = "last received";
+
+    return true;
+}
+
 #endif
 
 void CUDTGroup::close()
@@ -1268,6 +1326,12 @@ void CUDTGroup::close()
                 HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
                 continue;
             }
+
+            // XXX This is not true in case of non-managed groups, which
+            // only collect sockets, but also non-managed groups should not
+            // use common group buffering and tsbpd.
+            s->setClosing();
+
             s->m_GroupOf = NULL;
             s->m_GroupMemberData = NULL;
             HLOGC(smlog.Debug, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
@@ -2700,12 +2764,14 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(arlog.Debug, log << CONID() << "grp:recv: CONNECTION BROKEN - reading from recv buffer just for formality");
 
         int as_result = 0;
-        bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
-
-        if (ready)
         {
             ScopedLock lk (m_RcvBufferLock);
-            as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl));
+            bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+
+            if (ready)
+            {
+                as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl));
+            }
         }
 
         {
@@ -2751,12 +2817,14 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(arlog.Debug, log << CONID() << "grp:recv: BEGIN ASYNC MODE. Going to extract payload size=" << len);
 
         int as_result = 0;
-        bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
-
-        if (ready)
         {
             ScopedLock lk (m_RcvBufferLock);
-            as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl), (&seqrange));
+            bool ready = m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+
+            if (ready)
+            {
+                as_result = m_pRcvBuffer->readMessage(data, len, (&w_mctrl), (&seqrange));
+            }
         }
 
         {
@@ -2819,7 +2887,7 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     do
     {
-        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+        if (stillConnected() && !timeout && !isRcvBufferReady())
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -6372,6 +6440,8 @@ void* CUDTGroup::tsbpd(void* param)
                 << " ready=" << is_time_to_deliver
                 << " ondrop=" << info.seq_gap);
 
+        bool synch_loss_after_drop = false;
+
         if (!self->m_bTLPktDrop)
         {
             rxready = !info.seq_gap && is_time_to_deliver;
@@ -6382,8 +6452,13 @@ void* CUDTGroup::tsbpd(void* param)
             if (info.seq_gap)
             {
                 const int iDropCnt SRT_ATR_UNUSED = self->rcvDropTooLateUpTo(info.seqno);
-#if ENABLE_LOGGING
+
+                // Part required for synchronizing loss state in all group members should
+                // follow the drop, but this must be done outside the lock on the buffer.
+                synch_loss_after_drop = iDropCnt;
+
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
+
 #if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug,
                       log << self->CONID() << "grp/tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
@@ -6395,12 +6470,14 @@ void* CUDTGroup::tsbpd(void* param)
                      log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                          << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
                          << (timediff_us % 1000) << " ms");
-#endif
 
                 tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
             }
         }
         leaveCS(self->m_RcvBufferLock);
+
+        if (synch_loss_after_drop)
+            self->synchronizeLoss(info.seqno);
 
         if (rxready)
         {

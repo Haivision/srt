@@ -105,6 +105,12 @@ CRcvBufferNew::~CRcvBufferNew()
     }
 }
 
+void CRcvBufferNew::debugShowState(const char* source SRT_ATR_UNUSED)
+{
+    HLOGC(brlog.Debug, log << "RCV-BUF-STATE(" << source << ") start=" << m_iStartPos << " end=" << m_iEndPos
+            << " drop=" << m_iDropPos << " max-off=+" << m_iMaxPosOff << " seq[start]=%" << m_iStartSeqNo);
+}
+
 CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
@@ -124,6 +130,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
         return InsertInfo(InsertInfo::BELATED);
     }
+    IF_HEAVY_LOGGING(string debug_source = "insert %" + Sprint(seqno));
 
     if (offset >= (int)capacity())
     {
@@ -151,6 +158,8 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
             avail_range = 1;
         }
 
+        IF_HEAVY_LOGGING(debugShowState((debug_source + " overflow").c_str()));
+
         return InsertInfo(InsertInfo::DISCREPANCY, avail_seq, avail_range);
     }
 
@@ -176,6 +185,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     if (m_entries[newpktpos].status != EntryState_Empty)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
+        IF_HEAVY_LOGGING(debugShowState((debug_source + " redundant").c_str()));
         return InsertInfo(InsertInfo::REDUNDANT);
     }
     SRT_ASSERT(m_entries[newpktpos].pUnit == NULL);
@@ -312,6 +322,7 @@ CRcvBufferNew::InsertInfo CRcvBufferNew::insert(CUnit* unit)
     }
 
     IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
+    IF_HEAVY_LOGGING(debugShowState((debug_source + " ok").c_str()));
 
     if (avail_packet)
         return InsertInfo(InsertInfo::INSERTED, avail_packet->getSeqNo(), avail_range, earlier_time);
@@ -402,14 +413,9 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     // (This call MAY shift m_iStartSeqNo further.)
     releaseNextFillerEntries();
 
-    // Check only m_iDropPos. The m_iEndPos pointer must
-    // point either to the same cell as m_iDropPos, or earlier.
-    if (cmpPos(m_iDropPos, m_iStartPos) < 0)
-    {
-        // Start from here and search fort the next gap
-        m_iEndPos = m_iDropPos = m_iStartSeqNo;
-        updateGapInfo(incPos(m_iStartPos, m_iMaxPosOff));
-    }
+    // Start from here and search fort the next gap
+    m_iEndPos = m_iDropPos = m_iStartPos;
+    updateGapInfo(incPos(m_iStartPos, m_iMaxPosOff));
 
     // Set nonread position to the starting position before updating,
     // because start position was increased, and preceeding packets are invalid. 
@@ -417,6 +423,8 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     updateNonreadPos();
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableRandom();
+
+    IF_HEAVY_LOGGING(debugShowState(("drop %" + Sprint(seqno)).c_str()));
     return iDropCnt;
 }
 
@@ -481,6 +489,7 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
                 m_iFirstRandomMsgPos = -1;
             updateFirstReadableRandom();
         }
+        IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + Sprint(seqnolo)).c_str()));
         return iDropCnt;
     }
 
@@ -530,7 +539,28 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
         updateFirstReadableRandom();
     }
 
+    IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + Sprint(seqnolo)).c_str()));
     return iDropCnt;
+}
+
+bool CRcvBufferNew::getContiguousEnd(int32_t& w_seq) const
+{
+    if (m_iStartPos == m_iEndPos)
+    {
+        // Initial contiguous region empty (including empty buffer).
+        HLOGC(rbuflog.Debug, log << "CONTIG: empty, give up base=%" << m_iStartSeqNo);
+        w_seq = m_iStartSeqNo;
+        return m_iMaxPosOff > 0;
+    }
+
+    int end_off = offPos(m_iStartPos, m_iEndPos);
+
+    w_seq = CSeqNo::incseq(m_iStartSeqNo, end_off);
+
+    HLOGC(rbuflog.Debug, log << "CONTIG: endD=" << end_off << " maxD=" << m_iMaxPosOff << " base=%" << m_iStartSeqNo
+            << " end=%" << w_seq);
+
+    return (end_off < m_iMaxPosOff);
 }
 
 int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<int32_t, int32_t>* pw_seqrange)
@@ -708,6 +738,7 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pai
     if (pw_seqrange)
         *pw_seqrange = make_pair(out_seqlo, out_seqhi);
 
+    IF_HEAVY_LOGGING(debugShowState("readmsg"));
     return bytes_read;
 }
 
@@ -812,6 +843,7 @@ int CRcvBufferNew::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
         LOGC(rbuflog.Error, log << "readBufferTo: 0 bytes read. m_iStartPos=" << m_iStartPos << ", m_iFirstNonreadPos=" << m_iFirstNonreadPos);
     }
 
+    IF_HEAVY_LOGGING(debugShowState("readbuf"));
     return iBytesRead;
 }
 
@@ -1380,7 +1412,11 @@ int32_t CRcvBufferNew::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
 
     // Check if it's still inside the buffer
     if (offset < 0 || offset >= m_iMaxPosOff)
+    {
+        HLOGC(rbuflog.Debug, log << "getFirstLossSeq: offset=" << offset << " for %" << fromseq
+                << " (with max=" << m_iMaxPosOff << ") - NO LOSS FOUND");
         return SRT_SEQNO_NONE;
+    }
 
     // Start position
     int pos = incPos(m_iStartPos, offset);

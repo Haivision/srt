@@ -670,7 +670,7 @@ private:
     };
     friend ScopedGroupKeeper;
 
-    int32_t m_iRcvPossibleLossSeq;
+    sync::atomic<int32_t> m_iRcvPossibleLossSeq;
 
 #endif
 
@@ -915,11 +915,13 @@ public:
 
 #if ENABLE_NEW_RCVBUFFER
     int checkLazySpawnLatencyThread();
-    CRcvBufferNew::InsertInfo addDataUnit(CUnit* u);
+    CRcvBufferNew::InsertInfo addDataUnit(CUnit* u, CUDT::loss_seqs_t&, bool&);
     bool checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
     bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
-    int rcvDropTooLateUpTo(int seqno);
+    int rcvDropTooLateUpTo(int32_t seqno);
+    void synchronizeLoss(int32_t seqno);
     void addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt);
+    bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 #endif
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)

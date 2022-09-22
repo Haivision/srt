@@ -85,18 +85,8 @@ used by SRT library internally.
 // Macro shortcut for implementing parts of the redundancy features
 // that require the new receiver buffer
 
-#if defined(ENABLE_BONDING)
-    #if defined(ENABLE_NEW_RCVBUFFER)
-        #define ENABLE_NEW_BONDING 1
-        #define ENABLE_OLD_BONDING 0
-    #else
-        #define ENABLE_OLD_BONDING 1
-        #define ENABLE_NEW_BONDING 0
-    #endif
-#else
-    #define ENABLE_NEW_BONDING 0
-    #define ENABLE_OLD_BONDING 0
-#endif
+#define ENABLE_NEW_BONDING (ENABLE_BONDING && ENABLE_NEW_RCVBUFFER)
+#define ENABLE_OLD_BONDING (ENABLE_BONDING && !ENABLE_NEW_RCVBUFFER)
 
 ///////////////////////////////////////////////////////////////////////////////
 // Attributes for thread safety analysis

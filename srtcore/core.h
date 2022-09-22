@@ -669,6 +669,7 @@ private:
 #if ENABLE_NEW_BONDING
     void skipMemberLoss(int32_t seqno);
 #endif
+    bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
     void handshakeDone()
@@ -1072,6 +1073,18 @@ private: // Generation and processing of packets
     void removeSndLossUpTo(int32_t seq);
 
     int processData(CUnit* unit);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+
+#if ENABLE_NEW_BONDING
+    bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+#endif
+#if ENABLE_HEAVY_LOGGING
+#if ENABLE_NEW_BONDING
+    time_point getPacketPTS(CUDTGroup* grp, const CPacket& packet);
+#else
+    time_point getPacketPTS(void* grp, const CPacket& packet);
+#endif
+#endif
 
     int checkLazySpawnLatencyThread();
     void processClose();
