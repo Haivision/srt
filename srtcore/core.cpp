@@ -6754,7 +6754,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             // schedule, for all others it does nothing.
             if (m_parent->m_GroupMemberData->use_send_schedule)
             {
-                if (!m_parent->m_GroupOf->updateSendPacketUnique(seqno))
+                if (!m_parent->m_GroupOf->updateSendPacketUnique_LOCKED(seqno))
                 {
                     throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
                 }

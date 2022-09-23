@@ -6126,10 +6126,9 @@ ReportLink:
 }
 
 // Update on adding a new fresh packet to the sender buffer.
-bool CUDTGroup::updateSendPacketUnique(int32_t single_seq)
+// [[using locked(m_GroupLock)]]
+bool CUDTGroup::updateSendPacketUnique_LOCKED(int32_t single_seq)
 {
-    ScopedLock guard(m_GroupLock);
-
     // Check first if the packet wasn't already scheduled
     // If so, do nothing and return success.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)

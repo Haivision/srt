@@ -415,10 +415,13 @@ int srt::CSndLossList::rangecmp(int32_t seq, int32_t seqlo, int32_t seqhi)
     SRT_ASSERT(seqlo != SRT_SEQNO_NONE);
 
     int cmp = CSeqNo::seqcmp(seq, seqlo);
-    if (seqhi == SRT_SEQNO_NONE || cmp < 0)
+
+    // If seqhi == NONE, we only compare against seqlo, so return this value already.
+    // If seq <=% seqlo, we already know the result as well.
+    if (seqhi == SRT_SEQNO_NONE || cmp <= 0)
         return cmp;
 
-    // Since now seq may be only >= seqlo, check seqhi
+    // Since now may be only seq %> seqlo, check seqhi
     cmp = CSeqNo::seqcmp(seq, seqhi);
     if (cmp > 0)
         return cmp;
@@ -447,9 +450,15 @@ bool srt::CSndLossList::popLostSeq(int32_t seq)
 
     int loc = m_iHead;
     int* prev_next = &m_iHead;
-    for (;;)
+    for (int i = 0; i < m_iLength; ++i)
     {
         Seq& cell = m_caSeq[loc];
+        SRT_ASSERT(cell.seqstart != SRT_SEQNO_NONE);
+
+        // Ensure that if we've reached the last element by length
+        // then the next pointer is -1, and vice versa.
+        SRT_ASSERT((i == m_iLength - 1) ^ (cell.inext != -1));
+
         int cmp = rangecmp(seq, cell.seqstart, cell.seqend);
         if (cmp < 0)
         {

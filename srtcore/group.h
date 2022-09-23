@@ -965,7 +965,7 @@ public:
     void updateLatestRcv(srt::CUDTSocket*);
 
 #if ENABLE_NEW_RCVBUFFER
-    SRT_ATR_NODISCARD bool updateSendPacketUnique(int32_t single_seq);
+    SRT_ATR_NODISCARD bool updateSendPacketUnique_LOCKED(int32_t single_seq);
     SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);
 
     SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
