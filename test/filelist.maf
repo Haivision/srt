@@ -13,8 +13,9 @@ test_epoll.cpp
 test_fec_rebuilding.cpp
 test_file_transmission.cpp
 test_ipv6.cpp
-test_list.cpp
 test_listen_callback.cpp
+test_losslist_rcv.cpp
+test_losslist_snd.cpp
 test_muxer.cpp
 test_seqno.cpp
 test_socket_options.cpp
@@ -28,4 +29,3 @@ test_reuseaddr.cpp
 # Tests for bonding only - put here!
 
 SOURCES - ENABLE_BONDING
-

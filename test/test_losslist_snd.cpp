@@ -23,12 +23,12 @@ protected:
     void CheckEmptyArray()
     {
         EXPECT_EQ(m_lossList->getLossLength(), 0);
-        EXPECT_EQ(m_lossList->popLostSeq(), -1);
+        EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     }
 
     void CleanUpList()
     {
-        while (m_lossList->popLostSeq() != -1);
+        while (m_lossList->popLostSeq() != SRT_SEQNO_NONE);
     }
 
     CSndLossList* m_lossList;
