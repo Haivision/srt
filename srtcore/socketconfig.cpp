@@ -502,7 +502,7 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
         if (val < 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        using namespace sync;
+        using namespace srt::sync;
         co.tdConnTimeOut = milliseconds_from(val);
     }
 };
