@@ -331,8 +331,8 @@ srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
 
     // XXX Consider all below fields (except m_bReuseAddr) to be put
     // into a separate class for easier copying.
-
-    m_config            = ancestor.m_config;
+    m_cbUserData.set(ancestor.m_cbUserData.opaque, ancestor.m_cbUserData.fn);
+    m_config     = ancestor.m_config;
     // Reset values that shall not be derived to default ones.
     // These declarations should be consistent with SRTO_R_PRIVATE flag.
     for (size_t i = 0; i < Size(s_sockopt_action.flags); ++i)
@@ -2010,6 +2010,16 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
         m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, CUDT::HS_VERSION_UDT4);
         return true; // nothing to do
     }
+
+    case SRT_CMD_SID:
+        if (ctrlpkt->getExtendedType() == SRT_CMD_SID && m_cbUserData)
+        {
+            SRT_USERDATACTRL ctrl;
+            ctrl.timestamp = ts;
+            CALLBACK_CALL(m_cbUserData, m_SocketID, (const char*) srtdata, (int) len, &ctrl);
+        }
+        LOGC(cnlog.Warn, log << "SRT User Data received. Ext type " << ctrlpkt->getExtendedType());
+        return true;
 
     default:
         return false;
@@ -6809,6 +6819,28 @@ int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return receiveBuffer(data, len);
 }
 
+int srt::CUDT::senduserdata(const char* buf, int len, SRT_USERDATACTRL& udctrl)
+{
+    if (!m_bConnected || !m_CongCtl.ready())
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+
+    if (len <= 0)
+    {
+        LOGC(arlog.Error, log << "Wrong length '" << len << "' supplied to srt_senduserdata.");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    if (len > m_iMaxSRTPayloadSize)
+    {
+        LOGC(arlog.Error, log << "Length '" << len << "' exceeds max PLD size " << m_iMaxSRTPayloadSize << ".");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    const int32_t type_spec_info = 0;
+    sendCtrl(UMSG_EXT, &type_spec_info, buf, len);
+    return len;
+}
+
 size_t srt::CUDT::getAvailRcvBufferSizeLock() const
 {
     ScopedLock lck(m_RcvBufferLock);
@@ -7807,7 +7839,7 @@ static inline void DebugAck(string, int, int) {}
 #endif
 }
 
-void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
+void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, const void* rparam, int size)
 {
     CPacket ctrlpkt;
     setPacketTS(ctrlpkt, steady_clock::now());
@@ -7834,7 +7866,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         // Explicitly defined lost sequences
         if (rparam)
         {
-            int32_t *lossdata = (int32_t *)rparam;
+            const int32_t *lossdata = (const int32_t *)rparam;
 
             size_t bytes = sizeof(*lossdata) * size;
             ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
@@ -7934,7 +7966,23 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
 
         break;
 
-    case UMSG_EXT: // 0x7FFF - Resevered for future use
+    case UMSG_EXT: // 0x7FFF - Userdata
+        // Currently only SRT_CMD_SID user data is supported.
+        // SRT_CMD_HSREQ, SRT_CMD_HSRSP can also be sent in case of HSv4 (not handled here).
+        // SRT_CMD_KMREQ, SRT_CMD_KMRSP can be sent in case of KM refresh (not handled here).
+
+        // Allocate a buffer for payload because it will have to be modified on sending (HtoNL).
+        // And potentially enccrypted.
+        ctrlpkt.allocate(size);
+
+        memcpy((void*)ctrlpkt.data(), rparam, size);
+        ctrlpkt.setControl(pkttype);
+        ctrlpkt.setExtendedType(SRT_CMD_SID);
+        ctrlpkt.m_iID = m_PeerID;
+
+        // TODO: If m_pCryptoControl
+
+        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
         break;
 
     default:

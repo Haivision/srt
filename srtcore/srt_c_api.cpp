@@ -239,6 +239,16 @@ int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
     return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
+int srt_senduserdata(SRTSOCKET u, const char* buf, int len, SRT_USERDATACTRL* udctrl)
+{
+    // Allow NULL mctrl in the API, but not internally.
+    if (udctrl)
+        return CUDT::senduserdata(u, buf, len, (*udctrl));
+    SRT_USERDATACTRL mignore;
+    mignore.timestamp = 0;
+    return CUDT::senduserdata(u, buf, len, (mignore));
+}
+
 const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
 
 int srt_getlasterror(int* loc_errno)
@@ -399,6 +409,14 @@ int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opa
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
 
     return CUDT::installConnectHook(lsn, hook, opaq);
+}
+
+int srt_userdata_callback(SRTSOCKET u, srt_userdata_callback_fn* hook, void* opaq)
+{
+    if (!hook)
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+
+    return CUDT::installUserdataHook(u, hook, opaq);
 }
 
 uint32_t srt_getversion()

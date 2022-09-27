@@ -990,6 +990,24 @@ SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const
 SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
 SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
+// OOB userdata
+
+// A control structure with additional fields.
+typedef struct SRT_UserdataControl {
+    uint32_t timestamp;
+} SRT_USERDATACTRL;
+
+
+/// @param u SRT scoket with an established connection.
+/// @param buf data to send (must fit in one MTU!).
+/// @param len length of the data to send.
+/// @param udctrl control structure with additional fields, mainly for possible future extenstions.
+SRT_API int srt_senduserdata(SRTSOCKET u, const char* buf, int len, SRT_USERDATACTRL* udctrl);
+
+typedef int srt_userdata_callback_fn(void* opaq, SRTSOCKET u, const char* buf, int len, const SRT_USERDATACTRL* ctrl);
+SRT_API int srt_userdata_callback(SRTSOCKET u, srt_userdata_callback_fn* cb_fn, void* opaque);
+
+
 #ifdef __cplusplus
 }
 #endif

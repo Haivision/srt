@@ -33,6 +33,7 @@
 
 # Ignore any folder starting from underscore
 _*/
+build/
 
 # Ignode Visual Studio Code temp folder
 .vs/

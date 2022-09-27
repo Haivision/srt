@@ -238,10 +238,10 @@ public:
 
     /// Pack a Control packet.
     /// @param pkttype [in] packet type filed.
-    /// @param lparam [in] pointer to the first data structure, explained by the packet type.
-    /// @param rparam [in] pointer to the second data structure, explained by the packet type.
+    /// @param lparam [in] 32 bits to be placed in the type specific information field.
+    /// @param rparam [in] pointer to the data to be placed in the content specific information field.
     /// @param size [in] size of rparam, in number of bytes;
-    void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, size_t size = 0);
+    void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, const void* rparam = NULL, size_t size = 0);
 
     /// Read the packet vector.
     /// @return Pointer to the packet vector.
@@ -258,6 +258,9 @@ public:
     bool isControl() const { return 0 != SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]); }
 
     void setControl(UDTMessageType type) { m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type); }
+
+    /// Set the extended packet type (subtype).
+    void setExtendedType(int ext_type);
 
     /// Read the extended packet type.
     /// @return extended packet type filed (0x000 ~ 0xFFF).

@@ -162,7 +162,8 @@ foreach ($Platform in @("x64", "Win32")) {
         -DENABLE_STDCXX_SYNC=ON `
         -DOPENSSL_ROOT_DIR="$SRoot" `
         -DOPENSSL_LIBRARIES="$SRoot\lib\libssl_static.lib;$SRoot\lib\libcrypto_static.lib" `
-        -DOPENSSL_INCLUDE_DIR="$SRoot\include"
+        -DOPENSSL_INCLUDE_DIR="$SRoot\include" `
+        -DENABLE_BONDING=ON
 
     # Patch version string in version.h
     Get-Content "$BuildDir\version.h" |
@@ -201,7 +202,7 @@ if ($Missing -gt 0) {
 #-----------------------------------------------------------------------------
 
 $InstallExe = "$OutDir\libsrt-$Version.exe"
-$InstallZip = "$OutDir\libsrt-$Version-win-installer.zip"
+$InstallZip = "$OutDir\libsrt-bonding-$Version-win-installer.zip"
 
 Write-Output "Building installer ..."
 & $NSIS /V2 `
