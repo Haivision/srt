@@ -9932,14 +9932,12 @@ int srt::CUDT::processData(CUnit* in_unit)
                     // that exceeds the buffer size. Receiving data in this situation
                     // is no longer possible and this is a point of no return.
 
-                    LOGC(qrlog.Error, log << CONID() <<
-                            "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
-                            " seq=" << rpkt.m_iSeqNo
-                            << " buffer=(" << m_iRcvLastSkipAck
-                            << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                            << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
-                            << "), " << (offset-avail_bufsize+1)
-                            << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
+                    LOGC(qrlog.Error,
+                         log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. seq=" << rpkt.m_iSeqNo
+                             << " buffer=(" << m_iRcvLastAck << ":" << m_iRcvCurrSeqNo // -1 = size to last index
+                             << "+" << CSeqNo::incseq(m_iRcvLastAck, int(m_pRcvBuffer->capacity()) - 1) << "), "
+                             << (offset - avail_bufsize + 1)
+                             << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
                     // This is a scoped lock with AckLock, but for the moment
                     // when processClose() is called this lock must be taken out,
@@ -9955,8 +9953,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                          log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                              << ", insert offset " << offset << ". "
                              << m_pRcvBuffer->strFullnessState(
-                                    qrlog.Debug.CheckEnabled(), m_iRcvLastSkipAck, steady_clock::now()));
-
+                                    qrlog.Debug.CheckEnabled(), m_iRcvLastAck, steady_clock::now()));
                     return -1;
                 }
             }
@@ -10002,18 +9999,13 @@ int srt::CUDT::processData(CUnit* in_unit)
             else
                 expectspec << "ACCEPTED";
 
-            LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                    << " offset=" << offset
-                    << " BUFr=" << avail_bufsize
-                    << " avail=" << getAvailRcvBufferSizeNoLock()
-                    << " buffer=(" << m_iRcvLastSkipAck
-                    << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                    << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
-                    << ") "
-                    << " RSL=" << expectspec.str()
-                    << " SN=" << rexmitstat[pktrexmitflag]
-                    << " FLAGS: "
-                    << rpkt.MessageFlagStr());
+            LOGC(qrlog.Debug,
+                 log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset
+                     << " avail=" << avail_bufsize << " buffer=(" << m_iRcvLastAck << ":"
+                     << m_iRcvCurrSeqNo // -1 = size to last index
+                     << "+" << CSeqNo::incseq(m_iRcvLastAck, m_pRcvBuffer->capacity() - 1) << ") "
+                     << " RSL=" << expectspec.str() << " SN=" << rexmitstat[pktrexmitflag]
+                     << " FLAGS: " << rpkt.MessageFlagStr());
 #endif
 
             // Decryption should have made the crypto flags EK_NOENC.
