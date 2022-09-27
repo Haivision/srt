@@ -1004,12 +1004,18 @@ void CRcvBufferNew::updateTsbPdTimeBase(uint32_t usPktTimestamp)
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
+string CRcvBufferNew::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const
 {
     stringstream ss;
 
-    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize;
-    ss << " pkts. ";
+    if (enable_debug_log)
+    {
+        ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
+           << " m_iStartPos=" << m_iStartPos << " m_iMaxPosInc=" << m_iMaxPosInc << ". ";
+    }
+
+    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
+
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
         const PacketInfo nextValidPkt = getFirstValidPacketInfo();
@@ -1030,7 +1036,6 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
         {
             ss << "n/a";
         }
-
         ss << "). ";
     }
 

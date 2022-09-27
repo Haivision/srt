@@ -7723,9 +7723,15 @@ void srt::CUDT::releaseSynch()
 void srt::CUDT::ackDataUpTo(int32_t ack)
 {
     const int acksize SRT_ATR_UNUSED = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
-
-    HLOGC(xtlog.Debug, log << "ackDataUpTo: %" << m_iRcvLastSkipAck << " -> %" << ack
-            << " (" << acksize << " packets)");
+    if (acksize < 0)
+    {
+        LOGC(xtlog.Error,
+             log << CONID() << " ackDataUpTo: IPE: invalid ACK from %" << m_iRcvLastSkipAck << " to %" << ack << " ("
+                 << acksize << " packets)");
+        return;
+    }
+    HLOGC(xtlog.Debug,
+          log << "ackDataUpTo: %" << m_iRcvLastSkipAck << " -> %" << ack << " (" << acksize << " packets)");
 
     m_iRcvLastAck = ack;
     m_iRcvLastSkipAck = ack;
@@ -10130,10 +10136,11 @@ int srt::CUDT::processData(CUnit* in_unit)
                 else
                 {
 #if ENABLE_NEW_RCVBUFFER
-                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << offset << ". "
-                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
-                    );
+                    LOGC(qrlog.Warn,
+                         log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
+                             << ", insert offset " << offset << ". "
+                             << m_pRcvBuffer->strFullnessState(
+                                    qrlog.Debug.CheckEnabled(), m_iRcvLastSkipAck, steady_clock::now()));
 #else
                     LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                         << ", insert offset " << offset << ". "
@@ -10706,7 +10713,7 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
     ScopedLock lg(m_RcvLossLock);
     m_pRcvLossList->remove(from, to);
 
-    HLOGF(qrlog.Debug, "%sTLPKTDROP seq %d-%d (%d packets)", CONID().c_str(), from, to, CSeqNo::seqoff(from, to));
+    HLOGF(qrlog.Debug, "%sTLPKTDROP seq %d-%d (%d packets)", CONID().c_str(), from, to, CSeqNo::seqlen(from, to));
 
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
