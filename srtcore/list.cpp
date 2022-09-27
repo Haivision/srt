@@ -715,19 +715,14 @@ bool srt::CRcvLossList::remove(int32_t seqno)
 
 bool srt::CRcvLossList::remove(int32_t seqno1, int32_t seqno2)
 {
-    if (seqno1 <= seqno2)
+    if (CSeqNo::seqcmp(seqno1, seqno2) > 0)
     {
-        for (int32_t i = seqno1; i <= seqno2; ++i)
-            remove(i);
+        return false;
     }
-    else
+    for (int32_t i = seqno1; CSeqNo::seqcmp(i, seqno2) <= 0; i = CSeqNo::incseq(i))
     {
-        for (int32_t j = seqno1; j < CSeqNo::m_iMaxSeqNo; ++j)
-            remove(j);
-        for (int32_t k = 0; k <= seqno2; ++k)
-            remove(k);
+        remove(i);
     }
-
     return true;
 }
 
