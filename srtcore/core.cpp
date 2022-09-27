@@ -8652,7 +8652,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
     // This variable is used in "normal" logs, so it may cause a warning
     // when logging is forcefully off.
-    int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
+    int32_t wrong_loss SRT_ATR_UNUSED = SRT_SEQNO_NONE;
 
     // protect packet retransmission
     {
