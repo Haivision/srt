@@ -9995,6 +9995,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Check if packet was retransmitted on request or on ack timeout
         // Search the sequence in the loss record.
         rexmit_reason = " by ";
+        ScopedLock lock(m_RcvLossLock);
         if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
             rexmit_reason += "BLIND";
         else
@@ -10337,7 +10338,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                     {
                         // pack loss list for (possibly belated) NAK
                         // The LOSSREPORT will be sent in a while.
-
+                        ScopedLock lock(m_RcvLossLock);
                         for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                         {
                             m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
@@ -10409,9 +10410,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     {
         // A loss is detected
         {
-            // TODO: Can unlock rcvloss after m_pRcvLossList->insert(...)?
-            // And probably protect m_FreshLoss as well.
-
             HLOGC(qrlog.Debug,
                   log << CONID() << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
             // if record_loss == false, nothing will be contained here
