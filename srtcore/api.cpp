@@ -1946,9 +1946,9 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 
 int srt::CUDTUnited::close(CUDTSocket* s)
 {
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSE. Acquiring control lock");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing from listening, closing CUDT)");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
@@ -1971,7 +1971,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // be unable to bind to this port that the about-to-delete listener
         // is currently occupying (due to blocked slot in the RcvQueue).
 
-        HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing listener immediately)");
+        HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
 
         // broadcast all "accept" waiting
@@ -1989,7 +1989,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
               log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
-                  << ". Acquiring GLOBAL control lock");
+                  << "Acquiring GLOBAL control lock");
         ScopedLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid

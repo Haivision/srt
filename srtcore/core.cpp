@@ -6094,13 +6094,13 @@ bool srt::CUDT::closeInternal()
     // that has m_bBroken == false or m_bConnected == true.
     // If it is intended to forcefully close the socket, make sure
     // that it's in response to a broken connection.
-    HLOGC(smlog.Debug, log << CONID() << " - closing socket:");
+    HLOGC(smlog.Debug, log << CONID() << "closing socket");
 
     if (m_config.Linger.l_onoff != 0)
     {
         const steady_clock::time_point entertime = steady_clock::now();
 
-        HLOGC(smlog.Debug, log << CONID() << " ... (linger)");
+        HLOGC(smlog.Debug, log << CONID() << "... (linger)");
         while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) &&
                (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
         {
@@ -7726,7 +7726,7 @@ void srt::CUDT::ackDataUpTo(int32_t ack)
     if (acksize < 0)
     {
         LOGC(xtlog.Error,
-             log << CONID() << " ackDataUpTo: IPE: invalid ACK from %" << m_iRcvLastSkipAck << " to %" << ack << " ("
+             log << CONID() << "ackDataUpTo: IPE: invalid ACK from %" << m_iRcvLastSkipAck << " to %" << ack << " ("
                  << acksize << " packets)");
         return;
     }
@@ -7772,7 +7772,7 @@ void srt::CUDT::dropToGroupRecvBase() {
     if (cnt > 0)
     {
         HLOGC(grlog.Debug,
-              log << "dropToGroupRecvBase: " << CONID() << " dropped " << cnt << " packets before ACK: group_recv_base="
+              log << "dropToGroupRecvBase: " << CONID() << "dropped " << cnt << " packets before ACK: group_recv_base="
                   << group_recv_base << " m_iRcvLastSkipAck=" << m_iRcvLastSkipAck
                   << " m_iRcvCurrSeqNo=" << m_iRcvCurrSeqNo << " m_bTsbPd=" << m_bTsbPd);
     }
@@ -8008,7 +8008,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
         ctrlpkt.m_iID = m_PeerID;
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-        DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
+        DebugAck("sendCtrl(lite): " + CONID(), local_prevack, ack);
         return nbsent;
     }
 
