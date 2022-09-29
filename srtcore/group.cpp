@@ -2196,7 +2196,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 
         // Find the first readable packet among all member sockets.
         CUDTSocket*               socketToRead = NULL;
-        CRcvBufferNew::PacketInfo infoToRead   = {-1, false, time_point()};
+        CRcvBuffer::PacketInfo infoToRead   = {-1, false, time_point()};
         for (vector<CUDTSocket*>::const_iterator si = readySockets.begin(); si != readySockets.end(); ++si)
         {
             CUDTSocket* ps = *si;
@@ -2214,7 +2214,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 }
             }
 
-            const CRcvBufferNew::PacketInfo info =
+            const CRcvBuffer::PacketInfo info =
                 ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now());
             if (info.seqno == SRT_SEQNO_NONE)
             {

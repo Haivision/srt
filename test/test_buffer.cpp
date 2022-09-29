@@ -32,7 +32,7 @@ protected:
 
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
@@ -128,7 +128,7 @@ public:
 
 protected:
     unique_ptr<CUnitQueue> m_unit_queue;
-    unique_ptr<CRcvBufferNew> m_rcv_buffer;
+    unique_ptr<CRcvBuffer> m_rcv_buffer;
     const int m_buff_size_pkts = 16;
     const int m_init_seqno = 1000;
     int m_first_unack_seqno = m_init_seqno;
