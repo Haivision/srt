@@ -10327,23 +10327,7 @@ int srt::CUDT::processData(CUnit* in_unit)
                 {
                     int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                     int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
-
                     srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                    if (initial_loss_ttl)
-                    {
-                        // pack loss list for (possibly belated) NAK
-                        // The LOSSREPORT will be sent in a while.
-                        ScopedLock lock(m_RcvLossLock);
-                        for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                        {
-                            m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                        }
-                        HLOGC(qrlog.Debug,
-                              log << CONID() << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
-                                  << " tolerance: " << initial_loss_ttl);
-                        reorder_prevent_lossreport = true;
-                    }
                 }
             }
 
@@ -10357,6 +10341,24 @@ int srt::CUDT::processData(CUnit* in_unit)
             {
                 unlose(rpkt); // was BELATED or RETRANSMITTED
                 was_sent_in_order &= 0 != pktrexmitflag;
+            }
+        }
+
+        if (!srt_loss_seqs.empty())
+        {
+            if (initial_loss_ttl)
+            {
+                // pack loss list for (possibly belated) NAK
+                // The LOSSREPORT will be sent in a while.
+                ScopedLock lock(m_RcvLossLock);
+                for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
+                {
+                    m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
+                }
+                HLOGC(qrlog.Debug,
+                      log << CONID() << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
+                          << " tolerance: " << initial_loss_ttl);
+                reorder_prevent_lossreport = true;
             }
         }
 
