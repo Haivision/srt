@@ -11,8 +11,6 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#if ENABLE_NEW_RCVBUFFER
-
 #include "buffer.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
@@ -363,5 +361,4 @@ private: // Statistics
 
 } // namespace srt
 
-#endif // ENABLE_NEW_RCVBUFFER
 #endif // INC_SRT_BUFFER_RCV_H

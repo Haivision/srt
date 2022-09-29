@@ -416,11 +416,7 @@ public: // internal API
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
-#if ENABLE_NEW_RCVBUFFER
     SRTU_PROPERTY_RO(srt::CRcvBufferNew*, rcvBuffer, m_pRcvBuffer);
-#else
-    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
-#endif
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(sync::Condition*, recvDataCond, &m_RecvDataCond);
@@ -711,13 +707,11 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
-#if ENABLE_NEW_RCVBUFFER
     /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
     int rcvDropTooLateUpTo(int seqno);
-#endif
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
@@ -895,12 +889,7 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
-#if ENABLE_NEW_RCVBUFFER
-    CRcvBufferNew* m_pRcvBuffer;            //< Receiver buffer
-#else
-    CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
-#endif
-
+    CRcvBufferNew* m_pRcvBuffer;                 //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
@@ -1084,7 +1073,7 @@ private: // Generation and processing of packets
     /// @param seq first unacknowledged packet sequence number.
     void ackDataUpTo(int32_t seq);
 
-#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
+#if ENABLE_BONDING
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
     void dropToGroupRecvBase();
