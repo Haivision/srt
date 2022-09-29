@@ -10052,7 +10052,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     loss_seqs_t                             srt_loss_seqs;
     vector<CUnit *>                         incoming;
     bool                                    was_sent_in_order          = true;
-    bool                                    reorder_prevent_lossreport = false;
 
     // If the peer doesn't understand REXMIT flag, send rexmit request
     // always immediately.
@@ -10367,7 +10366,6 @@ int srt::CUDT::processData(CUnit* in_unit)
                 HLOGC(qrlog.Debug,
                       log << CONID() << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
                           << " tolerance: " << initial_loss_ttl);
-                reorder_prevent_lossreport = true;
             }
         }
 
@@ -10416,7 +10414,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (!srt_loss_seqs.empty())
     {
         const bool report_recorded_loss = !m_PacketFilter || m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
-        if (!reorder_prevent_lossreport && report_recorded_loss)
+        if (!initial_loss_ttl && report_recorded_loss)
         {
             HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
             sendLossReport(srt_loss_seqs);
