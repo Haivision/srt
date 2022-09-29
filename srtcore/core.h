@@ -59,7 +59,7 @@ modified by
 #include "srt.h"
 #include "common.h"
 #include "list.h"
-#include "buffer.h"
+#include "buffer_snd.h"
 #include "buffer_rcv.h"
 #include "window.h"
 #include "packet.h"
