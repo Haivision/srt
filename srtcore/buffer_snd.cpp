@@ -54,7 +54,7 @@ modified by
 
 #include <cstring>
 #include <cmath>
-#include "buffer.h"
+#include "buffer_snd.h"
 #include "packet.h"
 #include "core.h" // provides some constants
 #include "logging.h"

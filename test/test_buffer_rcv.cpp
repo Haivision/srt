@@ -1,7 +1,6 @@
 #include <array>
 #include <numeric>
 #include "gtest/gtest.h"
-#include "buffer.h"
 #include "buffer_rcv.h"
 
 using namespace srt;

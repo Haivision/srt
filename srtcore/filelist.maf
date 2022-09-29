@@ -2,7 +2,7 @@
 
 SOURCES
 api.cpp
-buffer.cpp
+buffer_snd.cpp
 buffer_rcv.cpp
 cache.cpp
 channel.cpp
@@ -53,7 +53,7 @@ udt.h
 
 PRIVATE HEADERS
 api.h
-buffer.h
+buffer_snd.h
 buffer_rcv.h
 cache.h
 channel.h
