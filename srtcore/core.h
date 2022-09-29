@@ -900,8 +900,12 @@ private: // Receiving related data
 #else
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
 #endif
+
+    SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
+    SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+
     int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
     int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
     int m_iConsecOrderedDelivery;                //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
