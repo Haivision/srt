@@ -10346,11 +10346,20 @@ int srt::CUDT::processData(CUnit* in_unit)
 
         if (!srt_loss_seqs.empty())
         {
+            ScopedLock lock(m_RcvLossLock);
+
+            HLOGC(qrlog.Debug,
+                  log << CONID() << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
+            for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
+            {
+                // If loss found, insert them to the receiver loss list.
+                m_pRcvLossList->insert(i->first, i->second);
+            }
+
             if (initial_loss_ttl)
             {
                 // pack loss list for (possibly belated) NAK
                 // The LOSSREPORT will be sent in a while.
-                ScopedLock lock(m_RcvLossLock);
                 for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
                 {
                     m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
@@ -10406,20 +10415,6 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     if (!srt_loss_seqs.empty())
     {
-        // A loss is detected
-        {
-            HLOGC(qrlog.Debug,
-                  log << CONID() << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
-            // if record_loss == false, nothing will be contained here
-            // Insert lost sequence numbers to the receiver loss list
-            ScopedLock lg(m_RcvLossLock);
-            for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-            {
-                // If loss found, insert them to the receiver loss list
-                m_pRcvLossList->insert(i->first, i->second);
-            }
-        }
-
         const bool report_recorded_loss = !m_PacketFilter || m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
         if (!reorder_prevent_lossreport && report_recorded_loss)
         {
