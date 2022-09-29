@@ -143,7 +143,7 @@ int CRcvBuffer::insert(CUnit* unit)
     }
     SRT_ASSERT(m_entries[pos].pUnit == NULL);
 
-    m_pUnitQueue->makeUnitGood(unit);
+    m_pUnitQueue->makeUnitTaken(unit);
     m_entries[pos].pUnit  = unit;
     m_entries[pos].status = EntryState_Avail;
     countBytes(1, (int)unit->m_Packet.getLength());

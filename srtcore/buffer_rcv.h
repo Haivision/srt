@@ -266,7 +266,7 @@ private:
     int getTimespan_ms() const;
 
 private:
-    // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.
+    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
     // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
     // class CUnitPtr
     // {
