@@ -9966,11 +9966,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         tns1 << m_SocketID;
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
-
-        const string& tn = tns2.str();
-
-        ThreadName tnkeep(tn);
-        const string& thname = tn;
+        const string thname = tns2.str();
 #else
         const string thname = "SRT:TsbPd";
 #endif
