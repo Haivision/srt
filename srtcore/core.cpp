@@ -10348,24 +10348,17 @@ int srt::CUDT::processData(CUnit* in_unit)
             ScopedLock lock(m_RcvLossLock);
 
             HLOGC(qrlog.Debug,
-                  log << CONID() << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
+                  log << CONID() << "processData: RECORDING LOSS: " << Printable(srt_loss_seqs)
+                      << " tolerance=" << initial_loss_ttl);
+
             for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
             {
-                // If loss found, insert them to the receiver loss list.
                 m_pRcvLossList->insert(i->first, i->second);
-            }
-
-            if (initial_loss_ttl)
-            {
-                // pack loss list for (possibly belated) NAK
-                // The LOSSREPORT will be sent in a while.
-                for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
+                if (initial_loss_ttl)
                 {
+                    // The LOSSREPORT will be sent after initial_loss_ttl.
                     m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
                 }
-                HLOGC(qrlog.Debug,
-                      log << CONID() << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
-                          << " tolerance: " << initial_loss_ttl);
             }
         }
 
