@@ -1,4 +1,3 @@
-#if ENABLE_NEW_RCVBUFFER
 #include <cmath>
 #include <limits>
 #include "buffer_rcv.h"
@@ -1073,5 +1072,3 @@ void CRcvBufferNew::updRcvAvgDataSize(const steady_clock::time_point& now)
 }
 
 } // namespace srt
-
-#endif // ENABLE_NEW_RCVBUFFER
