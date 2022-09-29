@@ -43,15 +43,15 @@ namespace srt
  *    first_nonread_pos_:
  */
 
-class CRcvBufferNew
+class CRcvBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
-    ~CRcvBufferNew();
+    ~CRcvBuffer();
 
 public:
     /// Insert a unit into the buffer.
