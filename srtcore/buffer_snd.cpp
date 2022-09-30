@@ -162,7 +162,7 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     }
 }
 
-CSndBuffer::CSndBuffer(int size, int maxpld)
+CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
     : m_BufLock()
     , m_pBlock(NULL)
     , m_pFirstBlock(NULL)
@@ -172,6 +172,7 @@ CSndBuffer::CSndBuffer(int size, int maxpld)
     , m_iNextMsgNo(1)
     , m_iSize(size)
     , m_iBlockLen(maxpld)
+    , m_iAuthTagSize(authtag)
     , m_iCount(0)
     , m_iBytesCount(0)
 {
@@ -233,7 +234,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int32_t& w_seqno    = w_mctrl.pktseq;
     int64_t& w_srctime  = w_mctrl.srctime;
     const int& ttl      = w_mctrl.msgttl;
-    const int iPktLen   = m_iBlockLen; // Payload length per packet.
+    const int iPktLen   = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
     int      iNumBlocks = len / iPktLen;
     if ((len % m_iBlockLen) != 0)
         ++iNumBlocks;
@@ -336,7 +337,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 {
-    const int iPktLen   = m_iBlockLen; // Payload length per packet.
+    const int iPktLen   = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
     int      iNumBlocks = len / iPktLen;
     if ((len % m_iBlockLen) != 0)
         ++iNumBlocks;
@@ -416,7 +417,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         // Make the packet REFLECT the data stored in the buffer.
         w_packet.m_pcData = m_pCurrBlock->m_pcData;
         readlen = m_pCurrBlock->m_iLength;
-        w_packet.setLength(readlen);
+        w_packet.setLength(readlen, m_iBlockLen);
         w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
 
         // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
@@ -589,7 +590,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     w_packet.m_pcData = p->m_pcData;
     const int readlen = p->m_iLength;
-    w_packet.setLength(readlen);
+    w_packet.setLength(readlen, m_iBlockLen);
 
     // XXX Here the value predicted to be applied to PH_MSGNO field is extracted.
     // As this function is predicted to extract the data to send as a rexmited packet,
