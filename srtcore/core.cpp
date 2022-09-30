@@ -9940,14 +9940,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 // that exceeds the buffer size. Receiving data in this situation
                 // is no longer possible and this is a point of no return.
 
-                LOGC(qrlog.Error, log << CONID() <<
-                        "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
-                        " seq=" << rpkt.m_iSeqNo
-                        << " buffer=(" << m_iRcvLastSkipAck
-                        << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                        << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
-                        << "), " << (offset-avail_bufsize+1)
-                        << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
+                LOGC(qrlog.Error,
+                     log << CONID() << "SEQUENCE DISCREPANCY. BREAKING CONNECTION. seq=" << rpkt.m_iSeqNo
+                         << " buffer=(" << m_iRcvLastAck << ":" << m_iRcvCurrSeqNo // -1 = size to last index
+                         << "+" << CSeqNo::incseq(m_iRcvLastAck, int(m_pRcvBuffer->capacity()) - 1) << "), "
+                         << (offset - avail_bufsize + 1)
+                         << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
                 return -2;
             }
@@ -10020,8 +10018,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         if (m_pRcvBuffer)
         {
-            bufinfo << " BUFr=" << avail_bufsize
-                << " avail=" << getAvailRcvBufferSizeNoLock()
+            bufinfo
+                << " avail=" << avail_bufsize
                 << " buffer=(" << m_iRcvLastSkipAck
                 << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
                 << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
