@@ -639,7 +639,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 const int max_events = ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
                 srt::FixedArray<epoll_event> ev(max_events);
-                int nfds = ::epoll_wait(ed.m_iLocalID, &ev[0], max_events, 0);
+                int nfds = ::epoll_wait(ed.m_iLocalID, ev.data(), ev.size(), 0);
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
                 for (int i = 0; i < nfds; ++ i)
@@ -663,7 +663,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                 SRT_ASSERT(max_events > 0);
                 srt::FixedArray<struct kevent> ke(max_events);
 
-                int nfds = kevent(ed.m_iLocalID, NULL, 0, &ke[0], max_events, &tmout);
+                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
