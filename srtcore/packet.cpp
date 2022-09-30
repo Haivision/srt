@@ -252,6 +252,13 @@ void srt::CPacket::setLength(size_t len)
     m_PacketVector[PV_DATA].setLength(len);
 }
 
+void srt::CPacket::setLength(size_t len, size_t cap)
+{
+   SRT_ASSERT(len <= cap);
+   setLength(len);
+   m_zCapacity = cap;
+}
+
 void srt::CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
@@ -456,8 +463,13 @@ int32_t srt::CPacket::getMsgSeq(bool has_rexmit) const
 
 bool srt::CPacket::getRexmitFlag() const
 {
-    // return false; //
     return 0 != MSGNO_REXMIT::unwrap(m_nHeader[SRT_PH_MSGNO]);
+}
+
+void srt::CPacket::setRexmitFlag(bool bRexmit)
+{
+    const int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_REXMIT::mask;
+    m_nHeader[SRT_PH_MSGNO] = clr_msgno | MSGNO_REXMIT::wrap(bRexmit? 1 : 0);
 }
 
 srt::EncryptionKeySpec srt::CPacket::getMsgCryptoFlags() const
