@@ -14,26 +14,30 @@ written by
    Haivision Systems Inc.
 
    2011-06-23 (jdube)
-        HaiCrypt initial implementation.
+		HaiCrypt initial implementation.
    2014-03-11 (jdube)
-        Adaptation for SRT.
+		Adaptation for SRT.
 *****************************************************************************/
 
 #include <string.h>				/* memcpy */
 #include "hcrypt.h"
 
+int HaiCryptCryspr_Is_AES_GCM_Supported(void); // Declared in haicrypt.h. Defined in cryspr.c.
+
 int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
-    ctx->mode = HCRYPT_CTX_MODE_AESCTR;
-    ctx->status = HCRYPT_CTX_S_INIT;
+	if (cfg) {
+		ctx->mode = (cfg->flags & HAICRYPT_CFG_F_GCM) ? HCRYPT_CTX_MODE_AESGCM : HCRYPT_CTX_MODE_AESCTR;
+	}
+	ctx->status = HCRYPT_CTX_S_INIT;
 
-    ctx->msg_info = crypto->msg_info;
+	ctx->msg_info = crypto->msg_info;
 
-    if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
-        return(-1);
-    }
-    ctx->status = HCRYPT_CTX_S_SARDY;
-    return(0);
+	if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
+		return(-1);
+	}
+	ctx->status = HCRYPT_CTX_S_SARDY;
+	return(0);
 }
 
 int hcryptCtx_Rx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *sek, size_t sek_len)
@@ -98,9 +102,22 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		}
 
 		/* Check options support  */
-		if ((HCRYPT_CIPHER_AES_CTR != km_msg[HCRYPT_MSG_KM_OFS_CIPHER])
-		||  (HCRYPT_AUTH_NONE != km_msg[HCRYPT_MSG_KM_OFS_AUTH])) {
-			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported option\n");
+		// TODO: Only OpenSSL EVP crypto provider allows the use of GCM. Add this condition.
+		if (HCRYPT_CIPHER_AES_CTR != km_msg[HCRYPT_MSG_KM_OFS_CIPHER]
+			&& HCRYPT_CIPHER_AES_GCM != km_msg[HCRYPT_MSG_KM_OFS_CIPHER])
+		{
+			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported cipher\n");
+			return(-1);
+		}
+
+		if (HCRYPT_CIPHER_AES_GCM == km_msg[HCRYPT_MSG_KM_OFS_CIPHER] && !HaiCryptCryspr_Is_AES_GCM_Supported())
+		{
+			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported GCM cipher\n");
+			return(-1);
+		}
+
+		if (HCRYPT_AUTH_NONE != km_msg[HCRYPT_MSG_KM_OFS_AUTH]) {
+			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported auth method\n");
 			return(-1);
 		}
 
@@ -144,6 +161,13 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		do_pbkdf = 1; /* Impact on password derived kek */
 	}
 
+	/* Check cipher mode */
+	if (ctx->mode != km_msg[HCRYPT_MSG_KM_OFS_CIPHER])
+	{
+		HCRYPT_LOG(LOG_WARNING, "%s", "cipher mode mismatch\n");
+		return(-3);
+	}
+
 	/* 
 	 * Regenerate KEK if it is password derived
 	 * and Salt or SEK length changed
@@ -184,7 +208,6 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		alt->salt_len = salt_len;
 
 		if (kek_len) { /* New or changed KEK */
-//			memcpy(&alt->aes_kek, &ctx->aes_kek, sizeof(alt->aes_kek));
 			alt->status = HCRYPT_CTX_S_SARDY;
 		}
 

@@ -31,6 +31,10 @@ typedef void *HaiCrypt_Cryspr;
 
 HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance (void);     /* Return a default cryspr instance */
 
+/// @brief Check if AES GCM is supported.
+/// @return 1 if AES GCM is supported, 0 otherwise
+int HaiCryptCryspr_Is_AES_GCM_Supported(void);
+
 #define HAICRYPT_CIPHER_BLK_SZ      16  /* AES Block Size */
 
 #define HAICRYPT_PWD_MAX_SZ         80  /* MAX password (for Password-based Key Derivation) */
@@ -60,6 +64,7 @@ typedef struct {
 #define HAICRYPT_CFG_F_TX       0x01        /* !TX -> RX */
 #define HAICRYPT_CFG_F_CRYPTO   0x02        /* Perform crypto Tx:Encrypt Rx:Decrypt */
 #define HAICRYPT_CFG_F_FEC      0x04        /* Do Forward Error Correction */
+#define HAICRYPT_CFG_F_GCM      0x08        /* Use AES-GCM */
         unsigned        flags;
 
         HaiCrypt_Secret secret;             /* Security Association */
@@ -112,6 +117,7 @@ int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *da
 
 #define HAICRYPT_ERROR -1
 #define HAICRYPT_ERROR_WRONG_SECRET -2
+#define HAICRYPT_ERROR_CIPHER -3
 #define HAICRYPT_OK 0
 
 

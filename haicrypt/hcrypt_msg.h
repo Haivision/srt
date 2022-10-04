@@ -122,6 +122,7 @@ typedef struct {
 #define HCRYPT_CIPHER_AES_ECB   1
 #define HCRYPT_CIPHER_AES_CTR   2
 #define HCRYPT_CIPHER_AES_CBC   3
+#define HCRYPT_CIPHER_AES_GCM   4
 
 #define HCRYPT_AUTH_NONE        0
 
