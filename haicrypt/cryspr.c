@@ -420,14 +420,16 @@ static int crysprFallback_MsEncrypt(
 	 * to reserve room for unencrypted message header in output buffer
 	 */
 	pfx_len = ctx->msg_info->pfx_len;
-	// Extra 16 bytes are needed for an authentication tag in GCM.
-	const int aux_len = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? 16 : 0;
+	/* Extra 16 bytes are needed for an authentication tag in GCM. */
+	const int aux_len = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? CRYSPR_AUTHTAGMAX : 0;
 
-	// Auth tag produced by AES GCM.
-	unsigned char tag[16];
+	/* Auth tag produced by AES GCM. */
+	unsigned char tag[CRYSPR_AUTHTAGMAX];
 
-	/* Get buffer room from the internal circular output buffer */
-	// TODO: Reserve additional 16 bytes for auth tag in AES GCM mode.
+	/*
+	 * Get buffer room from the internal circular output buffer.
+	 * Reserve additional 16 bytes for auth tag in AES GCM mode when needed.
+	 */
 	out_msg = _crysprFallback_GetOutbuf(cryspr_cb, pfx_len, in_data[0].len + aux_len);
 	if (NULL == out_msg) {
 		/* input data too big */

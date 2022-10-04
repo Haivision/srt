@@ -102,7 +102,6 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 		}
 
 		/* Check options support  */
-		// TODO: Only OpenSSL EVP crypto provider allows the use of GCM. Add this condition.
 		if (HCRYPT_CIPHER_AES_CTR != km_msg[HCRYPT_MSG_KM_OFS_CIPHER]
 			&& HCRYPT_CIPHER_AES_GCM != km_msg[HCRYPT_MSG_KM_OFS_CIPHER])
 		{
@@ -110,6 +109,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 			return(-1);
 		}
 
+		/* Only OpenSSL EVP crypto provider allows the use of GCM.Add this condition. Reject if GCM is not supported by the CRYSPR. */
 		if (HCRYPT_CIPHER_AES_GCM == km_msg[HCRYPT_MSG_KM_OFS_CIPHER] && !HaiCryptCryspr_Is_AES_GCM_Supported())
 		{
 			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported GCM cipher\n");
