@@ -9890,7 +9890,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             CUnit *  u    = *unitIt;
             CPacket &rpkt = u->m_Packet;
 
-            // This sequence is already in the past and the buffer is not interested.
+            // If negative, the seqno is already behind the dropped/acknowledged position.
             // Meaning, this packet will be rejected, even if it could potentially be
             // one of missing packets in the transmission.
             if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastSkipAck) < 0)
