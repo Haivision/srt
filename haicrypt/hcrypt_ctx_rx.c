@@ -22,8 +22,6 @@ written by
 #include <string.h>				/* memcpy */
 #include "hcrypt.h"
 
-int HaiCryptCryspr_Is_AES_GCM_Supported(void); // Declared in haicrypt.h. Defined in cryspr.c.
-
 int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg)
 {
 	if (cfg) {
@@ -109,12 +107,14 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 			return(-1);
 		}
 
+#if !CRYSPR_HAS_AESGCM
 		/* Only OpenSSL EVP crypto provider allows the use of GCM.Add this condition. Reject if GCM is not supported by the CRYSPR. */
-		if (HCRYPT_CIPHER_AES_GCM == km_msg[HCRYPT_MSG_KM_OFS_CIPHER] && !HaiCryptCryspr_Is_AES_GCM_Supported())
+		if (HCRYPT_CIPHER_AES_GCM == km_msg[HCRYPT_MSG_KM_OFS_CIPHER])
 		{
 			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported GCM cipher\n");
 			return(-1);
 		}
+#endif
 
 		if (HCRYPT_AUTH_NONE != km_msg[HCRYPT_MSG_KM_OFS_AUTH]) {
 			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported auth method\n");

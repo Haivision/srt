@@ -31,10 +31,6 @@ typedef void *HaiCrypt_Cryspr;
 
 HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance (void);     /* Return a default cryspr instance */
 
-/// @brief Check if AES GCM is supported.
-/// @return 1 if AES GCM is supported, 0 otherwise
-int HaiCryptCryspr_Is_AES_GCM_Supported(void);
-
 #define HAICRYPT_CIPHER_BLK_SZ      16  /* AES Block Size */
 
 #define HAICRYPT_PWD_MAX_SZ         80  /* MAX password (for Password-based Key Derivation) */

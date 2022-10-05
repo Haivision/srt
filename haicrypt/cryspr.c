@@ -774,9 +774,3 @@ HaiCrypt_Cryspr HaiCryptCryspr_Get_Instance(void)
 {
 	return((HaiCrypt_Cryspr)cryspr4SRT());
 }
-
-int HaiCryptCryspr_Is_AES_GCM_Supported(void)
-{
-	return (cryspr4SRT()->aes_gcm_cipher != crysprStub_AES_GCMCipher) ? 1 : 0;
-}
-
