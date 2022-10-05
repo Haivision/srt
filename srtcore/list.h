@@ -76,7 +76,7 @@ public:
     /// @param [in] seqno sequence number.
     void removeUpTo(int32_t seqno);
 
-    /// Read the loss length.∏
+    /// Read the loss length.
     /// @return The length of the list.
     int getLossLength() const;
 
@@ -89,7 +89,32 @@ public:
     /// @return true if the sequence was found and removed, false otherwise.
     bool popLostSeq(int32_t seqno);
 
+    template <class Stream>
+    Stream& traceState(Stream& sout) const
+    {
+        int pos = m_iHead;
+        while (pos != SRT_SEQNO_NONE)
+        {
+            sout << "[" << pos << "]:" << m_caSeq[pos].seqstart;
+            if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
+                sout << ":" << m_caSeq[pos].seqend;
+            if (m_caSeq[pos].inext == -1)
+                sout << "=|";
+            else
+                sout << "->[" << m_caSeq[pos].inext << "]";
+            sout << ", ";
+            pos = m_caSeq[pos].inext;
+        }
+        sout << " {len:" << m_iLength << " head:" << m_iHead << " last:" << m_iLastInsertPos << "}";
+        return sout;
+    }
     void traceState() const;
+
+    // Debug/unittest support.
+
+    int head() const { return m_iHead; }
+    int next(int loc) const { return m_caSeq[loc].inext; }
+    int last() const { return m_iLastInsertPos; }
 
 private:
     struct Seq

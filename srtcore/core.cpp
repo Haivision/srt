@@ -6041,7 +6041,7 @@ void srt::CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timeb
 
     if (m_iSndHsRetryCnt <= 0)
     {
-        HLOGC(cnlog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        //HLOGC(cnlog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
         return;
     }
 
@@ -6754,6 +6754,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             // schedule, for all others it does nothing.
             if (m_parent->m_GroupMemberData->use_send_schedule)
             {
+                HLOGC(aslog.Debug, log << CONID() << "sendmsg2: add to group schedule: %" << seqno << " !" << BufferStamp(data, size));
                 if (!m_parent->m_GroupOf->updateSendPacketUnique_LOCKED(seqno))
                 {
                     throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
@@ -6774,7 +6775,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         HLOGC(aslog.Debug, log << CONID() << "buf:SENDING (BEFORE) srctime:"
                 << (w_mctrl.srctime ? FormatTime(ts_srctime) : "none")
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
-                << " STAMP: " << BufferStamp(data, size));
+                << " !" << BufferStamp(data, size));
 
         if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
         {
@@ -8413,8 +8414,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     return nbsent;
 }
 
-void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
+void srt::CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
 {
+    w_last_sent_seqno = m_iSndCurrSeqNo;
+
 #if ENABLE_BONDING
     CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
     // This is for the call of CSndBuffer::getMsgNoAt that returns
@@ -8446,7 +8449,12 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         // one should happen in case of possible breakup detection, so this
         // way it doesn't make any sense to handle losses any other way than
         // per socket, as usual.
-        gkeeper.group->updateSndLossListOnACK(ackdata_seqno);
+        bool valid = gkeeper.group->updateOnACK(ackdata_seqno, (w_last_sent_seqno));
+        if (!valid)
+        {
+            HLOGC(inlog.Debug, log << "updateStateOnACK: " << CONID() << "sent outdated ack %" << ackdata_seqno
+                    << " against last sent %" << w_last_sent_seqno << " ??? ");
+        }
 
         // m_RecvAckLock protects sender's loss list and epoll
         ScopedLock ack_lock(m_RecvAckLock);
@@ -8569,7 +8577,13 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
           log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
               << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
 
-    updateSndLossListOnACK(ackdata_seqno);
+    // last_sent_seqno is the value of m_iSndCurrSeqNo in general,
+    // but for parallel-link groups (broadcast and balancing) this should
+    // use the value that is remembered in the group and represents the
+    // latest sequence sent for the group, no matter through which link
+    // it was sent.
+    int32_t last_sent_seqno;
+    updateStateOnACK(ackdata_seqno, (last_sent_seqno));
 
     // Process a lite ACK
     if (isLiteAck)
@@ -8615,13 +8629,13 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     enterCS(m_RecvAckLock);
 
     // Check the validation of the ack
-    if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
+    if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(last_sent_seqno)) > 0)
     {
         leaveCS(m_RecvAckLock);
         // this should not happen: attack or bug
         LOGC(gglog.Error,
                 log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
-                    << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
+                    << last_sent_seqno << " by " << (CSeqNo::seqoff(last_sent_seqno, ackdata_seqno) - 1) << "! - BREAKING");
         m_bBroken        = true;
         m_iBrokenCounter = 0;
         return;
@@ -9058,6 +9072,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         {
             groups::SocketData* d = m_parent->m_GroupMemberData;
 
+            HLOGC(aslog.Debug, log << CONID() << "processCtrl(loss): adding to group loss sched&list: %" << Printable(losses));
             // This will:
             // 1. Add the loss to the group loss list
             // 2. If use_send_schedule, it will also schedule these packets.
@@ -9093,7 +9108,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     {
         LOGC(inlog.Warn,
             log << CONID() << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo
-            << " vs loss %" << wrong_loss);
+            << " vs loss %" << wrong_loss << " - BREAKING");
         // this should not happen: attack or bug
         m_bBroken = true;
         m_iBrokenCounter = 0;
@@ -9815,6 +9830,19 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
             return false;
         }
 
+#if ENABLE_HEAVY_LOGGING
+        {
+            HLOGC(qslog.Debug, log << CONID() << "packData(sched): current schedule (" << seqs.size() << "):");
+            ostringstream so;
+            for (size_t i = 0; i < seqs.size(); ++i)
+            {
+                HLOGC(qslog.Debug, log << "... [" << i << "] %" << seqs[i].seq
+                    << " [" << groups::SeqTypeStr(seqs[i].type) << "]");
+            }
+
+        }
+#endif
+
         int nremoved = 0;
         for (size_t i = 0; i < seqs.size(); ++i)
         {
@@ -9825,11 +9853,15 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
             nremoved = i+1;
 
+            HLOGC(qslog.Debug, log << "packData(sched): got %" << ss.seq
+                    << " [" << groups::SeqTypeStr(ss.type) << "] [" << i << "]");
+
             // XXX see below
             //int msglen;
 
             if (ss.type == groups::SQT_PFILTER)
             {
+                HLOGC(qslog.Debug, log << "... filter type, NOT IMPLEMENTED");
                 // XXX packet filter extraction currently not implemented, do not use.
                 continue;
                 //filter_ctl_pkt = true;
@@ -9856,6 +9888,8 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                             << ":loss in the schedule is missing from the loss list");
                     continue;
                 }
+                HLOGC(qslog.Debug, log << "... ok, will send the REXMIT %" << ss.seq);
+                break; // exit the schedule loop and execute the event request
             }
             else if (ss.type == groups::SQT_FRESH)
             {
@@ -9890,6 +9924,8 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                     continue;
                 }
 
+                HLOGC(qslog.Debug, log << "... ok, will send the unique %" << ss.seq);
+
                 // After this condition we know that the situation is:
                 // The given sequence is one of the o below,
                 // and the very first call to packUniqueData() will pick
@@ -9902,18 +9938,38 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                 //           ^                   ^
                 // m_iSndCurrSeqNo           m_iSndNextSeqNo
 
-                if (!packUniqueData((w_packet), (origintime)))
+                // Roll here until you finally extract the packet with the expected
+                // sequence.
+                for (;;)
                 {
-                    // Kinda impossible, but still handle it.
-                    payload = 0;
-                    break;
-                }
+                    if (!packUniqueData((w_packet), (origintime)))
+                    {
+                        // Kinda impossible, but still handle it.
+                        LOGC(qslog.Debug, log << "packetData(sched): IPE: nothing extracted from the buffer tho sched requested %" << ss.seq);
+                        payload = 0; // force uplevel break
+                        break;
+                    }
 
-                if (w_packet.m_iSeqNo != ss.seq)
-                {
+                    payload = (int) w_packet.getLength();
+
+                    if (w_packet.m_iSeqNo == ss.seq)
+                    {
+                        break;
+                    }
+
+                    HLOGC(qslog.Debug, log << "packData(sched): extracted %" << w_packet.m_iSeqNo << " while expecting scheduled %" << ss.seq << " - retrying.");
+
                     // This is not the packet we are looking for.
-                    continue;
+                    // Fallback, just in case.
+                    if (CSeqNo::seqcmp(w_packet.m_iSeqNo, ss.seq) > 0)
+                    {
+                        LOGC(qslog.Debug, log << "packetData(sched): IPE: extraction from the sender buffer found %" << w_packet.m_iSeqNo << " past %" << ss.seq);
+                        payload = 0; // force uplevel break
+                        break;
+                    }
                 }
+                if (payload == 0)
+                    break;
 
                 new_packet_packed = true;
 
@@ -9921,8 +9977,10 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
                 if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
                     probe = true;
 
-                payload = (int) w_packet.getLength();
                 reason = "normal";
+
+                // The packet was successfully picked up, stop the loop here.
+                break;
             }
             else // SQT_SKIP
             {
@@ -9946,10 +10004,13 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
         // by removing elements - only this function can remove elements from there, or
         // when closing a socket. So this will always cover these sequences that have been
         // extracted here above.
+
+        HLOGC(qslog.Debug, log << "packData(sched): discard " << nremoved << "/" << seqs.size() << " scheduled events");
         m_parent->m_GroupOf->discardSendSchedule(m_parent->m_GroupMemberData, nremoved);
 
         if (!payload)
         {
+            HLOGC(qslog.Debug, log << "packData(sched): no packet extracted from the buffer - exitting");
             // XXX consider making that common for payload = 0
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration::zero();
@@ -10059,7 +10120,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(qslog.Debug,
-          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.m_iSeqNo << " (ACK=" << m_iSndLastAck
+          log << CONID() << "packData: " << reason << " packet %" << w_packet.m_iSeqNo << " (ACK=" << m_iSndLastAck
               << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
 #endif
 
@@ -10131,7 +10192,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     const int flightspan = getFlightSpan();
     if (cwnd <= flightspan)
     {
-        HLOGC(qslog.Debug, log << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
+        HLOGC(qslog.Debug, log << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
             << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
         return false;
     }
@@ -10148,10 +10209,13 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     {
         // Some packets were skipped due to TTL expiry.
         m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo, pktskipseqno);
+        HLOGC(qslog.Debug, log << "packUniqueData: reading skipped " << pktskipseqno << " seq up to %" << m_iSndCurrSeqNo
+                << " due to TTL expiry");
     }
 
     if (pld_size == 0)
     {
+        HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer");
         return false;
     }
 
@@ -10161,8 +10225,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
 
 #if ENABLE_BONDING
-    // Fortunately the group itself isn't being accessed.
-    if (m_parent->m_GroupOf)
+    CUDTUnited::GroupKeeper gk(uglobal(), m_parent);
+    if (gk.group)
     {
         const int packetspan = CSeqNo::seqoff(m_iSndCurrSeqNo, w_packet.m_iSeqNo);
         if (packetspan > 0)
@@ -10177,7 +10241,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
                 // no ACK to be awaited. We can screw up all the variables that are
                 // initialized from ISN just after connection.
                 LOGC(qslog.Note,
-                     log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
+                     log << CONID() << "packUniqueData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
                          << " from SCHEDULING sequence " << w_packet.m_iSeqNo << " for the first packet: DIFF="
                          << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             }
@@ -10185,7 +10249,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             {
                 // There will be a serious data discrepancy between the agent and the peer.
                 LOGC(qslog.Error,
-                     log << CONID() << "IPE: packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
+                     log << CONID() << "IPE: packUniqueData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
                          << " from SCHEDULING sequence " << w_packet.m_iSeqNo << " in the middle of transition: DIFF="
                          << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             }
@@ -10198,7 +10262,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
             seqpair[1]             = CSeqNo::decseq(w_packet.m_iSeqNo);
             const int32_t no_msgno = 0;
             LOGC(qslog.Debug,
-                 log << CONID() << "packData: Sending DROPREQ: SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
+                 log << CONID() << "packUniqueData: Sending DROPREQ: SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
                      << packetspan << " packets)");
             sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
             // In case when this message is lost, the peer will still get the
@@ -10216,18 +10280,23 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
         else if (packetspan < 0)
         {
             LOGC(qslog.Error,
-                 log << CONID() << "IPE: packData: SCHEDULING sequence " << w_packet.m_iSeqNo
+                 log << CONID() << "IPE: packUniqueData: SCHEDULING sequence " << w_packet.m_iSeqNo
                      << " is behind of EXTRACTION sequence " << m_iSndCurrSeqNo << ", dropping this packet: DIFF="
                      << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             // XXX: Probably also change the socket state to broken?
             return false;
         }
+#if ENABLE_NEW_BONDING
+        int32_t upd SRT_ATR_UNUSED = gk.group->updateSentSeq(m_iSndCurrSeqNo);
+        HLOGC(qslog.Debug, log << CONID() << "packUniqueData: last sent seq for socket: %" << m_iSndCurrSeqNo
+                << " group: %" << upd);
+#endif
     }
     else
 #endif
     {
         HLOGC(qslog.Debug,
-              log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
+              log << CONID() << "packUniqueData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
                   << " over SCHEDULING sequence " << w_packet.m_iSeqNo << " for socket not in group:"
                   << " DIFF=" << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
                   << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
@@ -12236,7 +12305,7 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
         // Application will detect this when it calls any UDT methods next time.
         //
         HLOGC(xtlog.Debug,
-              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - last_rsp_time) << "ms");
+              log << "CONNECTION EXPIRED after " << FormatDuration<DUNIT_MS>(currtime - last_rsp_time) << " - BREAKING");
         m_bClosing       = true;
         m_bBroken        = true;
         m_iBrokenCounter = 30;
@@ -12456,6 +12525,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
     {
         // XXX This somehow can cause a deadlock
         // uglobal()->close(m_parent);
+        LOGC(smlog.Debug, log << "updateBrokenConnection...: BROKEN SOCKET @" << m_SocketID << " - CLOSING, to be removed from group.");
         m_parent->setBrokenClosed();
     }
 #endif

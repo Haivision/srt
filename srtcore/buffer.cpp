@@ -426,7 +426,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         //    header must be set and remembered accordingly (see EncryptionKeySpec).
         // 3. The next time this packet is read (only for retransmission), the payload is already
         //    encrypted, and the proper flag value is already stored.
-        
+
         // TODO: Alternatively, encryption could happen before the packet is submitted to the buffer
         // (before the addBuffer() call), and corresponding flags could be set accordingly.
         // This may also put an encryption burden on the application thread, rather than the sending thread,
@@ -456,7 +456,10 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             continue;
         }
 
-        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
+                << " #" << w_packet.getMsgSeq()
+                << " %" << w_packet.m_iSeqNo
+                << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
         break;
     }
 

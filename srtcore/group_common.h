@@ -47,6 +47,8 @@ namespace groups
         SQT_SKIP
     };
 
+    std::string SeqTypeStr(SeqType);
+
     struct SchedSeq
     {
         int32_t seq;

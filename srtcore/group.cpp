@@ -968,7 +968,12 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     differ in sender and receiver.
     */
 
-    m_RcvLastSeqNo = CSeqNo::decseq(core.ISN());
+    int32_t butlast_seqno = CSeqNo::decseq(core.ISN());
+    m_RcvLastSeqNo = butlast_seqno;
+
+    // This should be the sequence of the latest packet in flight,
+    // after being send over whichever member connection.
+    m_SndLastSeqNo = butlast_seqno;
     m_SndLastDataAck = core.ISN();
 
     if (core.m_bGroupTsbPd)
@@ -1536,7 +1541,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
             if (!pu || pu->m_bBroken)
             {
                 HLOGC(gslog.Debug,
-                        log << "grp/sendBroadcast: socket @" << d->id << " detected +Broken - transit to BROKEN");
+                        log << "grp/sendSelectable: socket @" << d->id << " detected +Broken - transit to BROKEN");
                 d->sndstate = SRT_GST_BROKEN;
                 d->rcvstate = SRT_GST_BROKEN;
             }
@@ -1546,7 +1551,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         if (d->sndstate == SRT_GST_BROKEN)
         {
             HLOGC(gslog.Debug,
-                  log << "grp/sendBroadcast: socket in BROKEN state: @" << d->id
+                  log << "grp/sendSelectable: socket in BROKEN state: @" << d->id
                       << ", sockstatus=" << SockStatusStr(d->ps ? d->ps->getStatus() : SRTS_NONEXIST));
             wipeme.push_back(d->id);
             continue;
@@ -1575,7 +1580,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
                 continue;
             }
 
-            HLOGC(gslog.Debug, log << "grp/sendBroadcast: socket in IDLE state: @" << d->id << " - will activate it");
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: socket in IDLE state: @" << d->id << " - will activate it");
             // This is idle, we'll take care of them next time
             // Might be that:
             // - this socket is idle, while some NEXT socket is running
@@ -1589,13 +1594,13 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         if (d->sndstate == SRT_GST_RUNNING)
         {
             HLOGC(gslog.Debug,
-                  log << "grp/sendBroadcast: socket in RUNNING state: @" << d->id << " - will send a payload");
+                  log << "grp/sendSelectable: socket in RUNNING state: @" << d->id << " - will send a payload");
             activeLinks.push_back(d);
             continue;
         }
 
         HLOGC(gslog.Debug,
-              log << "grp/sendBroadcast: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
+              log << "grp/sendSelectable: socket @" << d->id << " not ready, state: " << StateStr(d->sndstate) << "("
                   << int(d->sndstate) << ") - NOT sending, SET AS PENDING");
 
         pendingSockets.push_back(d->id);
@@ -1677,7 +1682,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
 
-    // TODO: { sendBroadcast_ActivateIdleLinks
+    // TODO: { sendSelectable_ActivateIdleLinks
     for (vector<gli_t>::iterator i = idleLinks.begin(); i != idleLinks.end(); ++i)
     {
         gli_t d       = *i;
@@ -1689,7 +1694,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         if (curseq != SRT_SEQNO_NONE && curseq != lastseq)
         {
             HLOGC(gslog.Debug,
-                    log << "grp/sendBroadcast: socket @" << d->id << ": override snd sequence %" << lastseq << " with %"
+                    log << "grp/sendSelectable: socket @" << d->id << ": override snd sequence %" << lastseq << " with %"
                     << curseq << " (diff by " << CSeqNo::seqcmp(curseq, lastseq)
                     << "); SENDING PAYLOAD: " << BufferStamp(buf, len));
             d->ps->core().overrideSndSeqNo(curseq);
@@ -1697,7 +1702,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         else
         {
             HLOGC(gslog.Debug,
-                    log << "grp/sendBroadcast: socket @" << d->id << ": sequence remains with original value: %"
+                    log << "grp/sendSelectable: socket @" << d->id << ": sequence remains with original value: %"
                     << lastseq << "; SENDING PAYLOAD " << BufferStamp(buf, len));
         }
 
@@ -1737,7 +1742,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     if (nextseq != SRT_SEQNO_NONE)
     {
         HLOGC(gslog.Debug,
-              log << "grp/sendBroadcast: $" << id() << ": updating current scheduling sequence %" << nextseq);
+              log << "grp/sendSelectable: $" << id() << ": updating current scheduling sequence %" << nextseq);
         m_iLastSchedSeqNo = nextseq;
     }
 
@@ -1747,7 +1752,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
 
     if (!pendingSockets.empty())
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
+        HLOGC(gslog.Debug, log << "grp/sendSelectable: found pending sockets, polling them.");
 
         // These sockets if they are in pending state, they should be added to m_SndEID
         // at the connecting stage.
@@ -1757,7 +1762,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         {
             // Sanity check - weird pending reported.
             LOGC(gslog.Error,
-                 log << "grp/sendBroadcast: IPE: reported pending sockets, but EID is empty - wiping pending!");
+                 log << "grp/sendSelectable: IPE: reported pending sockets, but EID is empty - wiping pending!");
             copy(pendingSockets.begin(), pendingSockets.end(), back_inserter(wipeme));
         }
         else
@@ -1777,7 +1782,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
-            HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
             for (vector<SRTSOCKET>::iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
@@ -1785,7 +1790,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
                 {
                     HLOGC(gslog.Debug,
-                          log << "grp/sendBroadcast: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
+                          log << "grp/sendSelectable: Socket @" << (*i) << " reported FAILURE - moved to wiped.");
                     // Failed socket. Move d to wipeme. Remove from eid.
                     wipeme.push_back(*i);
                     int no_events = 0;
@@ -1815,7 +1820,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
 
     // }
 
-    // { sendBroadcast_CheckBlockedLinks()
+    // { sendSelectable_CheckBlockedLinks()
 
     // Alright, we've made an attempt to send a packet over every link.
     // Every operation was done through a non-blocking attempt, so
@@ -1845,7 +1850,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         {
             InvertedLock ung (m_GroupLock);
             enterCS(CUDT::uglobal().m_GlobControlLock);
-            HLOGC(gslog.Debug, log << "grp/sendBroadcast: Locked GlobControlLock, locking back GroupLock");
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: Locked GlobControlLock, locking back GroupLock");
         }
 
         // Under this condition, as an unlock-lock cycle was done on m_GroupLock,
@@ -1902,7 +1907,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: GROUP CLOSED, ABANDONING");
+        HLOGC(gslog.Debug, log << "grp/sendSelectable: GROUP CLOSED, ABANDONING");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -1939,7 +1944,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
             throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
         }
 
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: all blocked, trying to common-block on epoll...");
+        HLOGC(gslog.Debug, log << "grp/sendSelectable: all blocked, trying to common-block on epoll...");
 
         // XXX TO BE REMOVED. Sockets should be subscribed in m_SndEID at connecting time
         // (both srt_connect and srt_accept).
@@ -1961,7 +1966,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         {
             // Lift the group lock for a while, to avoid possible deadlocks.
             InvertedLock ug(m_GroupLock);
-            HLOGC(gslog.Debug, log << "grp/sendBroadcast: blocking on any of blocked sockets to allow sending");
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: blocking on any of blocked sockets to allow sending");
 
             // m_iSndTimeOut is -1 by default, which matches the meaning of waiting forever
             THREAD_PAUSED();
@@ -2066,7 +2071,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
 
     if (none_succeeded)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
+        HLOGC(gslog.Debug, log << "grp/sendSelectable: all links broken (none succeeded to send a payload)");
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
         // Reparse error code, if set.
@@ -5846,6 +5851,12 @@ int CUDTGroup::configure(const char* str)
 
 CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
 {
+    if (m_Group.empty())
+    {
+        // Should be impossible, but fallback just in case.
+        return m_Group.end();
+    }
+
     if (state.ilink == m_Group.end())
     {
         // Very first sending operation. Pick up the first link
@@ -5867,17 +5878,22 @@ CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState
         // and this one isn't usable either, return m_Group.end().
 
         if (this_link->sndstate == SRT_GST_IDLE)
+        {
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: activating link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
             this_link->sndstate = SRT_GST_RUNNING;
+        }
 
         if (this_link->sndstate == SRT_GST_RUNNING)
         {
             // Found you, buddy. Go on.
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: SELECTING link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
             return this_link;
         }
 
         if (this_link == state.ilink)
         {
             // No more links. Sorry.
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: rolled back to first link not running - bailing out");
             return m_Group.end();
         }
 
@@ -6134,17 +6150,23 @@ bool CUDTGroup::updateSendPacketUnique_LOCKED(int32_t single_seq)
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
         if (find(d->send_schedule.begin(), d->send_schedule.end(), (SchedSeq){single_seq, groups::SQT_FRESH}) != d->send_schedule.end())
+        {
+            HLOGC(gmlog.Debug, log << "grp/schedule(fresh): already scheduled to %" << d->id << " - skipping");
             return true; // because this should be considered successful, even though didn't schedule.
+        }
     }
 
     BalancingLinkState lstate = { m_Group.active(), 0, 0 };
     gli_t selink =  CALLBACK_CALL(m_cbSelectLink, lstate);
     if (selink == m_Group.end())
     {
+        HLOGC(gmlog.Debug, log << "grp/schedule(fresh): no link selected!");
         // If this returns the "trap" link index, it means
         // that no link is qualified for sending.
         return false;
     }
+
+    HLOGC(gmlog.Debug, log << "grp/schedule(fresh): scheduling %" << single_seq << " to @" << selink->id);
 
     selink->send_schedule.push_back((groups::SchedSeq){single_seq, groups::SQT_FRESH});
     m_Group.set_active(selink);
@@ -6170,14 +6192,22 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
 
     int num = 0; // for stats
 
+    HLOGC(gslog.Debug, log << "INITIAL:");
+    HLOGC(gslog.Debug, m_pSndLossList->traceState(log));
+
     // Add the loss list to the groups loss list
     for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
     {
-        num += m_pSndLossList->insert(seqpair->first, seqpair->second);
+        int len = m_pSndLossList->insert(seqpair->first, seqpair->second);
+        num += len;
+        HLOGC(gslog.Debug, log << "LOSS Added: " << Printable(seqlist) << " length: " << len);
+        HLOGC(gslog.Debug, m_pSndLossList->traceState(log));
     }
 
     if (use_send_sched)
     {
+        ScopedLock guard(m_GroupLock);
+
         BalancingLinkState lstate = { m_Group.active(), 0, 0 };
 
         for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
@@ -6196,9 +6226,11 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
                 if (selink == m_Group.end())
                 {
                     // Interrupt all - we have no link candidates to send.
+                    HLOGC(gmlog.Debug, log << "grp/schedule(loss): no link selected!");
                     return false;
                 }
 
+                HLOGC(gmlog.Debug, log << "grp/schedule(loss): schedule REXMIT %" << seq << " to @" << selink->id);
                 selink->send_schedule.push_back((SchedSeq){seq, groups::SQT_LOSS});
                 lstate.ilink = selink;
             }
@@ -6209,8 +6241,14 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
     return true;
 }
 
-void CUDTGroup::updateSndLossListOnACK(int32_t ackdata_seqno)
+bool CUDTGroup::updateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
 {
+    w_last_sent_seqno = getSentSeq();
+    /*
+    if (CSeqNo::seqcmp(ackdata_seqno, w_last_sent_seqno) > 0)
+        return false;
+        */
+
     ScopedLock guard(m_LossAckLock);
     if (CSeqNo::seqcmp(m_SndLastDataAck, ackdata_seqno) < 0)
     {
@@ -6218,6 +6256,8 @@ void CUDTGroup::updateSndLossListOnACK(int32_t ackdata_seqno)
         m_pSndLossList->removeUpTo(CSeqNo::decseq(ackdata_seqno));
         m_SndLastDataAck = ackdata_seqno;
     }
+
+    return true;
 }
 
 // This is almost a copy of the CUDT::packLostData except that:
@@ -6245,7 +6285,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_po
         have_extracted = m_pSndLossList->popLostSeq(exp_seq);
     }
 
-    HLOGC(qslog.Debug, log << "CUDTGroup::packLostData: " << (have_extracted ? "" : "NOT") << " extracted "
+    HLOGC(gslog.Debug, log << "CUDTGroup::packLostData: " << (have_extracted ? "" : "NOT") << " extracted "
             << as << " %" << exp_seq);
 
     if (have_extracted)
@@ -6261,7 +6301,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_po
             // XXX Likely that this will never be executed because if the upper
             // sequence is not in the sender buffer, then most likely the loss 
             // was completely ignored.
-            LOGC(qslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
+            LOGC(gslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
                 << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << core->m_iSndLastDataAck
                 << ")=" << offset << ". Continue");
 
@@ -6274,7 +6314,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_po
             };
             w_packet.m_iMsgNo = 0; // Message number is not known, setting all 32 bits to 0.
 
-            HLOGC(qslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
+            HLOGC(gslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
                     << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
 
@@ -6291,7 +6331,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_po
             SRT_ASSERT(msglen >= 1);
             seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
 
-            HLOGC(qslog.Debug,
+            HLOGC(gslog.Debug,
                   log << "loss-reported packets expired in SndBuf - requesting DROP: "
                       << "msgno=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen
                       << " SEQ:" << seqpair[0] << " - " << seqpair[1]);
@@ -6328,7 +6368,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_po
     else
     {
         // This is not the sequence we are looking for.
-        HLOGC(qslog.Debug, log << "packLostData: expected %" << exp_seq << " not found in the group's loss list");
+        HLOGC(gslog.Debug, log << "packLostData: expected %" << exp_seq << " not found in the group's loss list");
     }
 
     return 0;
@@ -6355,16 +6395,18 @@ void CUDTGroup::discardSendSchedule(SocketData* d, int ndiscard)
     ScopedLock glock (m_GroupLock);
     if (ndiscard > int(d->send_schedule.size()))
     {
-        // XXX report error
+        LOGC(gmlog.Error, log << "grp/discardSendSchedule: IPE: size " << ndiscard << " is out of range of " << d->send_schedule.size() << " (fallback: clear all)");
         d->send_schedule.clear();
     }
     else if (ndiscard == int(d->send_schedule.size()))
     {
+        HLOGC(gmlog.Debug, log << "grp/discardSendSchedule: clear all");
         d->send_schedule.clear();
     }
     else
     {
         d->send_schedule.erase(d->send_schedule.begin(), d->send_schedule.begin() + ndiscard);
+        HLOGC(gmlog.Debug, log << "grp/discardSendSchedule: drop " << ndiscard << " and keep " << d->send_schedule.size() << " events");
     }
 }
 

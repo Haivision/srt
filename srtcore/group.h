@@ -464,6 +464,8 @@ private:
 
         void erase(gli_t it);
     };
+
+    SRT_ATTR_PT_GUARDED_BY(m_GroupLock)
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
 #if !ENABLE_NEW_RCVBUFFER
@@ -732,6 +734,35 @@ private:
     sync::atomic<int32_t> m_RcvLastSeqNo;
     sync::atomic<int32_t> m_SndLastDataAck;
 
+    // This is required as a value with its own lock.
+    // There's no point in locking the whole group for this,
+    // but for a Sequence type data atomic is not enough
+    // because the update uses a roll-number comparison.
+    // It is however enough for reading the current value.
+
+    sync::Mutex m_SndLastSeqLock;
+
+    SRT_ATTR_GUARDED_BY(m_iSndLastSeqLock)
+    sync::atomic<int32_t> m_SndLastSeqNo;
+
+public:
+    int32_t updateSentSeq(int32_t seqno)
+    {
+        sync::ScopedLock lk(m_SndLastSeqLock);
+
+        if (CSeqNo::seqcmp(seqno, m_SndLastSeqNo) > 0)
+        {
+            m_SndLastSeqNo = seqno;
+        }
+        return m_SndLastSeqNo;
+    }
+
+    int32_t getSentSeq() const
+    {
+        return m_SndLastSeqNo;
+    }
+
+private:
 #else
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
@@ -970,7 +1001,7 @@ public:
 
     SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
     void discardSendSchedule(SocketData* d, int ndiscard);
-    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    bool updateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
     int packLostData(CUDT* core, CPacket& w_packet, steady_clock::time_point& w_origintime, int32_t exp_seq);
 
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const

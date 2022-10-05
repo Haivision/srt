@@ -63,5 +63,12 @@ SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type)
     return sd;
 }
 
+// debug only. May crash if 's' runs out of range.
+std::string SeqTypeStr(SeqType s)
+{
+    static const char* const name_table[4] = {"FRESH", "LOSS", "PFILTER", "SKIP"};
+    return name_table[int(s)];
+}
+
 } // namespace groups
 } // namespace srt
