@@ -81,7 +81,7 @@ void srt::CCryptoControl::globalInit()
 
 bool srt::CCryptoControl::isAESGCMSupported()
 {
-#ifdef SRT_ENABLE_ENCRYPTION && CRYSPR_HAS_AESGCM
+#if defined(SRT_ENABLE_ENCRYPTION) && CRYSPR_HAS_AESGCM
     // We need to force the Cryspr to be initialized during startup to avoid the
     // possibility of multiple threads initialzing the same static data later on.
     return true;
