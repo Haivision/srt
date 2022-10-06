@@ -203,6 +203,7 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+        flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 
         // For "private" options (not derived from the listener
         // socket by an accepted socket) provide below private_default
@@ -809,6 +810,11 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_RETRANSMITALGO:
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
+        break;
+
+    case SRTO_CRYPTOMODE:
+        *(int32_t*)optval = m_config.iCryptoMode;
+        optlen = sizeof(int32_t);
         break;
 
     default:
@@ -2629,6 +2635,13 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
+                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
+                    {
+                        // Cryptographic modes mismatch. Not acceptable at all.
+                        m_RejectReason = SRT_REJ_CRYPTO;
+                        return false;
+                    }
+
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.
                     if (m_config.bEnforcedEnc)
@@ -9086,6 +9099,13 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         else if (payload == 0)
             continue;
 
+        // The packet has been ecrypted, thus the authentication tag is expected to be stored
+        // in the SND buffer as well right after the payload.
+        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
+        }
+
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
         // Therefore unlocking in order not to block other threads.
@@ -9694,12 +9714,13 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+    const bool retransmitted = pktrexmitflag == 1;
 #if ENABLE_HEAVY_LOGGING
     static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
     string                   rexmit_reason;
 #endif
 
-    if (pktrexmitflag == 1)
+    if (retransmitted)
     {
         // This packet was retransmitted
         enterCS(m_StatsLock);
@@ -9756,7 +9777,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     // this function will extract and test as needed.
 
     const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
-    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
 
     // Retransmitted and unordered packets do not provide expected measurement.
     // We expect the 16th and 17th packet to be sent regularly,
@@ -9876,7 +9896,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Loop over all incoming packets that were filtered out.
         // In case when there is no filter, there's just one packet in 'incoming',
         // the one that came in the input of this function.
-        for (vector<CUnit *>::iterator unitIt = incoming.begin(); unitIt != incoming.end(); ++unitIt)
+        for (vector<CUnit *>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
         {
             CUnit *  u    = *unitIt;
             CPacket &rpkt = u->m_Packet;
@@ -9961,13 +9981,33 @@ int srt::CUDT::processData(CUnit* in_unit)
                 excessive = false;
                 if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
                 {
-                    EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                    // TODO: reset and restore the timestamp if TSBPD is disabled.
+                    // Reset retransmission flag (must be excluded from GCM auth tag).
+                    u->m_Packet.setRexmitFlag(false);
+                    const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                    u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+
                     if (rc != ENCS_CLEAR)
                     {
                         // Heavy log message because if seen once the message may happen very often.
                         HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                         adding_successful = false;
                         IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+                        {
+                            // Drop a packet from the receiver buffer.
+                            // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                            // Otherwise just drop the exact packet.
+                            if (m_config.bMessageAPI)
+                                m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+                            else
+                                m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+
+                            LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
+                            m_bBroken = true;
+                            m_iBrokenCounter = 0;
+                        }
 
                         ScopedLock lg(m_StatsLock);
                         m_stats.rcvr.undecrypted.count(stats::BytesPackets(pktsz, 1));

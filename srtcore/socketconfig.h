@@ -176,6 +176,13 @@ struct CSrtConfig: CSrtMuxerConfig
         DEF_LINGER_S = 3*60,    // 3 minutes
         DEF_CONNTIMEO_S = 3;    // 3 seconds
 
+    enum
+    {
+        CIPHER_MODE_AUTO = 0,
+        CIPHER_MODE_AES_CTR = 1,
+        CIPHER_MODE_AES_GCM = 2
+    };
+
     static const int      COMM_RESPONSE_TIMEOUT_MS      = 5 * 1000; // 5 seconds
     static const uint32_t COMM_DEF_MIN_STABILITY_TIMEOUT_MS = 60;   // 60 ms
 
@@ -224,6 +231,7 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iPeerIdleTimeout_ms; // Timeout for hearing anything from the peer (ms).
     uint32_t uMinStabilityTimeout_ms;
     int      iRetransmitAlgo;
+    int      iCryptoMode; // SRTO_CRYPTOMODE
 
     int64_t llInputBW;         // Input stream rate (bytes/sec). 0: use internally estimated input bandwidth
     int64_t llMinInputBW;      // Minimum input stream rate estimate (bytes/sec)
@@ -275,6 +283,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iPeerIdleTimeout_ms(COMM_RESPONSE_TIMEOUT_MS)
         , uMinStabilityTimeout_ms(COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
         , iRetransmitAlgo(1)
+        , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
         , iOverheadBW(25)
