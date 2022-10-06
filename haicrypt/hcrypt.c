@@ -156,7 +156,7 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
                 ||  hcryptCtx_Tx_Init(crypto, &crypto->ctx_pair[1], cfg)) {
             free(crypto);
             return(-1);
-        }			
+        }
         /* Generate keys for first (default) context */
         if (hcryptCtx_Tx_Rekey(crypto, &crypto->ctx_pair[0])) {
             free(crypto);

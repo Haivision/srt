@@ -60,6 +60,7 @@ typedef struct {
 #define HAICRYPT_CFG_F_TX       0x01        /* !TX -> RX */
 #define HAICRYPT_CFG_F_CRYPTO   0x02        /* Perform crypto Tx:Encrypt Rx:Decrypt */
 #define HAICRYPT_CFG_F_FEC      0x04        /* Do Forward Error Correction */
+#define HAICRYPT_CFG_F_GCM      0x08        /* Use AES-GCM */
         unsigned        flags;
 
         HaiCrypt_Secret secret;             /* Security Association */
@@ -112,6 +113,7 @@ int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *da
 
 #define HAICRYPT_ERROR -1
 #define HAICRYPT_ERROR_WRONG_SECRET -2
+#define HAICRYPT_ERROR_CIPHER -3
 #define HAICRYPT_OK 0
 
 

@@ -68,6 +68,7 @@ typedef struct tag_hcrypt_Ctx {
 #define HCRYPT_CTX_MODE_AESECB  1   /* Electronic Code Book mode */
 #define HCRYPT_CTX_MODE_AESCTR  2   /* Counter mode */
 #define HCRYPT_CTX_MODE_AESCBC  3   /* Cipher-block chaining mode */
+#define HCRYPT_CTX_MODE_AESGCM  4   /* AES GCM authenticated encryption */
         unsigned         mode;
 
         struct {
