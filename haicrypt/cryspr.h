@@ -63,7 +63,6 @@ typedef struct tag_CRYSPR_cb {
 #endif /* !CRYSPR_HAS_AESCTR */
 
 #define	CRYSPR_OUTMSGMAX		6
-#define	CRYSPR_AUTHTAGMAX		16  /* maximum length of the auth tag (e.g. GCM) */
     uint8_t *       outbuf; 		/* output circle buffer */
     size_t          outbuf_ofs;		/* write offset in circle buffer */
     size_t          outbuf_siz;		/* circle buffer size */
@@ -105,7 +104,7 @@ typedef struct tag_CRYSPR_methods {
             bool bEncrypt,          /* true:encrypt false:decrypt (don't care with CTR) */
             CRYSPR_AESCTX* aes_key, /* ctx */
             unsigned char* iv,      /* iv */
-            unsigned char* aad,     /* associated data */
+            const unsigned char* aad, /* associated data */
             size_t aadlen,
             const unsigned char* indata,  /* src (clear text) */
             size_t inlen,           /* src length */

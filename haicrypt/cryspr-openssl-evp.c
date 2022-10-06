@@ -295,7 +295,7 @@ int crysprOpenSSL_EVP_AES_GCMCipher(bool                 bEncrypt, /* true:encry
         return -1;
     }
 
-    if (!bEncrypt && !EVP_CIPHER_CTX_ctrl(aes_key, EVP_CTRL_GCM_SET_TAG, 16, out_tag)) {
+    if (!bEncrypt && !EVP_CIPHER_CTX_ctrl(aes_key, EVP_CTRL_GCM_SET_TAG, HAICRYPT_AUTHTAG_MAX, out_tag)) {
         ERR_print_errors_fp(stderr);
         HCRYPT_LOG(LOG_ERR, "%s\n", "EVP_EncryptUpdate failed");
         return -1;
@@ -318,7 +318,7 @@ int crysprOpenSSL_EVP_AES_GCMCipher(bool                 bEncrypt, /* true:encry
     }
 
     /* Get the tag if we are encrypting */
-    if (bEncrypt && !EVP_CIPHER_CTX_ctrl(aes_key, EVP_CTRL_GCM_GET_TAG, 16, out_tag))
+    if (bEncrypt && !EVP_CIPHER_CTX_ctrl(aes_key, EVP_CTRL_GCM_GET_TAG, HAICRYPT_AUTHTAG_MAX, out_tag))
     {
         ERR_print_errors_fp(stderr);
         HCRYPT_LOG(LOG_ERR, "%s\n", "EVP_CIPHER_CTX_ctrl(EVP_CTRL_GCM_GET_TAG) failed");
