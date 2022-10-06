@@ -303,8 +303,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
             return(-1);
         }
 
-
-        /* Configure contexts */
+        /* Configure contexts. Note that GCM mode has been already copied from the source context. */
         if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
                 ||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
             free(cryptoClone);

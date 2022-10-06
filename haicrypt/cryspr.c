@@ -86,18 +86,22 @@ int crysprStub_AES_GCMCipher(
 	bool bEncrypt,              /* true:encrypt, false:decrypt */
 	CRYSPR_AESCTX *aes_key,     /* AES context */
 	unsigned char *iv,          /* iv */
-	const unsigned char *tag,   /* auth tag */
-	const unsigned char *indata,/* src */
-	size_t inlen,               /* length */
-	unsigned char *out_txt)     /* dest */
+	const unsigned char *aad,   /* associated data */
+	size_t aadlen,
+	const unsigned char * indata,
+	size_t inlen,
+	unsigned char *out_txt,
+	unsigned char* out_tag)
 {
 	(void)bEncrypt;
 	(void)aes_key;
 	(void)iv;
-	(void)tag;
+	(void)aad;
+	(void)aadlen;
 	(void)indata;
 	(void)inlen;
 	(void)out_txt;
+	(void)out_tag;
 
 	return(-1);
 }
@@ -421,10 +425,10 @@ static int crysprFallback_MsEncrypt(
 	 */
 	pfx_len = ctx->msg_info->pfx_len;
 	/* Extra 16 bytes are needed for an authentication tag in GCM. */
-	const int aux_len = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? CRYSPR_AUTHTAGMAX : 0;
+	const int aux_len = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? HAICRYPT_AUTHTAG_MAX : 0;
 
 	/* Auth tag produced by AES GCM. */
-	unsigned char tag[CRYSPR_AUTHTAGMAX];
+	unsigned char tag[HAICRYPT_AUTHTAG_MAX];
 
 	/*
 	 * Get buffer room from the internal circular output buffer.
@@ -620,13 +624,13 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 
 				if (ctx->mode == HCRYPT_CTX_MODE_AESGCM)
 				{
-					unsigned char* tag = in_data[0].payload + in_data[0].len - 16;
-					int liret = cryspr_cb->cryspr->aes_gcm_cipher(false, aes_key, iv, in_data[0].pfx, ctx->msg_info->pfx_len, in_data[0].payload, in_data[0].len - 16,
+					unsigned char* tag = in_data[0].payload + in_data[0].len - HAICRYPT_AUTHTAG_MAX;
+					int liret = cryspr_cb->cryspr->aes_gcm_cipher(false, aes_key, iv, in_data[0].pfx, ctx->msg_info->pfx_len, in_data[0].payload, in_data[0].len - HAICRYPT_AUTHTAG_MAX,
 						out_txt, tag);
 					if (liret) {
 						return(liret);
 					}
-					out_len = in_data[0].len - 16;
+					out_len = in_data[0].len - HAICRYPT_AUTHTAG_MAX;
 				}
 				else {
 #if CRYSPR_HAS_AESCTR
