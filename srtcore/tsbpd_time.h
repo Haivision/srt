@@ -68,10 +68,14 @@ public:
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
     /// @param [in] tsPktArrival packet arrival time.
     /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair. If no sample, pass '-1'.
-    /// 
+    /// @param [in] msRcvBuf Undelivered timespan (msec) of UDT receiver
+    ///
     /// @return true if TSBPD base time has changed, false otherwise.
+#if SRT_DEBUG_TRACE_DRIFT
+    bool addDriftSample(uint32_t pktTimestamp, const time_point& tsPktArrival, int usRTTSample, int msRcvBuf);
+#else
     bool addDriftSample(uint32_t pktTimestamp, const time_point& tsPktArrival, int usRTTSample);
-
+#endif
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be
     /// shifted accordingly to correctly handle new packets with timestamps starting from zero.

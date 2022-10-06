@@ -968,11 +968,17 @@ int CRcvBuffer::scanNotInOrderMessageLeft(const int startPos, int msgNo) const
     return -1;
 }
 
+#if SRT_DEBUG_TRACE_DRIFT
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample, int msRcvBuf)
+{
+    return m_tsbpd.addDriftSample(usTimestamp, tsPktArrival, usRTTSample, msRcvBuf);
+}
+#else
 bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample)
 {
     return m_tsbpd.addDriftSample(usTimestamp, tsPktArrival, usRTTSample);
 }
-
+#endif
 void CRcvBuffer::setTsbPdMode(const steady_clock::time_point& timebase, bool wrap, duration delay)
 {
     m_tsbpd.setTsbPdMode(timebase, wrap, delay);

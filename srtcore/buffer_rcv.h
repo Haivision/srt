@@ -335,8 +335,11 @@ public: // TSBPD public functions
 
     void applyGroupDrift(const time_point& timebase, bool wrp, const duration& udrift);
 
+#if SRT_DEBUG_TRACE_DRIFT
+    bool addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample, int msRcvBuf);
+#else
     bool addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample);
-
+#endif
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const;
 
     time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;

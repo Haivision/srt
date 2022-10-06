@@ -8456,7 +8456,16 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
+#if SRT_DEBUG_TRACE_DRIFT
+        int byteRcvBuf, msRcvBuf;
+        {
+            ScopedLock lck(m_RcvBufferLock);
+            m_pRcvBuffer->getRcvAvgDataSize(byteRcvBuf, msRcvBuf);
+        }
+        const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt, msRcvBuf);
+#else
         const bool drift_updated SRT_ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
+#endif
 #if ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)
         {
@@ -11553,5 +11562,9 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     ScopedLock lck(m_RcvBufferLock);
     m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
     if (m_config.bDriftTracer)
+#if SRT_DEBUG_TRACE_DRIFT
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1, 0);
+#else
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+#endif
 }
