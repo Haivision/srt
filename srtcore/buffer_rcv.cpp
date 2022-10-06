@@ -260,7 +260,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi << " m_iStartSeqNo " << m_iStartSeqNo);
     // TODO: count bytes as removed?
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
-    if (msgno != 0)
+    if (msgno > 0) // including SRT_MSGNO_NONE and SRT_MSGNO_CONTROL
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << msgno);
         int minDroppedOffset = -1;
