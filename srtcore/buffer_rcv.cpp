@@ -547,6 +547,11 @@ int CRcvBuffer::getTimespan_ms() const
         return 0;
 
     const int lastpos = incPos(m_iStartPos, m_iMaxPosInc - 1);
+    // Should not happen if TSBPD is enabled (reading out of order is not allowed).
+    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
+    if (m_entries[lastpos].pUnit == NULL)
+        return 0;
+
     int startpos = m_iStartPos;
 
     while (m_entries[startpos].pUnit == NULL)
@@ -558,11 +563,6 @@ int CRcvBuffer::getTimespan_ms() const
     }
 
     if (m_entries[startpos].pUnit == NULL)
-        return 0;
-
-    // Should not happen
-    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
-    if (m_entries[lastpos].pUnit == NULL)
         return 0;
 
     const steady_clock::time_point startstamp =
