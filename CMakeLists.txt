@@ -1355,10 +1355,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 	# Version ranges are only supported with CMake 3.19 or later.
+	# Need GTest v1.10 or higher to support GTEST_SKIP.
 	if (${CMAKE_VERSION} VERSION_LESS "3.19.0")
-		find_package(GTest 1.8)
+		find_package(GTest 1.10)
 	else()
-		find_package(GTest 1.8...1.12)
+		find_package(GTest 1.10...1.12)
 	endif()
 	if (NOT GTEST_FOUND)
 		message(STATUS "GTEST not found! Fetching from git.")
