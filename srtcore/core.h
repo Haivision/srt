@@ -376,22 +376,29 @@ public: // internal API
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
     }
 
-    int32_t makeTS(const time_point& from_time) const
+    static int32_t makeTS(const time_point& from_time, const time_point& tsStartTime)
     {
         // NOTE:
         // - This calculates first the time difference towards start time.
         // - This difference value is also CUT OFF THE SEGMENT information
         //   (a multiple of MAX_TIMESTAMP+1)
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
-        // XXX Would be nice to check if local_time > m_tsStartTime,
-        // otherwise it may go unnoticed with clock skew.
-        return (int32_t) sync::count_microseconds(from_time - m_stats.tsStartTime);
+        SRT_ASSERT(from_time >= tsStartTime);
+        return (int32_t) sync::count_microseconds(from_time - tsStartTime);
     }
 
-    void setPacketTS(CPacket& p, const time_point& local_time)
-    {
-        p.m_iTimeStamp = makeTS(local_time);
-    }
+    /// @brief Set the timestamp field of the packet using the provided value (no check)
+    /// @param p the packet structure to set the timestamp on.
+    /// @param ts timestamp to use as a source for packet timestamp.
+    SRT_ATTR_EXCLUDES(m_StatsLock)
+    void setPacketTS(CPacket& p, const time_point& ts);
+
+    /// @brief Set the timestamp field of the packet according the TSBPD mode.
+    /// Also checks the connection start time (m_tsStartTime).
+    /// @param p the packet structure to set the timestamp on.
+    /// @param ts timestamp to use as a source for packet timestamp. Ignored if m_bPeerTsbPd is false.
+    SRT_ATTR_EXCLUDES(m_StatsLock)
+    void setDataPacketTS(CPacket& p, const time_point& ts);
 
     // Utility used for closing a listening socket
     // immediately to free the socket
@@ -437,16 +444,13 @@ public: // internal API
 
 private:
     /// initialize a UDT entity and bind to a local address.
-
     void open();
 
     /// Start listening to any connection request.
-
     void setListenState();
 
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
-
     void startConnect(const sockaddr_any& peer, int32_t forced_isn);
 
     /// Process the response handshake packet. Failure reasons can be:
@@ -457,7 +461,6 @@ private:
     /// @retval 0 Connection successful
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
-
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
@@ -1029,20 +1032,15 @@ private: // Generation and processing of packets
     void updateSndLossListOnACK(int32_t ackdata_seqno);
 
     /// Pack a packet from a list of lost packets.
-    ///
     /// @param packet [in, out] a packet structure to fill
-    /// @param origintime [in, out] origin timestamp of the packet
-    ///
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, time_point &origintime);
+    int packLostData(CPacket &packet);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
-    ///
     /// @param packet [in, out] a CPacket structure to fill.
-    /// @param origintime [in, out] origin timestamp of the packet.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet, time_point& origintime);
+    bool packUniqueData(CPacket& packet);
 
     /// Pack in CPacket the next data to be send.
     ///

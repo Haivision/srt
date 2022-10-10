@@ -9006,7 +9006,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     }
 }
 
-int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime)
+int srt::CUDT::packLostData(CPacket& w_packet)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
@@ -9061,8 +9061,8 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
         }
 
         int msglen;
-
-        const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_origintime), (msglen));
+        steady_clock::time_point tsOrigin;
+        const int payload = m_pSndBuffer->readData(offset, (w_packet), (tsOrigin), (msglen));
         if (payload == -1)
         {
             int32_t seqpair[2];
@@ -9101,6 +9101,7 @@ int srt::CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origi
         {
             w_packet.m_iMsgNo |= PACKET_SND_REXMIT;
         }
+        setDataPacketTS(w_packet, tsOrigin);
 
         return payload;
     }
@@ -9194,6 +9195,42 @@ private:
 snd_logger g_snd_logger;
 #endif // SRT_DEBUG_TRACE_SND
 
+void srt::CUDT::setPacketTS(CPacket& p, const time_point& ts)
+{
+    enterCS(m_StatsLock);
+    const time_point tsStart = m_stats.tsStartTime;
+    leaveCS(m_StatsLock);
+    p.m_iTimeStamp = makeTS(ts, tsStart);
+}
+
+void srt::CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
+{
+    enterCS(m_StatsLock);
+    const time_point tsStart = m_stats.tsStartTime;
+    leaveCS(m_StatsLock);
+
+    if (!m_bPeerTsbPd)
+    {
+        // If TSBPD is disabled, use the current time as the source (timestamp using the sending time).
+        p.m_iTimeStamp = makeTS(steady_clock::now(), tsStart);
+        return;
+    }
+
+    // TODO: Might be better for performance to ensure this condition is always false, and just use SRT_ASSERT here.
+    if (ts < tsStart)
+    {
+        p.m_iTimeStamp = makeTS(steady_clock::now(), tsStart);
+        LOGC(qslog.Warn,
+            log << CONID() << "setPacketTS: reference time=" << FormatTime(ts)
+            << " is in the past towards start time=" << FormatTime(tsStart)
+            << " - setting NOW as reference time for the data packet");
+        return;
+    }
+
+    // Use the provided source time for the timestamp.
+    p.m_iTimeStamp = makeTS(ts, tsStart);
+}
+
 bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
 {
     // Prioritization of original packets only applies to Live CC.
@@ -9237,9 +9274,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
 {
     int payload = 0;
     bool probe = false;
-    steady_clock::time_point origintime;
     bool new_packet_packed = false;
-    bool filter_ctl_pkt = false;
 
     const steady_clock::time_point enter_time = steady_clock::now();
 
@@ -9247,8 +9282,6 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     {
         m_tdSendTimeDiff = m_tdSendTimeDiff.load() + (enter_time - m_tsNextSendTime);
     }
-
-    string reason = "reXmit";
 
     ScopedLock connectguard(m_ConnectionLock);
     // If a closing action is done simultaneously, then
@@ -9262,9 +9295,10 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         return std::make_pair(false, enter_time);
 
     payload = isRetransmissionAllowed(enter_time)
-        ? packLostData((w_packet), (origintime))
+        ? packLostData((w_packet))
         : 0;
 
+    const char* reason; // The source of the data packet (normal/rexmit/filter)
     if (payload > 0)
     {
         reason = "reXmit";
@@ -9275,7 +9309,6 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
         payload        = (int) w_packet.getLength();
         reason         = "filter";
-        filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
         // Stats
         ScopedLock lg(m_StatsLock);
@@ -9283,7 +9316,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     }
     else
     {
-        if (!packUniqueData(w_packet, origintime))
+        if (!packUniqueData(w_packet))
         {
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration();
@@ -9299,43 +9332,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         reason = "normal";
     }
 
-    // Normally packet.m_iTimeStamp field is set exactly here,
-    // usually as taken from m_stats.tsStartTime and current time, unless live
-    // mode in which case it is based on 'origintime' as set during scheduling.
-    // In case when this is a filter control packet, the m_iTimeStamp field already
-    // contains the exactly needed value, and it's a timestamp clip, not a real
-    // timestamp.
-    if (!filter_ctl_pkt)
-    {
-        if (m_bPeerTsbPd)
-        {
-            /*
-             * When timestamp is carried over in this sending stream from a received stream,
-             * it may be older than the session start time causing a negative packet time
-             * that may block the receiver's Timestamp-based Packet Delivery.
-             * XXX Isn't it then better to not decrease it by m_stats.tsStartTime? As long as it
-             * doesn't screw up the start time on the other side.
-             */
-            if (origintime >= m_stats.tsStartTime)
-            {
-                setPacketTS(w_packet, origintime);
-            }
-            else
-            {
-                setPacketTS(w_packet, steady_clock::now());
-                LOGC(qslog.Warn,
-                     log << CONID() << "packData: reference time=" << FormatTime(origintime)
-                         << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
-                         << " - setting NOW as reference time for the data packet");
-            }
-        }
-        else
-        {
-            setPacketTS(w_packet, steady_clock::now());
-        }
-    }
-
-    w_packet.m_iID = m_PeerID;
+    w_packet.m_iID = m_PeerID; // Set the destination SRT socket ID.
 
     if (new_packet_packed && m_PacketFilter)
     {
@@ -9408,7 +9405,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
     return std::make_pair(payload >= 0, m_tsNextSendTime);
 }
 
-bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
+bool srt::CUDT::packUniqueData(CPacket& w_packet)
 {
     // Check the congestion/flow window limit
     const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
@@ -9428,7 +9425,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
     // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
     const int kflg = m_pCryptoControl->getSndCryptoFlags();
     int pktskipseqno = 0;
-    const int pld_size = m_pSndBuffer->readData((w_packet), (w_origintime), kflg, (pktskipseqno));
+    time_point tsOrigin;
+    const int pld_size = m_pSndBuffer->readData((w_packet), (tsOrigin), kflg, (pktskipseqno));
     if (pktskipseqno)
     {
         // Some packets were skipped due to TTL expiry.
@@ -9520,7 +9518,10 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet, time_point& w_origintime)
         w_packet.m_iSeqNo = m_iSndCurrSeqNo;
     }
 
-    // Encrypt if 1st time this packet is sent and crypto is enabled
+    // Set missing fields before encrypting the packet, because those fields might be used for encryption.
+    w_packet.m_iID = m_PeerID; // Destination SRT Socket ID
+    setDataPacketTS(w_packet, tsOrigin);
+
     if (kflg != EK_NOENC)
     {
         // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
