@@ -9878,34 +9878,32 @@ int srt::CUDT::processData(CUnit* in_unit)
             CUnit *  u    = *unitIt;
             CPacket &rpkt = u->m_Packet;
 
-            // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
-            // This is the offset in the buffer; if this is negative, it means that
-            // this sequence is already in the past and the buffer is not interested.
+            // If negative, the seqno is already behind the dropped/acknowledged position.
             // Meaning, this packet will be rejected, even if it could potentially be
             // one of missing packets in the transmission.
-            int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
-
-            IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
-
-            if (offset < 0)
+            if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastSkipAck) < 0)
             {
-                IF_HEAVY_LOGGING(exc_type = "BELATED");
                 steady_clock::time_point tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
-                const double bltime = (double) CountIIR<uint64_t>(
-                        uint64_t(m_stats.traceBelatedTime) * 1000,
-                        count_microseconds(steady_clock::now() - tsbpdtime), 0.2);
-
+                const double             bltime = (double)CountIIR<uint64_t>(uint64_t(m_stats.traceBelatedTime) * 1000,
+                                                                 count_microseconds(steady_clock::now() - tsbpdtime),
+                                                                 0.2);
                 enterCS(m_StatsLock);
                 m_stats.traceBelatedTime = bltime / 1000.0;
                 m_stats.rcvr.recvdBelated.count(rpkt.getLength());
                 leaveCS(m_StatsLock);
                 HLOGC(qrlog.Debug,
-                      log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset << " (BELATED/"
+                      log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo
+                          << " offset=" << CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo) << " (BELATED/"
                           << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: " << packet.MessageFlagStr());
                 continue;
             }
 
+            IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
+
+            // m_iRcvLastAck is the base sequence number for the receiver buffer.
+            const int32_t offset = CSeqNo::seqoff(m_iRcvLastAck, rpkt.m_iSeqNo);
             const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
+
             if (offset >= avail_bufsize)
             {
                 // This is already a sequence discrepancy. Probably there could be found
