@@ -125,6 +125,7 @@ typedef struct {
 #define HCRYPT_CIPHER_AES_GCM   4
 
 #define HCRYPT_AUTH_NONE        0
+#define HCRYPT_AUTH_AES_GCM     1
 
 #define HCRYPT_SE_TSUDP         1
         hcrypt_MsgInfo *        hcryptMsg_STA_MsgInfo(void);
