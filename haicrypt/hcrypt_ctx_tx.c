@@ -300,7 +300,7 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 
 	/* crypto->KMmsg_cache[4..7]: KEKI=0 */
 	km_msg[HCRYPT_MSG_KM_OFS_CIPHER] = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? HCRYPT_CIPHER_AES_GCM : HCRYPT_CIPHER_AES_CTR;
-	km_msg[HCRYPT_MSG_KM_OFS_AUTH] = HCRYPT_AUTH_NONE;
+	km_msg[HCRYPT_MSG_KM_OFS_AUTH] = (ctx->mode == HCRYPT_CTX_MODE_AESGCM) ? HCRYPT_AUTH_AES_GCM : HCRYPT_AUTH_NONE;
 	km_msg[HCRYPT_MSG_KM_OFS_SE] = (char) crypto->se;
 	hcryptMsg_KM_SetSaltLen(km_msg, ctx->salt_len);
 	hcryptMsg_KM_SetSekLen(km_msg, ctx->sek_len);
