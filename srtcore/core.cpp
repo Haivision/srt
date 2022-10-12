@@ -9775,23 +9775,11 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (m_bPeerRexmitFlag)
         initial_loss_ttl = m_iReorderTolerance;
 
-    // After introduction of packet filtering, the "recordable loss detection"
-    // does not exactly match the true loss detection. When a FEC filter is
-    // working, for example, then getting one group filled with all packet but
-    // the last one and the FEC control packet, in this special case this packet
-    // won't be notified at all as lost because it will be recovered by the
-    // filter immediately before anyone notices what happened (and the loss
-    // detection for the further functionality is checked only afterwards,
-    // and in this case the immediate recovery makes the loss to not be noticed
-    // at all).
-    //
-    // Because of that the check for losses must happen BEFORE passing the packet
-    // to the filter and before the filter could recover the packet before anyone
-    // notices :)
-
-    if (packet.getMsgSeq() != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
+    // Track packet loss in statistics ealry, because a packet filter (e.g. FEC) might recover it later on,
+    // supply the missing packet(s), and the loss will no longer be visible for the code that follows.
+    if (packet.getMsgSeq(m_bPeerRexmitFlag) != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
     {
-        int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
+        const int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
        // Difference between these two sequence numbers is expected to be:
        // 0 - duplicated last packet (theory only)
        // 1 - subsequent packet (alright)
