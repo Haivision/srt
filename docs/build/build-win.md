@@ -151,7 +151,7 @@ CMake will be able to find openssl given the following option is provided:
 ##### 2.1.1.2. Using Installer (Windows)
 
 The 64-bit OpenSSL package for Windows can be downloaded using
-the following link: [Win32OpenSSL-3_0_5](https://slproweb.com/download/Win32OpenSSL-3_0_5.exe).
+the following link: [Win64OpenSSL-3_0_5](https://slproweb.com/download/Win64OpenSSL-3_0_5.exe).
 
 **Note!** The last letter or version number may change and older versions may become no longer available. In that case find the appropriate installer here: [Win32OpenSSL](http://slproweb.com/products/Win32OpenSSL.html).
 
