@@ -7807,6 +7807,9 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     dropToGroupRecvBase();
 #endif
 
+    /* tsbpd thread may also call ackData when skipping packet so protect code */
+    UniqueLock bufflock(m_RcvBufferLock);
+
     {
         // If there is no loss, the ACK is the current largest sequence number plus 1;
         // Otherwise it is the smallest sequence number in the receiver loss list.
@@ -7835,6 +7838,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
     if (size == SEND_LITE_ACK)
     {
+        bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
         ctrlpkt.m_iID = m_PeerID;
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
@@ -7842,11 +7846,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         return nbsent;
     }
 
-    // There are new received packets to acknowledge, update related information.
-    /* tsbpd thread may also call ackData when skipping packet so protect code */
-    UniqueLock bufflock(m_RcvBufferLock);
-
     // IF ack %> m_iRcvLastAck
+    // There are new received packets to acknowledge, update related information.
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         ackDataUpTo(ack);
