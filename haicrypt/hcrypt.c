@@ -335,3 +335,12 @@ int HaiCrypt_Close(HaiCrypt_Handle hhc)
     HCRYPT_LOG_EXIT();
     return rc;
 }
+
+int  HaiCrypt_IsAESGCM_Supported()
+{
+#if CRYSPR_HAS_AESGCM
+    return 1;
+#else
+    return 0;
+#endif
+}
