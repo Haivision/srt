@@ -109,6 +109,10 @@ int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p
 int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 
+/// @brief Check if the crypto service provider supports AES GCM.
+/// @return returns 1 if AES GCM is supported, 0 otherwise.
+int  HaiCrypt_IsAESGCM_Supported();
+
 /* Status values */
 
 #define HAICRYPT_ERROR -1
