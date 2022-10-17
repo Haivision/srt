@@ -9298,17 +9298,17 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
         ? packLostData((w_packet))
         : 0;
 
-    const char* reason; // The source of the data packet (normal/rexmit/filter)
+    IF_HEAVY_LOGGING(const char* reason); // The source of the data packet (normal/rexmit/filter)
     if (payload > 0)
     {
-        reason = "reXmit";
+        IF_HEAVY_LOGGING(reason = "reXmit");
     }
     else if (m_PacketFilter &&
              m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
         payload        = (int) w_packet.getLength();
-        reason         = "filter";
+        IF_HEAVY_LOGGING(reason = "filter");
 
         // Stats
         ScopedLock lg(m_StatsLock);
@@ -9329,7 +9329,7 @@ std::pair<bool, steady_clock::time_point> srt::CUDT::packData(CPacket& w_packet)
             probe = true;
 
         payload = (int) w_packet.getLength();
-        reason = "normal";
+        IF_HEAVY_LOGGING(reason = "normal");
     }
 
     w_packet.m_iID = m_PeerID; // Set the destination SRT socket ID.
