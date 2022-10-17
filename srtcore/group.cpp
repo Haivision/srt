@@ -226,7 +226,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
     data.sndstate = SRT_GST_PENDING;
     data.rcvstate = SRT_GST_PENDING;
 
-    HLOGC(gmlog.Debug, log << "CUDTGroup::add: adding new member @" << data.id);
+    LOGC(gmlog.Note, log << "group/add: adding member @" << data.id << " into group $" << id());
     m_Group.push_back(data);
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)

@@ -1458,7 +1458,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 ns->m_GroupMemberData    = f;
                 ns->m_GroupOf            = &g;
                 f->weight                = targets[tii].weight;
-                LOGC(aclog.Note, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
+                HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
             }
             else
             {
@@ -2611,7 +2611,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 #if ENABLE_BONDING
         if (s->m_GroupOf)
         {
-            LOGC(smlog.Note,
+            HLOGC(smlog.Debug,
                  log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }
