@@ -7807,7 +7807,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     dropToGroupRecvBase();
 #endif
 
-    /* tsbpd thread may also call ackData when skipping packet so protect code */
+    // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
+    // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
 
     {
