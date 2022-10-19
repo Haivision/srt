@@ -7633,7 +7633,6 @@ static void DebugAck(string hdr, int prev, int ack)
         return;
     }
 
-    prev     = CSeqNo::incseq(prev);
     int diff = CSeqNo::seqoff(prev, ack);
     if (diff < 0)
     {
