@@ -4520,12 +4520,14 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
             // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
             if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
             {
-                int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+                const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
 
                 if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
                 {
                     LOGC(cnlog.Warn,
-                         log << CONID() << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE");
+                         log << CONID() << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE.");
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    return CONN_REJECT;
                 }
 
                 checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
