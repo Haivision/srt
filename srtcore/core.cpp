@@ -8406,9 +8406,9 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
         }
 
         LOGC(inlog.Error,
-            log << CONID() << "IPE: ACK record not found, can't estimate RTT "
-            << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-            << ", RTT (EWMA): " << m_iSRTT << ")");
+             log << CONID() << "ACK record not found, can't estimate RTT "
+                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                 << ", RTT (EWMA): " << m_iSRTT << ")");
         return;
     }
 
