@@ -254,6 +254,9 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
+#if ENABLE_NEW_RCVBUFFER
+    , m_zLongestDistance(0)
+#endif
     , m_type(gtype)
 #if !ENABLE_NEW_RCVBUFFER
     , m_listener()
@@ -316,6 +319,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
 #if ENABLE_NEW_RCVBUFFER
     m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
 #endif
+
+    m_RcvFurthestPacketTime = steady_clock::now();
 }
 
 #if ENABLE_NEW_RCVBUFFER
@@ -333,6 +338,60 @@ void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time, i
 
     m_pSndLossList.reset(new CSndLossList(flow_winsize * 2));
 }
+
+/// Update the internal state after a single link has been switched to RUNNING state.
+void CUDTGroup::updateRcvRunningState()
+{
+    ScopedLock lk (m_GroupLock);
+
+    size_t nrunning;
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        if (gi->rcvstate == SRT_GST_RUNNING)
+            ++nrunning;
+    }
+
+    m_Group.set_number_running(nrunning);
+}
+
+void CUDTGroup::updateErasedLink()
+{
+    // When a link has been erased, reset the tracing data
+    // to enforce a situation that some new links have been
+    // added
+    if (m_Group.size() > 1)
+    {
+        updateRcvRunningState();
+    }
+
+    m_zLongestDistance = 0;
+    m_tdLongestDistance = duration::zero();
+}
+
+void CUDTGroup::updateInterlinkDistance()
+{
+    // Before locking anything, check if you have good enough conditions
+    // to update the distance information. If not all links are idle, resolve
+    // to the distance equal to the number of links. That is, that many packets
+    // may be received after the gap so that the gap can be qualified as loss.
+
+    if (m_Group.number_running() < m_Group.size())
+    {
+        size_t max_size = max(m_zLongestDistance.load(), m_Group.size());
+        m_zLongestDistance = max_size;
+
+        // Reset the duration so that it's not being traced
+        m_tdLongestDistance = duration::zero();
+
+        // Can't do anything more.
+        return;
+    }
+
+    ScopedLock lk (m_GroupLock);
+
+
+}
+
 #endif
 
 CUDTGroup::~CUDTGroup()
@@ -382,6 +441,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         }
     }
     m_List.erase(it);
+    --m_sizeCache;
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -1005,7 +1065,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
 #if ENABLE_NEW_RCVBUFFER
 
-CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
+CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(groups::SocketData* member, CUnit* u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
 {
     // If this returns false, the adding has failed and 
 
@@ -1019,7 +1079,7 @@ CRcvBufferNew::InsertInfo CUDTGroup::addDataUnit(CUnit* u, CUDT::loss_seqs_t& w_
 
         if (info.result == CRcvBufferNew::InsertInfo::INSERTED)
         {
-            w_have_loss = checkPacketArrivalLoss(u->m_Packet, (w_losses));
+            w_have_loss = checkPacketArrivalLoss(member, u->m_Packet, (w_losses));
         }
     }
 
@@ -1110,7 +1170,7 @@ void CUDTGroup::synchronizeLoss(int32_t seqno)
 }
 
 // [[using locked(m_RcvBufferLock)]]
-bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w_losses)
+bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t& w_losses)
 {
     // This is called when the packet was added to the buffer and this
     // adding was successful. Here we need to:
@@ -1155,6 +1215,37 @@ bool CUDTGroup::checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t& w
     {
         HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest updated: %" << m_RcvLastSeqNo << " -> %" << rpkt.m_iSeqNo);
         m_RcvLastSeqNo = rpkt.m_iSeqNo;
+
+        // This should theoretically set it up with the very first packet received over whichever link
+        // but this time is initialized upon creation of the group, just in case.
+        m_RcvFurthestPacketTime = steady_clock::now();
+        m_zLongestDistance = 0; // this member is at top
+        member->updateCounter = 0;
+    }
+    else
+    {
+        bool updated SRT_ATR_UNUSED = false;
+        if (++member->updateCounter == 10 && m_zLongestDistance > 1)
+        {
+            // Decrease by 1 once per 10 events so that if a link
+            // happens to deliver packets faster, it is at some point detected
+            // and taken into account.
+            --m_zLongestDistance;
+            m_tdLongestDistance = duration::zero();
+            member->updateCounter = 0;
+            updated = true;
+        }
+
+        int dist = CSeqNo::seqoff(rpkt.m_iSeqNo, m_RcvLastSeqNo);
+        dist = max<int>(m_zLongestDistance, dist);
+        m_zLongestDistance = dist;
+
+        duration td = steady_clock::now() - m_RcvFurthestPacketTime;
+        td = max(m_tdLongestDistance.load(), td);
+        m_tdLongestDistance = td;
+
+        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest = %" << m_RcvLastSeqNo << ": pkt %" << rpkt.m_iSeqNo
+                << " dist={" << dist << "pkt " << FormatDuration(m_tdLongestDistance) << (updated ? "} (reflected)" : "} (continued)"));
     }
 
     return have;
@@ -1223,8 +1314,60 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         map<SRTSOCKET, size_t> nums;
         FringeValues(followers, (nums));
 
-        if (nums.size() >= m_Group.size() // 1
-                || find_if(nums.begin(), nums.end(), FFringeGreaterThan(1)) != nums.end())
+        IF_HEAVY_LOGGING(const char* which_condition[3] = {"fullcover", "longtail", "both???"});
+
+        bool longtail = false;
+        bool fullcover = nums.size() >= m_Group.number_running();
+        if (!fullcover)
+        {
+            int actual_distance = CSeqNo::seqoff(m_iRcvPossibleLossSeq, m_RcvLastSeqNo);
+
+            // The minimum distance is the number of links.
+            // This is used always, regardless of other conditions
+            longtail = (actual_distance > int(m_Group.size() + 1));
+
+            if (longtail && m_zLongestDistance > m_Group.size())
+            {
+                // This is a complicated condition. We need to state that
+                // the long tail has been exceeded if:
+                // 1. We have a long distance measured.
+                //    a. If not, fall back to the number of member links.
+                //
+                // 2. To this value we add 0.2 of the value (minimum 1) to make it
+                //    a base value for test if this is exceeded.
+                //
+                // 3. We check the distance between the packet tested for
+                // being a loss (m_iRcvPossibleLossSeq) and the latest received
+                // (m_RcvLastSeqNo).
+
+                int32_t basefax = m_zLongestDistance;
+                double extrafax = max(basefax * 0.2, 1.0);
+                basefax += int(extrafax);
+
+                // Previously it was tested this way to find providers that are longer
+                // than given value (here 1). As we currently collect the measurement values
+                // as they appear, we don't need to check it now.
+                //find_if(nums.begin(), nums.end(), FFringeGreaterThan(1)) != nums.end();
+
+                longtail = (actual_distance > basefax);
+
+                HLOGC(grlog.Debug, log << "grp:checkBalancingLoss: loss-distance=" << actual_distance
+                        << (longtail ? " EXCEEDS" : " UNDER") << " the longest tail " << m_zLongestDistance
+                        << " stretched to " << basefax);
+            }
+            else
+            {
+                HLOGC(grlog.Debug, log << "grp:checkBalancingLoss: loss-distance=" << actual_distance
+                        << (longtail ? " EXCEEDS" : " BELOW") << " the group size=" << m_Group.size()
+                        << (longtail ? " but not" : " and") << " the tail=" << m_zLongestDistance);
+            }
+        }
+        else
+        {
+            HLOGC(grlog.Debug, log << "grp:checkBalancingLoss: loss confirmed by " << nums.size() << " sources out of " << m_Group.number_running() << " running");
+        }
+
+        if (longtail || fullcover)
         {
             // Extract the whole first loss
             typename CUDT::loss_seqs_t::value_type loss;
@@ -1242,7 +1385,7 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
             // Save the next found loss
             m_iRcvPossibleLossSeq = m_pRcvBuffer->getFirstLossSeq(CSeqNo::incseq(loss.second));
 
-            HLOGC(gmlog.Debug, log << "... qualified as loss: %(" << loss.first << " - " << loss.second
+            HLOGC(gmlog.Debug, log << "... qualified as loss (" << which_condition[(int(fullcover) + 2*int(longtail))-1] << "): %(" << loss.first << " - " << loss.second
                     << "), next loss: %" << m_iRcvPossibleLossSeq);
 
             if (m_iRcvPossibleLossSeq == SRT_SEQNO_NONE)
@@ -1255,6 +1398,10 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
             // Found at least one reportable loss
             more_losses = true;
             continue;
+        }
+        else
+        {
+            HLOGC(gmlog.Debug, log << "... not yet a loss - waiting for possible sealing");
         }
 
         break;
@@ -5460,6 +5607,7 @@ int CUDTGroup::sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc)
             // the internal facilities won't know what to do with it anyway.
             // Simply delete the entry.
             m_Group.erase(d);
+            updateErasedLink();
             continue;
         }
         broken_sockets.push_back(ps);

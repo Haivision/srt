@@ -36,6 +36,7 @@ class CUDTGroup
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
+    typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
     typedef sync::steady_clock             steady_clock;
     typedef groups::SocketData SocketData;
     typedef groups::SendBackupCtx SendBackupCtx;
@@ -165,6 +166,7 @@ public:
         if (f != m_Group.end())
         {
             m_Group.erase(f);
+            updateErasedLink();
 
             // Reset sequence numbers on a dead group so that they are
             // initialized anew with the new alive connection within
@@ -433,9 +435,16 @@ private:
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
+
     struct GroupContainer
     {
+    private:
         std::list<SocketData>        m_List;
+        sync::atomic<size_t>         m_sizeCache;
+
+#if ENABLE_NEW_RCVBUFFER
+        sync::atomic<size_t> m_zNumberRunning;
+#endif
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -443,8 +452,14 @@ private:
         /// must be appropriately reset.
         gli_t m_LastActiveLink;
 
+    public:
+
         GroupContainer()
-            : m_LastActiveLink(m_List.end())
+            : m_sizeCache(0)
+#if ENABLE_NEW_RCVBUFFER
+            , m_zNumberRunning(0)
+#endif
+            , m_LastActiveLink(m_List.end())
         {
         }
 
@@ -454,16 +469,31 @@ private:
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
-        void         push_back(const SocketData& data) { m_List.push_back(data); }
+        void         push_back(const SocketData& data) { m_List.push_back(data); ++m_sizeCache; }
         void         clear()
         {
             m_LastActiveLink = end();
             m_List.clear();
+            m_sizeCache = 0;
         }
-        size_t size() { return m_List.size(); }
+        size_t size() { return m_sizeCache; }
 
         void erase(gli_t it);
+
+#if ENABLE_NEW_RCVBUFFER
+        SRTU_PROPERTY_RW(size_t, number_running, m_zNumberRunning);
+#endif
     };
+
+#if ENABLE_NEW_RCVBUFFER
+    sync::atomic<size_t> m_zLongestDistance;
+    atomic_duration m_tdLongestDistance;
+public:
+    void updateRcvRunningState();
+    void updateErasedLink();
+    void updateInterlinkDistance();
+private:
+#endif
 
     SRT_ATTR_PT_GUARDED_BY(m_GroupLock)
     GroupContainer m_Group;
@@ -732,6 +762,8 @@ private:
 #if ENABLE_NEW_RCVBUFFER
 
     sync::atomic<int32_t> m_RcvLastSeqNo;
+    sync::AtomicClock<sync::steady_clock> m_RcvFurthestPacketTime;
+
     sync::atomic<int32_t> m_SndLastDataAck;
 
     // This is required as a value with its own lock.
@@ -946,8 +978,8 @@ public:
 
 #if ENABLE_NEW_RCVBUFFER
     int checkLazySpawnLatencyThread();
-    CRcvBufferNew::InsertInfo addDataUnit(CUnit* u, CUDT::loss_seqs_t&, bool&);
-    bool checkPacketArrivalLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
+    CRcvBufferNew::InsertInfo addDataUnit(SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
+    bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
     bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
     int rcvDropTooLateUpTo(int32_t seqno);
     void synchronizeLoss(int32_t seqno);

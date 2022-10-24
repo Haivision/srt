@@ -10807,7 +10807,7 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
         // This is executed only when bonding is enabled and only
         // with the new buffer (in which case the buffer is in the group).
         // NOTE: this will lock ALSO the receiver buffer lock in the group
-        CRcvBufferNew::InsertInfo info = grp->addDataUnit(u, (w_srt_loss_seqs), (have_loss));
+        CRcvBufferNew::InsertInfo info = grp->addDataUnit(m_parent->m_GroupMemberData, u, (w_srt_loss_seqs), (have_loss));
 
         if (info.result == CRcvBufferNew::InsertInfo::DISCREPANCY)
         {
@@ -11007,10 +11007,9 @@ int srt::CUDT::processData(CUnit* in_unit)
 
         HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
                 << " seq=" << packet.getSeqNo()
-                // XXX FIX IT. OTS should represent the original sending time, but it's relative.
-                //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
                 << " ETS=" << FormatTime(ets)
-                << " PTS=" << FormatTime(pts));
+                << " PTS=" << FormatTime(pts)
+                << " NOW=" << FormatTime(m_tsLastRspTime.load()));
     }
 #endif
 
@@ -11128,6 +11127,9 @@ int srt::CUDT::processData(CUnit* in_unit)
                       log << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
                           << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
+#if ENABLE_NEW_BONDING
+                gkeeper.group->updateRcvRunningState();
+#endif
             }
             else
             {

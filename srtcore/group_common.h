@@ -81,12 +81,14 @@ namespace groups
         double load_factor;
         double unit_load;
 
-
         // Configuration
         uint16_t       weight;
 
-        // Stats
-        int64_t        pktSndDropTotal;
+        // Measurement
+        int64_t        pktSndDropTotal;  //< copy of socket's max drop stat value
+        int            rcvSeqDistance;   //< distance to the latest received sequence in the group
+
+        size_t updateCounter; //< counter used to damper measurement pickup for longest sequence span
 
         // This is used only in balancing mode and it defines
         // sequence numbers of packets to be sent at the next request
