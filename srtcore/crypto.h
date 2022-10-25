@@ -69,6 +69,7 @@ private:
     // putting the whole HaiCrypt_Cfg object here.
     int m_KmRefreshRatePkt;
     int m_KmPreAnnouncePkt;
+    bool m_bUseGCM; // Use AES GCM crypto mode.
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
@@ -86,6 +87,8 @@ private:
 
 public:
     static void globalInit();
+
+    static bool isAESGCMSupported();
 
     bool sendingAllowed()
     {
@@ -224,7 +227,7 @@ public:
         m_iRcvKmKeyLen = keylen;
     }
 
-    bool createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir tx, HaiCrypt_Handle& rh);
+    bool createCryptoCtx(HaiCrypt_Handle& rh, size_t keylen, HaiCrypt_CryptoDir tx, bool bAESGCM);
 
     int getSndCryptoFlags() const
     {

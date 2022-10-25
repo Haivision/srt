@@ -22,7 +22,6 @@ Written by
 #include "srt.h"
 #include "common.h"
 #include "core.h"
-#include "buffer.h"
 
 namespace srt
 {

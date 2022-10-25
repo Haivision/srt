@@ -73,16 +73,7 @@ class CUnitQueue;
 struct CUnit
 {
     CPacket m_Packet; // packet
-    enum Flag
-    {
-        FREE    = 0,
-        GOOD    = 1,
-        PASSACK = 2,
-        DROPPED = 3
-    };
-
-    // TODO: The new RcvBuffer allows to use atomic_bool here.
-    sync::atomic<Flag> m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
+    sync::atomic<bool> m_bTaken; // true if the unit is is use (can be stored in the RCV buffer).
     CUnitQueue* m_pParentQueue;
 };
 
@@ -111,7 +102,7 @@ public:
 
     void makeUnitFree(CUnit* unit);
 
-    void makeUnitGood(CUnit* unit);
+    void makeUnitTaken(CUnit* unit);
 
 private:
     struct CQEntry

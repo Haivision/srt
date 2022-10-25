@@ -2,7 +2,8 @@
 
 SOURCES
 api.cpp
-buffer.cpp
+buffer_rcv.cpp
+buffer_snd.cpp
 cache.cpp
 channel.cpp
 common.cpp
@@ -26,9 +27,6 @@ strerror_defs.cpp
 sync.cpp
 tsbpd_time.cpp
 window.cpp
-
-SOURCES - ENABLE_NEW_RCVBUFFER
-buffer_rcv.cpp
 
 SOURCES - ENABLE_BONDING
 group.cpp
@@ -55,7 +53,7 @@ udt.h
 
 PRIVATE HEADERS
 api.h
-buffer.h
+buffer_snd.h
 buffer_rcv.h
 cache.h
 channel.h

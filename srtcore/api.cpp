@@ -148,7 +148,7 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
-#if ENABLE_NEW_BONDING
+#if ENABLE_BONDING
 
     // In the "new bonding" the reading from a socket
     // happens exclusively from the group and the socket is
@@ -727,37 +727,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             // when it has its own common buffer read-ready, by whatever reason. Packets to the buffer
             // will be delivered by the sockets' receiver threads, so all these things happen strictly
             // in the background.
-#if !ENABLE_NEW_RCVBUFFER
-
-            // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
-            // but groupwise connections could be accepted from multiple listeners for the same group!
-            // m_listener MUST BE A CONTAINER, NOT POINTER!!!
-            // ALSO: Maybe checking "the same listener" is not necessary as subscruption may be done
-            // multiple times anyway?
-            if (!g->m_listener)
-            {
-                // Newly created group from the listener, which hasn't yet
-                // the listener set.
-                g->m_listener = ls;
-
-                // Listen on both first connected socket and continued sockets.
-                // This might help with jump-over situations, and in regular continued
-                // sockets the IN event won't be reported anyway.
-                int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
-                epoll_add_usock_INTERNAL(g->m_RcvEID, ls, &listener_modes);
-
-                // This listening should be done always when a first connected socket
-                // appears as accepted off the listener. This is for the sake of swait() calls
-                // inside the group receiving and sending functions so that they get
-                // interrupted when a new socket is connected.
-            }
-
-            // Add also per-direction subscription for the about-to-be-accepted socket.
-            // Both first accepted socket that makes the group-accept and every next
-            // socket that adds a new link.
-            int read_modes  = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-            epoll_add_usock_INTERNAL(g->m_RcvEID, ns, &read_modes);
-#endif
 
             // Keep per-socket sender ready EID.
             int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
@@ -1484,7 +1453,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 ns->m_GroupMemberData    = f;
                 ns->m_GroupOf            = &g;
                 f->weight                = targets[tii].weight;
-                LOGC(aclog.Note, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
+                HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
             }
             else
             {
@@ -1523,9 +1492,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // connection succeeded or failed and whether the new socket is
         // ready to use or needs to be closed.
         epoll_add_usock_INTERNAL(g.m_SndEID, ns, &connect_modes);
-#if !ENABLE_NEW_RCVBUFFER
-        epoll_add_usock_INTERNAL(g.m_RcvEID, ns, &connect_modes);
-#endif
 
         // Adding a socket on which we need to block to BOTH these tracking EIDs
         // and the blocker EID. We'll simply remove from them later all sockets that
@@ -1647,9 +1613,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 f->sndstate = SRT_GST_BROKEN;
                 f->rcvstate = SRT_GST_BROKEN;
                 epoll_remove_socket_INTERNAL(g.m_SndEID, ns);
-#if !ENABLE_NEW_RCVBUFFER
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, ns);
-#endif
             }
             else
             {
@@ -1735,9 +1698,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, y->second);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, y->second);
-#if !ENABLE_NEW_RCVBUFFER
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, y->second);
-#endif
             }
         }
 
@@ -1777,9 +1737,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, s);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, s);
-#if !ENABLE_NEW_RCVBUFFER
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, s);
-#endif
 
                 continue;
             }
@@ -1972,9 +1929,9 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 
 int srt::CUDTUnited::close(CUDTSocket* s)
 {
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSE. Acquiring control lock");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing from listening, closing CUDT)");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
@@ -1997,7 +1954,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // be unable to bind to this port that the about-to-delete listener
         // is currently occupying (due to blocked slot in the RcvQueue).
 
-        HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing listener immediately)");
+        HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
 
         // broadcast all "accept" waiting
@@ -2015,7 +1972,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
               log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
-                  << ". Acquiring GLOBAL control lock");
+                  << "Acquiring GLOBAL control lock");
         ScopedLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid
@@ -2631,12 +2588,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         // but that's not a problem - you can close the member socket
         // safely without worrying about reading data because they are
         // in the group anyway.
-#if ENABLE_NEW_RCVBUFFER
-                 && s->core().m_pRcvBuffer->hasAvailablePackets()
-#else
-                 && s->core().m_pRcvBuffer->isRcvDataAvailable()
-#endif
-                )
+                 && s->core().m_pRcvBuffer->hasAvailablePackets())
         {
             const int bc = s->core().m_iBrokenCounter.load();
             if (bc > 0)
@@ -2650,7 +2602,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 #if ENABLE_BONDING
         if (s->m_GroupOf)
         {
-            LOGC(smlog.Note,
+            HLOGC(smlog.Debug,
                  log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }

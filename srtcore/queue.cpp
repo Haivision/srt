@@ -126,7 +126,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
 
     for (int i = 0; i < iNumUnits; ++i)
     {
-        tempu[i].m_iFlag = CUnit::FREE;
+        tempu[i].m_bTaken = false;
         tempu[i].m_pParentQueue = this;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
@@ -174,7 +174,7 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
         const CUnit* end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
         for (; m_pAvailUnit != end; ++m_pAvailUnit, ++units_checked)
         {
-            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
+            if (!m_pAvailUnit->m_bTaken)
             {
                 return m_pAvailUnit;
             }
@@ -190,19 +190,19 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
 void srt::CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
-    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
-    unit->m_iFlag.store(CUnit::FREE);
+    SRT_ASSERT(unit->m_bTaken);
+    unit->m_bTaken.store(false);
 
     --m_iNumTaken;
 }
 
-void srt::CUnitQueue::makeUnitGood(CUnit* unit)
+void srt::CUnitQueue::makeUnitTaken(CUnit* unit)
 {
     ++m_iNumTaken;
 
     SRT_ASSERT(unit != NULL);
-    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
-    unit->m_iFlag.store(CUnit::GOOD);
+    SRT_ASSERT(!unit->m_bTaken);
+    unit->m_bTaken.store(true);
 }
 
 srt::CSndUList::CSndUList(sync::CTimer* pTimer)

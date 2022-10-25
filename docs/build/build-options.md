@@ -40,7 +40,6 @@ Option details are given further below.
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address.                                              |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors.                                                                                                            |
 | [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
-| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.5.0 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements.                                                           |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).                                                                      |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
@@ -349,20 +348,7 @@ clock (as configured in the resources used in the operation).
 However the current time of the monotonic clock can only be obtained by
 the `clock_gettime` function.
 
-
-
-
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
-
-
-
-#### ENABLE_NEW_RCVBUFFER
-**`--enable-new-rcvbuffer`** (default: ON)
-
-When ON, this option enables the newest implementation of the receiver buffer 
-with behavior and code improvements. Note that while it is still possible to fall 
-back to the old receiver buffer implementation, eventually the new implementation 
-will be the only one available.
 
 
 #### ENABLE_PROFILE

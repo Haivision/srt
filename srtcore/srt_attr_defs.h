@@ -82,12 +82,6 @@ used by SRT library internally.
 #error "The currently compiled application required C++11, but your compiler doesn't support it."
 #endif
 
-// Macro shortcut for implementing parts of the redundancy features
-// that require the new receiver buffer
-
-#define ENABLE_NEW_BONDING (ENABLE_BONDING && ENABLE_NEW_RCVBUFFER)
-#define ENABLE_OLD_BONDING (ENABLE_BONDING && !ENABLE_NEW_RCVBUFFER)
-
 ///////////////////////////////////////////////////////////////////////////////
 // Attributes for thread safety analysis
 // - Clang TSA (https://clang.llvm.org/docs/ThreadSafetyAnalysis.html#mutexheader).
