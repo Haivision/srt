@@ -236,6 +236,11 @@ public:
     /// @param len [in] the payload or the control information field length.
     void setLength(size_t len);
 
+    /// Set the payload or the control information field length.
+    /// @param len [in] the payload or the control information field length.
+    /// @param cap [in] capacity (if known).
+    void setLength(size_t len, size_t cap);
+
     /// Pack a Control packet.
     /// @param pkttype [in] packet type filed.
     /// @param lparam [in] pointer to the first data structure, explained by the packet type.
@@ -286,6 +291,8 @@ public:
     /// (because the peer will understand this bit as a part of MSGNO field).
     bool getRexmitFlag() const;
 
+    void setRexmitFlag(bool bRexmit);
+
     /// Read the message sequence number.
     /// @return packet header field [1]
     int32_t getMsgSeq(bool has_rexmit = true) const;
@@ -335,6 +342,7 @@ protected:
 
     int32_t m_extra_pad;
     bool    m_data_owned;
+    size_t  m_zCapacity;
 
 protected:
     CPacket& operator=(const CPacket&);
@@ -368,6 +376,8 @@ public:
     char*       data() { return m_pcData; }
     const char* data() const { return m_pcData; }
     size_t      size() const { return getLength(); }
+    size_t      capacity() const { return m_zCapacity; }
+    void        setCapacity(size_t cap) { m_zCapacity = cap; }
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if ENABLE_LOGGING

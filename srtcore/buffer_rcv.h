@@ -11,9 +11,7 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#if ENABLE_NEW_RCVBUFFER
-
-#include "buffer.h" // AvgBufSize
+#include "buffer_snd.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
 #include "sync.h"
@@ -45,15 +43,15 @@ namespace srt
  *    first_nonread_pos_:
  */
 
-class CRcvBufferNew
+class CRcvBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
-    ~CRcvBufferNew();
+    ~CRcvBuffer();
 
 public:
     /// Insert a unit into the buffer.
@@ -268,7 +266,7 @@ private:
     int getTimespan_ms() const;
 
 private:
-    // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.
+    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
     // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
     // class CUnitPtr
     // {
@@ -346,7 +344,7 @@ public: // TSBPD public functions
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
-    std::string strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const;
+    std::string strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const;
 
 private:
     CTsbpdTime  m_tsbpd;
@@ -363,5 +361,4 @@ private: // Statistics
 
 } // namespace srt
 
-#endif // ENABLE_NEW_RCVBUFFER
 #endif // INC_SRT_BUFFER_RCV_H

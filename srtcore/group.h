@@ -155,7 +155,7 @@ public:
         srt::sync::ScopedLock g(m_GroupLock);
 
         bool empty = false;
-        HLOGC(gmlog.Debug, log << "group/remove: going to remove @" << id << " from $" << m_GroupID);
+        LOGC(gmlog.Note, log << "group/remove: removing member @" << id << " from group $" << m_GroupID);
 
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())

@@ -59,7 +59,7 @@ modified by
 #include "srt.h"
 #include "common.h"
 #include "list.h"
-#include "buffer.h"
+#include "buffer_snd.h"
 #include "buffer_rcv.h"
 #include "window.h"
 #include "packet.h"
@@ -288,7 +288,7 @@ public: // internal API
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_SocketID << ":";
+        os << "@" << m_SocketID << ": ";
         return os.str();
 #else
         return "";
@@ -376,22 +376,29 @@ public: // internal API
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
     }
 
-    int32_t makeTS(const time_point& from_time) const
+    static int32_t makeTS(const time_point& from_time, const time_point& tsStartTime)
     {
         // NOTE:
         // - This calculates first the time difference towards start time.
         // - This difference value is also CUT OFF THE SEGMENT information
         //   (a multiple of MAX_TIMESTAMP+1)
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
-        // XXX Would be nice to check if local_time > m_tsStartTime,
-        // otherwise it may go unnoticed with clock skew.
-        return (int32_t) sync::count_microseconds(from_time - m_stats.tsStartTime);
+        SRT_ASSERT(from_time >= tsStartTime);
+        return (int32_t) sync::count_microseconds(from_time - tsStartTime);
     }
 
-    void setPacketTS(CPacket& p, const time_point& local_time)
-    {
-        p.m_iTimeStamp = makeTS(local_time);
-    }
+    /// @brief Set the timestamp field of the packet using the provided value (no check)
+    /// @param p the packet structure to set the timestamp on.
+    /// @param ts timestamp to use as a source for packet timestamp.
+    SRT_ATTR_EXCLUDES(m_StatsLock)
+    void setPacketTS(CPacket& p, const time_point& ts);
+
+    /// @brief Set the timestamp field of the packet according the TSBPD mode.
+    /// Also checks the connection start time (m_tsStartTime).
+    /// @param p the packet structure to set the timestamp on.
+    /// @param ts timestamp to use as a source for packet timestamp. Ignored if m_bPeerTsbPd is false.
+    SRT_ATTR_EXCLUDES(m_StatsLock)
+    void setDataPacketTS(CPacket& p, const time_point& ts);
 
     // Utility used for closing a listening socket
     // immediately to free the socket
@@ -416,11 +423,7 @@ public: // internal API
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
-#if ENABLE_NEW_RCVBUFFER
-    SRTU_PROPERTY_RO(srt::CRcvBufferNew*, rcvBuffer, m_pRcvBuffer);
-#else
-    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
-#endif
+    SRTU_PROPERTY_RO(srt::CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(sync::Condition*, recvDataCond, &m_RecvDataCond);
@@ -441,16 +444,13 @@ public: // internal API
 
 private:
     /// initialize a UDT entity and bind to a local address.
-
     void open();
 
     /// Start listening to any connection request.
-
     void setListenState();
 
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
-
     void startConnect(const sockaddr_any& peer, int32_t forced_isn);
 
     /// Process the response handshake packet. Failure reasons can be:
@@ -461,7 +461,6 @@ private:
     /// @retval 0 Connection successful
     /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
     /// @retval -1 Connection failed
-
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
 
@@ -711,13 +710,11 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
-#if ENABLE_NEW_RCVBUFFER
     /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
     int rcvDropTooLateUpTo(int seqno);
-#endif
 
     void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
@@ -895,13 +892,12 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
 private: // Receiving related data
-#if ENABLE_NEW_RCVBUFFER
-    CRcvBufferNew* m_pRcvBuffer;            //< Receiver buffer
-#else
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
-#endif
+    SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
+    SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     std::deque<CRcvFreshLoss> m_FreshLoss;       //< Lost sequence already added to m_pRcvLossList, but not yet sent UMSG_LOSSREPORT for.
+
     int m_iReorderTolerance;                     //< Current value of dynamic reorder tolerance
     int m_iConsecEarlyDelivery;                  //< Increases with every OOO packet that came <TTL-2 time, resets with every increased reorder tolerance
     int m_iConsecOrderedDelivery;                //< Increases with every packet coming in order or retransmitted, resets with every out-of-order packet
@@ -1036,20 +1032,15 @@ private: // Generation and processing of packets
     void updateSndLossListOnACK(int32_t ackdata_seqno);
 
     /// Pack a packet from a list of lost packets.
-    ///
     /// @param packet [in, out] a packet structure to fill
-    /// @param origintime [in, out] origin timestamp of the packet
-    ///
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, time_point &origintime);
+    int packLostData(CPacket &packet);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
-    ///
     /// @param packet [in, out] a CPacket structure to fill.
-    /// @param origintime [in, out] origin timestamp of the packet.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet, time_point& origintime);
+    bool packUniqueData(CPacket& packet);
 
     /// Pack in CPacket the next data to be send.
     ///
@@ -1086,7 +1077,7 @@ private: // Generation and processing of packets
     /// @param seq first unacknowledged packet sequence number.
     void ackDataUpTo(int32_t seq);
 
-#if ENABLE_BONDING && ENABLE_NEW_RCVBUFFER
+#if ENABLE_BONDING
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
     void dropToGroupRecvBase();

@@ -79,6 +79,15 @@ void srt::CCryptoControl::globalInit()
 #endif
 }
 
+bool srt::CCryptoControl::isAESGCMSupported()
+{
+#ifdef SRT_ENABLE_ENCRYPTION
+    return HaiCrypt_IsAESGCM_Supported() != 0;
+#else
+    return false;
+#endif
+}
+
 #if ENABLE_LOGGING
 std::string srt::CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)
 {
@@ -112,7 +121,7 @@ void srt::CCryptoControl::createFakeSndContext()
     if (!m_iSndKmKeyLen)
         m_iSndKmKeyLen = 16;
 
-    if (!createCryptoCtx(m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, (m_hSndCrypto)))
+    if (!createCryptoCtx((m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, false))
     {
         HLOGC(cnlog.Debug, log << "Error: Can't create fake crypto context for sending - sending will return ERROR!");
         m_hSndCrypto = 0;
@@ -199,7 +208,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     }
     wasb4 = m_hRcvCrypto;
 
-    if (!createCryptoCtx(m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX, (m_hRcvCrypto)))
+    if (!createCryptoCtx((m_hRcvCrypto), m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX, m_bUseGCM))
     {
         LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: Can't create RCV CRYPTO CTX - must reject...");
         m_RcvKmState = SRT_KM_S_NOSECRET;
@@ -230,6 +239,11 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         w_srtlen = 1;
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
+    case HAICRYPT_ERROR_CIPHER:
+        m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET; // TODO: Use a different, dedicated state.
+        w_srtlen = 1;
+        LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADCRYPTOMODE");
+        break;
     case HAICRYPT_ERROR: //Other errors
     default:
         m_RcvKmState = m_SndKmState = SRT_KM_S_NOSECRET;
@@ -243,7 +257,6 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
     // until the next KMREQ is received as a key regeneration.
     m_bErrorReported = false;
-
 
     if (w_srtlen == 1)
         goto HSv4_ErrorReport;
@@ -560,6 +573,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_RcvKmState(SRT_KM_S_UNSECURED)
     , m_KmRefreshRatePkt(0)
     , m_KmPreAnnouncePkt(0)
+    , m_bUseGCM(false)
     , m_bErrorReported(false)
 {
 
@@ -605,13 +619,13 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
                 m_iSndKmKeyLen = 16;
             }
 
-            bool ok = createCryptoCtx(m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, (m_hSndCrypto));
+            bool ok = createCryptoCtx((m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, m_bUseGCM);
             HLOGC(cnlog.Debug, log << "CCryptoControl::init: creating SND crypto context: " << ok);
 
             if (ok && bidirectional)
             {
                 m_iRcvKmKeyLen = m_iSndKmKeyLen;
-                int st = HaiCrypt_Clone(m_hSndCrypto, HAICRYPT_CRYPTO_DIR_RX, &m_hRcvCrypto);
+                const int st = HaiCrypt_Clone(m_hSndCrypto, HAICRYPT_CRYPTO_DIR_RX, &m_hRcvCrypto);
                 HLOGC(cnlog.Debug, log << "CCryptoControl::init: creating CLONED RCV crypto context: status=" << st);
                 ok = st == 0;
             }
@@ -691,9 +705,8 @@ static std::string CryptoFlags(int flg)
 } // namespace srt
 #endif // ENABLE_HEAVY_LOGGING
 
-bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir, HaiCrypt_Handle& w_hCrypto)
+bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, HaiCrypt_CryptoDir cdir, bool bAESGCM)
 {
-
     if (w_hCrypto)
     {
         // XXX You can check here if the existing handle represents
@@ -715,7 +728,7 @@ bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir
     m_KmRefreshRatePkt = 2000;
     m_KmPreAnnouncePkt = 500;
 #endif
-    crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0);
+    crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0) | (bAESGCM ? HAICRYPT_CFG_F_GCM : 0);
     crypto_cfg.xport = HAICRYPT_XPT_SRT;
     crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
     crypto_cfg.key_len = (size_t)keylen;
@@ -724,7 +737,6 @@ bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir
     crypto_cfg.km_refresh_rate_pkt = m_KmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_KmRefreshRatePkt;
     crypto_cfg.km_pre_announce_pkt = m_KmPreAnnouncePkt == 0 ? SRT_CRYPT_KM_PRE_ANNOUNCE : m_KmPreAnnouncePkt;
     crypto_cfg.secret = m_KmSecret;
-    //memcpy(&crypto_cfg.secret, &m_KmSecret, sizeof(crypto_cfg.secret));
 
     HLOGC(cnlog.Debug, log << "CRYPTO CFG: flags=" << CryptoFlags(crypto_cfg.flags) << " xport=" << crypto_cfg.xport << " cryspr=" << crypto_cfg.cryspr
         << " keylen=" << crypto_cfg.key_len << " passphrase_length=" << crypto_cfg.secret.len);
@@ -740,7 +752,7 @@ bool srt::CCryptoControl::createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir cdir
     return true;
 }
 #else
-bool srt::CCryptoControl::createCryptoCtx(size_t, HaiCrypt_CryptoDir, HaiCrypt_Handle&)
+bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
 {
     return false;
 }
@@ -754,6 +766,8 @@ srt::EncryptionStatus srt::CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNU
     if ( getSndCryptoFlags() == EK_NOENC )
         return ENCS_CLEAR;
 
+    // Note that in case of GCM the header has to zero Retransmitted Packet Flag (R).
+    // If TSBPD is disabled, timestamp also has to be zeroed.
     int rc = HaiCrypt_Tx_Data(m_hSndCrypto, ((uint8_t*)w_packet.getHeader()), ((uint8_t*)w_packet.m_pcData), w_packet.getLength());
     if (rc < 0)
     {

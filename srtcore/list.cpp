@@ -504,7 +504,7 @@ srt::CRcvLossList::~CRcvLossList()
     delete[] m_caSeq;
 }
 
-void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
+int srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
     // Data to be inserted must be larger than all those in the list
     if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
@@ -522,7 +522,7 @@ void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
                  log << "RCV-LOSS/insert: (" << seqno1 << "," << seqno2
                      << ") to be inserted is too small: m_iLargestSeq=" << m_iLargestSeq << ", m_iLength=" << m_iLength
                      << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << " -- REJECTING");
-            return;
+            return 0;
         }
     }
     m_iLargestSeq = seqno2;
@@ -538,19 +538,19 @@ void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 
         m_caSeq[m_iHead].inext  = -1;
         m_caSeq[m_iHead].iprior = -1;
-        m_iLength += CSeqNo::seqlen(seqno1, seqno2);
-
-        return;
+        const int n = CSeqNo::seqlen(seqno1, seqno2);
+        m_iLength += n;
+        return n;
     }
 
     // otherwise searching for the position where the node should be
-    int offset = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
+    const int offset = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
     if (offset < 0)
     {
         LOGC(qrlog.Error,
              log << "RCV-LOSS/insert: IPE: new LOSS %(" << seqno1 << "-" << seqno2 << ") PREDATES HEAD %"
                  << m_caSeq[m_iHead].seqstart << " -- REJECTING");
-        return;
+        return -1;
     }
 
     int loc = (m_iHead + offset) % m_iSize;
@@ -575,7 +575,9 @@ void srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
         m_iTail                = loc;
     }
 
-    m_iLength += CSeqNo::seqlen(seqno1, seqno2);
+    const int n = CSeqNo::seqlen(seqno1, seqno2);
+    m_iLength += n;
+    return n;
 }
 
 bool srt::CRcvLossList::remove(int32_t seqno)
@@ -715,19 +717,14 @@ bool srt::CRcvLossList::remove(int32_t seqno)
 
 bool srt::CRcvLossList::remove(int32_t seqno1, int32_t seqno2)
 {
-    if (seqno1 <= seqno2)
+    if (CSeqNo::seqcmp(seqno1, seqno2) > 0)
     {
-        for (int32_t i = seqno1; i <= seqno2; ++i)
-            remove(i);
+        return false;
     }
-    else
+    for (int32_t i = seqno1; CSeqNo::seqcmp(i, seqno2) <= 0; i = CSeqNo::incseq(i))
     {
-        for (int32_t j = seqno1; j < CSeqNo::m_iMaxSeqNo; ++j)
-            remove(j);
-        for (int32_t k = 0; k <= seqno2; ++k)
-            remove(k);
+        remove(i);
     }
-
     return true;
 }
 

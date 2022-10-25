@@ -1458,7 +1458,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 ns->m_GroupMemberData    = f;
                 ns->m_GroupOf            = &g;
                 f->weight                = targets[tii].weight;
-                LOGC(aclog.Note, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
+                HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
             }
             else
             {
@@ -1946,9 +1946,9 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 
 int srt::CUDTUnited::close(CUDTSocket* s)
 {
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSE. Acquiring control lock");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing from listening, closing CUDT)");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
@@ -1971,7 +1971,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // be unable to bind to this port that the about-to-delete listener
         // is currently occupying (due to blocked slot in the RcvQueue).
 
-        HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing listener immediately)");
+        HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
 
         // broadcast all "accept" waiting
@@ -1989,7 +1989,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
               log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
-                  << ". Acquiring GLOBAL control lock");
+                  << "Acquiring GLOBAL control lock");
         ScopedLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid
@@ -2597,11 +2597,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
         // this function is called (isRcvDataReady also checks if the
         // available data is "ready to play").
-#if ENABLE_NEW_RCVBUFFER
                  && s->core().m_pRcvBuffer->hasAvailablePackets())
-#else
-                 && s->core().m_pRcvBuffer->isRcvDataAvailable())
-#endif
         {
             const int bc = s->core().m_iBrokenCounter.load();
             if (bc > 0)
@@ -2615,7 +2611,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 #if ENABLE_BONDING
         if (s->m_GroupOf)
         {
-            LOGC(smlog.Note,
+            HLOGC(smlog.Debug,
                  log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }
