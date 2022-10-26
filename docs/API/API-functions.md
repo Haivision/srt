@@ -153,25 +153,26 @@ Since SRT v1.5.0.
 
 <h4 id="rejection-reasons">Rejection Reasons</h4>
 
-| *Rejection Reason*                                | *Description*                                                                                                  |
-|:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
-| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)               | A fallback value for cases when there was no connection rejected                                               |
-| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)                 | A system function reported a failure                                                                           |
-| [SRT_REJ_PEER](#SRT_REJ_PEER)                     | The connection has been rejected by peer, but no further details are available                                 |
-| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)             | A problem with resource allocation (usually memory)                                                            |
-| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)                   | The data sent by one party to another cannot be properly interpreted                                           |
-| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)               | The listener's backlog has exceeded                                                                            |
-| [SRT_REJ_IPE](#SRT_REJ_IPE)                       | Internal Program Error                                                                                         |
-| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)                   | The listener socket received a request as it is being closed                                                   |
-| [SRT_REJ_VERSION](#SRT_REJ_VERSION)               | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
-| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)           | Rendezvous cookie collision                                                                                    |
-| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)           | Both parties have defined a passprhase for connection and they differ                                          |
-| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)             | Only one connection party has set up a password                                                                |
-| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)         | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
-| [SRT_REJ_FILTER](#SRT_REJ_FILTER)                 | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
-| [SRT_REJ_GROUP](#SRT_REJ_GROUP)                   | The group type or some group settings are incompatible for both connection parties                             |
-| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)               | The connection wasn't rejected, but it timed out                                                               |
-| <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
+| *Rejection Reason*                           | *Since*   | *Description*                                                                                                  |
+|:-------------------------------------------- |:--------- |:-------------------------------------------------------------------------------------------------------------- |
+| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)          | 1.3.4     | A fallback value for cases when there was no connection rejected                                               |
+| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)            | 1.3.4     | A system function reported a failure                                                                           |
+| [SRT_REJ_PEER](#SRT_REJ_PEER)                | 1.3.4     | The connection has been rejected by peer, but no further details are available                                 |
+| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)        | 1.3.4     | A problem with resource allocation (usually memory)                                                            |
+| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)              | 1.3.4     | The data sent by one party to another cannot be properly interpreted                                           |
+| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)          | 1.3.4     | The listener's backlog has exceeded                                                                            |
+| [SRT_REJ_IPE](#SRT_REJ_IPE)                  | 1.3.4     | Internal Program Error                                                                                         |
+| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                   |
+| [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
+| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                    |
+| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passprhase for connection and they differ                                          |
+| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                |
+| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
+| [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
+| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
+| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.6.0-dev | The connection was rejected due to an unsupported or mismatching encryption mode                               |
+| <img width=290px height=1px/>                |           |                                                                                                                |
 
 <h4 id="error-codes">Error Codes</h4>
   

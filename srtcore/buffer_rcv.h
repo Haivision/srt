@@ -11,7 +11,7 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#include "buffer_snd.h" // AvgBufSize
+#include "buffer_tools.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
 #include "sync.h"
@@ -76,7 +76,7 @@ public:
     int dropAll();
 
     /// @brief Drop the whole message from the buffer.
-    /// If message number is 0, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
+    /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
     /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.

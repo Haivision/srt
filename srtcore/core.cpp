@@ -203,6 +203,7 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+        flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 
         // For "private" options (not derived from the listener
         // socket by an accepted socket) provide below private_default
@@ -809,6 +810,11 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_RETRANSMITALGO:
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
+        break;
+
+    case SRTO_CRYPTOMODE:
+        *(int32_t*)optval = m_config.iCryptoMode;
+        optlen = sizeof(int32_t);
         break;
 
     default:
@@ -2629,6 +2635,13 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
+                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
+                    {
+                        // Cryptographic modes mismatch. Not acceptable at all.
+                        m_RejectReason = SRT_REJ_CRYPTO;
+                        return false;
+                    }
+
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.
                     if (m_config.bEnforcedEnc)
@@ -9086,6 +9099,13 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         else if (payload == 0)
             continue;
 
+        // The packet has been ecrypted, thus the authentication tag is expected to be stored
+        // in the SND buffer as well right after the payload.
+        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
+        }
+
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
         // Therefore unlocking in order not to block other threads.
@@ -9706,6 +9726,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         CUnit *  u    = *unitIt;
         CPacket &rpkt = u->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
+        const bool retransmitted = pktrexmitflag == 1;
 
         time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
         IF_HEAVY_LOGGING(pts = getPacketPTS(NULL, rpkt));
@@ -9899,11 +9920,12 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+    const bool retransmitted = pktrexmitflag == 1;
 #if ENABLE_HEAVY_LOGGING
     string                   rexmit_reason;
 #endif
 
-    if (pktrexmitflag == 1)
+    if (retransmitted)
     {
         // This packet was retransmitted
         enterCS(m_StatsLock);
@@ -9960,7 +9982,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     // this function will extract and test as needed.
 
     const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
-    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
 
     // Retransmitted and unordered packets do not provide expected measurement.
     // We expect the 16th and 17th packet to be sent regularly,
