@@ -3474,7 +3474,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         // This will be also passed to a HSv4 rendezvous, but fortunately the old
         // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
         m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
-        bool whether SRT_ATR_UNUSED = m_config.iSndCryptoKeyLen != 0;
+        IF_HEAVY_LOGGING(const bool whether = m_config.iSndCryptoKeyLen != 0);
         HLOGC(aclog.Debug,
               log << CONID() << "startConnect (rnd): " << (whether ? "" : "NOT ")
                   << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
@@ -3518,7 +3518,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
 
     // Inform the server my configurations.
     CPacket reqpkt;
@@ -3546,8 +3545,9 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
 
-    steady_clock::time_point now = steady_clock::now();
-    setPacketTS(reqpkt, now);
+    const steady_clock::time_point tnow = steady_clock::now();
+    m_SndLastAck2Time = tnow;
+    setPacketTS(reqpkt, tnow);
 
     HLOGC(cnlog.Debug,
           log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.m_iTimeStamp
@@ -3558,7 +3558,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_tsLastReqTime = now;
+    m_tsLastReqTime = tnow;
     m_bConnecting = true;
     m_pSndQueue->sendto(serv_addr, reqpkt);
 
@@ -3597,7 +3597,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     while (!m_bClosing)
     {
-        const steady_clock::duration tdiff = steady_clock::now() - m_tsLastReqTime.load();
+        const steady_clock::time_point local_tnow = steady_clock::now();
+        const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
         // avoid sending too many requests, at most 1 request per 250ms
 
         // SHORT VERSION:
@@ -3616,7 +3617,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             if (m_config.bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
 
-            now = steady_clock::now();
 #if ENABLE_HEAVY_LOGGING
             {
                 CHandShake debughs;
@@ -3627,8 +3627,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             }
 #endif
 
-            m_tsLastReqTime       = now;
-            setPacketTS(reqpkt, now);
+            m_tsLastReqTime = local_tnow;
+            setPacketTS(reqpkt, local_tnow);
             m_pSndQueue->sendto(serv_addr, reqpkt);
         }
         else
