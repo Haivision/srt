@@ -3367,19 +3367,18 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     if (!first_time)
     {
-        HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck)
-                << ") SND=%" << m_iSndLastAck << " -> %" << snd_isn
-                << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+            HLOGC(gmlog.Debug,
+                  log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                      << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                      << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
         setInitialRcvSeq(rcv_isn);
         setInitialSndSeq(snd_isn);
     }
     else
     {
-        HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DEFINED ISN: RCV=%" << m_iRcvLastAck
-                << " SND=%" << m_iSndLastAck);
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup:  DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
+                << m_iSndLastAck);
     }
 }
 #endif
@@ -5485,14 +5484,11 @@ bool srt::CUDT::prepareBuffers(CUDTException *eout)
         // Keep the per-socket receiver buffer and receiver loss list empty.
         // Reception will be redirected to the group directly.
         if (!m_parent->m_GroupOf)
+#endif
         {
             SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
             m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_config.bMessageAPI);
         }
-#else
-        SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-        m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_config.bMessageAPI);
-#endif
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
@@ -7615,39 +7611,6 @@ void srt::CUDT::ackDataUpTo(int32_t ack)
     m_iRcvLastSkipAck = ack;
 }
 
-#if 0 // ENABLE_BONDING XXX unknown why blocked, investigate
-void srt::CUDT::dropToGroupRecvBase()
-{
-    int32_t group_recv_base = SRT_SEQNO_NONE;
-    if (m_parent->m_GroupOf)
-    {
-        // Check is first done before locking to avoid unnecessary
-        // mutex locking. The condition for this field is that it
-        // can be either never set, already reset, or ever set
-        // and possibly dangling. The re-check after lock eliminates
-        // the dangling case.
-        ScopedLock glock (uglobal().m_GlobControlLock);
-
-        // Note that getRcvBaseSeqNo() will lock m_GroupOf->m_GroupLock,
-        // but this is an intended order.
-        if (m_parent->m_GroupOf)
-            group_recv_base = m_parent->m_GroupOf->getRcvBaseSeqNo();
-    }
-    if (group_recv_base == SRT_SEQNO_NONE)
-        return;
-
-    ScopedLock lck(m_RcvBufferLock);
-    int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base));
-    if (cnt > 0)
-    {
-        HLOGC(grlog.Debug,
-              log << CONID() << "dropToGroupRecvBase: dropped " << cnt << " packets before ACK: group_recv_base="
-                  << group_recv_base << " m_iRcvLastSkipAck=" << m_iRcvLastSkipAck
-                  << " m_iRcvCurrSeqNo=" << m_iRcvCurrSeqNo << " m_bTsbPd=" << m_bTsbPd);
-    }
-}
-#endif
-
 namespace srt {
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
@@ -7922,7 +7885,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     {
         ackDataUpTo(ack);
 
-/* WAS: #if ENABLE_OLD_BONDING
+/* WAS: #if ENABLE_OLD_BONDING (used in the blocked code; to be removed in perspective)
         const int32_t group_read_seq = CSeqNo::decseq(ack);
 #endif */
 
@@ -8083,7 +8046,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         int32_t data[ACKD_TOTAL_SIZE];
 
         // For "new bonding", still get this size from buffer,
-        // but only unless we have a group
+        // but only unless we have a group (in which case this value
+        // has been already set few lines earlier).
         if (!group_buffering)
             avail_receiver_buffer_size = (int) getAvailRcvBufferSizeNoLock();
 
@@ -8168,28 +8132,26 @@ void srt::CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seq
 
 #if ENABLE_BONDING
 
-    using namespace any_op;
+    // This method is necessary for balancing groups, but it can be as well
+    // used for BROADCAST groups, if it is decided that a loss reported on
+    // whichever link should be then retransmitted using all links (while
+    // assymmetric losses will not be reported).
 
+    // For BACKUP we stick to the individual per-socket
+    // loss handling as any sending on a different link than the current
+    // one should happen in case of possible breakup detection, so this
+    // way it doesn't make any sense to handle losses any other way than
+    // per socket, as usual.
+
+    using namespace any_op;
 #ifdef BROADCAST_COMMON_SND_LOSS
     if (gkeeper.group && (EqualAny(gkeeper.group->type()), SRT_GTYPE_BALANCING, SRT_GTYPE_BROADCAST))
 #else
     if (gkeeper.group && gkeeper.group->type() == SRT_GTYPE_BALANCING)
 #endif
     {
-        // XXX TEMPORARY added broadcast for testing.
+        // For groups of that type we use the common loss handling.
 
-        // For groups of type BALANCING we use the common loss handling.
-
-        // XXX This method can be as well used for BROADCAST groups, if
-        // it is decided that a loss reported on whichever link should be
-        // then retransmitted using all links (while assymmetric losses
-        // will not be reported).
-
-        // For BACKUP we stick to the individual per-socket
-        // loss handling as any sending on a different link than the current
-        // one should happen in case of possible breakup detection, so this
-        // way it doesn't make any sense to handle losses any other way than
-        // per socket, as usual.
         bool valid = gkeeper.group->updateOnACK(ackdata_seqno, (w_last_sent_seqno));
         if (!valid)
         {
@@ -8662,7 +8624,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
     {
 #if ENABLE_BONDING
-        // Keep group from disappearing in the meantime
+        // Keep the group from disappearing in the meantime
         CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
         typedef vector< pair<int32_t, int32_t> > losses_t;
         losses_t losses;
@@ -9264,8 +9226,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     }
 }
 
-// XXX w_origintime unused anymore?
-int srt::CUDT::packLostData(CPacket& w_packet,/* steady_clock::time_point& w_origintime,*/ int32_t exp_seq)
+int srt::CUDT::packLostData(CPacket& w_packet, int32_t exp_seq)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
@@ -9503,7 +9464,6 @@ void srt::CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
 
     setPacketTS(p, tsStart, ts);
 }
-
 
 bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
 {
@@ -9816,7 +9776,6 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
             HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
             payload        = (int) w_packet.getLength();
             IF_HEAVY_LOGGING(reason = "filter");
-            /// XXX so? filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
 
             // Stats
             ScopedLock lg(m_StatsLock);
@@ -11152,70 +11111,6 @@ void srt::CUDT::updateIdleLinkFrom(CUDT* source)
 
 }
 
-// XXX This function is currently unused. It should be fixed and put into use.
-// See the blocked call in CUDT::processData().
-// XXX REVIEW LOCKS WHEN REACTIVATING!
-
-/*
-srt::CUDT::loss_seqs_t srt::CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
-{
-// [[using affinity(m_pRcvBuffer->workerThread())]];
-    CUDT* self = (CUDT*)vself;
-    loss_seqs_t output;
-
-    // XXX When an alternative packet arrival callback is installed
-    // in case of groups, move this part to the groupwise version.
-
-    if (self->m_parent->m_GroupOf)
-    {
-        groups::SocketData* gi = self->m_parent->m_GroupMemberData;
-        if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
-        {
-            HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
-            gi->rcvstate = SRT_GST_RUNNING;
-            return output;
-        }
-    }
-
-    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
-
-    int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
-
-    HLOGC(qrlog.Debug, log << "defaultPacketArrival: checking sequence " << pkt.m_iSeqNo
-            << " against latest " << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
-
-    // Loss detection.
-    if (seqdiff > 1) // packet is later than the very subsequent packet
-    {
-        const int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
-        const int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
-
-        {
-            // If loss found, insert them to the receiver loss list
-            ScopedLock lg (self->m_RcvLossLock);
-            self->m_pRcvLossList->insert(seqlo, seqhi);
-
-            if (initial_loss_ttl)
-            {
-                // pack loss list for (possibly belated) NAK
-                // The LOSSREPORT will be sent in a while.
-                self->m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-                HLOGF(qrlog.Debug, "defaultPacketArrival: added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi,
-                        1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-            }
-        }
-
-        if (!initial_loss_ttl)
-        {
-            // old code; run immediately when tolerance = 0
-            // or this feature isn't used because of the peer
-            output.push_back(make_pair(seqlo, seqhi));
-        }
-    }
-
-    return output;
-}
-*/
 #endif
 
 /// This function is called when a packet has arrived, which was behind the current

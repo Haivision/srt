@@ -403,7 +403,7 @@ int32_t srt::CSndLossList::popLostSeq_internal()
 /// It returns 0 in case when @a seq is in this range. Otherwise
 /// if it precedes this range, the returned value is the comparison
 /// result against @a seqlo, and if it succeeds the range, the
-/// comparison result with @a seqhi, or, if it is SRT_SEQNO_NONE,
+/// comparison result with @a seqhi, or, if seqhi == SRT_SEQNO_NONE,
 /// with @a seqlo.
 /// This function is using specific rules of CSndLossList.
 int srt::CSndLossList::rangecmp(int32_t seq, int32_t seqlo, int32_t seqhi)

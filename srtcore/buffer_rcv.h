@@ -11,7 +11,6 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-// XXX move to buffer_tools.h ?
 #include "buffer_snd.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
@@ -37,7 +36,7 @@ namespace srt
 //             |           |
 //             |           \___ m_iEndPos
 //             |
-//             \___ m_iStartPos: first message to read
+//             \___ m_iStartPos: first packet position in the buffer
 //
 //   m_pUnit[i]->status_: 0: free, 1: good, 2: read, 3: dropped (can be combined with read?)
 //
@@ -49,7 +48,7 @@ namespace srt
 //
 //
 //    m_iStartPos: the first packet that should be read (might be empty)
-//    m_iEndPos: the end of contiguous range. Empty if == m_iStartPos
+//    m_iEndPos: the end of contiguous range. Empty if m_iEndPos == m_iStartPos
 //    m_iDropPos: a packet available for retrieval after a drop. If == m_iEndPos, no such packet.
 //
 // Operational rules:

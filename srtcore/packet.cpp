@@ -638,4 +638,4 @@ std::string CPacket::Info()
 }
 #endif
 
-}
+} // end namespace srt

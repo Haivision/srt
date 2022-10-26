@@ -182,6 +182,9 @@ public:
                 // number will collide with any ISN provided by a socket.
                 // Also since now every socket will derive this ISN.
                 m_iLastSchedSeqNo = generateISN();
+                // XXX resetInitialRxSequence() was here, but
+                // this uses a field that is removed, and replaced by
+                // m_RcvLastSeqNo
                 empty = true;
             }
         }
@@ -432,9 +435,9 @@ private:
     struct GroupContainer
     {
     private:
-        std::list<SocketData>        m_List;
-        sync::atomic<size_t>         m_sizeCache;
-        sync::atomic<size_t> m_zNumberRunning;
+        std::list<SocketData> m_List;
+        sync::atomic<size_t>  m_SizeCache;
+        sync::atomic<size_t>  m_zNumberRunning;
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -445,7 +448,7 @@ private:
     public:
 
         GroupContainer()
-            : m_sizeCache(0)
+            : m_SizeCache(0)
             , m_zNumberRunning(0)
             , m_LastActiveLink(m_List.end())
         {
@@ -457,14 +460,14 @@ private:
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
-        void         push_back(const SocketData& data) { m_List.push_back(data); ++m_sizeCache; }
+        void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
         {
             m_LastActiveLink = end();
             m_List.clear();
-            m_sizeCache = 0;
+            m_SizeCache = 0;
         }
-        size_t size() { return m_sizeCache; }
+        size_t size() { return m_SizeCache; }
 
         void erase(gli_t it);
 
@@ -788,8 +791,8 @@ private:
     sync::Condition       m_RcvDataCond;
     sync::Mutex           m_RcvDataLock;
     sync::Condition       m_RcvTsbPdCond;
-    sync::atomic<bool> m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
-    sync::atomic<bool> m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
+    sync::atomic<bool>    m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
+    sync::atomic<bool>    m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
     mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     mutable sync::Mutex   m_LossAckLock;
 

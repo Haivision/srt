@@ -369,7 +369,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         }
     }
     m_List.erase(it);
-    --m_sizeCache;
+    --m_SizeCache;
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -2351,19 +2351,9 @@ struct FLookupSocketWithEvent_LOCKED
     }
 };
 
-void CUDTGroup::updateWriteState()
-{
-    ScopedLock lg(m_GroupLock);
-    m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
-}
 
-
-/*
-
-   Old unused procedure.
-   Leaving here for historical reasons.
-   */
-
+// Old unused procedure.
+// Leaving here for historical reasons.
 #if 0
 void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {
@@ -2483,7 +2473,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This call may wait indefinite time, so GroupLock must be unlocked.
         InvertedLock ung (m_GroupLock);
         THREAD_PAUSED();
-        nready  = m_Global.m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /-report by retval-/);
+        nready  = m_Global.m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
         THREAD_RESUMED();
 
         // HERE GlobControlLock is locked first, then GroupLock is applied back
@@ -2611,7 +2601,15 @@ int32_t CUDTGroup::getRcvBaseSeqNo()
     ScopedLock lg(m_GroupLock);
     return m_RcvBaseSeqNo;
 }
+#endif
 
+void CUDTGroup::updateWriteState()
+{
+    ScopedLock lg(m_GroupLock);
+    m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
+}
+
+#if 0
 /// Validate iPktSeqno is in range
 /// (iBaseSeqno - m_iSeqNoTH/2; iBaseSeqno + m_iSeqNoTH).
 ///
@@ -2834,7 +2832,57 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
     m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
     throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
 }
+
+// [[using locked(m_GroupLock)]]
+CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
+{
+    typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
+    ReadPos*                                  out = 0;
+
+    // This map no longer maps only ahead links.
+    // Here are all links, and whether ahead, it's defined by the sequence.
+    for (pit_t i = m_Positions.begin(); i != m_Positions.end(); ++i)
+    {
+        // i->first: socket ID
+        // i->second: ReadPos { sequence, packet }
+        // We are not interested with the socket ID because we
+        // aren't going to read from it - we have the packet already.
+        ReadPos& a = i->second;
+
+        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
+        if (seqdiff == 1)
+        {
+            // The very next packet. Return it.
+            HLOGC(grlog.Debug,
+                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
+                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
+            out = &a;
+        }
+        else if (seqdiff < 1 && !a.packet.empty())
+        {
+            HLOGC(grlog.Debug,
+                  log << "group/recv: @" << i->first << " dropping collected ahead %" << a.mctrl.pktseq << "#"
+                      << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
+            a.packet.clear();
+        }
+        // In case when it's >1, keep it in ahead
+    }
+
+    return out;
+}
+
 #endif // block by if 0
+
+const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
+{
+    static const char* const states[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
+    static const size_t      size     = Size(states);
+    static const char* const unknown  = "UNKNOWN";
+    if (size_t(st) < size)
+        return states[st];
+    return unknown;
+}
+
 
 // The REAL version for the new group receiver.
 // 
@@ -3088,16 +3136,6 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return res;
 }
 
-
-const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
-{
-    static const char* const states[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
-    static const size_t      size     = Size(states);
-    static const char* const unknown  = "UNKNOWN";
-    if (size_t(st) < size)
-        return states[st];
-    return unknown;
-}
 
 void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 {

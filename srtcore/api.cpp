@@ -150,7 +150,7 @@ bool srt::CUDTSocket::readReady()
 {
 #if ENABLE_BONDING
 
-    // In the "new bonding" the reading from a socket
+    // If this is a group member socket, then reading
     // happens exclusively from the group and the socket is
     // only used as a connection point, packet dispatching
     // and single link management. Data buffering and hence
@@ -2241,7 +2241,7 @@ int srt::CUDTUnited::select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSE
 }
 
 // XXX This may crash when a member socket is added to selectEx.
-// Consider revising to prevent a socket from being used.
+// Consider revising to prevent a member socket from being used.
 int srt::CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                               vector<SRTSOCKET>*       readfds,
                               vector<SRTSOCKET>*       writefds,
