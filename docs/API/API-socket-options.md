@@ -48,26 +48,30 @@ See [Transmission Types](API.md#transmission-types) for details.
 The defined encryption state as performed by the Key Material Exchange, used
 by `SRTO_RCVKMSTATE`, `SRTO_SNDKMSTATE` and `SRTO_KMSTATE` options:
 
-- `SRT_KM_S_UNSECURED`: no encryption/decryption. If this state is only on
+- `SRT_KM_S_UNSECURED` (`0`): no encryption/decryption. If this state is only on
 the receiver, received encrypted packets will be dropped.
 
-- `SRT_KM_S_SECURING`: pending security (HSv4 only). This is a temporary state
+- `SRT_KM_S_SECURING`(`1`): pending security (HSv4 only). This is a temporary state
 used only if the connection uses HSv4 and the Key Material Exchange is
 not finished yet. On HSv5 this is not possible because the Key Material
 Exchange for the initial key is done in the handshake.
 
-- `SRT_KM_S_SECURED`: KM exchange was successful and the data will be sent
+- `SRT_KM_S_SECURED` (`2`): KM exchange was successful and the data will be sent
 encrypted and will be decrypted by the receiver. This state is only possible on
 both sides in both directions simultaneously.
 
-- `SRT_KM_S_NOSECRET`: If this state is in the sending direction (`SRTO_SNDKMSTATE`), 
+- `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`), 
 then it means that the sending party has set a passphrase, but the peer did not. 
 In this case the sending party can receive unencrypted packets from the peer, but 
 packets it sends to the peer will be encrypted and the peer will not be able to 
 decrypt them. This state is only possible in HSv5.
 
-- `SRT_KM_S_BADSECRET`: The password is wrong (set differently on each party);
+- `SRT_KM_S_BADSECRET` (`4`): The password is wrong (set differently on each party);
 encrypted payloads won't be decrypted in either direction.
+
+- `SRT_KM_S_BADCRYPTOMODE` (`5`): The crypto mode mode configuration is either not supported
+or mismatches the configuration of the peer.
+
 
 Note that with the default value of `SRTO_ENFORCEDENCRYPTION` option (true),
 the state is equal on both sides in both directions, and it can be only
@@ -200,12 +204,13 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 3]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                   |       | pre      | `int32_t` | pkts    | 25600             | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)               | 1.5.0 | pre      | `int32_t` |         | 0                 | 0...1    | W   | S     |
-| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre     | `int32_t` | ms      | 60                | 60-...   | W   | GDI+  |
+| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI+  |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                     | 1.5.0 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                         | 1.0.5 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                             | 1.0.5 | pre-bind | `int32_t` |         | (system)          | 0..255   | RW  | GSD   |
@@ -313,6 +318,25 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 Connect timeout. This option applies to the caller and rendezvous connection
 modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
 will be 10 times the value set with `SRTO_CONNTIMEO`.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_CRYPTOMODE
+
+| OptName            | Since     | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
+| ------------------ | --------- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
+| `SRTO_CRYPTOMODE`  | 1.6.0-dev | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
+
+The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is set.
+
+Crypto modes:
+
+- `0`: auto-select during handshake negotiation (to be implemented; currently similar to AES-CTR).
+- `1`: regular AES-CTR (without message integrity authentication).
+- `2`: AES-GCM mode with message integrity authentication (AEAD).
+
 
 [Return to list](#list-of-options)
 

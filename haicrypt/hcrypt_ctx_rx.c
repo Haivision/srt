@@ -122,7 +122,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 			return(-1);
 		}
 
-		if (HCRYPT_CIPHER_AES_CTR != km_msg[HCRYPT_MSG_KM_OFS_CIPHER]
+		if (HCRYPT_CIPHER_AES_CTR == km_msg[HCRYPT_MSG_KM_OFS_CIPHER]
 			&& HCRYPT_AUTH_NONE != km_msg[HCRYPT_MSG_KM_OFS_AUTH]) {
 			HCRYPT_LOG(LOG_WARNING, "%s", "KMmsg unsupported auth method\n");
 			return(-1);

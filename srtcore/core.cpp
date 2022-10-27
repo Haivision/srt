@@ -207,6 +207,7 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+        flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 
         // For "private" options (not derived from the listener
         // socket by an accepted socket) provide below private_default
@@ -816,6 +817,11 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_RETRANSMITALGO:
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
+        break;
+
+    case SRTO_CRYPTOMODE:
+        *(int32_t*)optval = m_config.iCryptoMode;
+        optlen = sizeof(int32_t);
         break;
 
     default:
@@ -2636,6 +2642,13 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
+                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
+                    {
+                        // Cryptographic modes mismatch. Not acceptable at all.
+                        m_RejectReason = SRT_REJ_CRYPTO;
+                        return false;
+                    }
+
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.
                     if (m_config.bEnforcedEnc)
@@ -3439,7 +3452,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         // This will be also passed to a HSv4 rendezvous, but fortunately the old
         // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
         m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
-        bool whether SRT_ATR_UNUSED = m_config.iSndCryptoKeyLen != 0;
+        IF_HEAVY_LOGGING(const bool whether = m_config.iSndCryptoKeyLen != 0);
         HLOGC(aclog.Debug,
               log << CONID() << "startConnect (rnd): " << (whether ? "" : "NOT ")
                   << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
@@ -3483,7 +3496,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
 
     // Inform the server my configurations.
     CPacket reqpkt;
@@ -3511,8 +3523,9 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
 
-    steady_clock::time_point now = steady_clock::now();
-    setPacketTS(reqpkt, now);
+    const steady_clock::time_point tnow = steady_clock::now();
+    m_SndLastAck2Time = tnow;
+    setPacketTS(reqpkt, tnow);
 
     HLOGC(cnlog.Debug,
           log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.m_iTimeStamp
@@ -3523,7 +3536,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_tsLastReqTime = now;
+    m_tsLastReqTime = tnow;
     m_bConnecting = true;
     m_pSndQueue->sendto(serv_addr, reqpkt);
 
@@ -3562,7 +3575,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     while (!m_bClosing)
     {
-        const steady_clock::duration tdiff = steady_clock::now() - m_tsLastReqTime.load();
+        const steady_clock::time_point local_tnow = steady_clock::now();
+        const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
         // avoid sending too many requests, at most 1 request per 250ms
 
         // SHORT VERSION:
@@ -3581,7 +3595,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             if (m_config.bRendezvous)
                 reqpkt.m_iID = m_ConnRes.m_iID;
 
-            now = steady_clock::now();
 #if ENABLE_HEAVY_LOGGING
             {
                 CHandShake debughs;
@@ -3592,8 +3605,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             }
 #endif
 
-            m_tsLastReqTime       = now;
-            setPacketTS(reqpkt, now);
+            m_tsLastReqTime = local_tnow;
+            setPacketTS(reqpkt, local_tnow);
             m_pSndQueue->sendto(serv_addr, reqpkt);
         }
         else
@@ -9314,6 +9327,13 @@ int srt::CUDT::packLostData(CPacket& w_packet, int32_t exp_seq)
         else if (payload == 0)
             continue;
 
+        // The packet has been ecrypted, thus the authentication tag is expected to be stored
+        // in the SND buffer as well right after the payload.
+        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
+        }
+
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
         // Therefore unlocking in order not to block other threads.
@@ -10232,11 +10252,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
-    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end(); ++unitIt)
+    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     {
         CUnit *  u    = *unitIt;
         CPacket &rpkt = u->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
+        const bool retransmitted = pktrexmitflag == 1;
 
         time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
         IF_HEAVY_LOGGING(pts = getPacketPTS(NULL, rpkt));
@@ -10270,12 +10291,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             continue;
         }
 
-        int avail_bufsize = 0; // needed in logging
-
         // This is executed only when bonding is enabled and only
         // with the new buffer (in which case the buffer is in the group).
 
-        avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
+        const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
+
         if (offset >= avail_bufsize)
         {
             // This is already a sequence discrepancy. Probably there could be found
@@ -10345,13 +10365,33 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             excessive = false;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
-                EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                    // TODO: reset and restore the timestamp if TSBPD is disabled.
+                    // Reset retransmission flag (must be excluded from GCM auth tag).
+                    u->m_Packet.setRexmitFlag(false);
+                    const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                    u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+
                 if (rc != ENCS_CLEAR)
                 {
                     // Heavy log message because if seen once the message may happen very often.
                     HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+                        {
+                            // Drop a packet from the receiver buffer.
+                            // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                            // Otherwise just drop the exact packet.
+                            if (m_config.bMessageAPI)
+                                m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+                            else
+                                m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+
+                            LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
+                            m_bBroken = true;
+                            m_iBrokenCounter = 0;
+                        }
 
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
@@ -10401,7 +10441,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         if (adding_successful)
         {
             HLOGC(qrlog.Debug,
-                    log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
+                      log << CONID()
+                          << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
 
             if (CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
             {
@@ -10448,6 +10489,7 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
         CUnit *  u    = *unitIt;
         CPacket &rpkt = u->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
+        const bool retransmitted = pktrexmitflag == 1;
         const int pktsz = (int) rpkt.getLength();
 
         IF_HEAVY_LOGGING(pts = getPacketPTS(grp, rpkt));
@@ -10521,13 +10563,32 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
             excessive = false;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
-                EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                // TODO: reset and restore the timestamp if TSBPD is disabled.
+                // Reset retransmission flag (must be excluded from GCM auth tag).
+                u->m_Packet.setRexmitFlag(false);
+                const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
                 if (rc != ENCS_CLEAR)
                 {
                     // Heavy log message because if seen once the message may happen very often.
                     HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+                    {
+                        // Drop a packet from the receiver buffer.
+                        // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                        // Otherwise just drop the exact packet.
+                        if (m_config.bMessageAPI)
+                            m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+                        else
+                            m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+
+                        LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
+                        m_bBroken = true;
+                        m_iBrokenCounter = 0;
+                    }
 
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(pktsz, 1));
@@ -10618,6 +10679,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+    const bool retransmitted = pktrexmitflag == 1;
 
     if (pktrexmitflag == 1)
     {
@@ -10670,7 +10732,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     // this function will extract and test as needed.
 
     const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
-    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
 
     // Retransmitted and unordered packets do not provide expected measurement.
     // We expect the 16th and 17th packet to be sent regularly,

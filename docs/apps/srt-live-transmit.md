@@ -336,6 +336,7 @@ following type specification:
 | -------------------- | ---------------- | ------------------------- | ----------- |
 | `congestion`         | {`live`, `file`} | `SRTO_CONGESTION`         | Type of congestion control. |
 | `conntimeo`          | `ms`             | `SRTO_CONNTIMEO`          | Connection timeout. |
+| `cryptomode`         | 0..2             | `SRTO_CRYPTOMODE`         | Cryptographic mode. |
 | `drifttracer`        | `bool`           | `SRTO_DRIFTTRACER`        | Enable drift tracer. |
 | `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
 | `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |
