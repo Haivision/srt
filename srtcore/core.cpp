@@ -9711,8 +9711,7 @@ CUDT::time_point srt::CUDT::getPacketPTS(void*, const CPacket& packet)
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
 
-static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
-
+SRT_ATR_UNUSED static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
