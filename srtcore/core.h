@@ -312,8 +312,10 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
+#if ENABLE_BONDING
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
+#endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
@@ -385,6 +387,11 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         SRT_ASSERT(from_time >= tsStartTime);
         return (int32_t) sync::count_microseconds(from_time - tsStartTime);
+    }
+
+    static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
+    {
+        p.m_iTimeStamp = makeTS(ts, start_time);
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)
@@ -1044,13 +1051,12 @@ private: // Generation and processing of packets
 
     /// Pack in CPacket the next data to be send.
     ///
-    /// @param packet [in, out] a CPacket structure to fill
+    /// @param packet [out] a CPacket structure to fill
+    /// @param nexttime [out] Time when this socket should be next time picked up for processing.
     ///
-    /// @return A pair of values is returned (is_payload_valid, timestamp).
-    ///         If is_payload_valid is false, there was nothing packed for sending,
-    ///         and the timestamp value should be ignored.
-    ///         The timestamp is the full source/origin timestamp of the data.
-    std::pair<bool, time_point> packData(CPacket& packet);
+    /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
+    /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
+    bool packData(CPacket& packet, time_point& nexttime);
 
     int processData(CUnit* unit);
     void processClose();
@@ -1111,10 +1117,12 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
+#if ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
-    
+#endif
+
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

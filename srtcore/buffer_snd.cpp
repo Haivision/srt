@@ -359,7 +359,11 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             continue;
         }
 
-        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
+                << " #" << w_packet.getMsgSeq()
+                << " %" << w_packet.m_iSeqNo
+                << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+
         break;
     }
 

@@ -944,16 +944,36 @@ void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, cons
     Verb() << " IPE: LINK NOT FOUND???]";
 }
 
+SRT_GROUP_TYPE ResolveGroupType(const string& name)
+{
+    static struct
+    {
+        string name;
+        SRT_GROUP_TYPE type;
+    } table [] {
+#define E(n) {#n, SRT_GTYPE_##n}
+        E(BROADCAST),
+        E(BACKUP)
+
+#undef E
+    };
+
+    typedef int charxform(int c);
+
+    string uname;
+    transform(name.begin(), name.end(), back_inserter(uname), (charxform*)(&toupper));
+
+    for (auto& x: table)
+        if (x.name == uname)
+            return x.type;
+
+    return SRT_GTYPE_UNDEFINED;
+}
+
 void SrtCommon::OpenGroupClient()
 {
-    SRT_GROUP_TYPE type = SRT_GTYPE_UNDEFINED;
-
-    // Resolve group type.
-    if (m_group_type == "broadcast")
-        type = SRT_GTYPE_BROADCAST;
-    else if (m_group_type == "backup")
-        type = SRT_GTYPE_BACKUP;
-    else
+    SRT_GROUP_TYPE type = ResolveGroupType(m_group_type);
+    if (type == SRT_GTYPE_UNDEFINED)
     {
         Error("With //group, type='" + m_group_type + "' undefined");
     }

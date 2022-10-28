@@ -97,15 +97,7 @@ srt::CSndLossList::~CSndLossList()
 
 void srt::CSndLossList::traceState() const
 {
-    int pos = m_iHead;
-    while (pos != SRT_SEQNO_NONE)
-    {
-        std::cout << pos << ":[" << m_caSeq[pos].seqstart;
-        if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
-            std::cout << ", " << m_caSeq[pos].seqend;
-        std::cout << "], ";
-        pos = m_caSeq[pos].inext;
-    }
+    traceState(std::cout);
     std::cout << "\n";
 }
 
@@ -506,6 +498,10 @@ srt::CRcvLossList::~CRcvLossList()
 
 int srt::CRcvLossList::insert(int32_t seqno1, int32_t seqno2)
 {
+    SRT_ASSERT(seqno1 != SRT_SEQNO_NONE && seqno2 != SRT_SEQNO_NONE);
+    // Make sure that seqno2 isn't earlier than seqno1.
+    SRT_ASSERT(CSeqNo::seqcmp(seqno1, seqno2) <= 0);
+
     // Data to be inserted must be larger than all those in the list
     if (m_iLargestSeq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seqno1, m_iLargestSeq) <= 0)
     {
@@ -865,3 +861,64 @@ srt::CRcvFreshLoss::Emod srt::CRcvFreshLoss::revoke(int32_t lo, int32_t hi)
 
     return DELETE;
 }
+
+bool srt::CRcvFreshLoss::removeOne(std::deque<CRcvFreshLoss>& w_container, int32_t sequence, int* pw_had_ttl)
+{
+    size_t i       = 0;
+    int    had_ttl = 0;
+    for (i = 0; i < w_container.size(); ++i)
+    {
+        had_ttl = w_container[i].ttl;
+        switch (w_container[i].revoke(sequence))
+        {
+        case CRcvFreshLoss::NONE:
+            continue; // Not found. Search again.
+
+        case CRcvFreshLoss::STRIPPED:
+            goto breakbreak; // Found and the modification is applied. We're done here.
+
+        case CRcvFreshLoss::DELETE:
+            // No more elements. Kill it.
+            w_container.erase(w_container.begin() + i);
+            // Every loss is unique. We're done here.
+            goto breakbreak;
+
+        case CRcvFreshLoss::SPLIT:
+            // Oh, this will be more complicated. This means that it was in between.
+            {
+                // So create a new element that will hold the upper part of the range,
+                // and this one modify to be the lower part of the range.
+
+                // Keep the current end-of-sequence value for the second element
+                int32_t next_end = w_container[i].seq[1];
+
+                // seq-1 set to the end of this element
+                w_container[i].seq[1] = CSeqNo::decseq(sequence);
+                // seq+1 set to the begin of the next element
+                int32_t next_begin = CSeqNo::incseq(sequence);
+
+                // Use position of the NEXT element because insertion happens BEFORE pointed element.
+                // Use the same TTL (will stay the same in the other one).
+                w_container.insert(w_container.begin() + i + 1,
+                                   CRcvFreshLoss(next_begin, next_end, w_container[i].ttl));
+            }
+            goto breakbreak;
+        }
+    }
+
+    // Could have made the "return" instruction instead of goto, but maybe there will be something
+    // to add in future, so keeping that.
+breakbreak:
+    ;
+
+    if (pw_had_ttl)
+        *pw_had_ttl = had_ttl;
+
+    if (i != w_container.size())
+    {
+        return true;
+    }
+
+    return false;
+}
+

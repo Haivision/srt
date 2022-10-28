@@ -1416,6 +1416,26 @@ inline std::string SrtVersionString(int version)
 
 bool SrtParseConfig(std::string s, SrtConfig& w_config);
 
+
+inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+{
+    std::ostringstream os;
+
+    os << "[ ";
+    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    {
+        int len = CSeqNo::seqoff(i->first, i->second);
+        os << "%" << i->first;
+        if (len > 1)
+            os << "+" << len;
+        os << " ";
+    }
+
+    os << "]";
+    return os.str();
+}
+
+
 } // namespace srt
 
 #endif

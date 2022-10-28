@@ -52,6 +52,27 @@ written by
 #include "srt.h"
 #include "socketconfig.h"
 
+namespace srt
+{
+int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
+{
+    // Mimimum recv buffer size is 32 packets
+    const int mssin_size = mss - CPacket::UDP_HDR_SIZE;
+
+    int bufsize;
+    if (val > mssin_size * CSrtConfig::DEF_MIN_FLIGHT_PKT)
+        bufsize = val / mssin_size;
+    else
+        bufsize = CSrtConfig::DEF_MIN_FLIGHT_PKT;
+
+    // recv buffer MUST not be greater than FC size
+    if (bufsize > flightflag)
+        bufsize = flightflag;
+
+    return bufsize;
+}
+}
+
 using namespace srt;
 extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
@@ -122,17 +143,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         if (val <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        // Mimimum recv buffer size is 32 packets
-        const int mssin_size = co.iMSS - CPacket::UDP_HDR_SIZE;
-
-        if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
-            co.iRcvBufSize = val / mssin_size;
-        else
-            co.iRcvBufSize = co.DEF_MIN_FLIGHT_PKT;
-
-        // recv buffer MUST not be greater than FC size
-        if (co.iRcvBufSize > co.iFlightFlagSize)
-            co.iRcvBufSize = co.iFlightFlagSize;
+        co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS);
     }
 };
 

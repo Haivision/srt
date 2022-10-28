@@ -53,6 +53,8 @@ modified by
 #ifndef INC_SRT_LIST_H
 #define INC_SRT_LIST_H
 
+#include <deque>
+
 #include "udt.h"
 #include "common.h"
 
@@ -82,7 +84,32 @@ public:
     /// @return The seq. no. or -1 if the list is empty.
     int32_t popLostSeq();
 
+    template <class Stream>
+    Stream& traceState(Stream& sout) const
+    {
+        int pos = m_iHead;
+        while (pos != SRT_SEQNO_NONE)
+        {
+            sout << "[" << pos << "]:" << m_caSeq[pos].seqstart;
+            if (m_caSeq[pos].seqend != SRT_SEQNO_NONE)
+                sout << ":" << m_caSeq[pos].seqend;
+            if (m_caSeq[pos].inext == -1)
+                sout << "=|";
+            else
+                sout << "->[" << m_caSeq[pos].inext << "]";
+            sout << ", ";
+            pos = m_caSeq[pos].inext;
+        }
+        sout << " {len:" << m_iLength << " head:" << m_iHead << " last:" << m_iLastInsertPos << "}";
+        return sout;
+    }
     void traceState() const;
+
+    // Debug/unittest support.
+
+    int head() const { return m_iHead; }
+    int next(int loc) const { return m_caSeq[loc].inext; }
+    int last() const { return m_iLastInsertPos; }
 
 private:
     struct Seq
@@ -117,6 +144,8 @@ private:
     /// @param seqno1  first sequence number in range
     /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
     bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
+
+    static const int LOC_NONE = -1;
 
 private:
     CSndLossList(const CSndLossList&);
@@ -264,6 +293,8 @@ struct CRcvFreshLoss
 
     Emod revoke(int32_t sequence);
     Emod revoke(int32_t lo, int32_t hi);
+
+    static bool removeOne(std::deque<CRcvFreshLoss>& w_container, int32_t sequence, int* had_ttl = NULL);
 };
 
 } // namespace srt

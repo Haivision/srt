@@ -355,6 +355,9 @@ inline bool cast_optval(const void* optval, int optlen)
     return false;
 }
 
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
+
 } // namespace srt
 
 struct SRT_SocketOptionObject
