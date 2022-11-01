@@ -9706,7 +9706,7 @@ int srt::CUDT::checkLazySpawnLatencyThread()
     return 0;
 }
 
-CUDT::time_point srt::CUDT::getPacketPTS(void*, const CPacket& packet)
+CUDT::time_point srt::CUDT::getPacketPlayTime(void*, const CPacket& packet)
 {
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
@@ -9728,7 +9728,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const bool retransmitted = pktrexmitflag == 1;
 
         time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
-        IF_HEAVY_LOGGING(pts = getPacketPTS(NULL, rpkt));
+        IF_HEAVY_LOGGING(pts = getPacketPlayTime(NULL, rpkt));
 
         int buffer_add_result;
         bool adding_successful = true;
