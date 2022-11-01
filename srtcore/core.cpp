@@ -1286,12 +1286,6 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     SRT_GROUP_TYPE tp = m_parent->m_GroupOf->type();
     uint32_t flags = 0;
 
-    // Note: if agent is a listener, and the current version supports
-    // both sync methods, this flag might have been changed according to
-    // the wish of the caller.
-    if (m_parent->m_GroupOf->synconmsgno())
-        flags |= SRT_GFLAG_SYNCONMSG;
-
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
     // extracted so that it can be reported and possibly the
@@ -3391,29 +3385,22 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
 
-    if (gp->synconmsgno())
+    // These are the values that are normally set initially by setters.
+    int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
+    if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
     {
-        HLOGC(gmlog.Debug, log << CONID() << "synchronizeWithGroup: NOT synchronizing sequence numbers.");
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+        setInitialRcvSeq(rcv_isn);
+        setInitialSndSeq(snd_isn);
     }
     else
     {
-        // These are the values that are normally set initially by setters.
-        int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-        if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
-        {
-            HLOGC(gmlog.Debug,
-                  log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                      << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
-                      << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
-            setInitialRcvSeq(rcv_isn);
-            setInitialSndSeq(snd_isn);
-        }
-        else
-        {
-            HLOGC(gmlog.Debug,
-                  log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
-                      << m_iSndLastAck);
-        }
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
+                << m_iSndLastAck);
     }
 }
 #endif

@@ -436,7 +436,6 @@ private:
         void erase(gli_t it);
     };
     GroupContainer m_Group;
-    const bool     m_bSyncOnMsgNo; // It goes into a dedicated HS field. Could be true for balancing groups (not implemented).
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
@@ -813,7 +812,6 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
-    SRTU_PROPERTY_RO(bool, synconmsgno, m_bSyncOnMsgNo);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 

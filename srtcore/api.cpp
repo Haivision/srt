@@ -1481,14 +1481,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
         int isn = g.currentSchedSequence();
 
-        // Don't synchronize ISN in case of synch on msgno. Every link
-        // may send their own payloads independently.
-        if (g.synconmsgno())
-        {
-            HLOGC(aclog.Debug, log << "groupConnect: NOT synchronizing sequence numbers: will sync on msgno");
-            isn = -1;
-        }
-
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->core().m_config.iGroupConnect = 1;
 
