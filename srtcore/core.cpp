@@ -1295,10 +1295,6 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     SRT_GROUP_TYPE tp = m_parent->m_GroupOf->type();
     uint32_t flags = 0;
 
-    // Note: if agent is a listener, and the current version supports
-    // both sync methods, this flag might have been changed according to
-    // the wish of the caller.
-
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
     // extracted so that it can be reported and possibly the
@@ -3380,17 +3376,17 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     if (!first_time)
     {
-            HLOGC(gmlog.Debug,
-                  log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                      << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
-                      << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
         setInitialRcvSeq(rcv_isn);
         setInitialSndSeq(snd_isn);
     }
     else
     {
         HLOGC(gmlog.Debug,
-                log << CONID() << "synchronizeWithGroup:  DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
+                log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
                 << m_iSndLastAck);
     }
 }
@@ -7634,7 +7630,6 @@ static void DebugAck(string hdr, int prev, int ack)
         return;
     }
 
-    prev     = CSeqNo::incseq(prev);
     int diff = CSeqNo::seqoff(prev, ack);
     if (diff < 0)
     {
@@ -7855,7 +7850,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     if (m_iRcvLastAckAck == ack)
     {
         HLOGC(xtlog.Debug,
-              log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
+                log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
         return nbsent;
     }
 
@@ -7894,6 +7889,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     UniqueLock bufflock(m_RcvBufferLock);
 
     // IF ack %> m_iRcvLastAck
+    // There are new received packets to acknowledge, update related information.
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         ackDataUpTo(ack);
@@ -8551,9 +8547,9 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
         }
 
         LOGC(inlog.Error,
-            log << CONID() << "IPE: ACK record not found, can't estimate RTT "
-            << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-            << ", RTT (EWMA): " << m_iSRTT << ")");
+             log << CONID() << "ACK record not found, can't estimate RTT "
+                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                 << ", RTT (EWMA): " << m_iSRTT << ")");
         return;
     }
 
