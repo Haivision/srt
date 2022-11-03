@@ -1083,9 +1083,9 @@ private: // Generation and processing of packets
 #endif
 #if ENABLE_HEAVY_LOGGING
 #if ENABLE_BONDING
-    time_point getPacketPTS(CUDTGroup* grp, const CPacket& packet);
+    time_point getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet);
 #else
-    time_point getPacketPTS(void* grp, const CPacket& packet);
+    time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 #endif
 #endif
 

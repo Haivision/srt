@@ -10211,7 +10211,7 @@ int srt::CUDT::checkLazySpawnLatencyThread()
 
 #if ENABLE_HEAVY_LOGGING
 #if ENABLE_BONDING
-CUDT::time_point srt::CUDT::getPacketPTS(CUDTGroup* grp, const CPacket& packet)
+CUDT::time_point srt::CUDT::getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet)
 {
     steady_clock::time_point pts;
 
@@ -10235,7 +10235,7 @@ CUDT::time_point srt::CUDT::getPacketPTS(CUDTGroup* grp, const CPacket& packet)
     return pts;
 }
 #else
-CUDT::time_point srt::CUDT::getPacketPTS(void*, const CPacket& packet)
+CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 {
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
@@ -10259,9 +10259,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
-        time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
-        IF_HEAVY_LOGGING(pts = getPacketPTS(NULL, rpkt));
-
         int buffer_add_result;
         bool adding_successful = true;
 
@@ -10277,6 +10274,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         if (offset < 0)
         {
             IF_HEAVY_LOGGING(exc_type = "BELATED");
+            time_point pts = getPktTsbPdTime(NULL, rpkt);
+
             enterCS(m_StatsLock);
             const double bltime = (double) CountIIR<uint64_t>(
                     uint64_t(m_stats.traceBelatedTime) * 1000,
@@ -10479,8 +10478,6 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
-    time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
-
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of CUDT::processData().
@@ -10491,8 +10488,6 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
         const int pktsz = (int) rpkt.getLength();
-
-        IF_HEAVY_LOGGING(pts = getPacketPTS(grp, rpkt));
 
         bool adding_successful = true;
         bool have_loss = false;
@@ -10531,6 +10526,8 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
 
         if (info.result == CRcvBuffer::InsertInfo::BELATED)
         {
+            time_point pts = getPktTsbPdTime(grp, rpkt);
+
             IF_HEAVY_LOGGING(exc_type = "BELATED");
             enterCS(m_StatsLock);
             const double bltime = (double) CountIIR<uint64_t>(
@@ -10690,17 +10687,16 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     }
 
-    steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
-    steady_clock::time_point pts = steady_clock::time_point() + tsbpddelay;
-
 #if ENABLE_HEAVY_LOGGING
     {
         // It's easier to remove the latency factor from this value than to add a function
         // that exposes the details basing on which this value is calculated.
+        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+        time_point pts;
 #if ENABLE_BONDING
-        pts = getPacketPTS(gkeeper.group, packet);
+        pts = getPktTsbPdTime(gkeeper.group, packet);
 #else
-        pts = getPacketPTS(NULL, packet);
+        pts = getPktTsbPdTime(NULL, packet);
 #endif
         steady_clock::time_point ets = pts - tsbpddelay;
 
@@ -10984,6 +10980,24 @@ int srt::CUDT::processData(CUnit* in_unit)
     // delivery (after drop), this time we have received a packet to be delivered
     // earlier than that, so we need to notify TSBPD immediately so that it
     // updates this itself, not sleep until the previously set time.
+
+    // The meaning of m_bWakeOnRecv:
+    // - m_bWakeOnRecv is set by TSBPD thread and means that it wishes to be woken up
+    //   on every received packet. Hence we signal always if a new packet was inserted.
+    // - even if TSBPD doesn't wish to be woken up on every reception (because it sleeps
+    //   until the play time of the next deliverable packet), it will be woken up when
+    //   next_tsbpd_avail is set because it means this time is earlier than the time until
+    //   which TSBPD sleeps, so it must be woken up prematurely. It might be more performant
+    //   to simply update the sleeping end time of TSBPD, but there's no way to do it, so
+    //   we simply wake TSBPD up and count on that it will update its sleeping settings.
+
+    //   XXX Consider: as CUniqueSync locks m_RecvLock, it means that the next instruction
+    //   gets run only when TSBPD falls asleep again. Might be a good idea to record the
+    //   TSBPD end sleeping time - as an alternative to m_bWakeOnRecv - and after locking
+    //   a mutex check this time again and compare it against next_tsbpd_avail; might be
+    //   that if this difference is smaller than "dirac" (could be hard to reliably compare
+    //   this time, unless it's set from this very value), there's no need to wake the TSBPD
+    //   thread because it will wake up on time requirement at the right time anyway.
     if (m_bTsbPd && ((m_bWakeOnRecv && new_inserted) || next_tsbpd_avail != time_point()))
     {
         HLOGC(qrlog.Debug, log << "processData: will SIGNAL TSBPD for socket. WakeOnRecv=" << m_bWakeOnRecv
