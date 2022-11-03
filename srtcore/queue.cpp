@@ -1341,6 +1341,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
         w_id = w_unit->m_Packet.m_iID;
         HLOGC(qrlog.Debug,
               log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
+                  << "NOW=" << FormatTime(sync::steady_clock::now()) << " "
                   << w_unit->m_Packet.Info());
     }
     return rst;
