@@ -892,6 +892,12 @@ void CUDTGroup::close()
                 HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
                 continue;
             }
+
+            // XXX This is not true in case of non-managed groups, which
+            // only collect sockets, but also non-managed groups should not
+            // use common group buffering and tsbpd.
+            s->setClosing();
+
             s->m_GroupOf = NULL;
             s->m_GroupMemberData = NULL;
             HLOGC(smlog.Debug, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
