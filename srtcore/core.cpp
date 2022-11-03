@@ -5271,6 +5271,12 @@ void * srt::CUDT::tsbpd(void* param)
         const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
         tsNextDelivery = info.tsbpd_time;
 
+        HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: packet check: %"
+                << info.seqno << " T=" << FormatTime(tsNextDelivery)
+                << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
+                << " ready=" << is_time_to_deliver
+                << " ondrop=" << info.seq_gap);
+
         if (!self->m_bTLPktDrop)
         {
             rxready = !info.seq_gap && is_time_to_deliver;
