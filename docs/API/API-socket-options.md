@@ -1050,7 +1050,7 @@ The use is slightly different in 1.2.0 (HSv4), and since 1.3.0 (HSv5):
 
 - **HSv4**: This is set on the sender and enables encryption, if not 0. The receiver
 shall not set it and will agree on the length as defined by the sender. Being a
-sender is defined by the `SRTO_SENDER` socket option set to true, otherwise the
+sender is defined by the `SRTO_SENDER` socket option set to true; otherwise the
 party is a receiver.
 
 - **HSv5**: The "default value" for `PBKEYLEN` is 0, which means that the
@@ -1074,20 +1074,17 @@ undefined behavior:
   (the service allows all clients to freely decide about encryption, or the
   server uses more elaborate rules for encryption).
 
-  - **Bidirectional in Rendezvous arrangement**: In rendezvous there's no
-  situation of a potential "unknown party", as it is with listener side, so
-  both parties simply should set the same passphrase and the same key length,
-  or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in
-  default 16).
+  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is not possible for a party to be "unknown", 
+  as it is with Listener mode, so both parties should set the same passphrase and the same key length, 
+  or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
 
   - **Unwanted behavior cases**: if both parties set `PBKEYLEN` and the value
   on both sides is different, this is considered a conflict. It is resolved by
-  the Initiator party, which takes its own value, if it is set `SRTO_SENDER`
-  option to true, or takes the value from the Responder party otherwise. The
-  assignment of Initiator-Responder roles matches the Caller-Listener layout, and
-  in case of Rendezvous it's the matter of luck resulting from cookie comparison.
-  **It is highly recommended to never allow this to happen**, as this may also
-  override one party's setting of length 32 by the other one's 16.
+  the Initiator party, which takes its own value, if the `SRTO_SENDER`
+  option is set to true. Otherwise, it takes the value from the Responder party. The
+  assignment of Initiator-Responder roles matches the Caller-Listener layout. In the case of Rendezvous the assignment is a matter of luck, resulting from the cookie comparison.
+  **It is highly recommended to never allow this to happen**, as this may result in having
+  one party's setting of length = 32 be overridden by the other party's setting of length = 16.
 
 
 [Return to list](#list-of-options)
@@ -1363,7 +1360,7 @@ the TSBPD mode (see [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)) or encryption will not
 work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 
 This flag in versions above 1.3.0 also influences the conflict resolution for
-`SRTO_PBKEYLEN` in case when this flag is forcefully set on both connection
+`SRTO_PBKEYLEN` in the case where this flag is forcefully set on both connection
 parties simultaneously.
 
 [Return to list](#list-of-options)
