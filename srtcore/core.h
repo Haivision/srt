@@ -1073,7 +1073,7 @@ private: // Generation and processing of packets
     // it is submitted to the reading application) of the given packet.
     // This grp passed here by void* because in the current imp it's
     // unused and shall not be used in case when ENABLE_BONDING=0.
-    time_point getPacketPlayTime(void* grp, const CPacket& packet);
+    time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnLatencyThread();

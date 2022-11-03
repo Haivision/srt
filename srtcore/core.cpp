@@ -9706,7 +9706,7 @@ int srt::CUDT::checkLazySpawnLatencyThread()
     return 0;
 }
 
-CUDT::time_point srt::CUDT::getPacketPlayTime(void*, const CPacket& packet)
+CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 {
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
@@ -9727,9 +9727,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
-        time_point pts = steady_clock::now() + milliseconds_from(m_iTsbPdDelay_ms);
-        IF_HEAVY_LOGGING(pts = getPacketPlayTime(NULL, rpkt));
-
         int buffer_add_result;
         bool adding_successful = true;
 
@@ -9745,6 +9742,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         if (offset < 0)
         {
             IF_HEAVY_LOGGING(exc_type = "BELATED");
+            time_point pts = getPktTsbPdTime(NULL, rpkt);
+
             enterCS(m_StatsLock);
             const double bltime = (double) CountIIR<uint64_t>(
                     uint64_t(m_stats.traceBelatedTime) * 1000,
