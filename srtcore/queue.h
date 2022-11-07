@@ -451,9 +451,10 @@ private:
 
     sync::atomic<bool> m_bClosing;            // closing the worker
 
+public:
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
-    uint64_t m_ullDbgPeriod;
-    uint64_t m_ullDbgTime;
+    sync::steady_clock::duration m_DbgPeriod;
+    mutable sync::steady_clock::time_point m_DbgTime;
     struct
     {
         unsigned long lIteration;   //
@@ -462,14 +463,15 @@ private:
         unsigned long lSendTo;
         unsigned long lNotReadyTs;
         unsigned long lCondWait; // block on m_WindowCond
-    } m_WorkerStats;
+    } mutable m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+
+private:
 
 #if ENABLE_LOGGING
     static int m_counter;
 #endif
 
-private:
     CSndQueue(const CSndQueue&);
     CSndQueue& operator=(const CSndQueue&);
 };
