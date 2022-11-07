@@ -72,7 +72,10 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        return m_rcv_buffer->insert(unit);
+        auto info = m_rcv_buffer->insert(unit);
+        // XXX extra checks?
+
+        return int(info.result);
     }
 
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed
