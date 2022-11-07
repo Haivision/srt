@@ -7944,10 +7944,12 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 #endif
         IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
 
-        // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
-        // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
-        // will signal m_RecvDataCond when there's time to play for particular
-        // data packet.
+        // Signalling m_RecvDataCond is not dane when TSBPD is on.
+        // This signalling is done in file mode in order to keep the
+        // API reader thread sleeping until there is a "bigger portion"
+        // of data to read. In TSBPD mode this isn't done because every
+        // packet has its individual delivery time and its readiness is signed
+        // off by the TSBPD thread.
         HLOGC(xtlog.Debug,
               log << CONID() << "ACK: clip %" << oldack << "-%" << ack << ", REVOKED "
                   << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
@@ -8982,11 +8984,31 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         }
         // When the drop request was received, it means that there are
         // packets for which there will never be ACK sent; if the TSBPD thread
-        // is currently in the ACK-waiting state, it may never exit.
+        // is currently in the recv-waiting state, it may never exit.
         if (m_bTsbPd)
         {
-            HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-            rcvtscc.notify_one();
+            // XXX Likely this is not necessary because:
+            // 1. In the recv-waiting state, that is, when TSBPD thread
+            //    sleeps forever, it will be woken up anyway on packet
+            //    reception.
+            // 2. If there are any packets in the buffer and the initial
+            //    packet cell is empty (in which situation any drop could
+            //    occur), TSBPD thread is sleeping timely, until the playtime
+            //    of the first "drop up to" packet. Dropping changes nothing here.
+            // 3. If the buffer is empty, there's nothing "to drop up to", so
+            //    this function will not change anything in the buffer and so
+            //    in the reception state as well.
+            // 4. If the TSBPD thread is waiting until a play-ready packet is
+            //    retrieved by the API call (in which case it is also sleeping
+            //    forever until it's woken up by the API call), it may remain
+            //    stalled forever, if the application isn't reading the play-ready
+            //    packet. But this means that the application got stalled anyway.
+            //    TSBPD when woken up could at best state that there's still a
+            //    play-ready packet that is still not retrieved and fall back
+            //    to sleep (forever).
+
+            //HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
+            //rcvtscc.notify_one();
         }
     }
 
@@ -11050,6 +11072,8 @@ int srt::CUDT::processData(CUnit* in_unit)
         HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
         sendLossReport(filter_loss_seqs);
 
+        // XXX unsure as to whether this should change anything in the TSBPD conditions.
+        // Might be that this trigger is not necessary.
         if (m_bTsbPd)
         {
             HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
