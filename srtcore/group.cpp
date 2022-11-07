@@ -335,6 +335,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         }
     }
     m_List.erase(it);
+    --m_SizeCache;
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
