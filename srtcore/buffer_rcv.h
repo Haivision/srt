@@ -24,7 +24,7 @@ namespace srt
  *   Circular receiver buffer.
  *
  *   |<------------------- m_szSize ---------------------------->|
- *   |       |<------------ m_iMaxPosInc ----------->|           |
+ *   |       |<------------ m_iMaxPosOff ----------->|           |
  *   |       |                                       |           |
  *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
  *   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
@@ -182,7 +182,7 @@ public:
 
     bool empty() const
     {
-        return (m_iMaxPosInc == 0);
+        return (m_iMaxPosOff == 0);
     }
 
     /// Return buffer capacity.
@@ -224,6 +224,18 @@ private:
     inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
     inline int offPos(int pos1, int pos2) const { return (pos2 >= pos1) ? (pos2 - pos1) : int(m_szSize + pos2 - pos1); }
+    inline int cmpPos(int pos2, int pos1) const
+    {
+        // XXX maybe not the best implementation, but this keeps up to the rule
+        int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + m_szSize - m_iStartPos;
+        int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + m_szSize - m_iStartPos;
+
+        return off2 - off1;
+    }
+
+    // NOTE: Assumes that pUnit != NULL
+    CPacket& packetAt(int pos) { return m_entries[pos].pUnit->m_Packet; }
+    const CPacket& packetAt(int pos) const { return m_entries[pos].pUnit->m_Packet; }
 
 private:
     void countBytes(int pkts, int bytes);
@@ -310,7 +322,7 @@ private:
     int m_iStartSeqNo;
     int m_iStartPos;        // the head position for I/O (inclusive)
     int m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    int m_iMaxPosInc;       // the furthest data position
+    int m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
@@ -340,6 +352,8 @@ public: // TSBPD public functions
 
     time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;
     void       updateTsbPdTimeBase(uint32_t usPktTimestamp);
+
+    bool isTsbPd() const { return m_tsbpd.isEnabled(); }
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
