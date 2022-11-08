@@ -10496,53 +10496,8 @@ void srt::CUDT::unlose(const CPacket &packet)
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
 
-    size_t i       = 0;
-    int    had_ttl = 0;
-    for (i = 0; i < m_FreshLoss.size(); ++i)
-    {
-        had_ttl = m_FreshLoss[i].ttl;
-        switch (m_FreshLoss[i].revoke(sequence))
-        {
-        case CRcvFreshLoss::NONE:
-            continue; // Not found. Search again.
-
-        case CRcvFreshLoss::STRIPPED:
-            goto breakbreak; // Found and the modification is applied. We're done here.
-
-        case CRcvFreshLoss::DELETE:
-            // No more elements. Kill it.
-            m_FreshLoss.erase(m_FreshLoss.begin() + i);
-            // Every loss is unique. We're done here.
-            goto breakbreak;
-
-        case CRcvFreshLoss::SPLIT:
-            // Oh, this will be more complicated. This means that it was in between.
-            {
-                // So create a new element that will hold the upper part of the range,
-                // and this one modify to be the lower part of the range.
-
-                // Keep the current end-of-sequence value for the second element
-                int32_t next_end = m_FreshLoss[i].seq[1];
-
-                // seq-1 set to the end of this element
-                m_FreshLoss[i].seq[1] = CSeqNo::decseq(sequence);
-                // seq+1 set to the begin of the next element
-                int32_t next_begin = CSeqNo::incseq(sequence);
-
-                // Use position of the NEXT element because insertion happens BEFORE pointed element.
-                // Use the same TTL (will stay the same in the other one).
-                m_FreshLoss.insert(m_FreshLoss.begin() + i + 1,
-                                   CRcvFreshLoss(next_begin, next_end, m_FreshLoss[i].ttl));
-            }
-            goto breakbreak;
-        }
-    }
-
-    // Could have made the "return" instruction instead of goto, but maybe there will be something
-    // to add in future, so keeping that.
-breakbreak:;
-
-    if (i != m_FreshLoss.size())
+    int had_ttl = 0;
+    if (CRcvFreshLoss::removeOne((m_FreshLoss), sequence, (&had_ttl)))
     {
         HLOGF(qrlog.Debug, "sequence %d removed from belated lossreport record", sequence);
     }

@@ -53,6 +53,8 @@ modified by
 #ifndef INC_SRT_LIST_H
 #define INC_SRT_LIST_H
 
+#include <deque>
+
 #include "udt.h"
 #include "common.h"
 
@@ -83,6 +85,12 @@ public:
     int32_t popLostSeq();
 
     void traceState() const;
+
+    // Debug/unittest support.
+
+    int head() const { return m_iHead; }
+    int next(int loc) const { return m_caSeq[loc].inext; }
+    int last() const { return m_iLastInsertPos; }
 
 private:
     struct Seq
@@ -117,6 +125,8 @@ private:
     /// @param seqno1  first sequence number in range
     /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
     bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
+
+    static const int LOC_NONE = -1;
 
 private:
     CSndLossList(const CSndLossList&);
@@ -264,6 +274,8 @@ struct CRcvFreshLoss
 
     Emod revoke(int32_t sequence);
     Emod revoke(int32_t lo, int32_t hi);
+
+    static bool removeOne(std::deque<CRcvFreshLoss>& w_container, int32_t sequence, int* had_ttl = NULL);
 };
 
 } // namespace srt
