@@ -75,15 +75,15 @@ namespace {
 
 #define IF_RCVBUF_DEBUG(instr) (void)0
 
-    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosInc) % iSize].
+    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosOff) % iSize].
     // The right edge is included because we expect iFirstNonreadPos to be
     // right after the last valid packet position if all packets are available.
-    bool isInRange(int iStartPos, int iMaxPosInc, size_t iSize, int iFirstNonreadPos)
+    bool isInRange(int iStartPos, int iMaxPosOff, size_t iSize, int iFirstNonreadPos)
     {
         if (iFirstNonreadPos == iStartPos)
             return true;
 
-        const int iLastPos = (iStartPos + iMaxPosInc) % iSize;
+        const int iLastPos = (iStartPos + iMaxPosOff) % iSize;
         const bool isOverrun = iLastPos < iStartPos;
 
         if (isOverrun)
@@ -499,7 +499,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
                 continue;
 
             // TODO: Break the loop if a massege has been found. No need to search further.
-            const int32_t msgseq = m_entries[i].pUnit->m_Packet.getMsgSeq(m_bPeerRexmitFlag);
+            const int32_t msgseq = packetAt(i).getMsgSeq(m_bPeerRexmitFlag);
             if (msgseq == msgno)
             {
                 ++iDropCnt;
@@ -551,7 +551,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     {
         // Don't drop messages, if all its packets are already in the buffer.
         // TODO: Don't drop a several-packet message if all packets are in the buffer.
-        if (m_entries[i].pUnit && m_entries[i].pUnit->m_Packet.getMsgBoundary() == PB_SOLO)
+        if (m_entries[i].pUnit && packetAt(i).getMsgBoundary() == PB_SOLO)
             continue;
 
         dropUnitInPos(i);
@@ -636,7 +636,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
             break;
         }
 
-        const CPacket& packet  = m_entries[i].pUnit->m_Packet;
+        const CPacket& packet  = packetAt(i);
         const size_t   pktsize = packet.getLength();
         const int32_t pktseqno = packet.getSeqNo();
 
@@ -828,7 +828,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
             return -1;
         }
 
-        const srt::CPacket& pkt = m_entries[p].pUnit->m_Packet;
+        const srt::CPacket& pkt = packetAt(p);
 
         if (bTsbPdEnabled)
         {
@@ -935,8 +935,8 @@ int CRcvBuffer::getTimespan_ms() const
         return 0;
 
     const steady_clock::time_point startstamp =
-        getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
-    const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[lastpos].pUnit->m_Packet.getMsgTimeStamp());
+        getPktTsbPdTime(packetAt(startpos).getMsgTimeStamp());
+    const steady_clock::time_point endstamp = getPktTsbPdTime(packetAt(lastpos).getMsgTimeStamp());
     if (endstamp < startstamp)
         return 0;
 
@@ -1006,7 +1006,7 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_no
     {
         if (hasInorderPackets)
         {
-            const CPacket&   packet = m_entries[m_iStartPos].pUnit->m_Packet;
+            const CPacket&   packet = packetAt(m_iStartPos);
             const PacketInfo info   = {packet.getSeqNo(), false, time_point()};
             return info;
         }
@@ -1014,7 +1014,7 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_no
         if (m_iFirstRandomMsgPos >= 0)
         {
             SRT_ASSERT(m_numRandomPackets > 0);
-            const CPacket&   packet = m_entries[m_iFirstRandomMsgPos].pUnit->m_Packet;
+            const CPacket&   packet = packetAt(m_iFirstRandomMsgPos);
             const PacketInfo info   = {packet.getSeqNo(), true, time_point()};
             return info;
         }
@@ -1055,9 +1055,9 @@ bool CRcvBuffer::dropUnitInPos(int pos)
         return false;
     if (m_tsbpd.isEnabled())
     {
-        updateTsbPdTimeBase(m_entries[pos].pUnit->m_Packet.getMsgTimeStamp());
+        updateTsbPdTimeBase(packetAt(pos).getMsgTimeStamp());
     }
-    else if (m_bMessageAPI && !m_entries[pos].pUnit->m_Packet.getMsgOrderFlag())
+    else if (m_bMessageAPI && !packetAt(pos).getMsgOrderFlag())
     {
         --m_numRandomPackets;
         if (pos == m_iFirstRandomMsgPos)
@@ -1128,7 +1128,7 @@ int CRcvBuffer::findLastMessagePkt()
     {
         SRT_ASSERT(m_entries[i].pUnit);
 
-        if (m_entries[i].pUnit->m_Packet.getMsgBoundary() & PB_LAST)
+        if (packetAt(i).getMsgBoundary() & PB_LAST)
         {
             return i;
         }
@@ -1193,7 +1193,7 @@ bool CRcvBuffer::checkFirstReadableRandom()
         if (!m_entries[pos].pUnit)
             return false;
 
-        const CPacket& pkt = m_entries[pos].pUnit->m_Packet;
+        const CPacket& pkt = packetAt(pos);
         if (pkt.getMsgOrderFlag())
             return false;
 
@@ -1236,7 +1236,7 @@ void CRcvBuffer::updateFirstReadableRandom()
             continue;
         }
 
-        const CPacket& pkt = m_entries[pos].pUnit->m_Packet;
+        const CPacket& pkt = packetAt(pos);
 
         if (pkt.getMsgOrderFlag())   // Skip in order packet
         {
@@ -1287,7 +1287,7 @@ int CRcvBuffer::scanNotInOrderMessageRight(const int startPos, int msgNo) const
         if (!m_entries[pos].pUnit)
             break;
 
-        const CPacket& pkt = m_entries[pos].pUnit->m_Packet;
+        const CPacket& pkt = packetAt(pos);
 
         if (pkt.getMsgSeq(m_bPeerRexmitFlag) != msgNo)
         {
@@ -1376,7 +1376,7 @@ string CRcvBuffer::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo,
     if (enable_debug_log)
     {
         ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
-           << " m_iStartPos=" << m_iStartPos << " m_iMaxPosInc=" << m_iMaxPosOff << ". ";
+           << " m_iStartPos=" << m_iStartPos << " m_iMaxPosOff=" << m_iMaxPosOff << ". ";
     }
 
     ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
@@ -1392,7 +1392,7 @@ string CRcvBuffer::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo,
             if (m_entries[iLastPos].pUnit)
             {
                 ss << ", timespan ";
-                const uint32_t usPktTimestamp = m_entries[iLastPos].pUnit->m_Packet.getMsgTimeStamp();
+                const uint32_t usPktTimestamp = packetAt(iLastPos).getMsgTimeStamp();
                 ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
                 ss << " ms";
             }
