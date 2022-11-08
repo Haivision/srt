@@ -806,14 +806,14 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
     const size_t num_bytes1 = nfull_pkts * m_payload_sz + m_payload_sz / 2;
     const int res1 = m_rcv_buffer->readBuffer(buff.data(), num_bytes1);
     EXPECT_TRUE(size_t(res1) == num_bytes1);
-    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - nfull_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     EXPECT_TRUE(hasAvailablePackets());
 
     const size_t num_bytes2 = m_payload_sz * (num_pkts - nfull_pkts - 1) + m_payload_sz / 2;
 
     const int res2 = m_rcv_buffer->readBuffer(buff.data() + num_bytes1, buff.size() - num_bytes1);
     EXPECT_TRUE(size_t(res2) == num_bytes2);
-    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     EXPECT_FALSE(hasAvailablePackets());
     ackPackets(num_pkts); // Move the reference ACK position.
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);

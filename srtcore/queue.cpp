@@ -484,9 +484,9 @@ bool srt::CSndQueue::getBind(char* dst, size_t len) const
 #endif
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_clock::time_point currtime)
+static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady_clock::time_point currtime)
 {
-    if (self->m_ullDbgTime <= currtime)
+    if (self->m_DbgTime <= currtime)
     {
         fprintf(stdout,
                 "SndQueue %lu slt:%lu nrp:%lu snt:%lu nrt:%lu ctw:%lu\n",
@@ -497,7 +497,7 @@ static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_cloc
                 self->m_WorkerStats.lNotReadyTs,
                 self->m_WorkerStats.lCondWait);
         memset(&self->m_WorkerStats, 0, sizeof(self->m_WorkerStats));
-        self->m_ullDbgTime = currtime + self->m_ullDbgPeriod;
+        self->m_DbgTime = currtime + self->m_DbgPeriod;
     }
 }
 #endif
@@ -514,9 +514,9 @@ void* srt::CSndQueue::worker(void* param)
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
 #define IF_DEBUG_HIGHRATE(statement) statement
-    CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
-    self->m_ullDbgTime += self->m_ullDbgPeriod;
+    self->m_DbgTime = sync::steady_clock::now();
+    self->m_DbgPeriod = sync::microseconds_from(5000000);
+    self->m_DbgTime += self->m_DbgPeriod;
 #else
 #define IF_DEBUG_HIGHRATE(statement) (void)0
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */

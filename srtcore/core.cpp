@@ -8078,6 +8078,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
         data[ACKD_BUFFERLEFT] = avail_receiver_buffer_size;
+        // The ackDataUpTo() above ensures this condition.
+        SRT_ASSERT(m_iRcvLastSkipAck == m_iRcvLastAck);
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         // XXX This could be better fixed by having the receiver constantly send
         // ACKs even with the same ACK number, while the buffer is still full, and
@@ -10233,7 +10235,6 @@ int srt::CUDT::checkLazySpawnLatencyThread()
     return 0;
 }
 
-#if ENABLE_HEAVY_LOGGING
 #if ENABLE_BONDING
 CUDT::time_point srt::CUDT::getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet)
 {
@@ -10265,9 +10266,7 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 }
 #endif
 
-static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
-
-#endif
+SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
@@ -10310,7 +10309,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             leaveCS(m_StatsLock);
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (BELATED/"
-                    << rexmitstat[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
+                    << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
 
@@ -10454,7 +10453,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " offset=" << offset
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
-                << " SN=" << rexmitstat[pktrexmitflag]
+                << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
@@ -10471,11 +10470,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             {
                 int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
                 int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
-
                 w_srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
                 HLOGC(qrlog.Debug, log << "pkt/LOSS DETECTED: %" << seqlo << " - %" << seqhi);
             }
-
         }
 
         // Update the current largest sequence number that has been received.
@@ -10563,7 +10560,7 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
             leaveCS(m_StatsLock);
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " (BELATED/"
-                    << rexmitstat[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
+                    << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
 
             // For BELATED packets you should just skip anything else.
             // This means it's already beyond the first entry in the buffer, so this
@@ -10651,7 +10648,7 @@ bool srt::CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>&
 
         LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
                 << " RSL=" << expectspec.str()
-                << " SN=" << rexmitstat[pktrexmitflag]
+                << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
@@ -10713,9 +10710,10 @@ int srt::CUDT::processData(CUnit* in_unit)
 
 #if ENABLE_HEAVY_LOGGING
     {
+        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+
         // It's easier to remove the latency factor from this value than to add a function
         // that exposes the details basing on which this value is calculated.
-        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
         time_point pts;
 #if ENABLE_BONDING
         pts = getPktTsbPdTime(gkeeper.group, packet);

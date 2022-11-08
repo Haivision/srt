@@ -254,7 +254,7 @@ void CPacket::setLength(size_t len)
     m_PacketVector[PV_DATA].setLength(len);
 }
 
-void srt::CPacket::setLength(size_t len, size_t cap)
+void CPacket::setLength(size_t len, size_t cap)
 {
    SRT_ASSERT(len <= cap);
    setLength(len);
@@ -516,7 +516,7 @@ bool CPacket::getRexmitFlag() const
     return 0 != MSGNO_REXMIT::unwrap(m_nHeader[SRT_PH_MSGNO]);
 }
 
-void srt::CPacket::setRexmitFlag(bool bRexmit)
+void CPacket::setRexmitFlag(bool bRexmit)
 {
     const int32_t clr_msgno = m_nHeader[SRT_PH_MSGNO] & ~MSGNO_REXMIT::mask;
     m_nHeader[SRT_PH_MSGNO] = clr_msgno | MSGNO_REXMIT::wrap(bRexmit? 1 : 0);

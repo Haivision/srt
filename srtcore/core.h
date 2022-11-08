@@ -1076,19 +1076,37 @@ private: // Generation and processing of packets
     void removeSndLossUpTo(int32_t seq);
 
     int processData(CUnit* unit);
+
+    /// This function passes the incoming packet to the initial processing
+    /// (like packet filter) and is about to store it effectively to the
+    /// receiver buffer and do some postprocessing (decryption) if necessary
+    /// and report the status thereof.
+    ///
+    /// @param incoming [in] The packet coming from the network medium
+    /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
+    /// @param w_next_tsbpd [out] Set to the time of the earliest TSBPD-ready packet
+    /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
+    /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
+    ///
+    /// @return 0 The call was successful (regardless if the packet was accepted or not).
+    /// @return -1 The call has failed: no space left in the buffer.
+    /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
 #if ENABLE_BONDING
     bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 #endif
-#if ENABLE_HEAVY_LOGGING
+
+    /// Get the packet's TSBPD time.
+    /// The @a grp passed by void* is not used yet
+    /// and shall not be used when ENABLE_BONDING=0.
 #if ENABLE_BONDING
     time_point getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet);
 #else
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 #endif
-#endif
 
+    /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnLatencyThread();
     void processClose();
 
