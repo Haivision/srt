@@ -11089,7 +11089,10 @@ int srt::CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
      * not knowing what to retransmit when the only NAK sent by receiver is lost,
      * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
      */
+    enterCS(m_RcvLossLock);
     const int loss_len = m_pRcvLossList->getLossLength();
+    leaveCS(m_RcvLossLock);
+
     SRT_ASSERT(loss_len >= 0);
     int debug_decision = BECAUSE_NO_REASON;
 
