@@ -1286,12 +1286,6 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     SRT_GROUP_TYPE tp = m_parent->m_GroupOf->type();
     uint32_t flags = 0;
 
-    // Note: if agent is a listener, and the current version supports
-    // both sync methods, this flag might have been changed according to
-    // the wish of the caller.
-    if (m_parent->m_GroupOf->synconmsgno())
-        flags |= SRT_GFLAG_SYNCONMSG;
-
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
     // extracted so that it can be reported and possibly the
@@ -3391,29 +3385,22 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
 
-    if (gp->synconmsgno())
+    // These are the values that are normally set initially by setters.
+    int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
+    if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
     {
-        HLOGC(gmlog.Debug, log << CONID() << "synchronizeWithGroup: NOT synchronizing sequence numbers.");
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+        setInitialRcvSeq(rcv_isn);
+        setInitialSndSeq(snd_isn);
     }
     else
     {
-        // These are the values that are normally set initially by setters.
-        int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-        if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
-        {
-            HLOGC(gmlog.Debug,
-                  log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                      << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
-                      << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
-            setInitialRcvSeq(rcv_isn);
-            setInitialSndSeq(snd_isn);
-        }
-        else
-        {
-            HLOGC(gmlog.Debug,
-                  log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
-                      << m_iSndLastAck);
-        }
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
+                << m_iSndLastAck);
     }
 }
 #endif
@@ -7633,7 +7620,6 @@ static void DebugAck(string hdr, int prev, int ack)
         return;
     }
 
-    prev     = CSeqNo::incseq(prev);
     int diff = CSeqNo::seqoff(prev, ack);
     if (diff < 0)
     {
@@ -7822,6 +7808,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     dropToGroupRecvBase();
 #endif
 
+    // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
+    // To avoid it the m_RcvBufferLock has to be acquired.
+    UniqueLock bufflock(m_RcvBufferLock);
+
     {
         // If there is no loss, the ACK is the current largest sequence number plus 1;
         // Otherwise it is the smallest sequence number in the receiver loss list.
@@ -7850,6 +7840,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
     if (size == SEND_LITE_ACK)
     {
+        bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
         ctrlpkt.m_iID = m_PeerID;
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
@@ -7857,11 +7848,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         return nbsent;
     }
 
-    // There are new received packets to acknowledge, update related information.
-    /* tsbpd thread may also call ackData when skipping packet so protect code */
-    UniqueLock bufflock(m_RcvBufferLock);
-
     // IF ack %> m_iRcvLastAck
+    // There are new received packets to acknowledge, update related information.
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
         ackDataUpTo(ack);
@@ -8420,9 +8408,9 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
         }
 
         LOGC(inlog.Error,
-            log << CONID() << "IPE: ACK record not found, can't estimate RTT "
-            << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-            << ", RTT (EWMA): " << m_iSRTT << ")");
+             log << CONID() << "ACK record not found, can't estimate RTT "
+                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                 << ", RTT (EWMA): " << m_iSRTT << ")");
         return;
     }
 

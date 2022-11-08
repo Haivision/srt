@@ -406,7 +406,9 @@ private:
     SRTSOCKET m_PeerGroupID;
     struct GroupContainer
     {
-        std::list<SocketData>        m_List;
+    private:
+        std::list<SocketData>  m_List;
+        sync::atomic<size_t>   m_SizeCache;
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -414,8 +416,11 @@ private:
         /// must be appropriately reset.
         gli_t m_LastActiveLink;
 
+    public:
+
         GroupContainer()
-            : m_LastActiveLink(m_List.end())
+            : m_SizeCache(0)
+            , m_LastActiveLink(m_List.end())
         {
         }
 
@@ -425,18 +430,18 @@ private:
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
-        void         push_back(const SocketData& data) { m_List.push_back(data); }
+        void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
         {
             m_LastActiveLink = end();
             m_List.clear();
+            m_SizeCache = 0;
         }
-        size_t size() { return m_List.size(); }
+        size_t size() { return m_SizeCache; }
 
         void erase(gli_t it);
     };
     GroupContainer m_Group;
-    const bool     m_bSyncOnMsgNo; // It goes into a dedicated HS field. Could be true for balancing groups (not implemented).
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
@@ -813,7 +818,6 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
-    SRTU_PROPERTY_RO(bool, synconmsgno, m_bSyncOnMsgNo);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 

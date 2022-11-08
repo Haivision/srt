@@ -251,7 +251,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
     , m_GroupID(-1)
     , m_PeerGroupID(-1)
-    , m_bSyncOnMsgNo(false)
     , m_type(gtype)
     , m_listener()
     , m_iBusy()
@@ -336,6 +335,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
         }
     }
     m_List.erase(it);
+    --m_SizeCache;
 }
 
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
