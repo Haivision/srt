@@ -893,9 +893,13 @@ void CUDTGroup::close()
                 continue;
             }
 
-            // XXX This is not true in case of non-managed groups, which
+            // Make the socket closing BEFORE withdrawing its group membership
+            // because a socket created as a group member cannot be valid
+            // without the group.
+            // This is not true in case of non-managed groups, which
             // only collect sockets, but also non-managed groups should not
-            // use common group buffering and tsbpd.
+            // use common group buffering and tsbpd. Also currently there are
+            // no other groups than managed one.
             s->setClosing();
 
             s->m_GroupOf = NULL;
