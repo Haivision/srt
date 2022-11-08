@@ -128,9 +128,8 @@ public:
         const int iRBufSeqNo  = getStartSeqNo();
         if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
         {
-            // Full capacity is available, still don't want to encourage extra packets to come.
-            // Note: CSeqNo::seqlen(n, n) returns 1.
-            return capacity() - CSeqNo::seqlen(iFirstUnackSeqNo, iRBufSeqNo) + 1;
+            // Full capacity is available.
+            return capacity();
         }
 
         // Note: CSeqNo::seqlen(n, n) returns 1.
