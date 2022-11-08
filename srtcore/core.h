@@ -1069,10 +1069,9 @@ private: // Generation and processing of packets
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    // This function is to return the packet's play time (time when
-    // it is submitted to the reading application) of the given packet.
-    // This grp passed here by void* because in the current imp it's
-    // unused and shall not be used in case when ENABLE_BONDING=0.
+    /// Get the packet's TSBPD time.
+    /// The @a grp passed by void* is not used yet
+    /// and shall not be used when ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     /// Checks and spawns the TSBPD thread if required.
