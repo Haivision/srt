@@ -9699,7 +9699,7 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
 
-SRT_ATR_UNUSED static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
@@ -9742,7 +9742,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             leaveCS(m_StatsLock);
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (BELATED/"
-                    << rexmitstat[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
+                    << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
 
@@ -9869,7 +9869,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " offset=" << offset
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
-                << " SN=" << rexmitstat[pktrexmitflag]
+                << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
@@ -10105,7 +10105,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Needed for possibly check for needsQuickACK.
         bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
-        int res = handleSocketPacketReception(incoming,
+        const int res = handleSocketPacketReception(incoming,
                 (new_inserted),
                 (was_sent_in_order),
                 (srt_loss_seqs));
