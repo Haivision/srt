@@ -8016,6 +8016,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
+        // The ackDataUpTo() above ensures this condition.
+        SRT_ASSERT(m_iRcvLastSkipAck == m_iRcvLastAck);
         data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         if (data[ACKD_BUFFERLEFT] < 2)
@@ -9742,9 +9744,9 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
     return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
 }
 
-SRT_ATR_UNUSED static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
-int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -9785,7 +9787,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             leaveCS(m_StatsLock);
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (BELATED/"
-                    << rexmitstat[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
+                    << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
 
@@ -9929,7 +9931,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " offset=" << offset
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
-                << " SN=" << rexmitstat[pktrexmitflag]
+                << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
@@ -10165,7 +10167,7 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Needed for possibly check for needsQuickACK.
         bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
-        int res = handleSocketPacketReception(incoming,
+        const int res = handleSocketPacketReception(incoming,
                 (new_inserted),
                 (next_tsbpd_avail),
                 (was_sent_in_order),
