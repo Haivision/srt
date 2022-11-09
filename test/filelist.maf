@@ -26,6 +26,7 @@ test_timer.cpp
 test_unitqueue.cpp
 test_utilities.cpp
 test_reuseaddr.cpp
+test_socketdata.cpp
 
 # Tests for bonding only - put here!
 
