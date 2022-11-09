@@ -312,8 +312,10 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
+#if ENABLE_BONDING
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
+#endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
@@ -1134,10 +1136,12 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
+#if ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
-    
+#endif
+
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

@@ -1,18 +1,8 @@
-
-#include <stdio.h>
-#include <stdlib.h>
 #include <future>
 #include <thread>
 #include <chrono>
 #include <vector>
 #include <functional>
-#ifdef _WIN32
-#define usleep(x) Sleep(x / 1000)
-#else
-#include <unistd.h>
-#endif
-
-#if ENABLE_BONDING
 
 #include "gtest/gtest.h"
 
@@ -344,4 +334,3 @@ TEST(Bonding, CloseGroupAndSocket)
     srt_cleanup();
 }
 
-#endif // ENABLE_BONDING
