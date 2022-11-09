@@ -955,9 +955,11 @@ void srt::CUDT::open()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
+#if ENABLE_BONDING
     m_tsUnstableSince   = steady_clock::time_point();
     m_tsFreshActivation = steady_clock::time_point();
     m_tsWarySince       = steady_clock::time_point();
+#endif
 
     m_iReXmitCount   = 1;
     m_iPktCount      = 0;
@@ -10359,67 +10361,6 @@ void srt::CUDT::updateIdleLinkFrom(CUDT* source)
     setInitialRcvSeq(source->m_iRcvLastSkipAck);
 }
 
-// XXX This function is currently unused. It should be fixed and put into use.
-// See the blocked call in CUDT::processData().
-// XXX REVIEW LOCKS WHEN REACTIVATING!
-srt::CUDT::loss_seqs_t srt::CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
-{
-// [[using affinity(m_pRcvBuffer->workerThread())]];
-    CUDT* self = (CUDT*)vself;
-    loss_seqs_t output;
-
-    // XXX When an alternative packet arrival callback is installed
-    // in case of groups, move this part to the groupwise version.
-
-    if (self->m_parent->m_GroupOf)
-    {
-        groups::SocketData* gi = self->m_parent->m_GroupMemberData;
-        if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
-        {
-            HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
-            gi->rcvstate = SRT_GST_RUNNING;
-            return output;
-        }
-    }
-
-    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
-
-    int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
-
-    HLOGC(qrlog.Debug, log << "defaultPacketArrival: checking sequence " << pkt.m_iSeqNo
-            << " against latest " << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
-
-    // Loss detection.
-    if (seqdiff > 1) // packet is later than the very subsequent packet
-    {
-        const int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
-        const int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
-
-        {
-            // If loss found, insert them to the receiver loss list
-            ScopedLock lg (self->m_RcvLossLock);
-            self->m_pRcvLossList->insert(seqlo, seqhi);
-
-            if (initial_loss_ttl)
-            {
-                // pack loss list for (possibly belated) NAK
-                // The LOSSREPORT will be sent in a while.
-                self->m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-                HLOGF(qrlog.Debug, "defaultPacketArrival: added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi,
-                        1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-            }
-        }
-
-        if (!initial_loss_ttl)
-        {
-            // old code; run immediately when tolerance = 0
-            // or this feature isn't used because of the peer
-            output.push_back(make_pair(seqlo, seqhi));
-        }
-    }
-
-    return output;
-}
 #endif
 
 /// This function is called when a packet has arrived, which was behind the current
