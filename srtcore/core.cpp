@@ -5274,11 +5274,20 @@ void * srt::CUDT::tsbpd(void* param)
         const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
         tsNextDelivery = info.tsbpd_time;
 
-        HLOGC(tslog.Debug, log << self->CONID() << "grp/tsbpd: packet check: %"
-                << info.seqno << " T=" << FormatTime(tsNextDelivery)
-                << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
-                << " ready=" << is_time_to_deliver
-                << " ondrop=" << info.seq_gap);
+#if ENABLE_HEAVY_LOGGING
+        if (info.seqno == SRT_SEQNO_NONE)
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: NO PACKETS");
+        }
+        else
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: %"
+                    << info.seqno << " T=" << FormatTime(tsNextDelivery)
+                    << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
+                    << " ready=" << is_time_to_deliver
+                    << " ondrop=" << info.seq_gap);
+        }
+#endif
 
         if (!self->m_bTLPktDrop)
         {
@@ -5316,7 +5325,7 @@ void * srt::CUDT::tsbpd(void* param)
         {
             HLOGC(tslog.Debug,
                 log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
-                << (count_milliseconds(steady_clock::now() - info.tsbpd_time)) << "ms)");
+                << FormatDuration<DUNIT_MS>(steady_clock::now() - info.tsbpd_time) << ")");
             /*
              * There are packets ready to be delivered
              * signal a waiting "recv" call if there is any data available
@@ -5375,6 +5384,8 @@ void * srt::CUDT::tsbpd(void* param)
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
+        SRT_ATR_UNUSED bool wakeup_on_signal = true;
+
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -5385,9 +5396,9 @@ void * srt::CUDT::tsbpd(void* param)
             self->m_bWakeOnRecv = false;
             HLOGC(tslog.Debug,
                 log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
-                << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms");
+                << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            tsbpd_cc.wait_until(tsNextDelivery);
+            wakeup_on_signal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
         }
         else
@@ -5410,7 +5421,8 @@ void * srt::CUDT::tsbpd(void* param)
             THREAD_RESUMED();
         }
 
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
+        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (wakeup_on_signal ? "signal" : "timeout") << "]!!! - "
+                << "NOW=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
@@ -7488,8 +7500,8 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         m_dCongestionWindow = m_CongCtl->cgWindowSize();
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
+              log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
+                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
                   << std::setprecision(3) << m_dCongestionWindow);
 #endif
     }
