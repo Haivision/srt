@@ -1077,7 +1077,7 @@ private: // Generation and processing of packets
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     /// Checks and spawns the TSBPD thread if required.
-    int checkLazySpawnLatencyThread();
+    int checkLazySpawnTsbPdThread();
     void processClose();
 
     /// Process the request after receiving the handshake from caller.

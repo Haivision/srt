@@ -263,7 +263,7 @@ void CPacket::setLength(size_t len, size_t cap)
 
 #if ENABLE_HEAVY_LOGGING
 // Debug only
-static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, void* rparam, size_t size)
+static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, void* rparam, const size_t size)
 {
     // This may be changed over time, so use special interpretation
     // only for certain types, and still display all data, no matter
@@ -288,9 +288,15 @@ static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, 
     }
 
     bool interp_as_seq = (pkttype == UMSG_LOSSREPORT || pkttype == UMSG_DROPREQ);
+    bool display_dec = (pkttype == UMSG_ACK || pkttype == UMSG_ACKACK || pkttype == UMSG_DROPREQ);
 
     out << " [ ";
-    for (size_t i = 0; i < size; ++i)
+
+    // Will be effective only for hex/oct.
+    out << std::showbase;
+
+    const size_t size32 = size/4;
+    for (size_t i = 0; i < size32; ++i)
     {
         int32_t val = ((int32_t*)rparam)[i];
         if (interp_as_seq)
@@ -302,8 +308,16 @@ static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, 
         }
         else
         {
-            out << std::showpos << std::hex << val << "/" << std::dec << val;
+            if (!display_dec)
+            {
+                out << std::hex;
+                out << val << "/";
+                out << std::dec;
+            }
+            out << val;
+
         }
+        out << " ";
     }
 
     out << "]";
@@ -315,7 +329,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
 {
     // Set (bit-0 = 1) and (bit-1~15 = type)
     setControl(pkttype);
-    HLOGC(inlog.Debug, log << "pack: type=" << MessageTypeStr(pkttype) << FormatNumbers(pkttype, lparam, rparam, size));
+    HLOGC(inlog.Debug, log << "pack: type=" << MessageTypeStr(pkttype) << " " << FormatNumbers(pkttype, lparam, rparam, size));
 
     // Set additional information and control information field
     switch (pkttype)
