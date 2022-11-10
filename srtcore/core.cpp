@@ -955,9 +955,11 @@ void srt::CUDT::open()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
+#if ENABLE_BONDING
     m_tsUnstableSince   = steady_clock::time_point();
     m_tsFreshActivation = steady_clock::time_point();
     m_tsWarySince       = steady_clock::time_point();
+#endif
 
     m_iReXmitCount   = 1;
     m_iPktCount      = 0;
