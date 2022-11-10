@@ -10080,7 +10080,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 #endif
 
-    // NULL time by default
     bool new_inserted = false;
 
     if (m_PacketFilter)
