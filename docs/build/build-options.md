@@ -284,6 +284,9 @@ When ON, enables logging in the *haicrypt* module, which serves as a connector t
 an encryption library. Logging here might be seen as unsafe, therefore this 
 option is turned OFF by default.
 
+The log corresponds to the `HAICRYPT` functionl area.
+For example, to enable it in `srt-live-transmit` use `--logfa haicrypt`
+with combination of the required `--loglevel`.
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
