@@ -9669,7 +9669,7 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     return true;
 }
 
-int srt::CUDT::checkLazySpawnLatencyThread()
+int srt::CUDT::checkLazySpawnTsbPdThread()
 {
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
@@ -9709,6 +9709,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
+    w_new_inserted = false;
+
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
@@ -9719,7 +9721,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
-        int buffer_add_result;
         bool adding_successful = true;
 
         // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
@@ -9749,9 +9750,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
-
-        // This is executed only when bonding is enabled and only
-        // with the new buffer (in which case the buffer is in the group).
 
         const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
 
@@ -9791,10 +9789,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
-        buffer_add_result = m_pRcvBuffer->insert(u);
+        int buffer_add_result = m_pRcvBuffer->insert(u);
         if (buffer_add_result < 0)
         {
-            // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+            // The insert() result is -1 if at the position evaluated from this packet's
+            // sequence number there already is a packet.
             // So this packet is "redundant".
             IF_HEAVY_LOGGING(exc_type = "UNACKED");
             adding_successful = false;
@@ -9924,7 +9923,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (-1 == checkLazySpawnLatencyThread())
+    if (-1 == checkLazySpawnTsbPdThread())
     {
         return -1;
     }
@@ -10081,8 +10080,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     }
 #endif
 
-    // NULL time by default
-    time_point next_tsbpd_avail;
     bool new_inserted = false;
 
     if (m_PacketFilter)
