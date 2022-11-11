@@ -290,7 +290,7 @@ in the logging configuration.
 
 Please use the
 [`srt_addlogfa(SRT_LOGFA_HAICRYPT)`](../API/API-functions.md#srt_addlogfa)
-to enable the HAICRYPT logging via the SRT API.
+to enable the HAICRYPT logging via the SRT API.  
 To enable the logging in `srt-live-transmit` use `--logfa haicrypt`
 with combination of the required `--loglevel`.
 
