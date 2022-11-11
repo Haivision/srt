@@ -907,11 +907,11 @@ private: // Receiving related data
     CACKWindow<ACK_WND_SIZE> m_ACKWindow;        // ACK history window
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
-    int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
+    int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK. Should only be used in sendCtrlAck().
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
-    int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
+    int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK. Should be used as the base seq of recv buffer.
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.

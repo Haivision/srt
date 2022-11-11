@@ -6688,7 +6688,7 @@ size_t srt::CUDT::getAvailRcvBufferSizeLock() const
 
 size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
 {
-    return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
+    return m_pRcvBuffer->getAvailSize(m_iRcvLastSkipAck);
 }
 
 bool srt::CUDT::isRcvBufferReady() const
@@ -9782,7 +9782,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             {
                 LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                         << ", insert offset " << offset << ". "
-                        << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), m_iRcvLastAck, steady_clock::now())
+                        << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), m_iRcvLastSkipAck, steady_clock::now())
                     );
 
                 return -1;
