@@ -1113,7 +1113,7 @@ endif()
 # obtained by `pkg-config --libs`.
 if(ENABLE_CXX_DEPS)
 	foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
-		if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+		if((IS_ABSOLUTE ${LIB} AND EXISTS ${LIB}) OR (${LIB} MATCHES "^-l"))
 			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
 		else()
 			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
