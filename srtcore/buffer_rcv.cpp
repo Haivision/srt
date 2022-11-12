@@ -148,11 +148,12 @@ CRcvBuffer::~CRcvBuffer()
     }
 }
 
-int CRcvBuffer::insert(CUnit* unit)
+int CRcvBuffer::insert(CUnit* unit, int32_t& w_offset)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
     const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
+    w_offset             = offset;
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
@@ -1048,17 +1049,15 @@ void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBuffer::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const
+string CRcvBuffer::strFullnessState(bool enable_debug_log, const time_point& tsNow) const
 {
     stringstream ss;
 
     if (enable_debug_log)
     {
-        ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
-           << " m_iStartPos=" << m_iStartPos << " m_iMaxPosInc=" << m_iMaxPosInc << ". ";
+        ss << "m_iStartSeqNo=" << m_iStartSeqNo << " m_iStartPos=" << m_iStartPos << " m_iMaxPosInc=" << m_iMaxPosInc
+           << ". ";
     }
-
-    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
 
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {

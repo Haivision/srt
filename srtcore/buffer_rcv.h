@@ -58,12 +58,12 @@ public:
     /// Similar to CRcvBuffer::addData(CUnit* unit, int offset)
     ///
     /// @param [in] unit pointer to a data unit containing new packet
-    /// @param [in] offset offset from last ACK point.
+    /// @param [out] w_offset insert offset from the start pos.
     ///
     /// @return  0 on success, -1 if packet is already in buffer, -2 if packet is before m_iStartSeqNo.
     /// -3 if a packet is offset is ahead the buffer capacity.
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
-    int insert(CUnit* unit);
+    int insert(CUnit* unit, int32_t& w_offset);
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
@@ -343,7 +343,7 @@ public: // TSBPD public functions
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
-    std::string strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const;
+    std::string strFullnessState(bool enable_debug_log, const time_point& tsNow) const;
 
 private:
     CTsbpdTime  m_tsbpd;
