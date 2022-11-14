@@ -58,16 +58,7 @@ TEST(Bonding, SRTConnectGroup)
     srt_cleanup();
 }
 
-int CheckSRTError(const char* callform, int ret)
-{
-    if (ret == -1)
-    {
-        std::cout << "ERROR: { " << callform << "}\nERROR: SRT: " << srt_getlasterror_str() << std::endl;
-    }
-    return ret;
-}
-
-#define CHECK(callform) CheckSRTError(#callform, callform)
+#define ASSERT_SRT_SUCCESS(callform) ASSERT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
 
 void listening_thread(bool should_read)
 {
@@ -78,33 +69,33 @@ void listening_thread(bool should_read)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
     bind_sa.sin_port = htons(4200);
 
-    ASSERT_NE(CHECK(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa)), -1);
+    ASSERT_SRT_SUCCESS(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa));
     const int yes = 1;
-    ASSERT_NE(CHECK(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes)), -1);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes));
 
     const int no = 1;
-    ASSERT_NE(CHECK(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no)), -1);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no));
 
     const int eid = srt_epoll_create();
     const int listen_event = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    ASSERT_NE(CHECK(srt_epoll_add_usock(eid, server_sock, &listen_event)), -1);
+    ASSERT_SRT_SUCCESS(srt_epoll_add_usock(eid, server_sock, &listen_event));
 
-    ASSERT_NE(CHECK(srt_listen(server_sock, 5)), -1);
+    ASSERT_SRT_SUCCESS(srt_listen(server_sock, 5));
     std::cout << "Listen: wait for acceptability\n";
     int fds[2];
     int fds_len = 2;
     int ers[2];
     int ers_len = 2;
-    int wr = srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
-            0, 0, 0, 0);
+    ASSERT_SRT_SUCCESS(srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
+            0, 0, 0, 0));
 
-    ASSERT_NE(wr, -1);
     std::cout << "Listen: reported " << fds_len << " acceptable and " << ers_len << " errors\n";
     ASSERT_GT(fds_len, 0);
     ASSERT_EQ(fds[0], server_sock);
 
     srt::sockaddr_any scl;
     int acp = srt_accept(server_sock, (scl.get()), (&scl.len));
+    ASSERT_SRT_SUCCESS(acp);
     ASSERT_NE(acp & SRTGROUP_MASK, 0);
 
     if (should_read)
