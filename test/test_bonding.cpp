@@ -58,6 +58,16 @@ TEST(Bonding, SRTConnectGroup)
     srt_cleanup();
 }
 
+int CheckSRTError(const char* callform, int ret)
+{
+    if (ret == -1)
+    {
+        std::cout << "ERROR: { " << callform << "}\nERROR: SRT: " << srt_getlasterror_str() << std::endl;
+    }
+    return ret;
+}
+
+#define CHECK(callform) CheckSRTError(#callform, callform)
 
 void listening_thread(bool should_read)
 {
@@ -68,18 +78,18 @@ void listening_thread(bool should_read)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
     bind_sa.sin_port = htons(4200);
 
-    ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    ASSERT_NE(CHECK(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa)), -1);
     const int yes = 1;
-    srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    ASSERT_NE(CHECK(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes)), -1);
 
     const int no = 1;
-    srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no);
+    ASSERT_NE(CHECK(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no)), -1);
 
     const int eid = srt_epoll_create();
     const int listen_event = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    srt_epoll_add_usock(eid, server_sock, &listen_event);
+    ASSERT_NE(CHECK(srt_epoll_add_usock(eid, server_sock, &listen_event)), -1);
 
-    ASSERT_NE(srt_listen(server_sock, 5), -1);
+    ASSERT_NE(CHECK(srt_listen(server_sock, 5)), -1);
     std::cout << "Listen: wait for acceptability\n";
     int fds[2];
     int fds_len = 2;
