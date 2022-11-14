@@ -126,6 +126,7 @@ void listening_thread(bool should_read)
     }
 
     srt_close(acp);
+    srt_close(server_sock);
 
     std::cout << "Listen: wait 7 seconds\n";
     std::this_thread::sleep_for(std::chrono::seconds(7));
