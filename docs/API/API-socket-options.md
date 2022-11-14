@@ -1074,7 +1074,7 @@ undefined behavior:
   (the service allows all clients to freely decide about encryption, or the
   server uses more elaborate rules for encryption).
 
-  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is not possible for a party to be "unknown", 
+  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that the settings (including `PBKEYLEN`) are known at both ends. 
   as it is with Listener mode, so both parties should set the same passphrase and the same key length, 
   or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
 
