@@ -284,15 +284,15 @@ When ON, enables logging in the *haicrypt* module, which serves as a connector t
 an encryption library. Logging here might be seen as unsafe, therefore this 
 option is turned OFF by default.
 
-The log corresponds to the `HAICRYPT` functionl area.
-Enabling the HAICRYPT logging in the build does not enable the HAICRYPT functional area
+The log corresponds to the `HAICRYPT` functional area.
+Enabling `HAICRYPT` logging in the build does not enable the `HAICRYPT` functional area
 in the logging configuration.
 
 Please use the
 [`srt_addlogfa(SRT_LOGFA_HAICRYPT)`](../API/API-functions.md#srt_addlogfa)
-to enable the HAICRYPT logging via the SRT API.  
+to enable `HAICRYPT` logging via the SRT API.  
 To enable the logging in `srt-live-transmit` use `--logfa haicrypt`
-with combination of the required `--loglevel`.
+in combination with the required `--loglevel`.
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
