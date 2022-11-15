@@ -78,17 +78,6 @@ modified by
 #include <haicrypt.h>
 
 
-// TODO: Utility function - to be moved to utilities.h?
-template <class T>
-inline T CountIIR(T base, T newval, double factor)
-{
-    if ( base == 0.0 )
-        return newval;
-
-    T diff = newval - base;
-    return base+T(diff*factor);
-}
-
 // TODO: Probably a better rework for that can be done - this can be
 // turned into a serializable structure, just like it's done for CHandShake.
 enum AckDataItem

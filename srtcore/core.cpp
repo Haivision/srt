@@ -9949,25 +9949,28 @@ int srt::CUDT::processData(CUnit* in_unit)
     // that exposes the details basing on which this value is calculated.
     time_point ets = pts - tsbpddelay;
 
+    const int64_t bltime_us = count_microseconds(m_tsLastRspTime.load() - ets);
     HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
-            << " seq=" << packet.getSeqNo()
+            << " %" << packet.getSeqNo()
+            << " off-ACK=" << CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo)
+            << " off-BUF=" << CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), packet.m_iSeqNo)
             // XXX FIX IT. OTS should represent the original sending time, but it's relative.
             //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
             << " ETS=" << FormatTime(ets)
-            << " PTS=" << FormatTime(pts));
-
-    const bool incoming_belated = (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
-    const int64_t bltime_us = count_microseconds(m_tsLastRspTime.load() - ets);
+            << " PTS=" << FormatTime(pts)
+            << " ETS DELAY=" << FormatDuration<DUNIT_MS>(m_tsLastRspTime.load() - ets));
 
     // Note: if the sender is < 1.3.0 (HSv4) it will then kinda falsify these
     // stats because it will include actual retransmitted packets which may
     // make the resulting delay value a bit exaggerated. An alternative would be
     // to simply never update this value (keep 0) in case of HSv4 sender.
-    const bool regular_delayed = bltime_us > 0 && (!m_bPeerRexmitFlag || packet.getRexmitFlag());
+    const bool regular_delayed = bltime_us > 0 && (!m_bPeerRexmitFlag || !packet.getRexmitFlag());
+
+    const bool inthepast = CSeqNo::seqcmp(packet.m_iSeqNo, m_pRcvBuffer->getStartSeqNo()) < 0;
 
     // This is used because the lock is needed for EITHER of these conditions,
     // however if NONE of them is true, locking/unlocking is not necessary.
-    const bool dolock = incoming_belated || regular_delayed;
+    const bool dolock = inthepast || regular_delayed;
 
     if (dolock)
         enterCS(m_StatsLock);
@@ -9978,12 +9981,18 @@ int srt::CUDT::processData(CUnit* in_unit)
     // orientation 
     if (regular_delayed)
     {
-        const double avg_bltime = (double) CountIIR<uint64_t>(
-                uint64_t(m_stats.traceBelatedTime * 1000),
-                bltime_us, 0.2);
+        const int64_t current = m_stats.traceBelatedTime * 1000;
+
+        const double avg_bltime = current
+            ? (double) avg_iir<5>(current, bltime_us)
+            : bltime_us;
+
         m_stats.traceBelatedTime = avg_bltime / 1000.0;
+        HLOGC(qrlog.Debug, log << CONID() << "processData: DELAY TIME: [ " << current
+                << " << " << std::fixed << bltime_us << "[us] ] = " << avg_bltime
+                << "[us] = " << m_stats.traceBelatedTime << "[ms]");
     }
-    if (incoming_belated)
+    if (inthepast)
     {
         m_stats.rcvr.recvdBelated.count(packet.getLength());
     }
@@ -10164,6 +10173,8 @@ int srt::CUDT::processData(CUnit* in_unit)
                 }
             }
         }
+
+        const bool incoming_belated = (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
         // This is moved earlier after introducing filter because it shouldn't
         // be executed in case when the packet was rejected by the receiver buffer.
