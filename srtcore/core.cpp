@@ -9732,8 +9732,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             time_point pts = getPktTsbPdTime(NULL, rpkt);
 
             enterCS(m_StatsLock);
-            const double bltime = (double)CountIIR<uint64_t>(
-                uint64_t(m_stats.traceBelatedTime) * 1000, count_microseconds(steady_clock::now() - pts), 0.2);
+            const double bltime = (double) CountIIR<uint64_t>(
+                    uint64_t(m_stats.traceBelatedTime) * 1000,
+                    count_microseconds(steady_clock::now() - pts), 0.2);
             m_stats.traceBelatedTime = bltime / 1000.0;
             m_stats.rcvr.recvdBelated.count(rpkt.getLength());
             leaveCS(m_StatsLock);
