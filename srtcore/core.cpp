@@ -9748,9 +9748,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
         bool adding_successful = true;
 
-        int offset = 0;
-        int buffer_add_result = m_pRcvBuffer->insert(u, offset);
-        if (buffer_add_result == -3)
+        const int insert_offset = CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), rpkt.m_iSeqNo);
+        const int insert_res    = m_pRcvBuffer->insert(u);
+        if (insert_res == -3)
         {
             // The insert() result is -3 if the insert offset exceeds capacity.
             if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
@@ -9770,7 +9770,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                         << " buffer=(" << m_iRcvLastSkipAck
                         << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
                         << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
-                        << "), " << (offset - int(m_pRcvBuffer->capacity()) + 1)
+                        << "), " << (insert_offset - int(m_pRcvBuffer->capacity()) + 1)
                         << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
                 return -2;
@@ -9778,20 +9778,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             else
             {
                 LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << offset << ". "
+                        << ", insert offset " << insert_offset << ". "
                         << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), steady_clock::now())
                     );
 
                 return -1;
             }
         }
-        else if (buffer_add_result == -2)
+        else if (insert_res == -2)
         {
             // The insert() result is -2 if the packet is behind the start of recv buffer.
             IF_HEAVY_LOGGING(exc_type = "BELATED");
             adding_successful = false;
         }
-        else if (buffer_add_result == -1)
+        else if (insert_res == -1)
         {
             // The insert() result is -1 if at the position evaluated from this packet's
             // sequence number there already is a packet.
@@ -9801,7 +9801,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         }
         else
         {
-            SRT_ASSERT(buffer_add_result == 0);
+            SRT_ASSERT(insert_res == 0);
             w_new_inserted = true;
 
             IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
@@ -9869,7 +9869,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // There's no way to obtain this information here.
 
         LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                << " offset=" << offset
+                << " offset=" << insert_offset
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
                 << " SN=" << s_rexmitstat_str[pktrexmitflag]

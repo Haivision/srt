@@ -148,12 +148,11 @@ CRcvBuffer::~CRcvBuffer()
     }
 }
 
-int CRcvBuffer::insert(CUnit* unit, int32_t& w_offset)
+int CRcvBuffer::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
     const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
-    w_offset             = offset;
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
