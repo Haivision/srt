@@ -72,8 +72,7 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        int offset = 0;
-        return m_rcv_buffer->insert(unit, offset);
+        return m_rcv_buffer->insert(unit);
     }
 
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed
