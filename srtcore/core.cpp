@@ -9721,35 +9721,34 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
-        // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
-        // This is the offset in the buffer; if this is negative, it means that
-        // this sequence is already in the past and the buffer is not interested.
-        // Meaning, this packet will be rejected, even if it could potentially be
-        // one of missing packets in the transmission.
-        if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastSkipAck) < 0)
+        const int insert_offset = CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), rpkt.m_iSeqNo);
+        const int ack_offset    = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
+
+        // If this is negative, it means that this sequence is already in the past
+        // and the buffer is not interested.  Meaning, this packet will be rejected,
+        // even if it could potentially be one of missing packets in the transmission.
+        if (insert_offset < 0 || ack_offset < 0)
         {
             time_point pts = getPktTsbPdTime(NULL, rpkt);
 
             enterCS(m_StatsLock);
-            const double bltime = (double) CountIIR<uint64_t>(
-                    uint64_t(m_stats.traceBelatedTime) * 1000,
-                    count_microseconds(steady_clock::now() - pts), 0.2);
+            const double bltime = (double)CountIIR<uint64_t>(
+                uint64_t(m_stats.traceBelatedTime) * 1000, count_microseconds(steady_clock::now() - pts), 0.2);
             m_stats.traceBelatedTime = bltime / 1000.0;
             m_stats.rcvr.recvdBelated.count(rpkt.getLength());
             leaveCS(m_StatsLock);
 
             HLOGC(qrlog.Debug,
-                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                      << " offset=" << CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo) << " (BELATED/"
-                      << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
+                  log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " insert_offset=" << insert_offset
+                      << " ack_offset=" << ack_offset << " (BELATED/" << s_rexmitstat_str[pktrexmitflag]
+                      << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
 
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
         bool adding_successful = true;
 
-        const int insert_offset = CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), rpkt.m_iSeqNo);
-        const int insert_res    = m_pRcvBuffer->insert(u);
+        const int insert_res = m_pRcvBuffer->insert(u);
         if (insert_res == -3)
         {
             // The insert() result is -3 if the insert offset exceeds capacity.
@@ -9772,24 +9771,16 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                         << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, int(m_pRcvBuffer->capacity()) - 1)
                         << "), " << (insert_offset - int(m_pRcvBuffer->capacity()) + 1)
                         << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
-
                 return -2;
             }
             else
             {
-                LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << insert_offset << ". "
-                        << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), steady_clock::now())
-                    );
-
+                LOGC(qrlog.Warn,
+                     log << CONID() << "No room to store incoming packet. seqno=" << rpkt.m_iSeqNo
+                         << " insert_offset=" << insert_offset << " ack_offset=" << ack_offset << ". "
+                         << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), steady_clock::now()));
                 return -1;
             }
-        }
-        else if (insert_res == -2)
-        {
-            // The insert() result is -2 if the packet is behind the start of recv buffer.
-            IF_HEAVY_LOGGING(exc_type = "BELATED");
-            adding_successful = false;
         }
         else if (insert_res == -1)
         {
