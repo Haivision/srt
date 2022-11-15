@@ -9851,16 +9851,19 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         if (m_pRcvBuffer)
         {
-            bufinfo << " avail=" << getAvailRcvBufferSizeNoLock() << " buffer=(" << m_iRcvLastSkipAck << ":"
-                    << m_iRcvCurrSeqNo // -1 = size to last index
-                    << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity() - 1) << ")";
+            bufinfo << " avail=" << getAvailRcvBufferSizeNoLock()
+                << " buffer=(" << m_iRcvLastSkipAck
+                << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
+                << ")";
         }
 
         // Empty buffer info in case of groupwise receiver.
         // There's no way to obtain this information here.
 
         LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                << " offset=" << insert_offset
+                << " insert_offset=" << insert_offset
+                << " ack_offset=" << ack_offset
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
                 << " SN=" << s_rexmitstat_str[pktrexmitflag]
