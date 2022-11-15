@@ -10132,6 +10132,8 @@ int srt::CUDT::processData(CUnit* in_unit)
         // Prevent TsbPd thread from modifying Ack position while adding data
         // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
         UniqueLock recvbuf_acklock(m_RcvBufferLock);
+        // Needed for possibly check for needsQuickACK.
+        bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
         const int res = handleSocketPacketReception(incoming,
                 (new_inserted),
@@ -10173,8 +10175,6 @@ int srt::CUDT::processData(CUnit* in_unit)
                 }
             }
         }
-
-        const bool incoming_belated = (CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
 
         // This is moved earlier after introducing filter because it shouldn't
         // be executed in case when the packet was rejected by the receiver buffer.
