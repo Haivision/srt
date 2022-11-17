@@ -21,4 +21,4 @@ jobs:
     - name: build
       run: cd _build && cmake --build ./ --config Release
     - name: test
-      run: cd _build && ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C Release
+      run: cd _build && ctest -E "TestIPv6.v6_calls_v4" --gtest_filter="-TestConnectionTimeout.BlockingLoop" --extra-verbose -C Release
