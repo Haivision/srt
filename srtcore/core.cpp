@@ -8774,7 +8774,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             rcvtscc.notify_one();
         }
     }
-
+    // XXX Add some sanity check on dropdata[0]?
     dropFromLossLists(dropdata[1]);
 
     // If dropping ahead of the current largest sequence number,
@@ -9713,6 +9713,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
     w_new_inserted = false;
+    m_RcvBufferLock.lock();
+    int32_t bufseq = m_pRcvBuffer->getStartSeqNo();
+    m_RcvBufferLock.unlock();
 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
@@ -9730,7 +9733,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
-        if (offset < 0)
+        if (CSeqNo::seqcmp(rpkt.m_iSeqNo, bufseq) < 0 || offset < 0)
         {
             IF_HEAVY_LOGGING(exc_type = "BELATED");
             time_point pts = getPktTsbPdTime(NULL, rpkt);
@@ -9768,9 +9771,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 LOGC(qrlog.Error, log << CONID() <<
                         "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
                         " seq=" << rpkt.m_iSeqNo
-                        << " buffer=(" << m_pRcvBuffer->getStartSeqNo()
+                        << " buffer=(" << bufseq
                         << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                        << "+" << CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), int(m_pRcvBuffer->capacity()) - 1)
+                        << "+" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
                         << "), " << (offset-avail_bufsize+1)
                         << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
@@ -9857,9 +9860,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         {
             bufinfo << " BUFr=" << avail_bufsize
                 << " avail=" << getAvailRcvBufferSizeNoLock()
-                << " buffer=(" << m_pRcvBuffer->getStartSeqNo()
+                << " buffer=(" << bufseq
                 << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                << "+" << CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), m_pRcvBuffer->capacity()-1)
+                << "+" << CSeqNo::incseq(bufseq, m_pRcvBuffer->capacity()-1)
                 << ")";
         }
 
