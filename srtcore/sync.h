@@ -11,6 +11,8 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
+#include "platform_sys.h"
+
 #include <cstdlib>
 #include <limits>
 #ifdef ENABLE_STDCXX_SYNC

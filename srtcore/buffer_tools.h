@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_BUFFER_TOOLS_H
 #define INC_SRT_BUFFER_TOOLS_H
 
-#include "sync.h"
 #include "common.h"
 
 namespace srt {
