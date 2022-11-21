@@ -5902,7 +5902,7 @@ void srt::CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timeb
     sendSrtMsg(SRT_CMD_HSREQ);
 }
 
-void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
+void srt::CUDT::checkSndTimers()
 {
     if (m_SrtHsSide == HSD_INITIATOR)
     {
@@ -5919,17 +5919,18 @@ void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
                   << " - not considering legacy handshake");
     }
 
-    // This must be done always on sender, regardless of HS side.
-    // When regen == DONT_REGEN_KM, it's a handshake call, so do
-    // it only for initiator.
-    if (regen || m_SrtHsSide == HSD_INITIATOR)
-    {
-        // Don't call this function in "non-regen mode" (sending only),
-        // if this side is RESPONDER. This shall be called only with
-        // regeneration request, which is required by the sender.
-        if (m_pCryptoControl)
-            m_pCryptoControl->sendKeysToPeer(this, SRTT(), regen);
-    }
+    // Retransmit KM request after a timeout if there is no response (KM RSP).
+    // Or send KM REQ in case of the HSv4.
+    if (m_pCryptoControl)
+        m_pCryptoControl->sendKeysToPeer(this, SRTT());
+}
+
+void srt::CUDT::checkSndKMRefresh()
+{
+    // Do not apply the regenerated key to the to the receiver context.
+    const bool bidir = false;
+    if (m_pCryptoControl)
+        m_pCryptoControl->regenCryptoKm(this, bidir);
 }
 
 void srt::CUDT::addressAndSend(CPacket& w_pkt)
@@ -8386,7 +8387,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // cudt->deliveryRate() instead.
     }
 
-    checkSndTimers(REGEN_KM);
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
@@ -9549,6 +9549,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
             LOGC(qslog.Warn, log << CONID() << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
             return false;
         }
+
+        checkSndKMRefresh();
     }
 
 #if SRT_DEBUG_TRACE_SND
@@ -11148,6 +11150,9 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
 
 void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 {
+    // Check if HSv4 should be retransmitted, and if KM_REQ should be resent if the side is INITIATOR.
+    checkSndTimers();
+
     // There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
     //
     // LATEREXMIT is only used with FileCC.
@@ -11211,7 +11216,6 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 
     ++m_iReXmitCount;
 
-    checkSndTimers(DONT_REGEN_KM);
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
     updateCC(TEV_CHECKTIMER, EventVariant(stage));
 

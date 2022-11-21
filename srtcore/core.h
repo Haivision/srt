@@ -664,7 +664,11 @@ private:
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
 
-    void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
+    void checkSndTimers();
+    
+    /// @brief Check and perform KM refresh if needed.
+    void checkSndKMRefresh();
+
     void handshakeDone()
     {
         m_iSndHsRetryCnt = 0;
