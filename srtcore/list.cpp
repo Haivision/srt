@@ -61,10 +61,12 @@ namespace srt_logging
 {
 extern Logger qrlog;
 extern Logger qslog;
+extern Logger tslog;
 }
 
 using srt_logging::qrlog;
 using srt_logging::qslog;
+using srt_logging::tslog;
 
 using namespace srt::sync;
 
@@ -728,19 +730,28 @@ bool srt::CRcvLossList::remove(int32_t seqno1, int32_t seqno2)
     return true;
 }
 
-int32_t srt::CRcvLossList::removeUpTo(int32_t seqno)
+int32_t srt::CRcvLossList::removeUpTo(int32_t seqno_end)
 {
     int32_t first = getFirstLostSeq();
     if (first == SRT_SEQNO_NONE)
-        return first; // empty, so nothing to remove
-
-    if (CSeqNo::seqcmp(seqno, first) <= 0)
-        return first; // seqno older than first - nothing to remove
-
-    // NOTE: seqno is past-the-end here. Removed are only seqs
-    // that are earlier than this.
-    for (int32_t i = first; CSeqNo::seqcmp(i, seqno) <= 0; i = CSeqNo::incseq(i))
     {
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " - empty list");
+        return first; // empty, so nothing to remove
+    }
+
+    if (CSeqNo::seqcmp(seqno_end, first) <= 0)
+    {
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " - first %" << first << " is newer, exitting");
+        return first; // seqno_end older than first - nothing to remove
+    }
+
+    //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " ...");
+
+    // NOTE: seqno_end is past-the-end here. Removed are only seqs
+    // that are earlier than this.
+    for (int32_t i = first; CSeqNo::seqcmp(i, seqno_end) < 0; i = CSeqNo::incseq(i))
+    {
+        //HLOGC(tslog.Debug, log << "... removing %" << i);
         remove(i);
     }
 

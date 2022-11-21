@@ -6675,15 +6675,10 @@ int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     return receiveBuffer(data, len);
 }
 
-size_t srt::CUDT::getAvailRcvBufferSizeLock() const
-{
-    ScopedLock lck(m_RcvBufferLock);
-    return getAvailRcvBufferSizeNoLock();
-}
-
+// [[using locked(m_RcvBufferLock)]]
 size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
 {
-    return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
+    return m_pRcvBuffer->getAvailSize(m_iRcvCurrSeqNo);
 }
 
 bool srt::CUDT::isRcvBufferReady() const
@@ -7763,6 +7758,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         m_tsLastSndTime.store(steady_clock::now());
 }
 
+// [[using locked(m_RcvBufferLock)]]
 bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 {
     {
@@ -7770,6 +7766,8 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
         int32_t seq = m_pRcvLossList->getFirstLostSeq();
         if (seq != SRT_SEQNO_NONE)
         {
+            HLOGC(xtlog.Debug, log << "NONCONT-SEQUENCE: first loss %" << seq << " (loss len=" <<
+                    m_pRcvLossList->getLossLength() << ")");
             w_seq = seq;
             w_log_reason = "first lost";
             return true;
@@ -7777,6 +7775,7 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     }
 
     w_seq = CSeqNo::incseq(m_iRcvCurrSeqNo);
+    HLOGC(xtlog.Debug, log << "NONCONT-SEQUENCE: past-recv %" << w_seq);
     w_log_reason = "expected next";
 
     return true;
@@ -7843,6 +7842,11 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // in the past for the buffer. This SHOULD NEVER HAPPEN because
         // on drop the loss records should have been removed, and the last received
         // sequence also can't be in the past towards the buffer.
+
+        // NOTE: This problem has been observed when the packet sequence
+        // was incorrectly removed from the receiver loss list. This should
+        // then stay here as a condition in order to detect this problem,
+        // should it happen in the future.
         if (CSeqNo::seqcmp(ack, m_pRcvBuffer->getStartSeqNo()) < 0)
         {
             // Log and DO NOT UPDATE. Count on that next time
@@ -7850,7 +7854,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
             LOGC(xtlog.Error,
                     log << CONID() << "ack: IPE: invalid ACK from %" << m_iRcvLastAck << " to %" << ack << " ("
-                    << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets)");
+                    << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets) buffer=%" << m_pRcvBuffer->getStartSeqNo());
         }
         else
         {
@@ -9708,14 +9712,13 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
+// [[using locked(m_RcvBufferLock)]]
 int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
     w_new_inserted = false;
-    m_RcvBufferLock.lock();
     int32_t bufseq = m_pRcvBuffer->getStartSeqNo();
-    m_RcvBufferLock.unlock();
 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
@@ -9729,11 +9732,35 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         bool adding_successful = true;
 
-        int32_t offset = CSeqNo::seqoff(m_iRcvLastAck, rpkt.m_iSeqNo);
+        int32_t bufidx = CSeqNo::seqoff(bufseq, rpkt.m_iSeqNo);
 
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
-        if (CSeqNo::seqcmp(rpkt.m_iSeqNo, bufseq) < 0 || offset < 0)
+        // bufidx < 0: the packet is in the past for the buffer
+        // seqno <% m_iRcvLastAck : the sequence may be within the buffer,
+        // but if so, it is in the acknowledged-but-not-retrieved area.
+
+        // NOTE: if we have a situation when there are any packets in the
+        // acknowledged area, but they aren't retrieved, this area DOES NOT
+        // contain any losses.
+
+        // In case when a loss would be abandoned (TLPKTDROP), there must at
+        // some point happen to be an empty first cell in the buffer, followed
+        // somewhere by a valid packet. In this case the acknowledgement sequence
+        // should be equal to the beginning of the buffer.
+        //
+        // Next, if these empty cells are abandoned by TSBPD thread, these
+        // empty cells will be shifted out, up to the first found valid packet,
+        // after which the m_iRcvLastAck field will be set to a value in the
+        // past of the buffer. This case will be rejected by the buffer < 0
+        // condition, and the second condition will be in that case satisfied
+        // as well in every case. These will not be true simultaneously only
+        // in case when the buffer contains an initial continuous region,
+        // in which case this condition only cuts off the LAST FOUND initial
+        // contiguous region. If there are any packets following ACK, it doesn't
+        // matter. Important is to not disregard a packet that would seal a loss.
+
+        if (bufidx < 0 || CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastAck) < 0)
         {
             IF_HEAVY_LOGGING(exc_type = "BELATED");
             time_point pts = getPktTsbPdTime(NULL, rpkt);
@@ -9747,14 +9774,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             m_stats.rcvr.recvdBelated.count(rpkt.getLength());
             leaveCS(m_StatsLock);
             HLOGC(qrlog.Debug,
-                    log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo << " offset=" << offset << " (BELATED/"
+                    log << CONID() << "RECEIVED: %" << rpkt.m_iSeqNo << " bufidx=" << bufidx << " (BELATED/"
                     << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
 
-        const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
-
-        if (offset >= avail_bufsize)
+        if (bufidx >= int(m_pRcvBuffer->capacity()))
         {
             // This is already a sequence discrepancy. Probably there could be found
             // some way to make it continue reception by overriding the sequence and
@@ -9770,11 +9795,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
                 LOGC(qrlog.Error, log << CONID() <<
                         "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
-                        " seq=" << rpkt.m_iSeqNo
-                        << " buffer=(" << bufseq
-                        << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                        << "+" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
-                        << "), " << (offset-avail_bufsize+1)
+                        " %" << rpkt.m_iSeqNo
+                        << " buffer=(%" << bufseq
+                        << ":%" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                        << "+%" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
+                        << "), " << (m_pRcvBuffer->capacity() - bufidx + 1)
                         << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
 
                 return -2;
@@ -9782,7 +9807,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             else
             {
                 LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
-                        << ", insert offset " << offset << ". "
+                        << ", insert offset " << bufidx << ". "
                         << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), m_iRcvLastAck, steady_clock::now())
                     );
 
@@ -9858,19 +9883,23 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         if (m_pRcvBuffer)
         {
-            bufinfo << " BUFr=" << avail_bufsize
-                << " avail=" << getAvailRcvBufferSizeNoLock()
-                << " buffer=(" << bufseq
-                << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                << "+" << CSeqNo::incseq(bufseq, m_pRcvBuffer->capacity()-1)
+            // XXX Fix this when the end of contiguous region detection is added.
+            int ackidx = CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), m_iRcvLastAck);
+            if (ackidx < 0)
+                ackidx = 0;
+
+            bufinfo << " BUF.s=" << m_pRcvBuffer->capacity()
+                << " avail=" << (int(m_pRcvBuffer->capacity()) - ackidx)
+                << " buffer=(%" << bufseq
+                << ":%" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                << "+%" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
                 << ")";
         }
 
         // Empty buffer info in case of groupwise receiver.
         // There's no way to obtain this information here.
 
-        LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                << " offset=" << offset
+        LOGC(qrlog.Debug, log << CONID() << "RECEIVED: %" << rpkt.m_iSeqNo
                 << bufinfo.str()
                 << " RSL=" << expectspec.str()
                 << " SN=" << s_rexmitstat_str[pktrexmitflag]
@@ -10543,10 +10572,30 @@ breakbreak:;
 void srt::CUDT::dropFromLossLists(int32_t to)
 {
     ScopedLock lg(m_RcvLossLock);
-    int32_t from SRT_ATR_UNUSED = m_pRcvLossList->removeUpTo(to);
+    int32_t from SRT_ATR_UNUSED = m_pRcvLossList->removeUpTo(CSeqNo::incseq(to));
 
-    HLOGC(qrlog.Debug, log << CONID() << "TLPKTDROP %(" << from << ", " << to << " ("
-            << CSeqNo::seqlen(from, to) << " packets)");
+#if ENABLE_HEAVY_LOGGING
+    ostringstream range;
+    if (from == SRT_SEQNO_NONE)
+    {
+        range << "no";
+    }
+    else
+    {
+        int off = CSeqNo::seqoff(from, to);
+        if (off < 0)
+        {
+            range << "WEIRD NUMBER OF";
+        }
+        else
+        {
+            range << (off + 1);
+        }
+    }
+
+    HLOGC(qrlog.Debug, log << CONID() << "TLPKTDROP %" << from << "-" << to << " ("
+            << range.str() << " packets)");
+#endif
 
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;

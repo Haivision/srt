@@ -1099,9 +1099,6 @@ private: // Generation and processing of packets
 
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
-    /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
-    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
-    size_t getAvailRcvBufferSizeLock() const;
 
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
