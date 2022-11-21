@@ -108,6 +108,12 @@ int HaiCrypt_Tx_Data(HaiCrypt_Handle hhc,
 	/* Get/Set packet index */
 	ctx->msg_info->indexMsg(in_pfx, ctx->MSpfx_cache); 
 
+	// TODO: Consider network order. Make nicer.
+	if (((in_pfx[7] >> 3) & 0x3) != 1 + hcryptCtx_GetKeyIndex(ctx))
+	{
+		HCRYPT_LOG(LOG_ERR, "Tx_Data: Key mismatch: pkt=%d ctx=%d, hdr=0x%X\n", ((in_pfx[7] >> 3) & 0x3), 1+hcryptCtx_GetKeyIndex(ctx), in_pfx[7]);
+	}
+
 	/* Encrypt */
 	{
 		hcrypt_DataDesc indata;
