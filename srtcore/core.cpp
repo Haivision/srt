@@ -9982,7 +9982,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     const int64_t bltime_us = count_microseconds(m_tsLastRspTime.load() - ets);
     HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
             << " %" << packet.getSeqNo()
-            << " off-ACK=" << CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo)
+// XXX      << " off-ACK=" << CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo)
             << " off-BUF=" << CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), packet.m_iSeqNo)
             // XXX FIX IT. OTS should represent the original sending time, but it's relative.
             //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
