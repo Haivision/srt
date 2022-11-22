@@ -897,10 +897,26 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        if (i->id != dest_id)
+        if (cst != CONN_RENDEZVOUS && dest_id != 0)
         {
-            read_st = RST_AGAIN;
-            conn_st = CONN_AGAIN;
+            if (i->id != dest_id)
+            {
+                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " but for RID @" << i->id
+                        << " dest_id=@" << dest_id << " - resetting to AGAIN");
+
+                read_st = RST_AGAIN;
+                conn_st = CONN_AGAIN;
+            }
+            else
+            {
+                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and update came for @"
+                        << i->id);
+            }
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and dest_id=@" << dest_id
+                    << " - NOT checking against RID @" << i->id);
         }
 
         HLOGC(cnlog.Debug,
