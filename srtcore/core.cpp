@@ -5493,7 +5493,8 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
 
     try
     {
-        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
+        const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
+        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
         SRT_ASSERT(m_iISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
@@ -8767,6 +8768,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             rcvtscc.notify_one();
         }
     }
+
     dropFromLossLists(dropdata[0], dropdata[1]);
 
     // If dropping ahead of the current largest sequence number,
@@ -9732,23 +9734,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         // NOTE: if we have a situation when there are any packets in the
         // acknowledged area, but they aren't retrieved, this area DOES NOT
-        // contain any losses.
+        // contain any losses. So a packet in this area is at best a duplicate.
 
         // In case when a loss would be abandoned (TLPKTDROP), there must at
         // some point happen to be an empty first cell in the buffer, followed
-        // somewhere by a valid packet. In this case the acknowledgement sequence
-        // should be equal to the beginning of the buffer.
+        // somewhere by a valid packet. If this state is achieved at some point,
+        // the acknowledgement sequence should be equal to the beginning of the
+        // buffer. Then, when TSBPD decides to drop these initial empty cells,
+        // we'll have: (m_iRcvLastAck <% buffer->getStartSeqNo()) - and in this
+        // case (bufidx < 0) condition will be satisfied also for this case.
         //
-        // Next, if these empty cells are abandoned by TSBPD thread, these
-        // empty cells will be shifted out, up to the first found valid packet,
-        // after which the m_iRcvLastAck field will be set to a value in the
-        // past of the buffer. This case will be rejected by the buffer < 0
-        // condition, and the second condition will be in that case satisfied
-        // as well in every case. These will not be true simultaneously only
-        // in case when the buffer contains an initial continuous region,
-        // in which case this condition only cuts off the LAST FOUND initial
-        // contiguous region. If there are any packets following ACK, it doesn't
-        // matter. Important is to not disregard a packet that would seal a loss.
+        // The only case when bufidx > 0, but packet seq is <% m_iRcvLastAck
+        // is when the packet sequence is within the initial contiguous area,
+        // which never contains losses, so discarding this packet does not
+        // discard a loss coverage, even if this were past ACK.
 
         if (bufidx < 0 || CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastAck) < 0)
         {
