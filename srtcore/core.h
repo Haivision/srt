@@ -651,7 +651,8 @@ private:
     /// removes the loss record from both current receiver loss list and
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
-    void dropFromLossLists(int32_t from, int32_t to);
+    void dropFromLossLists(int32_t to);
+    bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
     void handshakeDone()
@@ -707,7 +708,7 @@ private:
     /// @return The number of packets dropped.
     int rcvDropTooLateUpTo(int seqno);
 
-    void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
+    void updateForgotten(int seqlen, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
@@ -900,7 +901,6 @@ private: // Receiving related data
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
-    int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.
@@ -1080,11 +1080,6 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-    /// @brief Acknowledge reading position up to the @p seq.
-    /// Updates m_iRcvLastAck and m_iRcvLastSkipAck to @p seq.
-    /// @param seq first unacknowledged packet sequence number.
-    void ackDataUpTo(int32_t seq);
-
 #if ENABLE_BONDING
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
@@ -1093,9 +1088,6 @@ private: // Generation and processing of packets
 
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
-    /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
-    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
-    size_t getAvailRcvBufferSizeLock() const;
 
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
