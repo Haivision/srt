@@ -662,7 +662,7 @@ private:
     /// removes the loss record from both current receiver loss list and
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
-    void dropFromLossLists(int32_t to);
+    void dropFromLossLists(int32_t from, int32_t to);
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     void checkSndTimers();
@@ -722,8 +722,6 @@ private:
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
     int rcvDropTooLateUpTo(int seqno);
-
-    void updateForgotten(int seqlen, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);

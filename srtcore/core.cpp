@@ -5421,7 +5421,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
         seqno = CSeqNo::incseq(m_iRcvCurrSeqNo);
     }
 
-    dropFromLossLists(CSeqNo::decseq(seqno));
+    dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
 
     const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
     if (iDropCnt > 0)
@@ -5458,17 +5458,6 @@ void srt::CUDT::setInitialRcvSeq(int32_t isn)
 
         m_pRcvBuffer->setStartSeqNo(isn);
     }
-}
-
-void srt::CUDT::updateForgotten(int seqlen, int32_t skiptoseqno)
-{
-    enterCS(m_StatsLock);
-    // Estimate dropped bytes from average payload size.
-    const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-    m_stats.rcvr.dropped.count(stats::BytesPackets(seqlen * avgpayloadsz, (uint32_t) seqlen));
-    leaveCS(m_StatsLock);
-
-    dropFromLossLists(CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
 }
 
 bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
@@ -8778,8 +8767,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             rcvtscc.notify_one();
         }
     }
-    // XXX Add some sanity check on dropdata[0]?
-    dropFromLossLists(dropdata[1]);
+    dropFromLossLists(dropdata[0], dropdata[1]);
 
     // If dropping ahead of the current largest sequence number,
     // move the recv seq number forward.
@@ -10571,20 +10559,32 @@ breakbreak:;
     }
 }
 
-void srt::CUDT::dropFromLossLists(int32_t to)
+void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
 {
     ScopedLock lg(m_RcvLossLock);
-    int32_t from SRT_ATR_UNUSED = m_pRcvLossList->removeUpTo(CSeqNo::incseq(to));
+
+    IF_HEAVY_LOGGING(bool autodetected = false);
+    int32_t begin SRT_ATR_UNUSED;
+    if (from == SRT_SEQNO_NONE)
+    {
+        begin = m_pRcvLossList->removeUpTo(to);
+        IF_HEAVY_LOGGING(autodetected = true);
+    }
+    else
+    {
+        begin = from;
+        m_pRcvLossList->remove(from, to);
+    }
 
 #if ENABLE_HEAVY_LOGGING
     ostringstream range;
-    if (from == SRT_SEQNO_NONE)
+    if (begin == SRT_SEQNO_NONE)
     {
         range << "no";
     }
     else
     {
-        int off = CSeqNo::seqoff(from, to);
+        int off = CSeqNo::seqoff(begin, to);
         if (off < 0)
         {
             range << "WEIRD NUMBER OF";
@@ -10595,7 +10595,10 @@ void srt::CUDT::dropFromLossLists(int32_t to)
         }
     }
 
-    HLOGC(qrlog.Debug, log << CONID() << "TLPKTDROP %" << from << "-" << to << " ("
+    static const char* const beginwhere[2] = {"explicit", "detected"};
+
+    HLOGC(qrlog.Debug, log << CONID() << "TLPKTDROP %" << begin
+            << "[" << beginwhere[1*autodetected] << "]-" << to << " ("
             << range.str() << " packets)");
 #endif
 
@@ -10613,7 +10616,7 @@ void srt::CUDT::dropFromLossLists(int32_t to)
     size_t delete_index = 0;
     for (size_t i = 0; i < m_FreshLoss.size(); ++i)
     {
-        CRcvFreshLoss::Emod result = m_FreshLoss[i].revoke(SRT_SEQNO_NONE, to);
+        CRcvFreshLoss::Emod result = m_FreshLoss[i].revoke(from, to);
         switch (result)
         {
         case CRcvFreshLoss::DELETE:
