@@ -360,7 +360,7 @@ int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto)
 		 * prepare next SEK for announcement
 		 */
 		hcryptCtx_Tx_Refresh(crypto);
-
+		
 		HCRYPT_LOG(LOG_INFO, "KM[%d] Pre-announced\n",
 			(ctx->alt->flags & HCRYPT_CTX_F_xSEK)/2);
 
