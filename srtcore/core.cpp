@@ -5415,11 +5415,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 {
     // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
     if (CSeqNo::seqcmp(seqno, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
-    {
-        LOGC(tslog.Error, log << CONID() << "IPE: drop request up to %" << seqno << " while last received is %"
-                << m_iRcvCurrSeqNo << " - fixing");
         seqno = CSeqNo::incseq(m_iRcvCurrSeqNo);
-    }
 
     dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
 
@@ -9751,7 +9747,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         if (bufidx < 0 || CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastAck) < 0)
         {
-            IF_HEAVY_LOGGING(exc_type = "BELATED");
             time_point pts = getPktTsbPdTime(NULL, rpkt);
 
             enterCS(m_StatsLock);
@@ -10596,7 +10591,9 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
 
     static const char* const beginwhere[2] = {"explicit", "detected"};
 
-    HLOGC(qrlog.Debug, log << CONID() << "TLPKTDROP %" << begin
+    const char* const reqtype = (from == SRT_SEQNO_NONE) ? "TLPKTDROP" : "DROPREQ";
+
+    HLOGC(qrlog.Debug, log << CONID() << "DROP PER " << reqtype << " %" << begin
             << "[" << beginwhere[1*autodetected] << "]-" << to << " ("
             << range.str() << " packets)");
 #endif
