@@ -1174,7 +1174,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int namelen)
 {
     // Here both srcname and tarname must be specified
-    if (!srcname || !tarname || size_t(namelen) < sizeof(sockaddr_in))
+    if (!srcname || !tarname || namelen < int(sizeof(sockaddr_in)))
     {
         LOGC(aclog.Error,
              log << "connect(with source): invalid call: srcname=" << srcname << " tarname=" << tarname
@@ -1219,6 +1219,12 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
 
 int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
+    if (!name || namelen < int(sizeof(sockaddr_in)))
+    {
+        LOGC(aclog.Error, log << "connect(): invalid call: name=" << name << " namelen=" << namelen);
+        throw CUDTException(MJ_NOTSUP, MN_INVAL);
+    }
+
     sockaddr_any target_addr(name, namelen);
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -1850,6 +1856,8 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
      */
     try
     {
+        // record peer address
+        s->m_PeerAddr = target_addr;
         s->core().startConnect(target_addr, forced_isn);
     }
     catch (const CUDTException&) // Interceptor, just to change the state.

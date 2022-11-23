@@ -14,7 +14,6 @@
 #include "buffer_tools.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
-#include "sync.h"
 #include "tsbpd_time.h"
 
 namespace srt
