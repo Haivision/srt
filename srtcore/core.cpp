@@ -5527,7 +5527,8 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
 
     try
     {
-        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
+        const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
+        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
         SRT_ASSERT(m_iISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
@@ -5919,7 +5920,7 @@ void srt::CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timeb
     sendSrtMsg(SRT_CMD_HSREQ);
 }
 
-void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
+void srt::CUDT::checkSndTimers()
 {
     if (m_SrtHsSide == HSD_INITIATOR)
     {
@@ -5936,17 +5937,18 @@ void srt::CUDT::checkSndTimers(Whether2RegenKm regen)
                   << " - not considering legacy handshake");
     }
 
-    // This must be done always on sender, regardless of HS side.
-    // When regen == DONT_REGEN_KM, it's a handshake call, so do
-    // it only for initiator.
-    if (regen || m_SrtHsSide == HSD_INITIATOR)
-    {
-        // Don't call this function in "non-regen mode" (sending only),
-        // if this side is RESPONDER. This shall be called only with
-        // regeneration request, which is required by the sender.
-        if (m_pCryptoControl)
-            m_pCryptoControl->sendKeysToPeer(this, SRTT(), regen);
-    }
+    // Retransmit KM request after a timeout if there is no response (KM RSP).
+    // Or send KM REQ in case of the HSv4.
+    if (m_pCryptoControl)
+        m_pCryptoControl->sendKeysToPeer(this, SRTT());
+}
+
+void srt::CUDT::checkSndKMRefresh()
+{
+    // Do not apply the regenerated key to the to the receiver context.
+    const bool bidir = false;
+    if (m_pCryptoControl)
+        m_pCryptoControl->regenCryptoKm(this, bidir);
 }
 
 void srt::CUDT::addressAndSend(CPacket& w_pkt)
@@ -8420,7 +8422,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // cudt->deliveryRate() instead.
     }
 
-    checkSndTimers(REGEN_KM);
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
@@ -9603,6 +9604,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
             LOGC(qslog.Warn, log << CONID() << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
             return false;
         }
+
+        checkSndKMRefresh();
     }
 
 #if SRT_DEBUG_TRACE_SND
@@ -9724,7 +9727,7 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     return true;
 }
 
-int srt::CUDT::checkLazySpawnLatencyThread()
+int srt::CUDT::checkLazySpawnTsbPdThread()
 {
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
@@ -9764,6 +9767,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
+    w_new_inserted = false;
+
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
@@ -9774,7 +9779,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
-        int buffer_add_result;
         bool adding_successful = true;
 
         // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
@@ -9804,9 +9808,6 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     << s_rexmitstat_str[pktrexmitflag] << ") FLAGS: " << rpkt.MessageFlagStr());
             continue;
         }
-
-        // This is executed only when bonding is enabled and only
-        // with the new buffer (in which case the buffer is in the group).
 
         const int avail_bufsize = (int) getAvailRcvBufferSizeNoLock();
 
@@ -9864,11 +9865,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 w_next_tsbpd = info.first_time;
             w_new_inserted = true;
         }
-        buffer_add_result = int(info.result);
+        int buffer_add_result = int(info.result);
 
         if (buffer_add_result < 0)
         {
-            // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+            // The insert() result is -1 if at the position evaluated from this packet's
+            // sequence number there already is a packet.
             // So this packet is "redundant".
             IF_HEAVY_LOGGING(exc_type = "UNACKED");
             adding_successful = false;
@@ -9996,7 +9998,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (-1 == checkLazySpawnLatencyThread())
+    if (-1 == checkLazySpawnTsbPdThread())
     {
         return -1;
     }
@@ -11266,6 +11268,9 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
 
 void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 {
+    // Check if HSv4 should be retransmitted, and if KM_REQ should be resent if the side is INITIATOR.
+    checkSndTimers();
+
     // There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
     //
     // LATEREXMIT is only used with FileCC.
@@ -11329,7 +11334,6 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 
     ++m_iReXmitCount;
 
-    checkSndTimers(DONT_REGEN_KM);
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
     updateCC(TEV_CHECKTIMER, EventVariant(stage));
 

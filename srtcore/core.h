@@ -665,7 +665,11 @@ private:
     void dropFromLossLists(int32_t from, int32_t to);
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
-    void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
+    void checkSndTimers();
+    
+    /// @brief Check and perform KM refresh if needed.
+    void checkSndKMRefresh();
+
     void handshakeDone()
     {
         m_iSndHsRetryCnt = 0;
@@ -1080,7 +1084,7 @@ private: // Generation and processing of packets
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     /// Checks and spawns the TSBPD thread if required.
-    int checkLazySpawnLatencyThread();
+    int checkLazySpawnTsbPdThread();
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
