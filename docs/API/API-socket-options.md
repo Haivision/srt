@@ -1082,9 +1082,11 @@ undefined behavior:
   on both sides is different, this is considered a conflict. It is resolved by
   the Initiator party, which takes its own value, if the `SRTO_SENDER`
   option is set to true. Otherwise, it takes the value from the Responder party. The
-  assignment of Initiator-Responder roles matches the Caller-Listener layout. In the case of Rendezvous the assignment is a matter of luck, resulting from the cookie comparison.
-  **It is highly recommended to never allow this to happen**, as this may result in having
-  one party's setting of length = 32 be overridden by the other party's setting of length = 16.
+  assignment of Initiator-Responder roles matches the Caller-Listener layout.
+  In the case of Rendezvous this assignment depends on the result of
+  the cookie comparison.  **It is highly recommended to never allow this to
+  happen**, as this may result in having one party's setting of length = 32 be
+  overridden by the other party's setting of length = 16.
 
 
 [Return to list](#list-of-options)
