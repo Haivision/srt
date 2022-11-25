@@ -9791,7 +9791,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             {
                 LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.m_iSeqNo
                         << ", insert offset " << bufidx << ". "
-                        << m_pRcvBuffer->strFullnessState(qrlog.Warn.CheckEnabled(), m_iRcvLastAck, steady_clock::now())
+                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
                     );
 
                 return -1;
