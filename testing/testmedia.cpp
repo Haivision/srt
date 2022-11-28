@@ -1283,15 +1283,13 @@ void SrtCommon::ConnectClient(string host, int port)
     {
         // Check if trying to connect to self.
         sockaddr_any lsa;
-        int size = lsa.size();
-        srt_getsockname(m_sock, &lsa, &size);
+        srt_getsockname(m_sock, lsa.get(), &lsa.len);
 
-        if (lsa.hport() == port && IsTargetAddrSelf(&lsa, psa))
+        if (lsa.hport() == port && IsTargetAddrSelf(lsa.get(), sa.get()))
         {
-            Verb() << "ERROR: Trying to connect to SELF address " << SockaddrToString(psa)
-                << " with socket bound to " << SockaddrToString(&lsa);
-            UDT::ERRORINFO inval(MJ_SETUP, MN_INVAL, 0);
-            Error(inval, "srt_connect");
+            Verb() << "ERROR: Trying to connect to SELF address " << sa.str()
+                << " with socket bound to " << lsa.str();
+            Error("srt_connect", 0, SRT_EINVPARAM);
         }
     }
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;

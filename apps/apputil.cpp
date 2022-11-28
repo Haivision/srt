@@ -16,6 +16,7 @@
 #include <utility>
 #include <memory>
 
+#include <ifaddrs.h>
 #include "srt.h" // Required for SRT_SYNC_CLOCK_* definitions.
 #include "apputil.hpp"
 #include "netinet_any.h"
