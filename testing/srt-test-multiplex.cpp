@@ -19,7 +19,7 @@
 
 #define REQUIRE_CXX11 1
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -47,7 +47,6 @@ using namespace std;
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
 
 volatile bool siplex_int_state = false;
@@ -120,7 +119,7 @@ struct MediumPair
             {
                 ostringstream sout;
                 alarm(1);
-                bytevector data = src->Read(chunk);
+                auto data = src->Read(chunk);
 
                 alarm(0);
                 if (alarm_state)
@@ -131,8 +130,8 @@ struct MediumPair
                         break;
                     continue;
                 }
-                sout << " << " << data.size() << "  ->  ";
-                if ( data.empty() && src->End() )
+                sout << " << " << data.payload.size() << "  ->  ";
+                if ( data.payload.empty() && src->End() )
                 {
                     sout << "EOS";
                     applog.Note() << sout.str();
@@ -155,14 +154,14 @@ struct MediumPair
                 applog.Note() << sout.str();
             }
         }
-        catch (Source::ReadEOF& x)
+        catch (const Source::ReadEOF&)
         {
             applog.Note() << "EOS - closing media for loop: " << name;
             src->Close();
             tar->Close();
             applog.Note() << "CLOSED: " << name;
         }
-        catch (std::runtime_error& x)
+        catch (const std::runtime_error& x)
         {
             applog.Note() << "INTERRUPTED: " << x.what();
             src->Close();
@@ -197,7 +196,7 @@ public:
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        ThreadName tn(thread_name.c_str());
+        srt::ThreadName tn(thread_name);
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;
@@ -465,12 +464,17 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    // Check options
+    const OptionName
+        o_loglevel = { "ll", "loglevel" },
+        o_input    = { "i" },
+        o_output   = { "o" };
+
     vector<OptionScheme> optargs = {
-        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
-        { {"i"}, OptionScheme::ARG_VAR },
-        { {"o"}, OptionScheme::ARG_VAR }
+        { o_loglevel, OptionScheme::ARG_ONE },
+        { o_input,    OptionScheme::ARG_VAR },
+        { o_output,   OptionScheme::ARG_VAR }
     };
+
     map<string, vector<string>> params = ProcessOptions(argv, argc, optargs);
 
     // The call syntax is:
@@ -546,8 +550,8 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::setloglevel(lev);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     string verbo = Option<OutString>(params, "no", "v", "verbose");
     if ( verbo == "" || !false_names.count(verbo) )
@@ -573,7 +577,7 @@ int main( int argc, char** argv )
 
     SrtModel m(up.host(), iport, up.parameters());
 
-    ThreadName::set("main");
+    srt::ThreadName::set("main");
 
     // Note: for input, there must be an exactly defined
     // number of sources. The loop rolls up to all these sources.
@@ -593,7 +597,7 @@ int main( int argc, char** argv )
         for(;;)
         {
             string id = *ids.begin();
-            m.Establish(Ref(id));
+            m.Establish((id));
 
             // The 'id' could have been altered.
             // If Establish did connect(), then it gave this stream id,
@@ -604,14 +608,14 @@ int main( int argc, char** argv )
             // close the stream and ignore it.
 
             // Select medium from parameters.
-            if ( SelectAndLink(m, id, mode_output) )
+            if (SelectAndLink(m, id, mode_output))
             {
                 ids.erase(id);
                 if (ids.empty())
                     break;
             }
 
-            ThreadName::set("main");
+            srt::ThreadName::set("main");
         }
 
         applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";

@@ -9,7 +9,9 @@
 
 SOURCES
 apputil.cpp
+statswriter.cpp
 logsupport.cpp
+logsupport_appdefs.cpp
 socketoptions.cpp
 transmitmedia.cpp
 uriparser.cpp

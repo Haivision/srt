@@ -1,0 +1,11 @@
+
+SOURCES
+srt-test-mpbond.cpp
+testmedia.cpp
+../apps/apputil.cpp
+../apps/verbose.cpp
+../apps/socketoptions.cpp
+../apps/uriparser.cpp
+../apps/logsupport.cpp
+../apps/logsupport_appdefs.cpp
+

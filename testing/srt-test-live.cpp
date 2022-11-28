@@ -64,11 +64,10 @@
 #include <chrono>
 #include <thread>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmediabase.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -81,21 +80,9 @@
 
 using namespace std;
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
 
 map<string,string> g_options;
-
-string Option(string deflt="") { return deflt; }
-
-template <class... Args>
-string Option(string deflt, string key, Args... further_keys)
-{
-    map<string, string>::iterator i = g_options.find(key);
-    if ( i == g_options.end() )
-        return Option(deflt, further_keys...);
-    return i->second;
-}
-
-ostream* cverb = &cout;
 
 struct ForcedExit: public std::runtime_error
 {
@@ -113,20 +100,19 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
-    int_state = true;
-    if ( transmit_throw_on_interrupt )
-        throw ForcedExit("Requested exception interrupt");
+    transmit_int_state = true;
 }
+
+std::string g_interrupt_reason;
 
 void OnAlarm_Interrupt(int)
 {
-    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
-    int_state = false; // JIC
+    cerr << "\n---------- INTERRUPT ON TIMEOUT: hang on " << g_interrupt_reason << "!\n";
+    transmit_int_state = true; // JIC
     timer_state = true;
     throw AlarmExit("Watchdog bites hangup");
 }
@@ -195,6 +181,97 @@ struct BandwidthGuard
     }
 };
 
+bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_outspec)
+{
+    // This function prints error messages by itself then returns false.
+    // Otherwise nothing is printed and true is returned.
+    // r_outspec is for a case when a redundancy specification should be translated.
+
+    if (spec.empty())
+    {
+        cerr << prefix << ": Specification is empty\n";
+        return false;
+    }
+
+    if (spec.size() == 1)
+    {
+        // Then, whatever.
+        w_outspec = spec[0];
+        return true;
+    }
+
+    // We have multiple items specified, check each one
+    // it SRT, if so, craft the redundancy URI spec,
+    // otherwise reject
+    vector<string> adrs;
+    map<string,string> uriparam;
+    bool first = true;
+    bool allow_raw_spec = false;
+    for (auto uris: spec)
+    {
+        UriParser uri(uris, UriParser::EXPECT_HOST);
+        if (!allow_raw_spec && uri.type() != UriParser::SRT)
+        {
+            cerr << ": Multiple media must be all with SRT scheme, or srt://* as first.\n";
+            return false;
+        }
+
+        if (uri.host() == "*")
+        {
+            allow_raw_spec = true;
+            first = false;
+            uriparam = uri.parameters();
+
+            // This does not specify the address, only options and URI.
+            continue;
+        }
+
+        string aspec = uri.host() + ":" + uri.port();
+        if (aspec[0] == ':' || aspec[aspec.size()-1] == ':')
+        {
+            cerr << "Empty host or port in the address specification: " << uris << endl;
+            return false;
+        }
+
+        if (allow_raw_spec && !uri.parameters().empty())
+        {
+            bool cont = false;
+            // Extract attributes if any and pass them there.
+            for (UriParser::query_it i = uri.parameters().begin();
+                    i != uri.parameters().end(); ++i)
+            {
+                aspec += cont ? "&" : "?";
+                cont = false;
+                aspec += i->first + "=" + i->second;
+            }
+        }
+
+        adrs.push_back(aspec);
+        if (first)
+        {
+            uriparam = uri.parameters();
+            first = false;
+        }
+    }
+
+    w_outspec = "srt:////group?";
+    if (map_getp(uriparam, "type") == nullptr)
+        uriparam["type"] = "redundancy";
+
+    for (auto& name_value: uriparam)
+    {
+        string name, value; tie(name, value) = name_value;
+        w_outspec += name + "=" + value + "&";
+    }
+    w_outspec += "nodes=";
+    for (string& a: adrs)
+        w_outspec += a + ",";
+
+    Verb() << "NOTE: " << prefix << " specification set as: " << (w_outspec);
+
+    return true;
+}
+
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 namespace srt_logging
@@ -202,7 +279,40 @@ namespace srt_logging
     extern Logger glog;
 }
 
-extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const sockaddr*, const char* streamid)
+#if ENABLE_BONDING
+extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    static string gtypes[] = {
+        "undefined", // SRT_GTYPE_UNDEFINED
+        "broadcast",
+        "backup",
+        "balancing",
+        "multicast"
+    };
+
+    int type;
+    int size = sizeof type;
+    srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
+    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << VerbNoEOL;
+    if (type != 0)
+    {
+        SRT_GROUP_TYPE gt;
+        size = sizeof gt;
+        if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
+        {
+            if (gt < Size(gtypes))
+                Verb() << " type=" << gtypes[gt] << VerbNoEOL;
+            else
+                Verb() << " type=" << int(gt) << VerbNoEOL;
+        }
+    }
+    Verb() << " connection";
+
+    return 0;
+}
+#endif
+
+extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
@@ -246,9 +356,25 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET listener, int hsv, const so
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(listener, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
 
     return 0;
+}
+
+struct RejectData
+{
+    int code;
+    string streaminfo;
+} g_reject_data;
+
+extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    RejectData* data = (RejectData*)op;
+
+    srt_setrejectreason(acpsock, data->code);
+    srt::setstreamid(acpsock, data->streaminfo);
+
+    return -1;
 }
 
 int main( int argc, char** argv )
@@ -258,6 +384,8 @@ int main( int argc, char** argv )
     if ( !SysInitializeNetwork() )
         throw std::runtime_error("Can't initialize network!");
 
+    srt_startup();
+
     // Symmetrically, this does a cleanup; put into a local destructor to ensure that
     // it's called regardless of how this function returns.
     struct NetworkCleanup
@@ -265,47 +393,218 @@ int main( int argc, char** argv )
         ~NetworkCleanup()
         {
             SysCleanupNetwork();
+            srt_cleanup();
         }
     } cleanupobj;
 
-    vector<string> args;
-    copy(argv+1, argv+argc, back_inserter(args));
+    vector<OptionScheme> optargs;
 
-    // Check options
-    vector<string> params;
+    OptionName
+        o_timeout   ((optargs), "<timeout[s]=0> Data transmission timeout", "t",   "to", "timeout" ),
+        o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
+        o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
+        o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
+        o_verbose   ((optargs), "[channel=0|1|./file] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
+        o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
+        o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
+        o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
+        o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
+        o_stats     ((optargs), "<freq[npkt]> How often stats should be reported", "s",   "stats", "stats-report-frequency"),
+        o_statspf   ((optargs), "<format=default|csv|json> Format for printing statistics", "pf", "statspf", "statspformat"),
+        o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
+        o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
+        o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
+#if ENABLE_BONDING
+        o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+#endif
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
+        o_retry     ((optargs), "<N=-1,0,+N> Retry connection N times if failed on timeout", "rc", "retry"),
+        o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
+            ;
 
-    for (string a: args)
+    options_t params = ProcessOptions(argv, argc, optargs);
+
+    bool need_help = OptionPresent(params, o_help);
+
+    vector<string> args = params[""];
+
+    string source_spec, target_spec;
+#if ENABLE_BONDING
+    vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+#endif
+    vector<string> source_items, target_items;
+
+    if (!need_help)
     {
-        if ( a[0] == '-' )
-        {
-            string key = a.substr(1);
-            size_t pos = key.find(':');
-            if ( pos == string::npos )
-                pos = key.find(' ');
-            string value = pos == string::npos ? "" : key.substr(pos+1);
-            key = key.substr(0, pos);
-            g_options[key] = value;
-            continue;
-        }
+        // You may still need help.
 
-        params.push_back(a);
+#if ENABLE_BONDING
+        if ( !groupspec.empty() )
+        {
+            // Check if you have something before -g and after -g.
+            if (args.empty())
+            {
+                // Then all items are sources, but the last one is a single target.
+                if (groupspec.size() < 3)
+                {
+                    cerr << "ERROR: Redundancy group: with nothing preceding -g, use -g <SRC-URI1> <SRC-URI2>... <TAR-URI> (at least 3 args)\n";
+                    need_help = true;
+                }
+                else
+                {
+                    copy(groupspec.begin(), groupspec.end()-1, back_inserter(source_items));
+                    target_items.push_back(*(groupspec.end()-1));
+                }
+            }
+            else
+            {
+                // Something before g, something after g. This time -g can accept also one argument.
+                copy(args.begin(), args.end(), back_inserter(source_items));
+                copy(groupspec.begin(), groupspec.end(), back_inserter(target_items));
+            }
+        }
+        else
+#endif
+        {
+            if (args.size() < 2)
+            {
+                cerr << "ERROR: source and target URI must be specified.\n\n";
+                need_help = true;
+            }
+            else
+            {
+                source_items.push_back(args[0]);
+                target_items.push_back(args[1]);
+            }
+        }
     }
 
-    if ( params.size() != 2 )
+    // Check verbose option before extracting the argument so that Verb()s
+    // can be displayed also when they report something about option parsing.
+    string verbose_val = Option<OutString>(params, "no", o_verbose);
+
+    unique_ptr<ofstream> pout_verb;
+
+    int verbch = 1; // default cerr
+    if (verbose_val != "no")
     {
-        cerr << "Usage: " << argv[0] << " [options] <input-uri> <output-uri>\n";
-        cerr << "\t-t:<timeout=0> - connection timeout\n";
-        cerr << "\t-c:<chunk=1316> - max size of data read in one step\n";
-        cerr << "\t-b:<bandwidth> - set SRT bandwidth\n";
-        cerr << "\t-r:<report-frequency=0> - bandwidth report frequency\n";
-        cerr << "\t-s:<stats-report-freq=0> - frequency of status report\n";
-        cerr << "\t-k - crash on error (aka developer mode)\n";
-        cerr << "\t-v - verbose mode (prints also size of every data packet passed)\n";
+        Verbose::on = true;
+        if (verbose_val == "")
+            verbch = 1;
+        else if (verbose_val.substr(0, 2) == "./")
+            verbch = 3;
+        else try
+        {
+            verbch = stoi(verbose_val);
+        }
+        catch (...)
+        {
+            verbch = 1;
+        }
+
+        if (verbch == 1)
+        {
+            Verbose::cverb = &std::cout;
+        }
+        else if (verbch == 2)
+        {
+            Verbose::cverb = &std::cerr;
+        }
+        else if (verbch == 3)
+        {
+            pout_verb.reset(new ofstream(verbose_val.substr(2), ios::out | ios::trunc));
+            if (!pout_verb->good())
+            {
+                cerr << "-v: error opening verbose output file: " << verbose_val << endl;
+                return 1;
+            }
+            Verbose::cverb = pout_verb.get();
+        }
+        else
+        {
+            cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+            return 1;
+        }
+    }
+
+
+    if (!need_help)
+    {
+        // Redundancy is then simply recognized by the fact that there are
+        // multiple specified inputs or outputs, for SRT caller only. Check
+        // every URI in advance.
+        if (!CheckMediaSpec("INPUT", source_items, (source_spec)))
+            need_help = true;
+        if (!CheckMediaSpec("OUTPUT", target_items, (target_spec)))
+            need_help = true;
+    }
+
+    if (need_help)
+    {
+        string helpspec = Option<OutString>(params, o_help);
+        if (helpspec == "logging")
+        {
+            cerr << "Logging options:\n";
+            cerr << "    -ll <LEVEL>   - specify minimum log level\n";
+            cerr << "    -lfa <area...> - specify functional areas\n";
+            cerr << "Where:\n\n";
+            cerr << "    <LEVEL>: fatal error note warning debug\n\n";
+            cerr << "This turns on logs that are at the given log name and all on the left.\n";
+            cerr << "(Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in hierarchy.)\n\n";
+            cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
+            cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
+            cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
+            return 1;
+        }
+
+        // Unrecognized helpspec is same as no helpspec, that is, general help.
+        cerr << "Usage:\n";
+        cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
+        cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
+        cerr << "*** (Position of [options] is unrestricted.)\n";
+        cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+        cerr << "where:\n";
+        cerr << "    (1) Exactly one input and one output URI spec is required,\n";
+        cerr << "    (2) Multiple SRT inputs or output as redundant links are allowed.\n";
+        cerr << "        `URI1 URI2 -g URI3` uses 1, 2 input and 3 output\n";
+        cerr << "        `-g URI1 URI2 URI3` like above\n";
+        cerr << "        `URI1 -g URI2 URI3` uses 1 input and 2, 3 output\n";
+        cerr << "SUPPORTED URI SCHEMES:\n";
+        cerr << "    srt: use SRT connection\n";
+        cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
+        cerr << "    file (default if scheme not specified) specified as:\n";
+        cerr << "       - empty host/port and absolute file path in the URI\n";
+        cerr << "       - only a filename, also as a relative path\n";
+        cerr << "       - file://con ('con' as host): designates stdin or stdout\n";
+        cerr << "OPTIONS HELP SYNTAX: -option <parameter[unit]=default[meaning]>:\n";
+        for (auto os: optargs)
+            cout << OptionHelpItem(*os.pid) << endl;
         return 1;
     }
 
-    int timeout = stoi(Option("30", "t", "to", "timeout"), 0, 0);
-    size_t chunk = stoul(Option("0", "c", "chunk"), 0, 0);
+    int timeout = Option<OutNumber>(params, "30", o_timeout);
+    size_t chunk = Option<OutNumber>(params, "0", o_chunk);
     if ( chunk == 0 )
     {
         chunk = SRT_LIVE_DEF_PLSIZE;
@@ -315,87 +614,110 @@ int main( int argc, char** argv )
         transmit_chunk_size = chunk;
     }
 
-    string verbose_val = Option("no", "v", "verbose");
-    int verbch = 1; // default cerr
-    if (verbose_val != "no")
-    {
-        Verbose::on = true;
-        try
-        {
-            verbch = stoi(verbose_val);
-        }
-        catch (...)
-        {
-            verbch = 1;
-        }
-        if (verbch != 1)
-        {
-            if (verbch != 2)
-            {
-                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
-                return 1;
-            }
-            Verbose::cverb = &std::cerr;
-        }
-        else
-        {
-            Verbose::cverb = &std::cout;
-        }
-    }
+    transmit_use_sourcetime = OptionPresent(params, o_stime);
+    size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
+    transmit_bw_report = Option<OutNumber>(params, "0", o_report);
+    bool crashonx = OptionPresent(params, o_crash);
 
-    bool crashonx = Option("no", "k", "crash") != "no";
-    string loglevel = Option("error", "loglevel");
-    string logfa = Option("general", "logfa");
-    string logfile = Option("", "logfile");
-    bool internal_log = Option("no", "loginternal") != "no";
-    bool skip_flushing = Option("no", "S", "skipflush") != "no";
+    string loglevel = Option<OutString>(params, "error", o_loglevel);
+    vector<string> logfa = Option<OutList>(params, o_logfa);
+    string logfile = Option<OutString>(params, "", o_logfile);
+    transmit_stats_report = Option<OutNumber>(params, "0", o_stats);
 
-    // Print format
-    string pf = Option("default", "pf", "printformat");
-    if (pf == "json")
-    {
-        transmit_printformat_json = true;
-    }
-    else if (pf != "default")
-    {
-        cerr << "ERROR: Unsupported print format: " << pf << endl;
-        return 1;
-    }
+    bool internal_log = OptionPresent(params, o_logint);
+    bool skip_flushing = OptionPresent(params, o_skipflush);
 
-
-    // Options that require integer conversion
-    size_t bandwidth;
-    size_t stoptime;
-
-    try
-    {
-        bandwidth = stoul(Option("0", "b", "bandwidth", "bitrate"));
-        transmit_bw_report = stoul(Option("0", "r", "report", "bandwidth-report", "bitrate-report"));
-        transmit_stats_report = stoi(Option("0", "s", "stats", "stats-report-frequency"));
-        stoptime = stoul(Option("0", "d", "stoptime"));
-    }
-    catch (std::invalid_argument &)
-    {
-        cerr << "ERROR: Incorrect integer number specified for an option.\n";
-        return 1;
-    }
-
-    string hook = Option("", "hook");
+    string hook = Option<OutString>(params, "", o_hook);
     if (hook != "")
     {
-        if (hook == "user-password")
+        vector<string> hargs;
+        Split(hook, ':', back_inserter(hargs));
+
+        if (hargs[0] == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
             transmit_accept_hook_op = nullptr;
         }
+        else if (hargs[0] == "reject")
+        {
+            hargs.resize(3); // make sure 3 elements exist, may be empty
+            g_reject_data.code = stoi(hargs[1]);
+            g_reject_data.streaminfo = hargs[2];
+            transmit_accept_hook_op = (void*)&g_reject_data;
+            transmit_accept_hook_fn = &SrtRejectByCodeHook;
+        }
+#if ENABLE_BONDING
+        else if (hargs[0] == "groupcheck")
+        {
+            transmit_accept_hook_fn = &SrtCheckGroupHook;
+            transmit_accept_hook_op = nullptr;
+        }
+#endif
     }
 
+    string pfextra;
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf), (pfextra));
+    if (statspf == SRTSTATS_PROFMAT_INVALID)
+    {
+        cerr << "Invalid stats print format\n";
+        return 1;
+    }
+    transmit_stats_writer = SrtStatsWriterFactory(statspf);
+    if (pfextra != "")
+    {
+        vector<string> options;
+        Split(pfextra, ',', back_inserter(options));
+        for (auto& i: options)
+        {
+            vector<string> klv;
+            Split(i, '=', back_inserter(klv));
+            klv.resize(2);
+            transmit_stats_writer->Option(klv[0], klv[1]);
+        }
+    }
+
+    // Options that require integer conversion
+    size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
     std::ofstream logfile_stream; // leave unused if not set
 
     srt_setloglevel(SrtParseLogLevel(loglevel));
-    set<srt_logging::LogFA> fas = SrtParseLogFA(logfa);
-    for (set<srt_logging::LogFA>::iterator i = fas.begin(); i != fas.end(); ++i)
-        srt_addlogfa(*i);
+    string logfa_on, logfa_off;
+    ParseLogFASpec(logfa, (logfa_on), (logfa_off));
+
+    set<srt_logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
+    set<srt_logging::LogFA> fason = SrtParseLogFA(logfa_on);
+
+    auto fa_del = [fasoff]() {
+        for (set<srt_logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+            srt_dellogfa(*i);
+    };
+
+    auto fa_add = [fason]() {
+        for (set<srt_logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+            srt_addlogfa(*i);
+    };
+
+    if (logfa_off == "all")
+    {
+        // If the spec is:
+        //     -lfa ~all control app
+        // then we first delete all, then enable given ones
+        fa_del();
+        fa_add();
+    }
+    else
+    {
+        // Otherwise we first add all those that have to be added,
+        // then delete those unwanted. This embraces both
+        //   -lfa control app ~cc
+        // and
+        //   -lfa all ~cc
+        fa_add();
+        fa_del();
+    }
+
+
+    srt::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -417,10 +739,21 @@ int main( int argc, char** argv )
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
+    string retryphrase = Option<OutString>(params, "", o_retry);
+    if (retryphrase != "")
+    {
+        if (retryphrase[retryphrase.size()-1] == 'a')
+        {
+            transmit_retry_always = true;
+            retryphrase = retryphrase.substr(0, retryphrase.size()-1);
+        }
+
+        transmit_retry_connect = stoi(retryphrase);
+    }
 
 #ifdef _WIN32
 #define alarm(argument) (void)0
@@ -465,12 +798,12 @@ int main( int argc, char** argv )
 
     try
     {
-        src = Source::Create(params[0]);
-        tar = Target::Create(params[1]);
+        src = Source::Create(source_spec);
+        tar = Target::Create(target_spec);
     }
     catch(std::exception& x)
     {
-        if (::int_state)
+        if (::transmit_int_state)
         {
             // The application was terminated by SIGINT or SIGTERM.
             // Don't print anything, just exit gently like ffmpeg.
@@ -484,7 +817,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exitting.";
+        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -499,10 +832,24 @@ int main( int argc, char** argv )
     alarm(0);
     end_time = time(0);
 
+    if (!src || !tar)
+    {
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
+
+        cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
+        return 2;
+    }
+
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << params[0] << "' --> '" << params[1] << "'";
+    if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
+    {
+        Verb() << "WARNING: -st option is effective only if the target type is SRT";
+    }
+
+    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -514,7 +861,7 @@ int main( int argc, char** argv )
 
         if (remain <= final_delay)
         {
-            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exitting\n";
+            cerr << "NOTE: remained too little time for cleanup: " << remain << "s - exiting\n";
             return 0;
         }
 
@@ -528,30 +875,41 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << "[." << VerbNoEOL;
                 alarm(timeout);
             }
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            else
+            {
+                alarm(0);
+            }
+            Verb() << " << ... " << VerbNoEOL;
+            g_interrupt_reason = "reading";
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;
             }
+            g_interrupt_reason = "writing";
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb() << ".] " << VerbNoEOL;
                 alarm(0);
             }
+
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken\n";
+                Verb() << " OUTPUT broken";
                 break;
             }
 
-            Verb() << " sent";
-            if ( int_state )
+            Verb() << "sent";
+
+            if (::transmit_int_state)
             {
-                cerr << "\n (interrupted on request)\n";
+                Verror() << "\n (interrupted on request)";
                 break;
             }
 
@@ -563,7 +921,7 @@ int main( int argc, char** argv )
                 int remain = stoptime - final_delay - elapsed;
                 if (remain < 0)
                 {
-                    cerr << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup\n";
+                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -575,17 +933,17 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            cerr << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    cerr << "(DEBUG) DEPLETED. Done.\n";
+                    Verror() << "(DEBUG) DEPLETED. Done.\n";
                     break;
                 }
 
-                cerr << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
@@ -593,20 +951,24 @@ int main( int argc, char** argv )
 
         if (stoptime != 0 && ::timer_state)
         {
-            cerr << "Exit on timeout.\n";
+            Verror() << "Exit on timeout.";
         }
-        else if (::int_state)
+        else if (::transmit_int_state)
         {
+            Verror() << "Exit on interrupt.";
             // Do nothing.
         }
         else
         {
-            cerr << "STD EXCEPTION: " << x.what() << endl;
+            Verror() << "STD EXCEPTION: " << x.what();
         }
+
+        if ( crashonx )
+            throw;
 
         if (final_delay > 0)
         {
-            cerr << "Waiting " << final_delay << "s for possible cleanup...\n";
+            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -616,7 +978,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        cerr << "UNKNOWN type of EXCEPTION\n";
+        Verror() << "UNKNOWN type of EXCEPTION";
         if ( crashonx )
             throw;
 
@@ -651,4 +1013,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-

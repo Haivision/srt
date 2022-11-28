@@ -66,7 +66,7 @@
 #include <list>
 
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -100,8 +100,8 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> int_state;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     Verb() << "\n-------- REQUESTED INTERRUPT!\n";
@@ -136,9 +136,11 @@ struct LiveTransmitConfig
     bool log_internal;
     string logfile;
     int bw_report = 0;
+    bool srctime = false;
+    size_t buffering = 10;
     int stats_report = 0;
     string stats_out;
-    PrintFormat stats_pf = PRINT_FORMAT_2COLS;
+    SrtStatsPrintFormat stats_pf = SRTSTATS_PROFMAT_2COLS;
     bool auto_reconnect = true;
     bool full_stats = false;
 
@@ -147,11 +149,11 @@ struct LiveTransmitConfig
 };
 
 
-void PrintOptionHelp(const set<string> &opt_names, const string &value, const string &desc)
+void PrintOptionHelp(const OptionName& opt_names, const string &value, const string &desc)
 {
     cerr << "\t";
     int i = 0;
-    for (auto opt : opt_names)
+    for (auto opt : opt_names.names)
     {
         if (i++) cerr << ", ";
         cerr << "-" << opt;
@@ -162,21 +164,22 @@ void PrintOptionHelp(const set<string> &opt_names, const string &value, const st
     cerr << "\t- " << desc << "\n";
 }
 
-
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
-    const set<string>
+    const OptionName
         o_timeout       = { "t", "to", "timeout" },
         o_timeout_mode  = { "tm", "timeout-mode" },
         o_autorecon     = { "a", "auto", "autoreconnect" },
         o_chunk         = { "c", "chunk" },
         o_bwreport      = { "r", "bwreport", "report", "bandwidth-report", "bitrate-report" },
+        o_srctime       = {"st", "srctime", "sourcetime"},
+        o_buffering     = {"buffering"},
         o_statsrep      = { "s", "stats", "stats-report-frequency" },
         o_statsout      = { "statsout" },
         o_statspf       = { "pf", "statspf" },
         o_statsfull     = { "f", "fullstats" },
         o_loglevel      = { "ll", "loglevel" },
-        o_logfa         = { "logfa" },
+        o_logfa         = { "lfa", "logfa" },
         o_log_internal  = { "loginternal"},
         o_logfile       = { "logfile" },
         o_quiet         = { "q", "quiet" },
@@ -190,6 +193,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_autorecon,    OptionScheme::ARG_ONE },
         { o_chunk,        OptionScheme::ARG_ONE },
         { o_bwreport,     OptionScheme::ARG_ONE },
+        { o_srctime,      OptionScheme::ARG_ONE },
+        { o_buffering,    OptionScheme::ARG_ONE },
         { o_statsrep,     OptionScheme::ARG_ONE },
         { o_statsout,     OptionScheme::ARG_ONE },
         { o_statspf,      OptionScheme::ARG_ONE },
@@ -200,14 +205,14 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         { o_logfile,      OptionScheme::ARG_ONE },
         { o_quiet,        OptionScheme::ARG_NONE },
         { o_verbose,      OptionScheme::ARG_NONE },
-        { o_help,         OptionScheme::ARG_NONE },
+        { o_help,         OptionScheme::ARG_VAR },
         { o_version,      OptionScheme::ARG_NONE }
     };
 
     options_t params = ProcessOptions(argv, argc, optargs);
 
-          bool print_help    = Option<OutBool>(params, false, o_help);
-    const bool print_version = Option<OutBool>(params, false, o_version);
+          bool print_help    = OptionPresent(params, o_help);
+    const bool print_version = OptionPresent(params, o_version);
 
     if (params[""].size() != 2 && !print_help && !print_version)
     {
@@ -223,29 +228,70 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_help)
     {
+        string helpspec = Option<OutString>(params, o_help);
+
+        if (helpspec == "logging")
+        {
+            cerr << "Logging options:\n";
+            cerr << "    -ll <LEVEL>   - specify minimum log level\n";
+            cerr << "    -lfa <area...> - specify functional areas\n";
+            cerr << "Where:\n\n";
+            cerr << "    <LEVEL>: fatal error note warning debug\n\n";
+            cerr << "Turns on logs that are at the given log level or any higher level\n";
+            cerr << "(all to the left in the list above from the selected level).\n";
+            cerr << "Names from syslog, like alert, crit, emerg, err, info, panic, are also\n";
+            cerr << "recognized, but they are aligned to those that lie close in the above hierarchy.\n\n";
+            cerr << "    <area...> is a coma-separated list of areas to turn on.\n\n";
+            cerr << "The list may include 'all' to turn all FAs on.\n";
+            cerr << "Example: `-lfa:sockmgmt,chn-recv` enables only `sockmgmt` and `chn-recv` log FAs.\n";
+            cerr << "Default: all are on except haicrypt. NOTE: 'general' FA can't be disabled.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            // Each group on a new line
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
+            return 1;
+        }
+
         cout << "SRT sample application to transmit live streaming.\n";
-        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 #ifndef _WIN32
         PrintOptionHelp(o_timeout,   "<timeout=0>", "exit timer in seconds");
         PrintOptionHelp(o_timeout_mode, "<mode=0>", "timeout mode (0 - since app start; 1 - like 0, but cancel on connect");
 #endif
-        PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode [yes|no]");
+        PrintOptionHelp(o_autorecon, "<enabled=yes>", "auto-reconnect mode {yes, no}");
         PrintOptionHelp(o_chunk,     "<chunk=1456>", "max size of data read in one step, that can fit one SRT packet");
         PrintOptionHelp(o_bwreport,  "<every_n_packets=0>", "bandwidth report frequency");
+        PrintOptionHelp(o_srctime,   "<enabled=yes>", "Pass packet time from source to SRT output {yes, no}");
+        PrintOptionHelp(o_buffering, "<packets=n>", "Buffer up to n incoming packets");
         PrintOptionHelp(o_statsrep,  "<every_n_packets=0>", "frequency of status report");
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
-        PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format [json|csv|default]");
+        PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
-        PrintOptionHelp(o_loglevel,  "<level=error>", "log level [fatal,error,info,note,warning]");
-        PrintOptionHelp(o_logfa,     "<fas=general,...>", "log functional area [all,general,bstats,control,data,tsbpd,rexmit]");
+        PrintOptionHelp(o_loglevel,  "<level=warn>", "log level {fatal,error,warn,note,info,debug}");
+        PrintOptionHelp(o_logfa,     "<fas>", "log functional area (see '-h logging' for more info)");
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
         PrintOptionHelp(o_quiet, "", "quiet mode (default off)");
         PrintOptionHelp(o_verbose,   "", "verbose mode (default off)");
         cerr << "\n";
-        cerr << "\t-h,-help - show this help\n";
+        cerr << "\t-h,-help - show this help (use '-h logging' for logging system)\n";
         cerr << "\t-version - print SRT library version\n";
         cerr << "\n";
         cerr << "\t<input-uri>  - URI specifying a medium to read from\n";
@@ -261,44 +307,45 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_version)
     {
-        cerr << "SRT Library version: " <<  SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
-    cfg.timeout      = stoi(Option<OutString>(params, "0", o_timeout));
-    cfg.timeout_mode = stoi(Option<OutString>(params, "0", o_timeout_mode));
-    cfg.chunk_size   = stoi(Option<OutString>(params, "-1", o_chunk));
-    cfg.bw_report    = stoi(Option<OutString>(params, "0", o_bwreport));
-    cfg.stats_report = stoi(Option<OutString>(params, "0", o_statsrep));
-    cfg.stats_out    = Option<OutString>(params, "", o_statsout);
-    const string pf  = Option<OutString>(params, "default", o_statspf);
-    if (pf == "default")
+    cfg.timeout      = Option<OutNumber>(params, o_timeout);
+    cfg.timeout_mode = Option<OutNumber>(params, o_timeout_mode);
+    cfg.chunk_size   = Option<OutNumber>(params, "-1", o_chunk);
+    cfg.srctime      = Option<OutBool>(params, cfg.srctime, o_srctime);
+    const int buffering = Option<OutNumber>(params, "10", o_buffering);
+    if (buffering <= 0)
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-    }
-    else if (pf == "json")
-    {
-        cfg.stats_pf = PRINT_FORMAT_JSON;
-    }
-    else if (pf == "csv")
-    {
-        cfg.stats_pf = PRINT_FORMAT_CSV;
+        cerr << "ERROR: Buffering value should be positive. Value provided: " << buffering << "." << endl;
+        return 1;
     }
     else
     {
-        cfg.stats_pf = PRINT_FORMAT_2COLS;
-        cerr << "ERROR: Unsupported print format: " << pf << endl;
+        cfg.buffering = (size_t) buffering;
+    }
+    cfg.bw_report    = Option<OutNumber>(params, o_bwreport);
+    cfg.stats_report = Option<OutNumber>(params, o_statsrep);
+    cfg.stats_out    = Option<OutString>(params, o_statsout);
+    const string pf  = Option<OutString>(params, "default", o_statspf);
+    string pfext;
+    cfg.stats_pf     = ParsePrintFormat(pf, (pfext));
+    if (cfg.stats_pf == SRTSTATS_PROFMAT_INVALID)
+    {
+        cfg.stats_pf = SRTSTATS_PROFMAT_2COLS;
+        cerr << "ERROR: Unsupported print format: " << pf << " -- fallback to default" << endl;
         return 1;
     }
 
-    cfg.full_stats   = Option<OutBool>(params, false, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
+    cfg.full_stats   = OptionPresent(params, o_statsfull);
+    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
-    cfg.log_internal = Option<OutBool>(params, false, o_log_internal);
-    cfg.logfile      = Option<OutString>(params, "", o_logfile);
-    cfg.quiet        = Option<OutBool>(params, false, o_quiet);
+    cfg.log_internal = OptionPresent(params, o_log_internal);
+    cfg.logfile      = Option<OutString>(params, o_logfile);
+    cfg.quiet        = OptionPresent(params, o_quiet);
     
-    if (Option<OutBool>(params, false, o_verbose))
+    if (OptionPresent(params, o_verbose))
         Verbose::on = !cfg.quiet;
 
     cfg.auto_reconnect = Option<OutBool>(params, true, o_autorecon);
@@ -341,7 +388,7 @@ int main(int argc, char** argv)
     //
     if (cfg.chunk_size > 0)
         transmit_chunk_size = cfg.chunk_size;
-    stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
+    transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
     transmit_total_stats = cfg.full_stats;
@@ -350,8 +397,12 @@ int main(int argc, char** argv)
     // Set SRT log levels and functional areas
     //
     srt_setloglevel(cfg.loglevel);
-    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-        srt_addlogfa(*i);
+    if (!cfg.logfas.empty())
+    {
+        srt_resetlogfa(nullptr, 0);
+        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+            srt_addlogfa(*i);
+    }
 
     //
     // SRT log handler
@@ -377,7 +428,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
@@ -548,6 +599,14 @@ int main(int argc, char** argv)
                     if (s == SRT_INVALID_SOCK)
                         continue;
 
+                    // Remove duplicated sockets
+                    for (size_t j = i + 1; j < sizeof(srtrwfds) / sizeof(SRTSOCKET); j++)
+                    {
+                        const SRTSOCKET next_s = srtrwfds[j];
+                        if (next_s == s)
+                            srtrwfds[j] = SRT_INVALID_SOCK;
+                    }
+
                     bool issource = false;
                     if (src && src->GetSRTSocket() == s)
                     {
@@ -714,15 +773,13 @@ int main(int argc, char** argv)
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
-                std::list<std::shared_ptr<bytevector>> dataqueue;
-                if (src.get() && (srtrfdslen || sysrfdslen))
+                std::list<std::shared_ptr<MediaPacket>> dataqueue;
+                if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
                 {
-                    while (dataqueue.size() < 10)
+                    while (dataqueue.size() < cfg.buffering)
                     {
-                        std::shared_ptr<bytevector> pdata(
-                            new bytevector(transmit_chunk_size));
-
-                        const int res = src->Read(transmit_chunk_size, *pdata, out_stats);
+                        std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
+                        const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
                         if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
                         {
@@ -734,28 +791,32 @@ int main(int argc, char** argv)
                             );
                         }
 
-                        if (res == 0 || pdata->empty())
+                        if (res == 0 || pkt->payload.empty())
                         {
                             break;
                         }
 
-                        dataqueue.push_back(pdata);
-                        receivedBytes += (*pdata).size();
+                        dataqueue.push_back(pkt);
+                        receivedBytes += pkt->payload.size();
                     }
                 }
 
-                // if no target, let received data fall to the floor
+                // if there is no target, let the received data be lost
                 while (!dataqueue.empty())
                 {
-                    std::shared_ptr<bytevector> pdata = dataqueue.front();
-                    if (!tar.get() || !tar->IsOpen()) {
-                        lostBytes += (*pdata).size();
+                    std::shared_ptr<MediaPacket> pkt = dataqueue.front();
+                    if (!tar.get() || !tar->IsOpen())
+                    {
+                        lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pdata->data(), pdata->size(), out_stats)) {
-                        lostBytes += (*pdata).size();
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    {
+                        lostBytes += pkt->payload.size();
                     }
                     else
-                        wroteBytes += (*pdata).size();
+                    {
+                        wroteBytes += pkt->payload.size();
+                    }
 
                     dataqueue.pop_front();
                 }

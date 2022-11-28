@@ -14,20 +14,20 @@ written by
    Haivision Systems Inc.
 
    2011-06-23 (jdube)
-        HaiCrypt initial implementation.
+		HaiCrypt initial implementation.
    2014-03-11 (jdube)
-        Adaptation for SRT.
+		Adaptation for SRT.
 *****************************************************************************/
 
 #include <sys/types.h>
 #include <stdlib.h>     /* NULL */
 #include <string.h>     /* memcpy */
 #ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #include <stdint.h>
+	#include <winsock2.h>
+	#include <ws2tcpip.h>
+	#include <stdint.h>
 #else
-    #include <arpa/inet.h>  /* htonl */
+	#include <arpa/inet.h>  /* htonl */
 #endif
 #include "hcrypt.h"
 
@@ -55,11 +55,11 @@ int HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_
 int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout) 
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	hcrypt_Ctx *ctx = NULL;
+	hcrypt_Ctx *ctx = crypto->ctx;
 	int nbout = 0;
 
 	if ((NULL == crypto)
-	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == ctx)
 	||  (NULL == out_p)
 	||  (NULL == out_len_p)) {
 		HCRYPT_LOG(LOG_ERR, "ManageKeys: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
@@ -69,7 +69,8 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	/* Manage Key Material (refresh, announce, decommission) */
 	hcryptCtx_Tx_ManageKM(crypto);
 
-	if (NULL == (ctx = crypto->ctx)) {
+	ctx = crypto->ctx;
+	if (NULL == ctx) {
 		HCRYPT_LOG(LOG_ERR, "%s", "crypto context not defined\n");
 		return(-1);
 	}
@@ -82,10 +83,10 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 int HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	hcrypt_Ctx *ctx = NULL;
+	hcrypt_Ctx *ctx = crypto->ctx;
 
 	if ((NULL == crypto)
-	||  (NULL == (ctx = crypto->ctx))){
+	||  (NULL == ctx)){
 		HCRYPT_LOG(LOG_ERR, "GetKeyFlags: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
 		return(-1);
 	}
@@ -96,16 +97,21 @@ int HaiCrypt_Tx_Data(HaiCrypt_Handle hhc,
 	unsigned char *in_pfx, unsigned char *in_data, size_t in_len) 
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	hcrypt_Ctx *ctx = NULL;
+	hcrypt_Ctx *ctx = crypto->ctx;
 	int nbout = 0;
 
 	if ((NULL == crypto)
-	||  (NULL == (ctx = crypto->ctx))){
+	||  (NULL == ctx)){
 		HCRYPT_LOG(LOG_ERR, "Tx_Data: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
 		return(-1);
 	}
 	/* Get/Set packet index */
 	ctx->msg_info->indexMsg(in_pfx, ctx->MSpfx_cache); 
+
+	if (hcryptMsg_GetKeyIndex(ctx->msg_info, in_pfx) != hcryptCtx_GetKeyIndex(ctx))
+	{
+		HCRYPT_LOG(LOG_ERR, "Tx_Data: Key mismatch!");
+	}
 
 	/* Encrypt */
 	{
@@ -129,11 +135,11 @@ int HaiCrypt_Tx_Process(HaiCrypt_Handle hhc,
 	void *out_p[], size_t out_len_p[], int maxout)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
-	hcrypt_Ctx *ctx = NULL;
+	hcrypt_Ctx *ctx = crypto->ctx;
 	int nb, nbout = 0;
 
 	if ((NULL == crypto)
-	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == ctx)
 	||  (NULL == out_p)
 	||  (NULL == out_len_p)) {
 		HCRYPT_LOG(LOG_ERR, "Tx_Process: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
@@ -143,7 +149,8 @@ int HaiCrypt_Tx_Process(HaiCrypt_Handle hhc,
 	/* Manage Key Material (refresh, announce, decommission) */
 	hcryptCtx_Tx_ManageKM(crypto);
 
-	if (NULL == (ctx = crypto->ctx)) {
+	ctx = crypto->ctx;
+	if (NULL == ctx) {
 		HCRYPT_LOG(LOG_ERR, "%s", "crypto context not defined\n");
 		return(-1);
 	}

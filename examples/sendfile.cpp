@@ -21,17 +21,14 @@ DWORD WINAPI sendfile(LPVOID);
 
 int main(int argc, char* argv[])
 {
-   //usage: sendfile [server_port]
    if ((2 < argc) || ((2 == argc) && (0 == atoi(argv[1]))))
    {
       cout << "usage: sendfile [server_port]" << endl;
       return 0;
    }
 
-   // use this function to initialize the UDT library
+   // Initialize the SRT library.
    srt_startup();
-
-   srt_setloglevel(srt_logging::LogLevel::debug);
 
    addrinfo hints;
    addrinfo* res;
@@ -51,7 +48,7 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   SRTSOCKET serv = srt_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+   SRTSOCKET serv = srt_create_socket();
 
    // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
    // although there's also lots of other options to be set, for which there's a convenience option,
@@ -66,9 +63,6 @@ int main(int argc, char* argv[])
    srt_setsockopt(serv, 0, SRTO_MSS, &mss, sizeof(int));
 #endif
 
-   //int64_t maxbw = 5000000;
-   //srt_setsockopt(serv, 0, SRTO_MAXBW, &maxbw, sizeof maxbw);
-
    if (SRT_ERROR == srt_bind(serv, res->ai_addr, res->ai_addrlen))
    {
       cout << "bind: " << srt_getlasterror_str() << endl;
@@ -78,7 +72,6 @@ int main(int argc, char* argv[])
    freeaddrinfo(res);
 
    cout << "server is ready at port: " << service << endl;
-
    srt_listen(serv, 10);
 
    sockaddr_storage clientaddr;
@@ -86,6 +79,7 @@ int main(int argc, char* argv[])
 
    SRTSOCKET fhandle;
 
+   // Accept multiple client connections.
    while (true)
    {
       if (SRT_INVALID_SOCK == (fhandle = srt_accept(serv, (sockaddr*)&clientaddr, &addrlen)))
@@ -99,18 +93,18 @@ int main(int argc, char* argv[])
       getnameinfo((sockaddr *)&clientaddr, addrlen, clienthost, sizeof(clienthost), clientservice, sizeof(clientservice), NI_NUMERICHOST|NI_NUMERICSERV);
       cout << "new connection: " << clienthost << ":" << clientservice << endl;
 
-      #ifndef _WIN32
-         pthread_t filethread;
-         pthread_create(&filethread, NULL, sendfile, new SRTSOCKET(fhandle));
-         pthread_detach(filethread);
-      #else
-         CreateThread(NULL, 0, sendfile, new SRTSOCKET(fhandle), 0, NULL);
-      #endif
+#ifndef _WIN32
+      pthread_t filethread;
+      pthread_create(&filethread, NULL, sendfile, new SRTSOCKET(fhandle));
+      pthread_detach(filethread);
+#else
+      CreateThread(NULL, 0, sendfile, new SRTSOCKET(fhandle), 0, NULL);
+#endif
    }
 
    srt_close(serv);
 
-   // use this function to release the UDT library
+   // Signal to the SRT library to clean up all allocated sockets and resources.
    srt_cleanup();
 
    return 0;
@@ -125,7 +119,7 @@ DWORD WINAPI sendfile(LPVOID usocket)
    SRTSOCKET fhandle = *(SRTSOCKET*)usocket;
    delete (SRTSOCKET*)usocket;
 
-   // aquiring file name information from client
+   // Acquiring file name information from client.
    char file[1024];
    int len;
 
@@ -142,15 +136,13 @@ DWORD WINAPI sendfile(LPVOID usocket)
    }
    file[len] = '\0';
 
-   // open the file (only to check the size)
+   // Open the file only to know its size.
    fstream ifs(file, ios::in | ios::binary);
-
    ifs.seekg(0, ios::end);
-   int64_t size = ifs.tellg();
-   //ifs.seekg(0, ios::beg);
+   const int64_t size = ifs.tellg();
    ifs.close();
 
-   // send file size information
+   // Send file size.
    if (SRT_ERROR == srt_send(fhandle, (char*)&size, sizeof(int64_t)))
    {
       cout << "send: " << srt_getlasterror_str() << endl;
@@ -160,7 +152,7 @@ DWORD WINAPI sendfile(LPVOID usocket)
    SRT_TRACEBSTATS trace;
    srt_bstats(fhandle, &trace, true);
 
-   // send the file
+   // Send the file itself.
    int64_t offset = 0;
    if (SRT_ERROR == srt_sendfile(fhandle, file, &offset, size, SRT_DEFAULT_SENDFILE_BLOCK))
    {
@@ -170,12 +162,10 @@ DWORD WINAPI sendfile(LPVOID usocket)
 
    srt_bstats(fhandle, &trace, true);
    cout << "speed = " << trace.mbpsSendRate << "Mbits/sec" << endl;
-   int losspercent = 100*trace.pktSndLossTotal/trace.pktSent;
-   cout << "loss = " << trace.pktSndLossTotal << "pkt (" << losspercent << "%)\n";
+   const int64_t losspercent = 100 * trace.pktSndLossTotal / trace.pktSent;
+   cout << "network loss = " << trace.pktSndLossTotal << "pkts (" << losspercent << "%)\n";
 
    srt_close(fhandle);
-
-   //ifs.close();
 
    #ifndef _WIN32
       return NULL;
