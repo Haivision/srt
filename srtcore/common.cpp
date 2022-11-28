@@ -457,7 +457,7 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-bool SrtParseConfig(string s, SrtConfig& w_config)
+bool SrtParseConfig(const string& s, SrtConfig& w_config)
 {
     using namespace std;
 
