@@ -9867,9 +9867,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         if (m_pRcvBuffer)
         {
             // XXX Fix this when the end of contiguous region detection is added.
-            int ackidx = CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), m_iRcvLastAck);
-            if (ackidx < 0)
-                ackidx = 0;
+            const int ackidx = std::max(0, CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), m_iRcvLastAck));
 
             bufinfo << " BUF.s=" << m_pRcvBuffer->capacity()
                 << " avail=" << (int(m_pRcvBuffer->capacity()) - ackidx)
