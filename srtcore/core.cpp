@@ -7836,9 +7836,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // should it happen in the future.
         if (CSeqNo::seqcmp(ack, m_pRcvBuffer->getStartSeqNo()) < 0)
         {
-            // Log and DO NOT UPDATE. Count on that next time
-            // the found out ack will be better.
-
             LOGC(xtlog.Error,
                     log << CONID() << "sendCtrlAck: IPE: invalid ACK from %" << m_iRcvLastAck << " to %" << ack << " ("
                     << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets) buffer=%" << m_pRcvBuffer->getStartSeqNo());
