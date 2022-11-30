@@ -7,8 +7,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
  */
-#ifndef INC__PLATFORM_SYS_H
-#define INC__PLATFORM_SYS_H
+#ifndef INC_SRT_PLATFORM_SYS_H
+#define INC_SRT_PLATFORM_SYS_H
 
 // INFORMATION
 //
@@ -30,7 +30,7 @@
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW__
+#ifndef __MINGW32__
    #include <intrin.h>
 #endif
 
@@ -41,17 +41,24 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
-      #pragma warning(disable:4251)
+      #pragma warning(disable: 4251 26812)
    #endif
 #else
 
-#if __APPLE__
+#if defined(__APPLE__) && __APPLE__
+// Warning: please keep this test as it is, do not make it
+// "#if __APPLE__" or "#ifdef __APPLE__". In applications with
+// a strict "no warning policy", "#if __APPLE__" triggers an "undef"
+// error. With GCC, an old & never fixed bug prevents muting this
+// warning (see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431).
+// Before this fix, the solution was to "#define __APPLE__ 0" before
+// including srt.h. So, don't use "#ifdef __APPLE__" either.
+
 // XXX Check if this condition doesn't require checking of
 // also other macros, like TARGET_OS_IOS etc.
 
 #include "TargetConditionals.h"
 #define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
-
 
 #ifdef SRT_IMPORT_TIME
       #include <mach/mach_time.h>
@@ -66,6 +73,15 @@
 
 #endif
 
+#ifdef BSD
+#ifdef SRT_IMPORT_EVENT
+   #include <sys/types.h>
+   #include <sys/event.h>
+   #include <sys/time.h>
+   #include <unistd.h>
+#endif
+#endif
+
 #ifdef LINUX
 
 #ifdef SRT_IMPORT_EVENT
@@ -75,7 +91,7 @@
 
 #endif
 
-#if defined(__ANDROID__) || defined(ANDROID)
+#ifdef __ANDROID__
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>
@@ -92,6 +108,15 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+#ifdef __cplusplus
+// Headers for errno, string and stdlib are
+// included indirectly correct C++ way.
+#else
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#endif
 
 #endif
 

@@ -8,8 +8,8 @@
  * 
  */
 
-#ifndef INC__COMMON_TRANSMITMEDIA_HPP
-#define INC__COMMON_TRANSMITMEDIA_HPP
+#ifndef INC_SRT_COMMON_TRANSMITMEDIA_HPP
+#define INC_SRT_COMMON_TRANSMITMEDIA_HPP
 
 #include <string>
 #include <map>
@@ -56,11 +56,11 @@ public:
     SRTSOCKET Socket() const { return m_sock; }
     SRTSOCKET Listener() const { return m_bindsock; }
 
-    virtual void Close();
+    void Close();
 
 protected:
 
-    void Error(UDT::ERRORINFO& udtError, string src);
+    void Error(string src);
     void Init(string host, int port, map<string,string> par, bool dir_output);
 
     virtual int ConfigurePost(SRTSOCKET sock);
@@ -93,7 +93,7 @@ public:
         // Do nothing - create just to prepare for use
     }
 
-    int Read(size_t chunk, bytevector& data, ostream& out_stats = cout) override;
+    int Read(size_t chunk, MediaPacket& pkt, ostream& out_stats = cout) override;
 
     /*
        In this form this isn't needed.
@@ -109,7 +109,6 @@ public:
 
     bool IsOpen() override { return IsUsable(); }
     bool End() override { return IsBroken(); }
-    void Close() override { return SrtCommon::Close(); }
 
     SRTSOCKET GetSRTSocket() const override
     { 
@@ -134,10 +133,9 @@ public:
     SrtTarget() {}
 
     int ConfigurePre(SRTSOCKET sock) override;
-    int Write(const char* data, size_t size, ostream &out_stats = cout) override;
+    int Write(const char* data, size_t size, int64_t src_time, ostream &out_stats = cout) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
-    void Close() override { return SrtCommon::Close(); }
 
     size_t Still() override
     {
@@ -181,18 +179,8 @@ public:
     string m_host;
     int m_port = 0;
 
-
     SrtModel(string host, int port, map<string,string> par);
-    void Establish(ref_t<std::string> name);
-
-    void Close()
-    {
-        if (m_sock != SRT_INVALID_SOCK)
-        {
-            srt_close(m_sock);
-            m_sock = SRT_INVALID_SOCK;
-        }
-    }
+    void Establish(std::string& name);
 };
 
 
