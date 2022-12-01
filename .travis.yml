@@ -24,7 +24,7 @@ matrix:
         - os: linux
           env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_BONDING=ON -DENABLE_HEAVY_LOGGING=ON -DCMAKE_CXX_FLAGS="-Werror"'
           - RUN_SONARCUBE=1
           - RUN_CODECOV=1
         - env:
