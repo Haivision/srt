@@ -38,7 +38,6 @@
    #include <win/wintime.h>
    #endif
 
-   #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
       #pragma warning(disable: 4251 26812)
