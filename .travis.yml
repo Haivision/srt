@@ -103,3 +103,5 @@ after_success:
     - if (( "$RUN_SONARCUBE" )); then
         sonar-scanner -D"sonar.cfamily.gcov.reportPath=.";
       fi
+after_failure:
+    - ls -l
