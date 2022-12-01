@@ -95,6 +95,7 @@ script:
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ./test-srt --gtest_filter="-$TESTS_IPv6";
       fi
+after_success:
     - if (( "$RUN_CODECOV" )); then
         source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);
