@@ -10,6 +10,7 @@ addons:
         - libssl-dev
         - build-essential
         - libmbedtls-dev
+        - gdb
     sonarcloud:
         organization: "haivision"
         token:
