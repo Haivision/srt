@@ -193,7 +193,6 @@ public: // Legacy Error Code
 };
 
 
-
 enum UDTSockType
 {
     UDT_UNDEFINED = 0, // initial trap representation
