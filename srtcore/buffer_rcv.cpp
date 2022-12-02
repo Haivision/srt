@@ -1,4 +1,48 @@
-#if ENABLE_NEW_RCVBUFFER
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ */
+
+/*****************************************************************************
+Copyright (c) 2001 - 2009, The Board of Trustees of the University of Illinois.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+* Redistributions of source code must retain the above
+  copyright notice, this list of conditions and the
+  following disclaimer.
+
+* Redistributions in binary form must reproduce the
+  above copyright notice, this list of conditions
+  and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the University of Illinois
+  nor the names of its contributors may be used to
+  endorse or promote products derived from this
+  software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*****************************************************************************/
+
 #include <cmath>
 #include <limits>
 #include "buffer_rcv.h"
@@ -71,7 +115,7 @@ namespace {
  *    m_iMaxPosInc:     none? (modified on add and ack
  */
 
-CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI)
+CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI)
     : m_entries(size)
     , m_szSize(size) // TODO: maybe just use m_entries.size()
     , m_pUnitQueue(unitqueue)
@@ -91,7 +135,7 @@ CRcvBufferNew::CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, 
     SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
 }
 
-CRcvBufferNew::~CRcvBufferNew()
+CRcvBuffer::~CRcvBuffer()
 {
     // Can be optimized by only iterating m_iMaxPosInc from m_iStartPos.
     for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
@@ -104,14 +148,14 @@ CRcvBufferNew::~CRcvBufferNew()
     }
 }
 
-int CRcvBufferNew::insert(CUnit* unit)
+int CRcvBuffer::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
     const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::insert: seqno " << seqno);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
     IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
@@ -144,7 +188,7 @@ int CRcvBufferNew::insert(CUnit* unit)
     }
     SRT_ASSERT(m_entries[pos].pUnit == NULL);
 
-    m_pUnitQueue->makeUnitGood(unit);
+    m_pUnitQueue->makeUnitTaken(unit);
     m_entries[pos].pUnit  = unit;
     m_entries[pos].status = EntryState_Avail;
     countBytes(1, (int)unit->m_Packet.getLength());
@@ -162,10 +206,10 @@ int CRcvBufferNew::insert(CUnit* unit)
     return 0;
 }
 
-int CRcvBufferNew::dropUpTo(int32_t seqno)
+int CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
 
     int len = CSeqNo::seqoff(m_iStartSeqNo, seqno);
     if (len <= 0)
@@ -201,7 +245,7 @@ int CRcvBufferNew::dropUpTo(int32_t seqno)
     return iDropCnt;
 }
 
-int CRcvBufferNew::dropAll()
+int CRcvBuffer::dropAll()
 {
     if (empty())
         return 0;
@@ -210,13 +254,13 @@ int CRcvBufferNew::dropAll()
     return dropUpTo(end_seqno);
 }
 
-int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
+int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi << " m_iStartSeqNo " << m_iStartSeqNo);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi << " m_iStartSeqNo " << m_iStartSeqNo);
     // TODO: count bytes as removed?
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
-    if (msgno != 0)
+    if (msgno > 0) // including SRT_MSGNO_NONE and SRT_MSGNO_CONTROL
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << msgno);
         int minDroppedOffset = -1;
@@ -261,7 +305,7 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     const int offset_b = CSeqNo::seqoff(m_iStartSeqNo, seqnohi);
     if (offset_b < 0)
     {
-        LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
+        LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
                                 << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
         return 0;
     }
@@ -284,7 +328,7 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
             minDroppedOffset = offPos(m_iStartPos, i);
     }
 
-    LOGC(rbuflog.Debug, log << "CRcvBufferNew.dropMessage(): [" << seqnolo << "; "
+    LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): [" << seqnolo << "; "
         << seqnohi << "].");
 
     // Check if units before m_iFirstNonreadPos are dropped.
@@ -305,19 +349,19 @@ int CRcvBufferNew::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     return iDropCnt;
 }
 
-int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
+int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
 {
     const bool canReadInOrder = hasReadableInorderPkts();
     if (!canReadInOrder && m_iFirstReadableOutOfOrder < 0)
     {
-        LOGC(rbuflog.Warn, log << "CRcvBufferNew.readMessage(): nothing to read. Ignored isRcvDataReady() result?");
+        LOGC(rbuflog.Warn, log << "CRcvBuffer.readMessage(): nothing to read. Ignored isRcvDataReady() result?");
         return 0;
     }
 
     const int readPos = canReadInOrder ? m_iStartPos : m_iFirstReadableOutOfOrder;
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBufferNew::readMessage. m_iStartSeqNo " << m_iStartSeqNo << " m_iStartPos " << m_iStartPos << " readPos " << readPos);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::readMessage. m_iStartSeqNo " << m_iStartSeqNo << " m_iStartPos " << m_iStartPos << " readPos " << readPos);
 
     size_t remain = len;
     char* dst = data;
@@ -329,7 +373,7 @@ int CRcvBufferNew::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
         SRT_ASSERT(m_entries[i].pUnit);
         if (!m_entries[i].pUnit)
         {
-            LOGC(rbuflog.Error, log << "CRcvBufferNew::readMessage(): null packet encountered.");
+            LOGC(rbuflog.Error, log << "CRcvBuffer::readMessage(): null packet encountered.");
             break;
         }
 
@@ -440,7 +484,7 @@ namespace {
     }
 }
 
-int CRcvBufferNew::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
+int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
 {
     int p = m_iStartPos;
     const int end_pos = m_iFirstNonreadPos;
@@ -516,22 +560,22 @@ int CRcvBufferNew::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
     return iBytesRead;
 }
 
-int CRcvBufferNew::readBuffer(char* dst, int len)
+int CRcvBuffer::readBuffer(char* dst, int len)
 {
     return readBufferTo(len, copyBytesToBuf, reinterpret_cast<void*>(dst));
 }
 
-int CRcvBufferNew::readBufferToFile(fstream& ofs, int len)
+int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 {
     return readBufferTo(len, writeBytesToFile, reinterpret_cast<void*>(&ofs));
 }
 
-bool CRcvBufferNew::hasAvailablePackets() const
+bool CRcvBuffer::hasAvailablePackets() const
 {
     return hasReadableInorderPkts() || (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1);
 }
 
-int CRcvBufferNew::getRcvDataSize() const
+int CRcvBuffer::getRcvDataSize() const
 {
     if (m_iFirstNonreadPos >= m_iStartPos)
         return m_iFirstNonreadPos - m_iStartPos;
@@ -539,7 +583,7 @@ int CRcvBufferNew::getRcvDataSize() const
     return int(m_szSize + m_iFirstNonreadPos - m_iStartPos);
 }
 
-int CRcvBufferNew::getTimespan_ms() const
+int CRcvBuffer::getTimespan_ms() const
 {
     if (!m_tsbpd.isEnabled())
         return 0;
@@ -548,6 +592,11 @@ int CRcvBufferNew::getTimespan_ms() const
         return 0;
 
     const int lastpos = incPos(m_iStartPos, m_iMaxPosInc - 1);
+    // Should not happen if TSBPD is enabled (reading out of order is not allowed).
+    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
+    if (m_entries[lastpos].pUnit == NULL)
+        return 0;
+
     int startpos = m_iStartPos;
 
     while (m_entries[startpos].pUnit == NULL)
@@ -561,11 +610,6 @@ int CRcvBufferNew::getTimespan_ms() const
     if (m_entries[startpos].pUnit == NULL)
         return 0;
 
-    // Should not happen
-    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
-    if (m_entries[lastpos].pUnit == NULL)
-        return 0;
-
     const steady_clock::time_point startstamp =
         getPktTsbPdTime(m_entries[startpos].pUnit->m_Packet.getMsgTimeStamp());
     const steady_clock::time_point endstamp = getPktTsbPdTime(m_entries[lastpos].pUnit->m_Packet.getMsgTimeStamp());
@@ -577,7 +621,7 @@ int CRcvBufferNew::getTimespan_ms() const
     return static_cast<int>(count_milliseconds(endstamp - startstamp) + 1);
 }
 
-int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
+int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan) const
 {
     ScopedLock lck(m_BytesCountLock);
     bytes = m_iBytesCount;
@@ -585,7 +629,7 @@ int CRcvBufferNew::getRcvDataSize(int& bytes, int& timespan) const
     return m_iPktsCount;
 }
 
-CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
+CRcvBuffer::PacketInfo CRcvBuffer::getFirstValidPacketInfo() const
 {
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     for (int i = m_iStartPos; i != end_pos; i = incPos(i))
@@ -603,20 +647,20 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstValidPacketInfo() const
     return info;
 }
 
-std::pair<int, int> CRcvBufferNew::getAvailablePacketsRange() const
+std::pair<int, int> CRcvBuffer::getAvailablePacketsRange() const
 {
     const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, (int) countReadable());
     return std::pair<int, int>(m_iStartSeqNo, seqno_last);
 }
 
-size_t CRcvBufferNew::countReadable() const
+size_t CRcvBuffer::countReadable() const
 {
     if (m_iFirstNonreadPos >= m_iStartPos)
         return m_iFirstNonreadPos - m_iStartPos;
     return m_szSize + m_iFirstNonreadPos - m_iStartPos;
 }
 
-bool CRcvBufferNew::isRcvDataReady(time_point time_now) const
+bool CRcvBuffer::isRcvDataReady(time_point time_now) const
 {
     const bool haveInorderPackets = hasReadableInorderPkts();
     if (!m_tsbpd.isEnabled())
@@ -636,7 +680,7 @@ bool CRcvBufferNew::isRcvDataReady(time_point time_now) const
     return info.tsbpd_time <= time_now;
 }
 
-CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstReadablePacketInfo(time_point time_now) const
+CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_now) const
 {
     const PacketInfo unreadableInfo    = {SRT_SEQNO_NONE, false, time_point()};
     const bool       hasInorderPackets = hasReadableInorderPkts();
@@ -671,7 +715,7 @@ CRcvBufferNew::PacketInfo CRcvBufferNew::getFirstReadablePacketInfo(time_point t
         return unreadableInfo;
 }
 
-void CRcvBufferNew::countBytes(int pkts, int bytes)
+void CRcvBuffer::countBytes(int pkts, int bytes)
 {
     ScopedLock lock(m_BytesCountLock);
     m_iBytesCount += bytes; // added or removed bytes from rcv buffer
@@ -680,7 +724,7 @@ void CRcvBufferNew::countBytes(int pkts, int bytes)
         m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
 }
 
-void CRcvBufferNew::releaseUnitInPos(int pos)
+void CRcvBuffer::releaseUnitInPos(int pos)
 {
     CUnit* tmp = m_entries[pos].pUnit;
     m_entries[pos] = Entry(); // pUnit = NULL; status = Empty
@@ -688,7 +732,7 @@ void CRcvBufferNew::releaseUnitInPos(int pos)
         m_pUnitQueue->makeUnitFree(tmp);
 }
 
-bool CRcvBufferNew::dropUnitInPos(int pos)
+bool CRcvBuffer::dropUnitInPos(int pos)
 {
     if (!m_entries[pos].pUnit)
         return false;
@@ -706,7 +750,7 @@ bool CRcvBufferNew::dropUnitInPos(int pos)
     return true;
 }
 
-void CRcvBufferNew::releaseNextFillerEntries()
+void CRcvBuffer::releaseNextFillerEntries()
 {
     int pos = m_iStartPos;
     while (m_entries[pos].status == EntryState_Read || m_entries[pos].status == EntryState_Drop)
@@ -722,7 +766,7 @@ void CRcvBufferNew::releaseNextFillerEntries()
 }
 
 // TODO: Is this function complete? There are some comments left inside.
-void CRcvBufferNew::updateNonreadPos()
+void CRcvBuffer::updateNonreadPos()
 {
     if (m_iMaxPosInc == 0)
         return;
@@ -757,7 +801,7 @@ void CRcvBufferNew::updateNonreadPos()
     }
 }
 
-int CRcvBufferNew::findLastMessagePkt()
+int CRcvBuffer::findLastMessagePkt()
 {
     for (int i = m_iStartPos; i != m_iFirstNonreadPos; i = incPos(i))
     {
@@ -772,7 +816,7 @@ int CRcvBufferNew::findLastMessagePkt()
     return -1;
 }
 
-void CRcvBufferNew::onInsertNotInOrderPacket(int insertPos)
+void CRcvBuffer::onInsertNotInOrderPacket(int insertPos)
 {
     if (m_numOutOfOrderPackets == 0)
         return;
@@ -816,7 +860,7 @@ void CRcvBufferNew::onInsertNotInOrderPacket(int insertPos)
     return;
 }
 
-bool CRcvBufferNew::checkFirstReadableOutOfOrder()
+bool CRcvBuffer::checkFirstReadableOutOfOrder()
 {
     if (m_numOutOfOrderPackets <= 0 || m_iFirstReadableOutOfOrder < 0 || m_iMaxPosInc == 0)
         return false;
@@ -844,7 +888,7 @@ bool CRcvBufferNew::checkFirstReadableOutOfOrder()
     return false;
 }
 
-void CRcvBufferNew::updateFirstReadableOutOfOrder()
+void CRcvBuffer::updateFirstReadableOutOfOrder()
 {
     if (hasReadableInorderPkts() || m_numOutOfOrderPackets <= 0 || m_iFirstReadableOutOfOrder >= 0)
         return;
@@ -907,7 +951,7 @@ void CRcvBufferNew::updateFirstReadableOutOfOrder()
     return;
 }
 
-int CRcvBufferNew::scanNotInOrderMessageRight(const int startPos, int msgNo) const
+int CRcvBuffer::scanNotInOrderMessageRight(const int startPos, int msgNo) const
 {
     // Search further packets to the right.
     // First check if there are packets to the right.
@@ -938,7 +982,7 @@ int CRcvBufferNew::scanNotInOrderMessageRight(const int startPos, int msgNo) con
     return -1;
 }
 
-int CRcvBufferNew::scanNotInOrderMessageLeft(const int startPos, int msgNo) const
+int CRcvBuffer::scanNotInOrderMessageLeft(const int startPos, int msgNo) const
 {
     // Search preceeding packets to the left.
     // First check if there are packets to the left.
@@ -969,17 +1013,17 @@ int CRcvBufferNew::scanNotInOrderMessageLeft(const int startPos, int msgNo) cons
     return -1;
 }
 
-bool CRcvBufferNew::addRcvTsbPdDriftSample(uint32_t usTimestamp, int usRTTSample)
+bool CRcvBuffer::addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample)
 {
-    return m_tsbpd.addDriftSample(usTimestamp, usRTTSample);
+    return m_tsbpd.addDriftSample(usTimestamp, tsPktArrival, usRTTSample);
 }
 
-void CRcvBufferNew::setTsbPdMode(const steady_clock::time_point& timebase, bool wrap, duration delay)
+void CRcvBuffer::setTsbPdMode(const steady_clock::time_point& timebase, bool wrap, duration delay)
 {
     m_tsbpd.setTsbPdMode(timebase, wrap, delay);
 }
 
-void CRcvBufferNew::applyGroupTime(const steady_clock::time_point& timebase,
+void CRcvBuffer::applyGroupTime(const steady_clock::time_point& timebase,
     bool                            wrp,
     uint32_t                        delay,
     const steady_clock::duration& udrift)
@@ -987,29 +1031,32 @@ void CRcvBufferNew::applyGroupTime(const steady_clock::time_point& timebase,
     m_tsbpd.applyGroupTime(timebase, wrp, delay, udrift);
 }
 
-void CRcvBufferNew::applyGroupDrift(const steady_clock::time_point& timebase,
+void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase,
     bool                            wrp,
     const steady_clock::duration& udrift)
 {
     m_tsbpd.applyGroupDrift(timebase, wrp, udrift);
 }
 
-CRcvBufferNew::time_point CRcvBufferNew::getTsbPdTimeBase(uint32_t usPktTimestamp) const
+CRcvBuffer::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t usPktTimestamp) const
 {
     return m_tsbpd.getTsbPdTimeBase(usPktTimestamp);
 }
 
-void CRcvBufferNew::updateTsbPdTimeBase(uint32_t usPktTimestamp)
+void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
+string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
 {
     stringstream ss;
 
-    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize;
-    ss << " pkts. ";
+    ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
+        << " m_iStartPos=" << m_iStartPos << " m_iMaxPosInc=" << m_iMaxPosInc << ". ";
+
+    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
+
     if (m_tsbpd.isEnabled() && m_iMaxPosInc > 0)
     {
         const PacketInfo nextValidPkt = getFirstValidPacketInfo();
@@ -1030,7 +1077,6 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
         {
             ss << "n/a";
         }
-
         ss << "). ";
     }
 
@@ -1038,13 +1084,13 @@ string CRcvBufferNew::strFullnessState(int iFirstUnackSeqNo, const time_point& t
     return ss.str();
 }
 
-CRcvBufferNew::time_point CRcvBufferNew::getPktTsbPdTime(uint32_t usPktTimestamp) const
+CRcvBuffer::time_point CRcvBuffer::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
     return m_tsbpd.getPktTsbPdTime(usPktTimestamp);
 }
 
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
-int CRcvBufferNew::getRcvAvgDataSize(int& bytes, int& timespan)
+int CRcvBuffer::getRcvAvgDataSize(int& bytes, int& timespan)
 {
     // Average number of packets and timespan could be small,
     // so rounding is beneficial, while for the number of
@@ -1056,7 +1102,7 @@ int CRcvBufferNew::getRcvAvgDataSize(int& bytes, int& timespan)
 }
 
 /* Update moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */
-void CRcvBufferNew::updRcvAvgDataSize(const steady_clock::time_point& now)
+void CRcvBuffer::updRcvAvgDataSize(const steady_clock::time_point& now)
 {
     if (!m_mavg.isTimeToUpdate(now))
         return;
@@ -1068,5 +1114,3 @@ void CRcvBufferNew::updRcvAvgDataSize(const steady_clock::time_point& now)
 }
 
 } // namespace srt
-
-#endif // ENABLE_NEW_RCVBUFFER

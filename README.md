@@ -1,6 +1,6 @@
 # Secure Reliable Transport (SRT) Protocol
 
-[About SRT](#what-is-srt) | [Features](#features) | [Getting Started](#getting-started-with-srt) | [Builds](#build-instructions) | [Sample Apps and Tools](#sample-applications-and-tools) | [Contribute](#contributing) | [License](#license) | [Releases](#release-history)
+[About SRT](#what-is-srt) | [Features](#features) | [Getting Started](#getting-started-with-srt) | [Build Instructions](#build-instructions) | [Sample Apps and Tools](#sample-applications-and-tools) | [Contribute](#contributing) | [License](#license) | [Releases](#release-history)
 
 <p align="left">
   <a href="http://srtalliance.org/">
@@ -29,7 +29,7 @@ SRT is applied to contribution and distribution endpoints as part of a video str
 | **R**eliable  | Recovers from severe packet loss                  |
 | **T**ransport | Dynamically adapts to changing network conditions |
 
-In live streaming configurations, the SRT protocol maintains a constant end-to-end latency. This allows the live stream’s signal characteristics to be recreated on the receiver side, reducing the need for buffering. As packets are streamed from source to destination, SRT detects and adapts to real-time network conditions between the two endpoints. It helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks.
+In live streaming configurations, the SRT protocol maintains a constant end-to-end latency. This allows the live stream's signal characteristics to be recreated on the receiver side, reducing the need for buffering. As packets are streamed from source to destination, SRT detects and adapts to real-time network conditions between the two endpoints. It helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks.
 
 [SRT implements AES encryption](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-6) to protect the payload of the media streams, and offers various error recovery mechanisms for minimizing the packet loss that is typical of Internet connections, of which Automatic Repeat reQuest (ARQ) is the primary method. With ARQ, when a receiver detects that a packet is missing it sends an alert to the sender requesting retransmission of this missing packet. [Forward Error Correction (FEC)](./docs/features/packet-filtering-and-fec.md) and [Connection Bonding](./docs/features/bonding-quick-start.md), which adds seamless stream protection and hitless failover, are also supported by the protocol.
 
@@ -157,7 +157,7 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 ## Build Instructions
 
-[Linux (Ubuntu/CentOS)](./docs/build/build-linux.md) | [Windows](./docs/build/build-win.md) | [macOS](./docs/build/build-macOS.md) | [iOS](./docs/build/build-iOS.md) | [Android](./docs/build/build-android.md)
+[Linux (Ubuntu/CentOS)](./docs/build/build-linux.md) | [Windows](./docs/build/build-win.md) | [macOS](./docs/build/build-macOS.md) | [iOS](./docs/build/build-iOS.md) | [Android](./docs/build/build-android.md) | [Package Managers](./docs/build/package-managers.md)
 
 ### Requirements
 
@@ -224,5 +224,5 @@ By contributing code to the SRT project, you agree to license your contribution 
 [github releases]: https://github.com/Haivision/srt/releases
 [release-badge]: https://img.shields.io/github/release/Haivision/srt.svg
 
-[debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1/version.svg
-[debian-package]: https://packages.debian.org/testing/libsrt1
+[debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1.5-gnutls/version.svg
+[debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls

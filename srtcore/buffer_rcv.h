@@ -11,12 +11,9 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#if ENABLE_NEW_RCVBUFFER
-
-#include "buffer.h" // AvgBufSize
+#include "buffer_tools.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
-#include "sync.h"
 #include "tsbpd_time.h"
 
 namespace srt
@@ -45,15 +42,15 @@ namespace srt
  *    first_nonread_pos_:
  */
 
-class CRcvBufferNew
+class CRcvBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBufferNew(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
-    ~CRcvBufferNew();
+    ~CRcvBuffer();
 
 public:
     /// Insert a unit into the buffer.
@@ -78,7 +75,7 @@ public:
     int dropAll();
 
     /// @brief Drop the whole message from the buffer.
-    /// If message number is 0, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
+    /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
     /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
@@ -130,9 +127,8 @@ public:
         const int iRBufSeqNo  = getStartSeqNo();
         if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
         {
-            // Full capacity is available, still don't want to encourage extra packets to come.
-            // Note: CSeqNo::seqlen(n, n) returns 1.
-            return capacity() - CSeqNo::seqlen(iFirstUnackSeqNo, iRBufSeqNo) + 1;
+            // Full capacity is available.
+            return capacity();
         }
 
         // Note: CSeqNo::seqlen(n, n) returns 1.
@@ -268,7 +264,7 @@ private:
     int getTimespan_ms() const;
 
 private:
-    // TODO: Call makeUnitGood upon assignment, and makeUnitFree upon clearing.
+    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
     // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
     // class CUnitPtr
     // {
@@ -337,7 +333,7 @@ public: // TSBPD public functions
 
     void applyGroupDrift(const time_point& timebase, bool wrp, const duration& udrift);
 
-    bool addRcvTsbPdDriftSample(uint32_t usTimestamp, int usRTTSample);
+    bool addRcvTsbPdDriftSample(uint32_t usTimestamp, const time_point& tsPktArrival, int usRTTSample);
 
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const;
 
@@ -363,5 +359,4 @@ private: // Statistics
 
 } // namespace srt
 
-#endif // ENABLE_NEW_RCVBUFFER
 #endif // INC_SRT_BUFFER_RCV_H

@@ -134,8 +134,8 @@ public:
     /// Insert a series of loss seq. no. between "seqno1" and "seqno2" into the receiver's loss list.
     /// @param [in] seqno1 sequence number starts.
     /// @param [in] seqno2 seqeunce number ends.
-
-    void insert(int32_t seqno1, int32_t seqno2);
+    /// @return length of the loss record inserted (seqlen(seqno1, seqno2)), -1 on error.
+    int insert(int32_t seqno1, int32_t seqno2);
 
     /// Remove a loss seq. no. from the receiver's loss list.
     /// @param [in] seqno sequence number.
@@ -149,6 +149,12 @@ public:
     /// @return if the packet is removed (true) or no such lost packet is found (false).
 
     bool remove(int32_t seqno1, int32_t seqno2);
+
+
+    /// Remove all numbers that precede the given sequence number.
+    /// @param [in] seqno sequence number.
+    /// @return the first removed sequence number
+    int32_t removeUpTo(int32_t seqno);
 
     /// Find if there is any lost packets whose sequence number falling seqno1 and seqno2.
     /// @param [in] seqno1 start sequence number.

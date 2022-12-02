@@ -14,20 +14,20 @@ written by
    Haivision Systems Inc.
 
    2011-06-23 (jdube)
-        HaiCrypt initial implementation.
+		HaiCrypt initial implementation.
    2014-03-11 (jdube)
-        Adaptation for SRT.
+		Adaptation for SRT.
 *****************************************************************************/
 
 #include <sys/types.h>
 #include <stdlib.h>     /* NULL */
 #include <string.h>     /* memcpy */
 #ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #include <stdint.h>
+	#include <winsock2.h>
+	#include <ws2tcpip.h>
+	#include <stdint.h>
 #else
-    #include <arpa/inet.h>  /* htonl */
+	#include <arpa/inet.h>  /* htonl */
 #endif
 #include "hcrypt.h"
 
@@ -107,6 +107,11 @@ int HaiCrypt_Tx_Data(HaiCrypt_Handle hhc,
 	}
 	/* Get/Set packet index */
 	ctx->msg_info->indexMsg(in_pfx, ctx->MSpfx_cache); 
+
+	if (hcryptMsg_GetKeyIndex(ctx->msg_info, in_pfx) != hcryptCtx_GetKeyIndex(ctx))
+	{
+		HCRYPT_LOG(LOG_ERR, "Tx_Data: Key mismatch!");
+	}
 
 	/* Encrypt */
 	{

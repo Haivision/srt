@@ -139,6 +139,9 @@ const char* srt_rejectreason_name [] = {
     "MESSAGEAPI",
     "CONGESTION",
     "FILTER",
+    "GROUP",
+    "TIMEOUT",
+    "CRYPTO"
 };
 }
 
@@ -149,7 +152,7 @@ std::string srt::RequestTypeStr(UDTRequestType rq)
         std::ostringstream rt;
         rt << "ERROR:";
         int id = RejectReasonForURQ(rq);
-        if (id < SRT_REJ_E_SIZE)
+        if (id < (int) Size(srt_rejectreason_name))
             rt << srt_rejectreason_name[id];
         else if (id < SRT_REJC_USERDEFINED)
         {

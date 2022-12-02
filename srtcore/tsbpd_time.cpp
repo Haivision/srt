@@ -103,12 +103,10 @@ drift_logger g_drift_logger;
 
 #endif // SRT_DEBUG_TRACE_DRIFT
 
-bool CTsbpdTime::addDriftSample(uint32_t usPktTimestamp, int usRTTSample)
+bool CTsbpdTime::addDriftSample(uint32_t usPktTimestamp, const time_point& tsPktArrival, int usRTTSample)
 {
     if (!m_bTsbPdMode)
         return false;
-
-    const time_point tsNow = steady_clock::now();
 
     ScopedLock lck(m_mtxRW);
 
@@ -123,9 +121,9 @@ bool CTsbpdTime::addDriftSample(uint32_t usPktTimestamp, int usRTTSample)
     // A change in network delay has to be taken into account. The only way to get some estimation of it
     // is to estimate RTT change and assume that the change of the one way network delay is
     // approximated by the half of the RTT change.
-    const duration               tdRTTDelta    = microseconds_from((usRTTSample - m_iFirstRTT) / 2);
+    const duration               tdRTTDelta    = usRTTSample >= 0 ? microseconds_from((usRTTSample - m_iFirstRTT) / 2) : duration(0);
     const time_point             tsPktBaseTime = getPktTsbPdBaseTime(usPktTimestamp);
-    const steady_clock::duration tdDrift       = tsNow - tsPktBaseTime - tdRTTDelta;
+    const steady_clock::duration tdDrift       = tsPktArrival - tsPktBaseTime - tdRTTDelta;
 
     const bool updated = m_DriftTracer.update(count_microseconds(tdDrift));
 

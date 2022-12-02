@@ -46,17 +46,14 @@ written by
          // VC 6.0 does not support unsigned __int64: may cause potential problems.
          typedef __int64 uint64_t;
       #endif
-
-      #ifdef SRT_DYNAMIC
-         #ifdef SRT_EXPORTS
-            #define SRT_API __declspec(dllexport)
-         #else
-            #define SRT_API __declspec(dllimport)
-         #endif
+   #endif
+   #ifdef SRT_DYNAMIC
+      #ifdef SRT_EXPORTS
+         #define SRT_API __declspec(dllexport)
       #else
-         #define SRT_API
+         #define SRT_API __declspec(dllimport)
       #endif
-   #else // __MINGW32__
+   #else // !SRT_DYNAMIC
       #define SRT_API
    #endif
 #else
@@ -241,7 +238,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
-   SRTO_RETRANSMITALGO = 61,  // An option to select packet retransmission algorithm
+   SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
+   SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -477,8 +475,8 @@ enum CodeMinor
 
 
 // Stupid, but effective. This will be #undefined, so don't worry.
-#define MJ(major) (1000 * MJ_##major)
-#define MN(major, minor) (1000 * MJ_##major + MN_##minor)
+#define SRT_EMJ(major) (1000 * MJ_##major)
+#define SRT_EMN(major, minor) (1000 * MJ_##major + MN_##minor)
 
 // Some better way to define it, and better for C language.
 typedef enum SRT_ERRNO
@@ -486,57 +484,56 @@ typedef enum SRT_ERRNO
     SRT_EUNKNOWN        = -1,
     SRT_SUCCESS         = MJ_SUCCESS,
 
-    SRT_ECONNSETUP      = MJ(SETUP),
-    SRT_ENOSERVER       = MN(SETUP, TIMEOUT),
-    SRT_ECONNREJ        = MN(SETUP, REJECTED),
-    SRT_ESOCKFAIL       = MN(SETUP, NORES),
-    SRT_ESECFAIL        = MN(SETUP, SECURITY),
-    SRT_ESCLOSED        = MN(SETUP, CLOSED),
+    SRT_ECONNSETUP      = SRT_EMJ(SETUP),
+    SRT_ENOSERVER       = SRT_EMN(SETUP, TIMEOUT),
+    SRT_ECONNREJ        = SRT_EMN(SETUP, REJECTED),
+    SRT_ESOCKFAIL       = SRT_EMN(SETUP, NORES),
+    SRT_ESECFAIL        = SRT_EMN(SETUP, SECURITY),
+    SRT_ESCLOSED        = SRT_EMN(SETUP, CLOSED),
 
-    SRT_ECONNFAIL       = MJ(CONNECTION),
-    SRT_ECONNLOST       = MN(CONNECTION, CONNLOST),
-    SRT_ENOCONN         = MN(CONNECTION, NOCONN),
+    SRT_ECONNFAIL       = SRT_EMJ(CONNECTION),
+    SRT_ECONNLOST       = SRT_EMN(CONNECTION, CONNLOST),
+    SRT_ENOCONN         = SRT_EMN(CONNECTION, NOCONN),
 
-    SRT_ERESOURCE       = MJ(SYSTEMRES),
-    SRT_ETHREAD         = MN(SYSTEMRES, THREAD),
-    SRT_ENOBUF          = MN(SYSTEMRES, MEMORY),
-    SRT_ESYSOBJ         = MN(SYSTEMRES, OBJECT),
+    SRT_ERESOURCE       = SRT_EMJ(SYSTEMRES),
+    SRT_ETHREAD         = SRT_EMN(SYSTEMRES, THREAD),
+    SRT_ENOBUF          = SRT_EMN(SYSTEMRES, MEMORY),
+    SRT_ESYSOBJ         = SRT_EMN(SYSTEMRES, OBJECT),
 
-    SRT_EFILE           = MJ(FILESYSTEM),
-    SRT_EINVRDOFF       = MN(FILESYSTEM, SEEKGFAIL),
-    SRT_ERDPERM         = MN(FILESYSTEM, READFAIL),
-    SRT_EINVWROFF       = MN(FILESYSTEM, SEEKPFAIL),
-    SRT_EWRPERM         = MN(FILESYSTEM, WRITEFAIL),
+    SRT_EFILE           = SRT_EMJ(FILESYSTEM),
+    SRT_EINVRDOFF       = SRT_EMN(FILESYSTEM, SEEKGFAIL),
+    SRT_ERDPERM         = SRT_EMN(FILESYSTEM, READFAIL),
+    SRT_EINVWROFF       = SRT_EMN(FILESYSTEM, SEEKPFAIL),
+    SRT_EWRPERM         = SRT_EMN(FILESYSTEM, WRITEFAIL),
 
-    SRT_EINVOP          = MJ(NOTSUP),
-    SRT_EBOUNDSOCK      = MN(NOTSUP, ISBOUND),
-    SRT_ECONNSOCK       = MN(NOTSUP, ISCONNECTED),
-    SRT_EINVPARAM       = MN(NOTSUP, INVAL),
-    SRT_EINVSOCK        = MN(NOTSUP, SIDINVAL),
-    SRT_EUNBOUNDSOCK    = MN(NOTSUP, ISUNBOUND),
-    SRT_ENOLISTEN       = MN(NOTSUP, NOLISTEN),
-    SRT_ERDVNOSERV      = MN(NOTSUP, ISRENDEZVOUS),
-    SRT_ERDVUNBOUND     = MN(NOTSUP, ISRENDUNBOUND),
-    SRT_EINVALMSGAPI    = MN(NOTSUP, INVALMSGAPI),
-    SRT_EINVALBUFFERAPI = MN(NOTSUP, INVALBUFFERAPI),
-    SRT_EDUPLISTEN      = MN(NOTSUP, BUSY),
-    SRT_ELARGEMSG       = MN(NOTSUP, XSIZE),
-    SRT_EINVPOLLID      = MN(NOTSUP, EIDINVAL),
-    SRT_EPOLLEMPTY      = MN(NOTSUP, EEMPTY),
-    SRT_EBINDCONFLICT   = MN(NOTSUP, BUSYPORT),
+    SRT_EINVOP          = SRT_EMJ(NOTSUP),
+    SRT_EBOUNDSOCK      = SRT_EMN(NOTSUP, ISBOUND),
+    SRT_ECONNSOCK       = SRT_EMN(NOTSUP, ISCONNECTED),
+    SRT_EINVPARAM       = SRT_EMN(NOTSUP, INVAL),
+    SRT_EINVSOCK        = SRT_EMN(NOTSUP, SIDINVAL),
+    SRT_EUNBOUNDSOCK    = SRT_EMN(NOTSUP, ISUNBOUND),
+    SRT_ENOLISTEN       = SRT_EMN(NOTSUP, NOLISTEN),
+    SRT_ERDVNOSERV      = SRT_EMN(NOTSUP, ISRENDEZVOUS),
+    SRT_ERDVUNBOUND     = SRT_EMN(NOTSUP, ISRENDUNBOUND),
+    SRT_EINVALMSGAPI    = SRT_EMN(NOTSUP, INVALMSGAPI),
+    SRT_EINVALBUFFERAPI = SRT_EMN(NOTSUP, INVALBUFFERAPI),
+    SRT_EDUPLISTEN      = SRT_EMN(NOTSUP, BUSY),
+    SRT_ELARGEMSG       = SRT_EMN(NOTSUP, XSIZE),
+    SRT_EINVPOLLID      = SRT_EMN(NOTSUP, EIDINVAL),
+    SRT_EPOLLEMPTY      = SRT_EMN(NOTSUP, EEMPTY),
+    SRT_EBINDCONFLICT   = SRT_EMN(NOTSUP, BUSYPORT),
 
-    SRT_EASYNCFAIL      = MJ(AGAIN),
-    SRT_EASYNCSND       = MN(AGAIN, WRAVAIL),
-    SRT_EASYNCRCV       = MN(AGAIN, RDAVAIL),
-    SRT_ETIMEOUT        = MN(AGAIN, XMTIMEOUT),
-    SRT_ECONGEST        = MN(AGAIN, CONGESTION),
+    SRT_EASYNCFAIL      = SRT_EMJ(AGAIN),
+    SRT_EASYNCSND       = SRT_EMN(AGAIN, WRAVAIL),
+    SRT_EASYNCRCV       = SRT_EMN(AGAIN, RDAVAIL),
+    SRT_ETIMEOUT        = SRT_EMN(AGAIN, XMTIMEOUT),
+    SRT_ECONGEST        = SRT_EMN(AGAIN, CONGESTION),
 
-    SRT_EPEERERR        = MJ(PEERERROR)
+    SRT_EPEERERR        = SRT_EMJ(PEERERROR)
 } SRT_ERRNO;
 
-
-#undef MJ
-#undef MN
+#undef SRT_EMJ
+#undef SRT_EMN
 
 enum SRT_REJECT_REASON
 {
@@ -557,6 +554,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
     SRT_REJ_TIMEOUT,     // connection timeout
+    SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
 
     SRT_REJ_E_SIZE,
 };
@@ -638,11 +636,12 @@ enum SRT_REJECT_REASON
 
 enum SRT_KM_STATE
 {
-    SRT_KM_S_UNSECURED = 0,      //No encryption
-    SRT_KM_S_SECURING  = 1,      //Stream encrypted, exchanging Keying Material
-    SRT_KM_S_SECURED   = 2,      //Stream encrypted, keying Material exchanged, decrypting ok.
-    SRT_KM_S_NOSECRET  = 3,      //Stream encrypted and no secret to decrypt Keying Material
-    SRT_KM_S_BADSECRET = 4       //Stream encrypted and wrong secret, cannot decrypt Keying Material
+    SRT_KM_S_UNSECURED     = 0, // No encryption
+    SRT_KM_S_SECURING      = 1, // Stream encrypted, exchanging Keying Material
+    SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
+    SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
+    SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
+    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong ccryptographic mode is used, cannot decrypt. Since v1.6.0.
 };
 
 enum SRT_EPOLL_OPT

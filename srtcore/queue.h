@@ -71,16 +71,7 @@ class CUDT;
 struct CUnit
 {
     CPacket m_Packet; // packet
-    enum Flag
-    {
-        FREE    = 0,
-        GOOD    = 1,
-        PASSACK = 2,
-        DROPPED = 3
-    };
-
-    // TODO: The new RcvBuffer allows to use atomic_bool here.
-    sync::atomic<Flag> m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
+    sync::atomic<bool> m_bTaken; // true if the unit is is use (can be stored in the RCV buffer).
 };
 
 class CUnitQueue
@@ -106,7 +97,7 @@ public:
 
     void makeUnitFree(CUnit* unit);
 
-    void makeUnitGood(CUnit* unit);
+    void makeUnitTaken(CUnit* unit);
 
 private:
     struct CQEntry
@@ -460,9 +451,10 @@ private:
 
     sync::atomic<bool> m_bClosing;            // closing the worker
 
+public:
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
-    uint64_t m_ullDbgPeriod;
-    uint64_t m_ullDbgTime;
+    sync::steady_clock::duration m_DbgPeriod;
+    mutable sync::steady_clock::time_point m_DbgTime;
     struct
     {
         unsigned long lIteration;   //
@@ -471,14 +463,15 @@ private:
         unsigned long lSendTo;
         unsigned long lNotReadyTs;
         unsigned long lCondWait; // block on m_WindowCond
-    } m_WorkerStats;
+    } mutable m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+
+private:
 
 #if ENABLE_LOGGING
     static int m_counter;
 #endif
 
-private:
     CSndQueue(const CSndQueue&);
     CSndQueue& operator=(const CSndQueue&);
 };

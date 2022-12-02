@@ -300,7 +300,7 @@ int srt::CUDTUnited::cleanup()
     // after which the m_bClosing flag is cheched, which
     // is set here above. Worst case secenario, this
     // pthread_join() call will block for 1 second.
-    CSync::signal_relaxed(m_GCStopCond);
+    CSync::notify_one_relaxed(m_GCStopCond);
     m_GCThread.join();
 
     m_bGCStatus = false;
@@ -563,7 +563,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
     }
     catch (const CUDTException&)
     {
-        LOGF(cnlog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
+        LOGC(cnlog.Fatal, log << "newConnection: IPE: all sockets occupied? Last gen=" << m_SocketIDGenerator);
         // generateSocketID throws exception, which can be naturally handled
         // when the call is derived from the API call, but here it's called
         // internally in response to receiving a handshake. It must be handled
@@ -600,7 +600,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         // this call causes sending the SRT Handshake through this socket.
         // Without this mapping the socket cannot be found and therefore
         // the SRT Handshake message would fail.
-        HLOGF(cnlog.Debug, "newConnection: incoming %s, mapping socket %d", peer.str().c_str(), ns->m_SocketID);
+        HLOGC(cnlog.Debug, log <<
+                "newConnection: incoming " << peer.str() << ", mapping socket " << ns->m_SocketID);
         {
             ScopedLock cg(m_GlobControlLock);
             m_Sockets[ns->m_SocketID] = ns;
@@ -647,7 +648,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         ScopedLock glock(m_GlobControlLock);
         try
         {
-            HLOGF(cnlog.Debug, "newConnection: mapping peer %d to that socket (%d)\n", ns->m_PeerID, ns->m_SocketID);
+            HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
+                    << " to that socket (" << ns->m_SocketID << ")");
             m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
         }
         catch (...)
@@ -778,7 +780,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         }
 
         // wake up a waiting accept() call
-        CSync::lock_signal(ls->m_AcceptCond, ls->m_AcceptLock);
+        CSync::lock_notify_one(ls->m_AcceptCond, ls->m_AcceptLock);
     }
     else
     {
@@ -1179,7 +1181,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int namelen)
 {
     // Here both srcname and tarname must be specified
-    if (!srcname || !tarname || size_t(namelen) < sizeof(sockaddr_in))
+    if (!srcname || !tarname || namelen < int(sizeof(sockaddr_in)))
     {
         LOGC(aclog.Error,
              log << "connect(with source): invalid call: srcname=" << srcname << " tarname=" << tarname
@@ -1224,6 +1226,12 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
 
 int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn)
 {
+    if (!name || namelen < int(sizeof(sockaddr_in)))
+    {
+        LOGC(aclog.Error, log << "connect(): invalid call: name=" << name << " namelen=" << namelen);
+        throw CUDTException(MJ_NOTSUP, MN_INVAL);
+    }
+
     sockaddr_any target_addr(name, namelen);
     if (target_addr.len == 0)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -1458,7 +1466,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 ns->m_GroupMemberData    = f;
                 ns->m_GroupOf            = &g;
                 f->weight                = targets[tii].weight;
-                LOGC(aclog.Note, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
+                HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " added to group $" << g.m_GroupID);
             }
             else
             {
@@ -1480,14 +1488,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         */
 
         int isn = g.currentSchedSequence();
-
-        // Don't synchronize ISN in case of synch on msgno. Every link
-        // may send their own payloads independently.
-        if (g.synconmsgno())
-        {
-            HLOGC(aclog.Debug, log << "groupConnect: NOT synchronizing sequence numbers: will sync on msgno");
-            isn = -1;
-        }
 
         // Set it the groupconnect option, as all in-group sockets should have.
         ns->core().m_config.iGroupConnect = 1;
@@ -1867,6 +1867,8 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
      */
     try
     {
+        // record peer address
+        s->m_PeerAddr = target_addr;
         s->core().startConnect(target_addr, forced_isn);
     }
     catch (const CUDTException&) // Interceptor, just to change the state.
@@ -1946,9 +1948,9 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 
 int srt::CUDTUnited::close(CUDTSocket* s)
 {
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSE. Acquiring control lock");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
-    HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing from listening, closing CUDT)");
+    HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
@@ -1971,11 +1973,11 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // be unable to bind to this port that the about-to-delete listener
         // is currently occupying (due to blocked slot in the RcvQueue).
 
-        HLOGC(smlog.Debug, log << s->core().CONID() << " CLOSING (removing listener immediately)");
+        HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
 
         // broadcast all "accept" waiting
-        CSync::lock_broadcast(s->m_AcceptCond, s->m_AcceptLock);
+        CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
     }
     else
     {
@@ -1989,7 +1991,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
               log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
-                  << ". Acquiring GLOBAL control lock");
+                  << "Acquiring GLOBAL control lock");
         ScopedLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid
@@ -2597,11 +2599,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
         // this function is called (isRcvDataReady also checks if the
         // available data is "ready to play").
-#if ENABLE_NEW_RCVBUFFER
                  && s->core().m_pRcvBuffer->hasAvailablePackets())
-#else
-                 && s->core().m_pRcvBuffer->isRcvDataAvailable())
-#endif
         {
             const int bc = s->core().m_iBrokenCounter.load();
             if (bc > 0)
@@ -2615,7 +2613,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 #if ENABLE_BONDING
         if (s->m_GroupOf)
         {
-            LOGC(smlog.Note,
+            HLOGC(smlog.Debug,
                  log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }
@@ -2644,7 +2642,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
     {
-        // HLOGF(smlog.Debug, "checking CLOSED socket: %d\n", j->first);
+        // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
         if (!is_zero(j->second->core().m_tsLingerExpiration))
         {
             // asynchronous close:
@@ -2671,7 +2669,7 @@ void srt::CUDTUnited::checkBrokenSockets()
                       log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
-                // HLOGF(smlog.Debug, "will unref socket: %d\n", j->first);
+                // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
                 tbr.push_back(j->first);
             }
         }
@@ -2684,6 +2682,8 @@ void srt::CUDTUnited::checkBrokenSockets()
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
         removeSocket(*l);
+
+    HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
 
 // [[using locked(m_GlobControlLock)]]
@@ -2768,9 +2768,13 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     s->core().closeInternal();
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
 
     if (mid == -1)
+    {
+        HLOGC(smlog.Debug, log << "GC/removeSocket: no muxer found, finishing.");
         return;
+    }
 
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);
@@ -2783,8 +2787,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     CMultiplexer& mx = m->second;
 
     mx.m_iRefCount--;
-    // HLOGF(smlog.Debug, "unrefing underlying socket for %u: %u\n",
-    //    u, mx.m_iRefCount);
+    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
     if (0 == mx.m_iRefCount)
     {
         HLOGC(smlog.Debug,
@@ -3163,6 +3166,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
         if (empty)
             break;
 
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
         srt::sync::this_thread::sleep_for(milliseconds_from(1));
     }
 
@@ -4473,7 +4477,7 @@ void dellogfa(LogFA fa)
     srt_logger_config.enabled_fa.set(fa, false);
 }
 
-void resetlogfa(set<LogFA> fas)
+void resetlogfa(const set<LogFA>& fas)
 {
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)

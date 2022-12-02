@@ -125,7 +125,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
 
     for (int i = 0; i < iNumUnits; ++i)
     {
-        tempu[i].m_iFlag = CUnit::FREE;
+        tempu[i].m_bTaken = false;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
 
@@ -172,7 +172,7 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
         const CUnit* end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
         for (; m_pAvailUnit != end; ++m_pAvailUnit, ++units_checked)
         {
-            if (m_pAvailUnit->m_iFlag == CUnit::FREE)
+            if (!m_pAvailUnit->m_bTaken)
             {
                 return m_pAvailUnit;
             }
@@ -188,19 +188,19 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
 void srt::CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
-    SRT_ASSERT(unit->m_iFlag != CUnit::FREE);
-    unit->m_iFlag.store(CUnit::FREE);
+    SRT_ASSERT(unit->m_bTaken);
+    unit->m_bTaken.store(false);
 
     --m_iNumTaken;
 }
 
-void srt::CUnitQueue::makeUnitGood(CUnit* unit)
+void srt::CUnitQueue::makeUnitTaken(CUnit* unit)
 {
     ++m_iNumTaken;
 
     SRT_ASSERT(unit != NULL);
-    SRT_ASSERT(unit->m_iFlag == CUnit::FREE);
-    unit->m_iFlag.store(CUnit::GOOD);
+    SRT_ASSERT(!unit->m_bTaken);
+    unit->m_bTaken.store(true);
 }
 
 srt::CSndUList::CSndUList(sync::CTimer* pTimer)
@@ -481,6 +481,25 @@ bool srt::CSndQueue::getBind(char* dst, size_t len) const
 }
 #endif
 
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
+static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady_clock::time_point currtime)
+{
+    if (self->m_DbgTime <= currtime)
+    {
+        fprintf(stdout,
+                "SndQueue %lu slt:%lu nrp:%lu snt:%lu nrt:%lu ctw:%lu\n",
+                self->m_WorkerStats.lIteration,
+                self->m_WorkerStats.lSleepTo,
+                self->m_WorkerStats.lNotReadyPop,
+                self->m_WorkerStats.lSendTo,
+                self->m_WorkerStats.lNotReadyTs,
+                self->m_WorkerStats.lCondWait);
+        memset(&self->m_WorkerStats, 0, sizeof(self->m_WorkerStats));
+        self->m_DbgTime = currtime + self->m_DbgPeriod;
+    }
+}
+#endif
+
 void* srt::CSndQueue::worker(void* param)
 {
     CSndQueue* self = (CSndQueue*)param;
@@ -492,34 +511,30 @@ void* srt::CSndQueue::worker(void* param)
 #endif
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-    CTimer::rdtsc(self->m_ullDbgTime);
-    self->m_ullDbgPeriod = uint64_t(5000000) * CTimer::getCPUFrequency();
-    self->m_ullDbgTime += self->m_ullDbgPeriod;
+#define IF_DEBUG_HIGHRATE(statement) statement
+    self->m_DbgTime = sync::steady_clock::now();
+    self->m_DbgPeriod = sync::microseconds_from(5000000);
+    self->m_DbgTime += self->m_DbgPeriod;
+#else
+#define IF_DEBUG_HIGHRATE(statement) (void)0
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
     while (!self->m_bClosing)
     {
         const steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
 
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-        self->m_WorkerStats.lIteration++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+        IF_DEBUG_HIGHRATE(self->m_WorkerStats.lIteration++);
 
         if (is_zero(next_time))
         {
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-            self->m_WorkerStats.lNotReadyTs++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyTs++);
 
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
             if (!self->m_bClosing)
             {
                 self->m_pSndUList->waitNonEmpty();
-
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-                self->m_WorkerStats.lCondWait++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+                IF_DEBUG_HIGHRATE(self->m_WorkerStats.lCondWait++);
             }
             THREAD_RESUMED();
 
@@ -529,43 +544,23 @@ void* srt::CSndQueue::worker(void* param)
         // wait until next processing time of the first socket on the list
         const steady_clock::time_point currtime = steady_clock::now();
 
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-        if (self->m_ullDbgTime <= currtime)
-        {
-            fprintf(stdout,
-                    "SndQueue %lu slt:%lu nrp:%lu snt:%lu nrt:%lu ctw:%lu\n",
-                    self->m_WorkerStats.lIteration,
-                    self->m_WorkerStats.lSleepTo,
-                    self->m_WorkerStats.lNotReadyPop,
-                    self->m_WorkerStats.lSendTo,
-                    self->m_WorkerStats.lNotReadyTs,
-                    self->m_WorkerStats.lCondWait);
-            memset(&self->m_WorkerStats, 0, sizeof(self->m_WorkerStats));
-            self->m_ullDbgTime = currtime + self->m_ullDbgPeriod;
-        }
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
-
-        THREAD_PAUSED();
+        IF_DEBUG_HIGHRATE(CSndQueueDebugHighratePrint(self, currtime));
         if (currtime < next_time)
         {
+            THREAD_PAUSED();
             self->m_pTimer->sleep_until(next_time);
-
-#if defined(HAI_DEBUG_SNDQ_HIGHRATE)
-            self->m_WorkerStats.lSleepTo++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            THREAD_RESUMED();
+            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSleepTo++);
         }
-        THREAD_RESUMED();
 
         // Get a socket with a send request if any.
         CUDT* u = self->m_pSndUList->pop();
         if (u == NULL)
         {
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-            self->m_WorkerStats.lNotReadyPop++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
         }
-        
+
 #define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
         HLOGC(qslog.Debug,
             log << "CSndQueue: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
@@ -575,9 +570,7 @@ void* srt::CSndQueue::worker(void* param)
 
         if (!u->m_bConnected || u->m_bBroken)
         {
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-            self->m_WorkerStats.lNotReadyPop++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
@@ -588,9 +581,7 @@ void* srt::CSndQueue::worker(void* param)
         // Check if payload size is invalid.
         if (res_time.first == false)
         {
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-            self->m_WorkerStats.lNotReadyPop++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
@@ -602,9 +593,7 @@ void* srt::CSndQueue::worker(void* param)
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
         self->m_pChannel->sendto(addr, pkt);
 
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-        self->m_WorkerStats.lSendTo++;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+        IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSendTo++);
     }
 
     THREAD_EXIT();
@@ -908,10 +897,26 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        if (i->id != dest_id)
+        if (cst != CONN_RENDEZVOUS && dest_id != 0)
         {
-            read_st = RST_AGAIN;
-            conn_st = CONN_AGAIN;
+            if (i->id != dest_id)
+            {
+                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " but for RID @" << i->id
+                        << " dest_id=@" << dest_id << " - resetting to AGAIN");
+
+                read_st = RST_AGAIN;
+                conn_st = CONN_AGAIN;
+            }
+            else
+            {
+                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " for @"
+                        << i->id);
+            }
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and dest_id=@" << dest_id
+                    << " - NOT checking against RID @" << i->id);
         }
 
         HLOGC(cnlog.Debug,
@@ -1599,8 +1604,7 @@ void srt::CRcvQueue::stopWorker()
 
 int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 {
-    UniqueLock bufferlock(m_BufferLock);
-    CSync      buffercond(m_BufferCond, bufferlock);
+    CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
     map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
@@ -1729,15 +1733,14 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
 
 void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 {
-    UniqueLock bufferlock(m_BufferLock);
-    CSync      passcond(m_BufferCond, bufferlock);
+    CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
     map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
         m_mBuffer[id].push(pkt);
-        passcond.signal_locked(bufferlock);
+        passcond.notify_one();
     }
     else
     {

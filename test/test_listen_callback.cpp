@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <thread>
 #include <chrono>
 #include <string>
 #include <map>
@@ -10,107 +11,134 @@
 #include "srt.h"
 #include "utilities.h"
 
-
 srt_listen_callback_fn SrtTestListenCallback;
 
-/**
- * This test makes a service and a client connecting to it.
- * The service sets up a callback function on the listener.
- * The listener sets up different passwords depending on the user.
- * The test tests:
- *  - correct connection with correct password
- *  - rejected connection with wrong password
- *  - rejected connection on nonexistent user
-*/
-TEST(Core, ListenCallback) {
+class ListenerCallback
+    : public testing::Test
+{
+protected:
+    ListenerCallback()
+    {
+        // initialization code here
+    }
 
-    using namespace std;
+    ~ListenerCallback()
+    {
+        // cleanup any pending stuff, but no exceptions allowed
+    }
+public:
 
-    ASSERT_EQ(srt_startup(), 0);
-
-    // Create server on 127.0.0.1:5555
-
-    const SRTSOCKET server_sock = srt_create_socket();
-    ASSERT_GT(server_sock, 0);    // socket_id should be > 0
-
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(5555);
-
-    ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
-    ASSERT_NE(srt_listen(server_sock, 5), -1);
-    (void)srt_listen_callback(server_sock, &SrtTestListenCallback, NULL);
-
-    // Create client to connect to the above server
-    SRTSOCKET client_sock;
+    SRTSOCKET server_sock, client_sock;
+    std::thread accept_thread;
     sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(5555);
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
-    sockaddr* psa = (sockaddr*)&sa;
+    sockaddr* psa;
 
+    void SetUp()
+    {
+        ASSERT_EQ(srt_startup(), 0);
 
-    cerr << "TEST 1: Connect to an encrypted socket correctly (should succeed)\n";
+        // Create server on 127.0.0.1:5555
 
-    client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+        server_sock = srt_create_socket();
+        ASSERT_GT(server_sock, 0);    // socket_id should be > 0
 
-    string username_spec = "#!::u=admin";
-    string password = "thelocalmanager";
+        sockaddr_in bind_sa;
+        memset(&bind_sa, 0, sizeof bind_sa);
+        bind_sa.sin_family = AF_INET;
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
+        bind_sa.sin_port = htons(5555);
 
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
-#if SRT_ENABLE_ENCRYPTION
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
-#endif
+        ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+        ASSERT_NE(srt_listen(server_sock, 5), -1);
+        (void)srt_listen_callback(server_sock, &SrtTestListenCallback, NULL);
 
-    // EXPECTED RESULT: connected successfully
-    EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+        accept_thread = std::thread([this] { this->AcceptLoop(); });
 
-    // Close the socket
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+        // Prepare client socket
 
+        client_sock = srt_create_socket();
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(5555);
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+        psa = (sockaddr*)&sa;
 
-    cerr << "TEST 2: Connect with a wrong password (should reject the handshake)\n";
-#if SRT_ENABLE_ENCRYPTION
-    client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+        ASSERT_GT(client_sock, 0);    // socket_id should be > 0
 
-    password = "thelokalmanager"; // (typo :D)
+        auto awhile = std::chrono::milliseconds(20);
+        std::this_thread::sleep_for(awhile);
+    }
 
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+    void AcceptLoop()
+    {
+        // Setup EID in order to pick up either readiness or error.
+        // THis is only to make a formal response side, nothing here is to be tested.
 
-    // EXPECTED RESULT: connection rejected
-    EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+        int eid = srt_epoll_create();
 
-    // Close the socket
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
-#endif
+        // Subscribe to R | E
 
+        int re = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+        srt_epoll_add_usock(eid, server_sock, &re);
 
-    cerr << "TEST 3: Connect with wrong username (should exit on exception)\n";
-    client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+        SRT_EPOLL_EVENT results[2];
 
-    username_spec = "#!::u=haivision";
-    password = "thelocalmanager"; // (typo :D)
+        for (;;)
+        {
+            auto state = srt_getsockstate(server_sock);
+            if (int(state) > int(SRTS_CONNECTED))
+            {
+                std::cout << "[T] Listener socket closed, exitting\n";
+                break;
+            }
 
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
-#if SRT_ENABLE_ENCRYPTION
-    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
-#endif
+            std::cout << "[T] Waiting for epoll to accept\n";
+            int res = srt_epoll_uwait(eid, results, 2, 1000);
+            if (res == 1)
+            {
+                if (results[0].events == SRT_EPOLL_IN)
+                {
+                    int acp = srt_accept(server_sock, NULL, NULL);
+                    if (acp == SRT_ERROR)
+                    {
+                        std::cout << "[T] Accept failed, so exitting\n";
+                        break;
+                    }
+                    srt_close(acp);
+                    continue;
+                }
 
-    // EXPECTED RESULT: connection rejected
-    EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+                // Then it can only be SRT_EPOLL_ERR, which
+                // can be done by having the socket closed
+                break;
+            }
 
-    // Close the socket
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+            if (res == 0) // probably timeout, just repeat
+            {
+                std::cout << "[T] (NOTE: epoll timeout, still waiting)\n";
+                continue;
+            }
+        }
 
-    (void)srt_cleanup();
-}
+        srt_epoll_release(eid);
+    }
+
+    void TearDown()
+    {
+        std::cout << "TeadDown: closing all sockets\n";
+        // Close the socket
+        EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+        EXPECT_EQ(srt_close(server_sock), SRT_SUCCESS);
+
+        // After that, the thread should exit
+        std::cout << "TearDown: joining accept thread\n";
+        accept_thread.join();
+        std::cout << "TearDown: SRT exit\n";
+
+        srt_cleanup();
+    }
+
+};
 
 int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
 {
@@ -191,5 +219,62 @@ int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion
     EXPECT_EQ(srt_setsockflag(ns, SRTO_RCVLATENCY, &optval, sizeof optval), SRT_SUCCESS);
     return 0;
 }
+
+
+/**
+ * This test makes a service and a client connecting to it.
+ * The service sets up a callback function on the listener.
+ * The listener sets up different passwords depending on the user.
+ * The test tests:
+ *  - correct connection with correct password (SecureSuccess)
+ *  - rejected connection with wrong password (FauxPass)
+ *  - rejected connection on nonexistent user (FauxUser)
+*/
+
+using namespace std;
+
+
+TEST_F(ListenerCallback, SecureSuccess)
+{
+    string username_spec = "#!::u=admin";
+    string password = "thelocalmanager";
+
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+#if SRT_ENABLE_ENCRYPTION
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+#endif
+
+    // EXPECTED RESULT: connected successfully
+    EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+}
+
+#if SRT_ENABLE_ENCRYPTION
+TEST_F(ListenerCallback, FauxPass)
+{
+    string username_spec = "#!::u=admin";
+    string password = "thelokalmanager"; // (typo :D)
+
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+
+    // EXPECTED RESULT: connection rejected
+    EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+}
+#endif
+
+TEST_F(ListenerCallback, FauxUser)
+{
+    string username_spec = "#!::u=haivision";
+    string password = "thelocalmanager"; // (typo :D)
+
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+#if SRT_ENABLE_ENCRYPTION
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+#endif
+
+    // EXPECTED RESULT: connection rejected
+    EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+}
+
 
 

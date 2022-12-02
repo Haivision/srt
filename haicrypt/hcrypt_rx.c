@@ -124,9 +124,6 @@ int HaiCrypt_Rx_Process(HaiCrypt_Handle hhc,
 		||  (0 != memcmp(ctx->KMmsg_cache, in_msg, in_len))) { /* or different */
 
 			nbout = hcryptCtx_Rx_ParseKM(crypto, in_msg, in_len);
-			//-2: unmatched shared secret
-			//-1: other failures
-			//0: success
 		} else {
 			nbout = 0;
 		}

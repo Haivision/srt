@@ -23,7 +23,7 @@ TEST(CUnitQueue, Increase)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
         taken_units.push_back(unit);
     }
 }
@@ -43,7 +43,7 @@ TEST(CUnitQueue, IncreaseAndFree)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_unit)
             unit_queue.makeUnitFree(taken_unit);
@@ -67,7 +67,7 @@ TEST(CUnitQueue, IncreaseAndFreeGrouped)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_units.size() >= buffer_size_pkts)
         {

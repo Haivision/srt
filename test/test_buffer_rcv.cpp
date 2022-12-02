@@ -1,7 +1,6 @@
 #include <array>
 #include <numeric>
 #include "gtest/gtest.h"
-#include "buffer.h"
 #include "buffer_rcv.h"
 
 using namespace srt;
@@ -30,14 +29,10 @@ protected:
         m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
-#if ENABLE_NEW_RCVBUFFER
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBufferNew(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
-#else
-        m_rcv_buffer.reset(new CRcvBuffer(m_unit_queue.get(), m_buff_size_pkts));
-#endif
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
 
@@ -77,12 +72,7 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-#if ENABLE_NEW_RCVBUFFER
         return m_rcv_buffer->insert(unit);
-#else
-        const int offset = CSeqNo::seqoff(m_first_unack_seqno, seqno);
-        return m_rcv_buffer->addData(unit, offset);
-#endif
     }
 
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed
@@ -117,47 +107,27 @@ public:
     int ackPackets(int num_pkts)
     {
         m_first_unack_seqno = CSeqNo::incseq(m_first_unack_seqno, num_pkts);
-#if ENABLE_NEW_RCVBUFFER
         return 0;
-#else
-        return m_rcv_buffer->ackData(num_pkts);
-#endif
     }
 
     int getAvailBufferSize()
     {
-#if ENABLE_NEW_RCVBUFFER
         return m_rcv_buffer->getAvailSize(m_first_unack_seqno);
-#else
-        return m_rcv_buffer->getAvailBufSize();
-#endif
     }
 
     int readMessage(char* data, size_t len)
     {
-#if ENABLE_NEW_RCVBUFFER
         return m_rcv_buffer->readMessage(data, len);
-#else
-        return m_rcv_buffer->readMsg(data, len);
-#endif
     }
 
     bool hasAvailablePackets()
     {
-#if ENABLE_NEW_RCVBUFFER
         return m_rcv_buffer->hasAvailablePackets();
-#else
-        return m_rcv_buffer->isRcvDataAvailable();
-#endif
     }
 
 protected:
     unique_ptr<CUnitQueue> m_unit_queue;
-#if ENABLE_NEW_RCVBUFFER
-    unique_ptr<CRcvBufferNew> m_rcv_buffer;
-#else
     unique_ptr<CRcvBuffer> m_rcv_buffer;
-#endif
     const int m_buff_size_pkts = 16;
     const int m_init_seqno = 1000;
     int m_first_unack_seqno = m_init_seqno;
@@ -241,32 +211,20 @@ TEST_F(CRcvBufferReadMsg, OnePacketGap)
     // BUG. Acknowledging an empty position must not result in a read-readiness.
     // TODO: Actually we should not acknowledge, but must drop instead.
     ackPackets(1);
-#if ENABLE_NEW_RCVBUFFER // Expected behavior
     EXPECT_FALSE(hasAvailablePackets());
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
 
     const auto next_packet = m_rcv_buffer->getFirstValidPacketInfo();
     EXPECT_EQ(next_packet.seqno, m_init_seqno + 1);
-#else // Wrong behavior (BUG)
-    EXPECT_TRUE(hasAvailablePackets());
-    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
-#endif
 
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 2);
-#if ENABLE_NEW_RCVBUFFER
-    // The new buffer will return 0 as reading is not available.
+    // The buffer will return 0 as reading is not available.
     res = rcv_buffer.readBuffer(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
-#else
-    cerr << "Expecting IPE from readBuffer(..): \n";
-    res = rcv_buffer.readBuffer(buff.data(), buff.size());
-    EXPECT_EQ(res, -1);
-#endif
 
     res = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res, 0);
 
-#if ENABLE_NEW_RCVBUFFER
     // Add a missing packet (can't add before an acknowledged position in the old buffer).
     EXPECT_EQ(addMessage(1, m_init_seqno), 0);
 
@@ -278,7 +236,6 @@ TEST_F(CRcvBufferReadMsg, OnePacketGap)
         EXPECT_TRUE(verifyPayload(buff.data(), msg_bytelen, CSeqNo::incseq(m_init_seqno, pktno)));
     }
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
-#endif
 
     // Further read is not possible
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
@@ -301,11 +258,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
     auto& rcv_buffer = *m_rcv_buffer.get();
     EXPECT_FALSE(hasAvailablePackets());
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
-#if ENABLE_NEW_RCVBUFFER
     rcv_buffer.dropUpTo(CSeqNo::incseq(m_init_seqno));
-#else
-    rcv_buffer.dropData(1);
-#endif
 
     EXPECT_TRUE(hasAvailablePackets());
     EXPECT_TRUE(rcv_buffer.isRcvDataReady());
@@ -329,16 +282,7 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
 
-    // The new receiver buffer allows reading without ACK.
-#if !ENABLE_NEW_RCVBUFFER
-    EXPECT_FALSE(hasAvailablePackets());
-
-    const int res1 = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res1, 0);
-
-    // Full ACK
-    ackPackets(msg_pkts);
-#endif
+    // The receiver buffer allows reading without ACK.
     EXPECT_TRUE(hasAvailablePackets());
 
     const int res2 = readMessage(buff.data(), buff.size());
@@ -365,12 +309,8 @@ TEST_F(CRcvBufferReadMsg, AddData)
     // The value is reported by SRT receiver like this:
     // data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
-#if ENABLE_NEW_RCVBUFFER
-    // The new receiver buffer does not need ACK to allow reading.
+    // The receiver buffer does not need ACK to allow reading.
     EXPECT_TRUE(hasAvailablePackets());
-#else
-    EXPECT_FALSE(hasAvailablePackets());
-#endif
 
     // Now acknowledge two packets
     const int ack_pkts = 2;
@@ -388,10 +328,7 @@ TEST_F(CRcvBufferReadMsg, AddData)
     }
 
     // Add packet to the position of oackets already read.
-    // Can't check the old buffer, as it does not handle a negative offset.
-#if ENABLE_NEW_RCVBUFFER
     EXPECT_EQ(addPacket(m_init_seqno), -2);
-#endif
 
     // Add packet to a non-empty position.
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts)), -1);
@@ -478,8 +415,8 @@ TEST_F(CRcvBufferReadMsg, MsgHalfAck)
     // Nothing to read (0 for zero bytes read).
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
-#if ENABLE_NEW_RCVBUFFER
-    // The new receiver buffer does not care about ACK.
+
+    // The receiver buffer does not care about ACK.
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
     EXPECT_TRUE(hasAvailablePackets());
 
@@ -490,32 +427,6 @@ TEST_F(CRcvBufferReadMsg, MsgHalfAck)
         const ptrdiff_t offset = i * m_payload_sz;
         EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, i)));
     }
-#else
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_FALSE(hasAvailablePackets());
-    const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, 0);
-
-    // ACK half of the message and check read-readiness.
-    ackPackets(2);
-    // FIXME: Sadly RCV buffer says the data is ready to be read.
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_TRUE(hasAvailablePackets());
-
-    // Actually must be nothing to read (can't read half a message).
-    const int res2 = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res2, 0);
-
-    // ACK the remaining half of the message and check read-readiness.
-    ackPackets(2);
-    const int res3 = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res3, msg_bytelen);
-    for (size_t i = 0; i < msg_pkts; ++i)
-    {
-        const ptrdiff_t offset = i * m_payload_sz;
-        EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, i)));
-    }
-#endif
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
@@ -528,13 +439,9 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgNoACK)
     // Adding one message with the Out-Of-Order flag set, but without acknowledging.
     addMessage(msg_pkts, m_init_seqno, true);
 
-#if ENABLE_NEW_RCVBUFFER
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
     EXPECT_TRUE(hasAvailablePackets());
-#else
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_FALSE(hasAvailablePackets());
-#endif
+
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     const int res = readMessage(buff.data(), buff.size());
@@ -548,19 +455,7 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgNoACK)
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     EXPECT_FALSE(hasAvailablePackets());
 
-#if ENABLE_NEW_RCVBUFFER
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
-#else
-    ackPackets(msg_pkts);
-    // The old buffer still does not free units.
-    EXPECT_NE(m_unit_queue->size(), m_unit_queue->capacity());
-    // BUG: wrong read-ready state.
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_TRUE(hasAvailablePackets());
-    // Nothing read, but empty units are freed.
-    EXPECT_EQ(readMessage(buff.data(), buff.size()), 0);
-    EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
-#endif
 }
 
 // Adding a message with the out-of-order flag set.
@@ -571,13 +466,9 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgGap)
     // Adding one message with the Out-Of-Order flag set, but without acknowledging.
     addMessage(msg_pkts, CSeqNo::incseq(m_init_seqno, 1), true);
 
-#if ENABLE_NEW_RCVBUFFER
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
     EXPECT_TRUE(hasAvailablePackets());
-#else
-    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
-    EXPECT_FALSE(hasAvailablePackets());
-#endif
+
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     const int res = readMessage(buff.data(), buff.size());
@@ -606,13 +497,8 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgGap)
 
     // Only "passack" or EntryState_Read packets remain in the buffer.
     // They are falsely signalled as read-ready.
-#if ENABLE_NEW_RCVBUFFER
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     EXPECT_FALSE(hasAvailablePackets());
-#else
-    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady()); // BUG: nothing to read.
-    EXPECT_TRUE(hasAvailablePackets()); // BUG: nothing to read.
-#endif
 
     // Adding a packet right after the EntryState_Read packets.
     const int seqno = CSeqNo::incseq(m_init_seqno, msg_pkts + 1);
@@ -643,14 +529,8 @@ TEST_F(CRcvBufferReadMsg, LongMsgReadReady)
         ackPackets(1);
         if (!pb_last)
         {
-#if ENABLE_NEW_RCVBUFFER
             EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
             EXPECT_FALSE(hasAvailablePackets());
-#else
-            // BUG: The old buffer returns true (read-readiness).
-            EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-            EXPECT_TRUE(hasAvailablePackets());
-#endif
             EXPECT_EQ(readMessage(buff.data(), buff.size()), 0);
         }
     }
@@ -669,7 +549,6 @@ TEST_F(CRcvBufferReadMsg, LongMsgReadReady)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
-#if ENABLE_NEW_RCVBUFFER
 // One message (4 packets) is added to the buffer. Can be read out of order.
 // Reading should be possible even before the missing packet is dropped.
 TEST_F(CRcvBufferReadMsg, MsgOutOfOrderDrop)
@@ -924,14 +803,14 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
     const size_t num_bytes1 = nfull_pkts * m_payload_sz + m_payload_sz / 2;
     const int res1 = m_rcv_buffer->readBuffer(buff.data(), num_bytes1);
     EXPECT_TRUE(size_t(res1) == num_bytes1);
-    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - nfull_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     EXPECT_TRUE(hasAvailablePackets());
 
     const size_t num_bytes2 = m_payload_sz * (num_pkts - nfull_pkts - 1) + m_payload_sz / 2;
 
     const int res2 = m_rcv_buffer->readBuffer(buff.data() + num_bytes1, buff.size() - num_bytes1);
     EXPECT_TRUE(size_t(res2) == num_bytes2);
-    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts - 1);
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     EXPECT_FALSE(hasAvailablePackets());
     ackPackets(num_pkts); // Move the reference ACK position.
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
@@ -943,5 +822,3 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
-
-#endif // ENABEL_NEW_RCVBUFFER
