@@ -563,7 +563,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
     }
     catch (const CUDTException&)
     {
-        LOGF(cnlog.Fatal, "newConnection: IPE: all sockets occupied? Last gen=%d", m_SocketIDGenerator);
+        LOGC(cnlog.Fatal, log << "newConnection: IPE: all sockets occupied? Last gen=" << m_SocketIDGenerator);
         // generateSocketID throws exception, which can be naturally handled
         // when the call is derived from the API call, but here it's called
         // internally in response to receiving a handshake. It must be handled
@@ -600,7 +600,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         // this call causes sending the SRT Handshake through this socket.
         // Without this mapping the socket cannot be found and therefore
         // the SRT Handshake message would fail.
-        HLOGF(cnlog.Debug, "newConnection: incoming %s, mapping socket %d", peer.str().c_str(), ns->m_SocketID);
+        HLOGC(cnlog.Debug, log <<
+                "newConnection: incoming " << peer.str() << ", mapping socket " << ns->m_SocketID);
         {
             ScopedLock cg(m_GlobControlLock);
             m_Sockets[ns->m_SocketID] = ns;
@@ -647,7 +648,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         ScopedLock glock(m_GlobControlLock);
         try
         {
-            HLOGF(cnlog.Debug, "newConnection: mapping peer %d to that socket (%d)\n", ns->m_PeerID, ns->m_SocketID);
+            HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
+                    << " to that socket (" << ns->m_SocketID << ")");
             m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
         }
         catch (...)
@@ -2640,7 +2642,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
     {
-        // HLOGF(smlog.Debug, "checking CLOSED socket: %d\n", j->first);
+        // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
         if (!is_zero(j->second->core().m_tsLingerExpiration))
         {
             // asynchronous close:
@@ -2667,7 +2669,7 @@ void srt::CUDTUnited::checkBrokenSockets()
                       log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
-                // HLOGF(smlog.Debug, "will unref socket: %d\n", j->first);
+                // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
                 tbr.push_back(j->first);
             }
         }
@@ -4475,7 +4477,7 @@ void dellogfa(LogFA fa)
     srt_logger_config.enabled_fa.set(fa, false);
 }
 
-void resetlogfa(set<LogFA> fas)
+void resetlogfa(const set<LogFA>& fas)
 {
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)

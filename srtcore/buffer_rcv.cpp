@@ -1048,11 +1048,8 @@ void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBuffer::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const
+string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
 {
-    if (!enable_debug_log)
-        return string();
-
     stringstream ss;
 
     ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo

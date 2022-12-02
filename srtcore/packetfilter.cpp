@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -43,7 +43,7 @@ bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::F
     return true;
 }
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config)
 {
     return ParseFilterConfig(s, (w_config), NULL);
 }

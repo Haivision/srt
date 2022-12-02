@@ -730,26 +730,26 @@ bool srt::CRcvLossList::remove(int32_t seqno1, int32_t seqno2)
     return true;
 }
 
-int32_t srt::CRcvLossList::removeUpTo(int32_t seqno_end)
+int32_t srt::CRcvLossList::removeUpTo(int32_t seqno_last)
 {
     int32_t first = getFirstLostSeq();
     if (first == SRT_SEQNO_NONE)
     {
-        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " - empty list");
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - empty list");
         return first; // empty, so nothing to remove
     }
 
-    if (CSeqNo::seqcmp(seqno_end, first) <= 0)
+    if (CSeqNo::seqcmp(seqno_last, first) < 0)
     {
-        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " - first %" << first << " is newer, exitting");
-        return first; // seqno_end older than first - nothing to remove
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - first %" << first << " is newer, exitting");
+        return first; // seqno_last older than first - nothing to remove
     }
 
-    //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_end << " ...");
+    HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " ...");
 
-    // NOTE: seqno_end is past-the-end here. Removed are only seqs
+    // NOTE: seqno_last is past-the-end here. Removed are only seqs
     // that are earlier than this.
-    for (int32_t i = first; CSeqNo::seqcmp(i, seqno_end) < 0; i = CSeqNo::incseq(i))
+    for (int32_t i = first; CSeqNo::seqcmp(i, seqno_last) <= 0; i = CSeqNo::incseq(i))
     {
         //HLOGC(tslog.Debug, log << "... removing %" << i);
         remove(i);
