@@ -11,10 +11,9 @@
 #ifndef INC_SRT_BUFFER_RCV_H
 #define INC_SRT_BUFFER_RCV_H
 
-#include "buffer_snd.h" // AvgBufSize
+#include "buffer_tools.h" // AvgBufSize
 #include "common.h"
 #include "queue.h"
-#include "sync.h"
 #include "tsbpd_time.h"
 
 namespace srt
@@ -76,7 +75,7 @@ public:
     int dropAll();
 
     /// @brief Drop the whole message from the buffer.
-    /// If message number is 0, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
+    /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
     /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
@@ -128,9 +127,8 @@ public:
         const int iRBufSeqNo  = getStartSeqNo();
         if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
         {
-            // Full capacity is available, still don't want to encourage extra packets to come.
-            // Note: CSeqNo::seqlen(n, n) returns 1.
-            return capacity() - CSeqNo::seqlen(iFirstUnackSeqNo, iRBufSeqNo) + 1;
+            // Full capacity is available.
+            return capacity();
         }
 
         // Note: CSeqNo::seqlen(n, n) returns 1.
@@ -344,7 +342,7 @@ public: // TSBPD public functions
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
-    std::string strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const;
+    std::string strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const;
 
 private:
     CTsbpdTime  m_tsbpd;

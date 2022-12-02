@@ -312,8 +312,10 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
+#if ENABLE_BONDING
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
+#endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
@@ -661,8 +663,13 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+    bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
-    void checkSndTimers(Whether2RegenKm regen = DONT_REGEN_KM);
+    void checkSndTimers();
+    
+    /// @brief Check and perform KM refresh if needed.
+    void checkSndKMRefresh();
+
     void handshakeDone()
     {
         m_iSndHsRetryCnt = 0;
@@ -715,8 +722,6 @@ private:
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
     int rcvDropTooLateUpTo(int seqno);
-
-    void updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
@@ -909,7 +914,6 @@ private: // Receiving related data
 #ifdef ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
-    int32_t m_iRcvLastSkipAck;                   // Last dropped sequence ACK
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.
@@ -1053,6 +1057,29 @@ private: // Generation and processing of packets
     std::pair<bool, time_point> packData(CPacket& packet);
 
     int processData(CUnit* unit);
+
+    /// This function passes the incoming packet to the initial processing
+    /// (like packet filter) and is about to store it effectively to the
+    /// receiver buffer and do some postprocessing (decryption) if necessary
+    /// and report the status thereof.
+    ///
+    /// @param incoming [in] The packet coming from the network medium
+    /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
+    /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
+    /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
+    ///
+    /// @return 0 The call was successful (regardless if the packet was accepted or not).
+    /// @return -1 The call has failed: no space left in the buffer.
+    /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+
+    /// Get the packet's TSBPD time.
+    /// The @a grp passed by void* is not used yet
+    /// and shall not be used when ENABLE_BONDING=0.
+    time_point getPktTsbPdTime(void* grp, const CPacket& packet);
+
+    /// Checks and spawns the TSBPD thread if required.
+    int checkLazySpawnTsbPdThread();
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
@@ -1066,11 +1093,6 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-    /// @brief Acknowledge reading position up to the @p seq.
-    /// Updates m_iRcvLastAck and m_iRcvLastSkipAck to @p seq.
-    /// @param seq first unacknowledged packet sequence number.
-    void ackDataUpTo(int32_t seq);
-
 #if ENABLE_BONDING
     /// @brief Drop packets in the recv buffer behind group_recv_base.
     /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
@@ -1079,9 +1101,6 @@ private: // Generation and processing of packets
 
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
-    /// Locks m_RcvBufferLock and retrieves the available size of the receiver buffer.
-    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
-    size_t getAvailRcvBufferSizeLock() const;
 
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
@@ -1111,10 +1130,12 @@ public:
     static const int PACKETPAIR_MASK = 0xF;
 
 private: // Timers functions
+#if ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
-    
+#endif
+
     static const int BECAUSE_NO_REASON = 0, // NO BITS
                      BECAUSE_ACK       = 1 << 0,
                      BECAUSE_LITEACK   = 1 << 1,

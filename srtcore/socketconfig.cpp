@@ -883,6 +883,28 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
+template<>
+struct CSrtConfigSetter<SRTO_CRYPTOMODE>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < CSrtConfig::CIPHER_MODE_AUTO || val > CSrtConfig::CIPHER_MODE_AES_GCM)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+#ifdef SRT_ENABLE_ENCRYPTION
+        if (val == CSrtConfig::CIPHER_MODE_AES_GCM && !HaiCrypt_IsAESGCM_Supported())
+        {
+            using namespace srt_logging;
+            LOGC(aclog.Error, log << "AES GCM is not supported by the crypto provider.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+#endif
+
+        co.iCryptoMode = val;
+    }
+};
+
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
     switch (optName)
@@ -940,6 +962,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
+        DISPATCH(SRTO_CRYPTOMODE);
 
 #undef DISPATCH
     default:

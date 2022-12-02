@@ -148,7 +148,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     // what has called this function. The HSv5 handshake only enforces bidirectional
     // connection.
 
-    bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
+    const bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
 
     // Local macro to return rejection appropriately.
     // CHANGED. The first version made HSv5 reject the connection.
@@ -240,7 +240,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
     case HAICRYPT_ERROR_CIPHER:
-        m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET; // TODO: Use a different, dedicated state.
+        m_RcvKmState = m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
         w_srtlen = 1;
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADCRYPTOMODE");
         break;
@@ -393,6 +393,13 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
             retstatus = 0;
             break;
 
+        case SRT_KM_S_BADCRYPTOMODE:
+            // The peer expects to use a different cryptographic mode (e.g. AES-GCM, not AES-CTR).
+            m_RcvKmState = SRT_KM_S_BADCRYPTOMODE;
+            m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
+            retstatus = -1;
+            break;
+
         default:
             LOGC(cnlog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer error state: "
                     << KmStateStr(peerstate) << " (" << int(peerstate) << ")");
@@ -440,8 +447,9 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     return retstatus;
 }
 
-void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED, Whether2RegenKm regen SRT_ATR_UNUSED)
+void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED)
 {
+    sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
     {
         HLOGC(cnlog.Debug, log << "sendKeysToPeer: NOT sending/regenerating keys: "
@@ -474,21 +482,13 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
             }
         }
     }
-
-
-    if (regen)
-    {
-        regenCryptoKm(
-            sock, // send UMSG_EXT + SRT_CMD_KMREQ to the peer using this socket
-            false // Do not apply the regenerated key to the to the receiver context
-        ); // regenerate and send
-    }
 #endif
 }
 
-#ifdef SRT_ENABLE_ENCRYPTION
-void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
+void srt::CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional SRT_ATR_UNUSED)
 {
+#ifdef SRT_ENABLE_ENCRYPTION
+    sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto)
         return;
 
@@ -562,8 +562,8 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
 
     if (sent)
         m_SndKmLastTime = srt::sync::steady_clock::now();
-}
 #endif
+}
 
 srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     : m_SocketID(id)
@@ -576,7 +576,6 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_bUseGCM(false)
     , m_bErrorReported(false)
 {
-
     m_KmSecret.len = 0;
     //send
     m_SndKmMsg[0].MsgLen = 0;
@@ -601,6 +600,15 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
 
     // Set UNSECURED state as default
     m_RcvKmState = SRT_KM_S_UNSECURED;
+    m_bUseGCM = cfg.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM;
+
+#ifdef SRT_ENABLE_ENCRYPTION
+    if (m_bUseGCM && !isAESGCMSupported())
+    {
+        LOGC(cnlog.Warn, log << "CCryptoControl: AES GCM is not supported by the crypto service provider.");
+        return false;
+    }
+#endif
 
     // Set security-pending state, if a password was set.
     m_SndKmState = hasPassphrase() ? SRT_KM_S_SECURING : SRT_KM_S_UNSECURED;
@@ -649,7 +657,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
             // is turned off at compile time. Setting the password itself should be not allowed
             // so this could only happen as a consequence of an IPE.
             LOGC(cnlog.Error, log << "CCryptoControl::init: IPE: encryption not supported");
-            return true;
+            return false;
 #endif
         }
         else

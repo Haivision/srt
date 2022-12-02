@@ -18,7 +18,7 @@ jobs:
       with:
         ndk-version: r23
         add-to-path: false
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: build
       run: |
         cd ./scripts/build-android/
