@@ -16,6 +16,11 @@ void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[
     ss.ss_family = family;
 
     void* sin_addr = nullptr;
+
+    // FORCE CRASH
+    ((char*)sin_addr)[0] = 0;
+
+
     if (family == AF_INET)
     {
         sockaddr_in* const sa = (sockaddr_in*)&ss;
