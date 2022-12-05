@@ -176,7 +176,7 @@ namespace srt {
 
 // Set up the aliases in the constructure
 CPacket::CPacket()
-    : m_nHeader()
+    : m_nHeader() // Silences GCC 12 warning "used uninitialized".
     , m_extra_pad()
     , m_data_owned(false)
     , m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO]))
