@@ -8476,6 +8476,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         // decode loss list message and insert loss into the sender loss list
         for (int i = 0, n = (int)losslist_len; i < n; ++i)
         {
+            // IF the loss is a range <LO, HI>
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
                 // Then it's this is a <LO, HI> specification with HI in a consecutive cell.
@@ -8501,12 +8502,14 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 }
 
                 int num = 0;
+                // IF losslist_lo %>= m_iSndLastAck
                 if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
                 {
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(losslist_lo, losslist_hi);
                 }
+                // ELSE losslist_lo %< m_iSndLastAck
                 else
                 {
                     // This should be theoretically impossible because this would mean that
@@ -8521,13 +8524,16 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     // This just causes repeating DROPREQ, as when the receiver continues sending
                     // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
                     int32_t dropreq_hi = losslist_hi;
+                    IF_HEAVY_LOGGING(const char* drop_type = "completely");
 
+                    // IF losslist_hi %>= m_iSndLastAck
                     if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
                     {
                         HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                                 << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
                         num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
                         dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
+                        IF_HEAVY_LOGGING(drop_type = "partially");
                     }
 
                     // In distinction to losslist, DROPREQ has always just one range,
@@ -8540,8 +8546,8 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
                     //   TSBPD wake up should it still wait for new packets to get ACK-ed)
                     HLOGC(inlog.Debug,
-                          log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %"
-                              << losslist_lo << "-" << dropreq_hi << " - sending DROPREQ");
+                          log << CONID() << "LOSSREPORT: " << drop_type << " IGNORED with SndLastAck=%" << m_iSndLastAck
+                              << ": %" << losslist_lo << "-" << dropreq_hi << " - sending DROPREQ");
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
 
@@ -8549,36 +8555,42 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
-            else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
-            {
-                if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
-                {
-                    LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
-                        << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
-                    // seq_a must not be greater than the most recent sent seq
-                    secure = false;
-                    wrong_loss = losslist[i];
-                    break;
-                }
-
-                HLOGC(inlog.Debug,
-                      log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
-                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
-
-                enterCS(m_StatsLock);
-                m_stats.sndr.lost.count(num);
-                leaveCS(m_StatsLock);
-            }
+            // ELSE the loss is a single seq
             else
             {
-                // In distinction to losslist, DROPREQ has always just one range,
-                // and the data are <LO, HI>, with no range bit.
-                int32_t seqpair[2] = { losslist[i], losslist[i] };
-                const int32_t no_msgno = 0; // We don't know.
-                HLOGC(inlog.Debug,
-                      log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %" << losslist[i]
-                          << " - sending DROPREQ");
-                sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                // IF loss_seq %>= m_iSndLastAck
+                if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
+                {
+                    if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                    {
+                        LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                                << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
+                        // loss_seq must not be greater than the most recent sent seq
+                        secure = false;
+                        wrong_loss = losslist[i];
+                        break;
+                    }
+
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
+                    const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                    enterCS(m_StatsLock);
+                    m_stats.sndr.lost.count(num);
+                    leaveCS(m_StatsLock);
+                }
+                // ELSE loss_seq %< m_iSndLastAck
+                else
+                {
+                    // In distinction to losslist, DROPREQ has always just one range,
+                    // and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist[i], losslist[i] };
+                    const int32_t no_msgno = 0; // We don't know.
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %" << losslist[i]
+                            << " - sending DROPREQ");
+                    sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                }
             }
         }
     }
