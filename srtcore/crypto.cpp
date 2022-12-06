@@ -676,6 +676,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
 void srt::CCryptoControl::close() 
 {
     /* Wipeout secrets */
+    sync::ScopedLock lck(m_mtxLock);
     memset(&m_KmSecret, 0, sizeof(m_KmSecret));
 }
 

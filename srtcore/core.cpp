@@ -5883,6 +5883,7 @@ void srt::CUDT::checkSndTimers()
 
     // Retransmit KM request after a timeout if there is no response (KM RSP).
     // Or send KM REQ in case of the HSv4.
+    ScopedLock lck(m_ConnectionLock);
     if (m_pCryptoControl)
         m_pCryptoControl->sendKeysToPeer(this, SRTT());
 }

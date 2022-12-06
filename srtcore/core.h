@@ -675,6 +675,7 @@ private:
 #endif
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
+    SRT_ATTR_EXCLUDES(m_ConnectionLock)
     void checkSndTimers();
     
     /// @brief Check and perform KM refresh if needed.
