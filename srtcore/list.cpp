@@ -61,10 +61,12 @@ namespace srt_logging
 {
 extern Logger qrlog;
 extern Logger qslog;
+extern Logger tslog;
 }
 
 using srt_logging::qrlog;
 using srt_logging::qslog;
+using srt_logging::tslog;
 
 using namespace srt::sync;
 
@@ -728,6 +730,34 @@ bool srt::CRcvLossList::remove(int32_t seqno1, int32_t seqno2)
     return true;
 }
 
+int32_t srt::CRcvLossList::removeUpTo(int32_t seqno_last)
+{
+    int32_t first = getFirstLostSeq();
+    if (first == SRT_SEQNO_NONE)
+    {
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - empty list");
+        return first; // empty, so nothing to remove
+    }
+
+    if (CSeqNo::seqcmp(seqno_last, first) < 0)
+    {
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - first %" << first << " is newer, exitting");
+        return first; // seqno_last older than first - nothing to remove
+    }
+
+    HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " ...");
+
+    // NOTE: seqno_last is past-the-end here. Removed are only seqs
+    // that are earlier than this.
+    for (int32_t i = first; CSeqNo::seqcmp(i, seqno_last) <= 0; i = CSeqNo::incseq(i))
+    {
+        //HLOGC(tslog.Debug, log << "... removing %" << i);
+        remove(i);
+    }
+
+    return first;
+}
+
 bool srt::CRcvLossList::find(int32_t seqno1, int32_t seqno2) const
 {
     if (0 == m_iLength)
@@ -836,8 +866,10 @@ srt::CRcvFreshLoss::Emod srt::CRcvFreshLoss::revoke(int32_t lo, int32_t hi)
     // ITEM:  <lo, hi>                      <--- delete
     // If the sequence range is older than the range to be revoked,
     // delete it anyway.
-    if (CSeqNo::seqcmp(lo, seq[1]) > 0)
+    if (lo != SRT_SEQNO_NONE && CSeqNo::seqcmp(lo, seq[1]) > 0)
         return DELETE;
+    // IF <lo> is NONE, then rely simply on that item.hi <% arg.hi,
+    // which is a condition at the end.
 
     // LOHI:  <lo, hi>
     // ITEM:             <lo, hi>  <-- NOTFOUND

@@ -54,7 +54,6 @@ modified by
 #include "buffer_tools.h"
 #include "packet.h"
 #include "logger_defs.h"
-#include "sync.h"
 #include "utilities.h"
 
 namespace srt {

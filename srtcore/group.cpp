@@ -893,6 +893,16 @@ void CUDTGroup::close()
                 HLOGC(smlog.Debug, log << "group/close: IPE(NF): group member @" << ig->id << " already deleted");
                 continue;
             }
+
+            // Make the socket closing BEFORE withdrawing its group membership
+            // because a socket created as a group member cannot be valid
+            // without the group.
+            // This is not true in case of non-managed groups, which
+            // only collect sockets, but also non-managed groups should not
+            // use common group buffering and tsbpd. Also currently there are
+            // no other groups than managed one.
+            s->setClosing();
+
             s->m_GroupOf = NULL;
             s->m_GroupMemberData = NULL;
             HLOGC(smlog.Debug, log << "group/close: CUTTING OFF @" << ig->id << " (found as @" << s->m_SocketID << ") from the group");
@@ -3990,7 +4000,7 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
 
     HLOGC(grlog.Debug,
           log << "updateLatestRcv: BACKUP group, updating from active link @" << s->m_SocketID << " with %"
-              << s->core().m_iRcvLastSkipAck);
+              << s->core().m_iRcvLastAck);
 
     CUDT*         source = &s->core();
     vector<CUDT*> targets;

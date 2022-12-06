@@ -3,7 +3,6 @@ any.hpp
 
 SOURCES
 test_buffer_rcv.cpp
-test_bonding.cpp
 test_common.cpp
 test_connection_timeout.cpp
 test_crypto.cpp
@@ -26,7 +25,9 @@ test_timer.cpp
 test_unitqueue.cpp
 test_utilities.cpp
 test_reuseaddr.cpp
+test_socketdata.cpp
 
 # Tests for bonding only - put here!
 
 SOURCES - ENABLE_BONDING
+test_bonding.cpp

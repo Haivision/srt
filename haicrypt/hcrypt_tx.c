@@ -108,6 +108,11 @@ int HaiCrypt_Tx_Data(HaiCrypt_Handle hhc,
 	/* Get/Set packet index */
 	ctx->msg_info->indexMsg(in_pfx, ctx->MSpfx_cache); 
 
+	if (hcryptMsg_GetKeyIndex(ctx->msg_info, in_pfx) != hcryptCtx_GetKeyIndex(ctx))
+	{
+		HCRYPT_LOG(LOG_ERR, "Tx_Data: Key mismatch!");
+	}
+
 	/* Encrypt */
 	{
 		hcrypt_DataDesc indata;

@@ -148,7 +148,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     // what has called this function. The HSv5 handshake only enforces bidirectional
     // connection.
 
-    bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
+    const bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
 
     // Local macro to return rejection appropriately.
     // CHANGED. The first version made HSv5 reject the connection.
@@ -447,8 +447,9 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     return retstatus;
 }
 
-void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED, Whether2RegenKm regen SRT_ATR_UNUSED)
+void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED)
 {
+    sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
     {
         HLOGC(cnlog.Debug, log << "sendKeysToPeer: NOT sending/regenerating keys: "
@@ -481,21 +482,13 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
             }
         }
     }
-
-
-    if (regen)
-    {
-        regenCryptoKm(
-            sock, // send UMSG_EXT + SRT_CMD_KMREQ to the peer using this socket
-            false // Do not apply the regenerated key to the to the receiver context
-        ); // regenerate and send
-    }
 #endif
 }
 
-#ifdef SRT_ENABLE_ENCRYPTION
-void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
+void srt::CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional SRT_ATR_UNUSED)
 {
+#ifdef SRT_ENABLE_ENCRYPTION
+    sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto)
         return;
 
@@ -569,8 +562,8 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock, bool bidirectional)
 
     if (sent)
         m_SndKmLastTime = srt::sync::steady_clock::now();
-}
 #endif
+}
 
 srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     : m_SocketID(id)
@@ -583,7 +576,6 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_bUseGCM(false)
     , m_bErrorReported(false)
 {
-
     m_KmSecret.len = 0;
     //send
     m_SndKmMsg[0].MsgLen = 0;
@@ -684,6 +676,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
 void srt::CCryptoControl::close() 
 {
     /* Wipeout secrets */
+    sync::ScopedLock lck(m_mtxLock);
     memset(&m_KmSecret, 0, sizeof(m_KmSecret));
 }
 
