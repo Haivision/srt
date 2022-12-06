@@ -1352,8 +1352,9 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.21)
 endif()
 
 
-#experimental SWIG support for csharp - only enabled for Windows currently
+#experimental SWIG support for csharp
 if(ENABLE_SWIG)
+	#on windows, there is no swig just in the path - nuget / scripted downloads must be pointed at (linux it just works)
 	if(MICROSOFT)
 		#if nuget has been used to install swig in the project packages, bind to that
 		if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packages/swig/swigwin-4.1.1/swig.exe")

@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 LABEL maintainer="Lewis Kirkaldie <lewis@cinegy.com>"
 
@@ -21,7 +21,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
 
 #add powershell core & dotnet 6.0
 RUN cd /tmp && \
-  curl -o packages-microsoft-prod.deb https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -sS && \
+  curl -o packages-microsoft-prod.deb https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -sS && \
   dpkg -i packages-microsoft-prod.deb && \
   rm packages-microsoft-prod.deb && \
   apt-get update && \

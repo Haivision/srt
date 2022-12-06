@@ -21,7 +21,7 @@ param (
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
     [Parameter()][String]$BONDING = "OFF",
-    [Parameter()][String]$ENABLE_SWIG = "ON",
+    [Parameter()][String]$ENABLE_SWIG = "OFF",
     [Parameter()][String]$ENABLE_SWIG_CSHARP = "ON"
 )
 
