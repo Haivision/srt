@@ -1049,7 +1049,9 @@ Possible values:
 The use is slightly different in 1.2.0 (HSv4), and since 1.3.0 (HSv5):
 
 - **HSv4**: This is set on the sender and enables encryption, if not 0. The receiver
-shall not set it and will agree on the length as defined by the sender.
+shall not set it and will agree on the length as defined by the sender. Being a
+sender is defined by the `SRTO_SENDER` socket option set to true; otherwise the
+party is a receiver.
 
 - **HSv5**: The "default value" for `PBKEYLEN` is 0, which means that the
 `PBKEYLEN` won't be advertised. The "effective value" for `PBKEYLEN` is 16, but
@@ -1068,20 +1070,24 @@ undefined behavior:
 
   - **Bidirectional in Caller-Listener arrangement**: it is recommended to use
   a rule whereby you will be setting the `PBKEYLEN` exclusively either on the
-  Listener or on the Caller. The value set on the Listener will win, if set on
-  both parties.
+  Listener (the service defines the encryption rules strictly) or on the Caller
+  (the service allows all clients to freely decide about encryption, or the
+  server uses more elaborate rules for encryption).
 
-  - **Bidirectional in Rendezvous arrangement**: you have to know the passphrases
-  for both parties, as well as `PBKEYLEN`. Set `PBKEYLEN` to the same value on
-  both parties (or leave the default value on both parties, which will
-  result in 16)
+  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that the settings (including `PBKEYLEN`) are known at both ends. 
+  as it is with Listener mode, so both parties should set the same passphrase and the same key length, 
+  or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
 
   - **Unwanted behavior cases**: if both parties set `PBKEYLEN` and the value
-  on both sides is different, the effective `PBKEYLEN` will be the one that is
-  set on the Responder party, which may also override the `PBKEYLEN` 32 set by
-  the sender to value 16 if such value was used by the receiver. The Responder
-  party is the Listener in a Caller-Listener arrangement. In Rendezvous it's a
-  matter of luck which party becomes the Responder.
+  on both sides is different, this is considered a conflict. It is resolved by
+  the Initiator party, which takes its own value, if the `SRTO_SENDER`
+  option is set to true. Otherwise, it takes the value from the Responder party. The
+  assignment of Initiator-Responder roles matches the Caller-Listener layout.
+  In the case of Rendezvous this assignment depends on the result of
+  the cookie comparison.  **It is highly recommended to never allow this to
+  happen**, as this may result in having one party's setting of length = 32 be
+  overridden by the other party's setting of length = 16.
+
 
 [Return to list](#list-of-options)
 
@@ -1354,6 +1360,10 @@ flag is only required when communicating with a receiver that uses SRT version
 less than 1.3.0 (and hence *HSv4* handshake), in which case if not set properly,
 the TSBPD mode (see [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)) or encryption will not
 work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
+
+This flag in versions above 1.3.0 also influences the conflict resolution for
+`SRTO_PBKEYLEN` in the case where this flag is forcefully set on both connection
+parties simultaneously.
 
 [Return to list](#list-of-options)
 

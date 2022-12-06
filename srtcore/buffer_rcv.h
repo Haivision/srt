@@ -573,7 +573,7 @@ public: // TSBPD public functions
 
     /// Form a string of the current buffer fullness state.
     /// number of packets acknowledged, TSBPD readiness, etc.
-    std::string strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const;
+    std::string strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const;
 
 private:
     CTsbpdTime  m_tsbpd;

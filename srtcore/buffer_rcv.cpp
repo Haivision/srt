@@ -959,16 +959,16 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstValidPacketInfo() const
     if (m_entries[m_iStartPos].status == EntryState_Avail)
     {
         SRT_ASSERT(m_entries[m_iStartPos].pUnit);
-        return (PacketInfo) { m_iStartSeqNo, false /*no gap*/, getPktTsbPdTime(packetAt(m_iStartPos).getMsgTimeStamp()) };
+        return { m_iStartSeqNo, false /*no gap*/, getPktTsbPdTime(packetAt(m_iStartPos).getMsgTimeStamp()) };
     }
     // If not, get the information from the drop
     if (m_iDropPos != m_iEndPos)
     {
         const CPacket& pkt = packetAt(m_iDropPos);
-        return (PacketInfo) { pkt.getSeqNo(), true, getPktTsbPdTime(pkt.getMsgTimeStamp()) };
+        return { pkt.getSeqNo(), true, getPktTsbPdTime(pkt.getMsgTimeStamp()) };
     }
 
-    return (PacketInfo) { SRT_SEQNO_NONE, false, time_point() };
+    return { SRT_SEQNO_NONE, false, time_point() };
 }
 
 std::pair<int, int> CRcvBuffer::getAvailablePacketsRange() const
@@ -1369,15 +1369,12 @@ void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
     m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
 }
 
-string CRcvBuffer::strFullnessState(bool enable_debug_log, int iFirstUnackSeqNo, const time_point& tsNow) const
+string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
 {
     stringstream ss;
 
-    if (enable_debug_log)
-    {
-        ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
-           << " m_iStartPos=" << m_iStartPos << " m_iMaxPosOff=" << m_iMaxPosOff << ". ";
-    }
+    ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
+       << " m_iStartPos=" << m_iStartPos << " m_iMaxPosOff=" << m_iMaxPosOff << ". ";
 
     ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
 

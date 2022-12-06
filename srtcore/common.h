@@ -1414,7 +1414,7 @@ inline std::string SrtVersionString(int version)
     return buf;
 }
 
-bool SrtParseConfig(std::string s, SrtConfig& w_config);
+bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
 
 } // namespace srt
 
