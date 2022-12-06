@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package >
+	<metadata>
+		<id>SrtSharp</id>
+		<title>SRT Library wrapped for C#</title>
+		<version>$version$-beta</version>
+		<authors>Cinegy GmbH</authors>
+		<owners>Cinegy GmbH</owners>
+		<license type="expression">MPL-2.0</license>
+		<requireLicenseAcceptance>false</requireLicenseAcceptance>
+		<description>Secure, Reliable Transport Library with C# bindings, published by Cinegy GmbH</description>
+		<copyright>2019 SRT Haivision Systems Inc (packaged by Cinegy GmbH). All rights reserved.</copyright>  
+		<dependencies>
+      		<group targetFramework="netstandard2.0" />
+    	</dependencies>
+	</metadata>
+
+	<files>
+		<file src="..\..\..\package\bin\srt_swig_csharp.dll" target="runtimes\win-x64\native\release"/>
+		
+		<file src="..\..\..\package\swig_bindings\csharp\bin\Release\netstandard2.0\srtsharp.dll" target="lib\netstandard2.0" /> 
+
+		<file src="..\..\..\package\include\**\*.*" target="sources"/>
+
+		<file src="..\..\..\package\swig_bindings\**\*.*" target="bindings" exclude="**\*.dll"/>
+
+		<file src="build\*" target="build" />
+	</files>
+</package>

@@ -43,3 +43,11 @@ vcpkg/
 
 # LSP
 compile_commands.json
+
+# Nuget packages
+packages/
+package/
+*.nupkg
+
+# Swig bindings
+/srtcore/swig_bindings

@@ -20,7 +20,9 @@ param (
     [Parameter()][String]$UNIT_TESTS = "OFF",
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
-    [Parameter()][String]$BONDING = "OFF"
+    [Parameter()][String]$BONDING = "OFF",
+    [Parameter()][String]$ENABLE_SWIG = "ON",
+    [Parameter()][String]$ENABLE_SWIG_CSHARP = "ON"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
@@ -38,7 +40,6 @@ if ( $Env:APPVEYOR ) {
     if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { $VS_VERSION='2015' }
-    if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2013' ) { $VS_VERSION='2013' }
 
     #if not statically linking OpenSSL, set flag to gather the specific openssl package from the build server into package
     if ( $STATIC_LINK_SSL -eq 'OFF' ) { $Env:GATHER_SSL_INTO_PACKAGE = $true }
@@ -48,13 +49,11 @@ if ( $Env:APPVEYOR ) {
     
     $CONFIGURATION = $Env:CONFIGURATION
 
-    #appveyor has many openssl installations - place the latest one in the default location unless VS2013
-    if( $VS_VERSION -ne '2013' ) {
-        Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-        Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
-        Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
-    }
+    #appveyor has many openssl installations - place the latest v111 edition in the default location
+    Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+    Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+    Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
+    Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
 }
 
 # persist VS_VERSION so it can be used in an artifact name later
@@ -64,8 +63,6 @@ $Env:VS_VERSION = $VS_VERSION
 if ( $VS_VERSION -eq '2019' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019'; $MSBUILDVER = "16.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015'; $MSBUILDVER = "14.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0"; }
-if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013'; $MSBUILDVER = "12.0"; }
-if ( $VS_VERSION -eq '2013' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 12 2013 Win64'; $MSBUILDVER = "12.0"; }
 
 # clear any previous build and create & enter the build directory
 $buildDir = Join-Path "$projectRoot" "$BUILD_DIR"
@@ -132,13 +129,29 @@ if ( $VCPKG_OPENSSL -eq "ON" ) {
     }
 }
 
+# check to see if SWIG is marked to be used - if so, download swig into packages folder so cmake can find it
+if ( $ENABLE_SWIG -eq "ON" ) {
+    if ( Test-Path "$projectRoot/packages/swig/swigwin-4.1.1" ) {
+        Write-Output "Found pre-existing copy of Swigwin 4.1.1 - using this binary"
+    }
+    else {
+        Write-Output "Swigwin 4.1.1 not found - downloading and unpacking..."
+        Remove-Item -LiteralPath $projectRoot/packages/swig/ -Force -Recurse -ErrorAction Ignore
+        Invoke-WebRequest 'https://deac-fra.dl.sourceforge.net/project/swig/swigwin/swigwin-4.1.1/swigwin-4.1.1.zip' -OutFile swig.zip
+        Expand-Archive swig.zip -DestinationPath $projectRoot/packages/swig
+        Remove-Item swig.zip
+    }
+}
+
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
-                "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
-                "-DENABLE_BONDING=$BONDING " +
-                "-DENABLE_UNITTESTS=$UNIT_TESTS"
+                "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " + 
+                "-DENABLE_BONDING=$BONDING " + 
+                "-DENABLE_UNITTESTS=$UNIT_TESTS " + 
+                "-DENABLE_SWIG=$ENABLE_SWIG " + 
+                "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
@@ -228,6 +241,15 @@ if ( $null -eq $msBuildPath ) {
 }
 
 & $msBuildPath SRT.sln -m /p:Configuration=$CONFIGURATION /p:Platform=$DEVENV_PLATFORM
+
+# if CSharp SWIG is on, now trigger compilation of these elements (cmake for dotnet is very new, and not available in older versions)
+if($ENABLE_SWIG_CSHARP){
+    Push-Location "$buildDir/swig_bindings/csharp"
+    Copy-Item "$projectRoot/srtcore/swig_bindings/csharp/*.csproj" .
+    & dotnet build -c $CONFIGURATION
+    Copy-Item "bin/$CONFIGURATION/netstandard2.0/*.dll" "$buildDir/$CONFIGURATION"
+    Pop-Location
+}
 
 # return to the directory previously occupied before running the script
 Pop-Location

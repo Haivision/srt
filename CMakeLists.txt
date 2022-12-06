@@ -160,6 +160,8 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_SWIG "Enable SWIG, used to generate alternative language bindings" OFF)
+option(ENABLE_SWIG_CSHARP "Enable SWIG binding generation for CSharp language (only effective if ENABLE_SWIG is ON)" ON)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -1340,6 +1342,34 @@ endif()
 	srt_add_example(testcapi-connect.c)
 endif()
 
+#SWIG support - adding bindings for other languages into a new library that statically include the main SRT lib
+cmake_policy(SET CMP0078 NEW)
+cmake_policy(SET CMP0086 NEW)
+
+#older cmakes do not understand this policy, so filter (VS2015 AppVeyor cmake is too old)
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.21)
+	cmake_policy(SET CMP0122 NEW)
+endif()
+
+
+#experimental SWIG support for csharp - only enabled for Windows currently
+if(ENABLE_SWIG)
+	if(MICROSOFT)
+		#if nuget has been used to install swig in the project packages, bind to that
+		if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/packages/swig/swigwin-4.1.1/swig.exe")
+			set(SWIG_EXECUTABLE "${CMAKE_CURRENT_SOURCE_DIR}/packages/swig/swigwin-4.1.1/swig.exe")
+		endif()
+	endif()
+	
+	FIND_PACKAGE(SWIG REQUIRED)
+	INCLUDE(${SWIG_USE_FILE})
+
+	if(ENABLE_SWIG_CSHARP)
+		swig_add_library(srt_swig_csharp LANGUAGE csharp SOURCES srtcore/srt.i OUTPUT_DIR ${CMAKE_BINARY_DIR}/swig_bindings/csharp)
+		swig_link_libraries(srt_swig_csharp ${srt_link_library} ${DEPENDS_srt})
+		set_property(TARGET srt_swig_csharp PROPERTY SWIG_COMPILE_OPTIONS -namespace SrtSharp)
+	endif()
+endif()
 
 if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 

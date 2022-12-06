@@ -3,29 +3,29 @@ configuration:
   - Debug
 
 image:
+  - Ubuntu
   - Visual Studio 2019
   - Visual Studio 2015
-  - Visual Studio 2013
 
 platform:
   - x64
   - x86
 
 build_script:
-  - ps: $VSIMG = $Env:APPVEYOR_BUILD_WORKER_IMAGE; $CNFG = $Env:CONFIGURATION
+  - ps: $VSIMG = $Env:APPVEYOR_BUILD_WORKER_IMAGE; $CNFG = $Env:CONFIGURATION  
   # use a few differing arguments depending on VS version to exercise different options during builds
-  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON -UNIT_TESTS ON -BONDING ON }
-  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Debug")   { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON }
+  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON -UNIT_TESTS ON -BONDING ON -ENABLE_SWIG ON}
+  - ps: if ($VSIMG -match '2019' -and $CNFG -eq "Debug")   { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON -ENABLE_SWIG ON}
   - ps: if ($VSIMG -match '2015' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON -UNIT_TESTS ON -BONDING ON}
   - ps: if ($VSIMG -match '2015' -and $CNFG -eq "Debug")   { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS OFF }
-  - ps: if ($VSIMG -match '2013' -and $CNFG -eq "Release") { .\scripts\build-windows.ps1 -CXX11 OFF -BUILD_APPS ON }
-  - ps: if ($VSIMG -match '2013' -and $CNFG -eq "Debug")   { Exit-AppveyorBuild } # just skip 2013 debug build for speed
+  - sh: ./scripts/build-lin-docker.ps1
 
 test_script:
   - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C $Env:CONFIGURATION; cd ../ }
-  
+        
 after_build:
-- cmd: >-
-    scripts/gather-package.bat
-        7z a SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip %APPVEYOR_BUILD_FOLDER%\package\*
-        appveyor PushArtifact SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip
+  - cmd: cd %APPVEYOR_BUILD_FOLDER%
+  - cmd: scripts/gather-package.bat
+  - cmd: scripts/create-win64-nuget.bat
+  - cmd: 7z a SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip %APPVEYOR_BUILD_FOLDER%\package\*
+  - cmd: appveyor PushArtifact SRT-%APPVEYOR_REPO_BRANCH%-%CONFIGURATION%-Win%PLATFORM%-%VS_VERSION%-%APPVEYOR_BUILD_VERSION%.zip
