@@ -1080,7 +1080,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     SRTSOCKET u        = CUDT::INVALID_SOCK;
     bool      accepted = false;
 
-    // !!only one conection can be set up each time!!
+    // !!only one connection can be set up each time!!
     while (!accepted)
     {
         UniqueLock accept_lock(ls->m_AcceptLock);
@@ -1482,7 +1482,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
         // XXX This should be reenabled later, this should
         // be probably still in use to exchange information about
-        // packets assymetrically lost. But for no other purpose.
+        // packets asymmetrically lost. But for no other purpose.
         /*
         ns->core().m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
         */
@@ -2948,7 +2948,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& addr, const U
             // candidates, proceed with creating a new multiplexer.
 
             // Note that a binding to a different IP address is not treated
-            // as a candidate for either reuseage or conflict.
+            // as a candidate for either reusage or conflict.
         }
     }
 
@@ -4367,7 +4367,7 @@ int epoll_wait2(int        eid,
                 int*       lwnum)
 {
     // This API is an alternative format for epoll_wait, created for
-    // compatability with other languages. Users need to pass in an array
+    // compatibility with other languages. Users need to pass in an array
     // for holding the returned sockets, with the maximum array length
     // stored in *rnum, etc., which will be updated with returned number
     // of sockets.

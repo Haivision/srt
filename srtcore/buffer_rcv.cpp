@@ -237,7 +237,7 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     // Move forward if there are "read/drop" entries.
     releaseNextFillerEntries();
     // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceeding packets are invalid. 
+    // because start position was increased, and proceeding packets are invalid.
     m_iFirstNonreadPos = m_iStartPos;
     updateNonreadPos();
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
@@ -546,7 +546,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
 
     // Update positions
     // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceeding packets are invalid. 
+    // because start position was increased, and proceeding packets are invalid.
     if (!isInRange(m_iStartPos, m_iMaxPosInc, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
@@ -984,7 +984,7 @@ int CRcvBuffer::scanNotInOrderMessageRight(const int startPos, int msgNo) const
 
 int CRcvBuffer::scanNotInOrderMessageLeft(const int startPos, int msgNo) const
 {
-    // Search preceeding packets to the left.
+    // Search proceeding packets to the left.
     // First check if there are packets to the left.
     if (startPos == m_iStartPos)
         return -1;

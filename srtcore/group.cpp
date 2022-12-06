@@ -1898,7 +1898,7 @@ void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTS
         // Don't skip packets that are ahead because if we have a situation
         // that all links are either "elephants" (do not report read readiness)
         // and "kangaroos" (have already delivered an ahead packet) then
-        // omiting kangaroos will result in only elephants to be polled for
+        // omitting kangaroos will result in only elephants to be polled for
         // reading. Due to the strict timing requirements and ensurance that
         // TSBPD on every link will result in exactly the same delivery time
         // for a packet of given sequence, having an elephant and kangaroo in
