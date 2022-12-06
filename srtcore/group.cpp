@@ -5111,7 +5111,7 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
 
     HLOGC(grlog.Debug,
           log << "updateLatestRcv: BACKUP group, updating from active link @" << s->m_SocketID << " with %"
-              << s->core().m_iRcvLastSkipAck);
+              << s->core().m_iRcvLastAck);
 
     CUDT*         source = &s->core();
     vector<CUDT*> targets;

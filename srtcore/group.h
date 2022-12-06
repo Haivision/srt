@@ -966,6 +966,13 @@ public:
         return m_pRcvBuffer->getPktTsbPdTime(usPktTimestamp);
     }
 
+    /*
+    int32_t getOldestRcvSeqNo() const
+    {
+        return m_pRcvBuffer->getStartSeqNo();
+    }
+    */
+
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
@@ -974,6 +981,7 @@ public:
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency_us, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+    SRTU_PROPERTY_RO(int32_t, getOldestRcvSeqNo, m_pRcvBuffer->getStartSeqNo());
 };
 
 } // namespace srt
