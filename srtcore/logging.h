@@ -60,6 +60,7 @@ written by
 
 // LOGF uses printf-like style formatting.
 // Usage: LOGF(gglog.Debug, "%s: %d", param1.c_str(), int(param2));
+// NOTE: LOGF is deprecated and should not be used
 #define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 
 // LOGP is C++11 only OR with only one string argument.
@@ -242,7 +243,9 @@ public:
             return *this;
         }
 
-        DummyProxy& form(const char*, ...)
+        // DEPRECATED: DO NOT use LOGF/HLOGF macros anymore.
+        // Use iostream-style formatting with LOGC or a direct argument with LOGP.
+        SRT_ATR_DEPRECATED_PX DummyProxy& form(const char*, ...) SRT_ATR_DEPRECATED
         {
             return *this;
         }
