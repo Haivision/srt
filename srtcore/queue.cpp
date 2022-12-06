@@ -831,14 +831,42 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
 {
     ScopedLock vg(m_RIDListLock);
 
+    IF_HEAVY_LOGGING(const char* const id_type = w_id ? "THIS ID" : "A NEW CONNECTION");
+
     // TODO: optimize search
     for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
+            // This procedure doesn't exactly respond to the original UDT idea.
+            // As the "rendezvous queue" is used for both handling rendezous and
+            // the caller sockets in the non-blocking mode (for blocking mode the
+            // entire handshake procedure is handled in a loop-style in CUDT::startConnect),
+            // the RID list should give up a socket entity in the following cases:
+            // 1. For THE SAME id as passed in w_id, respond always, as per a caller
+            //    socket that is currently trying to connect and is managed with
+            //    HS roundtrips in an event-style. Same for rendezvous.
+            // 2. For the "connection request" ID=0 the found socket should be given up
+            //    ONLY IF it is rendezvous. Normally ID=0 is only for listener as a
+            //    connection request. But if there was a listener, then this function
+            //    wouldn't even be called, as this case would be handled before trying
+            //    to call this function.
+            //
+            // This means: if an incoming ID is 0, then this search should succeed ONLY
+            // IF THE FOUND SOCKET WAS RENDEZVOUS.
+
+            if (!w_id && !i->m_pUDT->m_config.bRendezvous)
+            {
+                HLOGC(cnlog.Debug,
+                        log << "RID: found id @" << i->m_iID << " while looking for "
+                        << id_type << " FROM " << i->m_PeerAddr.str()
+                        << ", but it's NOT RENDEZVOUS, skipping");
+                continue;
+            }
+
             HLOGC(cnlog.Debug,
-                  log << "RID: found id @" << i->m_iID << " while looking for "
-                      << (w_id ? "THIS ID FROM " : "A NEW CONNECTION FROM ") << i->m_PeerAddr.str());
+                    log << "RID: found id @" << i->m_iID << " while looking for "
+                    << id_type << " FROM " << i->m_PeerAddr.str());
             w_id = i->m_iID;
             return i->m_pUDT;
         }
