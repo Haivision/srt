@@ -8475,78 +8475,80 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         ScopedLock ack_lock(m_RecvAckLock);
 
         // decode loss list message and insert loss into the sender loss list
-        for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
+        for (int i = 0, n = (int)losslist_len; i < n; ++i)
         {
+            // IF the loss is a range <LO, HI>
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
-                // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
+                // Then it's this is a <LO, HI> specification with HI in a consecutive cell.
                 const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
                 const int32_t losslist_hi = losslist[i + 1];
-                // <lo, hi> specification means that the consecutive cell has been already interpreted.
+                // <LO, HI> specification means that the consecutive cell has been already interpreted.
                 ++i;
 
                 HLOGC(inlog.Debug, log << CONID() << "received UMSG_LOSSREPORT: "
                                        << losslist_lo << "-" << losslist_hi
-                                       << " (" << (CSeqNo::seqoff(losslist_lo, losslist_hi) + 1) << " packets)...");
+                                       << " (" << CSeqNo::seqlen(losslist_lo, losslist_hi) << " packets)...");
 
                 if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
                     (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
                 {
+                    // LO must not be greater than HI.
+                    // HI must not be greater than the most recent sent seq.
                     LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
                         << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
-                    // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                     secure = false;
                     wrong_loss = losslist_hi;
                     break;
                 }
 
                 int num = 0;
-                //   IF losslist_lo %>= m_iSndLastAck
+                // IF losslist_lo %>= m_iSndLastAck
                 if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
                 {
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(losslist_lo, losslist_hi);
                 }
-                // ELSE IF losslist_hi %>= m_iSndLastAck
-                else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
-                {
-                    // This should be theoretically impossible because this would mean
-                    // that the received packet loss report informs about the loss that predates
-                    // the ACK sequence.
-                    // However, this can happen if the packet reordering has caused the earlier sent
-                    // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
-                    // more important, so simply drop the part that predates ACK.
-                    HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
-                        << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
-                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
-                }
+                // ELSE losslist_lo %< m_iSndLastAck
                 else
                 {
-                    // This should be treated as IPE, but this may happen in one situtation:
+                    // This should be theoretically impossible because this would mean that
+                    // the received packet loss report informs about the loss that predates
+                    // the ACK sequence.
+                    // However, this can happen in these situations:
+                    // - if the packet reordering has caused the earlier sent LOSSREPORT will be
+                    // delivered after later sent ACK. Whatever, ACK should be more important,
+                    // so simply drop the part that predates ACK.
                     // - redundancy second link (ISN was screwed up initially, but late towards last sent)
                     // - initial DROPREQ was lost
                     // This just causes repeating DROPREQ, as when the receiver continues sending
                     // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
-                    //
+                    int32_t dropreq_hi = losslist_hi;
+                    IF_HEAVY_LOGGING(const char* drop_type = "completely");
+
+                    // IF losslist_hi %>= m_iSndLastAck
+                    if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                    {
+                        HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
+                                << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
+                        num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                        dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
+                        IF_HEAVY_LOGGING(drop_type = "partially");
+                    }
+
+                    // In distinction to losslist, DROPREQ has always just one range,
+                    // and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist_lo, dropreq_hi };
+                    const int32_t no_msgno = 0; // We don't know.
+
                     // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
                     // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
                     // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
                     //   TSBPD wake up should it still wait for new packets to get ACK-ed)
-
-                    HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
-                        << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
-                        << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
-
-                    // This means that the loss touches upon a range that wasn't ever sent.
-                    // Normally this should never happen, but this might be a case when the
-                    // ISN FIX for redundant connection was missed.
-
-                    // In distinction to losslist, DROPREQ has always a range
-                    // always just one range, and the data are <LO, HI>, with no range bit.
-                    int32_t seqpair[2] = { losslist_lo, losslist_hi };
-                    const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
-
+                    HLOGC(inlog.Debug,
+                          log << CONID() << "LOSSREPORT: " << drop_type << " IGNORED with SndLastAck=%" << m_iSndLastAck
+                              << ": %" << losslist_lo << "-" << dropreq_hi << " - sending DROPREQ");
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
 
@@ -8554,25 +8556,42 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
-            else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
+            // ELSE the loss is a single seq
+            else
             {
-                if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                // IF loss_seq %>= m_iSndLastAck
+                if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
                 {
-                    LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
-                        << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
-                    // seq_a must not be greater than the most recent sent seq
-                    secure = false;
-                    wrong_loss = losslist[i];
-                    break;
+                    if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                    {
+                        LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                                << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
+                        // loss_seq must not be greater than the most recent sent seq
+                        secure = false;
+                        wrong_loss = losslist[i];
+                        break;
+                    }
+
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
+                    const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                    enterCS(m_StatsLock);
+                    m_stats.sndr.lost.count(num);
+                    leaveCS(m_StatsLock);
                 }
-
-                HLOGC(inlog.Debug, log << CONID() << "rcv LOSSREPORT: %"
-                    << losslist[i] << " (1 packet)");
-                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
-
-                enterCS(m_StatsLock);
-                m_stats.sndr.lost.count(num);
-                leaveCS(m_StatsLock);
+                // ELSE loss_seq %< m_iSndLastAck
+                else
+                {
+                    // In distinction to losslist, DROPREQ has always just one range,
+                    // and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist[i], losslist[i] };
+                    const int32_t no_msgno = 0; // We don't know.
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %" << losslist[i]
+                            << " - sending DROPREQ");
+                    sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                }
             }
         }
     }
