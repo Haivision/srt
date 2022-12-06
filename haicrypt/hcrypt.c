@@ -196,6 +196,9 @@ int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
     pcfg->flags = HAICRYPT_CFG_F_CRYPTO;
     if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT) == HCRYPT_CTX_F_ENCRYPT)
         pcfg->flags |= HAICRYPT_CFG_F_TX;
+   
+    if (ctx->mode == HCRYPT_CTX_MODE_AESGCM)
+        pcfg->flags |= HAICRYPT_CFG_F_GCM;
 
     /* Set this explicitly - this use of this library is SRT only. */
     pcfg->xport = HAICRYPT_XPT_SRT;

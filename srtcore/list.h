@@ -179,6 +179,12 @@ public:
 
     bool remove(int32_t seqno1, int32_t seqno2);
 
+
+    /// Remove all numbers that precede the given sequence number.
+    /// @param [in] seqno sequence number.
+    /// @return the first removed sequence number
+    int32_t removeUpTo(int32_t seqno);
+
     /// Find if there is any lost packets whose sequence number falling seqno1 and seqno2.
     /// @param [in] seqno1 start sequence number.
     /// @param [in] seqno2 end sequence number.

@@ -10,6 +10,7 @@ addons:
         - libssl-dev
         - build-essential
         - libmbedtls-dev
+        - gdb
     sonarcloud:
         organization: "haivision"
         token:
@@ -93,8 +94,13 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
+        ulimit -c unlimited;
         ./test-srt --gtest_filter="-$TESTS_IPv6";
+        SUCCESS=$?;
+        if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
       fi
+after_success:
     - if (( "$RUN_CODECOV" )); then
         source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);
