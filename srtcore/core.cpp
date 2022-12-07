@@ -813,7 +813,10 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_CRYPTOMODE:
-        *(int32_t*)optval = m_config.iCryptoMode;
+        if (m_pCryptoControl)
+            *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
+        else
+            *(int32_t*)optval = m_config.iCryptoMode;
         optlen = sizeof(int32_t);
         break;
 

@@ -161,6 +161,10 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     bool wasb4 SRT_ATR_UNUSED = false;
     size_t sek_len = 0;
 
+    const bool bUseGCM =
+        (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO && kmdata[HCRYPT_MSG_KM_OFS_CIPHER] == HCRYPT_CIPHER_AES_GCM) ||
+        (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM);
+
     // What we have to do:
     // If encryption is on (we know that by having m_KmSecret nonempty), create
     // the crypto context (if bidirectional, create for both sending and receiving).
@@ -208,12 +212,15 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     }
     wasb4 = m_hRcvCrypto;
 
-    if (!createCryptoCtx((m_hRcvCrypto), m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX, m_bUseGCM))
+    if (!createCryptoCtx((m_hRcvCrypto), m_iRcvKmKeyLen, HAICRYPT_CRYPTO_DIR_RX, bUseGCM))
     {
         LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: Can't create RCV CRYPTO CTX - must reject...");
         m_RcvKmState = SRT_KM_S_NOSECRET;
         KMREQ_RESULT_REJECTION();
     }
+
+    // Deduce resulting mode.
+    m_iCryptoMode = bUseGCM ? CSrtConfig::CIPHER_MODE_AES_GCM : CSrtConfig::CIPHER_MODE_AES_CTR;
 
     if (!wasb4)
     {
@@ -573,7 +580,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_RcvKmState(SRT_KM_S_UNSECURED)
     , m_KmRefreshRatePkt(0)
     , m_KmPreAnnouncePkt(0)
-    , m_bUseGCM(false)
+    , m_iCryptoMode(CSrtConfig::CIPHER_MODE_AUTO)
     , m_bErrorReported(false)
 {
     m_KmSecret.len = 0;
@@ -600,10 +607,14 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
 
     // Set UNSECURED state as default
     m_RcvKmState = SRT_KM_S_UNSECURED;
-    m_bUseGCM = cfg.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM;
+    m_iCryptoMode = cfg.iCryptoMode;
 
 #ifdef SRT_ENABLE_ENCRYPTION
-    if (m_bUseGCM && !isAESGCMSupported())
+    if (!cfg.bTSBPD && m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        m_iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+    const bool bUseGCM = m_iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM;
+
+    if (bUseGCM && !isAESGCMSupported())
     {
         LOGC(cnlog.Warn, log << "CCryptoControl: AES GCM is not supported by the crypto service provider.");
         return false;
@@ -616,7 +627,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
     m_KmPreAnnouncePkt = cfg.uKmPreAnnouncePkt;
     m_KmRefreshRatePkt = cfg.uKmRefreshRatePkt;
 
-    if ( side == HSD_INITIATOR )
+    if (side == HSD_INITIATOR)
     {
         if (hasPassphrase())
         {
@@ -627,7 +638,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
                 m_iSndKmKeyLen = 16;
             }
 
-            bool ok = createCryptoCtx((m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, m_bUseGCM);
+            bool ok = createCryptoCtx((m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, bUseGCM);
             HLOGC(cnlog.Debug, log << "CCryptoControl::init: creating SND crypto context: " << ok);
 
             if (ok && bidirectional)
@@ -652,6 +663,8 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
                 NULL, // Do not send the key (the KM msg will be attached to the HSv5 handshake)
                 bidirectional // replicate the key to the receiver context, if bidirectional
             );
+
+            m_iCryptoMode = bUseGCM ? CSrtConfig::CIPHER_MODE_AES_GCM : CSrtConfig::CIPHER_MODE_AES_CTR;
 #else
             // This error would be a consequence of setting the passphrase, while encryption
             // is turned off at compile time. Setting the password itself should be not allowed

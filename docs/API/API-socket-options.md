@@ -333,7 +333,7 @@ The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is s
 
 Crypto modes:
 
-- `0`: auto-select during handshake negotiation (to be implemented; currently similar to AES-CTR).
+- `0`: SRT listener accepts any mode from the caller. SRT Caller or SRT Rendezvous use AES-CTR (1).
 - `1`: regular AES-CTR (without message integrity authentication).
 - `2`: AES-GCM mode with message integrity authentication (AEAD).
 
