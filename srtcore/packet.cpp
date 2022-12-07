@@ -553,7 +553,7 @@ void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
 
 uint32_t CPacket::getMsgTimeStamp() const
 {
-    // SRT_DEBUG_TSBPD_WRAP may enable smaller timestamp for faster wrap around handling tests
+    // SRT_DEBUG_TSBPD_WRAP used to enable smaller timestamps for faster testing of how wraparounds are handled
     return (uint32_t)m_nHeader[SRT_PH_TIMESTAMP] & TIMESTAMP_MASK;
 }
 

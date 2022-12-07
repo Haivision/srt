@@ -142,7 +142,7 @@ public:
     /// Query how many data has been continuously received (for reading) and available for reading out
     /// regardless of the TSBPD.
     /// TODO: Rename to countAvailablePackets().
-    /// @return size of valid (continuos) data for reading.
+    /// @return size of valid (continuous) data for reading.
     int getRcvDataSize() const;
 
     /// Get the number of packets, bytes and buffer timespan.
@@ -162,10 +162,10 @@ public:
     /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
     /// none
     /// @param [out] passack   true if 1st ready packet is not yet acknowledged (allowed to be delivered to the app)
-    /// @param [out] skipseqno -1 or seq number of 1st unacknowledged pkt ready to play proceeded by missing packets.
+    /// @param [out] skipseqno -1 or sequence number of 1st unacknowledged packet (after one or more missing packets) that is ready to play.
     /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
     /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
-    ///                   IF skipseqno != -1, packet ready to play proceeded by missing packets.;
+    ///                   IF skipseqno != -1, packet ready to play preceded by missing packets.;
     ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
