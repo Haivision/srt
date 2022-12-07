@@ -150,13 +150,11 @@ bool srt::CUDTSocket::readReady()
 {
 #if ENABLE_BONDING
 
-    // If this is a group member socket, then reading
-    // happens exclusively from the group and the socket is
-    // only used as a connection point, packet dispatching
-    // and single link management. Data buffering and hence
-    // ability to deliver a packet through API is exclusively
-    // the matter of group, therefore a single socket is never
-    // "read ready".
+    // If this is a group member socket, then reading happens exclusively from
+    // the group and the socket is only used as a connection point, packet
+    // dispatching and single link management. Data buffering and hence ability
+    // to deliver a packet through API is exclusively the matter of group,
+    // therefore a single socket is never "read ready".
 
     if (m_GroupOf)
         return false;

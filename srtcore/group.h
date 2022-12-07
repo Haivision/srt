@@ -912,7 +912,7 @@ public:
 #endif
     }
 
-    int checkLazySpawnLatencyThread();
+    int checkLazySpawnTsbPdThread();
     CRcvBuffer::InsertInfo addDataUnit(SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
     bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);

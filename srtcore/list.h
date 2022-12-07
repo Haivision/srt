@@ -310,7 +310,6 @@ struct CRcvFreshLoss
     static bool removeOne(std::deque<CRcvFreshLoss>& w_container, int32_t sequence, int* had_ttl = NULL);
 };
 
-
 } // namespace srt
 
 #endif

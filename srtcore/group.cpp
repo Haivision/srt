@@ -1073,6 +1073,7 @@ void CUDTGroup::synchronizeLoss(int32_t seqno)
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         CUDT& u = gi->ps->core();
+        // XXX Consider expanding this call in place.
         u.skipMemberLoss(seqno);
     }
 }
@@ -2888,6 +2889,47 @@ const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
 }
 
 
+void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
+{
+    if (!m_bConnected)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+    if (m_bClosing)
+        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    const steady_clock::time_point currtime = steady_clock::now();
+
+    memset(perf, 0, sizeof *perf);
+
+    ScopedLock gg(m_GroupLock);
+
+    perf->msTimeStamp = count_milliseconds(currtime - m_tsStartTime);
+
+    perf->pktSentUnique = m_stats.sent.trace.count();
+    perf->pktRecvUnique = m_stats.recv.trace.count();
+    perf->pktRcvDrop    = m_stats.recvDrop.trace.count();
+
+    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr();
+    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr();
+    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr();
+
+    perf->pktSentUniqueTotal = m_stats.sent.total.count();
+    perf->pktRecvUniqueTotal = m_stats.recv.total.count();
+    perf->pktRcvDropTotal    = m_stats.recvDrop.total.count();
+
+    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr();
+    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr();
+    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr();
+
+    const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
+    perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
+    perf->mbpsRecvRate    = double(perf->byteRecv) * 8.0 / interval;
+
+    if (clear)
+    {
+        m_stats.reset();
+    }
+}
+
 // The REAL version for the new group receiver.
 // 
 int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
@@ -3138,48 +3180,6 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
     }
 
     return res;
-}
-
-
-void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
-{
-    if (!m_bConnected)
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    if (m_bClosing)
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-
-    const steady_clock::time_point currtime = steady_clock::now();
-
-    memset(perf, 0, sizeof *perf);
-
-    ScopedLock gg(m_GroupLock);
-
-    perf->msTimeStamp = count_milliseconds(currtime - m_tsStartTime);
-
-    perf->pktSentUnique = m_stats.sent.trace.count();
-    perf->pktRecvUnique = m_stats.recv.trace.count();
-    perf->pktRcvDrop    = m_stats.recvDrop.trace.count();
-
-    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr();
-    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr();
-    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr();
-
-    perf->pktSentUniqueTotal = m_stats.sent.total.count();
-    perf->pktRecvUniqueTotal = m_stats.recv.total.count();
-    perf->pktRcvDropTotal    = m_stats.recvDrop.total.count();
-
-    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr();
-    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr();
-    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr();
-
-    const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
-    perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
-    perf->mbpsRecvRate    = double(perf->byteRecv) * 8.0 / interval;
-
-    if (clear)
-    {
-        m_stats.reset();
-    }
 }
 
 /// @brief Compares group members by their weight (higher weight comes first).
@@ -5897,7 +5897,7 @@ void CUDTGroup::discardSendSchedule(SocketData* d, int ndiscard)
 
 // Receiver part
 
-int CUDTGroup::checkLazySpawnLatencyThread()
+int CUDTGroup::checkLazySpawnTsbPdThread()
 {
     // It is confirmed that the TSBPD thread is required,
     // so just check if it's running already.
