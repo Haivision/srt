@@ -231,7 +231,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                     | 1.1.0 | pre      | `bool`    |         |  \*               |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                         | 1.0.5 | post     | `int32_t` | %       | 25                | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)               | 1.4.0 | pre      | `string`  |         | ""                | [512]    | RW  | GSD   |
-| [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                   | 0.0.0 | pre      | `string`  |         | ""                | [10..79] | W   | GSD   |
+| [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                   | 0.0.0 | pre      | `string`  |         | ""                | [10..80] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                 | 1.3.0 | pre      | `int32_t` | bytes   | \*                | 0.. \*   | W   | GSD   |
 | [`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN)                       | 0.0.0 | pre      | `int32_t` | bytes   | 0                 | \*       | RW  | GSD   |
 | [`SRTO_PEERIDLETIMEO`](#SRTO_PEERIDLETIMEO)             | 1.3.3 | pre      | `int32_t` | ms      | 5000              | 0..      | RW  | GSD+  |
@@ -987,7 +987,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PASSPHRASE`    | 0.0.0 | pre      | `string`   |         | ""       |[10..79]| W   | GSD    |
+| `SRTO_PASSPHRASE`    | 0.0.0 | pre      | `string`   |         | ""       |[10..80]| W   | GSD    |
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
