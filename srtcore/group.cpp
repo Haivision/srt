@@ -1149,7 +1149,7 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
         dist = max<int>(m_zLongestDistance, dist);
         m_zLongestDistance = dist;
 
-        duration td = steady_clock::now() - m_RcvFurthestPacketTime;
+        duration td = steady_clock::now() - m_RcvFurthestPacketTime.load();
         td = max(m_tdLongestDistance.load(), td);
         m_tdLongestDistance = td;
 
