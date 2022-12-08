@@ -11191,30 +11191,8 @@ int srt::CUDT::processData(CUnit* in_unit)
 // if the transmission was already torn in the previously active link
 // this shouldn't be a problem that these packets won't be recovered
 // after activating the second link, although will be retried this way.
-void srt::CUDT::updateIdleLinkFrom(CUDT* source)
+void srt::CUDT::updateIdleLinkFrom(int32_t new_last_rcv, SRTSOCKET id SRT_ATR_UNUSED /* logging only */)
 {
-    int bufseq;
-    {
-        ScopedLock lg (m_RcvBufferLock);
-        bufseq = source->m_pRcvBuffer->getStartSeqNo();
-    }
-    ScopedLock lg (m_RecvLock);
-
-    // Same version as the one with the old receiver buffering,
-    // just this time don't check if the buffer is empty. The value
-    // will be rejected anyway if it's equal.
-
-    int32_t new_last_rcv = source->m_iRcvLastAck;
-
-    if (CSeqNo::seqcmp(new_last_rcv, bufseq) < 0)
-    {
-        // Emergency check whether the last ACK was behind the
-        // buffer. This may happen when TSBPD dropped empty cells.
-        // This may cause that the newly activated link may derive
-        // these empty cells which will never be recovered.
-        new_last_rcv = bufseq;
-    }
-
     // if (new_last_rcv <=% m_iRcvCurrSeqNo)
     if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) <= 0)
     {
@@ -11226,7 +11204,7 @@ void srt::CUDT::updateIdleLinkFrom(CUDT* source)
     }
 
     HLOGC(grlog.Debug, log << "grp: updating rcv-seq in @" << m_SocketID
-            << " from @" << source->m_SocketID << ": %" << new_last_rcv);
+            << " from @" << id << ": %" << new_last_rcv);
     setInitialRcvSeq(new_last_rcv);
 }
 

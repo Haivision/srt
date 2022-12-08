@@ -5163,9 +5163,16 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
     // operation will need receiver lock, so it might
     // risk a deadlock.
 
+    int bufseq;
+    {
+        ScopedLock bg (m_RcvBufferLock);
+        bufseq = m_pRcvBuffer->getStartSeqNo();
+    }
+    int32_t latest_seq = CSeqNo::maxseq(bufseq, source->m_iRcvLastAck);
+
     for (size_t i = 0; i < targets.size(); ++i)
     {
-        targets[i]->updateIdleLinkFrom(source);
+        targets[i]->updateIdleLinkFrom(latest_seq, source->id());
     }
 }
 

@@ -544,7 +544,7 @@ private:
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
 
-    void updateIdleLinkFrom(CUDT* source);
+    void updateIdleLinkFrom(int32_t seq, SRTSOCKET id);
 
     /// @brief Drop packets too late to be delivered if any.
     /// @returns the number of packets actually dropped.
