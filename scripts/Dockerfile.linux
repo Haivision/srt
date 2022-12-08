@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM debian:bullseye
 
 LABEL maintainer="Lewis Kirkaldie <lewis@cinegy.com>"
 
@@ -15,20 +15,17 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
         build-essential git nano gnupg apt-utils unzip sudo bzip2 \
         apt-transport-https curl wget ca-certificates cpio \
         libssl-dev software-properties-common \
-        p7zip-full p7zip-rar swig && \
+        p7zip-full swig && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/*
 
-#add powershell core & dotnet 6.0
-RUN cd /tmp && \
-  curl -o packages-microsoft-prod.deb https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -sS && \
-  dpkg -i packages-microsoft-prod.deb && \
-  rm packages-microsoft-prod.deb && \
-  apt-get update && \
-  apt-get install -y powershell && \
-  apt-get install -y dotnet-sdk-6.0 && \
-  apt-get clean && \
-  rm -rf /var/lib/apt/lists/*
+# add powershell core & dotnet 6.0
+# RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+#   sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-bullseye-prod bullseye main" > /etc/apt/sources.list.d/microsoft.list' && \
+#   apt update && sudo apt install -y powershell && \
+#   apt-get install -y dotnet-sdk-6.0 && \
+#   apt-get clean && \
+#   rm -rf /var/lib/apt/lists/*
 
 #add cmake 3.24.1
 RUN mkdir -p /usr/src/cmake \

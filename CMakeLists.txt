@@ -1351,7 +1351,6 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.21)
 	cmake_policy(SET CMP0122 NEW)
 endif()
 
-
 #experimental SWIG support for csharp
 if(ENABLE_SWIG)
 	#on windows, there is no swig just in the path - nuget / scripted downloads must be pointed at (linux it just works)
@@ -1364,6 +1363,10 @@ if(ENABLE_SWIG)
 	
 	FIND_PACKAGE(SWIG REQUIRED)
 	INCLUDE(${SWIG_USE_FILE})
+	
+	if(UNIX AND NOT APPLE)
+		list(APPEND CMAKE_SWIG_FLAGS "-DSWIGWORDSIZE64")
+	endif()
 
 	if(ENABLE_SWIG_CSHARP)
 		swig_add_library(srt_swig_csharp LANGUAGE csharp SOURCES srtcore/srt.i OUTPUT_DIR ${CMAKE_BINARY_DIR}/swig_bindings/csharp)

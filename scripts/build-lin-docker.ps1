@@ -9,8 +9,9 @@
 # encryption or unit tests enabled, but including test apps.
 ################################################################################
 
-param (
+param (    
     [Parameter()][String]$CONFIGURATION = "Release",
+    [Parameter()][String]$BUILDCONTAINER = "srtselfbuildcontainer",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
     [Parameter()][String]$STATIC_LINK_SSL = "OFF",
@@ -18,16 +19,21 @@ param (
     [Parameter()][String]$BUILD_APPS = "ON",
     [Parameter()][String]$UNIT_TESTS = "OFF",
     [Parameter()][String]$BUILD_DIR = "_build-linux",
-    [Parameter()][String]$ENABLE_SWIG = "OFF",
+    [Parameter()][String]$BONDING = "ON",
+    [Parameter()][String]$ENABLE_SWIG = "ON",
     [Parameter()][String]$ENABLE_SWIG_CSHARP = "ON"
 )
 
 $projectRoot = Join-Path $PSScriptRoot "/.." -Resolve
 
-# generate command to make sure an up-to-date docker container (for compiling within) is built
-$execVar = "docker build -t srtbuildcontainer:latest -f $($projectRoot)/scripts/Dockerfile.linux ."
-Write-Output $execVar
-Invoke-Expression "& $execVar"
+if($BUILDCONTAINER -eq "srtselfbuildcontainer") {
+    # the default build container name was passed - so rebuild this self-contained build environment first
+    # on a CI system, there may be a known-suitable build container already existing, so this can speed up builds
+    # but if this is on default, we can just self-serve
+    $execVar = "docker build -t $BUILDCONTAINER -f $($projectRoot)/scripts/Dockerfile.linux ."
+    Write-Output $execVar
+    Invoke-Expression "& $execVar"
+}
 
 # clear any previous build and create & enter the build directory
 $buildDir = Join-Path "$projectRoot" "$BUILD_DIR"
@@ -41,15 +47,16 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
                 "-DENABLE_UNITTESTS=$UNIT_TESTS " +
+                "-DENABLE_BONDING=$BONDING " + 
                 "-DENABLE_SWIG=$ENABLE_SWIG " +
                 "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
 
 # generate command for docker run of cmake generation step
-$execVar = "docker run --rm -v $($projectRoot):/srt -w /srt/$BUILD_DIR srtbuildcontainer:latest cmake -S ../ $cmakeFlags"
+$execVar = "docker run --rm -v $($projectRoot):/srt -w /srt/$BUILD_DIR $BUILDCONTAINER cmake -S ../ $cmakeFlags"
 Write-Output $execVar
 Invoke-Expression "& $execVar"
 
 # generate command for docker run of cmake build
-$execVar = "docker run --rm -v $($projectRoot):/srt -w /srt/$BUILD_DIR srtbuildcontainer:latest cmake --build ./"
+$execVar = "docker run --rm -v $($projectRoot):/srt -w /srt/$BUILD_DIR $BUILDCONTAINER cmake --build ./"
 Write-Output $execVar
 Invoke-Expression "& $execVar"

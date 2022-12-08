@@ -16,7 +16,7 @@ written by
 /*
 Automatic generatation of bindings via SWIG (http://www.swig.org)
 Install swig via the following (or use instructions from the link above):
-   sudo apt install swig / nuget install swigwintools    
+   sudo apt install swig / nuget install swigwintools / download latest from swig.org   
 Generate the bindings using:
    mkdir srtcore/bindings/csharp -p
    swig -v -csharp -namespace SrtSharp -outdir ./srtcore/bindings/csharp/ ./srtcore/srt.i
@@ -29,12 +29,33 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %}
 
 %include <arrays_csharp.i>
+%include "stdint.i"
+%include "typemaps.i"
 
+
+#if defined(SWIGCSHARP)
 //push anything with an argument name 'buf' back to being an array (e.g. csharp defaults this type to string, which is not ideal here)
 %apply unsigned char INOUT[]  { char* buf}
 
+#if defined(SWIGWORDSIZE64)
+%define PRIMITIVE_TYPEMAP(NEW_TYPE, TYPE)
+%clear NEW_TYPE;
+%clear NEW_TYPE *;
+%clear NEW_TYPE &;
+%clear const NEW_TYPE &;
+%apply TYPE { NEW_TYPE };
+%apply TYPE * { NEW_TYPE * };
+%apply TYPE & { NEW_TYPE & };
+%apply const TYPE & { const NEW_TYPE & };
+%enddef // PRIMITIVE_TYPEMAP
+PRIMITIVE_TYPEMAP(long int, long long);
+PRIMITIVE_TYPEMAP(unsigned long int, unsigned long long);
+#undef PRIMITIVE_TYPEMAP
+#endif // defined(SWIGWORDSIZE64)
+#endif // defined(SWIGCSHARP)
+
 /// 
-/// C# related configration section, customizing binding for this language  
+/// C# related configuration section, customizing binding for this language  
 /// 
 
 // add top-level code to module file, which allows C# bindings of specific objects to be injected for easier use in C# 
