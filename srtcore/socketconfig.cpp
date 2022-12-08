@@ -1010,7 +1010,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     case SRTO_PEERIDLETIMEO:
     case SRTO_RCVBUF:
         //SRTO_RCVSYN - must be always false in groups
-        //SRTO_RCVTIMEO - must be alwyas -1 in groups
+        //SRTO_RCVTIMEO - must be always -1 in groups
     case SRTO_SNDBUF:
     case SRTO_SNDDROPDELAY:
         //SRTO_TLPKTDROP - per transmission setting

@@ -196,8 +196,8 @@ struct CSrtConfig: CSrtMuxerConfig
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
-    bool   bSynSending;     // Sending syncronization mode
-    bool   bSynRecving;     // Receiving syncronization mode
+    bool   bSynSending;     // Sending synchronization mode
+    bool   bSynRecving;     // Receiving synchronization mode
     int    iFlightFlagSize; // Maximum number of packets in flight from the peer side
     int    iSndBufSize;     // Maximum UDT sender buffer size
     int    iRcvBufSize;     // Maximum UDT receiver buffer size

@@ -373,7 +373,7 @@ public: // internal API
     int minSndSize(int len = 0) const
     {
         const int ps = (int) maxPayloadSize();
-        if (len == 0) // wierd, can't use non-static data member as default argument!
+        if (len == 0) // weird, can't use non-static data member as default argument!
             len = ps;
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
     }
@@ -960,7 +960,7 @@ private: // synchronization: mutexes and conditions
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incomming ACK (SRT_EPOLL_OUT)
+    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
 
     sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
     sync::Mutex m_RecvLock;                      // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())

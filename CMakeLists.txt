@@ -433,7 +433,7 @@ if (USE_GNUSTL)
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
-# Detect if the compiler is GNU compatable for flags
+# Detect if the compiler is GNU compatible for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)

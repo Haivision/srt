@@ -144,7 +144,7 @@ any quite probable packet loss that may occur during this process.
 The idea of balancing means that there are multiple network links used for
 carrying out the same transmission, however a single input signal should
 distribute the incoming packets between the links so that one link can
-leverage the bandwith burden of the other. Note that this group is not
+leverage the bandwidth burden of the other. Note that this group is not
 directly used as protection - it is normally intended to work with a
 condition that a single link out of all links in the group would not be
 able to withstand the bitrate of the signal. In order to utilize a

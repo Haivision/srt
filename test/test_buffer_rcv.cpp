@@ -658,7 +658,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay));
 }
 
-/// TSBPD = ON, a ready to play packet is preceeded by a missing packet.
+/// TSBPD = ON, a ready-to-play packet is preceded by a missing packet.
 /// The read-rediness must be signalled, and a packet must be read after the missing
 /// one is dropped.
 /// The TSBPD delay is set to 200 ms. This means, that the packet can be played
@@ -696,7 +696,7 @@ TEST_F(CRcvBufferReadMsg, TSBPDGapBeforeValid)
     EXPECT_EQ(pkt_info.seqno, seqno);
     EXPECT_TRUE(pkt_info.seq_gap);
 
-    // The packet can't be read because there is a missing packet preceeding.
+    // The packet can't be read because there is a missing packet preceding.
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(readready_timestamp));
 
     const int seq_gap_len = CSeqNo::seqoff(m_rcv_buffer->getStartSeqNo(), pkt_info.seqno);

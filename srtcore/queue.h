@@ -194,7 +194,7 @@ private:
     void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
     /// Insert a new UDT instance into the list without realloc.
-    /// Should be called if there is a gauranteed space for the element.
+    /// Should be called if there is a guaranteed space for the element.
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
@@ -526,7 +526,7 @@ private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
     CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
     CHash*        m_pHash;      // Hash table for UDT socket looking up
-    CChannel*     m_pChannel;   // UDP channel for receving packets
+    CChannel*     m_pChannel;   // UDP channel for receiving packets
     sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
     int m_iIPversion;           // IP version

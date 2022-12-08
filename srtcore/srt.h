@@ -72,7 +72,7 @@ written by
 #endif
 
 
-// Stadnard attributes
+// Standard attributes
 
 // When compiling in C++17 mode, use the standard C++17 attributes
 // (out of these, only [[deprecated]] is supported in C++14, so
