@@ -347,7 +347,7 @@ When the [listener callback](./API-functions.md##srt_listen_callback) is used, t
 read on the new SRT socket to be accepted is not yet the negotiated but, but the one to negotiate,
 and inherited from the listener SRT socket.
 If a specific behavior for each individual connection request is desired based on
-[the user ID or anything else](../access-control.md),
+[the user ID or anything else](../features/access-control.md),
 the indended behavior can be achieved by setting the `SRTO_CRYPTOMODE` on the new SRT socket to a specific value.
 
 For example, let's say the initial value set on the listener socket is Auto (0). The listener callback is called
