@@ -356,31 +356,19 @@ for connection from this very user. Then AES-GCM (2) can be set on the new socke
 
 There is no way to check the crypto mode being requested by the SRT caller at this point.
 
-| Caller      | Listener    | Negotiated  |
-| ----------- | ----------- | ----------- |
-| 0 (auto)    | 0 (auto)    | AES-CTR (1) |
-| 0 (auto)    | AES-CTR (1) | AES-CTR (1) |
-| 0 (auto)    | AES-GCM (2) | reject      |
-| AES-CTR (1) | 0 (auto)    | AES-CTR (1) |
-| AES-CTR (1) | AES-CTR (1) | AES-CTR (1) |
-| AES-CTR (1) | AES-GCM (2) | reject      |
-| AES-GCM (2) | 0 (auto)    | AES-GCM (2) |
-| AES-GCM (2) | AES-CTR (1) | reject      |
-| AES-GCM (2) | AES-GCM (2) | AES-GCM (2) |
+| Caller      | Listener    | Negotiated  | | Rdv In-tor  | Rdv Res-der | Negotiated  |
+| ----------- | ----------- | ----------- |-| ----------- | ----------- | ----------- |
+| 0 (auto)    | 0 (auto)    | AES-CTR (1) | | 0 (auto)    | 0 (auto)    | AES-CTR (1) |
+| 0 (auto)    | AES-CTR (1) | AES-CTR (1) | | 0 (auto)    | AES-CTR (1) | AES-CTR (1) |
+| 0 (auto)    | AES-GCM (2) | reject      | | 0 (auto)    | AES-GCM (2) | reject      |
+| AES-CTR (1) | 0 (auto)    | AES-CTR (1) | | AES-CTR (1) | 0 (auto)    | AES-CTR (1) |
+| AES-CTR (1) | AES-CTR (1) | AES-CTR (1) | | AES-CTR (1) | AES-CTR (1) | AES-CTR (1) |
+| AES-CTR (1) | AES-GCM (2) | reject      | | AES-CTR (1) | AES-GCM (2) | reject      |
+| AES-GCM (2) | 0 (auto)    | AES-GCM (2) | | AES-GCM (2) | 0 (auto)    | reject      |
+| AES-GCM (2) | AES-CTR (1) | reject      | | AES-GCM (2) | AES-CTR (1) | reject      |
+| AES-GCM (2) | AES-GCM (2) | AES-GCM (2) | | AES-GCM (2) | AES-GCM (2) | AES-GCM (2) |
 
-
-| Rdv In-tor  | Rdv Res-der | Negotiated  |
-| ----------- | ----------- | ----------- |
-| 0 (auto)    | 0 (auto)    | AES-CTR (1) |
-| 0 (auto)    | AES-CTR (1) | AES-CTR (1) |
-| 0 (auto)    | AES-GCM (2) | reject      |
-| AES-CTR (1) | 0 (auto)    | AES-CTR (1) |
-| AES-CTR (1) | AES-CTR (1) | AES-CTR (1) |
-| AES-CTR (1) | AES-GCM (2) | reject      |
-| AES-GCM (2) | 0 (auto)    | reject      |
-| AES-GCM (2) | AES-CTR (1) | reject      |
-| AES-GCM (2) | AES-GCM (2) | AES-GCM (2) |
-
+* Rdv - Rendezvous; In-tor - initiator; Res-der - responder.
 
 [Return to list](#list-of-options)
 
