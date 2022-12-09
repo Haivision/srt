@@ -3436,6 +3436,10 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // handle handshake extension flags.
     m_ConnReq.m_iType = UDT_DGRAM;
 
+    // Auto mode for caller and in rendezvous is equivalent to CIPHER_MODE_AES_CTR.
+    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+
     // This is my current configuration
     if (m_config.bRendezvous)
     {
