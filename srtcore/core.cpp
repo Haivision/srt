@@ -813,7 +813,10 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_CRYPTOMODE:
-        *(int32_t*)optval = m_config.iCryptoMode;
+        if (m_pCryptoControl)
+            *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
+        else
+            *(int32_t*)optval = m_config.iCryptoMode;
         optlen = sizeof(int32_t);
         break;
 
@@ -3432,6 +3435,10 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // with HSv4 (it supported only live transmission), for HSv5 it will be changed to
     // handle handshake extension flags.
     m_ConnReq.m_iType = UDT_DGRAM;
+
+    // Auto mode for Caller and in Rendezvous is equivalent to CIPHER_MODE_AES_CTR.
+    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
 
     // This is my current configuration
     if (m_config.bRendezvous)

@@ -333,12 +333,42 @@ The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is s
 
 Crypto modes:
 
-- `0`: auto-select during handshake negotiation (to be implemented; currently similar to AES-CTR).
+- `0`: SRT listener accepts any mode from the caller. SRT Caller or SRT Rendezvous effectively negotiate AES-CTR (1).
 - `1`: regular AES-CTR (without message integrity authentication).
 - `2`: AES-GCM mode with message integrity authentication (AEAD).
 
 The AES-GCM mode (2) is only allowed if TSBPD is enabled ([`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)).
+Auto (0) is equivalent to AES-CTR (1) in Rendezvous and for a Caller.
 
+Once a connection is established, reading `SRTO_CRYPTOMODE` shows the negotiated crypto mode:
+AES-CTR (1) or AES-GCM (2).
+
+When [Listener callback](./API-functions.md##srt_listen_callback) is used, the value of
+`SRTO_CRYPTOMODE` read on the new SRT socket to be accepted is not yet the 
+negotiated one. It is the value to be negotiated, and is inherited from the listener SRT socket.
+If a specific behavior for each individual connection request is desired based on
+[the user ID or anything else](../features/access-control.md),
+the intended behavior can be achieved by setting the `SRTO_CRYPTOMODE` on the new SRT socket to a specific value.
+
+For example, let's say the initial value set on the listener socket is Auto (0). The listener callback is called,
+signalling the new connection request. The user ID is extracted, and the server wants to force AES-GCM only
+for the connection from this specific user. In this case AES-GCM (2) can be set on the new socket.
+
+There is no way to check the crypto mode being requested by the SRT caller at this point.
+
+| Caller      | Listener    | Negotiated  | | Rdv In-tor  | Rdv Res-der | Negotiated  |
+| ----------- | ----------- | ----------- |-| ----------- | ----------- | ----------- |
+| 0 (auto)    | 0 (auto)    | AES-CTR (1) | | 0 (auto)    | 0 (auto)    | AES-CTR (1) |
+| 0 (auto)    | AES-CTR (1) | AES-CTR (1) | | 0 (auto)    | AES-CTR (1) | AES-CTR (1) |
+| 0 (auto)    | AES-GCM (2) | reject      | | 0 (auto)    | AES-GCM (2) | reject      |
+| AES-CTR (1) | 0 (auto)    | AES-CTR (1) | | AES-CTR (1) | 0 (auto)    | AES-CTR (1) |
+| AES-CTR (1) | AES-CTR (1) | AES-CTR (1) | | AES-CTR (1) | AES-CTR (1) | AES-CTR (1) |
+| AES-CTR (1) | AES-GCM (2) | reject      | | AES-CTR (1) | AES-GCM (2) | reject      |
+| AES-GCM (2) | 0 (auto)    | AES-GCM (2) | | AES-GCM (2) | 0 (auto)    | reject      |
+| AES-GCM (2) | AES-CTR (1) | reject      | | AES-GCM (2) | AES-CTR (1) | reject      |
+| AES-GCM (2) | AES-GCM (2) | AES-GCM (2) | | AES-GCM (2) | AES-GCM (2) | AES-GCM (2) |
+
+* Rdv - Rendezvous; In-tor - initiator; Res-der - responder.
 
 [Return to list](#list-of-options)
 
