@@ -225,7 +225,7 @@ void srt::CChannel::open(const sockaddr_any& addr)
 
     m_BindAddr = addr;
 #ifdef SRT_ENABLE_PKTINFO
-      m_bBindMasked = m_BindAddr.isany();
+    m_bBindMasked = m_BindAddr.isany();
 #endif
     LOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
@@ -268,9 +268,9 @@ void srt::CChannel::open(int family)
     m_BindAddr = sockaddr_any(res->ai_addr, (sockaddr_any::len_t)res->ai_addrlen);
 
 #ifdef SRT_ENABLE_PKTINFO
-      // We know that this is intentionally bound now to "any",
-      // so the requester-destination address must be remembered and passed.
-      m_bBindMasked = true;
+    // We know that this is intentionally bound now to "any",
+    // so the requester-destination address must be remembered and passed.
+    m_bBindMasked = true;
 #endif
 
     ::freeaddrinfo(res);

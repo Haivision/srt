@@ -117,9 +117,8 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
-# Note: this can be decided to be turned ON by default,
-# however this can't be implemented on Windows, so at least
-# there it must be default OFF.
+# Note that the IP_PKTINFO  has a limited portability and may not work on some platforms
+# (Windows, FreeBSD, ...).
 set (ENABLE_PKTINFO_DEFAULT OFF)
 
 set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
@@ -148,7 +147,7 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
-option(ENABLE_PKTINFO "Enable target IP address extraction on listner" ${ENABLE_PKTINFO_DEFAULT})
+option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
@@ -717,8 +716,8 @@ if (ENABLE_GETNAMEINFO)
 endif()
 
 if (ENABLE_PKTINFO)
-	if (WIN32)
-		message(FATAL_ERROR "PKTINFO is not implemented on Windows.")
+	if (WIN32 OR BSD)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
 	endif()
 
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
