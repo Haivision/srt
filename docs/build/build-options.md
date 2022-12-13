@@ -437,19 +437,19 @@ set as a target IP address in the UDP packet from the peer. The peer will
 reject such a packet as a suspected MITM attempt, and this will lead to a
 connection failure.
 
-This problem has been observed in the case, when the agent's host has at least
-two IP addresses that share the same broadcast prefix and it is being contacted
-by the peer using other than the first of these addresses. For example:
+This problem has been observed where an agent's host has at least
+two IP addresses that share the same broadcast prefix, and it is being contacted
+by a peer using an address other than the first one. For example:
 
 The host has set the following local IP addresses:
 
-* 192.168.10.5 - routing to 192.168.10.1
-* 10.10.5.10 - routing to 10.10.5.1
-* 10.10.5.20 - routing to 10.10.5.1
+  (1) 192.168.10.5 - routing to 192.168.10.1
+  (2) 10.10.5.10 - routing to 10.10.5.1
+  (3) 10.10.5.20 - routing to 10.10.5.1
 
-In all of them the netmask is 255.255.255.0, which means that the second
-and third IP address share the same broadcast prefix, which is 10.10.5.0.
-The problematic case is when an agent running on this host will be contacted
+For all of them the netmask is 255.255.255.0, which means that the second
+and third IP addresses share the same broadcast prefix (10.10.5.0).
+The problem occurs when an agent running on this host is contacted
 by a peer using the address 10.10.5.20.
 
 In such a case the source address set in the UDP packet sent back to the peer
@@ -462,9 +462,9 @@ This problem occurs only with listener sockets bound to "any" address - when it
 is bound to a specific IP address, this will be always set as source address
 for outgoing packets.
 
-By enabling this feature SRT mitigates this problem by first reading the real
-target IP address from the incoming handshake packet, and then setting this
-very address forcefully to the source address field of every UDP packet sent
+By enabling this feature SRT mitigates the problem by first reading the real
+target IP address from the incoming handshake packet, and then forcing this
+specific address to be set in the source address field of every UDP packet sent
 from this socket. This behavior is also consistent with TCP.
 
 Note that this feature is available only on certain platforms. Notably the BSD
