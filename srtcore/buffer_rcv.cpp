@@ -591,19 +591,23 @@ int CRcvBuffer::getTimespan_ms() const
     if (m_iMaxPosInc == 0)
         return 0;
 
-    const int lastpos = incPos(m_iStartPos, m_iMaxPosInc - 1);
-    // Should not happen if TSBPD is enabled (reading out of order is not allowed).
-    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
+    int lastpos = incPos(m_iStartPos, m_iMaxPosInc - 1);
+    // Normally the last position should always be non empty
+    // if TSBPD is enabled (reading out of order is not allowed).
+    // However if decryption of the last packet fails, it may be dropped
+    // from the buffer (AES-GCM), and the position will be empty.
+    SRT_ASSERT(m_entries[lastpos].pUnit != NULL || m_entries[lastpos].status == EntryState_Drop);
+    while (m_entries[lastpos].pUnit == NULL && lastpos != m_iStartPos)
+    {
+        lastpos = decPos(lastpos);
+    }
+    
     if (m_entries[lastpos].pUnit == NULL)
         return 0;
 
     int startpos = m_iStartPos;
-
-    while (m_entries[startpos].pUnit == NULL)
+    while (m_entries[startpos].pUnit == NULL && startpos != lastpos)
     {
-        if (startpos == lastpos)
-            break;
-
         startpos = incPos(startpos);
     }
 

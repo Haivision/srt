@@ -9820,11 +9820,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             excessive = false;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
-                    // TODO: reset and restore the timestamp if TSBPD is disabled.
-                    // Reset retransmission flag (must be excluded from GCM auth tag).
-                    u->m_Packet.setRexmitFlag(false);
-                    const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
-                    u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+                // TODO: reset and restore the timestamp if TSBPD is disabled.
+                // Reset retransmission flag (must be excluded from GCM auth tag).
+                u->m_Packet.setRexmitFlag(false);
+                const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
 
                 if (rc != ENCS_CLEAR)
                 {
@@ -9833,20 +9833,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-                        {
-                            // Drop a packet from the receiver buffer.
-                            // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                            // Otherwise just drop the exact packet.
-                            if (m_config.bMessageAPI)
-                                m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
-                            else
-                                m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+                    {
+                        // Drop a packet from the receiver buffer.
+                        // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                        // Otherwise just drop the exact packet.
+                        if (m_config.bMessageAPI)
+                            m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+                        else
+                            m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-                            LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
-                            m_bBroken = true;
-                            m_iBrokenCounter = 0;
-                        }
+                        LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
+                        m_bBroken = true;
+                        m_iBrokenCounter = 0;
+                    }
 
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
