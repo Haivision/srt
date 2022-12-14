@@ -597,11 +597,8 @@ int CRcvBuffer::getTimespan_ms() const
     // However if decryption of the last packet fails, it may be dropped
     // from the buffer (AES-GCM), and the position will be empty.
     SRT_ASSERT(m_entries[lastpos].pUnit != NULL || m_entries[lastpos].status == EntryState_Drop);
-    while (m_entries[lastpos].pUnit == NULL)
+    while (m_entries[lastpos].pUnit == NULL && lastpos != m_iStartPos)
     {
-        if (lastpos == m_iStartPos)
-            break;
-
         lastpos = decPos(lastpos);
     }
     
@@ -609,11 +606,8 @@ int CRcvBuffer::getTimespan_ms() const
         return 0;
 
     int startpos = m_iStartPos;
-    while (m_entries[startpos].pUnit == NULL)
+    while (m_entries[startpos].pUnit == NULL && startpos != lastpos)
     {
-        if (startpos == lastpos)
-            break;
-
         startpos = incPos(startpos);
     }
 
