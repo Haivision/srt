@@ -1053,7 +1053,7 @@ private: // Generation and processing of packets
     /// whole group.
     ///
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    void updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
+    bool updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill

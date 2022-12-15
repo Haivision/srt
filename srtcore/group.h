@@ -477,8 +477,12 @@ private:
     sync::atomic<size_t> m_zLongestDistance;
     atomic_duration m_tdLongestDistance;
 public:
+    SRT_ATTR_REQUIRES(m_GroupLock)
     void updateRcvRunningState();
+
+    SRT_ATTR_REQUIRES(m_GroupLock)
     void updateErasedLink();
+
     void updateInterlinkDistance();
 private:
 
@@ -958,7 +962,7 @@ public:
 
     SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
     void discardSendSchedule(SocketData* d, int ndiscard);
-    bool updateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
+    void updateOnACK(int32_t ackdata_seqno);
     int packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq);
 
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const

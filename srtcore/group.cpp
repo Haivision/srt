@@ -273,10 +273,9 @@ void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time, i
 }
 
 /// Update the internal state after a single link has been switched to RUNNING state.
+// [[using locked(m_GroupLock)]]
 void CUDTGroup::updateRcvRunningState()
 {
-    ScopedLock lk (m_GroupLock);
-
     size_t nrunning;
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
@@ -287,6 +286,7 @@ void CUDTGroup::updateRcvRunningState()
     m_Group.set_number_running(nrunning);
 }
 
+// [[using locked(m_GroupLock)]]
 void CUDTGroup::updateErasedLink()
 {
     // When a link has been erased, reset the tracing data
@@ -5719,14 +5719,8 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
     return true;
 }
 
-bool CUDTGroup::updateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
+void CUDTGroup::updateOnACK(int32_t ackdata_seqno)
 {
-    w_last_sent_seqno = getSentSeq();
-    /*
-    if (CSeqNo::seqcmp(ackdata_seqno, w_last_sent_seqno) > 0)
-        return false;
-        */
-
     ScopedLock guard(m_LossAckLock);
     if (CSeqNo::seqcmp(m_SndLastDataAck, ackdata_seqno) < 0)
     {
@@ -5734,8 +5728,6 @@ bool CUDTGroup::updateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
         m_pSndLossList->removeUpTo(CSeqNo::decseq(ackdata_seqno));
         m_SndLastDataAck = ackdata_seqno;
     }
-
-    return true;
 }
 
 // This is almost a copy of the CUDT::packLostData except that:
@@ -5885,6 +5877,7 @@ SRT_ATR_NODISCARD bool CUDTGroup::getSendSchedule(SocketData* d, vector<groups::
 void CUDTGroup::discardSendSchedule(SocketData* d, int ndiscard)
 {
     ScopedLock glock (m_GroupLock);
+
     if (ndiscard > int(d->send_schedule.size()))
     {
         LOGC(gmlog.Error, log << "grp/discardSendSchedule: IPE: size " << ndiscard << " is out of range of " << d->send_schedule.size() << " (fallback: clear all)");
