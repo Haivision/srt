@@ -7806,10 +7806,99 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     if (!getFirstNoncontSequence((ack), (reason)))
         return nbsent;
 
+    // Lock the group existence until this function ends. This will be useful
+    // also on other places.
+#if ENABLE_BONDING
+    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
+
+    // bonding : group buffering if member
+    const bool group_buffering = gkeeper.group;
+
+    if (group_buffering)
+    {
+        // NOTE: in case of a Backup-type group, IDLE links are considered to never
+        // sending any packets, hence nothing is to be acknowledged. The problem is
+        // that normally the buffering activities were interconnected with ACK-ing,
+        // however in case of group reception the common receiver buffering causes
+        // that the fact of having received a packet IN THE BUFFER doesn't simultaneously
+        // mean that the packet was received OVER THIS LINK.
+
+        // So, first, check if this link was IDLE. For IDLE links, ACKs should not
+        // be sent at all.
+        //
+        // There is one more small problem though. When a link is being silenced,
+        // then it should turn from RUNNING to IDLE, however the recognition of
+        // this fact is only possible at the moment when the first KEEPALIVE arrives
+        // after the data stop coming. The problem of the wrong ACK could occur
+        // just as well during this period.
+        //
+        // Therefore the best way is, beside rejecting ACK on non-RUNNING
+        // links, in case of RUNNING state, additionally there should be
+        // checked if the last sent sequence exceeds the current last ACK
+        // received. If not, also no ACK should be sent, even if the
+        // noncontiguous sequence was shifted.
+
+        if (gkeeper.group->type() == SRT_GTYPE_BACKUP)
+        {
+            // Lock the GlobControlLock to avoid consideration for a broken link.
+            ScopedLock glk (uglobal().m_GlobControlLock);
+
+            groups::SocketData* pd = m_parent->m_GroupMemberData;
+            if (!m_bOpened || m_bClosing || !pd)
+                return 0;
+
+            if (pd->rcvstate != SRT_GST_RUNNING)
+            {
+                // Do not send ACK for non-RUNNING links
+                return 0;
+            }
+
+            // So, check now if anything has arrived
+            // over THIS LINK since the last ACK.
+            // NOTE: this is still being done for the
+            // backup group only because only in case of
+            // this group there can happen an immediate
+            // stop of the transmission on one of the links
+            // ("silencing"), of which the receiver has no
+            // idea. In broadcast and balancing groups you
+            // can safely send ACK basing on the latest
+            // contiguous sequence in the buffer because all
+            // links are supposed to be active and deliver
+            // packets.
+
+            // Note also that the IDLE state on the receiver
+            // side is only notified upon reception of KEEPALIVE.
+            // Until then it's simply a link that doesn't deliver
+            // data.
+            int32_t pe_recv_seq = CSeqNo::incseq(m_iRcvCurrSeqNo);
+            if (CSeqNo::seqcmp(ack, pe_recv_seq) > 0)
+            {
+                if (CSeqNo::seqcmp(m_iRcvLastAck, pe_recv_seq) >= 0)
+                {
+                    HLOGC(xtlog.Debug, log << CONID() << "sendCtrlAck: grp/BACKUP: buf-ACK %" << ack
+                            << " exceeds last-rcv %" << m_iRcvCurrSeqNo << " == last ack %" << m_iRcvLastAck
+                            << " - NOT SENDING (considered pending IDLE)");
+                    return 0;
+                }
+
+                HLOGC(xtlog.Debug, log << CONID() << "sendCtrlAck: grp/BACKUP: buf-ACK %" << ack
+                        << "exceeds last-rcv %" << m_iRcvCurrSeqNo << " %> last ack %" << m_iRcvLastAck
+                        << " - sending FIXED ack %" << pe_recv_seq);
+                ack = pe_recv_seq;
+            }
+        }
+    }
+
+#else
+    // no bonding : no group buffering
+    const bool group_buffering = false;
+#endif
+
+
     if (m_iRcvLastAckAck == ack)
     {
         HLOGC(xtlog.Debug,
-                log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
+                log << CONID() << "sendCtrlAck: last ACK %" << ack << "(" << reason << ") == last ACKACK");
         return nbsent;
     }
 
@@ -7820,22 +7909,9 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
         ctrlpkt.m_iID = m_PeerID;
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-        DebugAck(CONID() + "sendCtrl(lite): ", local_prevack, ack);
+        DebugAck(CONID() + "sendCtrlAck(lite): ", local_prevack, ack);
         return nbsent;
     }
-
-    // Lock the group existence until this function ends. This will be useful
-    // also on other places.
-#if ENABLE_BONDING
-    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
-
-    // bonding : group buffering if member
-    const bool group_buffering = gkeeper.group;
-
-#else
-    // no bonding : no group buffering
-    const bool group_buffering = false;
-#endif
 
     int avail_receiver_buffer_size = 0;
 #if ENABLE_BONDING
@@ -8024,14 +8100,14 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             (microseconds_from(m_iSRTT + 4 * m_iRTTVar)))
         {
             HLOGC(xtlog.Debug,
-                  log << CONID() << "sendCtrl(UMSG_ACK): ACK %" << ack << " just sent - too early to repeat");
+                  log << CONID() << "sendCtrlAck: ACK %" << ack << " just sent - too early to repeat");
             return nbsent;
         }
     }
     else
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
-        LOGC(xtlog.Error, log << CONID()<< "sendCtrl(UMSG_ACK): IPE: curr(" << reason << ") %" << ack
+        LOGC(xtlog.Error, log << CONID()<< "sendCtrlAck: IPE: curr(" << reason << ") %" << ack
             << " <% last %" << m_iRcvLastAck);
         return nbsent;
     }
@@ -8103,7 +8179,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         ctrlpkt.m_iID = m_PeerID;
         setPacketTS(ctrlpkt, steady_clock::now());
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-        DebugAck(CONID() + "sendCtrl(UMSG_ACK): ", local_prevack, ack);
+        DebugAck(CONID() + "sendCtrlAck: ", local_prevack, ack);
 
         m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
@@ -8113,7 +8189,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     }
     else
     {
-        HLOGC(xtlog.Debug, log << CONID() << "sendCtrl(UMSG_ACK): " << "ACK %" << m_iRcvLastAck
+        HLOGC(xtlog.Debug, log << CONID() << "sendCtrlAck: " << "ACK %" << m_iRcvLastAck
             << " <=%  ACKACK %" << m_iRcvLastAckAck << " - NOT SENDING ACK");
     }
 
