@@ -1359,6 +1359,8 @@ bool CUDTGroup::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     else
         w_log_reason = "last received";
 
+    HLOGC(xtlog.Debug, log << CONID() << "NONCONT-SEQUENCE: " << w_log_reason << " %" << w_seq);
+
     return true;
 }
 

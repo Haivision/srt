@@ -7778,7 +7778,7 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
         else
             w_log_reason = "expected next";
     }
-    HLOGC(xtlog.Debug, log << "NONCONT-SEQUENCE: " << w_log_reason << " %" << w_seq);
+    HLOGC(xtlog.Debug, log << CONID() << "NONCONT-SEQUENCE: " << w_log_reason << " %" << w_seq);
     return true;
 }
 
@@ -7898,7 +7898,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     if (m_iRcvLastAckAck == ack)
     {
         HLOGC(xtlog.Debug,
-                log << CONID() << "sendCtrlAck: last ACK %" << ack << "(" << reason << ") == last ACKACK");
+                log << CONID() << "sendCtrlAck: last ACK %" << ack << "(" << reason << ") == last ACKACK; NOT sending.");
         return nbsent;
     }
 
@@ -8047,7 +8047,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                         rdcc.notify_one();
                     }
                     // acknowledge any waiting epolls to read
-                    // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
+                    // fix SRT_EPOLL_IN event loss but rcvbuffer still have data:
                     // 1. user call receive/receivemessage(about line number:6482)
                     // 2. after read/receive, if rcvbuffer is empty, will set SRT_EPOLL_IN event to false
                     // 3. but if we do not do some lock work here, will cause some sync problems between threads:
