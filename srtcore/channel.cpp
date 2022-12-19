@@ -651,14 +651,17 @@ void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
 {
-    HLOGC(kslog.Debug,
-          log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.m_iID
-              << " size=" << packet.getLength() << " pkt.ts=" << packet.m_iTimeStamp
+#if ENABLE_HEAVY_LOGGING
+    ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
-        << " sourceIP="
-        << (m_bBindMasked && !source_addr.isany() ? source_addr.str() : "default")
+    dsrc << " sourceIP=" << (m_bBindMasked && !source_addr.isany() ? source_addr.str() : "default");
 #endif
-        << " " << packet.Info());
+
+    LOGC(kslog.Debug,
+         log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.m_iID
+             << " size=" << packet.getLength() << " pkt.ts=" << packet.m_iTimeStamp
+             << dsrc.str() << " " << packet.Info());
+#endif
 
 #ifdef SRT_TEST_FAKE_LOSS
 
