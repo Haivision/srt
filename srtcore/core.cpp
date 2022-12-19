@@ -820,7 +820,10 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_CRYPTOMODE:
-        *(int32_t*)optval = m_config.iCryptoMode;
+        if (m_pCryptoControl)
+            *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
+        else
+            *(int32_t*)optval = m_config.iCryptoMode;
         optlen = sizeof(int32_t);
         break;
 
@@ -2746,7 +2749,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // where the padding is filled by zero bytes. For the case when the string is
                 // exactly of a 4-divisible length, we make a big array with maximum allowed size
                 // filled with zeros. Copying to this array should then copy either only the valid
-                // characters of the string (if the lenght is divisible by 4), or the string with
+                // characters of the string (if the length is divisible by 4), or the string with
                 // padding zeros. In all these cases in the resulting array we should have all
                 // subsequent characters of the string plus at least one '\0' at the end. This will
                 // make it a perfect NUL-terminated string, to be used to initialize a string.
@@ -3419,6 +3422,10 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // handle handshake extension flags.
     m_ConnReq.m_iType = UDT_DGRAM;
 
+    // Auto mode for Caller and in Rendezvous is equivalent to CIPHER_MODE_AES_CTR.
+    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+
     // This is my current configuration
     if (m_config.bRendezvous)
     {
@@ -3655,7 +3662,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
 
-            // new request/response should be sent out immediately on receving a response
+            // new request/response should be sent out immediately on receiving a response
             HLOGC(cnlog.Debug,
                   log << CONID() << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst)
                       << ", REQ-TIME: LOW.");
@@ -4528,7 +4535,7 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
                 m_ConnReq.m_iVersion = HS_VERSION_SRT1;
                 // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
                 // The HSv4 client might not understand it, which means that agent
-                // must switch itself to HSv4 rendezvous, and this time iType sould
+                // must switch itself to HSv4 rendezvous, and this time iType should
                 // be set to UDT_DGRAM value.
                 m_ConnReq.m_iType = 0;
 
@@ -5507,7 +5514,7 @@ bool srt::CUDT::prepareBuffers(CUDTException *eout)
 
 void srt::CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 {
-    // this is a reponse handshake
+    // this is a response handshake
     w_hs.m_iReqType        = URQ_CONCLUSION;
     w_hs.m_iMSS            = m_config.iMSS;
     w_hs.m_iFlightFlagSize = m_config.flightCapacity();
@@ -6243,7 +6250,7 @@ int srt::CUDT::sndDropTooLate()
     const int buffdelay_ms = (int) count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
 
     // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
-    // Minimum value must accomodate an I-Frame (~8 x average frame size)
+    // Minimum value must accommodate an I-Frame (~8 x average frame size)
     // >>need picture rate or app to set min treshold
     // >>using 1 sec for worse case 1 frame using all bit budget.
     // picture rate would be useful in auto SRT setting for min latency
@@ -6471,7 +6478,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         /*
          * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
-         * If no free buffer available in non-blocking mode, we alredy returned. If buffer availaible,
+         * If no free buffer available in non-blocking mode, we alredy returned. If buffer available,
          * we test twice if this code is outside the else section.
          * This fix move it in the else (blocking-mode) section
          */
@@ -10102,7 +10109,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
         if (sendbrw >= sendint)
         {
-            // Send immidiately
+            // Send immediately
             m_tsNextSendTime = enter_time;
 
             // ATOMIC NOTE: this is the only thread that
@@ -10602,11 +10609,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             excessive = false;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
-                    // TODO: reset and restore the timestamp if TSBPD is disabled.
-                    // Reset retransmission flag (must be excluded from GCM auth tag).
-                    u->m_Packet.setRexmitFlag(false);
-                    const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
-                    u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+                // TODO: reset and restore the timestamp if TSBPD is disabled.
+                // Reset retransmission flag (must be excluded from GCM auth tag).
+                u->m_Packet.setRexmitFlag(false);
+                const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
 
                 if (rc != ENCS_CLEAR)
                 {
@@ -10615,20 +10622,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-                        {
-                            // Drop a packet from the receiver buffer.
-                            // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                            // Otherwise just drop the exact packet.
-                            if (m_config.bMessageAPI)
-                                m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
-                            else
-                                m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+                    {
+                        // Drop a packet from the receiver buffer.
+                        // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                        // Otherwise just drop the exact packet.
+                        if (m_config.bMessageAPI)
+                            m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+                        else
+                            m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-                            LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
-                            m_bBroken = true;
-                            m_iBrokenCounter = 0;
-                        }
+                        LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
+                        m_bBroken = true;
+                        m_iBrokenCounter = 0;
+                    }
 
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
@@ -11929,7 +11936,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         }
 
         // The `acpu` not NULL means connection exists, the `result` should be 0. It is not checked here though.
-        // The `newConnection(..)` only sends reponse for newly created connection.
+        // The `newConnection(..)` only sends response for newly created connection.
         // The connection already exists (no new connection has been created, no response sent).
         // Send the conclusion response manually here in case the peer has missed the first one.
         // The value  `result` here should be 0.

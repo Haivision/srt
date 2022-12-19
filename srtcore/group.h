@@ -278,7 +278,7 @@ private:
     /// @param[in]  pktseq         Packet sequence number currently tried to be sent
     /// @param[out] w_u            CUDT unit of the current member (to allow calling overrideSndSeqNo)
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
-    /// @param[out] w_final_stat   w_final_stat = send_status if sending succeded.
+    /// @param[out] w_final_stat   w_final_stat = send_status if sending succeeded.
     ///
     /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
     bool sendBackup_CheckSendStatus(const time_point&   currtime,

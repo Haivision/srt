@@ -841,7 +841,7 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
             // This procedure doesn't exactly respond to the original UDT idea.
-            // As the "rendezvous queue" is used for both handling rendezous and
+            // As the "rendezvous queue" is used for both handling rendezvous and
             // the caller sockets in the non-blocking mode (for blocking mode the
             // entire handshake procedure is handled in a loop-style in CUDT::startConnect),
             // the RID list should give up a socket entity in the following cases:

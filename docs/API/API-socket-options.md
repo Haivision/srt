@@ -204,7 +204,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
-| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 3]   | W   | GSD   |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
@@ -231,7 +231,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                     | 1.1.0 | pre      | `bool`    |         |  \*               |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                         | 1.0.5 | post     | `int32_t` | %       | 25                | 5..100   | RW  | GSD   |
 | [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)               | 1.4.0 | pre      | `string`  |         | ""                | [512]    | RW  | GSD   |
-| [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                   | 0.0.0 | pre      | `string`  |         | ""                | [10..79] | W   | GSD   |
+| [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE)                   | 0.0.0 | pre      | `string`  |         | ""                | [10..80] | W   | GSD   |
 | [`SRTO_PAYLOADSIZE`](#SRTO_PAYLOADSIZE)                 | 1.3.0 | pre      | `int32_t` | bytes   | \*                | 0.. \*   | W   | GSD   |
 | [`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN)                       | 0.0.0 | pre      | `int32_t` | bytes   | 0                 | \*       | RW  | GSD   |
 | [`SRTO_PEERIDLETIMEO`](#SRTO_PEERIDLETIMEO)             | 1.3.3 | pre      | `int32_t` | ms      | 5000              | 0..      | RW  | GSD+  |
@@ -333,10 +333,42 @@ The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is s
 
 Crypto modes:
 
-- `0`: auto-select during handshake negotiation (to be implemented; currently similar to AES-CTR).
+- `0`: SRT listener accepts any mode from the caller. SRT Caller or SRT Rendezvous effectively negotiate AES-CTR (1).
 - `1`: regular AES-CTR (without message integrity authentication).
 - `2`: AES-GCM mode with message integrity authentication (AEAD).
 
+The AES-GCM mode (2) is only allowed if TSBPD is enabled ([`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)).
+Auto (0) is equivalent to AES-CTR (1) in Rendezvous and for a Caller.
+
+Once a connection is established, reading `SRTO_CRYPTOMODE` shows the negotiated crypto mode:
+AES-CTR (1) or AES-GCM (2).
+
+When [Listener callback](./API-functions.md##srt_listen_callback) is used, the value of
+`SRTO_CRYPTOMODE` read on the new SRT socket to be accepted is not yet the 
+negotiated one. It is the value to be negotiated, and is inherited from the listener SRT socket.
+If a specific behavior for each individual connection request is desired based on
+[the user ID or anything else](../features/access-control.md),
+the intended behavior can be achieved by setting the `SRTO_CRYPTOMODE` on the new SRT socket to a specific value.
+
+For example, let's say the initial value set on the listener socket is Auto (0). The listener callback is called,
+signalling the new connection request. The user ID is extracted, and the server wants to force AES-GCM only
+for the connection from this specific user. In this case AES-GCM (2) can be set on the new socket.
+
+There is no way to check the crypto mode being requested by the SRT caller at this point.
+
+| Caller      | Listener    | Negotiated  | | Rdv In-tor  | Rdv Res-der | Negotiated  |
+| ----------- | ----------- | ----------- |-| ----------- | ----------- | ----------- |
+| 0 (auto)    | 0 (auto)    | AES-CTR (1) | | 0 (auto)    | 0 (auto)    | AES-CTR (1) |
+| 0 (auto)    | AES-CTR (1) | AES-CTR (1) | | 0 (auto)    | AES-CTR (1) | AES-CTR (1) |
+| 0 (auto)    | AES-GCM (2) | reject      | | 0 (auto)    | AES-GCM (2) | reject      |
+| AES-CTR (1) | 0 (auto)    | AES-CTR (1) | | AES-CTR (1) | 0 (auto)    | AES-CTR (1) |
+| AES-CTR (1) | AES-CTR (1) | AES-CTR (1) | | AES-CTR (1) | AES-CTR (1) | AES-CTR (1) |
+| AES-CTR (1) | AES-GCM (2) | reject      | | AES-CTR (1) | AES-GCM (2) | reject      |
+| AES-GCM (2) | 0 (auto)    | AES-GCM (2) | | AES-GCM (2) | 0 (auto)    | reject      |
+| AES-GCM (2) | AES-CTR (1) | reject      | | AES-GCM (2) | AES-CTR (1) | reject      |
+| AES-GCM (2) | AES-GCM (2) | AES-GCM (2) | | AES-GCM (2) | AES-GCM (2) | AES-GCM (2) |
+
+* Rdv - Rendezvous; In-tor - initiator; Res-der - responder.
 
 [Return to list](#list-of-options)
 
@@ -987,7 +1019,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PASSPHRASE`    | 0.0.0 | pre      | `string`   |         | ""       |[10..79]| W   | GSD    |
+| `SRTO_PASSPHRASE`    | 0.0.0 | pre      | `string`   |         | ""       |[10..80]| W   | GSD    |
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
