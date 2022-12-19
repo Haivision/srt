@@ -425,17 +425,15 @@ When ON, this option enables the standard C++ `thread` and `chrono` libraries
 #### ENABLE_PKTINFO
 **`--enable-pktinfo`** (default: OFF)
 
-This allows the use of `IP_PKTINFO` control message which can be used to
-extract the true target IP address from the incoming UDP packets to a listener
-bound to a so-called "any" address (`0.0.0.0` for IPv4, AKA `INADDR_ANY`, or
-`::` for IPv6, AKA `in6addr_any`, or simply when the application clears the
-`sockaddr*` structure and only sets the port number), and then set this address
-as source IP address when sending packets to the peer. This solves the problem,
-when the routing rules in the agent's host make that sending a packet to a
-given IP address would use a different source IP address than the one that was
-set as a target IP address in the UDP packet from the peer. The peer will
-reject such a packet as a suspected MITM attempt, and this will lead to a
-connection failure.
+This allows the use of the `IP_PKTINFO` control message to extract the true target IP 
+address from the incoming UDP packets to a listener bound to "any" address. The "any" 
+address is defined in IPv4 as 0.0.0.0 (`INADDR_ANY`) and in IPv6 as :: (`in6addr_any`). 
+Applications usually implement it by clearing the `sockaddr*` structure and only setting 
+the port number. This true address can then be used to override the source IP address 
+when sending packets to the peer. This solves the problem where routing rules 
+in an agent's host send a packet using a different source IP address than the  target 
+IP address in the UDP packet from the peer. The peer will reject such a packet as a 
+suspected man-in-the-middle (MITM) attempt, leading to a connection failure.
 
 This problem has been observed where an agent's host has at least
 two IP addresses that share the same broadcast prefix, and it is being contacted
@@ -452,11 +450,10 @@ and third IP addresses share the same broadcast prefix (10.10.5.0).
 The problem occurs when an agent running on this host is contacted
 by a peer using the address 10.10.5.20.
 
-In such a case the source address set in the UDP packet sent back to the peer
-will always be the first of these addresses (10.10.5.10), which will be
-different than the one the peer used to contact (10.10.5.20). The peer will
-then rejeect such a packet by having the source address different than the one
-it tries to contact.
+In such a case the source address set in the UDP packet being sent will 
+always be the first of these addresses (10.10.5.10), which will be different 
+from the one from which the packet is actually being sent (10.10.5.20). 
+The peer will then reject such a packet because its source address is different.
 
 This problem occurs only with listener sockets bound to "any" address - when it
 is bound to a specific IP address, this will be always set as source address
