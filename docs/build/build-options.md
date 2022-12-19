@@ -33,7 +33,8 @@ Option details are given further below.
 | [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7                                                   |
 | [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.                                                                                                           |
 | [`ENABLE_DEBUG`](#enable_debug)                              | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable.                                                                                |
-| [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature enabled, with dependency on an external encryption library.                                                               |
+| [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature, with dependency on an external encryption library.                                                                       |
+| [`ENABLE_AEAD_API_PREVIEW`](#enable_aead_api_preview)        | 1.5.2 | `BOOL`    | OFF        | Enables AEAD preview API (encryption with integrity check).                                                                                          |
 | [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name.                  |
 | [`ENABLE_HAICRYPT_LOGGING`](#enable_haicrypt_logging)        | 1.3.1 | `BOOL`    | OFF        | Enables logging in the *haicrypt* module, which serves as a connector to an encryption library.                                                      |
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
@@ -265,6 +266,15 @@ external encryption library (default: [openssl](https://github.com/openssl/opens
 If you disable encryption, the library will be unable to set encryption options. 
 It will be compatible with a peer that has encryption enabled, but just won't 
 use encryption for the connection.
+
+
+#### ENABLE_AEAD_API_PREVIEW
+**`--enable-aead-api-preview`** (default: OFF)
+
+When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
+The AEAD functionality is only available if OpenSSL EVP is selected as the crypto provider:
+build option `-DUSE_ENCLIB=openssl-evp`.  
+The AEAD API is to be official in SRT v1.6.0.
 
 
 #### ENABLE_GETNAMEINFO

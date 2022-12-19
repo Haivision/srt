@@ -331,6 +331,9 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is set.
 
+The feature is a part of the AEAD Preview API of SRT v1.5.2, and is disabled by default.
+To enable use [`ENABLE_AEAD_API_PREVIEW`](../build/build-options.md#enable_aead_api_preview) build option.
+
 Crypto modes:
 
 - `0`: SRT listener accepts any mode from the caller. SRT Caller or SRT Rendezvous effectively negotiate AES-CTR (1).
