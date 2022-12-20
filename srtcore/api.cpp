@@ -4477,7 +4477,7 @@ void dellogfa(LogFA fa)
     srt_logger_config.enabled_fa.set(fa, false);
 }
 
-void resetlogfa(const set<LogFA>& fas)
+void resetlogfa(set<LogFA> fas)
 {
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
