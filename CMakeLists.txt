@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.1)
+set (SRT_VERSION 1.5.2)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -428,7 +428,7 @@ if (ENABLE_ENCRYPTION)
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
-			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENC_LIB=openssl-evp!")
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
 		endif()
 	else()
 		message(STATUS "ENCRYPTION AEAD API: DISABLED")
