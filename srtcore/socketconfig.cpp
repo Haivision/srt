@@ -611,7 +611,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
 
         if (val > SRT_LIVE_MAX_PLSIZE)
         {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
+            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << ", maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -632,11 +632,15 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             if (size_t(val) > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
+                     log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << "bytes decreased by " << fc.extra_size
                          << " required for packet filter header");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
         }
+
+		if (co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM || co.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+		{
+		}
 
         co.zExpPayloadSize = val;
     }
