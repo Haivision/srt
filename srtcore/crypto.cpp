@@ -247,7 +247,11 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
     case HAICRYPT_ERROR_CIPHER:
+#if ENABLE_AEAD_API_PREVIEW
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
+#else
+        m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET; // Use "bad secret" as a fallback.
+#endif
         w_srtlen = 1;
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADCRYPTOMODE");
         break;
@@ -399,13 +403,14 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
             m_SndKmState = SRT_KM_S_UNSECURED;
             retstatus = 0;
             break;
-
+#if ENABLE_AEAD_API_PREVIEW
         case SRT_KM_S_BADCRYPTOMODE:
             // The peer expects to use a different cryptographic mode (e.g. AES-GCM, not AES-CTR).
             m_RcvKmState = SRT_KM_S_BADCRYPTOMODE;
             m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
             retstatus = -1;
             break;
+#endif
 
         default:
             LOGC(cnlog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer error state: "

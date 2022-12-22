@@ -203,7 +203,9 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+#ifdef ENABLE_AEAD_API_PREVIEW
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
+#endif
 
         // For "private" options (not derived from the listener
         // socket by an accepted socket) provide below private_default
@@ -811,7 +813,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
-
+#ifdef ENABLE_AEAD_API_PREVIEW
     case SRTO_CRYPTOMODE:
         if (m_pCryptoControl)
             *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
@@ -819,6 +821,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
             *(int32_t*)optval = m_config.iCryptoMode;
         optlen = sizeof(int32_t);
         break;
+#endif
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
@@ -2624,12 +2627,14 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
+#if ENABLE_AEAD_API_PREVIEW
                     if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
                         m_RejectReason = SRT_REJ_CRYPTO;
                         return false;
                     }
+#endif
 
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.

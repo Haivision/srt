@@ -893,6 +893,7 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
+#ifdef ENABLE_AEAD_API_PREVIEW
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
@@ -924,6 +925,7 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 
     }
 };
+#endif
 
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
@@ -982,7 +984,9 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
+#ifdef ENABLE_AEAD_API_PREVIEW
         DISPATCH(SRTO_CRYPTOMODE);
+#endif
 
 #undef DISPATCH
     default:
