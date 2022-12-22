@@ -67,7 +67,7 @@ struct SocketOption
 template<>
 inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
+    return (int)srt_setsockopt(SRTSOCKET(socket), 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 #if ENABLE_BONDING

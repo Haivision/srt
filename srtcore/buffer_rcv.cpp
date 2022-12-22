@@ -262,6 +262,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno)
     const int end_pos = incPos(m_iStartPos, m_iMaxPosInc);
     if (msgno > 0) // including SRT_MSGNO_NONE and SRT_MSGNO_CONTROL
     {
+        if (msgno < 0) // Note that only SRT_MSGNO_CONTROL is allowed in the protocol.
+        {
+            HLOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with mflag field set to a negative value!");
+        }
         IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << msgno);
         int minDroppedOffset = -1;
         int iDropCnt = 0;

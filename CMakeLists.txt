@@ -1325,6 +1325,10 @@ if (ENABLE_EXAMPLES)
 		
 	srt_add_example(recvfile.cpp)
 
+	srt_add_example(sendmsg.cpp)
+		
+	srt_add_example(recvmsg.cpp)
+
 	srt_add_example(test-c-client.c)
 
 	srt_add_example(example-client-nonblock.c)

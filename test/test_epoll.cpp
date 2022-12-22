@@ -222,7 +222,7 @@ TEST(CEPoll, HandleEpollEvent)
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     set<int> epoll_ids = { epoll_id };
 
@@ -238,7 +238,7 @@ TEST(CEPoll, HandleEpollEvent)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -248,7 +248,7 @@ TEST(CEPoll, HandleEpollEvent)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -399,7 +399,7 @@ TEST(CEPoll, HandleEpollEvent2)
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR | SRT_EPOLL_ET;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     set<int> epoll_ids = { epoll_id };
 
@@ -420,7 +420,7 @@ TEST(CEPoll, HandleEpollEvent2)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -430,7 +430,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -461,7 +461,7 @@ TEST(CEPoll, HandleEpollNoEvent)
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     SRT_EPOLL_EVENT fds[1024];
 
@@ -472,7 +472,7 @@ TEST(CEPoll, HandleEpollNoEvent)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -482,7 +482,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -515,7 +515,7 @@ TEST(CEPoll, ThreadedUpdate)
         this_thread::sleep_for(chrono::seconds(1)); // Make sure that uwait will be called as first
         cerr << "ADDING sockets to eid\n";
         const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-        ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+        epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
         set<int> epoll_ids = { epoll_id };
 
@@ -539,7 +539,7 @@ TEST(CEPoll, ThreadedUpdate)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -549,7 +549,7 @@ TEST(CEPoll, ThreadedUpdate)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {

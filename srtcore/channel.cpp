@@ -613,8 +613,8 @@ void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
 int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 {
     HLOGC(kslog.Debug,
-          log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.m_iID
-              << " size=" << packet.getLength() << " pkt.ts=" << packet.m_iTimeStamp << " " << packet.Info());
+          log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.id()
+              << " size=" << packet.getLength() << " pkt.ts=" << packet.timestamp() << " " << packet.Info());
 
 #ifdef SRT_TEST_FAKE_LOSS
 

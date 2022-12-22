@@ -236,7 +236,7 @@ public:
    /// Shortcut to test a packet for possible probe 1 or 2
    void probeArrival(const CPacket& pkt, bool unordered)
    {
-       const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
+       const int inorder16 = pkt.seqno() & PUMASK_SEQNO_PROBE;
 
        // for probe1, we want 16th packet
        if (inorder16 == 0)
@@ -257,7 +257,7 @@ public:
    /// Record the arrival time of the first probing packet.
    void probe1Arrival(const CPacket& pkt, bool unordered)
    {
-       if (unordered && pkt.m_iSeqNo == m_Probe1Sequence)
+       if (unordered && pkt.seqno() == m_Probe1Sequence)
        {
            // Reset the starting probe into "undefined", when
            // a packet has come as retransmitted before the
@@ -267,7 +267,7 @@ public:
        }
 
        m_tsProbeTime = sync::steady_clock::now();
-       m_Probe1Sequence = pkt.m_iSeqNo; // Record the sequence where 16th packet probe was taken
+       m_Probe1Sequence = pkt.seqno(); // Record the sequence where 16th packet probe was taken
    }
 
    /// Record the arrival time of the second probing packet and the interval between packet pairs.
@@ -282,7 +282,7 @@ public:
        // expected packet pair, behave as if the 17th packet was lost.
 
        // no start point yet (or was reset) OR not very next packet
-       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
+       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.seqno())
            return;
 
        // Grab the current time before trying to acquire

@@ -54,7 +54,7 @@ int main(int argc, char** argv)
     }
 
     printf("srt setsockflag\n");
-    if (SRT_ERROR == srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes)
+    if (SRT_ERROR == srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes))
     {
         fprintf(stderr, "srt_setsockflag: %s\n", srt_getlasterror_str());
         return 1;

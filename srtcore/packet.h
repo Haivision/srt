@@ -349,11 +349,14 @@ protected:
     CPacket(const CPacket&);
 
 public:
-    int32_t& m_iSeqNo;     // alias: sequence number
-    int32_t& m_iMsgNo;     // alias: message number
-    int32_t& m_iTimeStamp; // alias: timestamp
-    int32_t& m_iID;        // alias: destination SRT socket ID
     char*&   m_pcData;     // alias: payload (data packet) / control information fields (control packet)
+
+    SRTU_PROPERTY_RO(SRTSOCKET, id, SRTSOCKET(m_nHeader[SRT_PH_ID]));
+    SRTU_PROPERTY_WO_ARG(SRTSOCKET, id, m_nHeader[SRT_PH_ID] = int32_t(arg));
+
+    SRTU_PROPERTY_RW(int32_t, seqno, m_nHeader[SRT_PH_SEQNO]);
+    SRTU_PROPERTY_RW(int32_t, msgflags, m_nHeader[SRT_PH_MSGNO]);
+    SRTU_PROPERTY_RW(int32_t, timestamp, m_nHeader[SRT_PH_TIMESTAMP]);
 
     // Experimental: sometimes these references don't work!
     char* getData();

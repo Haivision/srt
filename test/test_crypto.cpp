@@ -86,9 +86,9 @@ namespace srt
         const int inorder = 1;
         const int kflg = m_crypt.getSndCryptoFlags();
 
-        pkt.m_iSeqNo = seqno;
-        pkt.m_iMsgNo = msgno | inorder | PacketBoundaryBits(PB_SOLO) | MSGNO_ENCKEYSPEC::wrap(kflg);;
-        pkt.m_iTimeStamp = 356;
+        pkt.set_seqno(seqno);
+        pkt.set_msgflags(msgno | inorder | PacketBoundaryBits(PB_SOLO) | MSGNO_ENCKEYSPEC::wrap(kflg));
+        pkt.set_timestamp(356);
 
         std::iota(pkt.data(), pkt.data() + pld_size, '0');
         pkt.setLength(pld_size);
