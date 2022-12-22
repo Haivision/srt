@@ -132,14 +132,12 @@ CSndBuffer::~CSndBuffer()
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    int32_t& w_msgno    = w_mctrl.msgno;
-    int32_t& w_seqno    = w_mctrl.pktseq;
-    int64_t& w_srctime  = w_mctrl.srctime;
-    const int& ttl      = w_mctrl.msgttl;
-    const int iPktLen   = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
-    int      iNumBlocks = len / iPktLen;
-    if ((len % m_iBlockLen) != 0)
-        ++iNumBlocks;
+    int32_t& w_msgno     = w_mctrl.msgno;
+    int32_t& w_seqno     = w_mctrl.pktseq;
+    int64_t& w_srctime   = w_mctrl.srctime;
+    const int& ttl       = w_mctrl.msgttl;
+    const int iPktLen    = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
+    const int iNumBlocks = (len + iPktLen - 1) / iPktLen;
 
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
@@ -556,6 +554,18 @@ int CSndBuffer::getCurrBufSize() const
     return m_iCount;
 }
 
+int CSndBuffer::getMaxPacketLen() const
+{
+	return m_iBlockLen - m_iAuthTagSize;
+}
+
+int CSndBuffer::countNumPacketsRequired(int iPldLen) const
+{
+	const int iPktLen = getMaxPacketLen();
+    const int iNumBlocks = (iPldLen + iPktLen - 1) / iPktLen;
+    return iNumBlocks;
+}
+
 namespace {
 int round_val(double val)
 {
@@ -590,7 +600,7 @@ void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
 
-int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
+int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan) const
 {
     w_bytes = m_iBytesCount;
     /*
