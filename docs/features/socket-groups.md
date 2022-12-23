@@ -686,7 +686,7 @@ set the `groupconnect` option (here let's say you get the source signal
 from a device that streams to this machine to port 5555):
 
 ```
-./srt-test-live udp://:5555 srt://:5000?groupconnect=true
+./srt-test-live udp://:5555 srt://:5000?groupconnect=1
 ```
 
 At the caller side you can also use some group-member specific options.
