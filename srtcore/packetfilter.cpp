@@ -226,7 +226,7 @@ bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_pack
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    w_packet.m_iMsgNo = SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    w_packet.set_msgflags(SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
