@@ -9071,28 +9071,25 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             }
         }
 
-        int msglen;
+        CSndBuffer::Drop buffer_drop;
         steady_clock::time_point tsOrigin;
-        const int payload = m_pSndBuffer->readData(offset, (w_packet), (tsOrigin), (msglen));
-        if (payload == -1)
+        const int payload = m_pSndBuffer->readData(offset, (w_packet), (tsOrigin), (buffer_drop));
+        if (payload == CSndBuffer::READ_DROP)
         {
-            int32_t seqpair[2];
-            seqpair[0] = w_packet.m_iSeqNo;
-            SRT_ASSERT(msglen >= 1);
-            seqpair[1] = CSeqNo::incseq(seqpair[0], msglen - 1);
+            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[CSndBuffer::Drop::BEGIN], buffer_drop.seqno[CSndBuffer::Drop::END]) >= 0);
 
             HLOGC(qrlog.Debug,
-                  log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: msgno="
-                      << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " msglen=" << msglen << " SEQ:" << seqpair[0] << " - "
-                      << seqpair[1]);
-            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+                  log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
+                      << buffer_drop.msgno << " %(" << buffer_drop.seqno[CSndBuffer::Drop::BEGIN] << " - "
+                      << buffer_drop.seqno[CSndBuffer::Drop::END] << ")");
+            sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
 
             // skip all dropped packets
-            m_pSndLossList->removeUpTo(seqpair[1]);
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqpair[1]);
+            m_pSndLossList->removeUpTo(buffer_drop.seqno[CSndBuffer::Drop::END]);
+            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[CSndBuffer::Drop::END]);
             continue;
         }
-        else if (payload == 0)
+        else if (payload == CSndBuffer::READ_NONE)
             continue;
 
         // The packet has been ecrypted, thus the authentication tag is expected to be stored
