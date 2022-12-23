@@ -333,7 +333,17 @@ struct CSrtConfigSetter<SRTO_TSBPDMODE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.bTSBPD = cast_optval<bool>(optval, optlen);
+        const bool val = cast_optval<bool>(optval, optlen);
+#ifdef SRT_ENABLE_ENCRYPTION
+        if (val == false && co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            using namespace srt_logging;
+            LOGC(aclog.Error, log << "Can't disable TSBPD as long as AES GCM is enabled.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+#endif
+
+        co.bTSBPD = val;
     }
 };
 template<>
@@ -883,27 +893,39 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
+#ifdef ENABLE_AEAD_API_PREVIEW
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        using namespace srt_logging;
         const int val = cast_optval<int>(optval, optlen);
+#ifdef SRT_ENABLE_ENCRYPTION
         if (val < CSrtConfig::CIPHER_MODE_AUTO || val > CSrtConfig::CIPHER_MODE_AES_GCM)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-#ifdef SRT_ENABLE_ENCRYPTION
         if (val == CSrtConfig::CIPHER_MODE_AES_GCM && !HaiCrypt_IsAESGCM_Supported())
         {
-            using namespace srt_logging;
             LOGC(aclog.Error, log << "AES GCM is not supported by the crypto provider.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
-#endif
+
+        if (val == CSrtConfig::CIPHER_MODE_AES_GCM && !co.bTSBPD)
+        {
+            LOGC(aclog.Error, log << "Enable TSBPD to use AES GCM.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
         co.iCryptoMode = val;
+#else
+        LOGC(aclog.Error, log << "SRT was built without crypto module.");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+#endif
+
     }
 };
+#endif
 
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
@@ -962,7 +984,9 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
+#ifdef ENABLE_AEAD_API_PREVIEW
         DISPATCH(SRTO_CRYPTOMODE);
+#endif
 
 #undef DISPATCH
     default:
@@ -1010,7 +1034,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     case SRTO_PEERIDLETIMEO:
     case SRTO_RCVBUF:
         //SRTO_RCVSYN - must be always false in groups
-        //SRTO_RCVTIMEO - must be alwyas -1 in groups
+        //SRTO_RCVTIMEO - must be always -1 in groups
     case SRTO_SNDBUF:
     case SRTO_SNDDROPDELAY:
         //SRTO_TLPKTDROP - per transmission setting
