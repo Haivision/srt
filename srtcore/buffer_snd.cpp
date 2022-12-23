@@ -494,7 +494,13 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
         w_drop.seqno[Drop::BEGIN] = w_packet.seqno();
         w_drop.seqno[Drop::END] = CSeqNo::incseq(w_packet.seqno(), msglen - 1);
-        SRT_ASSERT(w_drop.seqno[Drop::END] == p->m_iSeqNo);
+
+        // Note the rules: here `p` is pointing to the first block AFTER the
+        // message to be dropped, so the end sequence should be one behind
+        // the one for p. Note that the loop rolls until hitting the first
+        // packet that doesn't belong to the message or m_pLastBlock, which
+        // is past-the-end for the occupied range in the sender buffer.
+        SRT_ASSERT(w_drop.seqno[Drop::END] == CSeqNo::decseq(p->m_iSeqNo));
         return READ_DROP;
     }
 
