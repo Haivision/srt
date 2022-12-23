@@ -492,7 +492,7 @@ private:
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
 
-    SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
@@ -1048,13 +1048,13 @@ private: // Generation and processing of packets
 
     /// Pack in CPacket the next data to be send.
     ///
-    /// @param packet [in, out] a CPacket structure to fill
+    /// @param packet [out] a CPacket structure to fill
+    /// @param nexttime [out] Time when this socket should be next time picked up for processing.
+    /// @param src_addr [out] Source address to pass to channel's sendto
     ///
-    /// @return A pair of values is returned (is_payload_valid, timestamp).
-    ///         If is_payload_valid is false, there was nothing packed for sending,
-    ///         and the timestamp value should be ignored.
-    ///         The timestamp is the full source/origin timestamp of the data.
-    std::pair<bool, time_point> packData(CPacket& packet);
+    /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
+    /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
+    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
 
     int processData(CUnit* unit);
 
@@ -1154,6 +1154,7 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
+    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue

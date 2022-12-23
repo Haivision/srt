@@ -561,6 +561,8 @@ CPacket* CPacket::clone() const
     memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
     pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
 
+    pkt->m_DestAddr = m_DestAddr;
+
     return pkt;
 }
 
