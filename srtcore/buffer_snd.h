@@ -172,6 +172,12 @@ public:
     /// @return the number of required data packets.
     int countNumPacketsRequired(int iPldLen) const;
 
+    /// @brief Count the number of required packets to store the payload (message).
+    /// @param iPldLen the length of the payload to check.
+    /// @param iMaxPktLen the maximum payload length of the packet (the value returned from getMaxPacketLen()).
+    /// @return the number of required data packets.
+    int countNumPacketsRequired(int iPldLen, int iMaxPktLen) const;
+
     /// @brief Get the buffering delay of the oldest message in the buffer.
     /// @return the delay value.
     SRT_ATTR_EXCLUDES(m_BufLock)
