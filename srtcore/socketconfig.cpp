@@ -638,7 +638,8 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             }
         }
 
-        if ((co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM || co.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        // Not checking AUTO to allow defaul 1456 bytes.
+        if ((co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
             && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
         {
             LOGC(aclog.Error,
