@@ -394,12 +394,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     break;
 
-    case SRTO_CONGESTION:
-        // Currently no socket groups allow any other
-        // congestion control mode other than live.
-        LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
     default:
         break;
     }
