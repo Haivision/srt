@@ -245,10 +245,10 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
-    while (iPktLen + m_iCount >= m_iSize)
+    while (iNumBlocks + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug,
-              log << "addBufferFromFile: ... still lacking " << (iPktLen + m_iCount - m_iSize) << " buffers...");
+              log << "addBufferFromFile: ... still lacking " << (iNumBlocks + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
@@ -258,7 +258,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 
     Block* s     = m_pLastBlock;
     int    total = 0;
-    for (int i = 0; i < iPktLen; ++i)
+    for (int i = 0; i < iNumBlocks; ++i)
     {
         if (ifs.bad() || ifs.fail() || ifs.eof())
             break;
@@ -278,7 +278,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
         s->m_iMsgNoBitset = m_iNextMsgNo | MSGNO_PACKET_INORDER::mask;
         if (i == 0)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_FIRST);
-        if (i == iPktLen - 1)
+        if (i == iNumBlocks - 1)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_LAST);
         // NOTE: PB_FIRST | PB_LAST == PB_SOLO.
         // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
@@ -292,7 +292,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     m_pLastBlock = s;
 
     enterCS(m_BufLock);
-    m_iCount += iPktLen;
+    m_iCount += iNumBlocks;
     m_iBytesCount += total;
 
     leaveCS(m_BufLock);
