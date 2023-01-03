@@ -547,7 +547,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
     // Update positions
     // Set nonread position to the starting position before updating,
     // because start position was increased, and preceding packets are invalid.
-    if (!isInRange(m_iStartPos, m_iMaxPosInc, m_szSize, m_iFirstNonreadPos))
+    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
     }
