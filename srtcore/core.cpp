@@ -7247,7 +7247,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRcvLoss    = m_stats.rcvr.lost.trace.bytesWithHdr();
 
         perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
-        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();
+        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count();
         perf->byteSndDrop = m_stats.sndr.dropped.trace.bytesWithHdr();
         perf->byteRcvDrop = m_stats.rcvr.dropped.trace.bytesWithHdr();
         perf->pktRcvUndecrypt  = m_stats.rcvr.undecrypted.trace.count();
@@ -7278,10 +7278,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr();
         perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
-        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count() + m_stats.rcvr.undecrypted.total.count();
+        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count();
         // TODO: The payload is dropped. Probably header sizes should not be counted?
         perf->byteSndDropTotal = m_stats.sndr.dropped.total.bytesWithHdr();
-        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr() + m_stats.rcvr.undecrypted.total.bytesWithHdr();
+        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr();
         perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
         perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
 
@@ -9863,28 +9863,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
                 if (rc != ENCS_CLEAR)
                 {
-                    // Heavy log message because if seen once the message may happen very often.
-                    HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-                    {
-                        // Drop a packet from the receiver buffer.
-                        // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                        // Otherwise just drop the exact packet.
-                        if (m_config.bMessageAPI)
-                            m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
-                        else
-                            m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    // Drop a packet from the receiver buffer.
+                    // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                    // Otherwise just drop the exact packet.
+                    const int iDropCnt = (m_config.bMessageAPI)
+                        ? m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag))
+                        : m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-                        LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed. Pkt seqno %" << u->m_Packet.getSeqNo()
-                            << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Breaking the connection.");
-                        m_bBroken = true;
-                        m_iBrokenCounter = 0;
-                    }
-
+                    LOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
+                        << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");
                     ScopedLock lg(m_StatsLock);
+                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                 }
             }
