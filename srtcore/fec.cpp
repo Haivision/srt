@@ -604,8 +604,8 @@ void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
     }
 
     // Fill the rest with zeros. When this packet is going to be
-    // recovered, the payload extraced from this process will have
-    // the maximum lenght, but it will be cut to the right length
+    // recovered, the payload extracted from this process will have
+    // the maximum length, but it will be cut to the right length
     // and these padding 0s taken out.
     for (size_t i = payload_size; i < payloadSize(); ++i)
         g.payload_clip[i] = g.payload_clip[i] ^ 0;

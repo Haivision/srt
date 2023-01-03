@@ -66,6 +66,7 @@ modified by
 #include "epoll.h"
 #include "logging.h"
 #include "udt.h"
+#include "utilities.h"
 
 using namespace std;
 using namespace srt::sync;
@@ -639,8 +640,8 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
 #ifdef LINUX
                 const int max_events = ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                epoll_event ev[max_events];
-                int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
+                srt::FixedArray<epoll_event> ev(max_events);
+                int nfds = ::epoll_wait(ed.m_iLocalID, ev.data(), ev.size(), 0);
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
                 for (int i = 0; i < nfds; ++ i)
@@ -662,9 +663,9 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
                 struct timespec tmout = {0, 0};
                 const int max_events = ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                struct kevent ke[max_events];
+                srt::FixedArray<struct kevent> ke(max_events);
 
-                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
+                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)

@@ -117,6 +117,9 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
+# Note that the IP_PKTINFO  has a limited portability and may not work on some platforms
+# (Windows, FreeBSD, ...).
+set (ENABLE_PKTINFO_DEFAULT OFF)
 
 set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
 set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
@@ -144,10 +147,12 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
+option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
@@ -421,8 +426,21 @@ if (ENABLE_ENCRYPTION)
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
 	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
 	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+
+	if (ENABLE_AEAD_API_PREVIEW)
+		if ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+			add_definitions(-DENABLE_AEAD_API_PREVIEW)
+			message(STATUS "ENCRYPTION AEAD API: ENABLED")
+		else()
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
+		endif()
+	else()
+		message(STATUS "ENCRYPTION AEAD API: DISABLED")
+	endif()
+
 else()
 	message(STATUS "ENCRYPTION: DISABLED")
+	message(STATUS "ENCRYPTION AEAD API: N/A")
 endif()
 
 if (USE_GNUSTL)
@@ -433,7 +451,7 @@ if (USE_GNUSTL)
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
-# Detect if the compiler is GNU compatable for flags
+# Detect if the compiler is GNU compatible for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
@@ -710,6 +728,15 @@ endif()
 if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
+
+if (ENABLE_PKTINFO)
+	if (WIN32 OR BSD)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
+	endif()
+
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+endif()
+
 
 # ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
@@ -1324,6 +1351,10 @@ if (ENABLE_EXAMPLES)
 	srt_add_example(sendfile.cpp)
 		
 	srt_add_example(recvfile.cpp)
+
+	srt_add_example(sendmsg.cpp)
+		
+	srt_add_example(recvmsg.cpp)
 
 	srt_add_example(test-c-client.c)
 

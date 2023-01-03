@@ -237,7 +237,7 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     // Move forward if there are "read/drop" entries.
     releaseNextFillerEntries();
     // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceeding packets are invalid. 
+    // because start position was increased, and preceding packets are invalid.
     m_iFirstNonreadPos = m_iStartPos;
     updateNonreadPos();
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
@@ -546,8 +546,8 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
 
     // Update positions
     // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceeding packets are invalid. 
-    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
+    // because start position was increased, and preceding packets are invalid.
+    if (!isInRange(m_iStartPos, m_iMaxPosInc, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
     }
@@ -591,19 +591,23 @@ int CRcvBuffer::getTimespan_ms() const
     if (m_iMaxPosOff == 0)
         return 0;
 
-    const int lastpos = incPos(m_iStartPos, m_iMaxPosOff - 1);
-    // Should not happen if TSBPD is enabled (reading out of order is not allowed).
-    SRT_ASSERT(m_entries[lastpos].pUnit != NULL);
+    int lastpos = incPos(m_iStartPos, m_iMaxPosOff - 1);
+    // Normally the last position should always be non empty
+    // if TSBPD is enabled (reading out of order is not allowed).
+    // However if decryption of the last packet fails, it may be dropped
+    // from the buffer (AES-GCM), and the position will be empty.
+    SRT_ASSERT(m_entries[lastpos].pUnit != NULL || m_entries[lastpos].status == EntryState_Drop);
+    while (m_entries[lastpos].pUnit == NULL && lastpos != m_iStartPos)
+    {
+        lastpos = decPos(lastpos);
+    }
+    
     if (m_entries[lastpos].pUnit == NULL)
         return 0;
 
     int startpos = m_iStartPos;
-
-    while (m_entries[startpos].pUnit == NULL)
+    while (m_entries[startpos].pUnit == NULL && startpos != lastpos)
     {
-        if (startpos == lastpos)
-            break;
-
         startpos = incPos(startpos);
     }
 
@@ -984,7 +988,7 @@ int CRcvBuffer::scanNotInOrderMessageRight(const int startPos, int msgNo) const
 
 int CRcvBuffer::scanNotInOrderMessageLeft(const int startPos, int msgNo) const
 {
-    // Search preceeding packets to the left.
+    // Search preceding packets to the left.
     // First check if there are packets to the left.
     if (startPos == m_iStartPos)
         return -1;

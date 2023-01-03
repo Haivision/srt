@@ -576,22 +576,23 @@ void* srt::CSndQueue::worker(void* param)
 
         // pack a packet from the socket
         CPacket pkt;
-        const std::pair<bool, steady_clock::time_point> res_time = u->packData((pkt));
+        steady_clock::time_point next_send_time;
+        sockaddr_any source_addr;
+        const bool res = u->packData((pkt), (next_send_time), (source_addr));
 
-        // Check if payload size is invalid.
-        if (res_time.first == false)
+        // Check if extracted anything to send
+        if (res == false)
         {
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
         const sockaddr_any addr = u->m_PeerAddr;
-        const steady_clock::time_point next_send_time = res_time.second;
         if (!is_zero(next_send_time))
             self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
 
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
-        self->m_pChannel->sendto(addr, pkt);
+        self->m_pChannel->sendto(addr, pkt, source_addr);
 
         IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSendTo++);
     }
@@ -600,10 +601,13 @@ void* srt::CSndQueue::worker(void* param)
     return NULL;
 }
 
-int srt::CSndQueue::sendto(const sockaddr_any& w_addr, CPacket& w_packet)
+int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const sockaddr_any& src)
 {
     // send out the packet immediately (high priority), this is a control packet
-    m_pChannel->sendto(w_addr, w_packet);
+    // NOTE: w_packet is passed by mutable reference because this function will do
+    // a modification in place and then it will revert it. After returning this object
+    // should look unmodified, hence it is here passed without a reference marker.
+    m_pChannel->sendto(addr, w_packet, src);
     return (int)w_packet.getLength();
 }
 
@@ -831,14 +835,42 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
 {
     ScopedLock vg(m_RIDListLock);
 
+    IF_HEAVY_LOGGING(const char* const id_type = w_id ? "THIS ID" : "A NEW CONNECTION");
+
     // TODO: optimize search
     for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
+            // This procedure doesn't exactly respond to the original UDT idea.
+            // As the "rendezvous queue" is used for both handling rendezvous and
+            // the caller sockets in the non-blocking mode (for blocking mode the
+            // entire handshake procedure is handled in a loop-style in CUDT::startConnect),
+            // the RID list should give up a socket entity in the following cases:
+            // 1. For THE SAME id as passed in w_id, respond always, as per a caller
+            //    socket that is currently trying to connect and is managed with
+            //    HS roundtrips in an event-style. Same for rendezvous.
+            // 2. For the "connection request" ID=0 the found socket should be given up
+            //    ONLY IF it is rendezvous. Normally ID=0 is only for listener as a
+            //    connection request. But if there was a listener, then this function
+            //    wouldn't even be called, as this case would be handled before trying
+            //    to call this function.
+            //
+            // This means: if an incoming ID is 0, then this search should succeed ONLY
+            // IF THE FOUND SOCKET WAS RENDEZVOUS.
+
+            if (!w_id && !i->m_pUDT->m_config.bRendezvous)
+            {
+                HLOGC(cnlog.Debug,
+                        log << "RID: found id @" << i->m_iID << " while looking for "
+                        << id_type << " FROM " << i->m_PeerAddr.str()
+                        << ", but it's NOT RENDEZVOUS, skipping");
+                continue;
+            }
+
             HLOGC(cnlog.Debug,
-                  log << "RID: found id @" << i->m_iID << " while looking for "
-                      << (w_id ? "THIS ID FROM " : "A NEW CONNECTION FROM ") << i->m_PeerAddr.str());
+                    log << "RID: found id @" << i->m_iID << " while looking for "
+                    << id_type << " FROM " << i->m_PeerAddr.str());
             w_id = i->m_iID;
             return i->m_pUDT;
         }
@@ -1642,6 +1674,7 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     memcpy((w_packet.m_nHeader), newpkt->m_nHeader, CPacket::HDR_SIZE);
     memcpy((w_packet.m_pcData), newpkt->m_pcData, newpkt->getLength());
     w_packet.setLength(newpkt->getLength());
+    w_packet.m_DestAddr = newpkt->m_DestAddr;
 
     delete[] newpkt->m_pcData;
     delete newpkt;

@@ -151,11 +151,11 @@ modified by
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //
 //   Loss List Field Coding:
-//      For any consectutive lost seqeunce numbers that the differnece between
+//      For any consecutive lost seqeunce numbers that the differnece between
 //      the last and first is more than 1, only record the first (a) and the
 //      the last (b) sequence numbers in the loss list field, and modify the
 //      the first bit of a to 1.
-//      For any single loss or consectutive loss less than 2 packets, use
+//      For any single loss or consecutive loss less than 2 packets, use
 //      the original sequence numbers in the field.
 
 #include "platform_sys.h"
@@ -176,7 +176,8 @@ namespace srt {
 
 // Set up the aliases in the constructure
 CPacket::CPacket()
-    : m_extra_pad()
+    : m_nHeader() // Silences GCC 12 warning "used uninitialized".
+    , m_extra_pad()
     , m_data_owned(false)
     , m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO]))
     , m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO]))
@@ -552,7 +553,7 @@ void CPacket::setMsgCryptoFlags(EncryptionKeySpec spec)
 
 uint32_t CPacket::getMsgTimeStamp() const
 {
-    // SRT_DEBUG_TSBPD_WRAP may enable smaller timestamp for faster wraparoud handling tests
+    // SRT_DEBUG_TSBPD_WRAP used to enable smaller timestamps for faster testing of how wraparounds are handled
     return (uint32_t)m_nHeader[SRT_PH_TIMESTAMP] & TIMESTAMP_MASK;
 }
 
@@ -563,6 +564,8 @@ CPacket* CPacket::clone() const
     pkt->m_pcData = new char[m_PacketVector[PV_DATA].size()];
     memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
     pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
+
+    pkt->m_DestAddr = m_DestAddr;
 
     return pkt;
 }

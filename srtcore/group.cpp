@@ -394,12 +394,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     break;
 
-    case SRTO_CONGESTION:
-        // Currently no socket groups allow any other
-        // congestion control mode other than live.
-        LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
     default:
         break;
     }
@@ -1898,7 +1892,7 @@ void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTS
         // Don't skip packets that are ahead because if we have a situation
         // that all links are either "elephants" (do not report read readiness)
         // and "kangaroos" (have already delivered an ahead packet) then
-        // omiting kangaroos will result in only elephants to be polled for
+        // omitting kangaroos will result in only elephants to be polled for
         // reading. Due to the strict timing requirements and ensurance that
         // TSBPD on every link will result in exactly the same delivery time
         // for a packet of given sequence, having an elephant and kangaroo in
