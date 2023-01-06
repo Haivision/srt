@@ -9902,8 +9902,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     if (!m_stats.rcvr.undecrypted.trace.count())
                     {
                         // Reduce log frequency.
-                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed, in total " << 1 + m_stats.rcvr.undecrypted.total.count()
-                            << " pkts undecrypted.");
+                        LOGC(qrlog.Error, log << CONID() << "Packet decryption failure, in total " << 1 + m_stats.rcvr.undecrypted.total.count()
+                            << " pkts undecrypted. Silencing the log.");
                     }
 #endif
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
