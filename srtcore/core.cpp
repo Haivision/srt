@@ -2624,7 +2624,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
-#if ENABLE_AEAD_API_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
                     if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
