@@ -9892,9 +9892,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
                     const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-                    LOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
+#if ENABLE_HEAVY_LOGGING
+                    HLOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
                         << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");
+#endif
+
                     ScopedLock lg(m_StatsLock);
+#if !ENABLE_HEAVY_LOGGING
+                    if (!m_stats.rcvr.undecrypted.trace.count())
+                    {
+                        // Reduce log frequency.
+                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed, in total " << 1 + m_stats.rcvr.undecrypted.total.count()
+                            << " pkts undecrypted.");
+                    }
+#endif
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                 }
