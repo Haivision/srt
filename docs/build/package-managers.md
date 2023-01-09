@@ -1,5 +1,9 @@
 # Package Managers
 
+<a href="https://repology.org/project/srt/versions">
+    <img src="https://repology.org/badge/vertical-allrepos/srt.svg" alt="Packaging status" align="right">
+</a>
+
 The SRT library can be installed with the help of the following package managers:
 
 - [Vcpkg](https://github.com/Microsoft/vcpkg)
