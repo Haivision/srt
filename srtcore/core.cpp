@@ -62,6 +62,7 @@ modified by
 #include <algorithm>
 #include <iterator>
 #include "srt.h"
+#include "access_control.h" // Required for SRT_REJX_FALLBACK
 #include "queue.h"
 #include "api.h"
 #include "core.h"
@@ -11592,6 +11593,8 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
     acore->m_HSGroupType = gt;
 #endif
 
+    // Set the default value
+    acore->m_RejectReason = SRT_REJX_FALLBACK;
     try
     {
         int result = CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs.m_iVersion, peer, target);
@@ -11604,6 +11607,7 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
         return false;
     }
 
+    acore->m_RejectReason = SRT_REJ_UNKNOWN;
     return true;
 }
 
