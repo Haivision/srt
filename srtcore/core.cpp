@@ -4441,9 +4441,12 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
     }
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-    if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
+    if (m_ConnRes.m_iReqType >= URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
+        LOGC(cnlog.Warn,
+                log << CONID() << "processConnectResponse: rejecting per reception of a rejection HS response: "
+                    << RequestTypeStr(m_ConnRes.m_iReqType));
         return CONN_REJECT;
     }
 
@@ -4626,6 +4629,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
+        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
         // The "local storage depleted" case shouldn't happen here, but
         // this is a theoretical path that needs prevention.
         bool ok = pResponse;
