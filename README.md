@@ -10,10 +10,17 @@
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
-[![Debian Badge][debian-badge]][debian-package]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
+
+[![Ubuntu 23.04][Ubuntu-badge]][Ubuntu-package]
+[![Fedora 37][fedora-badge]][fedora-package]
+[![Debian][debian-badge]][debian-package]
+[![Homebrew][Homebrew-badge]][Homebrew-package]
+[![Vcpkg][Vcpkg-badge]][Vcpkg-package]
+[![ConanCenter][ConanCenter-badge]][ConanCenter-package]
+
 
 ## What is SRT?
 
@@ -212,6 +219,12 @@ By contributing code to the SRT project, you agree to license your contribution 
 [travis]: https://travis-ci.org/Haivision/srt
 [license-badge]: https://img.shields.io/badge/License-MPLv2.0-blue
 
+[Vcpkg-package]: https://repology.org/project/srt/versions
+[Vcpkg-badge]: https://repology.org/badge/version-for-repo/vcpkg/srt.svg
+
+[ConanCenter-package]: https://repology.org/project/srt/versions
+[ConanCenter-badge]: https://repology.org/badge/version-for-repo/conancenter/srt.svg
+
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg
 
@@ -220,3 +233,12 @@ By contributing code to the SRT project, you agree to license your contribution 
 
 [debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1.5-gnutls/version.svg
 [debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls
+
+[fedora-package]: https://repology.org/project/srt/versions
+[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_37/srt.svg
+
+[homebrew-package]: https://repology.org/project/srt/versions
+[homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
+
+[Ubuntu-package]: https://repology.org/project/srt/versions
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_23_04/srt.svg
