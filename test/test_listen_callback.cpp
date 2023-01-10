@@ -9,6 +9,7 @@
 #endif
 
 #include "srt.h"
+#include "access_control.h"
 #include "utilities.h"
 
 srt_listen_callback_fn SrtTestListenCallback;
@@ -98,8 +99,8 @@ public:
             {
                 if (results[0].events == SRT_EPOLL_IN)
                 {
-                    int acp = srt_accept(server_sock, NULL, NULL);
-                    if (acp == SRT_ERROR)
+                    SRTSOCKET acp = srt_accept(server_sock, NULL, NULL);
+                    if (acp == SRT_INVALID_SOCK)
                     {
                         std::cout << "[T] Accept failed, so exitting\n";
                         break;
@@ -140,7 +141,7 @@ public:
 
 };
 
-int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
+int SrtTestListenCallback(void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid)
 {
     using namespace std;
 
@@ -192,6 +193,7 @@ int SrtTestListenCallback(void* opaq, SRTSOCKET ns SRT_ATR_UNUSED, int hsversion
 
         if (!found)
         {
+            srt_setrejectreason(ns, SRT_REJX_UNAUTHORIZED);
             cerr << "TEST: USER NOT FOUND, returning false.\n";
             return -1;
         }
@@ -246,6 +248,8 @@ TEST_F(ListenerCallback, SecureSuccess)
 
     // EXPECTED RESULT: connected successfully
     EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+    EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJ_UNKNOWN);
 }
 
 #if SRT_ENABLE_ENCRYPTION
@@ -259,6 +263,8 @@ TEST_F(ListenerCallback, FauxPass)
 
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+    EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJ_BADSECRET);
 }
 #endif
 
@@ -274,7 +280,24 @@ TEST_F(ListenerCallback, FauxUser)
 
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+    EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJX_FALLBACK);
 }
 
+TEST_F(ListenerCallback, FauxSyntax)
+{
+    string username_spec = "#!::r=mystream,t=publish"; // No 'u' key specified
+    string password = "thelocalmanager";
+
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
+#if SRT_ENABLE_ENCRYPTION
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+#endif
+
+    // EXPECTED RESULT: connection rejected
+    EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+    EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJX_UNAUTHORIZED);
+}
 
 
