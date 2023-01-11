@@ -620,7 +620,14 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
         // bind to the same addr of listening socket
         ns->core().open();
-        updateListenerMux(ns, ls);
+        if (!updateListenerMux(ns, ls))
+        {
+            // This is highly unlikely if not impossible, but there's
+            // a theoretical runtime chance of failure so it should be
+            // handled
+            ns->core().m_RejectReason = SRT_REJ_IPE;
+            throw false; // let it jump directly into the omni exception handler
+        }
 
         ns->core().acceptAndRespond(ls->m_SelfAddr, peer, hspkt, (w_hs));
     }
@@ -3152,8 +3159,14 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
     CMultiplexer* mux = map_getp(m_mMultiplexer, ls->m_iMuxID);
 
     // NOTE:
-    // THIS BELOW CODE is only for a highly unlikely, and probably buggy,
-    // situation when the Multiplexer wasn't found by ID recorded in the listener.
+    // THIS BELOW CODE is only for a highly unlikely situation when the listener
+    // socket has been closed in the meantime when the accepted socket is being
+    // processed. This procedure is different than updateMux because this time we
+    // only want to have a multiplexer socket to be assigned to the accepted socket.
+    // It is also unlikely that the listener socket is garbage-collected so fast, so
+    // this procedure will most likely find the multiplexer of the zombie listener socket,
+    // which no longer accepts new connections (the listener is withdrawn immediately from
+    // the port) that wasn't yet completely deleted.
     CMultiplexer* fallback = NULL;
     if (!mux)
     {
@@ -3180,8 +3193,9 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
                     mux = &m; // best match
                     break;
                 }
-                else
+                else if (m.m_iIPversion == AF_INET6)
                 {
+                    // Allowed fallback case when 
                     fallback = &m;
                 }
             }
