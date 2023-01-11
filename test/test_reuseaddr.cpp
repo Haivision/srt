@@ -392,11 +392,7 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
     client.join();
     std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << " LSN:@" << bindsock << " CLR:@" << g_client_sock << " ...\n";
 
-    int yes = 1;
-    ASSERT_NE(srt_setsockopt(accepted_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
-
-    ASSERT_NE(srt_setsockopt(g_client_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
     ASSERT_NE(srt_close(g_client_sock), SRT_ERROR); // cannot close g_client_sock after srt_sendmsg because of issue in api.c:2346 
 }
 
