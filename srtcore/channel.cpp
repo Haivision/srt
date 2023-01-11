@@ -541,6 +541,11 @@ void srt::CChannel::setConfig(const CSrtMuxerConfig& config)
     m_mcfg = config;
 }
 
+void srt::CChannel::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
+{
+    w_status = ::getsockopt(m_iSocket, level, option, (pw_dataptr), (&w_len));
+}
+
 int srt::CChannel::getIpTTL() const
 {
     if (m_iSocket == INVALID_SOCKET)
