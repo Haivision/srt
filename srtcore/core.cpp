@@ -62,6 +62,7 @@ modified by
 #include <algorithm>
 #include <iterator>
 #include "srt.h"
+#include "access_control.h" // Required for SRT_REJX_FALLBACK
 #include "queue.h"
 #include "api.h"
 #include "core.h"
@@ -871,13 +872,10 @@ string srt::CUDT::getstreamid(SRTSOCKET u)
 
 // XXX REFACTOR: Make common code for CUDT constructor and clearData,
 // possibly using CUDT::construct.
+// Initial sequence number, loss, acknowledgement, etc.
 void srt::CUDT::clearData()
 {
-    // Initial sequence number, loss, acknowledgement, etc.
-    int udpsize = m_config.iMSS - CPacket::UDP_HDR_SIZE;
-
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
-
+    m_iMaxSRTPayloadSize = m_config.iMSS - CPacket::UDP_HDR_SIZE - CPacket::HDR_SIZE;
     HLOGC(cnlog.Debug, log << CONID() << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
     m_iEXPCount  = 1;
@@ -2627,7 +2625,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
-#if ENABLE_AEAD_API_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
                     if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
@@ -4443,9 +4441,12 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
     }
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-    if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
+    if (m_ConnRes.m_iReqType >= URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
+        LOGC(cnlog.Warn,
+                log << CONID() << "processConnectResponse: rejecting per reception of a rejection HS response: "
+                    << RequestTypeStr(m_ConnRes.m_iReqType));
         return CONN_REJECT;
     }
 
@@ -4628,6 +4629,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
+        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
         // The "local storage depleted" case shouldn't happen here, but
         // this is a theoretical path that needs prevention.
         bool ok = pResponse;
@@ -6442,15 +6444,20 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     // to modify m_pSndBuffer and m_pSndLossList
     const int iPktsTLDropped SRT_ATR_UNUSED = sndDropTooLate();
 
-    int minlen = 1; // Minimum sender buffer space required for STREAM API
-    if (m_config.bMessageAPI)
+    // For MESSAGE API the minimum outgoing buffer space required is
+    // the size that can carry over the whole message as passed here.
+    // Otherwise it is allowed to send less bytes.
+    const int iNumPktsRequired = m_config.bMessageAPI ? m_pSndBuffer->countNumPacketsRequired(len) : 1;
+
+    if (m_bTsbPd && iNumPktsRequired > 1)
     {
-        // For MESSAGE API the minimum outgoing buffer space required is
-        // the size that can carry over the whole message as passed here.
-        minlen = (len + m_iMaxSRTPayloadSize - 1) / m_iMaxSRTPayloadSize;
+        LOGC(aslog.Error,
+            log << CONID() << "Message length (" << len << ") can't fit into a single data packet ("
+                << m_pSndBuffer->getMaxPacketLen() << " bytes max).");
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
-    if (sndBuffersLeft() < minlen)
+    if (sndBuffersLeft() < iNumPktsRequired)
     {
         //>>We should not get here if SRT_ENABLE_TLPKTDROP
         // XXX Check if this needs to be removed, or put to an 'else' condition for m_bTLPktDrop.
@@ -6463,7 +6470,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
             if (m_config.iSndTimeOut < 0)
             {
-                while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
+                while (stillConnected() && sndBuffersLeft() < iNumPktsRequired && m_bPeerHealth)
                     m_SendBlockCond.wait(sendblock_lock);
             }
             else
@@ -6471,7 +6478,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 const steady_clock::time_point exptime =
                     steady_clock::now() + milliseconds_from(m_config.iSndTimeOut);
                 THREAD_PAUSED();
-                while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
+                while (stillConnected() && sndBuffersLeft() < iNumPktsRequired && m_bPeerHealth)
                 {
                     if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
@@ -6497,7 +6504,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
          * we test twice if this code is outside the else section.
          * This fix move it in the else (blocking-mode) section
          */
-        if (sndBuffersLeft() < minlen)
+        if (sndBuffersLeft() < iNumPktsRequired)
         {
             if (m_config.iSndTimeOut >= 0)
                 throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
@@ -7245,7 +7252,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRcvLoss    = m_stats.rcvr.lost.trace.bytesWithHdr();
 
         perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
-        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count() + m_stats.rcvr.undecrypted.trace.count();
+        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count();
         perf->byteSndDrop = m_stats.sndr.dropped.trace.bytesWithHdr();
         perf->byteRcvDrop = m_stats.rcvr.dropped.trace.bytesWithHdr();
         perf->pktRcvUndecrypt  = m_stats.rcvr.undecrypted.trace.count();
@@ -7276,10 +7283,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr();
         perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
-        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count() + m_stats.rcvr.undecrypted.total.count();
+        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count();
         // TODO: The payload is dropped. Probably header sizes should not be counted?
         perf->byteSndDropTotal = m_stats.sndr.dropped.total.bytesWithHdr();
-        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr() + m_stats.rcvr.undecrypted.total.bytesWithHdr();
+        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr();
         perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
         perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
 
@@ -9884,27 +9891,20 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
                 if (rc != ENCS_CLEAR)
                 {
-                    // Heavy log message because if seen once the message may happen very often.
-                    HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-                    {
-                        // Drop a packet from the receiver buffer.
-                        // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                        // Otherwise just drop the exact packet.
-                        if (m_config.bMessageAPI)
-                            m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
-                        else
-                            m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    // Drop a packet from the receiver buffer.
+                    // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
+                    // Otherwise just drop the exact packet.
+                    const int iDropCnt = (m_config.bMessageAPI)
+                        ? m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag))
+                        : m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-                        LOGC(qrlog.Error, log << CONID() << "AEAD decryption failed, breaking the connection.");
-                        m_bBroken = true;
-                        m_iBrokenCounter = 0;
-                    }
-
+                    LOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
+                        << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");
                     ScopedLock lg(m_StatsLock);
+                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                 }
             }
@@ -11620,6 +11620,8 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
     acore->m_HSGroupType = gt;
 #endif
 
+    // Set the default value
+    acore->m_RejectReason = SRT_REJX_FALLBACK;
     try
     {
         int result = CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs.m_iVersion, peer, target);
@@ -11632,6 +11634,7 @@ bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShak
         return false;
     }
 
+    acore->m_RejectReason = SRT_REJ_UNKNOWN;
     return true;
 }
 

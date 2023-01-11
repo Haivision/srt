@@ -247,7 +247,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
     case HAICRYPT_ERROR_CIPHER:
-#if ENABLE_AEAD_API_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
 #else
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET; // Use "bad secret" as a fallback.
@@ -403,7 +403,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
             m_SndKmState = SRT_KM_S_UNSECURED;
             retstatus = 0;
             break;
-#if ENABLE_AEAD_API_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
         case SRT_KM_S_BADCRYPTOMODE:
             // The peer expects to use a different cryptographic mode (e.g. AES-GCM, not AES-CTR).
             m_RcvKmState = SRT_KM_S_BADCRYPTOMODE;
