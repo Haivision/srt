@@ -69,7 +69,7 @@ struct CSrtConfigSetter<SRTO_MSS>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int ival = cast_optval<int>(optval, optlen);
+        const int ival = cast_optval<int>(optval, optlen);
         if (ival < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -611,7 +611,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
 
         if (val > SRT_LIVE_MAX_PLSIZE)
         {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
+            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << ", maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -632,10 +632,20 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             if (size_t(val) > efc_max_payload_size)
             {
                 LOGC(aclog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
+                     log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << fc.extra_size
                          << " required for packet filter header");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
             }
+        }
+
+        // Not checking AUTO to allow defaul 1456 bytes.
+        if ((co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+            && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
+        {
+            LOGC(aclog.Error,
+                log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
+                << " required for AES-GCM.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
         co.zExpPayloadSize = val;

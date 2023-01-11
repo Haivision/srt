@@ -40,13 +40,14 @@ Option details are given further below.
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address.                                              |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors.                                                                                                            |
-| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
+| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON\*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).                                                                      |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
-| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON*        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
+| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
+| [`ENABLE_PKTINFO`](#enable_pktinfo)                          | 1.5.2 | `BOOL`    | OFF\*      | Enables using `IP_PKTINFO` to allow the listener extracting the target IP address from incoming packets                                              |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
 | [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.                                         |
 | [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.                                                                                                                         |
@@ -430,6 +431,52 @@ to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
 
 When ON, this option enables the standard C++ `thread` and `chrono` libraries 
 (available since C++11) to be used by SRT instead of the `pthreads` libraries.
+
+#### ENABLE_PKTINFO
+**`--enable-pktinfo`** (default: OFF)
+
+This allows the use of the `IP_PKTINFO` control message to extract the true target IP 
+address from the incoming UDP packets to a listener bound to "any" address. The "any" 
+address is defined in IPv4 as 0.0.0.0 (`INADDR_ANY`) and in IPv6 as :: (`in6addr_any`). 
+Applications usually implement it by clearing the `sockaddr*` structure and only setting 
+the port number. This true address can then be used to override the source IP address 
+when sending packets to the peer. This solves the problem where routing rules 
+in an agent's host send a packet using a different source IP address than the  target 
+IP address in the UDP packet from the peer. The peer will reject such a packet as a 
+suspected man-in-the-middle (MITM) attempt, leading to a connection failure.
+
+This problem has been observed where an agent's host has at least
+two IP addresses that share the same broadcast prefix, and it is being contacted
+by a peer using an address other than the first one. For example:
+
+The host has set the following local IP addresses:
+
+  (1) 192.168.10.5 - routing to 192.168.10.1
+  (2) 10.10.5.10 - routing to 10.10.5.1
+  (3) 10.10.5.20 - routing to 10.10.5.1
+
+For all of them the netmask is 255.255.255.0, which means that the second
+and third IP addresses share the same broadcast prefix (10.10.5.0).
+The problem occurs when an agent running on this host is contacted
+by a peer using the address 10.10.5.20.
+
+In such a case the source address set in the UDP packet being sent will 
+always be the first of these addresses (10.10.5.10), which will be different 
+from the one from which the packet is actually being sent (10.10.5.20). 
+The peer will then reject such a packet because its source address is different.
+
+This problem occurs only with listener sockets bound to "any" address - when it
+is bound to a specific IP address, this will be always set as source address
+for outgoing packets.
+
+By enabling this feature SRT mitigates the problem by first reading the real
+target IP address from the incoming handshake packet, and then forcing this
+specific address to be set in the source address field of every UDP packet sent
+from this socket. This behavior is also consistent with TCP.
+
+Note that this feature is available only on certain platforms. Notably the BSD
+systems are known to not provide this feature and the current implementation
+doesn't support this feature on Windows systems.
 
 
 #### ENABLE_TESTING

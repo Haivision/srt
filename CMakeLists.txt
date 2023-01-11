@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.1)
+set (SRT_VERSION 1.5.2)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -117,6 +117,9 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
+# Note that the IP_PKTINFO  has a limited portability and may not work on some platforms
+# (Windows, FreeBSD, ...).
+set (ENABLE_PKTINFO_DEFAULT OFF)
 
 set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
 set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
@@ -144,6 +147,7 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
@@ -724,6 +728,15 @@ endif()
 if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
+
+if (ENABLE_PKTINFO)
+	if (WIN32 OR BSD)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
+	endif()
+
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+endif()
+
 
 # ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
