@@ -229,7 +229,7 @@ srt::CUDTUnited::~CUDTUnited()
 
 string srt::CUDTUnited::CONID(SRTSOCKET sock)
 {
-    if (int32_t(sock) <= 0) // both SRT_INVALID_SOCK and SRT_SOCKID_CONNREQ and illegal negative domain
+    if (int32_t(sock) <= 0) // embraces SRT_INVALID_SOCK, SRT_SOCKID_CONNREQ and illegal negative domain
         return "";
 
     std::ostringstream os;
