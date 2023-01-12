@@ -77,7 +77,7 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
 // iphlp library to be attached to the executable, which is kinda
 // problematic. Temporarily block tests using this function on Windows.
 
-std::string GetLocalIP()
+std::string GetLocalIP(int af = AF_UNSPEC)
 {
     std::cout << "!!!WARNING!!!: GetLocalIP not supported, test FORCEFULLY passed\n";
     return "";
@@ -97,7 +97,7 @@ struct IfAddr
     }
 };
 
-std::string GetLocalIP()
+std::string GetLocalIP(int af = AF_UNSPEC)
 {
     struct ifaddrs * ifa=NULL;
     void * tmpAddrPtr=NULL;
@@ -113,6 +113,10 @@ std::string GetLocalIP()
 
         if (ifa->ifa_addr->sa_family == AF_INET)
         {
+            // Ignore IPv4 address if not wanted.
+            if (af == AF_INET6)
+                continue;
+
             // is a valid IP4 Address
             sockaddr_in* psin = (struct sockaddr_in *)ifa->ifa_addr;
             tmpAddrPtr=&psin->sin_addr;
@@ -124,7 +128,14 @@ std::string GetLocalIP()
             inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
             return addressBuffer;
             printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
-        } else if (ifa->ifa_addr->sa_family == AF_INET6) { // check it is IP6
+        }
+        else if (ifa->ifa_addr->sa_family == AF_INET6)
+        { // check it is IP6
+
+            // Ignore IPv6 address if not wanted.
+            if (af == AF_INET)
+                continue;
+
             // is a valid IP6 Address
             tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
             char addressBuffer[INET6_ADDRSTRLEN] = "";
@@ -557,7 +568,10 @@ TEST(ReuseAddr, Wildcard)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    std::string localip = GetLocalIP();
+
+    // This time exceptionally require IPv4 because we'll be
+    // checking it against 0.0.0.0 
+    std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
@@ -572,7 +586,7 @@ TEST(ReuseAddr, Wildcard)
     SRTSOCKET bindsock_1 = createListener("0.0.0.0", 5000, true);
 
     // Binding a certain address when wildcard is already bound should fail.
-    SRTSOCKET bindsock_2 = createListener(localip, 5000, false);
+    SRTSOCKET bindsock_2 = createBinder(localip, 5000, false);
 
     std::thread server_1(testAccept, bindsock_1, "127.0.0.1", 5000, true);
     server_1.join();
@@ -585,6 +599,43 @@ TEST(ReuseAddr, Wildcard)
     srt_cleanup();
 }
 
+TEST(ReuseAddr, Wildcard6)
+{
+#if defined(_WIN32) || defined(CYGWIN)
+    std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
+        "Forcing test to pass, PLEASE FIX.\n";
+    return;
+#endif
+
+    // This time exceptionally require IPv6 because we'll be
+    // checking it against ::
+    std::string localip = GetLocalIP(AF_INET6);
+    if (localip == "")
+        return; // DISABLE TEST if this doesn't work.
+
+    ASSERT_EQ(srt_startup(), 0);
+
+    client_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, client_pollid);
+
+    server_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+    SRTSOCKET bindsock_1 = createListener("::", 5000, true);
+
+    // Binding a certain address when wildcard is already bound should fail.
+    SRTSOCKET bindsock_2 = createBinder(localip, 5000, false);
+
+    std::thread server_1(testAccept, bindsock_1, "::1", 5000, true);
+    server_1.join();
+
+    shutdownListener(bindsock_1);
+    shutdownListener(bindsock_2);
+
+    (void)srt_epoll_release(client_pollid);
+    (void)srt_epoll_release(server_pollid);
+    srt_cleanup();
+}
 
 TEST(ReuseAddr, ProtocolVersion)
 {
