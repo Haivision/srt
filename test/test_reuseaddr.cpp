@@ -487,6 +487,38 @@ TEST(ReuseAddr, SameAddr2)
     srt_cleanup();
 }
 
+TEST(ReuseAddr, SameAddrV6)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    client_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, client_pollid);
+
+    server_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+    SRTSOCKET bindsock_1 = createBinder("::1", 5000, true);
+    SRTSOCKET bindsock_2 = createListener("::1", 5000, true);
+
+    std::thread server_2(testAccept, bindsock_2, "::1", 5000, true);
+    server_2.join();
+
+    shutdownListener(bindsock_1);
+
+    // Test simple close and reuse the multiplexer
+    ASSERT_NE(srt_close(bindsock_2), SRT_ERROR);
+
+    SRTSOCKET bindsock_3 = createListener("::1", 5000, true);
+    testAccept(bindsock_3, "::1", 5000, true);
+
+    shutdownListener(bindsock_3);
+
+    (void)srt_epoll_release(client_pollid);
+    (void)srt_epoll_release(server_pollid);
+    srt_cleanup();
+}
+
+
 TEST(ReuseAddr, DiffAddr)
 {
     std::string localip = GetLocalIP();

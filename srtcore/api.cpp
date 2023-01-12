@@ -2831,9 +2831,38 @@ uint16_t srt::CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
     return sa.hport();
 }
 
+bool srt::CUDTUnited::inet6SettingsCorrect(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
+        const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket)
+{
+    if (muxaddr.family() != AF_INET6)
+        return true; // Don't check - the family has been checked already
+
+    if (reqaddr.isany())
+    {
+        if (cfgSocket.iIpV6Only == -1) // Treat as "adaptive"
+            return true;
+
+        // If set explicitly, then it must be equal to the one of found muxer.
+        return cfgSocket.iIpV6Only == cfgMuxer.iIpV6Only;
+    }
+
+    // If binding to the certain IPv6 address, then this setting doesn't matter.
+    return true;
+}
+
 bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket)
 {
-    return cfgMuxer.bReuseAddr && cfgMuxer == cfgSocket;
+    if (!cfgMuxer.bReuseAddr)
+    {
+        HLOGP(smlog.Debug, "channel settings match: fail: the multiplexer is not reusable");
+        return false;
+    }
+
+    if (cfgMuxer == cfgSocket)
+        return true;
+
+    HLOGP(smlog.Debug, "channel settings match: fail: some options have different values");
+    return false;
 }
 
 void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
@@ -3040,7 +3069,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             if (reuse_attempt)
             {
                 //   - if the channel settings match, it can be reused
-                if (channelSettingsMatch(m.m_mcfg, cfgSocket))
+                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCorrect(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
                 {
                     HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
                     // reuse the existing multiplexer

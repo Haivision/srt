@@ -738,7 +738,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     bool have_set_src = false;
 
 #ifdef SRT_ENABLE_PKTINFO
-    if (m_bBindMasked && !source_addr.isany())
+    if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
         if (!setSourceAddress(mh, source_addr))
         {

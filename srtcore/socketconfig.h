@@ -91,19 +91,27 @@ struct CSrtMuxerConfig
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
 
+    // NOTE: this operator is not reversable. The syntax must use:
+    //  muxer_entry == socket_entry
     bool operator==(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
-            && CEQUAL(iIpV6Only)
             && CEQUAL(bReuseAddr)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
             && CEQUAL(iUDPSndBufSize)
-            && CEQUAL(iUDPRcvBufSize);
+            && CEQUAL(iUDPRcvBufSize)
+            && (other.iIpV6Only == -1 || CEQUAL(iIpV6Only))
+            // NOTE: iIpV6Only is not regarded because
+            // this matches only in case of IPv6 with "any" address.
+            // And this aspect must be checked separately because here
+            // this procedure has no access to neither the address,
+            // nor the IP version (family).
 #undef CEQUAL
+            && true;
     }
 
     CSrtMuxerConfig()
