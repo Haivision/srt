@@ -645,10 +645,17 @@ and the actual value for connected sockets.
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_IPV6ONLY`  | 1.4.0 | pre-bind | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
 
-Set system socket flag `IPV6_V6ONLY`. When set to 0 a listening socket binding an
-IPv6 address accepts also IPv4 clients (their addresses will be formatted as
-IPv4-mapped IPv6 addresses). By default (-1) this option is not set and the
-platform default value is used.
+Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
+only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
+(known also as `::`). In this case this option must be also set explicitly to 0 or 1
+before binding or otherwise binding will fail (this is because it is not possible to
+determine the default value of this above mentioned system option any portable or
+reliable way). Possible values are:
+
+* -1: default, which can be used in cases not affected by this flag
+* 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
+* 1: The binding to `in6addr_any` will bind only to IPv6 and not IPv4 wildcard address
+
 
 [Return to list](#list-of-options)
 

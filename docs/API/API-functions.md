@@ -358,27 +358,74 @@ int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 
 Binds a socket to a local address and port. Binding specifies the local network
 interface and the UDP port number to be used for the socket. When the local 
-address is a form of `INADDR_ANY`, then it's bound to all interfaces. When the 
-port number is 0, then the port number will be system-allocated if necessary.
+address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
+it's bound to all interfaces (although see `SRTO_IPV6ONLY` and an additional
+information below for details about the wildcard address in IPv6).
+
+Binding is necessary for every socket to be used for communication. It can be
+bound implicitly, when the socket is being connected to a listening socket in
+the network using [`srt_connect`](#srt_connect) or a similar function that does
+the same, in which case the socket will be bound to a wildcard address of
+the IP version as specified in the `sockaddr::sa_family` field and port number
+0.  In other cases it must be bound explicitly using this function, or some
+other function that uses this functionality.
+
+When the port number is 0 (including the implicit binding case), then the port
+number will be system-allocated and can be determined after an explicit or
+implicit binding using [`srt_getsockname`](#srt_getsockname).
 
 This call is obligatory for a listening socket before calling [`srt_listen`](#srt_listen)
 and for rendezvous mode before calling [`srt_connect`](#srt_connect); otherwise it's 
 optional. For a listening socket it defines the network interface and the port where 
-the listener should expect a call request. In the case of rendezvous mode (when the
-socket has set [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to 
-true both parties connect to one another) it defines the network interface and port 
-from which packets will be sent to the peer, and the port to which the peer is 
-expected to send packets.
+the listener should expect a call request.
 
-For a connecting socket this call can set up the outgoing port to be used in the 
-communication. It is allowed that multiple SRT sockets share one local outgoing 
-port, as long as [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) 
-is set to *true* (default). Without this call the port will be automatically 
-selected by the system.
+In the case of rendezvous mode there's a pair of two endpoints (address-and-port
+specifications), let's name them A and B, and for both parties one endpoint is
+local and the other is remote one. The party, for which the A's address is
+local, should bind to the A address, and then connect to the B endpoint, and the
+other party the other way around. Both sockets must be set
+[`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to *true* to make
+this connection possible.
+
+For a connecting socket this call is optional, but can be used to set up the
+outgoing port for communication as well as the local interface through which
+it should reach out to the remote endpoint, should that be by some reason necessary.
+
+Whether binding is possible, it depends on some runtime conditions, in particular:
+
+* No socket in the system has been bound to this port ("free binding"), or
+
+* A socket bound to this port is bound to a certain address, and this binding is
+  using a different non-wildcard address ("side binding"), or
+
+* A socket bound to this port is bound to a wildcard address for a different IP
+  version than the version requested for this binding ("side wildcard binding",
+  see also `SRTO_IPV6ONLY` socket option).
+
+It is also possible to bind to the already busy port as long as the existing
+binding ("shared bindin") is possessed by an SRT socket created in the same
+application, and:
+
+* Its binding address and UDP-related socket options match the socket to be bound.
+* Its [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to *true* (default).
+
+If none of the free, side and shared binding is currently possible, this function
+will fail. If the socket in the way blocking the requested endpoint is an SRT
+socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
+while if it was another socket in the system, or the problem was in the system
+in general, it will report `SRT_ESOCKFAIL`.
 
 **NOTE**: This function cannot be called on a socket group. If you need to
 have the group-member socket bound to the specified source address before
-connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
+connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose
+or set the appropriate source address using
+[`srt_prepare_endpoint`](#srt_prepare_endpoint).
+
+**IMPORTANT** information about IPv6: If you are going to bind to the
+`in6addr_any` IPv6 wildcard address (known as `::`), the `SRTO_IPV6ONLY`
+option must be first set explicitly to 0 or 1 or otherwise the binding
+will fail. In all other cases this option is meaningless. See `SRTO_IPV6ONLY`
+option for more information.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
@@ -389,6 +436,7 @@ connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
 |:---------------------------------------- |:-------------------------------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock)          | Socket passed as [`u`](#u) designates no valid socket                |
 | [`SRT_EINVOP`](#srt_einvop)              | Socket already bound                                                 |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `name`/`namelen` or invalid `SRTO_IPV6ONLY` flag in `u`      |
 | [`SRT_ECONNSETUP`](#srt_econnsetup)      | Internal creation of a UDP socket failed                             |
 | [`SRT_ESOCKFAIL`](#srt_esockfail)        | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed |
 | [`SRT_EBINDCONFLICT`](#srt_ebindconflict)| Binding specification conflicts with existing one                    |
