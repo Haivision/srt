@@ -17,6 +17,8 @@ written by
 		CRYSPR/4SRT Initial implementation.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include "hcrypt.h"
 #include "cryspr.h"
 
