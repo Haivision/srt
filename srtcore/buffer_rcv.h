@@ -226,8 +226,8 @@ private:
     inline int cmpPos(int pos2, int pos1) const
     {
         // XXX maybe not the best implementation, but this keeps up to the rule
-        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + m_szSize - m_iStartPos;
-        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + m_szSize - m_iStartPos;
+        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
+        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
         return off2 - off1;
     }

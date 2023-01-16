@@ -54,14 +54,14 @@ int hcryptCtx_Tx_Rekey(hcrypt_Session *crypto, hcrypt_Ctx *ctx)
 
 	/* Generate Salt */
 	ctx->salt_len = HAICRYPT_SALT_SZ;
-	if (0 > (iret = crypto->cryspr->prng(ctx->salt, ctx->salt_len))) {
+	if (0 > (iret = crypto->cryspr->prng(ctx->salt, (int)ctx->salt_len))) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(salt[%zd]) failed\n", ctx->salt_len);
 		return(iret);
 	}
 
 	/* Generate SEK */
 	ctx->sek_len = ctx->cfg.key_len;
-	if (0 > (iret = crypto->cryspr->prng(ctx->sek, ctx->sek_len))) {
+	if (0 > (iret = crypto->cryspr->prng(ctx->sek, (int)ctx->sek_len))) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(sek[%zd] failed\n", ctx->sek_len);
 		return(iret);
 	}
@@ -197,7 +197,7 @@ int hcryptCtx_Tx_Refresh(hcrypt_Session *crypto)
 
 	HCRYPT_LOG(LOG_DEBUG, "refresh/generate SEK. salt_len=%d sek_len=%d\n", (int)new_ctx->salt_len, (int)new_ctx->sek_len);
 
-	if (0 > crypto->cryspr->prng(new_ctx->sek, new_ctx->sek_len)) {
+	if (0 > crypto->cryspr->prng(new_ctx->sek, (int)new_ctx->sek_len)) {
 		HCRYPT_LOG(LOG_ERR, "PRNG(sek[%zd] failed\n", new_ctx->sek_len);
 		return(-1);
 	}
@@ -324,7 +324,7 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 	}
 	if (0 > crypto->cryspr->km_wrap(crypto->cryspr_cb,
 		&km_msg[HCRYPT_MSG_KM_OFS_SALT + ctx->salt_len],
-		seks, sek_cnt * ctx->sek_len)) {
+		seks, (unsigned int)(sek_cnt * ctx->sek_len))) {
 
 		HCRYPT_LOG(LOG_ERR, "%s", "wrap key failed\n");
 		return(-1);

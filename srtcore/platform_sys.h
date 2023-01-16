@@ -71,10 +71,6 @@
    #include <unistd.h>
 #endif
 
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wshorten-64-to-32"
-#endif
-
 #endif
 
 #ifdef BSD

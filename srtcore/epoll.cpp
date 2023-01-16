@@ -661,23 +661,23 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
 
 #elif defined(BSD) || TARGET_OS_MAC
                 struct timespec tmout = {0, 0};
-                const int max_events = ed.m_sLocals.size();
+                const int max_events = (int)ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
                 srt::FixedArray<struct kevent> ke(max_events);
 
-                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), ke.size(), &tmout);
+                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), (int)ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
                 {
                     if ((NULL != lrfds) && (ke[i].filter == EVFILT_READ))
                     {
-                        lrfds->insert(ke[i].ident);
+                        lrfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                     if ((NULL != lwfds) && (ke[i].filter == EVFILT_WRITE))
                     {
-                        lwfds->insert(ke[i].ident);
+                        lwfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                 }
