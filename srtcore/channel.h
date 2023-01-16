@@ -165,8 +165,6 @@ public:
     const sockaddr*     bindAddress() { return m_BindAddr.get(); }
     const sockaddr_any& bindAddressAny() { return m_BindAddr; }
 
-    static const int32_t MSG_ERROR_FLAGS = MSG_OOB | MSG_EOR | MSG_TRUNC | MSG_CTRUNC;
-
 private:
     void setUDPSockOpt();
 
