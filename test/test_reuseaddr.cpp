@@ -192,6 +192,9 @@ void clientSocket(std::string ip, int port, bool expect_success)
     if (expect_success)
     {
         EXPECT_NE(connect_res, -1);
+        if (connect_res == -1)
+            return;
+
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
 
         if (connect_res != -1)
@@ -341,7 +344,7 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
         std::cout << "[T/S] Wait for acceptance on @" << bindsock << " ...\n";
 
-        ASSERT_NE(srt_epoll_wait(server_pollid,
+        EXPECT_NE(srt_epoll_wait(server_pollid,
                                          read,  &rlen,
                                          write, &wlen,
                                          3000, // -1 is set for debuging purpose.
