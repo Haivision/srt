@@ -41,7 +41,7 @@
    #include <stdint.h>
    #include <inttypes.h>
    #if defined(_MSC_VER)
-      #pragma warning(disable: 4101 4133 4244 4251 4267 26812)
+      #pragma warning(disable: 4251 26812)
    #endif
 #else
 

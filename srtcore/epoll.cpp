@@ -703,7 +703,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
                     if (lwfds)
                         FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
-                        max_fd = *i;
+                        max_fd = (int)*i;
                 }
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
