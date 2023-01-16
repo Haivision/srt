@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include <thread>
+#include <future>
 #ifndef _WIN32
 #include <ifaddrs.h>
 #endif
@@ -9,6 +10,18 @@
 #include "udt.h"
 
 using srt::sockaddr_any;
+
+template<typename Future>
+struct AtReturnJoin
+{
+    Future& which_future;
+
+    ~AtReturnJoin()
+    {
+        if (which_future.valid())
+            which_future.wait();
+    }
+};
 
 // Copied from ../apps/apputil.cpp, can't really link this file here.
 sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family = AF_INET)
@@ -322,18 +335,12 @@ SRTSOCKET createBinder(std::string ip, int port, bool expect_success)
 
 void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
 {
-    std::thread client(clientSocket, ip, port, expect_success);
 
-    struct AtReturnJoin
-    {
-        std::thread& which_thread;
+    auto run = [ip, port, expect_success]() { clientSocket(ip, port, expect_success); };
 
-        ~AtReturnJoin()
-        {
-            if (which_thread.joinable())
-                which_thread.join();
-        }
-    } atreturn_join {client};
+    auto launched = std::async(run);
+
+    AtReturnJoin<decltype(launched)> atreturn_join {launched};
 
     { // wait for connection from client
         int rlen = 2;
@@ -402,12 +409,12 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
     EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
 
-    std::cout << "[T/S] joining client thread...\n";
-    client.join();
     std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << " LSN:@" << bindsock << " CLR:@" << g_client_sock << " ...\n";
-
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
     ASSERT_NE(srt_close(g_client_sock), SRT_ERROR); // cannot close g_client_sock after srt_sendmsg because of issue in api.c:2346 
+
+    std::cout << "[T/S] joining client async...\n";
+    launched.get();
 }
 
 void shutdownListener(SRTSOCKET bindsock)
@@ -418,8 +425,8 @@ void shutdownListener(SRTSOCKET bindsock)
         return;
 
     int yes = 1;
-    ASSERT_NE(srt_setsockopt(bindsock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_close(bindsock), SRT_ERROR);
+    EXPECT_NE(srt_setsockopt(bindsock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
+    EXPECT_NE(srt_close(bindsock), SRT_ERROR);
 
     std::chrono::milliseconds check_period (250);
     int credit = 400; // 10 seconds
@@ -436,7 +443,7 @@ void shutdownListener(SRTSOCKET bindsock)
     }
     //std::cerr << std::endl;
 
-    ASSERT_NE(credit, 0);
+    EXPECT_NE(credit, 0);
 }
 
 TEST(ReuseAddr, SameAddr1)
@@ -452,8 +459,7 @@ TEST(ReuseAddr, SameAddr1)
     SRTSOCKET bindsock_1 = createBinder("127.0.0.1", 5000, true);
     SRTSOCKET bindsock_2 = createListener("127.0.0.1", 5000, true);
 
-    std::thread server_2(testAccept, bindsock_2, "127.0.0.1", 5000, true);
-    server_2.join();
+    testAccept(bindsock_2, "127.0.0.1", 5000, true);
 
     std::thread s1(shutdownListener, bindsock_1);
     std::thread s2(shutdownListener, bindsock_2);
@@ -483,8 +489,7 @@ TEST(ReuseAddr, SameAddr2)
     SRTSOCKET bindsock_1 = createBinder(localip, 5000, true);
     SRTSOCKET bindsock_2 = createListener(localip, 5000, true);
 
-    std::thread server_2(testAccept, bindsock_2, localip, 5000, true);
-    server_2.join();
+    testAccept(bindsock_2, localip, 5000, true);
 
     shutdownListener(bindsock_1);
 
@@ -514,8 +519,7 @@ TEST(ReuseAddr, SameAddrV6)
     SRTSOCKET bindsock_1 = createBinder("::1", 5000, true);
     SRTSOCKET bindsock_2 = createListener("::1", 5000, true);
 
-    std::thread server_2(testAccept, bindsock_2, "::1", 5000, true);
-    server_2.join();
+    testAccept(bindsock_2, "::1", 5000, true);
 
     shutdownListener(bindsock_1);
 
@@ -553,8 +557,7 @@ TEST(ReuseAddr, DiffAddr)
     //std::thread server_1(testAccept, bindsock_1, "127.0.0.1", 5000, true);
     //server_1.join();
 
-    std::thread server_2(testAccept, bindsock_2, localip, 5000, true);
-    server_2.join();
+    testAccept(bindsock_2, localip, 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
@@ -591,8 +594,7 @@ TEST(ReuseAddr, Wildcard)
     // Binding a certain address when wildcard is already bound should fail.
     SRTSOCKET bindsock_2 = createBinder(localip, 5000, false);
 
-    std::thread server_1(testAccept, bindsock_1, "127.0.0.1", 5000, true);
-    server_1.join();
+    testAccept(bindsock_1, "127.0.0.1", 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
@@ -629,8 +631,7 @@ TEST(ReuseAddr, Wildcard6)
     // Binding a certain address when wildcard is already bound should fail.
     SRTSOCKET bindsock_2 = createBinder(localip, 5000, false);
 
-    std::thread server_1(testAccept, bindsock_1, "::1", 5000, true);
-    server_1.join();
+    testAccept(bindsock_1, "::1", 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
@@ -667,11 +668,8 @@ TEST(ReuseAddr, ProtocolVersion)
         ASSERT_TRUE(bindListener(bindsock_2, "::", 5000, true));
     }
 
-    std::thread server_1(testAccept, bindsock_1, "127.0.0.1", 5000, true);
-    server_1.join();
-
-    std::thread server_2(testAccept, bindsock_2, "::1", 5000, true);
-    server_2.join();
+    testAccept(bindsock_1, "127.0.0.1", 5000, true);
+    testAccept(bindsock_2, "::1", 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
@@ -708,8 +706,7 @@ TEST(ReuseAddr, ProtocolVersionFaux)
         ASSERT_FALSE(bindListener(bindsock_2, "::", 5000, false));
     }
 
-    std::thread server_1(testAccept, bindsock_1, "127.0.0.1", 5000, true);
-    server_1.join();
+    testAccept(bindsock_1, "127.0.0.1", 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
