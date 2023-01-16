@@ -73,7 +73,6 @@
 
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wshorten-64-to-32"
-#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
@@ -101,10 +100,6 @@
 
 #ifdef SRT_IMPORT_EVENT
    #include <sys/select.h>
-#endif
-
-#if defined(__GNUC__) || defined(__GNUG__)
-#pragma GCC diagnostic ignored "-Wambiguous-reversed-operator"
 #endif
 
 #endif
