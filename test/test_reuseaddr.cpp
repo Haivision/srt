@@ -474,7 +474,7 @@ TEST(ReuseAddr, SameAddr1)
 
 TEST(ReuseAddr, SameAddr2)
 {
-    std::string localip = GetLocalIP();
+    std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
@@ -539,7 +539,7 @@ TEST(ReuseAddr, SameAddrV6)
 
 TEST(ReuseAddr, DiffAddr)
 {
-    std::string localip = GetLocalIP();
+    std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
@@ -641,7 +641,7 @@ TEST(ReuseAddr, Wildcard6)
     srt_cleanup();
 }
 
-TEST(ReuseAddr, ProtocolVersion)
+TEST(ReuseAddr, ProtocolVersion6)
 {
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
@@ -679,7 +679,7 @@ TEST(ReuseAddr, ProtocolVersion)
     srt_cleanup();
 }
 
-TEST(ReuseAddr, ProtocolVersionFaux)
+TEST(ReuseAddr, ProtocolVersionFaux6)
 {
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
