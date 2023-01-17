@@ -52,6 +52,11 @@ modified by
 
 #include "platform_sys.h"
 
+// POSIX only, for MSG_TRUNC and other flags
+#ifndef _WIN32
+
+#endif
+
 #include <iostream>
 #include <iomanip> // Logging
 #include <srt_compat.h>
@@ -996,13 +1001,13 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 
         std::ostringstream flg;
 
-#ifndef _WIN32
+#if !defined(_WIN32)
 
         static const pair<int, const char* const> errmsgflg [] = {
-            make_pair(MSG_OOB, "OOB"),
-            make_pair(MSG_EOR, "EOR"),
-            make_pair(MSG_TRUNC, "TRUNC"),
-            make_pair(MSG_CTRUNC, "CTRUNC")
+            make_pair<int>(MSG_OOB, "OOB"),
+            make_pair<int>(MSG_EOR, "EOR"),
+            make_pair<int>(MSG_TRUNC, "TRUNC"),
+            make_pair<int>(MSG_CTRUNC, "CTRUNC")
         };
 
         for (size_t i = 0; i < Size(errmsgflg); ++i)
