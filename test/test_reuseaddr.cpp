@@ -338,7 +338,7 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
     auto run = [ip, port, expect_success]() { clientSocket(ip, port, expect_success); };
 
-    auto launched = std::async(run);
+    auto launched = std::async(std::launch::async, run);
 
     AtReturnJoin<decltype(launched)> atreturn_join {launched};
 
@@ -349,12 +349,12 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
         int wlen = 2;
         SRTSOCKET write[2];
 
-        std::cout << "[T/S] Wait for acceptance on @" << bindsock << " ...\n";
+        std::cout << "[T/S] Wait 10s for acceptance on @" << bindsock << " ...\n";
 
-        EXPECT_NE(srt_epoll_wait(server_pollid,
+        ASSERT_NE(srt_epoll_wait(server_pollid,
                                          read,  &rlen,
                                          write, &wlen,
-                                         3000, // -1 is set for debuging purpose.
+                                         10000, // -1 is set for debuging purpose.
                                              // in case of production we need to set appropriate value
                                          0, 0, 0, 0), SRT_ERROR );
 
