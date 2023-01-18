@@ -9722,9 +9722,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 #if ENABLE_HEAVY_LOGGING
         std::ostringstream tns1, tns2;
         // Take the last 2 ciphers from the socket ID.
-        tns1 << m_SocketID;
+        tns1 << setfill('0') << setw(2) << m_SocketID;
         std::string s = tns1.str();
-        tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+        tns2 << "SRT:TsbPd:@" << s;
         const string thname = tns2.str();
 #else
         const string thname = "SRT:TsbPd";
