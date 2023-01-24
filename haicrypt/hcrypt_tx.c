@@ -58,13 +58,13 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	hcrypt_Ctx *ctx = NULL;
 	int nbout = 0;
 
-    if ((NULL == crypto)
-            ||  (NULL == (ctx = crypto->ctx))
-            ||  (NULL == out_p)
-            ||  (NULL == out_len_p)) {
-        HCRYPT_LOG(LOG_ERR, "ManageKeys: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
-        return(-1);
-    }
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)) {
+		HCRYPT_LOG(LOG_ERR, "ManageKeys: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
+		return(-1);
+	}
 
 	/* Manage Key Material (refresh, announce, decommission) */
 	hcryptCtx_Tx_ManageKM(crypto);
@@ -80,11 +80,11 @@ int HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc)
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
 	hcrypt_Ctx *ctx = NULL;
 
-    if ((NULL == crypto)
-            ||  (NULL == (ctx = crypto->ctx))) {
-        HCRYPT_LOG(LOG_ERR, "GetKeyFlags: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
-        return(-1);
-    }
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))) {
+		HCRYPT_LOG(LOG_ERR, "GetKeyFlags: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
+		return(-1);
+	}
 	return(hcryptCtx_GetKeyFlags(crypto->ctx));
 }
 
@@ -95,11 +95,11 @@ int HaiCrypt_Tx_Data(HaiCrypt_Handle hhc,
 	hcrypt_Ctx *ctx = NULL;
 	int nbout = 0;
 
-    if ((NULL == crypto)
-            ||  (NULL == (ctx = crypto->ctx))) {
-        HCRYPT_LOG(LOG_ERR, "Tx_Data: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
-        return(-1);
-    }
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))) {
+		HCRYPT_LOG(LOG_ERR, "Tx_Data: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
+		return(-1);
+	}
 	/* Get/Set packet index */
 	ctx->msg_info->indexMsg(in_pfx, ctx->MSpfx_cache);
 
@@ -133,13 +133,13 @@ int HaiCrypt_Tx_Process(HaiCrypt_Handle hhc,
 	hcrypt_Ctx *ctx = NULL;
 	int nb, nbout = 0;
 
-    if ((NULL == crypto)
-            ||  (NULL == (ctx = crypto->ctx))
-            ||  (NULL == out_p)
-            ||  (NULL == out_len_p)) {
-        HCRYPT_LOG(LOG_ERR, "Tx_Process: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
-        return(-1);
-    }
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)) {
+		HCRYPT_LOG(LOG_ERR, "Tx_Process: invalid params: crypto=%p crypto->ctx=%p\n", crypto, ctx);
+		return(-1);
+	}
 
 	/* Manage Key Material (refresh, announce, decommission) */
 	hcryptCtx_Tx_ManageKM(crypto);
