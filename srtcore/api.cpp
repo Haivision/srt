@@ -326,6 +326,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
         // We have a rollover on the socket value, so
         // definitely we haven't made the Columbus mistake yet.
         m_SocketIDGenerator = MAX_SOCKET_VAL;
+        sockval = MAX_SOCKET_VAL;
     }
 
     // Check all sockets if any of them has this value.

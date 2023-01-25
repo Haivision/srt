@@ -745,7 +745,7 @@ Keying Material state. This is a legacy option that is equivalent to
 `SRTO_RCVKMSTATE` otherwise. This option is then equal to `SRTO_RCVKMSTATE`
 always if your application disregards possible cooperation with a peer older
 than 1.3.0, but then with the default value of `SRTO_ENFORCEDENCRYPTION` the
-value returned by both options is always the same. See [`SRT_KM_STATE`](#2-srt_km_state)
+value returned by both options is always the same. See [`SRT_KM_STATE`](#srt_km_state)
 for more details.
 
 [Return to list](#list-of-options)
