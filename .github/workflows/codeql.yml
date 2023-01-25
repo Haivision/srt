@@ -35,11 +35,10 @@ jobs:
           languages: ${{ matrix.language }}
           queries: +security-and-quality
 
-      - name: Autobuild
-        #uses: github/codeql-action/autobuild@v2
-        - run: |
-            cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-fpermissive -DENABLE_BONDING=ON .
-            make
+      - name: Build
+      run: |
+        cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-fpermissive -DENABLE_BONDING=ON .
+        make
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
