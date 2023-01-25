@@ -1409,7 +1409,7 @@ inline std::string SrtVersionString(int version)
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
 
-    char buf[20];
+    char buf[22];
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
