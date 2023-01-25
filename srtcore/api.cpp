@@ -459,10 +459,8 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         // failure and rollback
         delete ns;
         ns = NULL;
-    }
-
-    if (!ns)
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
 
     if (pps)
         *pps = ns;
