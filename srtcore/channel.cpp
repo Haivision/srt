@@ -52,11 +52,6 @@ modified by
 
 #include "platform_sys.h"
 
-// POSIX only, for MSG_TRUNC and other flags
-#ifndef _WIN32
-
-#endif
-
 #include <iostream>
 #include <iomanip> // Logging
 #include <srt_compat.h>
@@ -504,8 +499,6 @@ void srt::CChannel::setUDPSockOpt()
 #endif
 
 #ifdef SRT_ENABLE_PKTINFO
-
-    //*
     if (m_bBindMasked)
     {
         HLOGP(kmlog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
@@ -524,8 +517,6 @@ void srt::CChannel::setUDPSockOpt()
         // XXX Unknown why this has to be off. RETEST.
         //::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
     }
-
-    // */
 #endif
 }
 

@@ -921,7 +921,6 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     if (s->m_Status != SRTS_INIT)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
-    //*
     if (s->core().m_config.iIpV6Only == -1 && name.family() == AF_INET6 && name.isany())
     {
         // V6ONLY option must be set explicitly if you want to bind to a wildcard address in IPv6
@@ -930,7 +929,6 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
 
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
-    // */
 
     s->core().open();
     updateMux(s, name);
@@ -3236,7 +3234,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
                 }
                 else if (m.m_iIPversion == AF_INET6)
                 {
-                    // Allowed fallback case when 
+                    // Allowed fallback case when we only need an accepted socket.
                     fallback = &m;
                 }
             }

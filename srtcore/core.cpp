@@ -4448,7 +4448,7 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
     }
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-    if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
+    if (m_ConnRes.m_iReqType >= URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
         LOGC(cnlog.Warn,
