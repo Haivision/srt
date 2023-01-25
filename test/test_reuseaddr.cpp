@@ -618,6 +618,11 @@ TEST(ReuseAddr, Wildcard6)
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
+    // This "should work", but there can also be platforms
+    // that do not have IPv4, in which case this test can't be
+    // performed there.
+    std::string localip_v4 = GetLocalIP(AF_INET);
+
     ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
@@ -626,15 +631,52 @@ TEST(ReuseAddr, Wildcard6)
     server_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, server_pollid);
 
-    SRTSOCKET bindsock_1 = createListener("::", 5000, true);
+    // This must be obligatory set before binding a socket to "::"
+    int strict_ipv6 = 1;
+
+    SRTSOCKET bindsock_1 = prepareSocket();
+    srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
+    bindListener(bindsock_1, "::", 5000, true);
 
     // Binding a certain address when wildcard is already bound should fail.
     SRTSOCKET bindsock_2 = createBinder(localip, 5000, false);
+
+    SRTSOCKET bindsock_3 = SRT_INVALID_SOCK;
+    if (localip_v4 != "")
+    {
+        // V6ONLY = 1, which means that binding to IPv4 should be possible.
+        bindsock_3 = createBinder(localip_v4, 5000, true);
+    }
 
     testAccept(bindsock_1, "::1", 5000, true);
 
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
+    shutdownListener(bindsock_3);
+
+    // Now the same thing, except that we bind to both IPv4 and IPv6.
+
+    strict_ipv6 = 0;
+
+    bindsock_1 = prepareSocket();
+    srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
+    bindListener(bindsock_1, "::", 5000, true);
+
+    // Binding a certain address when wildcard is already bound should fail.
+    bindsock_2 = createBinder(localip, 5000, false);
+    bindsock_3 = SRT_INVALID_SOCK;
+
+    if (localip_v4 != "")
+    {
+        // V6ONLY = 0, which means that binding to IPv4 should not be possible.
+        bindsock_3 = createBinder(localip_v4, 5000, false);
+    }
+
+    testAccept(bindsock_1, "::1", 5000, true);
+
+    shutdownListener(bindsock_1);
+    shutdownListener(bindsock_2);
+    shutdownListener(bindsock_3);
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
