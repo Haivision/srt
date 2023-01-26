@@ -359,7 +359,7 @@ int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 Binds a socket to a local address and port. Binding specifies the local network
 interface and the UDP port number to be used for the socket. When the local 
 address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
-it's bound to all interfaces (although see `SRTO_IPV6ONLY` and an additional
+it's bound to all interfaces (although see `SRTO_IPV6ONLY` and additional
 information below for details about the wildcard address in IPv6).
 
 Binding is necessary for every socket to be used for communication. It can be
@@ -389,9 +389,9 @@ this connection possible.
 
 For a connecting socket this call is optional, but can be used to set up the
 outgoing port for communication as well as the local interface through which
-it should reach out to the remote endpoint, should that be by some reason necessary.
+it should reach out to the remote endpoint, should that be necessary.
 
-Whether binding is possible, it depends on some runtime conditions, in particular:
+Whether binding is possible depends on some runtime conditions, in particular:
 
 * No socket in the system has been bound to this port ("free binding"), or
 
@@ -403,14 +403,14 @@ Whether binding is possible, it depends on some runtime conditions, in particula
   see also `SRTO_IPV6ONLY` socket option).
 
 It is also possible to bind to the already busy port as long as the existing
-binding ("shared bindin") is possessed by an SRT socket created in the same
+binding ("shared binding") is possessed by an SRT socket created in the same
 application, and:
 
 * Its binding address and UDP-related socket options match the socket to be bound.
 * Its [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to *true* (default).
 
-If none of the free, side and shared binding is currently possible, this function
-will fail. If the socket in the way blocking the requested endpoint is an SRT
+If none of the free, side and shared binding options is currently possible, this function
+will fail. If the socket blocking the requested endpoint is an SRT
 socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
 while if it was another socket in the system, or the problem was in the system
 in general, it will report `SRT_ESOCKFAIL`.
@@ -421,9 +421,9 @@ connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose
 or set the appropriate source address using
 [`srt_prepare_endpoint`](#srt_prepare_endpoint).
 
-**IMPORTANT** information about IPv6: If you are going to bind to the
+**IMPORTANT information about IPv6**: If you are going to bind to the
 `in6addr_any` IPv6 wildcard address (known as `::`), the `SRTO_IPV6ONLY`
-option must be first set explicitly to 0 or 1 or otherwise the binding
+option must be first set explicitly to 0 or 1, otherwise the binding
 will fail. In all other cases this option is meaningless. See `SRTO_IPV6ONLY`
 option for more information.
 

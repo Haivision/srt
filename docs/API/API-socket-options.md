@@ -648,8 +648,8 @@ and the actual value for connected sockets.
 Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
 only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
 (known also as `::`). In this case this option must be also set explicitly to 0 or 1
-before binding or otherwise binding will fail (this is because it is not possible to
-determine the default value of this above mentioned system option any portable or
+before binding, otherwise binding will fail (this is because it is not possible to
+determine the default value of this above-mentioned system option in any portable or
 reliable way). Possible values are:
 
 * -1: default, which can be used in cases not affected by this flag
