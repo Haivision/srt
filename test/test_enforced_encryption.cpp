@@ -346,15 +346,14 @@ public:
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
         // Determine the subcase for the KLUDGE (check the behavior of the decryption failure)
-        bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
-        bool case_both_relaxed = !test.enforcedenc[PEER_LISTENER] && !test.enforcedenc[PEER_CALLER];
-        bool case_sender_enc = test.password[PEER_CALLER] != "";
+        const bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
+        const bool case_both_relaxed = !test.enforcedenc[PEER_LISTENER] && !test.enforcedenc[PEER_CALLER];
+        const bool case_sender_enc = test.password[PEER_CALLER] != "";
 
         const TResult &expect = test.expected_result;
 
         // Start testing
         srt::sync::atomic<bool> caller_done;
-        //volatile bool caller_done = false; // 1.4.3
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -374,7 +373,6 @@ public:
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            //SRTSOCKET accepted_socket = -1;
             if (epoll_event == SRT_EPOLL_IN)
             {
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
@@ -494,7 +492,7 @@ public:
 
         if (!is_blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
         {
-            //// ! KLUDGE !
+            // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             EXPECT_FALSE(accepting_thread.joinable());
