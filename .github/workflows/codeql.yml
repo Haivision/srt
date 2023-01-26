@@ -5,8 +5,6 @@ on:
     branches: [ "master", "experimental/socket-groups" ]
   pull_request:
     branches: [ "master" ]
-  schedule:
-    - cron: "22 12 * * 1"
 
 jobs:
   analyze:
