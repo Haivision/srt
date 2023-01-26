@@ -145,10 +145,9 @@ srt::CChannel::CChannel()
 {
 #ifdef SRT_ENABLE_PKTINFO
    // Do the check for ancillary data buffer size, kinda assertion
-   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeAlike);
+   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6);
 
-   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo))
-           || CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in6_pktinfo)))
+   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo)) + CMSG_SPACE(sizeof(in6_pktinfo)))
    {
        LOGC(kmlog.Fatal, log << "Size of CMSG_MAX_SPACE="
                << CMSG_MAX_SPACE << " too short for cmsg "
@@ -504,8 +503,16 @@ void srt::CChannel::setUDPSockOpt()
     {
         HLOGP(kmlog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
         const int on = 1, off SRT_ATR_UNUSED = 0;
-        ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
-        ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
+
+        if (m_BindAddr.family() == AF_INET || m_mcfg.iIpV6Only == 0)
+        {
+            ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
+        }
+
+        if (m_BindAddr.family() == AF_INET6)
+        {
+            ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
+        }
 
         // XXX Unknown why this has to be off. RETEST.
         //::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
@@ -733,7 +740,10 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     bool have_set_src = false;
 
 #ifdef SRT_ENABLE_PKTINFO
-    if (m_bBindMasked && !source_addr.isany())
+
+    // Note that even if PKTINFO is desired, the first caller's packet will be sent
+    // without ancillary info anyway because there's no "peer" yet to know where to send it.
+    if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
         if (!setSourceAddress(mh, source_addr))
         {
@@ -745,6 +755,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
             have_set_src = true;
         }
     }
+
 #endif
 
     if (!have_set_src)
@@ -972,9 +983,30 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     // packet was received, so the packet will be then retransmitted.
     if (msg_flags != 0)
     {
+#if ENABLE_HEAVY_LOGGING
+
+        std::ostringstream flg;
+
+#if !defined(_WIN32)
+
+        static const pair<int, const char* const> errmsgflg [] = {
+            make_pair<int>(MSG_OOB, "OOB"),
+            make_pair<int>(MSG_EOR, "EOR"),
+            make_pair<int>(MSG_TRUNC, "TRUNC"),
+            make_pair<int>(MSG_CTRUNC, "CTRUNC")
+        };
+
+        for (size_t i = 0; i < Size(errmsgflg); ++i)
+            if ((msg_flags & errmsgflg[i].first) != 0)
+                flg << " " << errmsgflg[i].second;
+
+        // This doesn't work the same way on Windows, so on Windows just skip it.
+#endif
+
         HLOGC(krlog.Debug,
               log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << hex << msg_flags
-                  << ", possibly MSG_TRUNC)");
+                  << ", detected flags:" << flg.str());
+#endif
         status = RST_AGAIN;
         goto Return_error;
     }

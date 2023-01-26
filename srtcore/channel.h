@@ -177,21 +177,24 @@ private:
     // This structure is exclusively used to determine the required size for
     // CMSG buffer so that it can be allocated in a solid block with CChannel.
     // NOT TO BE USED to access any data inside the CMSG message.
-    struct CMSGNodeAlike
+    struct CMSGNodeIPv4
     {
-        union
-        {
-            in_pktinfo in4;
-            in6_pktinfo in6;
-        };
+        in_pktinfo in4;
+        size_t extrafill;
+        cmsghdr hdr;
+    };
+
+    struct CMSGNodeIPv6
+    {
+        in6_pktinfo in6;
         size_t extrafill;
         cmsghdr hdr;
     };
 
     // This is 'mutable' because it's a utility buffer defined here
     // to avoid unnecessary re-allocations.
-    mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
-    mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeAlike)]; // Reserved space for ancillary data with pktinfo
+    mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
+    mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
 
     // IMPORTANT!!! This function shall be called EXCLUSIVELY just after
     // calling ::recvmsg function. It uses a static buffer to supply data
