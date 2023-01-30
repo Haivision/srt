@@ -5,6 +5,8 @@
 #include "utilities.h"
 #include "common.h"
 
+using namespace srt;
+
 void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[4])
 {
     const int port = 4200;
@@ -34,7 +36,7 @@ void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[
     sockaddr_any host(family);
     host.hport(port);
 
-    CIPAddress::pton(host, ip, peer);
+    srt::CIPAddress::pton(host, ip, peer);
     EXPECT_EQ(peer, host) << "Peer " << peer.str() << " host " << host.str();
 }
 

@@ -8,20 +8,20 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.4.2)
+set (SRT_VERSION 1.5.2)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
 if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
-  project(SRT C CXX)
-  # Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
-  set_version_variables(SRT_VERSION ${SRT_VERSION})
+	project(SRT C CXX)
+	# Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+	set_version_variables(SRT_VERSION ${SRT_VERSION})
 else()
-  cmake_policy(SET CMP0048 NEW)
-  # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
-  project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
+	cmake_policy(SET CMP0048 NEW)
+	# Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
 include(FindPkgConfig)
@@ -39,17 +39,13 @@ set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(GNU         ${CMAKE_SYSTEM_NAME} MATCHES "GNU")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR (CYGWIN AND CYGWIN_USE_POSIX))
-set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR CYGWIN OR GNU)
+set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
+set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
+set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
-# Not sure what to do in case of compiling by MSVC.
-# This will make installdir in C:\Program Files\SRT then
-# inside "bin" and "lib64" directories. At least this maintains
-# the current status. Shall this be not desired, override values
-# of CMAKE_INSTALL_BINDIR, CMAKE_INSTALL_LIBDIR and CMAKE_INSTALL_INCLUDEDIR.
-if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
-	include(GNUInstallDirs)
-endif()
+include(GNUInstallDirs)
 
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
@@ -61,15 +57,28 @@ if (NOT DEFINED ENABLE_DEBUG)
 	endif()
 endif()
 
-# Set CMAKE_BUILD_TYPE properly, now that you know
-# that ENABLE_DEBUG is set as it should.
+# XXX This is a kind of workaround - this part to set the build
+# type and associated other flags should not be done for build
+# systems (cmake generators) that generate a multi-configuration
+# build definition. At least it is known that MSVC does it and it
+# sets _DEBUG and NDEBUG flags itself, so this shouldn't be done
+# at all in this case.
+if (NOT MICROSOFT)
 
-if (ENABLE_DEBUG EQUAL 2)
-	set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
-	set (CMAKE_BUILD_TYPE "Debug")
-else()
-	set (CMAKE_BUILD_TYPE "Release")
+	# Set CMAKE_BUILD_TYPE properly, now that you know
+	# that ENABLE_DEBUG is set as it should.
+	if (ENABLE_DEBUG EQUAL 2)
+		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
+		add_definitions(-DNDEBUG)
+	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
+		set (CMAKE_BUILD_TYPE "Debug")
+
+		# Add _DEBUG macro in debug mode only, to enable SRT_ASSERT().
+		add_definitions(-D_DEBUG)
+	else()
+		set (CMAKE_BUILD_TYPE "Release")
+		add_definitions(-DNDEBUG)
+	endif()
 endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
@@ -92,11 +101,12 @@ endforeach()
 
 # SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
 # SRT_DEBUG_TSBPD_OUTJITTER 1     /* Packet Delivery histogram */
-# SRT_DEBUG_TSBPD_DRIFT 1         /* Debug Encoder-Decoder Drift) */
+# SRT_DEBUG_TRACE_DRIFT 1         /* Create a trace log for Encoder-Decoder Clock Drift */
 # SRT_DEBUG_TSBPD_WRAP 1          /* Debug packet timestamp wraparound */
 # SRT_DEBUG_TLPKTDROP_DROPSEQ 1
 # SRT_DEBUG_SNDQ_HIGHRATE 1
 # SRT_DEBUG_BONDING_STATES 1
+# SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 
 # option defaults
@@ -107,12 +117,29 @@ if (ENABLE_DEBUG)
 	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
 endif()
 
+# Note that the IP_PKTINFO  has a limited portability and may not work on some platforms
+# (Windows, FreeBSD, ...).
+set (ENABLE_PKTINFO_DEFAULT OFF)
+
+set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
+set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+set(MONOTONIC_CLOCK_LINKLIB "")
+if (MICROSOFT)
+	set(ENABLE_STDCXX_SYNC_DEFAULT ON)
+elseif (POSIX)
+	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
+endif()
+
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
+else()
+	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
-option(ENABLE_EXPERIMENTAL_BONDING "Should the EXPERIMENTAL bonding functionality be enabled?" OFF)
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -120,20 +147,33 @@ option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEA
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
+option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
+option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/" OFF)
-option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" OFF)
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
+option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
+option(OPENSSL_USE_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
+option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
+# NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
+#  Atomic implemetation in srtcore/atomic.h.
+option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
+if (ATOMIC_USE_SRT_SYNC_MUTEX)
+   add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
+endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -178,7 +218,6 @@ if (NOT USE_ENCLIB)
 	else()
 		set (USE_ENCLIB openssl)
 	endif()
-
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
@@ -261,7 +300,15 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
+# Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
+include(FindPThreadGetSetName)
+FindPThreadGetSetName()
+
 if (ENABLE_MONOTONIC_CLOCK)
+	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
+		message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+	endif()
+	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
 	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
@@ -283,14 +330,67 @@ if (ENABLE_ENCRYPTION)
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
-	else() # Common for mbedtls and openssl
-		if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-			add_definitions(-DUSE_MBEDTLS=1)
-			set (SSL_REQUIRED_MODULES "mbedtls mbedcrypto")
-		else()
-			add_definitions(-DUSE_OPENSSL=1)
-			set (SSL_REQUIRED_MODULES "openssl libcrypto")
+	elseif ("${USE_ENCLIB}" STREQUAL "mbedtls")
+		add_definitions(-DUSE_MBEDTLS=1)
+		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+			set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
+			find_package(MbedTLS REQUIRED)
+			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
+			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 		endif()
+		if ("${SSL_LIBRARIES}" STREQUAL "")
+			set (SSL_LIBRARIES  mbedtls mbedcrypto)
+		endif()
+		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+
+		foreach(LIB ${SSL_LIBRARIES})
+			if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
+			else()
+				set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+			endif()
+		endforeach()
+	elseif ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+		# Openssl-EVP requires CRYSPR2
+		add_definitions(-DUSE_OPENSSL_EVP=1 -DCRYSPR2)
+		set (SSL_REQUIRED_MODULES "openssl libcrypto")
+		# Try using pkg-config method first if enabled,
+		# fall back to find_package method otherwise
+		if (USE_OPENSSL_PC)
+			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
+			if (OPENSSL_USE_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+			endif()
+		endif()
+		if (SSL_FOUND)
+			# We have some cases when pkg-config is improperly configured
+			# When it doesn't ship the -L and -I options, and the CMAKE_PREFIX_PATH
+			# is set (also through `configure`), then we have this problem. If so,
+			# set forcefully the -I and -L contents to prefix/include and
+			# prefix/lib.
+			if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
+			if (NOT "${CMAKE_PREFIX_PATH}" STREQUAL "")
+				message(STATUS "WARNING: pkg-config has incorrect prefix - enforcing target path prefix: ${CMAKE_PREFIX_PATH}")
+				set (SSL_LIBRARY_DIRS ${CMAKE_PREFIX_PATH}/${CMAKE_INSTALL_LIBDIR})
+				set (SSL_INCLUDE_DIRS ${CMAKE_PREFIX_PATH}/include)
+			endif()
+			endif()
+
+			link_directories(
+				${SSL_LIBRARY_DIRS}
+			)
+			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+		else()
+			find_package(OpenSSL REQUIRED)
+			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
+		endif()
+	else() # openssl
+		# Openssl (Direct-AES API) can use CRYSPR2
+		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
+			set (SSL_REQUIRED_MODULES "openssl libcrypto")
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
@@ -315,31 +415,32 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
-			if ("${USE_ENCLIB}" STREQUAL "mbedtls")
-				if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
-					set(MBEDTLS_PREFIX "${CMAKE_PREFIX_PATH}" CACHE PATH "The path of mbedtls")
-					find_package(MbedTLS REQUIRED)
-					set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
-					set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
-				endif()
-				if ("${SSL_LIBRARIES}" STREQUAL "")
-					set (SSL_LIBRARIES  mbedtls mbedcrypto)
-				endif()
-				message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			else()
-				find_package(OpenSSL REQUIRED)
-				set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
-				set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
-				message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
-			endif()
+			find_package(OpenSSL REQUIRED)
+			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
 	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
 	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+
+	if (ENABLE_AEAD_API_PREVIEW)
+		if ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+			add_definitions(-DENABLE_AEAD_API_PREVIEW)
+			message(STATUS "ENCRYPTION AEAD API: ENABLED")
+		else()
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
+		endif()
+	else()
+		message(STATUS "ENCRYPTION AEAD API: DISABLED")
+	endif()
+
 else()
 	message(STATUS "ENCRYPTION: DISABLED")
+	message(STATUS "ENCRYPTION AEAD API: N/A")
 endif()
 
 if (USE_GNUSTL)
@@ -350,7 +451,7 @@ if (USE_GNUSTL)
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
-# Detect if the compiler is GNU compatable for flags
+# Detect if the compiler is GNU compatible for flags
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
 	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
 	set(HAVE_COMPILER_GNU_COMPAT 1)
@@ -378,6 +479,29 @@ else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX
 	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
 	set (FORCE_CXX_STANDARD 1)
 	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
+endif()
+
+# Check for GCC Atomic Intrinsics and C++11 Atomics.
+# Sets:
+#  HAVE_LIBATOMIC
+#  HAVE_LIBATOMIC_COMPILES
+#  HAVE_LIBATOMIC_COMPILES_STATIC
+#  HAVE_GCCATOMIC_INTRINSICS
+#  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
+include(CheckGCCAtomicIntrinsics)
+CheckGCCAtomicIntrinsics()
+#  HAVE_CXX_ATOMIC
+#  HAVE_CXX_ATOMIC_STATIC
+include(CheckCXXAtomic)
+CheckCXXAtomic()
+
+# Check for std::put_time():
+# Sets:
+#  HAVE_CXX_STD_PUT_TIME
+include(CheckCXXStdPutTime)
+CheckCXXStdPutTime()
+if (HAVE_CXX_STD_PUT_TIME)
+	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
 endif()
 
 if (DISABLE_CXX11)
@@ -415,9 +539,6 @@ if (NOT ENABLE_CXX11)
 	if (ENABLE_STDCXX_SYNC)
 		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
 	endif()
-	if (DEFINED USE_CXX_STD)
-		message(FATAL_ERROR "USE_CXX_STD can be set only when ENABLE_CXX11 is on")
-	endif()
 elseif (ENABLE_STDCXX_SYNC)
 	add_definitions(-DENABLE_STDCXX_SYNC=1)
 	if (DEFINED USE_CXX_STD)
@@ -432,6 +553,7 @@ elseif (ENABLE_STDCXX_SYNC)
 endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
@@ -461,9 +583,14 @@ if (DEFINED USE_CXX_STD)
 
 			# Set this through independent flags
 			set (USE_CXX_STD_LIB ${STDCXX})
-			set (USE_CXX_STD_APP "")
 			set (FORCE_CXX_STANDARD 1)
-			message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			if (NOT ENABLE_APPS)
+				set (USE_CXX_STD_APP ${STDCXX})
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
+			else()
+				set (USE_CXX_STD_APP "")
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			endif()
 		elseif (FORCE_CXX_STANDARD_GNUONLY)
 			# CMake is too old to handle CMAKE_CXX_STANDARD,
 			# use bare GNU options.
@@ -518,14 +645,6 @@ if (USE_STATIC_LIBSTDCXX)
 	endif()
 endif()
 
-# We need clock_gettime, but on some systems this is only provided
-# by librt. Check if librt is required.
-if (ENABLE_MONOTONIC_CLOCK AND LINUX)
-	# "requires" - exits on FATAL_ERROR when clock_gettime not available
-	test_requires_clock_gettime(NEED_CLOCK_GETTIME)
-	set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${NEED_CLOCK_GETTIME}")
-endif()
-
 
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
@@ -577,6 +696,9 @@ elseif(CYGWIN)
 elseif(GNU)
 	add_definitions(-DGNU=1)
 	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
+elseif(SUNOS)
+	add_definitions(-DSUNOS=1)
+	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
 else()
 	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
@@ -616,8 +738,26 @@ if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
 endif()
 
+if (ENABLE_PKTINFO)
+	if (WIN32 OR BSD)
+		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
+	endif()
+
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+endif()
+
+
+# ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
 if (ENABLE_EXPERIMENTAL_BONDING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_EXPERIMENTAL_BONDING=1")
+	message(DEPRECATION "ENABLE_EXPERIMENTAL_BONDING is deprecated. Please use ENABLE_BONDING instead.")
+	set (ENABLE_BONDING ON)
+endif()
+
+if (ENABLE_BONDING)
+	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
+	message(STATUS "ENABLE_BONDING: ON")
+else()
+	message(STATUS "ENABLE_BONDING: OFF")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -626,6 +766,11 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
+endif()
+
+if (ENABLE_CLANG_TSA)
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	message(STATUS "Clang TSA: Enabled")
 endif()
 
 if (ENABLE_PROFILE)
@@ -784,8 +929,13 @@ MafReadDir(srtcore filelist.maf
 # Auto generated version file and add it to the HEADERS_srt list.
 if(DEFINED ENV{APPVEYOR_BUILD_NUMBER})
 	set(SRT_VERSION_BUILD ON)
-	set(APPVEYOR_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
+	set(CI_BUILD_NUMBER_STRING $ENV{APPVEYOR_BUILD_NUMBER})
 	message(STATUS "AppVeyor build environment detected: Adding build number to version header")
+endif()
+if(DEFINED ENV{TEAMCITY_VERSION})
+	set(SRT_VERSION_BUILD ON)
+	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
+	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
@@ -805,10 +955,10 @@ macro(srt_set_stdcxx targetname spec)
 	if (NOT "${stdcxxspec}" STREQUAL "")
 		if (FORCE_CXX_STANDARD_GNUONLY)
 			target_compile_options(${targetname} PRIVATE -std=c++${stdcxxspec})
-			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
+			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
 		else()
 			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
-			#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
+			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 		endif()
 	else()
 		message(STATUS "APP: ${targetname}: using default C++ standard")
@@ -832,13 +982,13 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
 		else()
 			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
 		endif()
 	elseif (MINGW)
-		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32.lib ws2_32.lib)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32 ws2_32)
 	elseif (APPLE)
 		set_property(TARGET ${TARGET_srt}_shared PROPERTY MACOSX_RPATH ON)
 	endif()
@@ -870,7 +1020,7 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
 		endif()
 	elseif (MINGW)
@@ -883,8 +1033,8 @@ endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
-if (MICROSOFT)		
-	if (OPENSSL_USE_STATIC_LIBS)			
+if (MICROSOFT)
+	if (OPENSSL_USE_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
@@ -920,9 +1070,31 @@ endif()
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)			
+		if (OPENSSL_USE_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
+	endif()
+endif()
+
+# Required by some toolchains when statically linking this library if the
+#  GCC Atomic Intrinsics are being used.
+if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+	if (srt_libspec_shared)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
+	endif()
+elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
+	# This is a workaround for ANDROID NDK<17 builds, which need to link
+	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
+	# This is a workaround for some older Linux Toolchains.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
 endif()
 
@@ -934,15 +1106,29 @@ if (CYGWIN)
 endif()
 
 message(STATUS "INSTALL DIRS: bin=${CMAKE_INSTALL_BINDIR} lib=${CMAKE_INSTALL_LIBDIR} shlib=${INSTALL_SHARED_DIR} include=${CMAKE_INSTALL_INCLUDEDIR}")
-
-install(TARGETS ${INSTALL_TARGETS}
-		RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-		ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+if (NEED_DESTINATION)
+	if (DEFINED CMAKE_INSTALL_BINDIR AND DEFINED CMAKE_INSTALL_LIBDIR AND NOT INSTALL_SHARED_DIR STREQUAL "")
+		install(TARGETS ${INSTALL_TARGETS}
+			RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+			ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+			LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
+		)
+	else()
+		message(WARNING "No location to install ${INSTALL_TARGETS}")
+	endif()
+elseif (NOT INSTALL_SHARED_DIR STREQUAL "")
+	install(TARGETS ${INSTALL_TARGETS}
 		LIBRARY DESTINATION ${INSTALL_SHARED_DIR}
-)
-install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
-if (WIN32)
-	install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
+	)
+else()
+	install(TARGETS ${INSTALL_TARGETS})
+endif()
+
+if (DEFINED CMAKE_INSTALL_INCLUDEDIR)
+	install(FILES ${HEADERS_srt} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt)
+	if (WIN32)
+		install(FILES ${HEADERS_srt_win32} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/srt/win)
+	endif()
 endif()
 
 # ---
@@ -968,7 +1154,7 @@ endif()
 # obtained by `pkg-config --libs`.
 if(ENABLE_CXX_DEPS)
 	foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES})
-		if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
+		if((IS_ABSOLUTE ${LIB} AND EXISTS ${LIB}) OR (${LIB} MATCHES "^-l"))
 			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
 		else()
 			set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
@@ -978,11 +1164,13 @@ endif()
 
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
-# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-configure_file(scripts/srt.pc.in srt.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+if (DEFINED CMAKE_INSTALL_LIBDIR)
+	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
+	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+	configure_file(scripts/srt.pc.in srt.pc @ONLY)
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+endif()
 
 # Applications
 
@@ -1000,11 +1188,21 @@ else()
 	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
 endif()
 
-macro(srt_add_program name)
+macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
-	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endmacro()
+
+macro(srt_add_program name)
+	srt_add_program_dont_install(${name} ${ARGN})
+	if(NOT NEED_DESTINATION)
+		install(TARGETS ${name} RUNTIME)
+	elseif (DEFINED CMAKE_INSTALL_BINDIR)
+		install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	else()
+		message(WARNING "No location to install program ${name}")
+	endif()
 endmacro()
 
 macro(srt_make_application name)
@@ -1043,7 +1241,13 @@ endmacro()
 macro(srt_add_application name) # ARGN=sources...
 	srt_add_program(${name} apps/${name}.cpp ${ARGN})
 	srt_make_application(${name})
-	install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	if(NOT NEED_DESTINATION)
+		install(TARGETS ${name} RUNTIME)
+	elseif (DEFINED CMAKE_INSTALL_BINDIR)
+		install(TARGETS ${name} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+	else()
+		message(WARNING "No location to install program ${name}")
+	endif()
 endmacro()
 
 ## FIXME: transmitmedia.cpp does not build on OpenBSD
@@ -1107,7 +1311,7 @@ if (ENABLE_APPS)
 			# For testing applications, every application has its exclusive
 			# list of source files in its own Manifest file.
 			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
-			srt_add_program(${name} ${SOURCES_app})
+			srt_add_program_dont_install(${name} ${SOURCES_app})
 		endmacro()
 
 		srt_add_testprogram(utility-test)
@@ -1133,7 +1337,7 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
-		if (ENABLE_EXPERIMENTAL_BONDING)
+		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
 		endif()
@@ -1152,44 +1356,56 @@ if (ENABLE_EXAMPLES)
 	# No examples should need C++11
 	macro(srt_add_example mainsrc)
 		get_filename_component(name ${mainsrc} NAME_WE)
-		srt_add_program(${name} examples/${mainsrc} ${ARGN})
+		srt_add_program_dont_install(${name} examples/${mainsrc} ${ARGN})
+		target_link_libraries(${name} ${srt_link_library} ${DEPENDS_srt})
 	endmacro()
 
-	srt_add_example(sendfile.cpp)
-	srt_make_application(sendfile)
-
-	srt_add_example(recvfile.cpp)
-	srt_make_application(recvfile)
-
 	srt_add_example(recvlive.cpp)
-	srt_make_application(recvlive)
+
+	srt_add_example(sendfile.cpp)
+		
+	srt_add_example(recvfile.cpp)
+
+	srt_add_example(sendmsg.cpp)
+		
+	srt_add_example(recvmsg.cpp)
 
 	srt_add_example(test-c-client.c)
-	srt_make_application(test-c-client)
 
 	srt_add_example(example-client-nonblock.c)
-	srt_make_application(example-client-nonblock)
 
 	srt_add_example(test-c-server.c)
-	srt_make_application(test-c-server)
 
-if (ENABLE_EXPERIMENTAL_BONDING)
+if (ENABLE_BONDING)
 	srt_add_example(test-c-client-bonding.c)
-	srt_make_application(test-c-client-bonding)
 
 	srt_add_example(test-c-server-bonding.c)
-	srt_make_application(test-c-server-bonding)
 endif()
 
 	srt_add_example(testcapi-connect.c)
-	target_link_libraries(testcapi-connect ${srt_link_library} ${DEPENDS_srt})
 endif()
 
 
 if (ENABLE_UNITTESTS AND ENABLE_CXX11)
+
+	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+		message(STATUS "VERSION < 3.10 -- adding test using the old method")
+		set (USE_OLD_ADD_METHOD 1)
+	else()
+		message(STATUS "VERSION > 3.10 -- using NEW POLICY for in_list operator")
+		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
+	endif()
+
+
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-	find_package(GTest 1.8)
+	# Version ranges are only supported with CMake 3.19 or later.
+	# Need GTest v1.10 or higher to support GTEST_SKIP.
+	if (${CMAKE_VERSION} VERSION_LESS "3.19.0")
+		find_package(GTest 1.10)
+	else()
+		find_package(GTest 1.10...1.12)
+	endif()
 	if (NOT GTEST_FOUND)
 		message(STATUS "GTEST not found! Fetching from git.")
 		include(googletest)
@@ -1201,10 +1417,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	endif()
 
 	MafReadDir(test filelist.maf
+		HEADERS SOURCES_unittests
 		SOURCES SOURCES_unittests
 	)
 
-	srt_add_program(test-srt ${SOURCES_unittests})
+	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
@@ -1215,13 +1432,12 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${PTHREAD_LIBRARY}
 		)
 
-	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
+	if (USE_OLD_ADD_METHOD)
 		add_test(
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
 	else()
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 		gtest_add_tests(
 			test-srt
 			""
@@ -1234,11 +1450,22 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 endif()
 
 
-install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(NOT NEED_DESTINATION)
+	install(PROGRAMS scripts/srt-ffplay TYPE BIN)
+elseif (DEFINED CMAKE_INSTALL_BINDIR)
+	install(PROGRAMS scripts/srt-ffplay DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+	message(WARNING "No location to install scripts/srt-ffplay")
+endif()
 
 
 if (DEFINED SRT_EXTRA_APPS_INC)
 	include(${SRT_EXTRA_APPS_INC}.cmake)
 	# No extra variables expected. Just use the variables
 	# already provided and define additional targets.
+endif()
+
+if (ENABLE_SHOW_PROJECT_CONFIG)
+	include(ShowProjectConfig)
+	ShowProjectConfig()
 endif()

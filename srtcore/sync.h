@@ -11,8 +11,7 @@
 #ifndef INC_SRT_SYNC_H
 #define INC_SRT_SYNC_H
 
-//#define ENABLE_STDCXX_SYNC
-//#define ENABLE_CXX17
+#include "platform_sys.h"
 
 #include <cstdlib>
 #include <limits>
@@ -21,18 +20,50 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
+#define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
 #include <pthread.h>
-#endif
-#include "utilities.h"
 
-class CUDTException;    // defined in common.h
+// Defile clock type to use
+#ifdef IA32
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA32_RDTSC
+#define SRT_SYNC_CLOCK_STR "IA32_RDTSC"
+#elif defined(IA64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_IA64_ITC
+#define SRT_SYNC_CLOCK_STR "IA64_ITC"
+#elif defined(AMD64)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_AMD64_RDTSC
+#define SRT_SYNC_CLOCK_STR "AMD64_RDTSC"
+#elif defined(_WIN32)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_WINQPC
+#define SRT_SYNC_CLOCK_STR "WINQPC"
+#elif TARGET_OS_MAC
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
+#define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
+#elif defined(ENABLE_MONOTONIC_CLOCK)
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
+#else
+#define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY
+#define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
+#endif
+
+#endif // ENABLE_STDCXX_SYNC
+
+#include "srt.h"
+#include "utilities.h"
+#include "srt_attr_defs.h"
+
 
 namespace srt
 {
+
+class CUDTException;    // defined in common.h
+
 namespace sync
 {
-using namespace std;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -43,7 +74,7 @@ using namespace std;
 #if ENABLE_STDCXX_SYNC
 
 template <class Clock>
-using Duration = chrono::duration<Clock>;
+using Duration = std::chrono::duration<Clock>;
 
 #else
 
@@ -102,13 +133,13 @@ private:
 
 #if ENABLE_STDCXX_SYNC
 
-using steady_clock = chrono::steady_clock;
+using steady_clock = std::chrono::steady_clock;
 
 template <class Clock, class Duration = typename Clock::duration>
-using time_point = chrono::time_point<Clock, Duration>;
+using time_point = std::chrono::time_point<Clock, Duration>;
 
 template <class Clock>
-using TimePoint = chrono::time_point<Clock>;
+using TimePoint = std::chrono::time_point<Clock>;
 
 template <class Clock, class Duration = typename Clock::duration>
 inline bool is_zero(const time_point<Clock, Duration> &tp)
@@ -155,6 +186,11 @@ public:
     {
     }
 
+    TimePoint(const Duration<Clock>& duration_since_epoch)
+        : m_timestamp(duration_since_epoch.count())
+    {
+    }
+
     ~TimePoint() {}
 
 public: // Relational operators
@@ -179,8 +215,8 @@ public: // Assignment operators
     inline void operator-=(const Duration<Clock>& rhs) { m_timestamp -= rhs.count(); }
 
 public: //
-    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(numeric_limits<uint64_t>::min()); }
-    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(numeric_limits<uint64_t>::max()); }
+    static inline ATR_CONSTEXPR TimePoint min() { return TimePoint(std::numeric_limits<uint64_t>::min()); }
+    static inline ATR_CONSTEXPR TimePoint max() { return TimePoint(std::numeric_limits<uint64_t>::max()); }
 
 public:
     Duration<Clock> time_since_epoch() const;
@@ -198,6 +234,12 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 }
 
 #endif // ENABLE_STDCXX_SYNC
+
+// NOTE: Moved the following class definitions to "atomic_clock.h"
+//   template <class Clock>
+//      class AtomicDuration;
+//   template <class Clock>
+//      class AtomicClock;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -272,14 +314,14 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 ///////////////////////////////////////////////////////////////////////////////
 
 #if ENABLE_STDCXX_SYNC
-using Mutex = mutex;
-using UniqueLock = unique_lock<mutex>;
-using ScopedLock = lock_guard<mutex>;
+using Mutex = std::mutex;
+using UniqueLock = std::unique_lock<std::mutex>;
+using ScopedLock = std::lock_guard<std::mutex>;
 #else
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
 /// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
-class Mutex
+class SRT_ATTR_CAPABILITY("mutex") Mutex
 {
     friend class SyncEvent;
 
@@ -288,11 +330,11 @@ public:
     ~Mutex();
 
 public:
-    int lock();
-    int unlock();
+    int lock() SRT_ATTR_ACQUIRE();
+    int unlock() SRT_ATTR_RELEASE();
 
     /// @return     true if the lock was acquired successfully, otherwise false
-    bool try_lock();
+    bool try_lock() SRT_ATTR_TRY_ACQUIRE(true);
 
     // TODO: To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
@@ -302,10 +344,13 @@ private:
 };
 
 /// A pthread version of std::chrono::scoped_lock<mutex> (or lock_guard for C++11)
-class ScopedLock
+class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
 {
 public:
-    ScopedLock(Mutex& m);
+    SRT_ATTR_ACQUIRE(m)
+    explicit ScopedLock(Mutex& m);
+
+    SRT_ATTR_RELEASE()
     ~ScopedLock();
 
 private:
@@ -313,45 +358,53 @@ private:
 };
 
 /// A pthread version of std::chrono::unique_lock<mutex>
-class UniqueLock
+class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
+    int m_iLocked;
+    Mutex& m_Mutex;
 
 public:
-    UniqueLock(Mutex &m);
+    SRT_ATTR_ACQUIRE(m)
+    explicit UniqueLock(Mutex &m);
+
+    SRT_ATTR_RELEASE()
     ~UniqueLock();
 
 public:
+    SRT_ATTR_ACQUIRE()
     void lock();
-    void unlock();
-    Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 
-private:
-    int m_iLocked;
-    Mutex& m_Mutex;
+    SRT_ATTR_RELEASE()
+    void unlock();
+
+    SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
+    Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 };
 #endif // ENABLE_STDCXX_SYNC
 
-inline void enterCS(Mutex& m) { m.lock(); }
-inline bool tryEnterCS(Mutex& m) { return m.try_lock(); }
-inline void leaveCS(Mutex& m) { m.unlock(); }
+inline void enterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+
+inline bool tryEnterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+
+inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
 
 class InvertedLock
 {
-    Mutex *m_pMutex;
+    Mutex& m_mtx;
 
-  public:
+public:
+    SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
     InvertedLock(Mutex& m)
-        : m_pMutex(&m)
+        : m_mtx(m)
     {
-        leaveCS(*m_pMutex);
+        m_mtx.unlock();
     }
 
+    SRT_ATTR_ACQUIRE(m_mtx)
     ~InvertedLock()
     {
-        if (!m_pMutex)
-            return;
-        enterCS(*m_pMutex);
+        m_mtx.lock();
     }
 };
 
@@ -419,7 +472,7 @@ public:
 
 private:
 #if ENABLE_STDCXX_SYNC
-    condition_variable m_cv;
+    std::condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
 #endif
@@ -438,6 +491,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 // This should provide a cleaner API around locking with debug-logging inside.
 class CSync
 {
+protected:
     Condition* m_cond;
     UniqueLock* m_locker;
 
@@ -485,40 +539,46 @@ public:
     }
 
     // Static ad-hoc version
-    static void lock_signal(Condition& cond, Mutex& m)
+    static void lock_notify_one(Condition& cond, Mutex& m)
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_one();
     }
 
-    static void lock_broadcast(Condition& cond, Mutex& m)
+    static void lock_notify_all(Condition& cond, Mutex& m)
     {
         ScopedLock lk(m); // XXX with thread logging, don't use ScopedLock directly!
         cond.notify_all();
     }
 
-    void signal_locked(UniqueLock& lk ATR_UNUSED)
+    void notify_one_locked(UniqueLock& lk SRT_ATR_UNUSED)
     {
         // EXPECTED: lk.mutex() is LOCKED.
         m_cond->notify_one();
     }
 
-    // The signal_relaxed and broadcast_relaxed functions are to be used in case
-    // when you don't care whether the associated mutex is locked or not (you
-    // accept the case that a mutex isn't locked and the signal gets effectively
-    // missed), or you somehow know that the mutex is locked, but you don't have
-    // access to the associated UniqueLock object. This function, although it does
-    // the same thing as signal_locked() and broadcast_locked(), is here for
-    // the user to declare explicitly that the signal/broadcast is done without
-    // being prematurely certain that the associated mutex is locked.
+    void notify_all_locked(UniqueLock& lk SRT_ATR_UNUSED)
+    {
+        // EXPECTED: lk.mutex() is LOCKED.
+        m_cond->notify_all();
+    }
+
+    // The *_relaxed functions are to be used in case when you don't care
+    // whether the associated mutex is locked or not (you accept the case that
+    // a mutex isn't locked and the condition notification gets effectively
+    // missed), or you somehow know that the mutex is locked, but you don't
+    // have access to the associated UniqueLock object. This function, although
+    // it does the same thing as CSync::notify_one_locked etc. here for the
+    // user to declare explicitly that notifying is done without being
+    // prematurely certain that the associated mutex is locked.
     //
     // It is then expected that whenever these functions are used, an extra
-    // comment is provided to explain, why the use of the relaxed signaling is
-    // correctly used.
+    // comment is provided to explain, why the use of the relaxed notification
+    // is correctly used.
 
-    void signal_relaxed() { signal_relaxed(*m_cond); }
-    static void signal_relaxed(Condition& cond) { cond.notify_one(); }
-    static void broadcast_relaxed(Condition& cond) { cond.notify_all(); }
+    void notify_one_relaxed() { notify_one_relaxed(*m_cond); }
+    static void notify_one_relaxed(Condition& cond) { cond.notify_one(); }
+    static void notify_all_relaxed(Condition& cond) { cond.notify_all(); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -527,6 +587,9 @@ public:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+// XXX Do not use this class now, there's an unknown issue
+// connected to object management with the use of release* functions.
+// Until this is solved, stay with separate *Cond and *Lock fields.
 class CEvent
 {
 public:
@@ -535,12 +598,13 @@ public:
 
 public:
     Mutex& mutex() { return m_lock; }
+    Condition& cond() { return m_cond; }
 
 public:
     /// Causes the current thread to block until
     /// a specific time is reached.
     ///
-    /// @return true  if condition occured or spuriously woken up
+    /// @return true  if condition occurred or spuriously woken up
     ///         false on timeout
     bool lock_wait_until(const steady_clock::time_point& tp);
 
@@ -551,7 +615,7 @@ public:
     /// It may also be unblocked spuriously.
     /// Uses internal mutex to lock.
     ///
-    /// @return true  if condition occured or spuriously woken up
+    /// @return true  if condition occurred or spuriously woken up
     ///         false on timeout
     bool lock_wait_for(const steady_clock::duration& rel_time);
 
@@ -562,7 +626,7 @@ public:
     /// It may also be unblocked spuriously.
     /// When unblocked, regardless of the reason, lock is reacquiredand wait_for() exits.
     ///
-    /// @return true  if condition occured or spuriously woken up
+    /// @return true  if condition occurred or spuriously woken up
     ///         false on timeout
     bool wait_for(UniqueLock& lk, const steady_clock::duration& rel_time);
 
@@ -574,11 +638,63 @@ public:
 
     void notify_all();
 
+    void lock_notify_one()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_one();
+    }
+
+    void lock_notify_all()
+    {
+        ScopedLock lk(m_lock); // XXX with thread logging, don't use ScopedLock directly!
+        m_cond.notify_all();
+    }
+
 private:
     Mutex      m_lock;
     Condition  m_cond;
 };
 
+
+// This class binds together the functionality of
+// UniqueLock and CSync. It provides a simple interface of CSync
+// while having already the UniqueLock applied in the scope,
+// so a safe statement can be made about the mutex being locked
+// when signalling or waiting.
+class CUniqueSync: public CSync
+{
+    UniqueLock m_ulock;
+
+public:
+
+    UniqueLock& locker() { return m_ulock; }
+
+    CUniqueSync(Mutex& mut, Condition& cnd)
+        : CSync(cnd, m_ulock)
+        , m_ulock(mut)
+    {
+    }
+
+    CUniqueSync(CEvent& event)
+        : CSync(event.cond(), m_ulock)
+        , m_ulock(event.mutex())
+    {
+    }
+
+    // These functions can be used safely because
+    // this whole class guarantees that whatever happens
+    // while its object exists is that the mutex is locked.
+
+    void notify_one()
+    {
+        m_cond->notify_one();
+    }
+
+    void notify_all()
+    {
+        m_cond->notify_all();
+    }
+};
 
 class CTimer
 {
@@ -690,8 +806,9 @@ public:
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
+namespace this_thread = std::this_thread;
 #else // pthreads wrapper version
-typedef ::CUDTException CThreadException;
+typedef CUDTException CThreadException;
 
 class CThread
 {
@@ -754,7 +871,7 @@ private:
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {
-#if defined(_WIN32) && defined(PTW32_VERSION)
+#if defined(_WIN32) && (defined(PTW32_VERSION) || defined (__PTW32_VERSION))
     // This is a version specific for pthread-win32 implementation
     // Here pthread_t type is a structure that is not convertible
     // to a number at all.
@@ -773,7 +890,7 @@ namespace this_thread
 #if !defined(_WIN32)
         usleep(count_microseconds(t)); // microseconds
 #else
-        Sleep(count_milliseconds(t));
+        Sleep((DWORD) count_milliseconds(t));
 #endif
     }
 }
@@ -791,9 +908,9 @@ namespace this_thread
 ///
 #ifdef ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name);
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -810,7 +927,21 @@ void SetThreadLocalError(const CUDTException& e);
 /// @returns CUDTException pointer
 CUDTException& GetThreadLocalError();
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Random distribution functions.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Generate a uniform-distributed random integer from [minVal; maxVal].
+/// If HAVE_CXX11, uses std::uniform_distribution(std::random_device).
+/// @param[in] minVal minimum allowed value of the resulting random number.
+/// @param[in] maxVal maximum allowed value of the resulting random number.
+int genRandomInt(int minVal, int maxVal);
+
 } // namespace sync
 } // namespace srt
+
+#include "atomic_clock.h"
 
 #endif // INC_SRT_SYNC_H

@@ -23,7 +23,7 @@ written by
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#if defined(__unix__) && !defined(BSD)
+#if defined(__unix__) && !defined(BSD) && !defined(SUNOS)
 #include <features.h>
 #endif
 

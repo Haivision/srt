@@ -51,6 +51,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "crypto.h"
 #include "utilities.h"
 
+namespace srt
+{
+
 typedef Bits<31, 16> HS_CMDSPEC_CMD;
 typedef Bits<15, 0> HS_CMDSPEC_SIZE;
 
@@ -126,7 +129,6 @@ struct SrtHandshakeExtension
 // Implemented in core.cpp, so far
 void SrtExtractHandshakeExtensions(const char* bufbegin, size_t size,
         std::vector<SrtHandshakeExtension>& w_output);
-
 
 
 struct SrtHSRequest: public SrtHandshakeExtension
@@ -316,7 +318,7 @@ public:
     int32_t m_iMSS;              // maximum segment size
     int32_t m_iFlightFlagSize;   // flow control window size
     UDTRequestType m_iReqType;   // handshake stage
-    int32_t m_iID;		// socket ID
+    int32_t m_iID;               // SRT socket ID of HS sender
     int32_t m_iCookie;		// cookie
     uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
 
@@ -359,5 +361,6 @@ public:
 
 };
 
+} // namespace srt
 
 #endif

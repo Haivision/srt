@@ -70,15 +70,23 @@ modified by
 
 #include <srt_compat.h> // SysStrError
 
+using namespace std;
 using namespace srt::sync;
-
-namespace srt_logging {
-    extern Logger inlog;
-}
-
 using namespace srt_logging;
 
-CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
+namespace srt_logging
+{
+extern Logger inlog;
+}
+
+namespace srt
+{
+
+const char* strerror_get_message(size_t major, size_t minor);
+} // namespace srt
+
+
+srt::CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
@@ -88,34 +96,30 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-namespace srt {
-const char* strerror_get_message(size_t major, size_t minor);
-}
-
-const char* CUDTException::getErrorMessage() const ATR_NOTHROW
+const char* srt::CUDTException::getErrorMessage() const ATR_NOTHROW
 {
-    return srt::strerror_get_message(m_iMajor, m_iMinor);
+    return strerror_get_message(m_iMajor, m_iMinor);
 }
 
-string CUDTException::getErrorString() const
+std::string srt::CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
 
-int CUDTException::getErrorCode() const
+int srt::CUDTException::getErrorCode() const
 {
     return UDT_XCODE(m_iMajor, m_iMinor);
 }
 
-int CUDTException::getErrno() const
+int srt::CUDTException::getErrno() const
 {
    return m_iErrno;
 }
 
 
-void CUDTException::clear()
+void srt::CUDTException::clear()
 {
    m_iMajor = MJ_SUCCESS;
    m_iMinor = MN_NONE;
@@ -125,7 +129,7 @@ void CUDTException::clear()
 #undef UDT_XCODE
 
 //
-bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
+bool srt::CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
 {
    if (AF_INET == ver)
    {
@@ -153,7 +157,7 @@ bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
    return false;
 }
 
-void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -172,6 +176,7 @@ void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
+namespace srt {
 bool checkMappedIPv4(const uint16_t* addr)
 {
     static const uint16_t ipv4on6_model [8] =
@@ -186,11 +191,13 @@ bool checkMappedIPv4(const uint16_t* addr)
 
     return std::equal(mbegin, mend, addr);
 }
+}
 
 // XXX This has void return and the first argument is passed by reference.
 // Consider simply returning sockaddr_any by value.
-void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
 {
+    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -307,8 +314,8 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
     }
 }
 
-using namespace std;
 
+namespace srt {
 static string ShowIP4(const sockaddr_in* sin)
 {
     ostringstream os;
@@ -360,9 +367,10 @@ string CIPAddress::show(const sockaddr* adr)
     else
         return "(unsupported sockaddr type)";
 }
+} // namespace srt
 
 //
-void CMD5::compute(const char* input, unsigned char result[16])
+void srt::CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;
 
@@ -371,6 +379,7 @@ void CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
+namespace srt {
 std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
     using std::string;
@@ -437,7 +446,8 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
         "checktimer",
         "send",
         "receive",
-        "custom"
+        "custom",
+        "sync"
     };
 
     size_t vals_size = Size(vals);
@@ -447,40 +457,7 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-extern const char* const srt_rejectreason_msg [] = {
-    "Unknown or erroneous",
-    "Error in system calls",
-    "Peer rejected connection",
-    "Resource allocation failure",
-    "Rogue peer or incorrect parameters",
-    "Listener's backlog exceeded",
-    "Internal Program Error",
-    "Socket is being closed",
-    "Peer version too old",
-    "Rendezvous-mode cookie collision",
-    "Incorrect passphrase",
-    "Password required or unexpected",
-    "MessageAPI/StreamAPI collision",
-    "Congestion controller type collision",
-    "Packet Filter type collision",
-    "Group settings collision",
-    "Connection timeout"
-};
-
-const char* srt_rejectreason_str(int id)
-{
-    if (id >= SRT_REJC_PREDEFINED)
-    {
-        return "Application-defined rejection reason";
-    }
-
-    static const size_t ra_size = Size(srt_rejectreason_msg);
-    if (size_t(id) >= ra_size)
-        return srt_rejectreason_msg[0];
-    return srt_rejectreason_msg[id];
-}
-
-bool SrtParseConfig(string s, SrtConfig& w_config)
+bool SrtParseConfig(const string& s, SrtConfig& w_config)
 {
     using namespace std;
 
@@ -495,18 +472,13 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
         Split(*i, ':', back_inserter(keyval));
         if (keyval.size() != 2)
             return false;
-        w_config.parameters[keyval[0]] = keyval[1];
+        if (keyval[1] != "")
+            w_config.parameters[keyval[0]] = keyval[1];
     }
 
     return true;
 }
-
-uint64_t PacketMetric::fullBytes()
-{
-    static const int PKT_HDR_SIZE = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    return bytes + pkts * PKT_HDR_SIZE;
-}
-
+} // namespace srt
 
 namespace srt_logging
 {
@@ -543,7 +515,7 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
@@ -572,7 +544,7 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
 #if ENABLE_LOGGING
 
-LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+srt::logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
     if (that_enabled)
     {
@@ -592,17 +564,22 @@ LogDispatcher::Proxy LogDispatcher::operator()()
 void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
+    using namespace srt;
 
-    char tmp_buf[512];
+    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
+                      "ThreadName::BUFSIZE is too small to be used for strftime");
+    char tmp_buf[ThreadName::BUFSIZE];
     if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
-        gettimeofday(&tv, 0);
+        gettimeofday(&tv, NULL);
         struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        strftime(tmp_buf, 512, "%X.", &tm);
-        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
+        {
+            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        }
     }
 
     string out_prefix;

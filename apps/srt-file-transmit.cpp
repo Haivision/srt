@@ -52,7 +52,6 @@ void OnINT_ForceExit(int)
     interrupt = true;
 }
 
-
 struct FileTransmitConfig
 {
     unsigned long chunk_size;
@@ -144,12 +143,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     if (print_help)
     {
         cout << "SRT sample application to transmit files.\n";
-        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
-        const uint32_t srtver = srt_getversion();
-        const int major = srtver / 0x10000;
-        const int minor = (srtver / 0x100) % 0x100;
-        const int patch = srtver % 0x100;
-        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-file-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 
@@ -182,7 +176,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 
     if (Option<OutBool>(params, false, o_version))
     {
-        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
@@ -321,7 +315,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
                     << tar->GetSRTSocket() << endl;
                 goto exit;
             }
-            UDT::setstreamid(tar->GetSRTSocket(), filename);
+            srt::setstreamid(tar->GetSRTSocket(), filename);
         }
 
         s = tar->GetSRTSocket();
@@ -539,7 +533,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                     cerr << "Failed to add SRT client to poll" << endl;
                     goto exit;
                 }
-                id = UDT::getstreamid(s);
+                id = srt::getstreamid(s);
                 cerr << "Source connected (listener), id ["
                     << id << "]" << endl;
                 connected = true;
@@ -550,7 +544,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
             {
                 if (!connected)
                 {
-                    id = UDT::getstreamid(s);
+                    id = srt::getstreamid(s);
                     cerr << "Source connected (caller), id ["
                         << id << "]" << endl;
                     connected = true;
@@ -714,7 +708,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 

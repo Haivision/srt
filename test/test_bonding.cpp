@@ -1,18 +1,8 @@
-
-#include <stdio.h>
-#include <stdlib.h>
 #include <future>
 #include <thread>
 #include <chrono>
 #include <vector>
 #include <functional>
-#ifdef _WIN32
-#define usleep(x) Sleep(x / 1000)
-#else
-#include <unistd.h>
-#endif
-
-#if ENABLE_EXPERIMENTAL_BONDING
 
 #include "gtest/gtest.h"
 
@@ -46,15 +36,20 @@ TEST(Bonding, SRTConnectGroup)
     }, ss);
 
     std::cout << "srt_connect_group calling " << std::endl;
-    const int st = srt_connect_group(ss, targets.data(), targets.size());
-    std::cout << "srt_connect_group returned " << st << std::endl;
+    const int st = srt_connect_group(ss, targets.data(), (int) targets.size());
+    std::cout << "srt_connect_group returned " << st << ", waiting for srt_close() to finish" << std::endl;
 
     closing_promise.wait();
+
+    std::cout << "TEST: closing future has exit. Deleting all other resources\n";
+
     // Delete config objects before prospective exception
     for (auto& gd: targets)
         srt_delete_config(gd.config);
 
     int res = srt_close(ss);
+
+    std::cout << "TEST: closing ss has exit. Cleaning up\n";
     if (res == SRT_ERROR)
     {
         std::cerr << "srt_close: " << srt_getlasterror_str() << std::endl;
@@ -63,6 +58,7 @@ TEST(Bonding, SRTConnectGroup)
     srt_cleanup();
 }
 
+#define ASSERT_SRT_SUCCESS(callform) ASSERT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
 
 void listening_thread(bool should_read)
 {
@@ -73,33 +69,33 @@ void listening_thread(bool should_read)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
     bind_sa.sin_port = htons(4200);
 
-    ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    ASSERT_SRT_SUCCESS(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa));
     const int yes = 1;
-    srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes));
 
     const int no = 1;
-    srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no));
 
     const int eid = srt_epoll_create();
     const int listen_event = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    srt_epoll_add_usock(eid, server_sock, &listen_event);
+    ASSERT_SRT_SUCCESS(srt_epoll_add_usock(eid, server_sock, &listen_event));
 
-    ASSERT_NE(srt_listen(server_sock, 5), -1);
+    ASSERT_SRT_SUCCESS(srt_listen(server_sock, 5));
     std::cout << "Listen: wait for acceptability\n";
     int fds[2];
     int fds_len = 2;
     int ers[2];
     int ers_len = 2;
-    int wr = srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
-            0, 0, 0, 0);
+    ASSERT_SRT_SUCCESS(srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
+            0, 0, 0, 0));
 
-    ASSERT_NE(wr, -1);
     std::cout << "Listen: reported " << fds_len << " acceptable and " << ers_len << " errors\n";
     ASSERT_GT(fds_len, 0);
     ASSERT_EQ(fds[0], server_sock);
 
-    sockaddr_any scl;
+    srt::sockaddr_any scl;
     int acp = srt_accept(server_sock, (scl.get()), (&scl.len));
+    ASSERT_SRT_SUCCESS(acp);
     ASSERT_NE(acp & SRTGROUP_MASK, 0);
 
     if (should_read)
@@ -121,6 +117,7 @@ void listening_thread(bool should_read)
     }
 
     srt_close(acp);
+    srt_close(server_sock);
 
     std::cout << "Listen: wait 7 seconds\n";
     std::this_thread::sleep_for(std::chrono::seconds(7));
@@ -264,15 +261,15 @@ TEST(Bonding, CloseGroupAndSocket)
     }
     std::cout << "Returned from connecting two sockets " << std::endl;
 
-    const int default_len = 3;
-    int rlen = default_len;
-    SRTSOCKET read[default_len];
-
-    int wlen = default_len;
-    SRTSOCKET write[default_len];
-
     for (int j = 0; j < 2; ++j)
     {
+        const int default_len = 3;
+        int rlen = default_len;
+        SRTSOCKET read[default_len];
+
+        int wlen = default_len;
+        SRTSOCKET write[default_len];
+
         const int epoll_res = srt_epoll_wait(poll_id, read, &rlen,
             write, &wlen,
             5000, /* timeout */
@@ -280,6 +277,9 @@ TEST(Bonding, CloseGroupAndSocket)
 
         std::cout << "Epoll result: " << epoll_res << '\n';
         std::cout << "Epoll rlen: " << rlen << ", wlen: " << wlen << '\n';
+        if (epoll_res < 0)
+            continue;
+
         for (int i = 0; i < rlen; ++i)
         {
             std::cout << "Epoll read[" << i << "]: " << read[i] << '\n';
@@ -290,6 +290,20 @@ TEST(Bonding, CloseGroupAndSocket)
             EXPECT_EQ(srt_epoll_remove_usock(poll_id, write[i]), 0);
         }
     }
+
+    // Some basic checks for group stats
+    SRT_TRACEBSTATS stats;
+    EXPECT_EQ(srt_bstats(ss, &stats, true), SRT_SUCCESS);
+    EXPECT_EQ(stats.pktSent, 0);
+    EXPECT_EQ(stats.pktSentTotal, 0);
+    EXPECT_EQ(stats.pktSentUnique, 0);
+    EXPECT_EQ(stats.pktSentUniqueTotal, 0);
+    EXPECT_EQ(stats.pktRecv, 0);
+    EXPECT_EQ(stats.pktRecvTotal, 0);
+    EXPECT_EQ(stats.pktRecvUnique, 0);
+    EXPECT_EQ(stats.pktRecvUniqueTotal, 0);
+    EXPECT_EQ(stats.pktRcvDrop, 0);
+    EXPECT_EQ(stats.pktRcvDropTotal, 0);
 
     std::cout << "Starting thread for sending:\n";
     std::thread sender([ss] {
@@ -322,4 +336,3 @@ TEST(Bonding, CloseGroupAndSocket)
     srt_cleanup();
 }
 
-#endif // ENABLE_EXPERIMENTAL_BONDING

@@ -19,18 +19,27 @@ Written by
 #include "srt.h"
 #include "common.h"
 #include "packet.h"
+#include "group_common.h"
+#include "group_backup.h"
+
+namespace srt
+{
 
 #if ENABLE_HEAVY_LOGGING
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
+
 class CUDTGroup
 {
     friend class CUDTUnited;
 
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
-    typedef srt::sync::steady_clock             steady_clock;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
+    typedef sync::steady_clock             steady_clock;
+    typedef groups::SocketData SocketData;
+    typedef groups::SendBackupCtx SendBackupCtx;
+    typedef groups::BackupMemberState BackupMemberState;
 
 public:
     typedef SRT_MEMBERSTATUS GroupState;
@@ -56,26 +65,6 @@ public:
 
     static int32_t s_tokenGen;
     static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
-
-    struct SocketData
-    {
-        SRTSOCKET      id;
-        CUDTSocket*    ps;
-        int            token;
-        SRT_SOCKSTATUS laststatus;
-        GroupState     sndstate;
-        GroupState     rcvstate;
-        int            sndresult;
-        int            rcvresult;
-        sockaddr_any   agent;
-        sockaddr_any   peer;
-        bool           ready_read;
-        bool           ready_write;
-        bool           ready_error;
-
-        // Configuration
-        uint16_t weight;
-    };
 
     struct ConfigItem
     {
@@ -112,7 +101,7 @@ public:
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;
-    typedef std::vector< std::pair<SRTSOCKET, CUDTSocket*> > sendable_t;
+    typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
     struct Sendstate
     {
@@ -124,8 +113,6 @@ public:
 
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
-
-    static SocketData prepareData(CUDTSocket* s);
 
     SocketData* add(SocketData data);
 
@@ -168,7 +155,7 @@ public:
         srt::sync::ScopedLock g(m_GroupLock);
 
         bool empty = false;
-        HLOGC(gmlog.Debug, log << "group/remove: going to remove @" << id << " from $" << m_GroupID);
+        LOGC(gmlog.Note, log << "group/remove: removing member @" << id << " from group $" << m_GroupID);
 
         gli_t f = std::find_if(m_Group.begin(), m_Group.end(), HaveID(id));
         if (f != m_Group.end())
@@ -228,105 +215,104 @@ public:
 
 private:
     // For Backup, sending all previous packet
-    int sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc);
+    int sendBackupRexmit(srt::CUDT& core, SRT_MSGCTRL& w_mc);
 
     // Support functions for sendBackup and sendBroadcast
+    /// Check if group member is idle.
+    /// @param d group member
+    /// @param[in,out] w_wipeme array of sockets to remove from group
+    /// @param[in,out] w_pendingLinks array of sockets pending for connection
+    /// @returns true if d is idle (standby), false otherwise
     bool send_CheckIdle(const gli_t d, std::vector<SRTSOCKET>& w_wipeme, std::vector<SRTSOCKET>& w_pendingLinks);
+
+
+    /// This function checks if the member has just become idle (check if sender buffer is empty) to send a KEEPALIVE immidiatelly.
+    /// @todo Check it is some abandoned logic.
     void sendBackup_CheckIdleTime(gli_t w_d);
     
     /// Qualify states of member links.
     /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
+    /// @param[out] w_sendBackupCtx  the context will be updated with state qualifications
     /// @param[in] currtime          current timestamp
-    /// @param[out] w_wipeme         broken links or links about to be closed
-    /// @param[out] w_idleLinks      idle links (connected, but not used for transmission)
-    /// @param[out] w_pendingSockets sockets pending to be connected
-    /// @param[out] w_unstableLinks  active member links qualified as unstable
-    /// @param[out] w_activeLinks    all active member links, including unstable
-    void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime,
-        std::vector<SRTSOCKET>& w_wipeme,
-        std::vector<gli_t>& w_idleLinks,
-        std::vector<SRTSOCKET>& w_pendingSockets,
-        std::vector<gli_t>& w_unstableLinks,
-        std::vector<gli_t>& w_activeLinks);
+    void sendBackup_QualifyMemberStates(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 
-    /// Check if a running link is stable.
-    /// @retval true running link is stable
-    /// @retval false running link is unstable
-    bool sendBackup_CheckRunningStability(const gli_t d, const time_point currtime);
+    void sendBackup_AssignBackupState(srt::CUDT& socket, BackupMemberState state, const steady_clock::time_point& currtime);
+
+    /// Qualify the state of the active link: fresh, stable, unstable, wary.
+    /// @retval active backup member state: fresh, stable, unstable, wary.
+    BackupMemberState sendBackup_QualifyActiveState(const gli_t d, const time_point currtime);
+
+    BackupMemberState sendBackup_QualifyIfStandBy(const gli_t d);
+
+    /// Sends the same payload over all active members.
+    /// @param[in] buf payload
+    /// @param[in] len payload length in bytes
+    /// @param[in,out] w_mc message control
+    /// @param[in] currtime current time
+    /// @param[in] currseq current packet sequence number
+    /// @param[out] w_nsuccessful number of members with successfull sending.
+    /// @param[in,out] maxActiveWeight
+    /// @param[in,out] sendBackupCtx context
+    /// @param[in,out] w_cx error
+    /// @return group send result: -1 if sending over all members has failed; number of bytes sent overwise.
+    int sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& w_mc, const steady_clock::time_point& currtime, int32_t& w_curseq,
+        size_t& w_nsuccessful, uint16_t& w_maxActiveWeight, SendBackupCtx& w_sendBackupCtx, CUDTException& w_cx);
     
     /// Check link sending status
-    /// @param[in]  d              Group member iterator
     /// @param[in]  currtime       Current time (logging only)
-    /// @param[in]  stat           Result of sending over the socket
+    /// @param[in]  send_status    Result of sending over the socket
     /// @param[in]  lastseq        Last sent sequence number before the current sending operation
     /// @param[in]  pktseq         Packet sequence number currently tried to be sent
     /// @param[out] w_u            CUDT unit of the current member (to allow calling overrideSndSeqNo)
     /// @param[out] w_curseq       Group's current sequence number (either -1 or the value used already for other links)
-    /// @param[out] w_parallel     Parallel link container (will be filled inside this function)
-    /// @param[out] w_final_stat   Status to be reported by this function eventually
-    /// @param[out] w_maxActiveWeight Maximum weight value of active links
-    /// @param[out] w_nsuccessful  Updates the number of successful links
-    /// @param[out] w_is_unstable  Set true if sending resulted in AGAIN error.
+    /// @param[out] w_final_stat   w_final_stat = send_status if sending succeeded.
     ///
     /// @returns true if the sending operation result (submitted in stat) is a success, false otherwise.
-    bool sendBackup_CheckSendStatus(const gli_t         d,
-                                    const time_point&   currtime,
-                                    const int           stat,
-                                    const int           erc,
+    bool sendBackup_CheckSendStatus(const time_point&   currtime,
+                                    const int           send_status,
                                     const int32_t       lastseq,
                                     const int32_t       pktseq,
                                     CUDT&               w_u,
                                     int32_t&            w_curseq,
-                                    std::vector<gli_t>& w_parallel,
-                                    int&                w_final_stat,
-                                    uint16_t&           w_maxActiveWeight,
-                                    size_t&             w_nsuccessful,
-                                    bool&               w_is_unstable);
+                                    int&                w_final_stat);
     void sendBackup_Buffering(const char* buf, const int len, int32_t& curseq, SRT_MSGCTRL& w_mc);
 
-    /// Check activation conditions and activate a backup link if needed.
-    /// Backup link activation is needed if:
-    ///
-    /// 1. All currently active links are unstable.
-    /// Note that unstable links still count as sendable; they
-    /// are simply links that were qualified for sending, but:
-    /// - have exceeded response timeout
-    /// - have hit EASYNCSND error during sending
-    ///
-    /// 2. Another reason to activate might be if one of idle links
-    /// has a higher weight than any link currently active
-    /// (those are collected in 'sendable_pri').
-    /// If there are no sendable, a new link needs to be activated anyway.
-    bool sendBackup_IsActivationNeeded(const std::vector<CUDTGroup::gli_t>&  idleLinks,
-        const std::vector<gli_t>& unstable,
-        const std::vector<gli_t>& sendable,
-        const uint16_t max_sendable_weight,
-        std::string& activate_reason) const;
+    size_t sendBackup_TryActivateStandbyIfNeeded(
+        const char* buf,
+        const int   len,
+        bool& w_none_succeeded,
+        SRT_MSGCTRL& w_mc,
+        int32_t& w_curseq,
+        int32_t& w_final_stat,
+        SendBackupCtx& w_sendBackupCtx,
+        CUDTException& w_cx,
+        const steady_clock::time_point& currtime);
 
-    size_t sendBackup_TryActivateIdleLink(const std::vector<gli_t>& idleLinks,
-                                      const char*               buf,
-                                      const int                 len,
-                                      bool&                     w_none_succeeded,
-                                      SRT_MSGCTRL&              w_mc,
-                                      int32_t&                  w_curseq,
-                                      int32_t&                  w_final_stat,
-                                      CUDTException&            w_cx,
-                                      std::vector<gli_t>&       w_parallel,
-                                      std::vector<SRTSOCKET>&   w_wipeme,
-                                      const std::string&        activate_reason);
+    /// Check if pending sockets are to be qualified as broken.
+    /// This qualification later results in removing the socket from a group and closing it.
+    /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
+    void sendBackup_CheckPendingSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 
-    /// Check if pending sockets are to be closed.
-    /// @param[in]     pending pending sockets
-    /// @param[in,out] w_wipeme a list of sockets to be removed from the group
-    void send_CheckPendingSockets(const std::vector<SRTSOCKET>& pending, std::vector<SRTSOCKET>& w_wipeme);
+    /// Check if unstable sockets are to be qualified as broken.
+    /// The main reason for such qualification is if a socket is unstable for too long.
+    /// This qualification later results in removing the socket from a group and closing it.
+    /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
+    void sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
+
+    /// @brief Marks broken sockets as closed. Used in broadcast sending.
+    /// @param w_wipeme a list of sockets to close
     void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
-    void sendBackup_RetryWaitBlocked(const std::vector<gli_t>& unstable,
-                                     std::vector<gli_t>&       w_parallel,
+
+    /// @brief Marks broken sockets as closed. Used in backup sending.
+    /// @param w_sendBackupCtx the context with a list of broken sockets
+    void sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx);
+
+    void sendBackup_RetryWaitBlocked(SendBackupCtx& w_sendBackupCtx,
                                      int&                      w_final_stat,
                                      bool&                     w_none_succeeded,
                                      SRT_MSGCTRL&              w_mc,
                                      CUDTException&            w_cx);
-    void sendBackup_SilenceRedundantLinks(std::vector<gli_t>&  w_parallel);
+    void sendBackup_SilenceRedundantLinks(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
 
     void send_CheckValidSockets();
 
@@ -337,7 +323,7 @@ public:
 
     void setOpt(SRT_SOCKOPT optname, const void* optval, int optlen);
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
-    void deriveSettings(CUDT* source);
+    void deriveSettings(srt::CUDT* source);
     bool applyFlags(uint32_t flags, HandshakeSide);
 
     SRT_SOCKSTATUS getStatus();
@@ -351,14 +337,20 @@ public:
         return m_type == SRT_GTYPE_BROADCAST;
     }
 
-    srt::sync::Mutex* exp_groupLock() { return &m_GroupLock; }
-    void              addEPoll(int eid);
-    void              removeEPollEvents(const int eid);
-    void              removeEPollID(const int eid);
-    void              updateReadState(SRTSOCKET sock, int32_t sequence);
-    void              updateWriteState();
-    void              updateFailedLink();
-    void              activateUpdateEvent(bool still_have_items);
+    sync::Mutex* exp_groupLock() { return &m_GroupLock; }
+    void         addEPoll(int eid);
+    void         removeEPollEvents(const int eid);
+    void         removeEPollID(const int eid);
+
+    /// @brief Update read-ready state.
+    /// @param sock member socket ID (unused)
+    /// @param sequence the latest packet sequence number available for reading.
+    void         updateReadState(SRTSOCKET sock, int32_t sequence);
+
+    void         updateWriteState();
+    void         updateFailedLink();
+    void         activateUpdateEvent(bool still_have_items);
+    int32_t      getRcvBaseSeqNo();
 
     /// Update the in-group array of packet providers per sequence number.
     /// Also basing on the information already provided by possibly other sockets,
@@ -371,19 +363,18 @@ public:
     /// @param provider The core of the socket for which the packet was dispatched
     /// @param time TSBPD time of this packet
     /// @return The bitmap that marks by 'false' packets lost since next to exp_sequence
-    std::vector<bool> providePacket(int32_t exp_sequence, int32_t sequence, CUDT* provider, uint64_t time);
+    std::vector<bool> providePacket(int32_t exp_sequence, int32_t sequence, srt::CUDT* provider, uint64_t time);
 
     /// This is called from the ACK action by particular socket, which
     /// actually signs off the packet for extraction.
     ///
     /// @param core The socket core for which the ACK was sent
     /// @param ack The past-the-last-received ACK sequence number
-    void readyPackets(CUDT* core, int32_t ack);
+    void readyPackets(srt::CUDT* core, int32_t ack);
 
-    void syncWithSocket(const CUDT& core, const HandshakeSide side);
+    void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    int  configure(const char* str);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -400,7 +391,7 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
-    void handleKeepalive(SocketData*);
+    void processKeepalive(SocketData*);
     void internalKeepalive(SocketData*);
 
 private:
@@ -408,14 +399,16 @@ private:
     // If so, grab the status of all member sockets.
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
-    class CUDTUnited* m_pGlobal;
+    srt::CUDTUnited&  m_Global;
     srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
     struct GroupContainer
     {
-        std::list<SocketData>        m_List;
+    private:
+        std::list<SocketData>  m_List;
+        sync::atomic<size_t>   m_SizeCache;
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -423,8 +416,11 @@ private:
         /// must be appropriately reset.
         gli_t m_LastActiveLink;
 
+    public:
+
         GroupContainer()
-            : m_LastActiveLink(m_List.end())
+            : m_SizeCache(0)
+            , m_LastActiveLink(m_List.end())
         {
         }
 
@@ -434,22 +430,21 @@ private:
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
-        void         push_back(const SocketData& data) { m_List.push_back(data); }
+        void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
         {
             m_LastActiveLink = end();
             m_List.clear();
+            m_SizeCache = 0;
         }
-        size_t size() { return m_List.size(); }
+        size_t size() { return m_SizeCache; }
 
         void erase(gli_t it);
     };
     GroupContainer m_Group;
-    bool           m_selfManaged;
-    bool           m_bSyncOnMsgNo;
     SRT_GROUP_TYPE m_type;
     CUDTSocket*    m_listener; // A "group" can only have one listener.
-    int            m_iBusy;
+    srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
@@ -511,7 +506,7 @@ public:
 
     bool isStillBusy()
     {
-        srt::sync::ScopedLock glk(m_GroupLock);
+        sync::ScopedLock glk(m_GroupLock);
         return m_iBusy || !m_Group.empty();
     }
 
@@ -619,10 +614,10 @@ public:
 
 private:
     // Fields required for SRT_GTYPE_BACKUP groups.
-    senderBuffer_t   m_SenderBuffer;
-    int32_t          m_iSndOldestMsgNo; // oldest position in the sender buffer
-    volatile int32_t m_iSndAckedMsgNo;
-    uint32_t         m_uOPT_StabilityTimeout;
+    senderBuffer_t        m_SenderBuffer;
+    int32_t               m_iSndOldestMsgNo; // oldest position in the sender buffer
+    sync::atomic<int32_t> m_iSndAckedMsgNo;
+    uint32_t              m_uOPT_MinStabilityTimeout_us;
 
     // THIS function must be called only in a function for a group type
     // that does use sender buffer.
@@ -637,9 +632,9 @@ private:
     bool               m_bTLPktDrop;
     int64_t            m_iTsbPdDelay_us;
     int                m_RcvEID;
-    struct CEPollDesc* m_RcvEpolld;
+    class CEPollDesc*  m_RcvEpolld;
     int                m_SndEID;
-    struct CEPollDesc* m_SndEpolld;
+    class CEPollDesc*  m_SndEpolld;
 
     int m_iSndTimeOut; // sending timeout in milliseconds
     int m_iRcvTimeOut; // receiving timeout in milliseconds
@@ -665,21 +660,21 @@ private:
 
     ReadPos* checkPacketAhead();
 
-    void recv_CollectAliveAndBroken(std::vector<CUDTSocket*>& w_alive, std::set<CUDTSocket*>& w_broken);
+    void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
     /// The function polls alive member sockets and retrieves a list of read-ready.
-    /// [acquires lock for CUDT::s_UDTUnited.m_GlobControlLock]
+    /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
     /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
     ///
     /// @returns list of read-ready sockets
     /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
     /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
-    std::vector<CUDTSocket*> recv_WaitForReadReady(const std::vector<CUDTSocket*>& aliveMembers, std::set<CUDTSocket*>& w_broken);
+    std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
     // from the first delivering socket will be taken as a good deal.
-    volatile int32_t m_RcvBaseSeqNo;
+    sync::atomic<int32_t> m_RcvBaseSeqNo;
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
@@ -693,10 +688,10 @@ private:
 
     // Signal for the blocking user thread that the packet
     // is ready to deliver.
-    srt::sync::Condition m_RcvDataCond;
-    srt::sync::Mutex     m_RcvDataLock;
-    volatile int32_t     m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
-    volatile int32_t     m_iLastSchedMsgNo;
+    sync::Condition       m_RcvDataCond;
+    sync::Mutex           m_RcvDataLock;
+    sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
+    sync::atomic<int32_t> m_iLastSchedMsgNo;
     // Statistics
 
     struct Stats
@@ -705,31 +700,29 @@ private:
         time_point tsActivateTime;   // Time when this group sent or received the first data packet
         time_point tsLastSampleTime; // Time reset when clearing stats
 
-        MetricUsage<PacketMetric> sent; // number of packets sent from the application
-        MetricUsage<PacketMetric> recv; // number of packets delivered from the group to the application
-        MetricUsage<PacketMetric>
-                                  recvDrop; // number of packets dropped by the group receiver (not received from any member)
-        MetricUsage<PacketMetric> recvDiscard; // number of packets discarded as already delivered
+        stats::Metric<stats::BytesPackets> sent; // number of packets sent from the application
+        stats::Metric<stats::BytesPackets> recv; // number of packets delivered from the group to the application
+        stats::Metric<stats::BytesPackets> recvDrop; // number of packets dropped by the group receiver (not received from any member)
+        stats::Metric<stats::BytesPackets> recvDiscard; // number of packets discarded as already delivered
 
         void init()
         {
             tsActivateTime = srt::sync::steady_clock::time_point();
-            sent.Init();
-            recv.Init();
-            recvDrop.Init();
-            recvDiscard.Init();
-
-            reset();
+            tsLastSampleTime = srt::sync::steady_clock::now();
+            sent.reset();
+            recv.reset();
+            recvDrop.reset();
+            recvDiscard.reset();
         }
 
         void reset()
         {
-            sent.Clear();
-            recv.Clear();
-            recvDrop.Clear();
-            recvDiscard.Clear();
-
             tsLastSampleTime = srt::sync::steady_clock::now();
+
+            sent.resetTrace();
+            recv.resetTrace();
+            recvDrop.resetTrace();
+            recvDiscard.resetTrace();
         }
     } m_stats;
 
@@ -809,22 +802,25 @@ public:
     }
 
     // Live state synchronization
-    bool getBufferTimeBase(CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
+    bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
-    void synchronizeDrift(CUDT* cu, duration udrift, time_point newtimebase);
 
-    void updateLatestRcv(CUDTSocket*);
+    /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
+    /// @param srcMember a reference for synchronization.
+    void synchronizeDrift(const srt::CUDT* srcMember);
+
+    void updateLatestRcv(srt::CUDTSocket*);
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, bool, managed, m_selfManaged);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
-    SRTU_PROPERTY_RO(bool, synconmsgno, m_bSyncOnMsgNo);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
+
+} // namespace srt
 
 #endif // INC_SRT_GROUP_H

@@ -14,6 +14,7 @@
 #include <map>
 #include <vector>
 #include <deque>
+#include <iterator>
 
 #include "packetfilter.h"
 #include "core.h"
@@ -34,6 +35,94 @@
 using namespace std;
 using namespace srt_logging;
 
+namespace srt {
+
+const char FECFilterBuiltin::defaultConfig [] = "fec,rows:1,layout:staircase,arq:onreq";
+
+struct StringKeys
+{
+    string operator()(const pair<const string, const string> item)
+    {
+        return item.first;
+    }
+};
+
+bool FECFilterBuiltin::verifyConfig(const SrtFilterConfig& cfg, string& w_error)
+{
+    string arspec = map_get(cfg.parameters, "layout");
+
+    if (arspec != "" && arspec != "even" && arspec != "staircase")
+    {
+        w_error = "value for 'layout' must be 'even' or 'staircase'";
+        return false;
+    }
+
+    string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
+
+    int out_rows = 1;
+
+    if (colspec != "")
+    {
+        int out_cols = atoi(colspec.c_str());
+        if (out_cols < 2)
+        {
+            w_error = "at least 'cols' must be specified and > 1";
+            return false;
+        }
+    }
+
+    if (rowspec != "")
+    {
+        out_rows = atoi(rowspec.c_str());
+        if (out_rows >= -1 && out_rows < 1)
+        {
+            w_error = "'rows' must be >=1 or negative < -1";
+            return false;
+        }
+    }
+
+    // Extra interpret level, if found, default never.
+    // Check only those that are managed.
+    string level = map_get(cfg.parameters, "arq");
+    if (level != "")
+    {
+        static const char* const levelnames [] = {"never", "onreq", "always"};
+        size_t i = 0;
+        for (i = 0; i < Size(levelnames); ++i)
+        {
+            if (strcmp(level.c_str(), levelnames[i]) == 0)
+                break;
+        }
+
+        if (i == Size(levelnames))
+        {
+            w_error = "'arq' value '" + level + "' invalid. Allowed: never, onreq, always";
+            return false;
+        }
+    }
+
+    set<string> keys;
+    transform(cfg.parameters.begin(), cfg.parameters.end(), inserter(keys, keys.begin()), StringKeys());
+
+    // Delete all default parameters
+    SrtFilterConfig defconf;
+    ParseFilterConfig(defaultConfig, (defconf));
+    for (map<string,string>::const_iterator i = defconf.parameters.begin();
+            i != defconf.parameters.end(); ++i)
+        keys.erase(i->first);
+
+    // Delete mandatory parameters
+    keys.erase("cols");
+
+    if (!keys.empty())
+    {
+        w_error = "Extra parameters. Allowed only: cols, rows, layout, arq";
+        return false;
+    }
+
+    return true;
+}
+
 FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector<SrtPacket> &provided, const string &confstr)
     : SrtPacketFilterBase(init)
     , m_fallback_level(SRT_ARQ_ONREQ)
@@ -42,6 +131,13 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 {
     if (!ParseFilterConfig(confstr, cfg))
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    string ermsg;
+    if (!verifyConfig(cfg, (ermsg)))
+    {
+        LOGC(pflog.Error, log << "IPE: Filter config failed: " << ermsg);
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
 
     // Configuration supported:
     // - row only (number_rows == 1)
@@ -57,33 +153,23 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     string shorter = arspec.size() > 5 ? arspec.substr(0, 5) : arspec;
     if (shorter == "even")
         m_arrangement_staircase = false;
-    else if (shorter != "" && shorter != "stair")
-    {
-        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: value for 'layout' must be 'even' or 'staircase'");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-    }
 
     string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
 
-    int out_rows = 1;
-    int out_cols = atoi(colspec.c_str());
-
-    if (colspec == "" || out_cols < 2)
+    if (colspec == "")
     {
-        LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: at least 'cols' must be specified and > 1");
+        LOGC(pflog.Error, log << "FEC filter config: parameter 'cols' is mandatory");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
+
+    int out_rows = 1;
+    int out_cols = atoi(colspec.c_str());
 
     m_number_cols = out_cols;
 
     if (rowspec != "")
     {
         out_rows = atoi(rowspec.c_str());
-        if (out_rows >= -1 && out_rows < 1)
-        {
-            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'rows' must be >=1 or negative < -1");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
     }
 
     if (out_rows < 0)
@@ -113,20 +199,16 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
                 break;
             }
         }
+    }
 
-        if (lv == -1)
-        {
-            LOGC(pflog.Error, log << "FILTER/FEC: CONFIG: 'arq': value '" << level << "' unknown");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
+    if (lv != -1)
+    {
         m_fallback_level = SRT_ARQLevel(lv);
     }
     else
     {
         m_fallback_level = SRT_ARQ_ONREQ;
     }
-
 
     // Required to store in the header when rebuilding
     rcv.id = socketID();
@@ -371,7 +453,9 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
             << " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
-    if (vert_off >= 0 && sizeCol() > 1)
+    // [[assert sizeCol() >= 2]]; // see the condition above.
+
+    if (vert_off >= 0)
     {
         // BEWARE! X % Y with different signedness upgrades int to unsigned!
 
@@ -386,7 +470,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        SRT_ASSERT(vert_off >= 0);
+        // [[assert vert_off >= 0]]; // this condition branch
         int vert_pos = vert_off / int(sizeRow());
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
@@ -414,7 +498,6 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     }
     else
     {
-
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[col=" << vert_gx << "]<NO-COLUMN>"
@@ -522,8 +605,8 @@ void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
     }
 
     // Fill the rest with zeros. When this packet is going to be
-    // recovered, the payload extraced from this process will have
-    // the maximum lenght, but it will be cut to the right length
+    // recovered, the payload extracted from this process will have
+    // the maximum length, but it will be cut to the right length
     // and these padding 0s taken out.
     for (size_t i = payload_size; i < payloadSize(); ++i)
         g.payload_clip[i] = g.payload_clip[i] ^ 0;
@@ -1037,11 +1120,11 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, size_t 
     }
 
     // Ok, we have some empty cells, so just adjust to the start of a row.
-	size_t bstep = i % row_size;
-	if (i < bstep)  // you never know...
-		i = 0;
-	else
-		i -= bstep;
+    size_t bstep = i % row_size;
+    if (i < bstep)  // you never know...
+        i = 0;
+    else
+        i -= bstep;
     
     for ( ; i < cells.size(); i += row_size )
     {
@@ -1390,8 +1473,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     if (tp == Group::SINGLE)
         return;
 
-    // This flips HORIZ/VERT
-    Group::Type crosstype = Group::Type(!tp);
+    Group::Type crosstype = Group::FlipType(tp);
     EHangStatus stat;
 
     if (crosstype == Group::HORIZ)
@@ -1947,7 +2029,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         any_dismiss = true;
 
         const int32_t newbase = rcv.colq[numberCols()].base;
-        int32_t newbase_row ATR_UNUSED; // For logging only, but including FATAL.
+        int32_t newbase_row SRT_ATR_UNUSED; // For logging only, but including FATAL.
         // Sanity check
         // If sanity check failed OR if the number of existing row
         // groups doesn't enclose those that need to be dismissed,
@@ -2476,3 +2558,5 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
 
     return colgx;
 }
+
+} // namespace srt
