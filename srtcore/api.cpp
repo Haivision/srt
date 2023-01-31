@@ -2862,14 +2862,14 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
 {
     if (!cfgMuxer.bReuseAddr)
     {
-        HLOGP(smlog.Debug, "channel settings match: fail: the multiplexer is not reusable");
+        HLOGP(smlog.Debug, "channelSettingsMatch: fail: the multiplexer is not reusable");
         return false;
     }
 
-    if (cfgMuxer == cfgSocket)
+    if (cfgMuxer.isCompatWith(cfgSocket))
         return true;
 
-    HLOGP(smlog.Debug, "channel settings match: fail: some options have different values");
+    HLOGP(smlog.Debug, "channelSettingsMatch: fail: some options have different values");
     return false;
 }
 

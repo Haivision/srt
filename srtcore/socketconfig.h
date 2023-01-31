@@ -93,7 +93,7 @@ struct CSrtMuxerConfig
 
     // NOTE: this operator is not reversable. The syntax must use:
     //  muxer_entry == socket_entry
-    bool operator==(const CSrtMuxerConfig& other) const
+    bool isCompatWith(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(iIpTTL)
