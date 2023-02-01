@@ -413,7 +413,17 @@ If none of the free, side and shared binding options is currently possible, this
 will fail. If the socket blocking the requested endpoint is an SRT
 socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
 while if it was another socket in the system, or the problem was in the system
-in general, it will report `SRT_ESOCKFAIL`.
+in general, it will report `SRT_ESOCKFAIL`. Here is the table that shows possible situations:
+
+| Address in srt_bind | Result for attempted binding |           |                             |               |               |
+|---------------------|------------------------------|-----------|-----------------------------|---------------|---------------|
+| Bind address        | A.B.C.D                      | 0.0.0.0   | ::X                         | :: / V6ONLY=1 | :: / V6ONLY=0 |
+| 1.2.3.4             | 1.2.3.4 shareable, else free | blocked   | free                        | free          | blocked       |
+| 0.0.0.0             | blocked                      | shareable | free                        | free          | blocked       |
+| 8080::1             | free                         | free      | 8080::1 sharable, else free | blocked       | blocked       |
+| :: / V6ONLY=1       | free                         | free      | blocked                     | sharable      | blocked       |
+| :: / V6ONLY=0       | blocked                      | blocked   | blocked                     | blocked       | sharable      |
+
 
 **NOTE**: This function cannot be called on a socket group. If you need to
 have the group-member socket bound to the specified source address before
