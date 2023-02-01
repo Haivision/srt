@@ -2839,7 +2839,7 @@ uint16_t srt::CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
     return sa.hport();
 }
 
-bool srt::CUDTUnited::inet6SettingsCorrect(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
+bool srt::CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket)
 {
     if (muxaddr.family() != AF_INET6)
@@ -3077,7 +3077,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             if (reuse_attempt)
             {
                 //   - if the channel settings match, it can be reused
-                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCompact(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
+                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCompat(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
                 {
                     HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
                     // reuse the existing multiplexer
