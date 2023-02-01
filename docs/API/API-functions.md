@@ -362,32 +362,32 @@ address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
 it's bound to all interfaces (although see `SRTO_IPV6ONLY` and additional
 information below for details about the wildcard address in IPv6).
 
-Binding is necessary for every socket to be used for communication. It can be
-bound implicitly, when the socket is being connected to a listening socket in
-the network using [`srt_connect`](#srt_connect) or a similar function that does
-the same, in which case the socket will be bound to a wildcard address of
-the IP version as specified in the `sockaddr::sa_family` field and port number
-0.  In other cases it must be bound explicitly using this function, or some
-other function that uses this functionality.
+Binding is necessary for every socket to be used for communication. If the socket
+is to be used to initiate a connection to a listener socket, which can be done,
+for example, by the [`srt_connect`](#srt_connect) function, the socket is bound
+implicitly to the wildcard address according to the IP family (`INADDR_ANY` for
+`AF_INET` or `in6addr_any` for `AF_INET6`) and port number 0. In all other cases,
+a socket must be bound explicitly by using the functionality of this function first.
 
-When the port number is 0 (including the implicit binding case), then the port
-number will be system-allocated and can be determined after an explicit or
-implicit binding using [`srt_getsockname`](#srt_getsockname).
+When the port number parameter is 0, then the effective port number will be
+system-allocated. To obtain this effective port number you can use
+[`srt_getsockname`](#srt_getsockname).
 
 This call is obligatory for a listening socket before calling [`srt_listen`](#srt_listen)
 and for rendezvous mode before calling [`srt_connect`](#srt_connect); otherwise it's 
 optional. For a listening socket it defines the network interface and the port where 
 the listener should expect a call request.
 
-In the case of rendezvous mode there's a pair of two endpoints (address-and-port
-specifications), let's name them A and B, and for both parties one endpoint is
-local and the other is remote one. The party, for which the A's address is
-local, should bind to the A address, and then connect to the B endpoint, and the
-other party the other way around. Both sockets must be set
+In the case of rendezvous mode there are two parties that connect to one another. 
+For every party there must be chosen a local binding endpoint (local address and port)
+to which they expect connection from the peer. Let's say, we have a Party 1
+that selects an endpoint A and a Party 2 that selects an endpoint B. In this case the Party 1
+binds the socket to the endpoint A and then connects to the endpoint B, and the Party 2
+the other way around. Both sockets must be set
 [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to *true* to make
 this connection possible.
 
-For a connecting socket this call is optional, but can be used to set up the
+For a connecting socket the call to `srt_bind` is optional, but can be used to set up the
 outgoing port for communication as well as the local interface through which
 it should reach out to the remote endpoint, should that be necessary.
 
