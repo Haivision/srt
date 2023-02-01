@@ -652,7 +652,7 @@ before binding, otherwise binding will fail (this is because it is not possible 
 determine the default value of this above-mentioned system option in any portable or
 reliable way). Possible values are:
 
-* -1: default, which can be used in cases not affected by this flag
+* -1: (default) use system-default value (can be used when not binding to IPv6 wildcard `::`)
 * 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
 * 1: The binding to `in6addr_any` will bind only to IPv6 and not IPv4 wildcard address
 
