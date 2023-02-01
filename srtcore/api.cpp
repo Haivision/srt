@@ -469,7 +469,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
 }
 
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, bool lateremove)
+void srt::CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, CUDTUnited::SwipeSocketTerm lateremove)
 {
     m_ClosedSockets[id] = s;
     if (!lateremove)
@@ -835,7 +835,7 @@ ERR_ROLLBACK:
                 ns->removeFromGroup(true);
             }
 #endif
-            swipeSocket_LOCKED(id, ns);
+            swipeSocket_LOCKED(id, ns, SWIPE_NOW);
         }
 
         return -1;
@@ -2028,7 +2028,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         }
 #endif
 
-        swipeSocket_LOCKED(s->m_SocketID, s);
+        swipeSocket_LOCKED(s->m_SocketID, s, SWIPE_NOW);
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
         CGlobEvent::triggerEvent();
@@ -2629,9 +2629,10 @@ void srt::CUDTUnited::checkBrokenSockets()
 
         // close broken connections and start removal timer
         s->setClosed();
-        // NOTE: removal from m_Sockets POSTPONED in tbc.
         tbc.push_back(i->first);
-        swipeSocket_LOCKED(i->first, s, true);
+
+        // NOTE: removal from m_SocketID POSTPONED.
+        swipeSocket_LOCKED(i->first, s, SWIPE_LATER);
 
         // remove from listener's queue
         sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
@@ -2744,7 +2745,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
             CUDTSocket* as = si->second;
 
             as->breakSocket_LOCKED();
-            swipeSocket_LOCKED(*q, as);
+            swipeSocket_LOCKED(*q, as, SWIPE_NOW);
         }
     }
 
@@ -3148,7 +3149,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
            // NOTE: not removing the socket from m_Sockets.
            // This is a loop over m_Sockets and after this loop ends,
            // this whole container will be cleared.
-           self->swipeSocket_LOCKED(i->first, s, true);
+           self->swipeSocket_LOCKED(i->first, s, self->SWIPE_LATER);
 
             // remove from listener's queue
             sockets_t::iterator ls = self->m_Sockets.find(s->m_ListenSocket);

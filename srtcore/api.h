@@ -256,13 +256,14 @@ public:
     /// @return The new UDT socket ID, or INVALID_SOCK.
     SRTSOCKET newSocket(CUDTSocket** pps = NULL);
 
-   /// Removes the socket from the global socket container
-   /// and place it in the socket trashcan. The socket should
-   /// remain there until all still pending activities are
-   /// finished and there are no more users of this socket.
-   /// Note that the swiped socket is no longer dispatchable
-   /// by id.
-   void swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, bool lateremove = false);
+    enum SwipeSocketTerm { SWIPE_LATER, SWIPE_NOW };
+    /// Removes the socket from the global socket container
+    /// and place it in the socket trashcan. The socket should
+    /// remain there until all still pending activities are
+    /// finished and there are no more users of this socket.
+    /// Note that the swiped socket is no longer dispatchable
+    /// by id.
+    void swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, SwipeSocketTerm);
 
     /// Create (listener-side) a new socket associated with the incoming connection request.
     /// @param [in] listen the listening socket ID.
