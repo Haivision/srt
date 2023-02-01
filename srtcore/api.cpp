@@ -2889,7 +2889,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         const int         port      = reqaddr.hport();
         const CSrtConfig& cfgSocket = s->core().m_config;
 
-        // This loop is going to check the attepted binding of
+        // This loop is going to check the attempted binding of
         // address:port and socket settings against every existing
         // multiplexer. Possible results of the check are:
 
@@ -3077,7 +3077,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             if (reuse_attempt)
             {
                 //   - if the channel settings match, it can be reused
-                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCorrect(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
+                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCompact(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
                 {
                     HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
                     // reuse the existing multiplexer

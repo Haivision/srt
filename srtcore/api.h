@@ -456,7 +456,7 @@ private:
     /// @param cfgSocket socket configuration.
     /// @return tru if configurations match, false otherwise.
     static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
-    static bool inet6SettingsCorrect(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
+    static bool inet6SettingsCompact(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);
 
 private:
