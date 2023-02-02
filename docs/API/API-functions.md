@@ -358,27 +358,96 @@ int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 
 Binds a socket to a local address and port. Binding specifies the local network
 interface and the UDP port number to be used for the socket. When the local 
-address is a form of `INADDR_ANY`, then it's bound to all interfaces. When the 
-port number is 0, then the port number will be system-allocated if necessary.
+address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
+it's bound to all interfaces (although see `SRTO_IPV6ONLY` and additional
+information below for details about the wildcard address in IPv6).
+
+Binding is necessary for every socket to be used for communication. If the socket
+is to be used to initiate a connection to a listener socket, which can be done,
+for example, by the [`srt_connect`](#srt_connect) function, the socket is bound
+implicitly to the wildcard address according to the IP family (`INADDR_ANY` for
+`AF_INET` or `in6addr_any` for `AF_INET6`) and port number 0. In all other cases,
+a socket must be bound explicitly by using the functionality of this function first.
+
+When the port number parameter is 0, then the effective port number will be
+system-allocated. To obtain this effective port number you can use
+[`srt_getsockname`](#srt_getsockname).
 
 This call is obligatory for a listening socket before calling [`srt_listen`](#srt_listen)
 and for rendezvous mode before calling [`srt_connect`](#srt_connect); otherwise it's 
 optional. For a listening socket it defines the network interface and the port where 
-the listener should expect a call request. In the case of rendezvous mode (when the
-socket has set [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to 
-true both parties connect to one another) it defines the network interface and port 
-from which packets will be sent to the peer, and the port to which the peer is 
-expected to send packets.
+the listener should expect a call request.
 
-For a connecting socket this call can set up the outgoing port to be used in the 
-communication. It is allowed that multiple SRT sockets share one local outgoing 
-port, as long as [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) 
-is set to *true* (default). Without this call the port will be automatically 
-selected by the system.
+In the case of rendezvous mode there are two parties that connect to one another. 
+For every party there must be chosen a local binding endpoint (local address and port)
+to which they expect connection from the peer. Let's say, we have a Party 1
+that selects an endpoint A and a Party 2 that selects an endpoint B. In this case the Party 1
+binds the socket to the endpoint A and then connects to the endpoint B, and the Party 2
+the other way around. Both sockets must be set
+[`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) to *true* to make
+this connection possible.
+
+For a connecting socket the call to `srt_bind` is optional, but can be used to set up the
+outgoing port for communication as well as the local interface through which
+it should reach out to the remote endpoint, should that be necessary.
+
+Whether binding is possible depends on some runtime conditions, in particular:
+
+* No socket in the system has been bound to this port ("free binding"), or
+
+* A socket bound to this port is bound to a certain address, and this binding is
+  using a different non-wildcard address ("side binding"), or
+
+* A socket bound to this port is bound to a wildcard address for a different IP
+  version than the version requested for this binding ("side wildcard binding",
+  see also `SRTO_IPV6ONLY` socket option).
+
+It is also possible to bind to the already busy port as long as the existing
+binding ("shared binding") is possessed by an SRT socket created in the same
+application, and:
+
+* Its binding address and UDP-related socket options match the socket to be bound.
+* Its [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to *true* (default).
+
+If none of the free, side and shared binding options is currently possible, this function
+will fail. If the socket blocking the requested endpoint is an SRT
+socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
+while if it was another socket in the system, or the problem was in the system
+in general, it will report `SRT_ESOCKFAIL`. Here is the table that shows possible situations:
+
+| Requested binding   | vs. Existing bindings...     |           |                             |               |               |
+|---------------------|------------------------------|-----------|-----------------------------|---------------|---------------|
+|                     | A.B.C.D                      | 0.0.0.0   | ::X                         | :: / V6ONLY=1 | :: / V6ONLY=0 |
+| 1.2.3.4             | 1.2.3.4 shareable, else free | blocked   | free                        | free          | blocked       |
+| 0.0.0.0             | blocked                      | shareable | free                        | free          | blocked       |
+| 8080::1             | free                         | free      | 8080::1 sharable, else free | blocked       | blocked       |
+| :: / V6ONLY=1       | free                         | free      | blocked                     | sharable      | blocked       |
+| :: / V6ONLY=0       | blocked                      | blocked   | blocked                     | blocked       | sharable      |
+Where:
+* free: This binding can coexist with the requested binding.
+* blocked: This binding conflicts with the requested binding.
+* shareable: This binding can be shared with the requested binding if it's compatible.
+* (ADDRESS) shareable, else free: this binding is shareable if the requested binding address is
+equal to the given one. Otherwise it's free.
+If the binding is shareable, then the operation will succeed if the socket that currently
+occupies the binding has the `SRTO_REUSEADDR` option set to true (default) and all UDP
+settings are the same as in the current socket. Otherwise it will fail. Shared binding means
+sharing the underlying UDP socket and communication queues between SRT sockets. If
+all existing bindings on the same port are "free" then the requested binding will
+allocate a distinct UDP socket for this SRT socket ("side binding").
+
 
 **NOTE**: This function cannot be called on a socket group. If you need to
 have the group-member socket bound to the specified source address before
-connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
+connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose
+or set the appropriate source address using
+[`srt_prepare_endpoint`](#srt_prepare_endpoint).
+
+**IMPORTANT information about IPv6**: If you are going to bind to the
+`in6addr_any` IPv6 wildcard address (known as `::`), the `SRTO_IPV6ONLY`
+option must be first set explicitly to 0 or 1, otherwise the binding
+will fail. In all other cases this option is meaningless. See `SRTO_IPV6ONLY`
+option for more information.
 
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
@@ -389,6 +458,7 @@ connecting, use [`srt_connect_bind`](#srt_connect_bind) for that purpose.
 |:---------------------------------------- |:-------------------------------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock)          | Socket passed as [`u`](#u) designates no valid socket                |
 | [`SRT_EINVOP`](#srt_einvop)              | Socket already bound                                                 |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `name`/`namelen` or invalid `SRTO_IPV6ONLY` flag in `u`      |
 | [`SRT_ECONNSETUP`](#srt_econnsetup)      | Internal creation of a UDP socket failed                             |
 | [`SRT_ESOCKFAIL`](#srt_esockfail)        | Internal configuration of a UDP socket (`bind`, `setsockopt`) failed |
 | [`SRT_EBINDCONFLICT`](#srt_ebindconflict)| Binding specification conflicts with existing one                    |
