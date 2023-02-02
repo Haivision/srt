@@ -415,14 +415,26 @@ socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
 while if it was another socket in the system, or the problem was in the system
 in general, it will report `SRT_ESOCKFAIL`. Here is the table that shows possible situations:
 
-| Address in srt_bind | Result for attempted binding |           |                             |               |               |
+| Requested binding   | vs. Existing bindings...     |           |                             |               |               |
 |---------------------|------------------------------|-----------|-----------------------------|---------------|---------------|
-| Bind address        | A.B.C.D                      | 0.0.0.0   | ::X                         | :: / V6ONLY=1 | :: / V6ONLY=0 |
+|                     | A.B.C.D                      | 0.0.0.0   | ::X                         | :: / V6ONLY=1 | :: / V6ONLY=0 |
 | 1.2.3.4             | 1.2.3.4 shareable, else free | blocked   | free                        | free          | blocked       |
 | 0.0.0.0             | blocked                      | shareable | free                        | free          | blocked       |
 | 8080::1             | free                         | free      | 8080::1 sharable, else free | blocked       | blocked       |
 | :: / V6ONLY=1       | free                         | free      | blocked                     | sharable      | blocked       |
 | :: / V6ONLY=0       | blocked                      | blocked   | blocked                     | blocked       | sharable      |
+Where:
+* free: This binding can coexist with the requested binding.
+* blocked: This binding conflicts with the requested binding.
+* shareable: This binding can be shared with the requested binding if it's compatible.
+* (ADDRESS) shareable, else free: this binding is shareable if the requested binding address is
+equal to the given one. Otherwise it's free.
+If the binding is shareable, then the operation will succeed if the socket that currently
+occupies the binding has the `SRTO_REUSEADDR` option set to true (default) and all UDP
+settings are the same as in the current socket. Otherwise it will fail. Shared binding means
+sharing the underlying UDP socket and communication queues between SRT sockets. If
+all existing bindings on the same port are "free" then the requested binding will
+allocate a distinct UDP socket for this SRT socket ("side binding").
 
 
 **NOTE**: This function cannot be called on a socket group. If you need to
