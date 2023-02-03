@@ -423,19 +423,24 @@ in general, it will report `SRT_ESOCKFAIL`. Here is the table that shows possibl
 | 8080::1             | free                         | free      | 8080::1 sharable, else free | blocked       | blocked       |
 | :: / V6ONLY=1       | free                         | free      | blocked                     | sharable      | blocked       |
 | :: / V6ONLY=0       | blocked                      | blocked   | blocked                     | blocked       | sharable      |
+
 Where:
+
 * free: This binding can coexist with the requested binding.
+
 * blocked: This binding conflicts with the requested binding.
+
 * shareable: This binding can be shared with the requested binding if it's compatible.
-* (ADDRESS) shareable, else free: this binding is shareable if the requested binding address is
-equal to the given one. Otherwise it's free.
+
+* (ADDRESS) shareable, else free: this binding is shareable if the existing binding address is
+equal to the requested ADDRESS. Otherwise it's free.
+
 If the binding is shareable, then the operation will succeed if the socket that currently
 occupies the binding has the `SRTO_REUSEADDR` option set to true (default) and all UDP
 settings are the same as in the current socket. Otherwise it will fail. Shared binding means
 sharing the underlying UDP socket and communication queues between SRT sockets. If
 all existing bindings on the same port are "free" then the requested binding will
 allocate a distinct UDP socket for this SRT socket ("side binding").
-
 
 **NOTE**: This function cannot be called on a socket group. If you need to
 have the group-member socket bound to the specified source address before
