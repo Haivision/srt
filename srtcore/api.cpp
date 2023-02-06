@@ -2120,6 +2120,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
     ...
     }
     */
+    CSync::notify_one_relaxed(m_GCStopCond);
 
     return 0;
 }
