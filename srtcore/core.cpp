@@ -9893,7 +9893,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
                     const steady_clock::time_point tnow = steady_clock::now();
+                    ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
+                    m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                     if (m_tsLogSlowDown + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS) <= tnow)
                     {
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
