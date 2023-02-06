@@ -204,6 +204,16 @@ else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
 endif()
 
+# Reduce the frequency of some frequent logs, milliseconds
+set(SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT 1000) # 1s
+if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
+	if (ENABLE_HEAVY_LOGGING)
+		set(SRT_LOG_SLOWDOWN_FREQ_MS 0) # Just show every log message.
+	else()
+		set(SRT_LOG_SLOWDOWN_FREQ_MS ${SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT})
+	endif()
+endif()
+
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
@@ -1066,6 +1076,8 @@ target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
 endif()
+
+target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
 
 if (srt_libspec_shared)
 	if (MICROSOFT)

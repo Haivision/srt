@@ -846,6 +846,8 @@ private: // Timers
 
     time_point m_tsNextSendTime;                 // Scheduled time of next packet sending
 
+    time_point m_tsLogSlowDown;                  // Reduce the frequency of some frequent logs. Currently only decryption failure log is slown down. No mutex needed.
+
     sync::atomic<int32_t> m_iSndLastFullAck;     // Last full ACK received
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndLastAck;         // Last ACK received
