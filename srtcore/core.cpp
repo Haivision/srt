@@ -9897,17 +9897,16 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                         << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");
 #endif
 
+                    const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
-#if !ENABLE_HEAVY_LOGGING
-                    if (!m_stats.rcvr.undecrypted.trace.count())
-                    {
-                        // Reduce log frequency.
-                        LOGC(qrlog.Error, log << CONID() << "Packet decryption failure, in total " << 1 + m_stats.rcvr.undecrypted.total.count()
-                            << " pkts undecrypted. Silencing the log.");
-                    }
-#endif
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                    if (m_tsLogSlowDown + seconds_from(1) <= tnow)
+                    {
+                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "). pktRcvUndecryptTotal="
+                            << m_stats.rcvr.undecrypted.total.count() << ".");
+                        m_tsLogSlowDown = tnow;
+                    }
                 }
             }
         }
