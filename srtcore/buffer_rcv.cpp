@@ -206,6 +206,47 @@ int CRcvBuffer::insert(CUnit* unit)
     return 0;
 }
 
+int CRcvBuffer::erase(int32_t seqno)
+{
+    const int end_pos = incPos(m_iStartPos, m_iMaxPosOff);
+    // Drop by packet seqno range.
+    const int offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
+    if (offset < 0)
+    {
+        LOGC(rbuflog.Debug, log << "CRcvBuffer.erase(): nothing to erase. Requested @" << seqno
+            << ". Buffer start " << m_iStartSeqNo << ".");
+        return 0;
+    }
+
+    const int pos = incPos(m_iStartPos, offset);
+    if (!m_entries[pos].pUnit)
+        return 0;
+
+    const bool bMsgOrderFlag = packetAt(pos).getMsgOrderFlag();
+    releaseUnitInPos(pos);
+
+    if (m_bMessageAPI && !bMsgOrderFlag && !m_tsbpd.isEnabled())
+    {
+        --m_numOutOfOrderPackets;
+        if (pos == m_iFirstReadableOutOfOrder) {
+            m_iFirstReadableOutOfOrder = -1;
+            updateFirstReadableOutOfOrder();
+        }
+    }
+
+    HLOGC(rbuflog.Debug, log << "CRcvBuffer.erase(): @" << seqno << ".");
+
+    // Check if a unit before m_iFirstNonreadPos was erased.
+    const bool needUpdateNonreadPos = offset <= getRcvDataSize();
+    if (needUpdateNonreadPos)
+    {
+        m_iFirstNonreadPos = m_iStartPos;
+        updateNonreadPos();
+    }
+
+    return 1;
+}
+
 int CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);

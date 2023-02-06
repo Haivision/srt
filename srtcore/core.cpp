@@ -9850,7 +9850,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
-        int buffer_add_result = m_pRcvBuffer->insert(u);
+        const int buffer_add_result = m_pRcvBuffer->insert(u);
         if (buffer_add_result < 0)
         {
             // The insert() result is -1 if at the position evaluated from this packet's
@@ -9878,17 +9878,16 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                    // Drop a packet from the receiver buffer.
-                    // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                    // Otherwise just drop the exact packet.
-                    const int iDropCnt = (m_config.bMessageAPI)
-                        ? m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag))
-                        : m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    // Erase the packet from the receiver buffer.
+                    // In message mode the whole message could be dropped.
+                    // However, when decryption fails the message number in the packet cannot be trusted.
+                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to erase it from the buffer.
+                    // TODO: Erasing the packet means it has to be added back to the loss list.
+                    const int iEraseCnt = m_pRcvBuffer->erase(u->m_Packet.getSeqNo());
 
                     LOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
-                        << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");
+                        << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ".");
                     ScopedLock lg(m_StatsLock);
-                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                 }
             }

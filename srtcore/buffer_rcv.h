@@ -64,6 +64,12 @@ public:
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
+    /// Erase a packet from the buffer based on the packet sequence number.
+    /// The entry is marked EntryState_Empty. The CUnit is marked free.
+    /// @param seqno packet sequence number.
+    /// @return the number of packets erased.
+    int erase(int32_t seqno);
+
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return  number of dropped packets.
