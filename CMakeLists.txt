@@ -1423,6 +1423,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 
 	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
+	srt_set_stdcxx(test-srt "14")
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 
 	target_link_libraries(
