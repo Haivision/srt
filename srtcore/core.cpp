@@ -10750,20 +10750,23 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     // See issue ##2626.
                     SRT_ASSERT(m_bTsbPd);
 
-                    // Drop the packet from the receiver buffer.
-                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
-                    // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
-                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+                    // Erase the packet from the receiver buffer, rather than dropping it.
+                    // Dropping marks the buffer slot as dropped, which would prevent a valid packet
+                    // with the same sequence number, if it happens to arrive later, from ending up
+                    // in the buffer. Erasing leaves the slot fillable.
+                    // The packet was added to the buffer based on the sequence number, therefore the
+                    // sequence number is used to erase it from the buffer.
+                    // TODO: Erasing the packet means it has to be added back to the loss list.
+                    const int iEraseCnt = m_pRcvBuffer->erase(u->m_Packet.getSeqNo());
 
                     const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
-                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                     string why;
                     if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                     {
-                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
+                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), erased "
+                            << iEraseCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                     }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
                     else
