@@ -428,8 +428,9 @@ void shutdownListener(SRTSOCKET bindsock)
     EXPECT_NE(srt_setsockopt(bindsock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
     EXPECT_NE(srt_close(bindsock), SRT_ERROR);
 
-    std::chrono::milliseconds check_period (250);
+    std::chrono::milliseconds check_period (100);
     int credit = 400; // 10 seconds
+    auto then = std::chrono::steady_clock::now();
 
     std::cout << "[T/S] waiting for cleanup of @" << bindsock << " up to 10s" << std::endl;
     while (srt_getsockstate(bindsock) != SRTS_NONEXIST)
@@ -438,10 +439,15 @@ void shutdownListener(SRTSOCKET bindsock)
         --credit;
         if (!credit)
             break;
-
-        //std::cerr << ".";
     }
-    //std::cerr << std::endl;
+    auto now = std::chrono::steady_clock::now();
+    auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(now - then);
+
+    // Keep as single string because this tends to be mixed from 2 threads.
+    std::ostringstream sout;
+    sout << "[T/S] @" << bindsock << " dissolved after "
+        << (dur.count() / 1000.0) << "s" << std::endl;
+    std::cout << sout.str() << std::flush;
 
     EXPECT_NE(credit, 0);
 }

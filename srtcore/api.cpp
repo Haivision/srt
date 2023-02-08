@@ -1990,12 +1990,14 @@ int srt::CUDTUnited::close(CUDTSocket* s)
 
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
+        s->m_Status = SRTS_CLOSING;
 
         // broadcast all "accept" waiting
         CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
     }
     else
     {
+        s->m_Status = SRTS_CLOSING;
         // Note: this call may be done on a socket that hasn't finished
         // sending all packets scheduled for sending, which means, this call
         // may block INDEFINITELY. As long as it's acceptable to block the
@@ -2118,6 +2120,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
     ...
     }
     */
+    CSync::notify_one_relaxed(m_GCStopCond);
 
     return 0;
 }
