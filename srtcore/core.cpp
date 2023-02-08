@@ -2659,7 +2659,14 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, HS_VERSION_SRT1);
                 if (m_config.bEnforcedEnc && res == -1)
                 {
-                    m_RejectReason = SRT_REJ_UNSECURE;
+                    if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)
+                        m_RejectReason = SRT_REJ_BADSECRET;
+#ifdef ENABLE_AEAD_API_PREVIEW
+                    else if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADCRYPTOMODE)
+                        m_RejectReason = SRT_REJ_CRYPTO;
+#endif
+                    else
+                        m_RejectReason = SRT_REJ_UNSECURE;
                     LOGC(cnlog.Error,
                          log << CONID() << "KMRSP failed - rejecting connection as per enforced encryption.");
                     return false;
@@ -9722,7 +9729,7 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 #if ENABLE_HEAVY_LOGGING
         std::ostringstream tns1, tns2;
         // Take the last 2 ciphers from the socket ID.
-        tns1 << m_SocketID;
+        tns1 << setfill('0') << setw(2) << m_SocketID;
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = tns2.str();
@@ -9843,7 +9850,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
-        int buffer_add_result = m_pRcvBuffer->insert(u);
+        const int buffer_add_result = m_pRcvBuffer->insert(u);
         if (buffer_add_result < 0)
         {
             // The insert() result is -1 if at the position evaluated from this packet's
@@ -9871,12 +9878,19 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     adding_successful = false;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
-                    // Drop a packet from the receiver buffer.
-                    // Dropping depends on the configuration mode. If message mode is enabled, we have to drop the whole message.
-                    // Otherwise just drop the exact packet.
-                    const int iDropCnt = (m_config.bMessageAPI)
-                        ? m_pRcvBuffer->dropMessage(SRT_SEQNO_NONE, SRT_SEQNO_NONE, u->m_Packet.getMsgSeq(m_bPeerRexmitFlag))
-                        : m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    // If TSBPD is disabled, then SRT either operates in buffer mode, of in message API without a restriction
+                    // of a single message packet. In that case just dropping a packet is not enough.
+                    // In message mode the whole message has to be dropped.
+                    // However, when decryption fails the message number in the packet cannot be trusted.
+                    // The packet has to be removed from the RCV buffer based on that pkt sequence number,
+                    // and the sequence number itself must go into the RCV loss list.
+                    // See issue ##2626.
+                    SRT_ASSERT(m_bTsbPd);
+
+                    // Drop the packet from the receiver buffer.
+                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
+                    // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
+                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
                     LOGC(qrlog.Warn, log << CONID() << "Decryption failed. Seqno %" << u->m_Packet.getSeqNo()
                         << ", msgno " << u->m_Packet.getMsgSeq(m_bPeerRexmitFlag) << ". Dropping " << iDropCnt << ".");

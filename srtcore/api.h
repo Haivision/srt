@@ -456,6 +456,8 @@ private:
     /// @param cfgSocket socket configuration.
     /// @return tru if configurations match, false otherwise.
     static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
+    static bool inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
+        const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);
 
 private:
     std::map<int, CMultiplexer> m_mMultiplexer; // UDP multiplexer
