@@ -62,14 +62,18 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	||  (NULL == out_p)
 	||  (NULL == out_len_p)) {
 		HCRYPT_LOG(LOG_ERR, "ManageKeys: invalid params: crypto=%p out_p=%p out_len_p=%p\n",
-                                                         crypto,   out_p,   out_len_p);
+				crypto, out_p, out_len_p);
 		return(-1);
 	}
 
 	/* Manage Key Material (refresh, announce, decommission) */
 	hcryptCtx_Tx_ManageKM(crypto);
 
-	ASSERT(crypto->ctx && crypto->ctx->status == HCRYPT_CTX_S_ACTIVE);
+	if (NULL == crypto->ctx) {
+		HCRYPT_LOG(LOG_ERR, "%s", "crypto context NULL after ManageKM call\n");
+		return(-1);
+	}
+	ASSERT(crypto->ctx->status == HCRYPT_CTX_S_ACTIVE);
 
 	nbout = hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
 	return(nbout);
