@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Configure
-        run: cmake . --debug-trycompile -DENABLE_HEAVY_LOGGING=1 -DENABLE_BONDING=1
+        run: cmake -DENABLE_HEAVY_LOGGING=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-fpermissive -DENABLE_BONDING=1 .        
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
@@ -35,7 +35,6 @@ jobs:
 
       - name: Build
         run: |
-          cmake --debug-trycompile -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-fpermissive -DENABLE_BONDING=ON .
           make
 
       - name: Perform CodeQL Analysis
