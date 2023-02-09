@@ -40,7 +40,7 @@ Option details are given further below.
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
 | [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address.                                              |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors.                                                                                                            |
-| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON\*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
+| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON\*       | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).                                                                      |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
@@ -57,6 +57,7 @@ Option details are given further below.
 | [`PKG_CONFIG_EXECUTABLE`](#pkg_config_executable)            | 1.3.0 | `BOOL`    | OFF        | Configures the path to the `pkg-config` tool.                                                                                                        |
 | [`PTHREAD_INCLUDE_DIR`](#pthread_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for a `pthread` library.                                                                                        |
 | [`PTHREAD_LIBRARY`](#pthread_library)                        | 1.3.0 | `STRING`  | OFF        | Configures the path to a `pthread` library.                                                                                                          |
+| [`SRT_LOG_SLOWDOWN_FREQ_MS`](#SRT_LOG_SLOWDOWN_FREQ_MS)      | 1.5.2 | `INT`     | 1000\*     | Reduce the frequency of some frequent logs, milliseconds.                                                                                            |
 | [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load.                                                                      |
 | [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling.                                                                          |
 | [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`).                                                         |
@@ -545,6 +546,14 @@ in the system.
 **`--pthread-library=<filepath>`**
 
 Used to configure the path to a `pthread` library.
+
+
+#### SRT_LOG_SLOWDOWN_FREQ_MS
+**`--srt-log-slowdown-freq-ms=<ms>`** (DEFAULT 1000 ms; or 0 ms if `ENABLE_HEAVY_LOGGING`)
+
+Reduce the frequency of some frequent logs, milliseconds.
+
+- Decryption failure warning message (`SRT_LOGFA_QUE_RECV`).
 
 
 #### USE_BUSY_WAITING

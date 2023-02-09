@@ -897,6 +897,15 @@ private: // Timers
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
+    time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
+                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
+
+    /// @brief Check if a frequent log can be shown.
+    /// @param tnow current time
+    /// @return true if it is ok to print a frequent log message.
+    bool frequentLogAllowed(const time_point& tnow) const;
+
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
