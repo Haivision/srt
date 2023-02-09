@@ -61,7 +61,11 @@ std::string KmStateStr(SRT_KM_STATE state)
     default:
         {
             char buf[256];
-            sprintf(buf, "??? (%d)", state);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+            _snprintf(buf, sizeof(buf) - 1, "??? (%d)", state);
+#else
+            snprintf(buf, sizeof(buf), "??? (%d)", state);
+#endif
             return buf;
         }
     }

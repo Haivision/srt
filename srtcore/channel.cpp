@@ -770,7 +770,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     }
     mh.msg_flags      = 0;
 
-    const int res = ::sendmsg(m_iSocket, &mh, 0);
+    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
@@ -837,7 +837,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 
         mh.msg_flags      = 0;
 
-        recv_size = ::recvmsg(m_iSocket, (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
