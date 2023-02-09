@@ -74,14 +74,24 @@ public:
     /// @return the number of dropped packets.
     int dropAll();
 
+    enum DropActionIfExists {
+        DROP_EXISTING = 0,
+        KEEP_EXISTING = 1
+    };
+
     /// @brief Drop the whole message from the buffer.
+    /// If message number is valid, sender has requested to drop the whole message by TTL.
     /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
+    /// A packedt should be dropped only if it is not a SOLO packet or if it does not exist in the buffer. Set bKeepExisting = true.
+    /// This is done to avoid dropping existing packet due to a sender trying to re-transmit a packet from outdated loss report,
+    /// which is already not available in the SND buffer.
     /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
+    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
-    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
+    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
     /// Read the whole message from one or several packets.
     ///

@@ -268,6 +268,19 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
+TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
+{
+    // Add one packet with a gap.
+    EXPECT_EQ(addMessage(1, CSeqNo::incseq(m_init_seqno)), 0);
+
+    auto& rcv_buffer = *m_rcv_buffer.get();
+    EXPECT_FALSE(hasAvailablePackets());
+    EXPECT_FALSE(rcv_buffer.isRcvDataReady());
+
+    EXPECT_EQ(rcv_buffer.dropMessage(m_init_seqno, m_init_seqno, SRT_MSGNO_NONE, CRcvBuffer::KEEP_EXISTING), 0);
+    EXPECT_EQ(rcv_buffer.dropMessage(m_init_seqno, m_init_seqno, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 1);
+}
+
 // Add one packet to the buffer and read it once it is acknowledged.
 // Confirm the data read is valid.
 // Don't allow to add packet with the same sequence number.
