@@ -3,16 +3,15 @@
 echo_help()
 {
   echo "Usage: $0 [options...]"
-  echo "    -n    Specify NDK root path for the build."
-  echo "    -a    Select target API level."
-  echo "    -t    Select target architectures."
-  echo "          Android supports the following architectures: armeabi-v7a arm64-v8a x86 x86_64."
+  echo "    -n    NDK root path for the build"
+  echo "    -a    Target API level"
+  echo "    -t    Space-separated list of target architectures"
+  echo "          Android supports the following architectures: armeabi-v7a arm64-v8a x86 x86_64"
   echo "    -e    Encryption library to be used. Possible options: openssl (default) mbedtls"
-  echo "    -o    Select OpenSSL (1.1.1 series) version. E.g. 1.1.1h"
-  echo "    -m    Select Mbed TLS version. E.g. v2.26.0"
-  echo "    -s    Select SRT version. E.g. v1.4.3"
+  echo "    -o    OpenSSL version. E.g. 1.1.1l"
+  echo "    -m    Mbed TLS version. E.g. v2.26.0"
   echo
-  echo "Example: ./build-android -n /home/username/Android/Sdk/ndk/21.4.7075529 -a 28 -t \"armeabi-v7a arm64-v8a x86 x86_64\" -o 1.1.1h -s v1.4.3"
+  echo "Example: ./build-android -n /home/username/Android/Sdk/ndk/23.0.7599858 -a 28 -t \"arm64-v8a x86_64\""
   echo
 }
 
@@ -20,8 +19,7 @@ echo_help()
 NDK_ROOT=""
 API_LEVEL=28
 BUILD_TARGETS="armeabi-v7a arm64-v8a x86 x86_64"
-OPENSSL_VERSION=1.1.1h
-SRT_VERSION=""
+OPENSSL_VERSION=1.1.1l
 ENC_LIB=openssl
 MBEDTLS_VERSION=v2.26.0
 
@@ -56,10 +54,8 @@ SCRIPT_DIR=$(pwd)
 HOST_TAG='unknown'
 unamestr=$(uname -s)
 if [ "$unamestr" = 'Linux' ]; then
- SCRIPT_DIR=$(readlink -f $0 | xargs dirname)
  HOST_TAG='linux-x86_64'
 elif [ "$unamestr" = 'Darwin' ]; then
- SCRIPT_DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
  if [ $(uname -p) = 'arm' ]; then
   echo "NDK does not currently support ARM64"
   exit 128
@@ -93,12 +89,8 @@ else
  exit 128
 fi
 
-if [ ! -d $BASE_DIR/srt ]; then
- git clone https://github.com/Haivision/srt srt
- if [ ! -z "$SRT_VERSION" ]; then
-  git -C $BASE_DIR/srt checkout $SRT_VERSION
- fi
-fi
+# Build working copy of srt repository
+REPO_DIR="../.."
 
 for build_target in $BUILD_TARGETS; do
  LIB_DIR=$BASE_DIR/$build_target/lib
@@ -113,7 +105,7 @@ for build_target in $BUILD_TARGETS; do
   cp $LIB_DIR/libmbedx509.so $JNI_DIR/libmbedx509.so
  fi
 
- git -C $BASE_DIR/srt clean -fd
- $SCRIPT_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s $BASE_DIR/srt -i $BASE_DIR/$build_target
+ git -C $REPO_DIR clean -fd -e scripts
+ $SCRIPT_DIR/mksrt -n $NDK_ROOT -a $API_LEVEL -t $build_target -e $ENC_LIB -s $REPO_DIR -i $BASE_DIR/$build_target
  cp $LIB_DIR/libsrt.so $JNI_DIR/libsrt.so
 done

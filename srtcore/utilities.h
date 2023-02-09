@@ -35,7 +35,6 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
-#include <iomanip>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -44,6 +43,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 // -------------- UTILITIES ------------------------
 
@@ -115,7 +115,7 @@ written by
 
 #	include <sys/endian.h>
 
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
 
 #	include <sys/endian.h>
 
@@ -139,6 +139,46 @@ written by
 #ifndef le64toh
 #	define le64toh(x) letoh64(x)
 #endif
+
+#elif defined(SUNOS)
+
+   // SunOS/Solaris
+
+   #include <sys/byteorder.h>
+   #include <sys/isa_defs.h>
+
+   #define __LITTLE_ENDIAN 1234
+   #define __BIG_ENDIAN 4321
+
+   # if defined(_BIG_ENDIAN)
+   #define __BYTE_ORDER __BIG_ENDIAN
+   #define be64toh(x) (x)
+   #define be32toh(x) (x)
+   #define be16toh(x) (x)
+   #define le16toh(x) ((uint16_t)BSWAP_16(x))
+   #define le32toh(x) BSWAP_32(x)
+   #define le64toh(x) BSWAP_64(x)
+   #define htobe16(x) (x)
+   #define htole16(x) ((uint16_t)BSWAP_16(x))
+   #define htobe32(x) (x)
+   #define htole32(x) BSWAP_32(x)
+   #define htobe64(x) (x)
+   #define htole64(x) BSWAP_64(x)
+   # else
+   #define __BYTE_ORDER __LITTLE_ENDIAN
+   #define be64toh(x) BSWAP_64(x)
+   #define be32toh(x) ntohl(x)
+   #define be16toh(x) ntohs(x)
+   #define le16toh(x) (x)
+   #define le32toh(x) (x)
+   #define le64toh(x) (x)
+   #define htobe16(x) htons(x)
+   #define htole16(x) (x)
+   #define htobe32(x) htonl(x)
+   #define htole32(x) (x)
+   #define htobe64(x) BSWAP_64(x)
+   #define htole64(x) (x)
+   # endif
 
 #elif defined(__WINDOWS__)
 
@@ -261,7 +301,7 @@ template<size_t R>
 struct BitsetMask<R, R, true>
 {
     static const bool correct = true;
-    static const uint32_t value = 1 << R;
+    static const uint32_t value = 1u << R;
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition
@@ -369,6 +409,88 @@ struct DynamicStruct
     char* raw() { return (char*)inarray; }
 };
 
+
+/// Fixed-size array template class.
+namespace srt {
+
+template <class T>
+class FixedArray
+{
+public:
+    FixedArray(size_t size)
+        : m_size(size)
+        , m_entries(new T[size])
+    {
+    }
+
+    ~FixedArray()
+    {
+        delete [] m_entries;
+    }
+
+public:
+    const T& operator[](size_t index) const
+    {
+        if (index >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    T& operator[](size_t index)
+    {
+        if (index >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    const T& operator[](int index) const
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    T& operator[](int index)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    size_t size() const { return m_size; }
+
+    typedef T* iterator;
+    typedef const T* const_iterator;
+
+    iterator begin() { return m_entries; }
+    iterator end() { return m_entries + m_size; }
+
+    const_iterator cbegin() const { return m_entries; }
+    const_iterator cend() const { return m_entries + m_size; }
+
+    T* data() { return m_entries; }
+
+private:
+    FixedArray(const FixedArray<T>& );
+    FixedArray<T>& operator=(const FixedArray<T>&);
+
+    void raise_expection(int i) const
+    {
+        std::stringstream ss;
+        ss << "Index " << i << "out of range";
+        throw std::runtime_error(ss.str());
+    }
+
+private:
+    size_t      m_size;
+    T* const    m_entries;
+};
+
+} // namespace srt
 
 // ------------------------------------------------------------
 

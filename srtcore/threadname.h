@@ -16,24 +16,62 @@ written by
 #ifndef INC_SRT_THREADNAME_H
 #define INC_SRT_THREADNAME_H
 
-#if defined(__APPLE__) || defined(__linux__)
-#if defined(__linux__)
-#include <sys/prctl.h>
+// NOTE:
+//    HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H
+//    HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H
+//    HAVE_PTHREAD_GETNAME_NP
+//    HAVE_PTHREAD_GETNAME_NP
+//    Are detected and set in ../CMakeLists.txt.
+//    OS Availability of pthread_getname_np(..) and pthread_setname_np(..)::
+//       MacOS(10.6)
+//       iOS(3.2)
+//       AIX(7.1)
+//       FreeBSD(version?), OpenBSD(Version?)
+//       Linux-GLIBC(GLIBC-2.12).
+//       Linux-MUSL(MUSL-1.1.20 Partial Implementation. See below).
+//       MINGW-W64(4.0.6)
+
+#if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
+   || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
+   #include <pthread_np.h>
+   #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
+      && !defined(HAVE_PTHREAD_GETNAME_NP)
+      #define HAVE_PTHREAD_GETNAME_NP 1
+   #endif
+   #if defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H) \
+      && !defined(HAVE_PTHREAD_SETNAME_NP)
+      #define HAVE_PTHREAD_SETNAME_NP 1
+   #endif
 #endif
 
-#include <pthread.h>
+#if (defined(HAVE_PTHREAD_GETNAME_NP) && defined(HAVE_PTHREAD_GETNAME_NP)) \
+   || defined(__linux__)
+   // NOTE:
+   //    Linux pthread_getname_np() and pthread_setname_np() became available
+   //       in GLIBC-2.12 and later.
+   //    Some Linux runtimes do not have pthread_getname_np(), but have
+   //       pthread_setname_np(), for instance MUSL at least as of v1.1.20.
+   //    So using the prctl() for Linux is more portable.
+   #if defined(__linux__)
+      #include <sys/prctl.h>
+   #endif
+   #include <pthread.h>
 #endif
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 
+#include "common.h"
 #include "sync.h"
+
+namespace srt {
 
 class ThreadName
 {
 
-#if defined(__APPLE__) || defined(__linux__)
+#if (defined(HAVE_PTHREAD_GETNAME_NP) && defined(HAVE_PTHREAD_GETNAME_NP)) \
+   || defined(__linux__)
 
     class ThreadNameImpl
     {
@@ -47,8 +85,7 @@ class ThreadName
             // since Linux 2.6.11. The buffer should allow space for up to 16
             // bytes; the returned string will be null-terminated.
             return prctl(PR_GET_NAME, (unsigned long)namebuf, 0, 0) != -1;
-#elif defined(__APPLE__)
-            // since macos(10.6), ios(3.2)
+#elif defined(HAVE_PTHREAD_GETNAME_NP)
             return pthread_getname_np(pthread_self(), namebuf, BUFSIZE) == 0;
 #else
 #error "unsupported platform"
@@ -57,37 +94,41 @@ class ThreadName
 
         static bool set(const char* name)
         {
+            SRT_ASSERT(name != NULL);
 #if defined(__linux__)
             // The name can be up to 16 bytes long, including the terminating
             // null byte. (If the length of the string, including the terminating
             // null byte, exceeds 16 bytes, the string is silently truncated.)
             return prctl(PR_SET_NAME, (unsigned long)name, 0, 0) != -1;
-#elif defined(__APPLE__)
-            // since macos(10.6), ios(3.2)
+#elif defined(HAVE_PTHREAD_SETNAME_NP)
+    #if defined(__APPLE__)
             return pthread_setname_np(name) == 0;
+    #else
+            return pthread_setname_np(pthread_self(), name) == 0;
+    #endif
 #else
 #error "unsupported platform"
 #endif
         }
 
-        ThreadNameImpl(const char* name)
+        explicit ThreadNameImpl(const std::string& name)
+            : reset(false)
         {
-            reset = false;
             tid   = pthread_self();
 
             if (!get(old_name))
                 return;
 
-            reset = set(name);
+            reset = set(name.c_str());
             if (reset)
                 return;
 
             // Try with a shorter name. 15 is the upper limit supported by Linux,
             // other platforms should support a larger value. So 15 should works
             // on all platforms.
-            size_t max_len = 15;
-            if (std::strlen(name) > max_len)
-                reset = set(std::string(name, max_len).c_str());
+            const size_t max_len = 15;
+            if (name.size() > max_len)
+                reset = set(name.substr(0, max_len).c_str());
         }
 
         ~ThreadNameImpl()
@@ -99,6 +140,10 @@ class ThreadName
             if (tid == pthread_self())
                 set(old_name);
         }
+    
+    private:
+        ThreadNameImpl(ThreadNameImpl& other);
+        ThreadNameImpl& operator=(const ThreadNameImpl& other);
 
     private:
         bool      reset;
@@ -118,7 +163,7 @@ class ThreadName
         {
             // The default implementation will simply try to get the thread ID
             std::ostringstream bs;
-            bs << "T" << srt::sync::this_thread::get_id();
+            bs << "T" << sync::this_thread::get_id();
             size_t s  = bs.str().copy(output, BUFSIZE - 1);
             output[s] = '\0';
             return true;
@@ -126,7 +171,7 @@ class ThreadName
 
         static bool set(const char*) { return false; }
 
-        ThreadNameImpl(const char*) {}
+        ThreadNameImpl(const std::string&) {}
 
         ~ThreadNameImpl() // just to make it "non-trivially-destructible" for compatibility with normal version
         {
@@ -161,21 +206,19 @@ public:
         return ret;
     }
 
-    // note: set can fail if name is too long. The upper limit is platform
-    // dependent. strlen(name) <= 15 should work on most of the platform.
-    static bool set(const char* name) { return ThreadNameImpl::set(name); }
+    static bool set(const std::string& name) { return ThreadNameImpl::set(name.c_str()); }
 
-    static bool set(const std::string& name) { return set(name.c_str()); }
-
-    ThreadName(const char* name)
+    explicit ThreadName(const std::string& name)
         : impl(name)
     {
     }
 
-    ThreadName(const std::string& name)
-        : impl(name.c_str())
-    {
-    }
+private:
+    ThreadName(const ThreadName&);
+    ThreadName(const char*);
+    ThreadName& operator=(const ThreadName& other);
 };
+
+} // namespace srt
 
 #endif

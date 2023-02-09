@@ -348,7 +348,7 @@ public:
         const TResult &expect = test.expected_result;
 
         // Start testing
-        volatile bool caller_done = false;
+        srt::sync::atomic<bool> caller_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -407,7 +407,7 @@ public:
                     std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
 
-                // We have to wait some time for the socket to be able to process the HS responce from the caller.
+                // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
                 do

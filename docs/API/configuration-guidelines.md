@@ -87,13 +87,12 @@ where
 
 
 ```c++
-
 auto CalculateTargetRBufSize(int msRTT, int bpsRate, int bytesPayloadSize, int msLatency, int SRTO_MSS)
 {
     const int UDPHDR_SIZE = 28;
-    const int targetPayloadBytes = (msLatency + msRTT / 2) * bpsRate / 1000 / 8;
-    const int targetNumPackets   = targetPayloadBytes / bytesPayloadSize;
-    const int targetSizeValue    = targetNumPackets * (SRTO_MSS - UDPHDR_SIZE);
+    const long long targetPayloadBytes = static_cast<long long>(msLatency + msRTT / 2) * bpsRate / 1000 / 8;
+    const long long targetNumPackets   = targetPayloadBytes / bytesPayloadSize;
+    const long long targetSizeValue    = targetNumPackets * (SRTO_MSS - UDPHDR_SIZE);
     return {targetNumPackets, targetSizeValue};
 }
 

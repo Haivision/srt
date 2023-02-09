@@ -252,7 +252,7 @@ function (test_requires_clock_gettime _enable _linklib)
 
 	check_testcode_compiles(${code} "" HAVE_CLOCK_GETTIME_IN)
 	if (HAVE_CLOCK_GETTIME_IN)
-		message(STATUS "CLOCK_MONOTONIC: availabe, no extra libs needed")
+		message(STATUS "CLOCK_MONOTONIC: available, no extra libs needed")
 		set (${_enable}  ON PARENT_SCOPE)
 		set (${_linklib} "" PARENT_SCOPE)
 		return()

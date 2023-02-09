@@ -20,7 +20,7 @@ namespace srt
 
 /// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic.
 /// Used by the receiver to calculate delivery time of data packets.
-/// See SRT RFC Section "Timestamp-Based Packet Delivery".
+/// See SRT Internet Draft Section "Timestamp-Based Packet Delivery".
 class CTsbpdTime
 {
     typedef srt::sync::steady_clock  steady_clock;
@@ -66,15 +66,11 @@ public:
     /// and can be used to estimate clock drift.
     /// 
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
-    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair.
-    /// @param [out] w_udrift Current clock drift value.
-    /// @param [out] w_newtimebase Current TSBPD base time.
+    /// @param [in] tsPktArrival packet arrival time.
+    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair. If no sample, pass '-1'.
     /// 
     /// @return true if TSBPD base time has changed, false otherwise.
-    bool addDriftSample(uint32_t                  pktTimestamp,
-                        int                       usRTTSample,
-                        steady_clock::duration&   w_udrift,
-                        steady_clock::time_point& w_newtimebase);
+    bool addDriftSample(uint32_t pktTimestamp, const time_point& tsPktArrival, int usRTTSample);
 
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be

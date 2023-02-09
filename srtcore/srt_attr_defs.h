@@ -89,7 +89,7 @@ used by SRT library internally.
 // - Other compilers: none.
 ///////////////////////////////////////////////////////////////////////////////
 #if _MSC_VER >= 1920
-// In case of MSVC these attributes have to preceed the attributed objects (variable, function).
+// In case of MSVC these attributes have to precede the attributed objects (variable, function).
 // E.g. SRT_ATTR_GUARDED_BY(mtx) int object;
 // It is tricky to annotate e.g. the following function, as clang complaints it does not know 'm'.
 // SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m)
@@ -101,6 +101,7 @@ used by SRT library internally.
 #define SRT_ATTR_ACQUIRED_BEFORE(...)
 #define SRT_ATTR_ACQUIRED_AFTER(...)
 #define SRT_ATTR_REQUIRES(expr) _Requires_lock_held_(expr)
+#define SRT_ATTR_REQUIRES2(expr1, expr2) _Requires_lock_held_(expr1) _Requires_lock_held_(expr2)
 #define SRT_ATTR_REQUIRES_SHARED(...)
 #define SRT_ATTR_ACQUIRE(expr) _Acquires_nonreentrant_lock_(expr)
 #define SRT_ATTR_ACQUIRE_SHARED(...)
@@ -116,7 +117,7 @@ used by SRT library internally.
 #define SRT_ATTR_NO_THREAD_SAFETY_ANALYSIS
 #else
 
-#if defined(__clang__)
+#if defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
 #else
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)   // no-op
@@ -141,6 +142,9 @@ used by SRT library internally.
   THREAD_ANNOTATION_ATTRIBUTE__(acquired_after(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
+
+#define SRT_ATTR_REQUIRES2(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES_SHARED(...) \

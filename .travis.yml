@@ -9,6 +9,8 @@ addons:
         - cmake
         - libssl-dev
         - build-essential
+        - libmbedtls-dev
+        - gdb
     sonarcloud:
         organization: "haivision"
         token:
@@ -23,12 +25,12 @@ matrix:
         - os: linux
           env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - BUILD_OPTS='-DENABLE_CODE_COVERAGE=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
           - RUN_SONARCUBE=1
           - RUN_CODECOV=1
         - env:
           - BUILD_TYPE=Debug
-          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_EXPERIMENTAL_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release
         - os: osx
@@ -52,7 +54,7 @@ matrix:
                 - gcc-mingw-w64
                 - g++-mingw-w64-x86-64
           before_script:
-            - git clone -b OpenSSL_1_1_1-stable https://github.com/openssl/openssl.git openssl
+            - git clone -b OpenSSL_1_1_1g https://github.com/openssl/openssl.git openssl
             - cd openssl
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
@@ -69,7 +71,7 @@ matrix:
           - BUILD_TYPE=Release
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
-    - TESTS_IPv6="TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*:ReuseAddr.ProtocolVersion" ; # Tests to skip due to lack of IPv6 support
+    - TESTS_IPv6="TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*:ReuseAddr.ProtocolVersion:ReuseAddr.*6" ; # Tests to skip due to lack of IPv6 support
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
@@ -92,8 +94,13 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
+        ulimit -c unlimited;
         ./test-srt --gtest_filter="-$TESTS_IPv6";
+        SUCCESS=$?;
+        if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
       fi
+after_success:
     - if (( "$RUN_CODECOV" )); then
         source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);

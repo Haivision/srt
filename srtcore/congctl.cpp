@@ -77,7 +77,7 @@ public:
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
-        if ( m_zMaxPayloadSize == 0 )
+        if (m_zMaxPayloadSize == 0)
             m_zMaxPayloadSize = parent->maxPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 
@@ -230,7 +230,7 @@ private:
          * For realtime Transport Stream content, pkts/sec is not a good indication of time to transmit
          * since packets are not filled to m_iMSS and packet size average is lower than (7*188)
          * for low bit rates.
-         * If NAK report is lost, another cycle (RTT) is requred which is bad for low latency so we
+         * If NAK report is lost, another cycle (RTT) is required which is bad for low latency so we
          * accelerate the NAK Reports frequency, at the cost of possible duplicate resend.
          * Finally, the UDT4 native minimum NAK interval (m_ullMinNakInt_tk) is 300 ms which is too high
          * (~10 i30 video frames) to maintain low latency.
@@ -535,8 +535,7 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization.
-            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            m_iDecRandom = m_iAvgNAKNum > 1 ? genRandomInt(1, m_iAvgNAKNum) : 1;
             SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq

@@ -105,7 +105,7 @@ class SrtMainLoop
     std::exception_ptr m_input_xp;
 
     void InputRunner();
-    volatile bool m_input_running = false;
+    srt::sync::atomic<bool> m_input_running;
 
 public:
     SrtMainLoop(const string& srt_uri, bool input_echoback, const string& input_spec, const vector<string>& output_spec);
@@ -392,7 +392,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
 void SrtMainLoop::InputRunner()
 {
-    ThreadName::set("InputRN");
+    srt::ThreadName::set("InputRN");
     // An extra thread with a loop that reads from the external input
     // and writes into the SRT medium. When echoback mode is used,
     // this thread isn't started at all and instead the SRT reading
@@ -438,7 +438,7 @@ void SrtMainLoop::run()
 
         std::ostringstream tns;
         tns << "Input:" << this;
-        ThreadName tn(tns.str().c_str());
+        srt::ThreadName tn(tns.str());
         m_input_thr = thread([this] {
                 try {
                     InputRunner();

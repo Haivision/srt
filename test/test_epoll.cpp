@@ -9,6 +9,7 @@
 
 
 using namespace std;
+using namespace srt;
 
 
 TEST(CEPoll, InfiniteWait)
@@ -367,7 +368,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     EXPECT_EQ(ready[0], sock);
 
     // Wait for the caller to close connection
-    // There should be no wait, as epoll should wait untill connection is closed.
+    // There should be no wait, as epoll should wait until connection is closed.
     EXPECT_EQ(close_res.get(), SRT_SUCCESS);
     const SRT_SOCKSTATUS state = srt_getsockstate(sock);
     const bool state_valid = state == SRTS_BROKEN || state == SRTS_CLOSING || state == SRTS_CLOSED;
@@ -718,7 +719,7 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
+            ASSERT_EQ(read[0], acpsock); // read event is for bind socket
         }
 
         char buffer[1316];

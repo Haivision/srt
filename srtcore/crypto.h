@@ -40,8 +40,8 @@ extern Logger cnlog;
 
 namespace srt
 {
-    class CUDT;
-}
+class CUDT;
+struct CSrtConfig;
 
 
 // For KMREQ/KMRSP. Only one field is used.
@@ -50,15 +50,12 @@ const size_t SRT_KMR_KMSTATE = 0;
 #define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
 const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
-enum Whether2RegenKm {DONT_REGEN_KM = 0, REGEN_KM = 1};
-
 class CCryptoControl
 {
-    srt::CUDT*  m_parent;
-    SRTSOCKET   m_SocketID;
+    SRTSOCKET m_SocketID;
 
-    size_t      m_iSndKmKeyLen;        //Key length
-    size_t      m_iRcvKmKeyLen;        //Key length from rx KM
+    size_t    m_iSndKmKeyLen;        //Key length
+    size_t    m_iRcvKmKeyLen;        //Key length from rx KM
 
     // Temporarily allow these to be accessed.
 public:
@@ -70,10 +67,12 @@ private:
     // putting the whole HaiCrypt_Cfg object here.
     int m_KmRefreshRatePkt;
     int m_KmPreAnnouncePkt;
+    int m_iCryptoMode;
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
-    srt::sync::steady_clock::time_point     m_SndKmLastTime;
+    sync::steady_clock::time_point m_SndKmLastTime;
+    sync::Mutex m_mtxLock; // A mutex to protect concurrent access to CCryptoControl.
     struct {
         unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
         size_t MsgLen;
@@ -86,6 +85,9 @@ private:
     bool m_bErrorReported;
 
 public:
+    static void globalInit();
+
+    static bool isAESGCMSupported();
 
     bool sendingAllowed()
     {
@@ -109,13 +111,16 @@ public:
         return m_KmSecret.len > 0;
     }
 
-private:
+    int getCryptoMode() const
+    {
+        return m_iCryptoMode;
+    }
 
-#ifdef SRT_ENABLE_ENCRYPTION
-    void regenCryptoKm(bool sendit, bool bidirectional);
-#endif
-
-public:
+    /// Regenerate cryptographic key material if needed.
+    /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
+    /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
+    SRT_ATTR_EXCLUDES(m_mtxLock)
+    void regenCryptoKm(CUDT* sock, bool bidirectional);
 
     size_t KeyLen() { return m_iSndKmKeyLen; }
 
@@ -166,7 +171,7 @@ public:
         using srt_logging::cnlog;
 #endif
 
-        m_SndKmLastTime = srt::sync::steady_clock::now();
+        m_SndKmLastTime = sync::steady_clock::now();
         if (runtime)
         {
             m_SndKmMsg[ki].iPeerRetry--;
@@ -196,25 +201,28 @@ public:
         return false;
     }
 
-    CCryptoControl(srt::CUDT* parent, SRTSOCKET id);
+    CCryptoControl(SRTSOCKET id);
 
     // DEBUG PURPOSES:
     std::string CONID() const;
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
 
-    bool init(HandshakeSide, bool);
+    bool init(HandshakeSide, const CSrtConfig&, bool);
+    SRT_ATTR_EXCLUDES(m_mtxLock)
     void close();
 
-    // This function is used in:
-    // - HSv4 (initial key material exchange - in HSv5 it's attached to handshake)
-    // - case of key regeneration, which should be then exchanged again
-    void sendKeysToPeer(Whether2RegenKm regen);
-
+    /// (Re)send KM request to a peer on timeout.
+    /// This function is used in:
+    /// - HSv4 (initial key material exchange - in HSv5 it's attached to handshake).
+    /// - The case of key regeneration (KM refresh), when a new key has to be sent again.
+    ///   In this case the first sending happens in regenCryptoKm(..). This function
+    ///   retransmits the KM request by timeout if not KM response has been received.
+    SRT_ATTR_EXCLUDES(m_mtxLock)
+    void sendKeysToPeer(CUDT* sock, int iSRTT);
 
     void setCryptoSecret(const HaiCrypt_Secret& secret)
     {
         m_KmSecret = secret;
-        //memcpy(&m_KmSecret, &secret, sizeof(m_KmSecret));
     }
 
     void setCryptoKeylen(size_t keylen)
@@ -223,7 +231,7 @@ public:
         m_iRcvKmKeyLen = keylen;
     }
 
-    bool createCryptoCtx(size_t keylen, HaiCrypt_CryptoDir tx, HaiCrypt_Handle& rh);
+    bool createCryptoCtx(HaiCrypt_Handle& rh, size_t keylen, HaiCrypt_CryptoDir tx, bool bAESGCM);
 
     int getSndCryptoFlags() const
     {
@@ -258,16 +266,18 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(srt::CPacket& w_packet);
+    EncryptionStatus encrypt(CPacket& w_packet);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts
     /// only if the encryption correctly configured, otherwise it
     /// fails. After successful decryption, the ENCKEYSPEC part
     // in PH_MSGNO is set to EK_NOENC.
-    EncryptionStatus decrypt(srt::CPacket& w_packet);
+    EncryptionStatus decrypt(CPacket& w_packet);
 
     ~CCryptoControl();
 };
+
+} // namespace srt
 
 #endif // SRT_CONGESTION_CONTROL_H

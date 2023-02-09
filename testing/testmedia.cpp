@@ -42,10 +42,11 @@
 #include "verbose.hpp"
 
 using namespace std;
+using namespace srt;
 
 using srt_logging::KmStateStr;
 using srt_logging::SockStatusStr;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 using srt_logging::MemberStatusStr;
 #endif
 
@@ -131,10 +132,6 @@ public:
     bool End() override { return ifile.eof(); }
     //~FileSource() { ifile.close(); }
 };
-
-#ifdef PLEASE_LOG
-#include "logging.h"
-#endif
 
 class FileTarget: public virtual Target
 {
@@ -223,7 +220,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
         path = path.substr(2);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (path == "group")
         {
             // Group specified, check type.
@@ -456,7 +453,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         string v = par["minversion"];
         if (v.find('.') != string::npos)
         {
-            int version = SrtParseVersion(v.c_str());
+            int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
                 throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
@@ -554,18 +551,14 @@ void SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (m_sock & SRTGROUP_MASK)
     {
         m_listener_group = true;
         if (m_group_config != "")
         {
-            int stat = srt_group_configure(m_sock, m_group_config.c_str());
-            if (stat == SRT_ERROR)
-            {
-                // Don't break the connection basing on this, just ignore.
-                Verb() << " (error setting config: '" << m_group_config << "') " << VerbNoEOL;
-            }
+            // Don't break the connection basing on this, just ignore.
+            Verb() << " (ignoring setting group config: '" << m_group_config << "') " << VerbNoEOL;
         }
         // There might be added a poller, remove it.
         // We need it work different way.
@@ -669,7 +662,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
             {
                 OpenClient(host, port);
             }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             else
             {
                 OpenGroupClient(); // Source data are in the fields already.
@@ -881,9 +874,9 @@ void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if (m_outgoing_port)
+    if (m_outgoing_port || m_adapter != "")
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter(m_adapter, m_outgoing_port);
     }
 
     ConnectClient(host, port);
@@ -906,7 +899,7 @@ void SrtCommon::PrepareClient()
 
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 void TransmitGroupSocketConnect(void* srtcommon, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     SrtCommon* that = (SrtCommon*)srtcommon;
@@ -960,8 +953,6 @@ void SrtCommon::OpenGroupClient()
         type = SRT_GTYPE_BROADCAST;
     else if (m_group_type == "backup")
         type = SRT_GTYPE_BACKUP;
-    else if (m_group_type == "balancing")
-        type = SRT_GTYPE_BALANCING;
     else
     {
         Error("With //group, type='" + m_group_type + "' undefined");
@@ -976,9 +967,7 @@ void SrtCommon::OpenGroupClient()
     int stat = -1;
     if (m_group_config != "")
     {
-        stat = srt_group_configure(m_sock, m_group_config.c_str());
-        if (stat == SRT_ERROR)
-            Error("srt_group_configure");
+        Verb() << "Ignoring setting group config: '" << m_group_config;
     }
 
     stat = ConfigurePre(m_sock);
@@ -1478,7 +1467,7 @@ SrtCommon::~SrtCommon()
     Close();
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size)
 {
     if (!grpdata)
@@ -1800,7 +1789,7 @@ RETRY_READING:
         // Don't skip packets that are ahead because if we have a situation
         // that all links are either "elephants" (do not report read readiness)
         // and "kangaroos" (have already delivered an ahead packet) then
-        // omiting kangaroos will result in only elephants to be polled for
+        // omitting kangaroos will result in only elephants to be polled for
         // reading. Elephants, due to the strict timing requirements and
         // ensurance that TSBPD on every link will result in exactly the same
         // delivery time for a packet of given sequence, having an elephant
@@ -2109,7 +2098,7 @@ RETRY_READING:
 
     // In this position all links are either:
     // - updated to the current position
-    // - updated to the newest possible possition available
+    // - updated to the newest possible position available
     // - not yet ready for extraction (not present in the group)
 
     // If we haven't extracted the very next sequence position,
@@ -2283,7 +2272,7 @@ MediaPacket SrtSource::Read(size_t chunk)
 
     do
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (have_group || m_listener_group)
         {
             mctrl.grpdata = m_group_data.data();
@@ -2385,7 +2374,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (have_group) // Means, group with caller mode
     {
         UpdateGroupStatus(mctrl.grpdata, mctrl.grpdata_size);
@@ -2477,7 +2466,7 @@ Epoll_again:
     }
 
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     bool have_group = !m_group_nodes.empty();
     if (have_group || m_listener_group)
     {
@@ -2504,7 +2493,7 @@ Epoll_again:
     const bool need_bw_report    = transmit_bw_report    && int(counter % transmit_bw_report) == transmit_bw_report - 1;
     const bool need_stats_report = transmit_stats_report && counter % transmit_stats_report == transmit_stats_report - 1;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (have_group)
     {
         // For listener group this is not necessary. The group information
@@ -2580,10 +2569,10 @@ void SrtModel::Establish(std::string& w_name)
             Verb() << "NO STREAM ID for SRT connection";
         }
 
-        if (m_outgoing_port)
+        if (m_outgoing_port || m_adapter != "")
         {
-            Verb() << "Setting outgoing port: " << m_outgoing_port;
-            SetupAdapter("", m_outgoing_port);
+            Verb() << "Setting outgoing port: " << m_outgoing_port << " adapter:" << m_adapter;
+            SetupAdapter(m_adapter, m_outgoing_port);
         }
 
         ConnectClient(m_host, m_port);

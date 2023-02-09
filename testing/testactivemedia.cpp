@@ -3,7 +3,7 @@
 
 void SourceMedium::Runner()
 {
-    ThreadName::set("SourceRN");
+    srt::ThreadName::set("SourceRN");
 
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
@@ -16,7 +16,7 @@ void SourceMedium::Runner()
         }
         LOGP(applog.Debug, "SourceMedium(", typeid(*med).name(), "): [", input.payload.size(), "] MEDIUM -> BUFFER. signal(", &ready, ")");
 
-        lock_guard<mutex> g(buffer_lock);
+        lock_guard<std::mutex> g(buffer_lock);
         buffer.push_back(input);
         ready.notify_one();
     }
@@ -24,7 +24,7 @@ void SourceMedium::Runner()
 
 MediaPacket SourceMedium::Extract()
 {
-    unique_lock<mutex> g(buffer_lock);
+    unique_lock<std::mutex> g(buffer_lock);
     for (;;)
     {
         if (::transmit_int_state)
@@ -63,14 +63,14 @@ MediaPacket SourceMedium::Extract()
 
 void TargetMedium::Runner()
 {
-    ThreadName::set("TargetRN");
+    srt::ThreadName::set("TargetRN");
     auto on_return_set = OnReturnSet(running, false);
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)
     {
         MediaPacket val;
         {
-            unique_lock<mutex> lg(buffer_lock);
+            unique_lock<std::mutex> lg(buffer_lock);
             if (buffer.empty())
             {
                 if (!running)

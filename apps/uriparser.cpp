@@ -25,24 +25,27 @@
 
 using namespace std;
 
-map<string, UriParser::Type> types;
+map<string, UriParser::Type> g_types;
 
+// Map construction using the initializer list is only available starting from C++11.
+// This dummy structure is used instead.
 struct UriParserInit
 {
     UriParserInit()
     {
-        types["file"] = UriParser::FILE;
-        types["udp"] = UriParser::UDP;
-        types["tcp"] = UriParser::TCP;
-        types["srt"] = UriParser::SRT;
-        types["rtmp"] = UriParser::RTMP;
-        types["http"] = UriParser::HTTP;
-        types["rtp"] = UriParser::RTP;
-        types[""] = UriParser::UNKNOWN;
+        g_types["file"] = UriParser::FILE;
+        g_types["udp"] = UriParser::UDP;
+        g_types["tcp"] = UriParser::TCP;
+        g_types["srt"] = UriParser::SRT;
+        g_types["rtmp"] = UriParser::RTMP;
+        g_types["http"] = UriParser::HTTP;
+        g_types["rtp"] = UriParser::RTP;
+        g_types[""] = UriParser::UNKNOWN;
     }
 } g_uriparser_init;
 
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
+    : m_uriType(UNKNOWN)
 {
     m_expect = exp;
     Parse(strUrl, exp);
@@ -196,7 +199,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
     // Check special things in the HOST entry.
     size_t atp = m_host.find('@');
-    if ( atp != string::npos )
+    if (atp != string::npos)
     {
         string realhost = m_host.substr(atp+1);
         string prehost;
@@ -309,7 +312,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         }
     }
 
-    if ( m_proto == "file" )
+    if (m_proto == "file")
     {
         if ( m_path.size() > 3 && m_path.substr(0, 3) == "/./" )
             m_path = m_path.substr(3);
@@ -317,14 +320,19 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
     // Post-parse fixes
     // Treat empty protocol as a file. In this case, merge the host and path.
-    if ( exp == EXPECT_FILE && m_proto == "" && m_port == "" )
+    if (exp == EXPECT_FILE && m_proto == "" && m_port == "")
     {
         m_proto = "file";
         m_path = m_host + m_path;
         m_host = "";
     }
 
-    m_uriType = types[m_proto]; // default-constructed UNKNOWN will be used if not found (although also inserted)
+    const auto proto_it = g_types.find(m_proto);
+    // Default-constructed UNKNOWN will be used if not found.
+    if (proto_it != g_types.end())
+    {
+        m_uriType = proto_it->second;
+    }
     m_origUri = strUrl;
 }
 

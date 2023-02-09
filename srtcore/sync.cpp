@@ -79,9 +79,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 
 
 #ifdef ENABLE_STDCXX_SYNC
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const char* name)
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 #else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const char* name)
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
     ThreadName tn(name);
@@ -283,10 +283,11 @@ bool srt::sync::CGlobEvent::waitForEvent()
 namespace srt
 {
 #if HAVE_CXX11
-static std::random_device& randomDevice()
+static std::mt19937& randomGen()
 {
     static std::random_device s_RandomDevice;
-    return s_RandomDevice;
+    static std::mt19937 s_GenMT19937(s_RandomDevice());
+    return s_GenMT19937;
 }
 #elif defined(_WIN32) && defined(__MINGW32__)
 static void initRandSeed()
@@ -300,7 +301,7 @@ static pthread_once_t s_InitRandSeedOnce = PTHREAD_ONCE_INIT;
 static unsigned int genRandSeed()
 {
     // Duration::count() does not depend on any global objects,
-    // therefore it is preferred over count)microseconds(..).
+    // therefore it is preferred over count_microseconds(..).
     const int64_t seed = sync::steady_clock::now().time_since_epoch().count();
     return (unsigned int) seed;
 }
@@ -317,7 +318,7 @@ static unsigned int* getRandSeed()
 int srt::sync::genRandomInt(int minVal, int maxVal)
 {
     // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
-    // A mutex to protect simulteneout access to the random device.
+    // A mutex to protect simultaneous access to the random device.
     // Thread-local storage could be used here instead to store the seed / random device.
     // However the generator is not used often (Initial Socket ID, Initial sequence number, FileCC),
     // so sharing a single seed among threads should not impact the performance.
@@ -325,7 +326,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
     sync::ScopedLock lck(s_mtxRandomDevice);
 #if HAVE_CXX11
     uniform_int_distribution<> dis(minVal, maxVal); 
-    return dis(randomDevice());
+    return dis(randomGen());
 #else
 #if defined(__MINGW32__)
     // No rand_r(..) for MinGW.
@@ -342,9 +343,13 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif
 
     // Map onto [minVal, maxVal].
-    // Note. The probablity to get maxVal as the result is minuscule.
-    const int res = minVal + static_cast<int>((maxVal - minVal) * rand_0_1);
-    return res;
+    // Note. There is a minuscule probablity to get maxVal+1 as the result.
+    // So we have to use long long to handle cases when maxVal = INT32_MAX.
+    // Also we must check 'res' does not exceed maxVal,
+    // which may happen if rand_0_1 = 1, even though the chances are low.
+    const long long llMaxVal = maxVal;
+    const int res = minVal + static_cast<int>((llMaxVal + 1 - minVal) * rand_0_1);
+    return min(res, maxVal);
 #endif // HAVE_CXX11
 }
 

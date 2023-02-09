@@ -26,7 +26,7 @@
 #   define ANY_IMPL_NO_EXCEPTIONS
 # endif
 #else
-// you can opt-out of exceptions by definining ANY_IMPL_NO_EXCEPTIONS,
+// you can opt-out of exceptions by defining ANY_IMPL_NO_EXCEPTIONS,
 // but you must ensure not to cast badly when passing an `any' object to any_cast<T>(any)
 #endif
 
@@ -337,7 +337,7 @@ protected:
     /// Checks if two type infos are the same.
     ///
     /// If ANY_IMPL_FAST_TYPE_INFO_COMPARE is defined, checks only the address of the
-    /// type infos, otherwise does an actual comparision. Checking addresses is
+    /// type infos, otherwise does an actual comparison. Checking addresses is
     /// only a valid approach when there's no interaction with outside sources
     /// (other shared libraries and such).
     static bool is_same(const std::type_info& a, const std::type_info& b)
