@@ -13,6 +13,7 @@ typedef int SOCKET;
 #include"platform_sys.h"
 #include "srt.h"
 #include "netinet_any.h"
+#include "testsupport.hpp"
 
 using namespace std;
 
@@ -102,7 +103,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
-    const int connection_timeout_ms = 500;
+    const int connection_timeout_ms = 300;
     EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
     const int yes = 1;
@@ -207,68 +208,11 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
 }
 
-// Copy from apputil.cpp to avoid extra linkage
-static sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family)
-{
-    // Handle empty name.
-    // If family is specified, empty string resolves to ANY of that family.
-    // If not, it resolves to IPv4 ANY (to specify IPv6 any, use [::]).
-    if (name == "")
-    {
-        sockaddr_any result(pref_family == AF_INET6 ? pref_family : AF_INET);
-        result.hport(port);
-        return result;
-    }
-
-    bool first6 = pref_family != AF_INET;
-    int families[2] = {AF_INET6, AF_INET};
-    if (!first6)
-    {
-        families[0] = AF_INET;
-        families[1] = AF_INET6;
-    }
-
-    for (int i = 0; i < 2; ++i)
-    {
-        int family = families[i];
-        sockaddr_any result (family);
-
-        // Try to resolve the name by pton first
-        if (inet_pton(family, name.c_str(), result.get_addr()) == 1)
-        {
-            result.hport(port); // same addr location in ipv4 and ipv6
-            return result;
-        }
-    }
-
-    // If not, try to resolve by getaddrinfo
-    // This time, use the exact value of pref_family
-
-    sockaddr_any result;
-    addrinfo fo = {
-        0,
-        pref_family,
-        0, 0,
-        0, 0,
-        NULL, NULL
-    };
-
-    addrinfo* val = nullptr;
-    int erc = getaddrinfo(name.c_str(), nullptr, &fo, &val);
-    if (erc == 0)
-    {
-        result.set(val->ai_addr);
-        result.len = result.size();
-        result.hport(port); // same addr location in ipv4 and ipv6
-    }
-    freeaddrinfo(val);
-
-    return result;
-}
 
 TEST(TestConnectionAPI, Accept)
 {
     using namespace std::chrono;
+    using namespace srt;
 
     srt_startup();
 

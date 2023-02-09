@@ -22,8 +22,11 @@
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
 #else
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <io.h>
+#endif
+#if defined(SUNOS)
+#include <sys/filio.h>
 #endif
 
 #include "netinet_any.h"
@@ -35,6 +38,7 @@
 #include "verbose.hpp"
 
 using namespace std;
+using namespace srt;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
@@ -374,9 +378,9 @@ void SrtCommon::OpenClient(string host, int port)
 {
     PrepareClient();
 
-    if ( m_outgoing_port )
+    if (m_outgoing_port || m_adapter != "")
     {
-        SetupAdapter("", m_outgoing_port);
+        SetupAdapter(m_adapter, m_outgoing_port);
     }
 
     ConnectClient(host, port);
@@ -398,7 +402,7 @@ void SrtCommon::ConnectClient(string host, int port)
 {
 
     sockaddr_any sa = CreateAddr(host, port);
-	sockaddr* psa = sa.get();
+    sockaddr* psa = sa.get();
 
     Verb() << "Connecting to " << host << ":" << port;
 
@@ -624,7 +628,7 @@ void SrtModel::Establish(std::string& w_name)
         if (w_name != "")
         {
             Verb() << "Connect with requesting stream [" << w_name << "]";
-            UDT::setstreamid(m_sock, w_name);
+            srt::setstreamid(m_sock, w_name);
         }
         else
         {
@@ -667,7 +671,7 @@ void SrtModel::Establish(std::string& w_name)
         Verb() << "Accepting a client...";
         AcceptNewClient();
         // This rewrites m_sock with a new SRT socket ("accepted" socket)
-        w_name = UDT::getstreamid(m_sock);
+        w_name = srt::getstreamid(m_sock);
         Verb() << "... GOT CLIENT for stream [" << w_name << "]";
     }
 }

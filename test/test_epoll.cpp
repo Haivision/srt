@@ -9,6 +9,7 @@
 
 
 using namespace std;
+using namespace srt;
 
 
 TEST(CEPoll, InfiniteWait)
@@ -367,7 +368,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     EXPECT_EQ(ready[0], sock);
 
     // Wait for the caller to close connection
-    // There should be no wait, as epoll should wait untill connection is closed.
+    // There should be no wait, as epoll should wait until connection is closed.
     EXPECT_EQ(close_res.get(), SRT_SUCCESS);
     const SRT_SOCKSTATUS state = srt_getsockstate(sock);
     const bool state_valid = state == SRTS_BROKEN || state == SRTS_CLOSING || state == SRTS_CLOSED;
@@ -408,7 +409,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     int result = epoll.uwait(epoll_id, fds, 1024, -1);
     ASSERT_EQ(result, 1); 
-    ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+    ASSERT_EQ(fds[0].events, int(SRT_EPOLL_ERR));
 
     // Edge-triggered means that after one wait call was done, the next
     // call to this event should no longer report it. Now use timeout 0
@@ -529,7 +530,7 @@ TEST(CEPoll, ThreadedUpdate)
     int result = epoll.uwait(epoll_id, fds, 1024, -1);
     cerr << "Exit no longer infinite-wait by uwait, result=" << result << "\n";
     ASSERT_EQ(result, 1); 
-    ASSERT_EQ(fds[0].events, SRT_EPOLL_ERR);
+    ASSERT_EQ(fds[0].events, int(SRT_EPOLL_ERR));
 
     cerr << "THREAD JOIN...\n";
     td.join();
@@ -718,7 +719,7 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], acpsock); // read event is for bind socket        
+            ASSERT_EQ(read[0], acpsock); // read event is for bind socket
         }
 
         char buffer[1316];

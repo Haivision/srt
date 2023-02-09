@@ -1,7 +1,0 @@
-#!/bin/bash
-
-source prepare_build
-
-./configure --use-openssl-pc=OFF --CMAKE_PREFIX_PATH=$install_dir --CMAKE_INSTALL_PREFIX=$install_dir --CMAKE_SYSTEM_NAME=Android --CMAKE_SYSTEM_VERSION=$api_lev  --CMAKE_ANDROID_NDK=$NDK_HOME --CMAKE_ANDROID_ARCH_ABI=$arch_abi
-make
-make install

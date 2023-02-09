@@ -68,7 +68,6 @@
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmedia.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -101,7 +100,7 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool timer_state = false;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
@@ -280,7 +279,7 @@ namespace srt_logging
     extern Logger glog;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -378,37 +377,6 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     return -1;
 }
 
-void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
-{
-    std::ostringstream son, soff;
-
-    for (auto& s: speclist)
-    {
-        string name;
-        bool on = true;
-        if (s[0] == '+')
-            name = s.substr(1);
-        else if (s[0] == '~')
-        {
-            name = s.substr(1);
-            on = false;
-        }
-        else
-            name = s;
-
-        if (on)
-            son << "," << name;
-        else
-            soff << "," << name;
-    }
-
-    const string& sons = son.str();
-    const string& soffs = soff.str();
-
-    w_on = sons.empty() ? string() : sons.substr(1);
-    w_off = soffs.empty() ? string() : soffs.substr(1);
-}
-
 int main( int argc, char** argv )
 {
     // This is mainly required on Windows to initialize the network system,
@@ -447,7 +415,7 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
@@ -462,7 +430,7 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
 #endif
     vector<string> source_items, target_items;
@@ -471,7 +439,7 @@ int main( int argc, char** argv )
     {
         // You may still need help.
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -678,7 +646,7 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;

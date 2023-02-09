@@ -60,11 +60,14 @@ written by
 
 // LOGF uses printf-like style formatting.
 // Usage: LOGF(gglog.Debug, "%s: %d", param1.c_str(), int(param2));
+// NOTE: LOGF is deprecated and should not be used
 #define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 
 // LOGP is C++11 only OR with only one string argument.
 // Usage: LOGP(gglog.Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
+
+#define IF_LOGGING(instr) instr
 
 #if ENABLE_HEAVY_LOGGING
 
@@ -95,6 +98,7 @@ written by
 #define HLOGP(...)
 
 #define IF_HEAVY_LOGGING(instr) (void)0
+#define IF_LOGGING(instr) (void)0
 
 #endif
 
@@ -128,7 +132,10 @@ struct LogConfig
     {
     }
 
+    SRT_ATTR_ACQUIRE(mutex)
     void lock() { mutex.lock(); }
+
+    SRT_ATTR_RELEASE(mutex)
     void unlock() { mutex.unlock(); }
 };
 
@@ -236,7 +243,14 @@ public:
             return *this;
         }
 
-        DummyProxy& form(const char*, ...)
+        // DEPRECATED: DO NOT use LOGF/HLOGF macros anymore.
+        // Use iostream-style formatting with LOGC or a direct argument with LOGP.
+        SRT_ATR_DEPRECATED_PX DummyProxy& form(const char*, ...) SRT_ATR_DEPRECATED
+        {
+            return *this;
+        }
+
+        DummyProxy& vform(const char*, va_list)
         {
             return *this;
         }
@@ -419,7 +433,7 @@ inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
 }
 
 template <class... Args>
-inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, Args&&... args ATR_UNUSED)
+inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, Args&&... args SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
     std::ostringstream serr;
@@ -437,7 +451,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 #else
 
 template <class Arg>
-inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, const Arg& arg ATR_UNUSED)
+inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
     std::ostringstream serr;

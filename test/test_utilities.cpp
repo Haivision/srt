@@ -9,6 +9,7 @@
 #include "common.h"
 
 using namespace std;
+using namespace srt;
 
 
 // To test CircularBuffer
@@ -219,7 +220,7 @@ TEST(ConfigString, Setting)
     StringStorage<STRSIZE> s;
 
     EXPECT_TRUE(s.empty());
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
     EXPECT_EQ(s.str(), std::string());
 
     char example_ac1[] = "example_long";
@@ -246,7 +247,7 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), sizeof (example_ac3)-1);
 
     EXPECT_TRUE(s.set(example_ace, sizeof (example_ace)-1));
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
 
     string example_s1 = "example_long";
     string example_s2 = "short";
@@ -268,6 +269,6 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), example_s3.size());
 
     EXPECT_TRUE(s.set(example_se));
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
     EXPECT_TRUE(s.empty());
 }
