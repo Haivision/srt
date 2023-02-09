@@ -870,7 +870,7 @@ srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNU
     const int rc = HaiCrypt_Rx_Data(m_hRcvCrypto, ((uint8_t *)w_packet.getHeader()), ((uint8_t *)w_packet.m_pcData), w_packet.getLength());
     if (rc <= 0)
     {
-        LOGC(cnlog.Note, log << "decrypt ERROR (IPE): HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
+        LOGC(cnlog.Note, log << "decrypt ERROR: HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
         // -1: decryption failure
         // 0: key not received yet
         return ENCS_FAILED;

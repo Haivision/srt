@@ -5743,6 +5743,15 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     addressAndSend((response));
 }
 
+bool srt::CUDT::frequentLogAllowed(const time_point& tnow) const
+{
+#ifndef SRT_LOG_SLOWDOWN_FREQ_MS
+#define SRT_LOG_SLOWDOWN_FREQ_MS 1000
+#endif
+
+    return (m_tsLogSlowDown + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS)) <= tnow;
+}
+
 // This function is required to be called when a caller receives an INDUCTION
 // response from the listener and would like to create a CONCLUSION that includes
 // the SRT handshake extension. This extension requires that the crypter object
@@ -9892,15 +9901,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
                     const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
 
-#ifndef SRT_LOG_SLOWDOWN_FREQ_MS
-#define SRT_LOG_SLOWDOWN_FREQ_MS 1000
-#endif
-
                     const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                    if (m_tsLogSlowDown + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS) <= tnow)
+                    if (frequentLogAllowed(tnow))
                     {
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
                             << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
