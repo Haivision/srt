@@ -80,7 +80,11 @@ public:
     };
 
     /// @brief Drop the whole message from the buffer.
-    /// If message number is valid, sender has requested to drop the whole message by TTL.
+    /// If message number is valid, sender has requested to drop the whole message by TTL. In this case it has to provide a valid pkt seqno range.
+    /// However, if a message has been partially acknowledged and already removed from the SND buffer,
+    /// the seqnolo might specify some position in the middle of the message. In this case the msgno should be used to determine starting packets of the 
+    /// message. If those packet have been acknowledged, they must exist in the receiver buffer unless already read.
+    /// Some packets of the message can be missing on the receiver, therefore the actual drop can only be performed by pkt seqno range.
     /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
     /// A packedt should be dropped only if it is not a SOLO packet or if it does not exist in the buffer. Set bKeepExisting = true.
     /// This is done to avoid dropping existing packet due to a sender trying to re-transmit a packet from outdated loss report,

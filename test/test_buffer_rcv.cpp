@@ -270,15 +270,26 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
 
 TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
 {
-    // Add one packet with a gap.
+    // Add two packets.
+    EXPECT_EQ(addMessage(1, m_init_seqno), 0);
     EXPECT_EQ(addMessage(1, CSeqNo::incseq(m_init_seqno)), 0);
 
     auto& rcv_buffer = *m_rcv_buffer.get();
-    EXPECT_FALSE(hasAvailablePackets());
-    EXPECT_FALSE(rcv_buffer.isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
 
     EXPECT_EQ(rcv_buffer.dropMessage(m_init_seqno, m_init_seqno, SRT_MSGNO_NONE, CRcvBuffer::KEEP_EXISTING), 0);
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
+
     EXPECT_EQ(rcv_buffer.dropMessage(m_init_seqno, m_init_seqno, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 1);
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
+
+    array<char, m_payload_sz> buff;
+    EXPECT_TRUE(readMessage(buff.data(), buff.size()) == m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
+    EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
 // Add one packet to the buffer and read it once it is acknowledged.
