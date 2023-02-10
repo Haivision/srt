@@ -151,6 +151,7 @@ public:
     }
 
     /// @brief Checks if the buffer has packets available for reading regardless of the TSBPD.
+    /// A message is available for reading only if all of its packets are present in the buffer.
     /// @return true if there are packets available for reading, false otherwise.
     bool hasAvailablePackets() const;
 
