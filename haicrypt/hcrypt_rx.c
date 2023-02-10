@@ -19,8 +19,6 @@ written by
         Adaptation for SRT.
 *****************************************************************************/
 
-#include "platform_sys.h"
-
 #include <stdlib.h>				/* NULL */
 #include <string.h>				/* memcmp */
 #include "hcrypt.h"
