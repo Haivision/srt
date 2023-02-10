@@ -19,8 +19,6 @@ written by
         GnuTLS/Nettle CRYSPR/4SRT (CRYypto Service PRovider for SRT)
 *****************************************************************************/
 
-#include "platform_sys.h"
-
 #include "hcrypt.h"
 
 #include <string.h>
