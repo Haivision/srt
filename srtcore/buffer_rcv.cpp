@@ -261,11 +261,12 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     const bool bKeepExisting = (actionOnExisting == KEEP_EXISTING);
     // TODO: count bytes as removed?
     const int end_pos = incPos(m_iStartPos, m_iMaxPosOff);
+    int minDroppedOffset = -1;
+    int iDropCnt = 0;
     if (msgno > 0) // including SRT_MSGNO_NONE and SRT_MSGNO_CONTROL
     {
+        // First try to drop by message number in case the message starts earlier thtan @a seqnolo.
         IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << msgno);
-        int minDroppedOffset = -1;
-        int iDropCnt = 0;
         for (int i = m_iStartPos; i != end_pos; i = incPos(i))
         {
             // Can't drop is message number is not known.
@@ -295,24 +296,9 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             }
         }
         IF_RCVBUF_DEBUG(scoped_log.ss << " iDropCnt " << iDropCnt);
-        // Check if units before m_iFirstNonreadPos are dropped.
-        bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
-        releaseNextFillerEntries();
-        if (needUpdateNonreadPos)
-        {
-            m_iFirstNonreadPos = m_iStartPos;
-            updateNonreadPos();
-        }
-        if (!m_tsbpd.isEnabled() && m_bMessageAPI)
-        {
-            if (!checkFirstReadableOutOfOrder())
-                m_iFirstReadableOutOfOrder = -1;
-            updateFirstReadableOutOfOrder();
-        }
-        return iDropCnt;
     }
 
-    // Drop by packet seqno range.
+    // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
     const int offset_b = CSeqNo::seqoff(m_iStartSeqNo, seqnohi);
     if (offset_b < 0)
@@ -324,8 +310,6 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
     const int start_off = max(0, offset_a);
     const int break_pos = incPos(m_iStartPos, offset_b + 1); // The position right after the last packet to drop.
-    int minDroppedOffset = -1;
-    int iDropCnt = 0;
     for (int i = incPos(m_iStartPos, start_off); i != end_pos && i != break_pos; i = incPos(i))
     {
         // Don't drop messages, if all its packets are already in the buffer.
@@ -342,11 +326,11 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             minDroppedOffset = offPos(m_iStartPos, i);
     }
 
-    LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): [" << seqnolo << "; "
+    HLOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): [" << seqnolo << "; "
         << seqnohi << "].");
 
     // Check if units before m_iFirstNonreadPos are dropped.
-    bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
+    const bool needUpdateNonreadPos = (minDroppedOffset != -1 && minDroppedOffset <= getRcvDataSize());
     releaseNextFillerEntries();
     if (needUpdateNonreadPos)
     {

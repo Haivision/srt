@@ -79,17 +79,18 @@ public:
         KEEP_EXISTING = 1
     };
 
-    /// @brief Drop the whole message from the buffer.
-    /// If message number is valid, sender has requested to drop the whole message by TTL. In this case it has to provide a valid pkt seqno range.
+    /// @brief Drop a sequence of packets from the buffer.
+    /// If @a msgno is valid, sender has requested to drop the whole message by TTL. In this case it has to also provide a pkt seqno range.
     /// However, if a message has been partially acknowledged and already removed from the SND buffer,
-    /// the seqnolo might specify some position in the middle of the message. In this case the msgno should be used to determine starting packets of the 
-    /// message. If those packet have been acknowledged, they must exist in the receiver buffer unless already read.
-    /// Some packets of the message can be missing on the receiver, therefore the actual drop can only be performed by pkt seqno range.
+    /// the @a seqnolo might specify some position in the middle of the message, not the very first packet.
+    /// If those packets have been acknowledged, they must exist in the receiver buffer unless already read.
+    /// In this case the @a msgno should be used to determine starting packets of the message.
+    /// Some packets of the message can be missing on the receiver, therefore the actual drop should still be performed by pkt seqno range.
     /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
-    /// A packedt should be dropped only if it is not a SOLO packet or if it does not exist in the buffer. Set bKeepExisting = true.
-    /// This is done to avoid dropping existing packet due to a sender trying to re-transmit a packet from outdated loss report,
+    /// A SOLO message packet can be kept depending on @a actionOnExisting value.
+    /// TODO: A message in general can be kept if all of its packets are in the buffer, depending on @a actionOnExisting value.
+    /// This is done to avoid dropping existing packet when the sender was asked to re-transmit a packet from an outdated loss report,
     /// which is already not available in the SND buffer.
-    /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
