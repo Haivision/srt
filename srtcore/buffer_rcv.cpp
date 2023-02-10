@@ -316,7 +316,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     {
         // Don't drop messages, if all its packets are already in the buffer.
         // TODO: Don't drop a several-packet message if all packets are in the buffer.
-        if (bKeepExisting && m_entries[i].pUnit && packetAt(i).getMsgBoundary() == PB_SOLO) {
+        if (bKeepExisting && m_entries[i].pUnit && packetAt(i).getMsgBoundary() == PB_SOLO)
+        {
             LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): Skipped dropping an exising SOLO packet %" << packetAt(i).getSeqNo() << ".");
             continue;
         }
