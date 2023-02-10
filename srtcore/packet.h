@@ -150,7 +150,7 @@ const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
 
 inline int32_t CreateControlSeqNo(UDTMessageType type)
 {
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(type));
+    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(uint32_t(type));
 }
 
 inline int32_t CreateControlExtSeqNo(int exttype)
@@ -307,6 +307,8 @@ public:
     /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
     uint32_t getMsgTimeStamp() const;
 
+    sockaddr_any udpDestAddr() const { return m_DestAddr; }
+
 #ifdef SRT_DEBUG_TSBPD_WRAP                           // Receiver
     static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; // 27 bit fast wraparound for tests (~2m15s)
 #else
@@ -342,6 +344,7 @@ protected:
 
     int32_t m_extra_pad;
     bool    m_data_owned;
+    sockaddr_any m_DestAddr;
     size_t  m_zCapacity;
 
 protected:

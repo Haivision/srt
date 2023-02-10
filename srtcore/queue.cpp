@@ -577,10 +577,11 @@ void* srt::CSndQueue::worker(void* param)
         // pack a packet from the socket
         CPacket pkt;
         steady_clock::time_point next_send_time;
-        bool valid = u->packData((pkt), (next_send_time));
+        sockaddr_any source_addr;
+        const bool res = u->packData((pkt), (next_send_time), (source_addr));
 
-        // Check if payload size is invalid.
-        if (!valid)
+        // Check if extracted anything to send
+        if (res == false)
         {
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
@@ -591,7 +592,7 @@ void* srt::CSndQueue::worker(void* param)
             self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
 
         HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
-        self->m_pChannel->sendto(addr, pkt);
+        self->m_pChannel->sendto(addr, pkt, source_addr);
 
         IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSendTo++);
     }
@@ -600,10 +601,13 @@ void* srt::CSndQueue::worker(void* param)
     return NULL;
 }
 
-int srt::CSndQueue::sendto(const sockaddr_any& w_addr, CPacket& w_packet)
+int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const sockaddr_any& src)
 {
     // send out the packet immediately (high priority), this is a control packet
-    m_pChannel->sendto(w_addr, w_packet);
+    // NOTE: w_packet is passed by mutable reference because this function will do
+    // a modification in place and then it will revert it. After returning this object
+    // should look unmodified, hence it is here passed without a reference marker.
+    m_pChannel->sendto(addr, w_packet, src);
     return (int)w_packet.getLength();
 }
 
@@ -839,7 +843,7 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
         if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
         {
             // This procedure doesn't exactly respond to the original UDT idea.
-            // As the "rendezvous queue" is used for both handling rendezous and
+            // As the "rendezvous queue" is used for both handling rendezvous and
             // the caller sockets in the non-blocking mode (for blocking mode the
             // entire handshake procedure is handled in a loop-style in CUDT::startConnect),
             // the RID list should give up a socket entity in the following cases:
@@ -1670,6 +1674,7 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     memcpy((w_packet.m_nHeader), newpkt->m_nHeader, CPacket::HDR_SIZE);
     memcpy((w_packet.m_pcData), newpkt->m_pcData, newpkt->getLength());
     w_packet.setLength(newpkt->getLength());
+    w_packet.m_DestAddr = newpkt->m_DestAddr;
 
     delete[] newpkt->m_pcData;
     delete newpkt;

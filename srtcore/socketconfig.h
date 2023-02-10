@@ -91,19 +91,27 @@ struct CSrtMuxerConfig
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
 
-    bool operator==(const CSrtMuxerConfig& other) const
+    // NOTE: this operator is not reversable. The syntax must use:
+    //  muxer_entry == socket_entry
+    bool isCompatWith(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
-            && CEQUAL(iIpV6Only)
             && CEQUAL(bReuseAddr)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
             && CEQUAL(iUDPSndBufSize)
-            && CEQUAL(iUDPRcvBufSize);
+            && CEQUAL(iUDPRcvBufSize)
+            && (other.iIpV6Only == -1 || CEQUAL(iIpV6Only))
+            // NOTE: iIpV6Only is not regarded because
+            // this matches only in case of IPv6 with "any" address.
+            // And this aspect must be checked separately because here
+            // this procedure has no access to neither the address,
+            // nor the IP version (family).
 #undef CEQUAL
+            && true;
     }
 
     CSrtMuxerConfig()
@@ -196,8 +204,8 @@ struct CSrtConfig: CSrtMuxerConfig
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
-    bool   bSynSending;     // Sending syncronization mode
-    bool   bSynRecving;     // Receiving syncronization mode
+    bool   bSynSending;     // Sending synchronization mode
+    bool   bSynRecving;     // Receiving synchronization mode
     int    iFlightFlagSize; // Maximum number of packets in flight from the peer side
     int    iSndBufSize;     // Maximum UDT sender buffer size
     int    iRcvBufSize;     // Maximum UDT receiver buffer size

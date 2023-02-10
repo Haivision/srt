@@ -194,7 +194,7 @@ private:
     void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
     /// Insert a new UDT instance into the list without realloc.
-    /// Should be called if there is a gauranteed space for the element.
+    /// Should be called if there is a guaranteed space for the element.
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
@@ -410,25 +410,25 @@ public:
     /// Initialize the sending queue.
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t Timer
-
     void init(CChannel* c, sync::CTimer* t);
 
-    /// Send out a packet to a given address.
+    /// Send out a packet to a given address. The @a src parameter is
+    /// blindly passed by the caller down the call with intention to
+    /// be received eventually by CChannel::sendto, and used only if
+    /// appropriate conditions state so.
     /// @param [in] addr destination address
-    /// @param [in] packet packet to be sent out
+    /// @param [in,ref] packet packet to be sent out
+    /// @param [in] src The source IP address (details above)
     /// @return Size of data sent out.
-
-    int sendto(const sockaddr_any& addr, CPacket& packet);
+    int sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& src);
 
     /// Get the IP TTL.
     /// @param [in] ttl IP Time To Live.
     /// @return TTL.
-
     int getIpTTL() const;
 
     /// Get the IP Type of Service.
     /// @return ToS.
-
     int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
@@ -526,7 +526,7 @@ private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
     CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
     CHash*        m_pHash;      // Hash table for UDT socket looking up
-    CChannel*     m_pChannel;   // UDP channel for receving packets
+    CChannel*     m_pChannel;   // UDP channel for receiving packets
     sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
     int m_iIPversion;           // IP version

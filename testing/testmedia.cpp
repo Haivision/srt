@@ -1809,7 +1809,7 @@ RETRY_READING:
         // Don't skip packets that are ahead because if we have a situation
         // that all links are either "elephants" (do not report read readiness)
         // and "kangaroos" (have already delivered an ahead packet) then
-        // omiting kangaroos will result in only elephants to be polled for
+        // omitting kangaroos will result in only elephants to be polled for
         // reading. Elephants, due to the strict timing requirements and
         // ensurance that TSBPD on every link will result in exactly the same
         // delivery time for a packet of given sequence, having an elephant
@@ -2118,7 +2118,7 @@ RETRY_READING:
 
     // In this position all links are either:
     // - updated to the current position
-    // - updated to the newest possible possition available
+    // - updated to the newest possible position available
     // - not yet ready for extraction (not present in the group)
 
     // If we haven't extracted the very next sequence position,

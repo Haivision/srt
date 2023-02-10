@@ -23,7 +23,7 @@ namespace srt
  *   Circular receiver buffer.
  *
  *   |<------------------- m_szSize ---------------------------->|
- *   |       |<------------ m_iMaxPosInc ----------->|           |
+ *   |       |<------------ m_iMaxPosOff ----------->|           |
  *   |       |                                       |           |
  *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
  *   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
@@ -142,7 +142,7 @@ public:
     /// Query how many data has been continuously received (for reading) and available for reading out
     /// regardless of the TSBPD.
     /// TODO: Rename to countAvailablePackets().
-    /// @return size of valid (continous) data for reading.
+    /// @return size of valid (continuous) data for reading.
     int getRcvDataSize() const;
 
     /// Get the number of packets, bytes and buffer timespan.
@@ -161,11 +161,11 @@ public:
     /// Parameters (of the 1st packet queue, ready to play or not):
     /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
     /// none
-    /// @param [out] passack   true if 1st ready packet is not yet acknowleged (allowed to be delivered to the app)
-    /// @param [out] skipseqno -1 or seq number of 1st unacknowledged pkt ready to play preceeded by missing packets.
+    /// @param [out] passack   true if 1st ready packet is not yet acknowledged (allowed to be delivered to the app)
+    /// @param [out] skipseqno -1 or sequence number of 1st unacknowledged packet (after one or more missing packets) that is ready to play.
     /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
     /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
-    ///                   IF skipseqno != -1, packet ready to play preceeded by missing packets.;
+    ///                   IF skipseqno != -1, packet ready to play preceded by missing packets.;
     ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
@@ -181,7 +181,7 @@ public:
 
     bool empty() const
     {
-        return (m_iMaxPosInc == 0);
+        return (m_iMaxPosOff == 0);
     }
 
     /// Return buffer capacity.
@@ -226,8 +226,8 @@ private:
     inline int cmpPos(int pos2, int pos1) const
     {
         // XXX maybe not the best implementation, but this keeps up to the rule
-        int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + m_szSize - m_iStartPos;
-        int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + m_szSize - m_iStartPos;
+        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
+        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
         return off2 - off1;
     }
@@ -321,7 +321,7 @@ private:
     int m_iStartSeqNo;
     int m_iStartPos;        // the head position for I/O (inclusive)
     int m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    int m_iMaxPosInc;       // the furthest data position
+    int m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
@@ -334,7 +334,7 @@ public: // TSBPD public functions
     /// Set TimeStamp-Based Packet Delivery Rx Mode
     /// @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
     /// @param [in] wrap Is in wrapping period
-    /// @param [in] delay aggreed TsbPD delay
+    /// @param [in] delay agreed TsbPD delay
     ///
     /// @return 0
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
