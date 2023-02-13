@@ -7001,7 +7001,7 @@ int64_t srt::CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int blo
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         // delay the EXP timer to avoid mis-fired timeout
-        // XXX Lock ???  ScopedLock ack_lock(m_RecvAckLock);
+        ScopedLock ack_lock(m_RecvAckLock);
         m_tsLastRspAckTime = steady_clock::now();
         m_iReXmitCount   = 1;
     }
@@ -8207,8 +8207,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
 
-            // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
-            // because the sendmsg2 may want to change it at the same time.
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
         }
@@ -8238,52 +8236,50 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     //
 
     // Protect packet retransmission
-    enterCS(m_RecvAckLock);
-
-    // Check the validation of the ack
-    if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
     {
-        leaveCS(m_RecvAckLock);
-        // this should not happen: attack or bug
-        LOGC(gglog.Error,
-                log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
+        ScopedLock ack_lock(m_RecvAckLock);
+
+        // Check the validation of the ack
+        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
+        {
+            // this should not happen: attack or bug
+            LOGC(gglog.Error,
+                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
                     << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
-        m_bBroken        = true;
-        m_iBrokenCounter = 0;
-        return;
+            m_bBroken        = true;
+            m_iBrokenCounter = 0;
+            return;
+        }
+
+        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
+        {
+            // Update Flow Window Size, must update before and together with m_iSndLastAck
+            m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+            m_iSndLastAck     = ackdata_seqno;
+            m_tsLastRspAckTime  = currtime;
+            m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+        }
+
+        /*
+         * We must not ignore full ack received by peer
+         * if data has been artificially acked by late packet drop.
+         * Therefore, a distinct ack state is used for received Ack (iSndLastFullAck)
+         * and ack position in send buffer (m_iSndLastDataAck).
+         * Otherwise, when severe congestion causing packet drops (and m_iSndLastDataAck update)
+         * occures, we drop received acks (as duplicates) and do not update stats like RTT,
+         * which may go crazy and stay there, preventing proper stream recovery.
+         */
+
+        if (CSeqNo::seqoff(m_iSndLastFullAck, ackdata_seqno) <= 0)
+        {
+            // discard it if it is a repeated ACK
+            return;
+        }
+        m_iSndLastFullAck = ackdata_seqno;
     }
-
-    if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
-    {
-        // Update Flow Window Size, must update before and together with m_iSndLastAck
-        m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
-        m_iSndLastAck     = ackdata_seqno;
-        m_tsLastRspAckTime  = currtime;
-        m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
-    }
-
-    /*
-     * We must not ignore full ack received by peer
-     * if data has been artificially acked by late packet drop.
-     * Therefore, a distinct ack state is used for received Ack (iSndLastFullAck)
-     * and ack position in send buffer (m_iSndLastDataAck).
-     * Otherwise, when severe congestion causing packet drops (and m_iSndLastDataAck update)
-     * occures, we drop received acks (as duplicates) and do not update stats like RTT,
-     * which may go crazy and stay there, preventing proper stream recovery.
-     */
-
-    if (CSeqNo::seqoff(m_iSndLastFullAck, ackdata_seqno) <= 0)
-    {
-        // discard it if it is a repeated ACK
-        leaveCS(m_RecvAckLock);
-        return;
-    }
-    m_iSndLastFullAck = ackdata_seqno;
-
     //
     // END of the new code with TLPKTDROP
     //
-    leaveCS(m_RecvAckLock);
 #if ENABLE_BONDING
     if (m_parent->m_GroupOf)
     {
@@ -8797,7 +8793,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         {
             const bool using_rexmit_flag = m_bPeerRexmitFlag;
             ScopedLock rblock(m_RcvBufferLock);
-            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag));
+            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag), CRcvBuffer::KEEP_EXISTING);
 
             if (iDropCnt > 0)
             {
@@ -9899,7 +9895,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     // Drop the packet from the receiver buffer.
                     // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
                     // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
-                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE);
+                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
 
                     const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
@@ -11249,11 +11245,14 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     // in the sender's buffer will be added to the SND loss list and retransmitted.
     //
 
-    const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
-    const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
+    {
+        ScopedLock ack_lock(m_RecvAckLock);
+        const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
+        const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
 
-    if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))
-        return;
+        if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))
+            return;
+    }
 
     // If there is no unacknowledged data in the sending buffer,
     // then there is nothing to retransmit.

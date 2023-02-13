@@ -17,8 +17,6 @@ written by
 		CRYSPR/4SRT Initial implementation.
 *****************************************************************************/
 
-#include "platform_sys.h"
-
 #include "hcrypt.h"
 #include "cryspr.h"
 
@@ -561,7 +559,7 @@ static int crysprFallback_MsEncrypt(
 			memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
 			if (ctx->mode == HCRYPT_CTX_MODE_AESGCM) {
 				// Encoding produced more payload (auth tag).
-				return out_len;
+				return (int)out_len;
 			}
 #endif /* CRYSPR_HAS_AESCTR */
 	} else {
