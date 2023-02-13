@@ -79,7 +79,7 @@ The target size of the payload stored by the receiver buffer would be:
 
 where
 
-- `UDPHDR_SIZE` = 28 (20 bytes IPv4, 8 bytes of UDP)
+- `UDPHDR_SIZE` = 44 (20 bytes IPv4, 8 bytes of UDP, 16 bytes SRT)
 - `SRTO_MSS` is the corresponding socket option value at the moment of setting `SRTO_RCVBUF`.
 
 
