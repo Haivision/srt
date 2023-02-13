@@ -293,7 +293,6 @@ void srt::CUDT::construct()
     m_iTsbPdDelay_ms      = 0;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
-    m_iPeerTsbPdDelay_ms  = 0;
     m_bTsbPd              = false;
     m_bTsbPdAckWakeup     = false;
     m_bGroupTsbPd         = false;

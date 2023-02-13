@@ -440,11 +440,6 @@ static int crysprFallback_MsEncrypt(
 		return(-1);
 	}
 
-	if (NULL == out_msg) {
-		/* input data too big */
-		return(-1);
-	}
-
 	switch(ctx->mode) {
 		case HCRYPT_CTX_MODE_AESCTR: /* Counter mode */
 		case HCRYPT_CTX_MODE_AESGCM:
