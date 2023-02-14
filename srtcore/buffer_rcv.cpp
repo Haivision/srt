@@ -322,7 +322,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
         // First try to drop by message number in case the message starts earlier thtan @a seqnolo.
         // The sender should have the last packet of the message it is requesting to be dropped,
         // therefore we don't search forward.
-        for (int i = start_pos; i != decPos(m_iStartPos); i = decPos(i))
+        const int stop_pos = decPos(m_iStartPos);
+        for (int i = start_pos; i != stop_pos; i = decPos(i))
         {
             // Can't drop is message number is not known.
             if (!m_entries[i].pUnit) // also dropped earlier.
