@@ -32,7 +32,7 @@ int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
     // UDP header size is assumed to be 44 bytes
     // 20 bytes IPv4 + 8 bytes of UDP + 16 bytes SRT
     const int UDPHDR_SIZE = 44;
-    const int pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE));
+    const int pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE - SRTHDR_SIZE));
 
     return min(pkts, SRTO_FC);
 }
