@@ -144,7 +144,7 @@ public:
     {
         ofile.write(data.payload.data(), data.payload.size());
 #ifdef PLEASE_LOG
-        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+        applog.Debug() << "FileTarget::Write: " << data.payload.size() << " written to a file";
 #endif
     }
 
@@ -1297,7 +1297,8 @@ void SrtCommon::ConnectClient(string host, int port)
         {
             int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
-            LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
+            LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock,
+                    " reject reason: ", reason, ": ", srt_rejectreason_str(reason));
 #endif
             if (transmit_retry_connect && (transmit_retry_always || reason == SRT_REJ_TIMEOUT))
             {
@@ -2360,7 +2361,7 @@ Epoll_again:
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
-                << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+                << BufferStamp(data.data(), stat) << " BELATED: " << ((srt_time_now()-mctrl.srctime)/1000.0) << "ms");
 #endif
 
         Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
