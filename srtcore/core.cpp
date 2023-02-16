@@ -5290,6 +5290,8 @@ void * srt::CUDT::tsbpd(void* param)
         bool shall_update_group = false;
 #endif
 
+        INCREMENT_THREAD_ITERATIONS();
+
         enterCS(self->m_RcvBufferLock);
         const steady_clock::time_point tnow = steady_clock::now();
 
