@@ -121,6 +121,24 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         }
     }
 
+    if (par.count("bind"))
+    {
+        string bindspec = par.at("bind");
+        UriParser u (bindspec, UriParser::EXPECT_HOST);
+        if ( u.scheme() != ""
+                || u.path() != ""
+                || !u.parameters().empty()
+                || u.portno() == 0)
+        {
+            Error("Invalid syntax in 'bind' option");
+        }
+
+        if (u.host() != "")
+            par["adapter"] = u.host();
+        par["port"] = u.port();
+        par.erase("bind");
+    }
+
     string adapter;
     if (par.count("adapter"))
     {

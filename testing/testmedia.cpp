@@ -363,6 +363,24 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 #endif
     }
 
+    if (par.count("bind"))
+    {
+        string bindspec = par.at("bind");
+        UriParser u (bindspec, UriParser::EXPECT_HOST);
+        if ( u.scheme() != ""
+                || u.path() != ""
+                || !u.parameters().empty()
+                || u.portno() == 0)
+        {
+            Error("Invalid syntax in 'bind' option");
+        }
+
+        if (u.host() != "")
+            par["adapter"] = u.host();
+        par["port"] = u.port();
+        par.erase("bind");
+    }
+
     string adapter;
     if (par.count("adapter"))
     {
@@ -864,6 +882,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
+    Verb() << "Binding the caller socket to " << host << ":" << port << " ...";
     auto lsa = CreateAddr(host, port);
     int stat = srt_bind(m_sock, lsa.get(), sizeof lsa);
     if (stat == SRT_ERROR)
