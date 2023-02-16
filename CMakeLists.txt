@@ -1449,12 +1449,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
+		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		gtest_add_tests(
-			test-srt
-			""
-			AUTO
+			TEST_LIST tests_srt
+			TARGET test-srt
 		)
+		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
 	endif()
 
 	enable_testing()
