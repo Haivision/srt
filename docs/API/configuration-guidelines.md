@@ -23,12 +23,12 @@ When the `SRTO_RCVBUF` option value is set using the `srt_setsockopt(..)` functi
 the provided size in bytes is internally converted to the corresponding size in packets.
 The size of a cell for a single packet in the buffer is defined by the
 `SRTO_MSS` option, which is 1500 by default.  This value, decreased by 28 in
-case of IPv4 (20 bytes for IPv4 header and 8 bytes for UDP header), gives 1472
+the case of IPv4 (20 bytes for the IPv4 header and 8 bytes for the UDP header), gives 1472
 bytes per packet to be allocated. The actual memory occupied by the receiver
-buffer will be a multiplicity of that value. For the default 8192 packets it
-makes then 11776kB (11.5MB).
+buffer will be a multiple of that value. For the default 8192 packets it
+will be 11776 kB (11.5 MB).
 
-Further, in every cell, there is 16 bytes of SRT header and the remaining space
+Note that every cell has 16 bytes for the SRT header. The remaining space
 is for the payload.
 
 As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
