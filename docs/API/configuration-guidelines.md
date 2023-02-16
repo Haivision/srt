@@ -33,7 +33,7 @@ is for the payload.
 
 As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
 
-The following function returns the buffer size in packets:
+The following function returns the configured buffer size in packets depending on the SRTO_RCVBUF, SRTO_MSS and SRTO_FC values set:
 
 ```c++
 int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
@@ -65,7 +65,7 @@ where
 
 If the whole remainder of the MTU is expected to be used, payload size is calculated as follows: 
 
-`bytePayloadSize = MSS - UDP_HDR - SRT_HDR`
+`bytePayloadSize = MSS - UDP_IPv4_HDR - SRT_HDR`
 
 where
 
