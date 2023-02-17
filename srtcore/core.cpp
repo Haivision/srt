@@ -3686,12 +3686,14 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 if (cst == CONN_CONTINUE)
                     continue;
 
+                // Just in case it wasn't set, set this as a fallback
+                if (m_RejectReason == SRT_REJ_UNKNOWN)
+                    m_RejectReason = SRT_REJ_ROGUE;
+
                 // rejection or erroneous code.
                 reqpkt.setLength(m_iMaxSRTPayloadSize);
                 reqpkt.setControl(UMSG_HANDSHAKE);
                 sendRendezvousRejection(serv_addr, (reqpkt));
-
-                break; // unure if this should stay. This prevents from sending additionally SHUTDOWN message
             }
 
             if (cst == CONN_REJECT)
@@ -3886,6 +3888,9 @@ bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
             LOGC(cnlog.Warn,
                  log << CONID()
                      << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
+
+            if (m_RejectReason == SRT_REJ_UNKNOWN)
+                m_RejectReason = SRT_REJ_ROGUE;
 
             sendRendezvousRejection(serv_addr, (request));
             status = false;
