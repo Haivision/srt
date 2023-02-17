@@ -40,8 +40,8 @@ int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
 {
     // UDP/IPv4 header size is assumed to be 28 bytes
     // 20 bytes IPv4 + 8 bytes of UDP
-    const int UDPHDR_SIZE = 28;
-    const int pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE));
+    const int UDP_IPv4_HDR= 28;
+    const int pkts = (rbuf_size / (SRTO_MSS - UDP_IPv4_HDR));
 
     return min(pkts, SRTO_FC);
 }
@@ -70,7 +70,7 @@ If the whole remainder of the MTU is expected to be used, payload size is calcul
 where
 
 - `MSS`: Maximum Segment Size (size of the MTU); see `SRTO_MSS` (default: 1500)
-- `UDP_HDR`: 20 bytes for IPv4 + 8 bytes for UDP
+- `UDP_IPv4_HDR`: 20 bytes for IPv4 + 8 bytes for UDP
 - `SRT_HDR`: 16 bytes of SRT header (belonging to the user space)
 
 ### Calculating Target Size to Set
