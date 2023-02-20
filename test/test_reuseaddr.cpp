@@ -322,15 +322,50 @@ void serverSocket(std::string ip, int port, bool expect_success)
     std::cout << "Server exit\n";
 }
 
+class SRTTestEnv
+{
+    private:
+        int srtStartupVal;
+
+        int testEnvSetup()
+        {
+            return srt_startup();
+        }
+
+        int testEnvTearDown()
+        {
+            return srt_cleanup();
+        }
+
+    public:
+        SRTTestEnv() : srtStartupVal{srt_startup()}
+        {
+            std::cout<<"Entered into constructor" <<std::endl;
+        }
+
+        ~SRTTestEnv()
+        {
+            std::cout<<"Entered into destructor" <<std::endl;
+            testEnvTearDown();
+        }
+
+        int getSrtStartupVal()
+        {
+            return srtStartupVal;
+        }
+
+};
+
 TEST(ReuseAddr, SameAddr1)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    SRTTestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
 
     server_pollid = srt_epoll_create();
-    ASSERT_NE(SRT_ERROR, server_pollid);
+    ASSERT_NE(SRT_ERROR, server_pollid); 
 
     std::thread server_1(serverSocket, "127.0.0.1", 5000, true);
     server_1.join();
@@ -340,7 +375,7 @@ TEST(ReuseAddr, SameAddr1)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
+    //srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddr2)
