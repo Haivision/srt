@@ -150,8 +150,8 @@ typedef struct {
 #define hcryptMsg_KM_GetSaltLen(msg)    (size_t)((msg)[HCRYPT_MSG_KM_OFS_SLEN] * 4)
 #define hcryptMsg_KM_GetSekLen(msg)     (size_t)((msg)[HCRYPT_MSG_KM_OFS_KLEN] * 4)
 
-#define hcryptMsg_KM_SetSaltLen(msg,len)do {(msg)[HCRYPT_MSG_KM_OFS_SLEN] = (len)/4;} while(0)
-#define hcryptMsg_KM_SetSekLen(msg,len) do {(msg)[HCRYPT_MSG_KM_OFS_KLEN] = (len)/4;} while(0)
+#define hcryptMsg_KM_SetSaltLen(msg,len)do {(msg)[HCRYPT_MSG_KM_OFS_SLEN] = (unsigned char)(len)/4;} while(0)
+#define hcryptMsg_KM_SetSekLen(msg,len) do {(msg)[HCRYPT_MSG_KM_OFS_KLEN] = (unsigned char)(len)/4;} while(0)
 
 
 #endif /* HCRYPT_MSG_H */

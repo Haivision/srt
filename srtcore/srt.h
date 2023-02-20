@@ -556,7 +556,7 @@ enum SRT_REJECT_REASON
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
     SRT_REJ_TIMEOUT,     // connection timeout
-#if ENABLE_AEAD_API_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
 #endif
 
@@ -645,8 +645,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-#if ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong ccryptographic mode is used, cannot decrypt. Since v1.6.0.
+#ifdef ENABLE_AEAD_API_PREVIEW
+    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.6.0.
 #endif
 };
 

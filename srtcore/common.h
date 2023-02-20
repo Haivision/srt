@@ -1409,8 +1409,12 @@ inline std::string SrtVersionString(int version)
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
 
-    char buf[20];
-    sprintf(buf, "%d.%d.%d", major, minor, patch);
+    char buf[22];
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
+#else
+    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
+#endif
     return buf;
 }
 

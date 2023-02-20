@@ -75,9 +75,9 @@ int crysprMbedtls_AES_SetKey(
     // kstr_len is in "bytes" convention (16, 24, 32).
 
     if (bEncrypt) {        /* Encrypt key */
-        ret = mbedtls_aes_setkey_enc(aes_key, kstr, kstr_len*8);
+        ret = mbedtls_aes_setkey_enc(aes_key, kstr, (unsigned int)kstr_len*8);
     } else {               /* Decrypt key */
-        ret = mbedtls_aes_setkey_dec(aes_key, kstr, kstr_len*8);
+        ret = mbedtls_aes_setkey_dec(aes_key, kstr, (unsigned int)kstr_len*8);
     }
 
     return ret == 0 ? 0 : -1;
@@ -91,8 +91,8 @@ int crysprMbedtls_AES_EcbCipher( /* AES Electronic Codebook cipher*/
     unsigned char *out_txt,     /* dst (cipher text) */
     size_t *outlen)             /* dst len */
 {
-    int nblk = inlen/CRYSPR_AESBLKSZ;
-    int nmore = inlen%CRYSPR_AESBLKSZ;
+    int nblk = (int)(inlen/CRYSPR_AESBLKSZ);
+    int nmore = (int)(inlen%CRYSPR_AESBLKSZ);
     int i;
 
     if (bEncrypt) {
@@ -216,7 +216,7 @@ int crysprMbedtls_KmPbkdf2(
 
     ret = mbedtls_pkcs5_pbkdf2_hmac(&mdctx,
             (unsigned char*)passwd, passwd_len, salt, salt_len,
-            itr, key_len, out);
+            itr, (uint32_t)key_len, out);
 
     mbedtls_md_free(&mdctx);
 

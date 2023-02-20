@@ -485,6 +485,7 @@ private:
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
+    void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
     /// Create the CryptoControl object based on the HS packet. Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
@@ -829,6 +830,7 @@ private: // Timers
 
     duration   m_tdACKInterval;                  // ACK interval
     duration   m_tdNAKInterval;                  // NAK interval
+
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer
@@ -896,6 +898,15 @@ private: // Timers
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
+
+    time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
+                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
+
+    /// @brief Check if a frequent log can be shown.
+    /// @param tnow current time
+    /// @return true if it is ok to print a frequent log message.
+    bool frequentLogAllowed(const time_point& tnow) const;
 
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
