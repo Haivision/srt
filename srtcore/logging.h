@@ -359,7 +359,11 @@ struct LogDispatcher::Proxy
     {
         char buf[512];
 
-        vsprintf(buf, fmts, ap);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+        _vsnprintf(buf, sizeof(buf) - 1, fmts, ap);
+#else
+        vsnprintf(buf, sizeof(buf), fmts, ap);
+#endif
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {
