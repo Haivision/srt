@@ -965,6 +965,7 @@ void srt::CUDT::open()
 #endif
 
     m_iReXmitCount   = 1;
+    memset(&m_aSuppressedMsg, 0, sizeof m_aSuppressedMsg);
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
     m_tsNextSendTime = steady_clock::time_point();
@@ -5379,15 +5380,16 @@ void * srt::CUDT::tsbpd(void* param)
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
                     << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
 #endif
-                if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow))
+                string why;
+                if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                             << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
-                            << (timediff_us % 1000) << " ms");
+                            << (timediff_us % 1000) << " ms " << why);
                 }
                 else
                 {
-                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG");
+                    //LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
                 }
 #endif
 
@@ -5807,7 +5809,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     addressAndSend((response));
 }
 
-bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow)
+bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string& w_why)
 {
 #ifndef SRT_LOG_SLOWDOWN_FREQ_MS
 #define SRT_LOG_SLOWDOWN_FREQ_MS 1000
@@ -5829,14 +5831,22 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow)
         m_tsLogSlowDown.store(tnow);
 
         is_suppressed = false;
+
+        int supr = m_aSuppressedMsg[logid];
+
+        if (supr > 0)
+            w_why = Sprint("++SUPPRESSED: ", supr);
+        m_aSuppressedMsg[logid] = 0;
     }
     else
     {
+        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
+        ++m_aSuppressedMsg[logid];
     }
 
-    return is_suppressed;
+    return !is_suppressed;
 }
 
 // This function is required to be called when a caller receives an INDUCTION
@@ -8886,15 +8896,16 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
             {
                 ScopedLock lg (m_StatsLock);
                 const steady_clock::time_point tnow = steady_clock::now();
-                if (frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow))
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << CONID() << "RCV-DROPPED " << iDropCnt << " packet(s), seqno range %"
                             << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
-                            << " (SND DROP REQUEST).");
+                            << " (SND DROP REQUEST). " << why);
                 }
                 else
                 {
-                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG");
+                    //LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
                 }
 
                 // Estimate dropped bytes from average payload size.
@@ -9995,10 +10006,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     ScopedLock lg(m_StatsLock);
                     m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
                     m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                    if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow))
+                    string why;
+                    if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                     {
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
+                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                     }
                 }
             }
