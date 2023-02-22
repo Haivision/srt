@@ -645,10 +645,17 @@ and the actual value for connected sockets.
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_IPV6ONLY`  | 1.4.0 | pre-bind | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
 
-Set system socket flag `IPV6_V6ONLY`. When set to 0 a listening socket binding an
-IPv6 address accepts also IPv4 clients (their addresses will be formatted as
-IPv4-mapped IPv6 addresses). By default (-1) this option is not set and the
-platform default value is used.
+Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
+only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
+(known also as `::`). In this case this option must be also set explicitly to 0 or 1
+before binding, otherwise binding will fail (this is because it is not possible to
+determine the default value of this above-mentioned system option in any portable or
+reliable way). Possible values are:
+
+* -1: (default) use system-default value (can be used when not binding to IPv6 wildcard `::`)
+* 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
+* 1: The binding to `in6addr_any` will bind only to IPv6 and not IPv4 wildcard address
+
 
 [Return to list](#list-of-options)
 
@@ -738,7 +745,7 @@ Keying Material state. This is a legacy option that is equivalent to
 `SRTO_RCVKMSTATE` otherwise. This option is then equal to `SRTO_RCVKMSTATE`
 always if your application disregards possible cooperation with a peer older
 than 1.3.0, but then with the default value of `SRTO_ENFORCEDENCRYPTION` the
-value returned by both options is always the same. See [`SRT_KM_STATE`](#2-srt_km_state)
+value returned by both options is always the same. See [`SRT_KM_STATE`](#srt_km_state)
 for more details.
 
 [Return to list](#list-of-options)
@@ -1123,6 +1130,31 @@ undefined behavior:
   happen**, as this may result in having one party's setting of length = 32 be
   overridden by the other party's setting of length = 16.
 
+| Initiator     |             | Responder     |             | Result  |
+|---------------|-------------|---------------|-------------|---------|
+| SRTO_PBKEYLEN | SRTO_SENDER | SRTO_PBKEYLEN | SRTO_SENDER |         |
+|  0            | any         |  0            | any         | AES-128 |
+|  0            | any         | AES-128       | any         | AES-128 |
+|  0            | any         | AES-192       | any         | AES-192 |
+|  0            | any         | AES-256       | any         | AES-256 |
+| AES-128       | any         |  0            | any         | AES-128 |
+| AES-128       | any         | AES-128       | any         | AES-128 |
+| AES-128       | 0           | AES-192       | any         | AES-192 |
+| AES-128       | 0           | AES-256       | any         | AES-256 |
+| AES-128       | 1           | AES-192       | any         | AES-128 |
+| AES-128       | 1           | AES-256       | any         | AES-128 |
+| AES-192       | any         |  0            | any         | AES-192 |
+| AES-192       | 0           | AES-128       | any         | AES-128 |
+| AES-192       | any         | AES-192       | any         | AES-192 |
+| AES-192       | 0           | AES-256       | any         | AES-256 |
+| AES-192       | 1           | AES-128       | any         | AES-192 |
+| AES-192       | 1           | AES-256       | any         | AES-192 |
+| AES-256       | any         |  0            | any         | AES-256 |
+| AES-256       | 0           | AES-128       | any         | AES-128 |
+| AES-256       | 0           | AES-192       | any         | AES-192 |
+| AES-256       | any         | AES-256       | any         | AES-256 |
+| AES-256       | 1           | AES-128       | any         | AES-256 |
+| AES-256       | 1           | AES-192       | any         | AES-256 |
 
 [Return to list](#list-of-options)
 

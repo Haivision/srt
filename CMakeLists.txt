@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.1)
+set (SRT_VERSION 1.5.2)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -202,6 +202,16 @@ if (USE_BUSY_WAITING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
 else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
+# Reduce the frequency of some frequent logs, milliseconds
+set(SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT 1000) # 1s
+if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
+	if (ENABLE_HEAVY_LOGGING)
+		set(SRT_LOG_SLOWDOWN_FREQ_MS 0) # Just show every log message.
+	else()
+		set(SRT_LOG_SLOWDOWN_FREQ_MS ${SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT})
+	endif()
 endif()
 
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
@@ -494,6 +504,15 @@ CheckGCCAtomicIntrinsics()
 #  HAVE_CXX_ATOMIC_STATIC
 include(CheckCXXAtomic)
 CheckCXXAtomic()
+
+# Check for std::put_time():
+# Sets:
+#  HAVE_CXX_STD_PUT_TIME
+include(CheckCXXStdPutTime)
+CheckCXXStdPutTime()
+if (HAVE_CXX_STD_PUT_TIME)
+	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
+endif()
 
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
@@ -1058,6 +1077,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
 endif()
 
+target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
@@ -1079,6 +1100,11 @@ if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
 elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
 	# This is a workaround for ANDROID NDK<17 builds, which need to link
 	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
+	# This is a workaround for some older Linux Toolchains.
 	if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
@@ -1423,12 +1449,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
+		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		gtest_add_tests(
-			test-srt
-			""
-			AUTO
+			TEST_LIST tests_srt
+			TARGET test-srt
 		)
+		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
 	endif()
 
 	enable_testing()

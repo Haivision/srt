@@ -266,14 +266,29 @@ public:
     /// @return the number of dropped packets.
     int dropAll();
 
-    /// @brief Drop the whole message from the buffer.
+    enum DropActionIfExists {
+        DROP_EXISTING = 0,
+        KEEP_EXISTING = 1
+    };
+
+    /// @brief Drop a sequence of packets from the buffer.
+    /// If @a msgno is valid, sender has requested to drop the whole message by TTL. In this case it has to also provide a pkt seqno range.
+    /// However, if a message has been partially acknowledged and already removed from the SND buffer,
+    /// the @a seqnolo might specify some position in the middle of the message, not the very first packet.
+    /// If those packets have been acknowledged, they must exist in the receiver buffer unless already read.
+    /// In this case the @a msgno should be used to determine starting packets of the message.
+    /// Some packets of the message can be missing on the receiver, therefore the actual drop should still be performed by pkt seqno range.
     /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
-    /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
+    /// A SOLO message packet can be kept depending on @a actionOnExisting value.
+    /// TODO: A message in general can be kept if all of its packets are in the buffer, depending on @a actionOnExisting value.
+    /// This is done to avoid dropping existing packet when the sender was asked to re-transmit a packet from an outdated loss report,
+    /// which is already not available in the SND buffer.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
+    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
-    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
+    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
     /// Extract the "expected next" packet sequence.
     /// Extract the past-the-end sequence for the first packet
@@ -339,6 +354,7 @@ public:
     }
 
     /// @brief Checks if the buffer has packets available for reading regardless of the TSBPD.
+    /// A message is available for reading only if all of its packets are present in the buffer.
     /// @return true if there are packets available for reading, false otherwise.
     bool hasAvailablePackets() const;
 
@@ -437,8 +453,8 @@ private:
     inline int cmpPos(int pos2, int pos1) const
     {
         // XXX maybe not the best implementation, but this keeps up to the rule
-        int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + m_szSize - m_iStartPos;
-        int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + m_szSize - m_iStartPos;
+        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
+        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
         return off2 - off1;
     }

@@ -440,11 +440,6 @@ static int crysprFallback_MsEncrypt(
 		return(-1);
 	}
 
-	if (NULL == out_msg) {
-		/* input data too big */
-		return(-1);
-	}
-
 	switch(ctx->mode) {
 		case HCRYPT_CTX_MODE_AESCTR: /* Counter mode */
 		case HCRYPT_CTX_MODE_AESGCM:
@@ -559,7 +554,7 @@ static int crysprFallback_MsEncrypt(
 			memcpy(in_data[0].payload, &out_msg[pfx_len], out_len);
 			if (ctx->mode == HCRYPT_CTX_MODE_AESGCM) {
 				// Encoding produced more payload (auth tag).
-				return out_len;
+				return (int)out_len;
 			}
 #endif /* CRYSPR_HAS_AESCTR */
 	} else {

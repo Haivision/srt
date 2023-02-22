@@ -523,6 +523,8 @@ void* srt::CSndQueue::worker(void* param)
     {
         const steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
 
+        INCREMENT_THREAD_ITERATIONS();
+
         IF_DEBUG_HIGHRATE(self->m_WorkerStats.lIteration++);
 
         if (is_zero(next_time))
@@ -1219,6 +1221,8 @@ void* srt::CRcvQueue::worker(void* param)
     {
         bool        have_received = false;
         EReadStatus rst           = self->worker_RetrieveUnit((id), (unit), (sa));
+
+        INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
             if (id < 0)

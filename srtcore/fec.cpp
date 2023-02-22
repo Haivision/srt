@@ -453,7 +453,9 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo() << " rowoff=" << baseoff
             << " column=" << vert_gx << " .base=%" << vert_base << " coloff=" << vert_off);
 
-    if (vert_off >= 0 && sizeCol() > 1)
+    // [[assert sizeCol() >= 2]]; // see the condition above.
+
+    if (vert_off >= 0)
     {
         // BEWARE! X % Y with different signedness upgrades int to unsigned!
 
@@ -468,7 +470,7 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
             return;
         }
 
-        SRT_ASSERT(vert_off >= 0);
+        // [[assert vert_off >= 0]]; // this condition branch
         int vert_pos = vert_off / int(sizeRow());
 
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
@@ -496,7 +498,6 @@ void FECFilterBuiltin::feedSource(CPacket& packet)
     }
     else
     {
-
         HLOGC(pflog.Debug, log << "FEC:feedSource: %" << packet.getSeqNo()
                 << " B:%" << baseoff << " H:*[" << horiz_pos << "] V(B=%" << vert_base
                 << ")[col=" << vert_gx << "]<NO-COLUMN>"
