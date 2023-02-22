@@ -5840,7 +5840,7 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
     }
     else
     {
-        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown));
+        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown.load()));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
         ++m_aSuppressedMsg[logid];
