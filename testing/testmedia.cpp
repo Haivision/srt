@@ -639,7 +639,7 @@ static string PrintEpollEvent(int events, int et_events)
     };
 
     ostringstream os;
-    int N = Size(namemap);
+    int N = (int)Size(namemap);
 
     for (int i = 0; i < N; ++i)
     {
@@ -1059,7 +1059,7 @@ void SrtCommon::OpenGroupClient()
 Connect_Again:
         Verb() << "Waiting for group connection... " << VerbNoEOL;
 
-        int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+        int fisock = srt_connect_group(m_sock, targets.data(), int(targets.size()));
 
         if (fisock == SRT_ERROR)
         {
@@ -2304,7 +2304,7 @@ MediaPacket SrtSource::Read(size_t chunk)
             Error("srt_recvmsg2: interrupted");
 
         ::transmit_throw_on_interrupt = true;
-        stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
+        stat = srt_recvmsg2(m_sock, data.data(), int(chunk), &mctrl);
         ::transmit_throw_on_interrupt = false;
         if (stat != SRT_ERROR)
         {
@@ -2500,7 +2500,7 @@ Epoll_again:
         mctrl.srctime = data.time;
     }
 
-    int stat = srt_sendmsg2(m_sock, data.payload.data(), data.payload.size(), &mctrl);
+    int stat = srt_sendmsg2(m_sock, data.payload.data(), int(data.payload.size()), &mctrl);
 
     // For a socket group, the error is reported only
     // if ALL links from the group have failed to perform
@@ -2952,7 +2952,7 @@ UdpTarget::UdpTarget(string host, int port, const map<string,string>& attr)
 
 void UdpTarget::Write(const MediaPacket& data)
 {
-    int stat = sendto(m_sock, data.payload.data(), data.payload.size(), 0, (sockaddr*)&sadr, sizeof sadr);
+    int stat = sendto(m_sock, data.payload.data(), int(data.payload.size()), 0, (sockaddr*)&sadr, int(sizeof sadr));
     if (stat == -1)
         Error(SysError(), "UDP Write/sendto");
 }

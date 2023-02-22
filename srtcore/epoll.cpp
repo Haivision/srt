@@ -965,7 +965,7 @@ static ostream& PrintEpollEvent(ostream& os, int events, int et_events)
         make_pair(SRT_EPOLL_UPDATE, "U")
     };
 
-    int N = Size(namemap);
+    const int N = (int)Size(namemap);
 
     for (int i = 0; i < N; ++i)
     {

@@ -850,7 +850,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
     size_t pred_size = shift + m_chunk;
 
     w_output.resize(pred_size);
-    int st = ReadInternal((w_output.data() + shift), m_chunk);
+    int st = ReadInternal((w_output.data() + shift), int(m_chunk));
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -884,7 +884,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
 
 void SrtMedium::Write(bytevector& w_buffer)
 {
-    int st = srt_send(m_socket, w_buffer.data(), w_buffer.size());
+    int st = srt_send(m_socket, w_buffer.data(), int(w_buffer.size()));
     if (st == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_send");
@@ -907,7 +907,7 @@ void SrtMedium::Write(bytevector& w_buffer)
 
 void TcpMedium::Write(bytevector& w_buffer)
 {
-    int st = ::send(m_socket, w_buffer.data(), w_buffer.size(), DEF_SEND_FLAG);
+    int st = ::send(m_socket, w_buffer.data(), int(w_buffer.size()), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
