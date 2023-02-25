@@ -452,44 +452,9 @@ void shutdownListener(SRTSOCKET bindsock)
     EXPECT_NE(credit, 0);
 }
 
-class SRTTestEnv
-{
-    private:
-        int srtStartupVal;
-
-        int testEnvSetup()
-        {
-            return srt_startup();
-        }
-
-        int testEnvTearDown()
-        {
-            return srt_cleanup();
-        }
-
-    public:
-        SRTTestEnv() : srtStartupVal{srt_startup()}
-        {
-            std::cout<<"Entered into constructor" <<std::endl;
-        }
-
-        ~SRTTestEnv()
-        {
-            std::cout<<"Entered into destructor" <<std::endl;
-            testEnvTearDown();
-        }
-
-        int getSrtStartupVal()
-        {
-            return srtStartupVal;
-        }
-
-};
-
 TEST(ReuseAddr, SameAddr1)
 {
-    SRTTestEnv testSetup;
-    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
+    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -510,7 +475,7 @@ TEST(ReuseAddr, SameAddr1)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    //srt_cleanup();
+    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddr2)

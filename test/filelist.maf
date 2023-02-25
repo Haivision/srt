@@ -1,5 +1,6 @@
 HEADERS
 any.hpp
+test_env.h
 
 SOURCES
 test_buffer_rcv.cpp
@@ -8,6 +9,7 @@ test_connection_timeout.cpp
 test_crypto.cpp
 test_cryspr.cpp
 test_enforced_encryption.cpp
+test_env.cpp
 test_epoll.cpp
 test_fec_rebuilding.cpp
 test_file_transmission.cpp
