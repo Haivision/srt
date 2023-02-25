@@ -4,13 +4,13 @@
 # Usable on a Windows PC with Powershell and Visual studio, 
 # or called by CI systems like AppVeyor
 #
-# By default produces a VS2019 64-bit Release binary using C++11 threads, without
+# By default produces a VS2022 64-bit Release binary using C++11 threads, without
 # encryption or unit tests enabled, but including test apps.
 # Before enabling any encryption options, install OpenSSL or set VCKPG flag to build
 ################################################################################
 
 param (
-    [Parameter()][String]$VS_VERSION = "2019",
+    [Parameter()][String]$VS_VERSION = "2022",
     [Parameter()][String]$CONFIGURATION = "Release",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
@@ -21,7 +21,7 @@ param (
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
     [Parameter()][String]$BONDING = "OFF",
-    [Parameter()][String]$ENABLE_SWIG = "OFF",
+    [Parameter()][String]$ENABLE_SWIG = "ON",
     [Parameter()][String]$ENABLE_SWIG_CSHARP = "ON"
 )
 
@@ -38,6 +38,7 @@ $projectRoot = Join-Path $PSScriptRoot "/.." -Resolve
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
 if ( $Env:APPVEYOR ) { 
     if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
+    if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2022' ) { $VS_VERSION='2022' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { $VS_VERSION='2015' }
 
@@ -67,6 +68,7 @@ if($Env:TEAMCITY_VERSION){
 $Env:VS_VERSION = $VS_VERSION
 
 # select the appropriate cmake generator string given the environment
+if ( $VS_VERSION -eq '2022' ) { $CMAKE_GENERATOR = 'Visual Studio 17 2022'; $MSBUILDVER = "17.0"; }
 if ( $VS_VERSION -eq '2019' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019'; $MSBUILDVER = "16.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015'; $MSBUILDVER = "14.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0"; }
@@ -152,13 +154,13 @@ if ( $ENABLE_SWIG -eq "ON" ) {
 
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
-                "-DENABLE_STDCXX_SYNC=$CXX11 " + 
-                "-DENABLE_APPS=$BUILD_APPS " + 
-                "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " + 
-                "-DENABLE_BONDING=$BONDING " + 
-                "-DENABLE_UNITTESTS=$UNIT_TESTS " + 
-                "-DENABLE_SWIG=$ENABLE_SWIG " + 
-                "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
+              "-DENABLE_STDCXX_SYNC=$CXX11 " + 
+              "-DENABLE_APPS=$BUILD_APPS " + 
+              "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " + 
+              "-DENABLE_BONDING=$BONDING " + 
+              "-DENABLE_UNITTESTS=$UNIT_TESTS " + 
+              "-DENABLE_SWIG=$ENABLE_SWIG " + 
+              "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
@@ -201,8 +203,8 @@ else {
     $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
 }
 
-# cmake uses a flag for architecture from vs2019, so add that as a suffix
-if ( $VS_VERSION -eq '2019' ) {    
+# cmake uses a flag for architecture from vs2022, so add that as a suffix
+if ( $VS_VERSION -eq '2019' -or $VS_VERSION -eq '2022') {    
     $cmakeFlags += " -A `"$DEVENV_PLATFORM`""
 }
 
