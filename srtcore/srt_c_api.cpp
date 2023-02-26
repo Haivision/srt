@@ -29,8 +29,8 @@ using namespace srt;
 
 extern "C" {
 
-int srt_startup() { cout<<"in srt_startup()" <<endl; return CUDT::startup(); }
-int srt_cleanup() { cout<<"in srt_cleanup()" <<endl; return CUDT::cleanup(); }
+int srt_startup() { return CUDT::startup(); }
+int srt_cleanup() { return CUDT::cleanup(); }
 
 // Socket creation.
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
