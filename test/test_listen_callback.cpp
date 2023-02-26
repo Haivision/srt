@@ -10,6 +10,7 @@
 
 #include "srt.h"
 #include "access_control.h"
+#include "test_env.h"
 #include "utilities.h"
 
 srt_listen_callback_fn SrtTestListenCallback;
@@ -27,6 +28,9 @@ protected:
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
+
+    srt::TestEnv testSetup;
+    
 public:
 
     SRTSOCKET server_sock, client_sock;
@@ -36,7 +40,7 @@ public:
 
     void SetUp()
     {
-        ASSERT_EQ(srt_startup(), 0);
+        ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
         // Create server on 127.0.0.1:5555
 
@@ -136,7 +140,7 @@ public:
         accept_thread.join();
         std::cout << "TearDown: SRT exit\n";
 
-        srt_cleanup();
+        // srt_cleanup() called in testSetup destructor 
     }
 
 };

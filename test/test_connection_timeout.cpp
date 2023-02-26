@@ -11,6 +11,7 @@ typedef int SOCKET;
 
 #include"platform_sys.h"
 #include "srt.h"
+#include "test_env.h"
 
 using namespace std;
 
@@ -34,7 +35,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
-        ASSERT_EQ(srt_startup(), 0);
+        ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
@@ -63,15 +64,16 @@ protected:
     void TearDown() override
     {
         // Code here will be called just after the test completes.
+        // srt_cleanup() called in testSetup destructor 
         // OK to throw exceptions from here if needed.
         ASSERT_NE(closesocket(m_udp_sock), -1);
-        srt_cleanup();
     }
 
 protected:
 
     SOCKET m_udp_sock = INVALID_SOCKET;
     sockaddr_in m_sa = sockaddr_in();
+    srt::TestEnv testSetup;
 
 };
 

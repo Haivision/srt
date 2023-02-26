@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "srt.h"
+#include "test_env.h"
 #include "udt.h"
 
 using srt::sockaddr_any;
@@ -324,7 +325,9 @@ void serverSocket(std::string ip, int port, bool expect_success)
 
 TEST(ReuseAddr, SameAddr1)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -340,16 +343,17 @@ TEST(ReuseAddr, SameAddr1)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddr2)
 {
+    srt::TestEnv testSetup;
+
     std::string localip = GetLocalIP();
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -365,16 +369,17 @@ TEST(ReuseAddr, SameAddr2)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, DiffAddr)
 {
+    srt::TestEnv testSetup;
+
     std::string localip = GetLocalIP();
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -387,7 +392,6 @@ TEST(ReuseAddr, DiffAddr)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, Wildcard)
@@ -397,11 +401,13 @@ TEST(ReuseAddr, Wildcard)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
+    srt::TestEnv testSetup;
+
     std::string localip = GetLocalIP();
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -414,7 +420,6 @@ TEST(ReuseAddr, Wildcard)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 
@@ -425,7 +430,9 @@ TEST(ReuseAddr, ProtocolVersion)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -438,5 +445,4 @@ TEST(ReuseAddr, ProtocolVersion)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }

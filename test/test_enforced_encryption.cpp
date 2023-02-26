@@ -17,6 +17,7 @@
 
 #include "srt.h"
 #include "sync.h"
+#include "test_env.h"
 
 
 
@@ -229,10 +230,11 @@ protected:
 
 protected:
 
+    srt::TestEnv testSetup;
     // SetUp() is run immediately before a test starts.
     void SetUp()
-    {
-        ASSERT_EQ(srt_startup(), 0);
+    {   
+        ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
         m_pollid = srt_epoll_create();
         ASSERT_GE(m_pollid, 0);
@@ -257,10 +259,10 @@ protected:
     void TearDown()
     {
         // Code here will be called just after the test completes.
+        // srt_cleanup() called in testSetup destructor 
         // OK to throw exceptions from here if needed.
         ASSERT_NE(srt_close(m_caller_socket),   SRT_ERROR);
         ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
-        srt_cleanup();
     }
 
 
