@@ -6,6 +6,7 @@
 #include "gtest/gtest.h"
 #include "api.h"
 #include "epoll.h"
+#include "test_env.h"
 
 
 using namespace std;
@@ -14,7 +15,8 @@ using namespace srt;
 
 TEST(CEPoll, InfiniteWait)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -26,12 +28,12 @@ TEST(CEPoll, InfiniteWait)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitNoSocketsInEpoll)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -47,12 +49,12 @@ TEST(CEPoll, WaitNoSocketsInEpoll)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitNoSocketsInEpoll2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -63,12 +65,12 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitEmptyCall)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -87,12 +89,12 @@ TEST(CEPoll, WaitEmptyCall)
                 -1, 0, 0, 0, 0), SRT_ERROR);
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, UWaitEmptyCall)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -111,12 +113,12 @@ TEST(CEPoll, UWaitEmptyCall)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -146,12 +148,12 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -176,12 +178,12 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -199,13 +201,13 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollEvent)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -256,7 +258,6 @@ TEST(CEPoll, HandleEpollEvent)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
@@ -266,7 +267,8 @@ TEST(CEPoll, HandleEpollEvent)
 // be notified about connection break via polling the accepted socket.
 TEST(CEPoll, NotifyConnectionBreak)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     // 1. Prepare client
     SRTSOCKET client_sock = srt_create_socket();
@@ -376,13 +378,13 @@ TEST(CEPoll, NotifyConnectionBreak)
     if (!state_valid)
         cerr << "socket state: " << state << endl;
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollEvent2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -438,13 +440,13 @@ TEST(CEPoll, HandleEpollEvent2)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollNoEvent)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -490,12 +492,12 @@ TEST(CEPoll, HandleEpollNoEvent)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, ThreadedUpdate)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -558,7 +560,6 @@ TEST(CEPoll, ThreadedUpdate)
     }
 
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
@@ -568,6 +569,7 @@ protected:
 
     int m_client_pollid = SRT_ERROR;
     SRTSOCKET m_client_sock = SRT_ERROR;
+    srt::TestEnv testSetup;
 
     void clientSocket()
     {
@@ -752,7 +754,7 @@ protected:
 
     void SetUp() override
     {
-        ASSERT_EQ(srt_startup(), 0);
+        ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
         m_client_pollid = srt_epoll_create();
         ASSERT_NE(SRT_ERROR, m_client_pollid);
@@ -766,7 +768,7 @@ protected:
     {
         (void)srt_epoll_release(m_client_pollid);
         (void)srt_epoll_release(m_server_pollid);
-        srt_cleanup();
+        // srt_cleanup() called in testSetup destructor 
     }
 };
 

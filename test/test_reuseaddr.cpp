@@ -7,6 +7,7 @@
 
 #include "common.h"
 #include "srt.h"
+#include "test_env.h"
 #include "udt.h"
 
 using srt::sockaddr_any;
@@ -454,7 +455,9 @@ void shutdownListener(SRTSOCKET bindsock)
 
 TEST(ReuseAddr, SameAddr1)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -475,16 +478,17 @@ TEST(ReuseAddr, SameAddr1)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddr2)
 {
+    srt::TestEnv testSetup;
+
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -509,12 +513,13 @@ TEST(ReuseAddr, SameAddr2)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddrV6)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+    
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -539,17 +544,18 @@ TEST(ReuseAddr, SameAddrV6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 
 TEST(ReuseAddr, DiffAddr)
 {
+    srt::TestEnv testSetup;
+
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -570,7 +576,6 @@ TEST(ReuseAddr, DiffAddr)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, Wildcard)
@@ -580,14 +585,15 @@ TEST(ReuseAddr, Wildcard)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-
+    srt::TestEnv testSetup;
+    
     // This time exceptionally require IPv4 because we'll be
     // checking it against 0.0.0.0 
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -607,7 +613,6 @@ TEST(ReuseAddr, Wildcard)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, Wildcard6)
@@ -618,6 +623,8 @@ TEST(ReuseAddr, Wildcard6)
     return;
 #endif
 
+    srt::TestEnv testSetup;
+    
     // This time exceptionally require IPv6 because we'll be
     // checking it against ::
     std::string localip = GetLocalIP(AF_INET6);
@@ -629,7 +636,7 @@ TEST(ReuseAddr, Wildcard6)
     // performed there.
     std::string localip_v4 = GetLocalIP(AF_INET);
 
-    ASSERT_EQ(srt_startup(), 0);
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -686,7 +693,6 @@ TEST(ReuseAddr, Wildcard6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, ProtocolVersion6)
@@ -696,7 +702,9 @@ TEST(ReuseAddr, ProtocolVersion6)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -724,7 +732,6 @@ TEST(ReuseAddr, ProtocolVersion6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, ProtocolVersionFaux6)
@@ -734,7 +741,9 @@ TEST(ReuseAddr, ProtocolVersionFaux6)
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestEnv testSetup;
+
+    ASSERT_EQ(testSetup.getSrtStartupVal(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -761,5 +770,4 @@ TEST(ReuseAddr, ProtocolVersionFaux6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }

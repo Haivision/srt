@@ -17,6 +17,7 @@
 #endif
 
 #include "srt.h"
+#include "test_env.h"
 
 #include <array>
 #include <thread>
@@ -29,7 +30,7 @@
 
 TEST(Transmission, FileUpload)
 {
-    srt_startup();
+    srt::TestEnv testSetup;
 
     // Generate the source file
     // We need a file that will contain more data
@@ -195,5 +196,4 @@ TEST(Transmission, FileUpload)
     remove("file.source");
     remove("file.target");
 
-    (void)srt_cleanup();
 }

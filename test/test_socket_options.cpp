@@ -19,6 +19,7 @@
 #include "any.hpp"
 #include "socketconfig.h"
 #include "srt.h"
+#include "test_env.h"
 
 using namespace std;
 using namespace srt;
@@ -82,7 +83,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
-        ASSERT_GE(srt_startup(), 0);
+        ASSERT_GE(testSetup.getSrtStartupVal(), 0);
         const int yes = 1;
 
         memset(&m_sa, 0, sizeof m_sa);
@@ -104,16 +105,17 @@ protected:
     void TearDown()
     {
         // Code here will be called just after the test completes.
+        // srt_cleanup() called in testSetup destructor
         // OK to throw exceptions from here if needed.
         ASSERT_NE(srt_close(m_caller_sock), SRT_ERROR);
         ASSERT_NE(srt_close(m_listen_sock), SRT_ERROR);
-        srt_cleanup();
     }
 
 protected:
     sockaddr_in m_sa;
     SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
+    srt::TestEnv testSetup;
 
     int       m_pollid = 0;
 };

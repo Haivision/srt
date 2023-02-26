@@ -2,6 +2,7 @@
 #include <thread>
 #include <string>
 #include "srt.h"
+#include "test_env.h"
 #include "netinet_any.h"
 
 using srt::sockaddr_any;
@@ -27,7 +28,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
-        ASSERT_GE(srt_startup(), 0);
+        ASSERT_GE(testSetup.getSrtStartupVal(), 0);
 
         m_caller_sock = srt_create_socket();
         ASSERT_NE(m_caller_sock, SRT_ERROR);
@@ -41,10 +42,10 @@ protected:
     void TearDown()
     {
         // Code here will be called just after the test completes.
+        // srt_cleanup() called in testSetup destructor 
         // OK to throw exceptions from here if needed.
         srt_close(m_listener_sock);
         srt_close(m_caller_sock);
-        srt_cleanup();
     }
 
 public:
@@ -118,6 +119,7 @@ protected:
     SRTSOCKET m_caller_sock;
     SRTSOCKET m_listener_sock;
     const int m_listen_port = 4200;
+    srt::TestEnv testSetup;
 };
 
 

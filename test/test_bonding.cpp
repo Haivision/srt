@@ -7,13 +7,14 @@
 #include "gtest/gtest.h"
 
 #include "srt.h"
+#include "test_env.h"
 #include "netinet_any.h"
 
 TEST(Bonding, SRTConnectGroup)
 {
     struct sockaddr_in sa;
 
-    srt_startup();
+    srt::TestEnv testSetup;
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -55,7 +56,6 @@ TEST(Bonding, SRTConnectGroup)
         std::cerr << "srt_close: " << srt_getlasterror_str() << std::endl;
     }
 
-    srt_cleanup();
 }
 
 #define ASSERT_SRT_SUCCESS(callform) ASSERT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
@@ -133,7 +133,7 @@ void ConnectCallback(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* 
 
 TEST(Bonding, NonBlockingGroupConnect)
 {
-    srt_startup();
+    srt::TestEnv testSetup;
     
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -208,7 +208,6 @@ TEST(Bonding, NonBlockingGroupConnect)
 
     EXPECT_EQ(srt_close(ss), 0) << "srt_close: %s\n" << srt_getlasterror_str();
 
-    srt_cleanup();
 }
 
 void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
@@ -226,7 +225,7 @@ void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sock
 
 TEST(Bonding, CloseGroupAndSocket)
 {
-    srt_startup();
+    srt::TestEnv testSetup;
     
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -333,6 +332,5 @@ TEST(Bonding, CloseGroupAndSocket)
     sender.join();
     listen_promise.wait();
 
-    srt_cleanup();
 }
 

@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 #include <thread>
 #include "srt.h"
+#include "test_env.h"
 
 class TestMuxer
     : public ::testing::Test
@@ -20,7 +21,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp()
     {
-        ASSERT_GE(srt_startup(), 0);
+        ASSERT_GE(testSetup.getSrtStartupVal(), 0);
         
         m_caller_sock = srt_create_socket();
         ASSERT_NE(m_caller_sock, SRT_ERROR);
@@ -44,12 +45,12 @@ protected:
     void TearDown()
     {
         // Code here will be called just after the test completes.
+        // srt_cleanup() called in testSetup destructor 
         // OK to throw exceptions from here if needed.
         srt_epoll_release(m_client_pollid);
         srt_epoll_release(m_server_pollid);
         srt_close(m_listener_sock_ipv4);
         srt_close(m_listener_sock_ipv6);
-        srt_cleanup();
     }
 
 public:
@@ -95,6 +96,7 @@ protected:
     int m_client_pollid = SRT_ERROR;
     int m_server_pollid = SRT_ERROR;
     const int m_listen_port = 4200;
+    srt::TestEnv testSetup;
 };
 
 

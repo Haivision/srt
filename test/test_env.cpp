@@ -15,12 +15,11 @@ int srt::TestEnv::testEnvTearDown()
 
 srt::TestEnv::TestEnv() : srtStartupVal{testEnvSetup()}
 {
-    std::cout<<"Entered into constructor" <<std::endl;
+
 }
 
 srt::TestEnv::~TestEnv()
 {
-    std::cout<<"Entered into destructor" <<std::endl;
     testEnvTearDown();
 }
 
