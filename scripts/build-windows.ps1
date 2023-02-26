@@ -21,7 +21,7 @@ param (
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
     [Parameter()][String]$BONDING = "OFF",
-    [Parameter()][String]$ENABLE_SWIG = "ON",
+    [Parameter()][String]$ENABLE_SWIG = "OFF",
     [Parameter()][String]$ENABLE_SWIG_CSHARP = "ON"
 )
 
@@ -203,7 +203,7 @@ else {
     $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
 }
 
-# cmake uses a flag for architecture from vs2022, so add that as a suffix
+# cmake uses a flag for architecture from vs2019 onwards, so add that as a suffix
 if ( $VS_VERSION -eq '2019' -or $VS_VERSION -eq '2022') {    
     $cmakeFlags += " -A `"$DEVENV_PLATFORM`""
 }
