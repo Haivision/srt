@@ -144,9 +144,12 @@ if ( $ENABLE_SWIG -eq "ON" ) {
         Write-Output "Found pre-existing copy of Swigwin 4.1.1 - using this binary"
     }
     else {
+        #originally, script downloaded from sourceforge from link below, but this was flakey
+        #and therefore was copied to a Cinegy-controlled S3 mirror bucket
+        #original source URL: https://deac-fra.dl.sourceforge.net/project/swig/swigwin/swigwin-4.1.1/swigwin-4.1.1.zip
         Write-Output "Swigwin 4.1.1 not found - downloading and unpacking..."
         Remove-Item -LiteralPath $projectRoot/packages/swig/ -Force -Recurse -ErrorAction Ignore
-        Invoke-WebRequest 'https://deac-fra.dl.sourceforge.net/project/swig/swigwin/swigwin-4.1.1/swigwin-4.1.1.zip' -OutFile swig.zip
+        Invoke-WebRequest 'https://caas-deploy.s3.eu-central-1.amazonaws.com/v1/Thirdparty-Swig-v4.x/swigwin-4.1.1.zip' -OutFile swig.zip
         Expand-Archive swig.zip -DestinationPath $projectRoot/packages/swig
         Remove-Item swig.zip
     }

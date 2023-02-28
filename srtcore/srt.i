@@ -302,6 +302,10 @@ PRIMITIVE_TYPEMAP(unsigned long int, unsigned long long);
 // C additional definitions
 %inline{
 
+#ifndef _WIN32
+    typedef unsigned char byte;
+#endif
+
 typedef struct
 {
     byte *Arg1;
