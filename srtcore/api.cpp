@@ -618,7 +618,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         }
 
         // bind to the same addr of listening socket
-        ns->core().open();
+        ns->core().open(peer.family());
         if (!updateListenerMux(ns, ls))
         {
             // This is highly unlikely if not impossible, but there's
@@ -928,7 +928,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    s->core().open();
+    s->core().open(name.family());
     updateMux(s, name);
     s->m_Status = SRTS_OPENED;
 
@@ -957,7 +957,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     // Successfully extracted, so update the size
     name.len = namelen;
 
-    s->core().open();
+    s->core().open(name.family());
     updateMux(s, name, &udpsock);
     s->m_Status = SRTS_OPENED;
 
@@ -1847,7 +1847,7 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
         // same thing as bind() does, just with empty address so that
         // the binding parameters are autoselected.
 
-        s->core().open();
+        s->core().open(target_addr.family());
         sockaddr_any autoselect_sa(target_addr.family());
         // This will create such a sockaddr_any that
         // will return true from empty().
@@ -3157,7 +3157,14 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue = new CSndQueue;
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
-        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+
+        // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
+        // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
+        size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+
+        HLOGC(smlog.Debug, log << s->core().CONID() << "updateMux: config rcv queue qsize=" << 128
+                << " plsize=" << payload_size << " hsize=" << 1024);
+        m.m_pRcvQueue->init(128, payload_size, m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.

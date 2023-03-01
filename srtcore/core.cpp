@@ -269,6 +269,7 @@ void srt::CUDT::construct()
 
     m_pSndQueue = NULL;
     m_pRcvQueue = NULL;
+    m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
     m_pSNode    = NULL;
     m_pRNode    = NULL;
 
@@ -305,7 +306,9 @@ void srt::CUDT::construct()
     // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent)
+    : m_parent(parent)
+    , m_stats(&m_iMaxSRTPayloadSize)
 {
     construct();
 
@@ -328,7 +331,9 @@ srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
 
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
+    : m_parent(parent)
+    , m_stats(&m_iMaxSRTPayloadSize)
 {
     construct();
 
@@ -468,13 +473,17 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen         = sizeof(int);
         break;
 
+        // For SNDBUF/RCVBUF values take the variant that uses more memory.
+        // It is not possible to make sure what "family" is in use without
+        // checking if the socket is bound. This will also be the exact size
+        // of the memory in use.
     case SRTO_SNDBUF:
-        *(int *)optval = m_config.iSndBufSize * (m_config.iMSS - CPacket::UDP_HDR_SIZE);
+        *(int *)optval = m_config.iSndBufSize * (m_config.iMSS - CPacket::udpHeaderSize(AF_INET));
         optlen         = sizeof(int);
         break;
 
     case SRTO_RCVBUF:
-        *(int *)optval = m_config.iRcvBufSize * (m_config.iMSS - CPacket::UDP_HDR_SIZE);
+        *(int *)optval = m_config.iRcvBufSize * (m_config.iMSS - CPacket::udpHeaderSize(AF_INET));
         optlen         = sizeof(int);
         break;
 
@@ -756,7 +765,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = (int) m_config.zExpPayloadSize;
+        *(int *)optval = (int) payloadSize();
         break;
 
     case SRTO_KMREFRESHRATE:
@@ -872,10 +881,14 @@ string srt::CUDT::getstreamid(SRTSOCKET u)
 // XXX REFACTOR: Make common code for CUDT constructor and clearData,
 // possibly using CUDT::construct.
 // Initial sequence number, loss, acknowledgement, etc.
-void srt::CUDT::clearData()
+void srt::CUDT::clearData(int family)
 {
-    m_iMaxSRTPayloadSize = m_config.iMSS - CPacket::UDP_HDR_SIZE - CPacket::HDR_SIZE;
+    const size_t full_hdr_size = CPacket::udpHeaderSize(family) + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
     HLOGC(cnlog.Debug, log << CONID() << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+
+    m_SndTimeWindow.initialize(full_hdr_size, m_iMaxSRTPayloadSize);
+    m_RcvTimeWindow.initialize(full_hdr_size, m_iMaxSRTPayloadSize);
 
     m_iEXPCount  = 1;
     m_iBandwidth = 1; // pkts/sec
@@ -919,11 +932,11 @@ void srt::CUDT::clearData()
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
-void srt::CUDT::open()
+void srt::CUDT::open(int family)
 {
     ScopedLock cg(m_ConnectionLock);
 
-    clearData();
+    clearData(family);
 
     // structures for queue
     if (m_pSNode == NULL)
@@ -3025,7 +3038,9 @@ bool srt::CUDT::checkApplyFilterConfig(const std::string &confstr)
         m_config.sPacketFilterConfig.set(confstr);
     }
 
-    size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
+    // XXX Using less maximum payload size of IPv4 and IPv6; this is only about the payload size
+    // for live.
+    size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET6 - cfg.extra_size;
     if (m_config.zExpPayloadSize > efc_max_payload_size)
     {
         LOGC(cnlog.Warn,
@@ -4659,10 +4674,19 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
         return false;
     }
 
+    m_TransferIPVersion = m_PeerAddr.family();
+    if (m_PeerAddr.family() == AF_INET6)
+    {
+        // Check if the m_PeerAddr's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(m_PeerAddr.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
+
     // Re-configure according to the negotiated values.
     m_config.iMSS        = m_ConnRes.m_iMSS;
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
-    const int udpsize    = m_config.iMSS - CPacket::UDP_HDR_SIZE;
+    const int udpsize    = m_config.iMSS - CPacket::udpHeaderSize(m_TransferIPVersion);
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN           = m_ConnRes.m_iISN;
 
@@ -5508,7 +5532,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
         enterCS(m_StatsLock);
         // Estimate dropped bytes from average payload size.
         const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+        m_stats.rcvr.dropped.count(stats::BytesPacketsCount(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
         leaveCS(m_StatsLock);
     }
     return iDropCnt;
@@ -5532,7 +5556,7 @@ void srt::CUDT::setInitialRcvSeq(int32_t isn)
             const int        iDropCnt     = m_pRcvBuffer->dropAll();
             const uint64_t   avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
             sync::ScopedLock sl(m_StatsLock);
-            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+            m_stats.rcvr.dropped.count(stats::BytesPacketsCount(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
         }
 
         m_pRcvBuffer->setStartSeqNo(isn);
@@ -5572,8 +5596,30 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
 
     try
     {
+        // XXX SND buffer may allocate more memory, but must set the size of a single
+        // packet that fits the transmission for the overall connection. For any mixed 4-6
+        // connection it should be the less size, that is, for IPv6
+
         const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
-        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
+
+        SRT_ASSERT(m_iMaxSRTPayloadSize != 0);
+        SRT_ASSERT(m_TransferIPVersion != AF_UNSPEC);
+        // IMPORTANT:
+        // The m_iMaxSRTPayloadSize is the size of the payload in the "SRT packet" that can be sent
+        // over the current connection - which means that if any party is IPv6, then the maximum size
+        // is the one for IPv6 (1444). Only if both parties are IPv4, this maximum size is 1456.
+        // The family as the first argument is something different - it's for the header size in order
+        // to calculate rate and statistics.
+
+        int snd_payload_size = m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+        SRT_ASSERT(m_iMaxSRTPayloadSize <= snd_payload_size);
+
+        HLOGC(rslog.Debug, log << CONID() << "Creating buffers: snd-plsize=" << snd_payload_size
+                << " snd-bufsize=" << 32 << " TF-IPv"
+                << (m_TransferIPVersion == AF_INET6 ? "6" : m_TransferIPVersion == AF_INET ? "4" : "???")
+                << " authtag=" << authtag);
+
+        m_pSndBuffer = new CSndBuffer(m_TransferIPVersion, 32, snd_payload_size, authtag);
         SRT_ASSERT(m_iISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
         // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
@@ -5651,8 +5697,17 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
 
     rewriteHandshakeData(peer, (w_hs));
 
-    int udpsize          = m_config.iMSS - CPacket::UDP_HDR_SIZE;
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
+    m_TransferIPVersion = peer.family();
+    if (peer.family() == AF_INET6)
+    {
+        // Check if the peer's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(peer.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
+
+    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
     // Prepare all structures
@@ -7285,7 +7340,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion == AF_UNSPEC ? AF_INET : m_TransferIPVersion);
     {
         ScopedLock statsguard(m_StatsLock);
 
@@ -8861,7 +8916,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                 enterCS(m_StatsLock);
                 // Estimate dropped bytes from average payload size.
                 const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+                m_stats.rcvr.dropped.count(stats::BytesPacketsCount(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
                 leaveCS(m_StatsLock);
             }
         }
@@ -9956,8 +10011,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
                     const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
-                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
-                    m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                    m_stats.rcvr.dropped.count(stats::BytesPacketsCount(iDropCnt * rpkt.getLength(), iDropCnt));
+                    m_stats.rcvr.undecrypted.count(stats::BytesPacketsCount(rpkt.getLength(), 1));
                     if (frequentLogAllowed(tnow))
                     {
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
@@ -10158,7 +10213,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
             ScopedLock lg(m_StatsLock);
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-            m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, (uint32_t) loss));
+            m_stats.rcvr.lost.count(stats::BytesPacketsCount(loss * avgpayloadsz, (uint32_t) loss));
 
             HLOGC(qrlog.Debug,
                   log << CONID() << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "

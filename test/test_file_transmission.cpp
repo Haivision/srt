@@ -17,6 +17,7 @@
 #endif
 
 #include "srt.h"
+#include "netinet_any.h"
 
 #include <array>
 #include <thread>
@@ -27,7 +28,7 @@
 
 //#pragma comment (lib, "ws2_32.lib")
 
-TEST(Transmission, FileUpload)
+TEST(FileTransmission, Upload)
 {
     srt_startup();
 
@@ -197,3 +198,113 @@ TEST(Transmission, FileUpload)
 
     (void)srt_cleanup();
 }
+
+TEST(FileTransmission, Setup46)
+{
+    using namespace srt;
+
+    srt_startup();
+
+    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+
+    const int tt = SRTT_FILE;
+    srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
+    srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
+
+    try
+    {
+        // Setup a connection with IPv6 caller and IPv4 listener,
+        // then send data of 1456 size and make sure two packets were used.
+
+        // So first configure a caller for IPv6 socket, capable of
+        // using IPv4. As the IP version isn't specified now when
+        // creating a socket, force binding explicitly.
+
+        // This creates the "any" spec for IPv6 with port = 0
+        sockaddr_any sa(AF_INET6);
+
+        int ipv4_and_ipv6 = 0;
+        ASSERT_NE(srt_setsockflag(sock_clr, SRTO_IPV6ONLY, &ipv4_and_ipv6, sizeof ipv4_and_ipv6), -1);
+
+        // srt_setloglevel(LOG_DEBUG);
+
+        ASSERT_NE(srt_bind(sock_clr, sa.get(), sa.size()), -1);
+
+        int connect_port = 5555;
+
+        // Configure listener 
+        sockaddr_in sa_lsn = sockaddr_in();
+        sa_lsn.sin_family = AF_INET;
+        sa_lsn.sin_addr.s_addr = INADDR_ANY;
+        sa_lsn.sin_port = htons(connect_port);
+
+
+        srt_setloglevel(LOG_DEBUG);
+
+
+        // Find unused a port not used by any other service.    
+        // Otherwise srt_connect may actually connect.
+        int bind_res = -1;
+        for (connect_port = 5000; connect_port <= 5555; ++connect_port)
+        {
+            sa_lsn.sin_port = htons(connect_port);
+            bind_res = srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
+            if (bind_res == 0)
+            {
+                std::cout << "Running test on port " << connect_port << "\n";
+                break;
+            }
+
+            ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
+        }
+
+        ASSERT_GE(bind_res, 0);
+
+        srt_listen(sock_lsn, 1);
+
+        ASSERT_EQ(inet_pton(AF_INET6, "::FFFF:127.0.0.1", &sa.sin6.sin6_addr), 1);
+
+        sa.hport(connect_port);
+
+        ASSERT_EQ(srt_connect(sock_clr, sa.get(), sa.size()), 0);
+
+        int sock_acp = -1;
+        ASSERT_NE(sock_acp = srt_accept(sock_lsn, sa.get(), &sa.len), -1);
+
+        const size_t SIZE = 1454; // Max payload for IPv4 minus 2 - still more than 1444 for IPv6
+        char buffer[SIZE];
+
+        unsigned int randseed = std::time(NULL);
+
+        for (size_t i = 0; i < SIZE; ++i)
+            buffer[i] = rand_r(&randseed);
+
+        EXPECT_EQ(srt_send(sock_acp, buffer, SIZE), SIZE) << srt_getlasterror_str();
+
+        char resultbuf[SIZE];
+        EXPECT_EQ(srt_recv(sock_clr, resultbuf, SIZE), SIZE) << srt_getlasterror_str();
+
+        // It should use the maximum payload size per packet reported from the option.
+        int payloadsize_back = 0;
+        int payloadsize_back_size = sizeof (payloadsize_back);
+        EXPECT_EQ(srt_getsockflag(sock_clr, SRTO_PAYLOADSIZE, &payloadsize_back, &payloadsize_back_size), 0);
+        EXPECT_EQ(payloadsize_back, SRT_MAX_PLSIZE_AF_INET);
+
+        SRT_TRACEBSTATS snd_stats, rcv_stats;
+        srt_bstats(sock_acp, &snd_stats, 0);
+        srt_bstats(sock_clr, &rcv_stats, 0);
+
+        EXPECT_EQ(snd_stats.pktSentUniqueTotal, 1);
+        EXPECT_EQ(rcv_stats.pktRecvUniqueTotal, 1);
+
+    }
+    catch (...)
+    {
+        srt_cleanup();
+        throw;
+    }
+
+    srt_cleanup();
+}
+
+// XXX Setup66 - establish an IPv6 to IPv6 connection and make sure max payload size is that of IPv6.

@@ -70,7 +70,7 @@ struct CSrtConfigSetter<SRTO_MSS>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         const int ival = cast_optval<int>(optval, optlen);
-        if (ival < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
+        if (ival < int(CPacket::udpHeaderSize(AF_INET6) + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         co.iMSS = ival;
@@ -109,7 +109,7 @@ struct CSrtConfigSetter<SRTO_SNDBUF>
         if (bs <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iSndBufSize = bs / (co.iMSS - CPacket::UDP_HDR_SIZE);
+        co.iSndBufSize = bs / (co.iMSS - CPacket::udpHeaderSize(AF_INET));
     }
 };
 
@@ -123,7 +123,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         // Mimimum recv buffer size is 32 packets
-        const int mssin_size = co.iMSS - CPacket::UDP_HDR_SIZE;
+        const int mssin_size = co.iMSS - CPacket::udpHeaderSize(AF_INET);
 
         if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
             co.iRcvBufSize = val / mssin_size;
@@ -609,42 +609,20 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (val > SRT_LIVE_MAX_PLSIZE)
+        // We don't know at this point, how bit the payloadsize can be set,
+        // so we limit it to the biggest value of the two.
+        // When this payloadsize would be then too big to be used with given MSS and IPv6,
+        // this problem should be reported appropriately from srt_connect and srt_bind calls.
+        if (val > SRT_MAX_PLSIZE_AF_INET)
         {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << ", maximum payload per MTU.");
+            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_MAX_PLSIZE_AF_INET << ", maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (!co.sPacketFilterConfig.empty())
+        std::string errorlog;
+        if (!co.payloadSizeFits(size_t(val), AF_INET, (errorlog)))
         {
-            // This means that the filter might have been installed before,
-            // and the fix to the maximum payload size was already applied.
-            // This needs to be checked now.
-            SrtFilterConfig fc;
-            if (!ParseFilterConfig(co.sPacketFilterConfig.str(), fc))
-            {
-                // Break silently. This should not happen
-                LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (size_t(val) > efc_max_payload_size)
-            {
-                LOGC(aclog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << fc.extra_size
-                         << " required for packet filter header");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-        }
-
-        // Not checking AUTO to allow defaul 1456 bytes.
-        if ((co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-            && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
-        {
-            LOGC(aclog.Error,
-                log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
-                << " required for AES-GCM.");
+            LOGP(aclog.Error, errorlog);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -840,7 +818,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+        size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET - fc.extra_size;
         if (co.zExpPayloadSize > efc_max_payload_size)
         {
             LOGC(aclog.Warn,
@@ -1009,6 +987,47 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     return dispatchSet(optName, *this, optval, optlen);
+}
+
+bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
+{
+    if (!this->sPacketFilterConfig.empty())
+    {
+        // This means that the filter might have been installed before,
+        // and the fix to the maximum payload size was already applied.
+        // This needs to be checked now.
+        SrtFilterConfig fc;
+        if (!this->sPacketFilterConfig.empty() && !ParseFilterConfig(this->sPacketFilterConfig.str(), (fc)))
+        {
+            // Break silently. This should not happen
+            w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
+            return false;
+        }
+
+        const size_t efc_max_payload_size = CPacket::srtPayloadSize(ip_family) - fc.extra_size;
+        if (size_t(val) > efc_max_payload_size)
+        {
+            std::ostringstream log;
+            log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family) << " bytes decreased by " << fc.extra_size
+                << " required for packet filter header";
+            w_errmsg = log.str();
+            return false;
+        }
+    }
+
+    // Not checking AUTO to allow defaul 1456 bytes.
+    if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+            && (val > (CPacket::srtPayloadSize(ip_family) - HAICRYPT_AUTHTAG_MAX)))
+    {
+        std::ostringstream log;
+        log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family)
+            << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
+            << " required for AES-GCM.";
+        w_errmsg = log.str();
+        return false;
+    }
+
+    return true;
 }
 
 #if ENABLE_BONDING

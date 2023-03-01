@@ -22,6 +22,8 @@ namespace stats
 class Packets
 {
 public:
+    typedef Packets count_type;
+
     Packets() : m_count(0) {}
 
     Packets(uint32_t num) : m_count(num) {}
@@ -46,27 +48,20 @@ private:
     uint32_t m_count;
 };
 
-class BytesPackets
+class BytesPacketsCount
 {
 public:
-    BytesPackets()
+    BytesPacketsCount()
         : m_bytes(0)
         , m_packets(0)
     {}
 
-    BytesPackets(uint64_t bytes, uint32_t n = 1)
+    BytesPacketsCount(uint64_t bytes, uint32_t n = 1)
         : m_bytes(bytes)
         , m_packets(n)
     {}
 
-    BytesPackets& operator+= (const BytesPackets& other)
-    {
-        m_bytes   += other.m_bytes;
-        m_packets += other.m_packets;
-        return *this;
-    }
 
-public:
     void reset()
     {
         m_packets = 0;
@@ -89,26 +84,61 @@ public:
         return m_packets;
     }
 
-    uint64_t bytesWithHdr() const
+    BytesPacketsCount& operator+= (const BytesPacketsCount& other)
     {
-        return m_bytes + m_packets * CPacket::SRT_DATA_HDR_SIZE;
+        m_bytes   += other.m_bytes;
+        m_packets += other.m_packets;
+        return *this;
     }
 
-private:
+protected:
     uint64_t m_bytes;
     uint32_t m_packets;
 };
 
-template <class METRIC_TYPE>
+class BytesPackets: public BytesPacketsCount
+{
+public:
+    typedef BytesPacketsCount count_type;
+
+    BytesPackets()
+        : m_pPayloadSizeLocation(NULL)
+    {}
+
+public:
+
+    void bindPayloadSize(int* sizeloc)
+    {
+        m_pPayloadSizeLocation = sizeloc;
+    }
+
+    uint64_t bytesWithHdr() const
+    {
+        SRT_ASSERT(m_pPayloadSizeLocation != NULL);
+        size_t header_size = CPacket::ETH_MAX_MTU_SIZE - *m_pPayloadSizeLocation;
+        return m_bytes + m_packets * header_size;
+    }
+
+private:
+    int*  m_pPayloadSizeLocation;
+};
+
+template <class METRIC_TYPE, class BASE_METRIC_TYPE = METRIC_TYPE>
 struct Metric
 {
     METRIC_TYPE trace;
     METRIC_TYPE total;
 
-    void count(METRIC_TYPE val)
+    void count(typename METRIC_TYPE::count_type val)
     {
         trace += val;
         total += val;
+    }
+
+    void bindPayloadSize(int* loc)
+    {
+        trace.bindPayloadSize(loc);
+        total.bindPayloadSize(loc);
     }
 
     void reset()
@@ -136,6 +166,16 @@ struct Sender
     
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
+
+    Sender(int* payloadsize_loc)
+    {
+#define BIND(var) var.bindPayloadSize(payloadsize_loc)
+        BIND(sent);
+        BIND(sentUnique);
+        BIND(sentRetrans);
+        BIND(dropped);
+#undef BIND
+    }
 
     void reset()
     {
@@ -179,6 +219,19 @@ struct Receiver
 
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
+
+    Receiver(int* payloadsize_loc)
+    {
+#define BIND(var) var.bindPayloadSize(payloadsize_loc)
+        BIND(recvd);
+        BIND(recvdUnique);
+        BIND(recvdRetrans);
+        BIND(lost);
+        BIND(dropped);
+        BIND(recvdBelated);
+        BIND(undecrypted);
+#undef BIND
+    }
 
     void reset()
     {

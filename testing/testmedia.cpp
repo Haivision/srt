@@ -392,6 +392,37 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
     {
         m_mode = par.at("mode");
     }
+
+    int fam_to_limit_size = AF_INET6; // take the less one as default
+
+    // Try to interpret host and adapter first
+    sockaddr_any host_sa, adapter_sa;
+
+    if (host != "")
+    {
+        host_sa = CreateAddr(host);
+        fam_to_limit_size = host_sa.family();
+        if (fam_to_limit_size == AF_UNSPEC)
+            Error("Failed to interpret 'host' spec: " + host);
+    }
+
+    if (adapter != "")
+    {
+        adapter_sa = CreateAddr(adapter);
+        fam_to_limit_size = adapter_sa.family();
+
+        if (fam_to_limit_size == AF_UNSPEC)
+            Error("Failed to interpret 'adapter' spec: " + adapter);
+
+        if (host_sa.family() != AF_UNSPEC && host_sa.family() != adapter_sa.family())
+        {
+            Error("Both host and adapter specified and they use different IP versions");
+        }
+    }
+
+    if (fam_to_limit_size != AF_INET)
+        fam_to_limit_size = AF_INET6;
+
     SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
     if (mode == SocketOption::FAILURE)
     {
@@ -445,16 +476,14 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     // That's kinda clumsy, but it must rely on the defaults.
     // Default mode is live, so check if the file mode was enforced
-    if (par.count("transtype") == 0 || par["transtype"] != "file")
+    if ((par.count("transtype") == 0 || par["transtype"] != "file")
+            && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        // If the Live chunk size was nondefault, enforce the size.
-        if (transmit_chunk_size != SRT_LIVE_DEF_PLSIZE)
-        {
-            if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-                throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        size_t size_limit = (size_t)SRT_MAX_PLSIZE(fam_to_limit_size);
+        if (transmit_chunk_size > size_limit)
+            throw std::runtime_error(Sprint("Chunk size in live mode exceeds ", size_limit, " bytes; this is not supported"));
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
-        }
+        par["payloadsize"] = Sprint(transmit_chunk_size);
     }
 
     // Assigning group configuration from a special "groupconfig" attribute.
