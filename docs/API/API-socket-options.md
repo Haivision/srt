@@ -264,7 +264,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 
 ### Option Descriptions
 
-#### `SRTO_BINDTODEVICE`
+#### SRTO_BINDTODEVICE
 
 | OptName               | Since | Restrict | Type     | Units  | Default  | Range  | Dir |Entity|
 | --------------------- | ----- | -------- | -------- | ------ | -------- | ------ |-----|------|
@@ -287,7 +287,7 @@ for a process that runs as root. Otherwise the function that applies the setting
 
 ---
 
-#### `SRTO_CONGESTION`
+#### SRTO_CONGESTION
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -309,7 +309,7 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 
 ---
 
-#### `SRTO_CONNTIMEO`
+#### SRTO_CONNTIMEO
 
 | OptName            | Since | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -323,7 +323,7 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 ---
 
-#### `SRTO_CRYPTOMODE`
+#### SRTO_CRYPTOMODE
 
 | OptName            | Since     | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | --------- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -377,7 +377,7 @@ There is no way to check the crypto mode being requested by the SRT caller at th
 
 ---
 
-#### `SRTO_DRIFTTRACER`
+#### SRTO_DRIFTTRACER
 
 | OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -389,7 +389,7 @@ Enables or disables time drift tracer (receiver).
 
 ---
 
-#### `SRTO_ENFORCEDENCRYPTION`
+#### SRTO_ENFORCEDENCRYPTION
 
 | OptName                    | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -434,7 +434,7 @@ on the caller side.
 
 ---
 
-#### `SRTO_EVENT`
+#### SRTO_EVENT
 
 | OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -449,7 +449,7 @@ Possible values are those defined in `SRT_EPOLL_OPT` enum (a combination of
 
 ---
 
-#### `SRTO_FC`
+#### SRTO_FC
 
 | OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -488,7 +488,7 @@ where `latency_sec` is the receiver buffering delay ([SRTO_RCVLATENCY](#SRTO_RCV
 
 ---
 
-#### `SRTO_GROUPCONNECT`
+#### SRTO_GROUPCONNECT
 
 | OptName              | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
@@ -514,7 +514,7 @@ function will return the group, not this socket ID.
 
 ---
 
-#### `SRTO_GROUPMINSTABLETIMEO`
+#### SRTO_GROUPMINSTABLETIMEO
 
 | OptName                    | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | -------------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -548,7 +548,7 @@ Note that the value of this option is not allowed to exceed the value of
 
 ---
 
-#### `SRTO_GROUPTYPE`
+#### SRTO_GROUPTYPE
 
 | OptName              | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -567,7 +567,7 @@ context than inside the listener callback handler, the value is undefined.
 
 ---
 
-#### `SRTO_INPUTBW`
+#### SRTO_INPUTBW
 
 | OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -588,7 +588,7 @@ and keep the default 25% value for `SRTO_OHEADBW`*.
 
 ---
 
-#### `SRTO_MININPUTBW`
+#### SRTO_MININPUTBW
 
 | OptName           | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -603,7 +603,7 @@ See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 
 ---
 
-#### `SRTO_IPTOS`
+#### SRTO_IPTOS
 
 | OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -621,7 +621,7 @@ and the actual value for connected sockets.
 
 ---
 
-#### `SRTO_IPTTL`
+#### SRTO_IPTTL
 
 | OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -639,7 +639,7 @@ and the actual value for connected sockets.
 
 ---
 
-#### `SRTO_IPV6ONLY`
+#### SRTO_IPV6ONLY
 
 | OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -661,7 +661,7 @@ reliable way). Possible values are:
 
 ---
 
-#### `SRTO_ISN`
+#### SRTO_ISN
 
 | OptName          | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -678,7 +678,7 @@ used in any regular development.*
 
 ---
 
-#### `SRTO_KMPREANNOUNCE`
+#### SRTO_KMPREANNOUNCE
 
 | OptName               | Since | Restrict | Type       | Units  | Default           | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | ---------- | ------ | ----------------- | ------ | --- | ------ |
@@ -712,7 +712,7 @@ The value of `SRTO_KMPREANNOUNCE must not exceed `(SRTO_KMREFRESHRATE - 1) / 2`.
 
 ---
 
-#### `SRTO_KMREFRESHRATE`
+#### SRTO_KMREFRESHRATE
 
 | OptName               | Since | Restrict | Type       | Units  | Default          | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | ---------- | ------ | ---------------- | ------ | --- | ------ |
@@ -734,7 +734,7 @@ might still be in flight, or packets that have to be retransmitted.
 
 ---
 
-#### `SRTO_KMSTATE`
+#### SRTO_KMSTATE
 
 | OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -752,7 +752,7 @@ for more details.
 
 ---
 
-#### `SRTO_LATENCY`
+#### SRTO_LATENCY
 
 | OptName               | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -771,7 +771,7 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 
 ---
 
-#### `SRTO_LINGER`
+#### SRTO_LINGER
 
 | OptName              | Since | Restrict | Type       | Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
@@ -789,7 +789,7 @@ The default value in [the file transfer configuration](./API.md#transmission-typ
 
 ---
 
-#### `SRTO_LOSSMAXTTL`
+#### SRTO_LOSSMAXTTL
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -810,7 +810,7 @@ By default this value is set to 0, which means that this mechanism is off.
 
 ---
 
-#### `SRTO_MAXBW`
+#### SRTO_MAXBW
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -834,7 +834,7 @@ therefore the default -1 remains even in live mode.
 
 ---
 
-#### `SRTO_MESSAGEAPI`
+#### SRTO_MESSAGEAPI
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -873,7 +873,7 @@ SCTP protocol.
 
 ---
 
-#### `SRTO_MINVERSION`
+#### SRTO_MINVERSION
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -889,7 +889,7 @@ The default value is 0x010000 (SRT v1.0.0).
 
 ---
 
-#### `SRTO_MSS`
+#### SRTO_MSS
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -973,7 +973,7 @@ the best approach is then to avoid it by using appropriate parameters.
 
 ---
 
-#### `SRTO_NAKREPORT`
+#### SRTO_NAKREPORT
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -990,7 +990,7 @@ The default is true for Live mode, and false for File mode (see [`SRTO_TRANSTYPE
 
 ---
 
-#### `SRTO_OHEADBW`
+#### SRTO_OHEADBW
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1020,7 +1020,7 @@ and break quickly at any rise in packet loss.
 
 ---
 
-#### `SRTO_PACKETFILTER`
+#### SRTO_PACKETFILTER
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1086,7 +1086,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 ---
 
-#### `SRTO_PASSPHRASE`
+#### SRTO_PASSPHRASE
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1115,7 +1115,7 @@ encrypted connection, they have to simply set the same passphrase.
 
 ---
 
-#### `SRTO_PAYLOADSIZE`
+#### SRTO_PAYLOADSIZE
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1173,7 +1173,7 @@ For File mode: Default value is 0 and it's recommended not to be changed.
 
 ---
 
-#### `SRTO_PBKEYLEN`
+#### SRTO_PBKEYLEN
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1260,7 +1260,7 @@ undefined behavior:
 
 ---
 
-#### `SRTO_PEERIDLETIMEO`
+#### SRTO_PEERIDLETIMEO
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1274,7 +1274,7 @@ considered broken on timeout.
 
 ---
 
-#### `SRTO_PEERLATENCY`
+#### SRTO_PEERLATENCY
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1295,7 +1295,7 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 ---
 
-#### `SRTO_PEERVERSION`
+#### SRTO_PEERVERSION
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
@@ -1309,7 +1309,7 @@ See [`SRTO_VERSION`](#SRTO_VERSION) for the version format.
 
 ---
 
-#### `SRTO_RCVBUF`
+#### SRTO_RCVBUF
 
 | OptName              | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1329,7 +1329,7 @@ than the Flight Flag size).
 
 ---
 
-#### `SRTO_RCVDATA`
+#### SRTO_RCVDATA
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1341,7 +1341,7 @@ Size of the available data in the receive buffer.
 
 ---
 
-#### `SRTO_RCVKMSTATE`
+#### SRTO_RCVKMSTATE
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1355,7 +1355,7 @@ Values defined in enum [`SRT_KM_STATE`](#srt_km_state).
 
 ---
 
-#### `SRTO_RCVLATENCY`
+#### SRTO_RCVLATENCY
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1397,7 +1397,7 @@ See also [`SRTO_LATENCY`](#SRTO_LATENCY).
 
 ---
 
-#### `SRTO_RCVSYN`
+#### SRTO_RCVSYN
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1434,7 +1434,7 @@ derived from the socket of which the group is a member).
 
 ---
 
-#### `SRTO_RCVTIMEO`
+#### SRTO_RCVTIMEO
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1448,7 +1448,7 @@ it will behave as if in "non-blocking mode". The -1 value means no time limit.
 
 ---
 
-#### `SRTO_RENDEZVOUS`
+#### SRTO_RENDEZVOUS
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1461,7 +1461,7 @@ procedure of `srt_bind` and then `srt_connect` (or `srt_rendezvous`) to one anot
 
 ---
 
-#### `SRTO_RETRANSMITALGO`
+#### SRTO_RETRANSMITALGO
 
 | OptName               | Since | Restrict | Type      | Units  | Default | Range  | Dir | Entity |
 | --------------------- | ----- | -------- | --------- | ------ | ------- | ------ | --- | ------ |
@@ -1489,7 +1489,7 @@ Periodic NAK reports. See [SRTO_NAKREPORT](#SRTO_NAKREPORT).
 
 ---
 
-#### `SRTO_REUSEADDR`
+#### SRTO_REUSEADDR
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1516,7 +1516,7 @@ its address.*
 
 ---
 
-#### `SRTO_SENDER`
+#### SRTO_SENDER
 
 | OptName           | Since | Restrict | Type       |  Units  |   Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | ---------- | ------ | --- | ------ |
@@ -1536,7 +1536,7 @@ parties simultaneously.
 
 ---
 
-#### `SRTO_SNDBUF`
+#### SRTO_SNDBUF
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1548,7 +1548,7 @@ Sender Buffer Size. See [`SRTO_RCVBUF`](#SRTO_RCVBUF) for more information.
 
 ---
 
-#### `SRTO_SNDDATA`
+#### SRTO_SNDDATA
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1560,7 +1560,7 @@ Size of the unacknowledged data in send buffer.
 
 ---
 
-#### `SRTO_SNDDROPDELAY`
+#### SRTO_SNDDROPDELAY
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1587,7 +1587,7 @@ always when requested).
 
 ---
 
-#### `SRTO_SNDKMSTATE`
+#### SRTO_SNDKMSTATE
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1601,7 +1601,7 @@ Values defined in enum [`SRT_KM_STATE`](#srt_km_state).
 
 ---
 
-#### `SRTO_SNDSYN`
+#### SRTO_SNDSYN
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1627,7 +1627,7 @@ but will have no effect on the listener socket itself.
 
 ---
 
-#### `SRTO_SNDTIMEO`
+#### SRTO_SNDTIMEO
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1641,7 +1641,7 @@ if in "non-blocking mode". The -1 value means no time limit.
 
 ---
 
-#### `SRTO_STATE`
+#### SRTO_STATE
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1653,7 +1653,7 @@ Returns the current socket state, same as `srt_getsockstate`.
 
 ---
 
-#### `SRTO_STREAMID`
+#### SRTO_STREAMID
 
 | OptName              | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1682,7 +1682,7 @@ influence anything.
 
 ---
 
-#### `SRTO_TLPKTDROP`
+#### SRTO_TLPKTDROP
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1701,7 +1701,7 @@ enabled in sender if receiver supports it.
 
 ---
 
-#### `SRTO_TRANSTYPE`
+#### SRTO_TRANSTYPE
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1717,7 +1717,7 @@ Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
 
 ---
 
-#### `SRTO_TSBPDMODE`
+#### SRTO_TSBPDMODE
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1735,7 +1735,7 @@ the application.
 
 ---
 
-#### `SRTO_UDP_RCVBUF`
+#### SRTO_UDP_RCVBUF
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1748,7 +1748,7 @@ based on MSS value. Receive buffer must not be greater than FC size.
 
 ---
 
-#### `SRTO_UDP_SNDBUF`
+#### SRTO_UDP_SNDBUF
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
@@ -1761,7 +1761,7 @@ on `SRTO_MSS` value.
 
 ---
 
-#### `SRTO_VERSION`
+#### SRTO_VERSION
 
 | OptName           | Since | Restrict | Type       |  Units  |  Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
