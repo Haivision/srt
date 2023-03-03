@@ -308,7 +308,6 @@ void srt::CUDT::construct()
 
 srt::CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
-    , m_stats(&m_iMaxSRTPayloadSize)
 {
     construct();
 
@@ -333,7 +332,6 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 
 srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
-    , m_stats(&m_iMaxSRTPayloadSize)
 {
     construct();
 
@@ -478,12 +476,12 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         // checking if the socket is bound. This will also be the exact size
         // of the memory in use.
     case SRTO_SNDBUF:
-        *(int *)optval = m_config.iSndBufSize * (m_config.iMSS - CPacket::udpHeaderSize(AF_INET));
+        *(int *)optval = m_config.iSndBufSize * m_config.bytesPerPkt();
         optlen         = sizeof(int);
         break;
 
     case SRTO_RCVBUF:
-        *(int *)optval = m_config.iRcvBufSize * (m_config.iMSS - CPacket::udpHeaderSize(AF_INET));
+        *(int *)optval = m_config.iRcvBufSize * m_config.bytesPerPkt();
         optlen         = sizeof(int);
         break;
 
@@ -881,9 +879,9 @@ string srt::CUDT::getstreamid(SRTSOCKET u)
 // XXX REFACTOR: Make common code for CUDT constructor and clearData,
 // possibly using CUDT::construct.
 // Initial sequence number, loss, acknowledgement, etc.
-void srt::CUDT::clearData(int family)
+void srt::CUDT::clearData()
 {
-    const size_t full_hdr_size = CPacket::udpHeaderSize(family) + CPacket::HDR_SIZE;
+    const size_t full_hdr_size = CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE;
     m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
     HLOGC(cnlog.Debug, log << CONID() << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
@@ -932,11 +930,11 @@ void srt::CUDT::clearData(int family)
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
-void srt::CUDT::open(int family)
+void srt::CUDT::open()
 {
     ScopedLock cg(m_ConnectionLock);
 
-    clearData(family);
+    clearData();
 
     // structures for queue
     if (m_pSNode == NULL)
@@ -4185,7 +4183,7 @@ EConnectStatus srt::CUDT::processRendezvous(
     // This must be done before prepareConnectionObjects(), because it sets ISN and m_iMaxSRTPayloadSize needed to create buffers.
     if (!applyResponseSettings(pResponse))
     {
-        LOGC(cnlog.Error, log << CONID() << "processRendezvous: rogue peer");
+        LOGC(cnlog.Error, log << CONID() << "processRendezvous: peer settings rejected");
         return CONN_REJECT;
     }
 
@@ -4685,6 +4683,21 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
 
     // Re-configure according to the negotiated values.
     m_config.iMSS        = m_ConnRes.m_iMSS;
+
+    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+    if (m_iMaxSRTPayloadSize < int(m_config.zExpPayloadSize))
+    {
+        LOGC(cnlog.Error, log << CONID() << "applyResponseSettings: negotiated MSS=" << m_config.iMSS
+                << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
+                << m_config.zExpPayloadSize);
+        m_RejectReason = SRT_REJ_SETTINGS;
+        return false;
+    }
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    m_stats.setupHeaderSize(full_hdr_size);
+
+
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
     const int udpsize    = m_config.iMSS - CPacket::udpHeaderSize(m_TransferIPVersion);
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
@@ -5676,6 +5689,20 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // Uses the smaller MSS between the peers
     m_config.iMSS = std::min(m_config.iMSS, w_hs.m_iMSS);
 
+    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+    if (m_iMaxSRTPayloadSize < int(m_config.zExpPayloadSize))
+    {
+        LOGC(cnlog.Error, log << CONID() << "acceptAndRespond: negotiated MSS=" << m_config.iMSS
+                << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
+                << m_config.zExpPayloadSize);
+        m_RejectReason = SRT_REJ_SETTINGS;
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    m_stats.setupHeaderSize(full_hdr_size);
+
     // exchange info for maximum flow window size
     m_iFlowWindowSize = w_hs.m_iFlightFlagSize;
     m_iPeerISN        = w_hs.m_iISN;
@@ -5706,9 +5733,6 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
             m_TransferIPVersion = AF_INET;
     }
 
-    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
-    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
-    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
     // Prepare all structures
     if (!prepareConnectionObjects(w_hs, HSD_DRAW, 0))

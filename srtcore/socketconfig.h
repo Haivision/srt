@@ -328,6 +328,10 @@ struct CSrtConfig: CSrtMuxerConfig
     int set(SRT_SOCKOPT optName, const void* val, int size);
 
     bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // This function returns the number of bytes that are allocated
+    // for a single packet in the sender and receiver buffer.
+    int bytesPerPkt() const { return iMSS - int(CPacket::udpHeaderSize(AF_INET)); }
 };
 
 template <typename T>

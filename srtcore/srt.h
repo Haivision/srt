@@ -564,6 +564,7 @@ enum SRT_REJECT_REASON
 #ifdef ENABLE_AEAD_API_PREVIEW
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
 #endif
+    SRT_REJ_SETTINGS,    // socket settings on both sides collide and can't be negotiated
 
     SRT_REJ_E_SIZE,
 };

@@ -179,7 +179,7 @@ class CUDT
 
 private: // constructor and desctructor
     void construct();
-    void clearData(int family);
+    void clearData();
     CUDT(CUDTSocket* parent);
     CUDT(CUDTSocket* parent, const CUDT& ancestor);
     const CUDT& operator=(const CUDT&) {return *this;} // = delete ?
@@ -341,6 +341,7 @@ public: // internal API
         // then return the maximum payload size per packet.
         return m_iMaxSRTPayloadSize;
     }
+
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
@@ -459,7 +460,7 @@ public: // internal API
 
 private:
     /// initialize a UDT entity and bind to a local address.
-    void open(int family);
+    void open();
 
     /// Start listening to any connection request.
     void setListenState();
@@ -1137,14 +1138,16 @@ private: // Trace
         time_point tsLastSampleTime;        // last performance sample time
         int traceReorderDistance;
         double traceBelatedTime;
-        
+
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
 
-        CoreStats(int* payloadsize_loc)
-            : sndr(payloadsize_loc)
-            , rcvr(payloadsize_loc)
-        {}
+        void setupHeaderSize(int hsize)
+        {
+            sndr.setupHeaderSize(hsize);
+            rcvr.setupHeaderSize(hsize);
+        }
+
     } m_stats;
 
 public:

@@ -101,26 +101,25 @@ class BytesPackets: public BytesPacketsCount
 public:
     typedef BytesPacketsCount count_type;
 
+    // Set IPv4-based header size value as a fallback. This will be fixed upon connection.
     BytesPackets()
-        : m_pPayloadSizeLocation(NULL)
+        : m_iPacketHeaderSize(CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE)
     {}
 
 public:
 
-    void bindPayloadSize(int* sizeloc)
+    void setupHeaderSize(int size)
     {
-        m_pPayloadSizeLocation = sizeloc;
+        m_iPacketHeaderSize = size;
     }
 
     uint64_t bytesWithHdr() const
     {
-        SRT_ASSERT(m_pPayloadSizeLocation != NULL);
-        size_t header_size = CPacket::ETH_MAX_MTU_SIZE - *m_pPayloadSizeLocation;
-        return m_bytes + m_packets * header_size;
+        return m_bytes + m_packets * m_iPacketHeaderSize;
     }
 
 private:
-    int*  m_pPayloadSizeLocation;
+    int m_iPacketHeaderSize;
 };
 
 template <class METRIC_TYPE, class BASE_METRIC_TYPE = METRIC_TYPE>
@@ -135,10 +134,10 @@ struct Metric
         total += val;
     }
 
-    void bindPayloadSize(int* loc)
+    void setupHeaderSize(int loc)
     {
-        trace.bindPayloadSize(loc);
-        total.bindPayloadSize(loc);
+        trace.setupHeaderSize(loc);
+        total.setupHeaderSize(loc);
     }
 
     void reset()
@@ -167,14 +166,14 @@ struct Sender
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
 
-    Sender(int* payloadsize_loc)
+    void setupHeaderSize(int hdr_size)
     {
-#define BIND(var) var.bindPayloadSize(payloadsize_loc)
-        BIND(sent);
-        BIND(sentUnique);
-        BIND(sentRetrans);
-        BIND(dropped);
-#undef BIND
+#define SETHSIZE(var) var.setupHeaderSize(hdr_size)
+        SETHSIZE(sent);
+        SETHSIZE(sentUnique);
+        SETHSIZE(sentRetrans);
+        SETHSIZE(dropped);
+#undef SETHSIZE
     }
 
     void reset()
@@ -220,17 +219,17 @@ struct Receiver
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
 
-    Receiver(int* payloadsize_loc)
+    void setupHeaderSize(int hdr_size)
     {
-#define BIND(var) var.bindPayloadSize(payloadsize_loc)
-        BIND(recvd);
-        BIND(recvdUnique);
-        BIND(recvdRetrans);
-        BIND(lost);
-        BIND(dropped);
-        BIND(recvdBelated);
-        BIND(undecrypted);
-#undef BIND
+#define SETHSIZE(var) var.setupHeaderSize(hdr_size)
+        SETHSIZE(recvd);
+        SETHSIZE(recvdUnique);
+        SETHSIZE(recvdRetrans);
+        SETHSIZE(lost);
+        SETHSIZE(dropped);
+        SETHSIZE(recvdBelated);
+        SETHSIZE(undecrypted);
+#undef SETHSIZE
     }
 
     void reset()

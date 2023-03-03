@@ -618,7 +618,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         }
 
         // bind to the same addr of listening socket
-        ns->core().open(peer.family());
+        ns->core().open();
         if (!updateListenerMux(ns, ls))
         {
             // This is highly unlikely if not impossible, but there's
@@ -928,7 +928,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    s->core().open(name.family());
+    s->core().open();
     updateMux(s, name);
     s->m_Status = SRTS_OPENED;
 
@@ -957,7 +957,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     // Successfully extracted, so update the size
     name.len = namelen;
 
-    s->core().open(name.family());
+    s->core().open();
     updateMux(s, name, &udpsock);
     s->m_Status = SRTS_OPENED;
 
@@ -1847,7 +1847,7 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
         // same thing as bind() does, just with empty address so that
         // the binding parameters are autoselected.
 
-        s->core().open(target_addr.family());
+        s->core().open();
         sockaddr_any autoselect_sa(target_addr.family());
         // This will create such a sockaddr_any that
         // will return true from empty().

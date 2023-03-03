@@ -109,7 +109,7 @@ struct CSrtConfigSetter<SRTO_SNDBUF>
         if (bs <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iSndBufSize = bs / (co.iMSS - CPacket::udpHeaderSize(AF_INET));
+        co.iSndBufSize = bs / co.bytesPerPkt();
     }
 };
 
@@ -123,7 +123,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         // Mimimum recv buffer size is 32 packets
-        const int mssin_size = co.iMSS - CPacket::udpHeaderSize(AF_INET);
+        const int mssin_size = co.bytesPerPkt();
 
         if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
             co.iRcvBufSize = val / mssin_size;

@@ -172,6 +172,7 @@ Since SRT v1.5.0.
 | [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
 | [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
 | [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.6.0-dev | The connection was rejected due to an unsupported or mismatching encryption mode                               |
+| [SRT_REJ_SETTINGS](#SRT_REJ_SETTINGS)        | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
 <h4 id="error-codes">Error Codes</h4>
@@ -3063,6 +3064,21 @@ constants. Note that the number space from the value of `SRT_REJC_PREDEFINED`
 and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
 adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
 the application.
+
+#### SRT_REJ_CRYPTO
+
+Settings for `SRTO_CRYPTOMODE` on both parties are not compatible with one another.
+See [`SRTO_CRYPTOMODE`](API-socket-options.md#SRTO_CRYPTOMODE) for details.
+
+#### SRT_REJ_SETTINGS
+
+Settings for various transmission parameters that are supposed to be negotiated
+during the handshake (in order to agree upon a common value) are under restrictions
+that make finding common values for them impossible. Cases include:
+
+* `SRTO_PAYLOADSIZE`, which is nonzero in live mode, is set to a value that
+exceeds the free space in a single packet that results from the value of the
+negotiated MSS value
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
