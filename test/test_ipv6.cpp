@@ -300,7 +300,7 @@ TEST_F(TestIPv6, plsize_v4)
 
 TEST_F(TestIPv6, plsize_faux_v6)
 {
-    using namespace std::literals;
+    using namespace std::chrono;
     SetupFileMode();
 
     sockaddr_any sa (AF_INET6);
@@ -322,7 +322,7 @@ TEST_F(TestIPv6, plsize_faux_v6)
     // Sleeping isn't reliable so do a dampened spinlock here.
     // This flag also confirms that the caller acquired the mutex and will
     // unlock it for CV waiting - so we can proceed to notifying it.
-    do std::this_thread::sleep_for(100ms); while (!m_CallerStarted);
+    do std::this_thread::sleep_for(milliseconds(100)); while (!m_CallerStarted);
 
     // Just in case of a test failure, kick CV to avoid deadlock
     CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
