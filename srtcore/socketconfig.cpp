@@ -69,9 +69,15 @@ struct CSrtConfigSetter<SRTO_MSS>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        using namespace srt_logging;
         const int ival = cast_optval<int>(optval, optlen);
-        if (ival < int(CPacket::udpHeaderSize(AF_INET6) + CHandShake::m_iContentSize))
+        const int handshake_size = CHandShake::m_iContentSize + (sizeof(uint32_t) * SRT_HS_E_SIZE);
+        const int minval = int(CPacket::udpHeaderSize(AF_INET6) + CPacket::HDR_SIZE + handshake_size);
+        if (ival < minval)
+        {
+            LOGC(kmlog.Error, log << "SRTO_MSS: minimum value allowed is " << minval << " = [IPv6][UDP][SRT] headers + minimum SRT handshake");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
         co.iMSS = ival;
 

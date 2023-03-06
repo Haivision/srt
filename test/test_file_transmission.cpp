@@ -226,8 +226,6 @@ TEST(FileTransmission, Setup46)
         int ipv4_and_ipv6 = 0;
         ASSERT_NE(srt_setsockflag(sock_clr, SRTO_IPV6ONLY, &ipv4_and_ipv6, sizeof ipv4_and_ipv6), -1);
 
-        // srt_setloglevel(LOG_DEBUG);
-
         ASSERT_NE(srt_bind(sock_clr, sa.get(), sa.size()), -1);
 
         int connect_port = 5555;
@@ -237,10 +235,6 @@ TEST(FileTransmission, Setup46)
         sa_lsn.sin_family = AF_INET;
         sa_lsn.sin_addr.s_addr = INADDR_ANY;
         sa_lsn.sin_port = htons(connect_port);
-
-
-        srt_setloglevel(LOG_DEBUG);
-
 
         // Find unused a port not used by any other service.    
         // Otherwise srt_connect may actually connect.

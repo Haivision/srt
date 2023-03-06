@@ -103,23 +103,23 @@ public:
 
     // Set IPv4-based header size value as a fallback. This will be fixed upon connection.
     BytesPackets()
-        : m_iPacketHeaderSize(CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE)
+        : m_zPacketHeaderSize(CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE)
     {}
 
 public:
 
     void setupHeaderSize(int size)
     {
-        m_iPacketHeaderSize = size;
+        m_zPacketHeaderSize = uint64_t(size);
     }
 
     uint64_t bytesWithHdr() const
     {
-        return m_bytes + m_packets * m_iPacketHeaderSize;
+        return m_bytes + m_packets * m_zPacketHeaderSize;
     }
 
 private:
-    int m_iPacketHeaderSize;
+    uint64_t m_zPacketHeaderSize;
 };
 
 template <class METRIC_TYPE, class BASE_METRIC_TYPE = METRIC_TYPE>
