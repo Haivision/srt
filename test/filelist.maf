@@ -2,6 +2,7 @@ HEADERS
 any.hpp
 
 SOURCES
+test_main.cpp
 test_buffer_rcv.cpp
 test_common.cpp
 test_connection_timeout.cpp
