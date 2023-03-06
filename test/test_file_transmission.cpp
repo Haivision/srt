@@ -268,10 +268,14 @@ TEST(FileTransmission, Setup46)
         const size_t SIZE = 1454; // Max payload for IPv4 minus 2 - still more than 1444 for IPv6
         char buffer[SIZE];
 
-        unsigned int randseed = std::time(NULL);
+        std::random_device rd;
+        std::mt19937 mtrd(rd());
+        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
         for (size_t i = 0; i < SIZE; ++i)
-            buffer[i] = rand_r(&randseed);
+        {
+            buffer[i] = dis(mtrd);
+        }
 
         EXPECT_EQ(srt_send(sock_acp, buffer, SIZE), SIZE) << srt_getlasterror_str();
 
