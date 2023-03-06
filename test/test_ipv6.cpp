@@ -80,7 +80,7 @@ public:
         sa.hport(m_listen_port);
         EXPECT_EQ(inet_pton(family, address.c_str(), sa.get_addr()), 1);
 
-        std::cout << "Calling: " << address << "(" << fam[family] << ")\n";
+        std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK]\n";
 
         CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
 
@@ -100,10 +100,13 @@ public:
 
             if (connect_res == SRT_ERROR)
             {
+                std::cout << "Connect failed - [UNLOCK]\n";
+                before_closing.locker().unlock(); // We don't need this lock here and it may deadlock
                 srt_close(m_listener_sock);
             }
             else
             {
+                std::cout << "Connect succeeded, [UNLOCK-WAIT-CV]\n";
                 before_closing.wait();
             }
         }
@@ -149,6 +152,7 @@ public:
                 << "EMPTY address in srt_getsockname";
         }
 
+        std::cout << "DoAccept: [LOCK-SIGNAL]\n";
         CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
         before_closing.notify_one();
 
