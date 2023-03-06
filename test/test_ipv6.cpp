@@ -153,8 +153,8 @@ public:
         }
 
         std::cout << "DoAccept: [LOCK-SIGNAL]\n";
-        CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
-        before_closing.notify_one();
+        // XXX Deadlock here on Travis by unknown reason, hence do relaxed signaling.
+        CSync::notify_all_relaxed(m_ReadyToClose);
 
         srt_close(accepted_sock);
         return sn;
