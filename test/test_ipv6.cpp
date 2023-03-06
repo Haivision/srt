@@ -96,6 +96,8 @@ public:
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
 
+            PrintAddresses(m_caller_sock, "CALLER");
+
             if (connect_res == SRT_ERROR)
             {
                 srt_close(m_listener_sock);
@@ -104,8 +106,6 @@ public:
             {
                 before_closing.wait();
             }
-
-            PrintAddresses(m_caller_sock, "CALLER");
         }
         else
         {
