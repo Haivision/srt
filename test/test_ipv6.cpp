@@ -211,7 +211,7 @@ TEST_F(TestIPv6, v4_calls_v6_mapped)
     client.join();
 }
 
-TEST_F(TestIPv6, v6_calls_v6_mapped)
+TEST_F(TestIPv6, v6_calls_mapped_v6)
 {
     sockaddr_any sa (AF_INET6);
     sa.hport(m_listen_port);
