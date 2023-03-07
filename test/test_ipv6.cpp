@@ -172,14 +172,16 @@ public:
         while (!m_ReadyToCloseLock.try_lock())
         {
             this_thread::sleep_for(milliseconds_from(100));
+            std::cout << "(lock failed, retrying " << nms << ")...\n";
             if (--nms == 0)
                 break;
-            std::cout << "(lock failed, retrying " << nms << ")...\n";
         }
 
+        std::cout << "(signaling...)\n";
         CSync::notify_all_relaxed(m_ReadyToClose);
         if (nms)
         {
+            std::cout << "(unlocking...)\n";
             m_ReadyToCloseLock.unlock();
         }
         std::cout << "DoAccept: [UNLOCKED] " << nms << "\n";
