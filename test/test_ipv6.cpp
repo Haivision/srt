@@ -80,9 +80,11 @@ public:
         sa.hport(m_listen_port);
         EXPECT_EQ(inet_pton(family, address.c_str(), sa.get_addr()), 1);
 
-        std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK]\n";
+        std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
 
         CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
+
+        std::cout << "[LOCKED] Connecting\n";
 
         m_CallerStarted = true;
 
@@ -106,8 +108,9 @@ public:
             }
             else
             {
-                std::cout << "Connect succeeded, [UNLOCK-WAIT-CV]\n";
+                std::cout << "Connect succeeded, [UNLOCK-WAIT-CV...]\n";
                 before_closing.wait();
+                std::cout << "Connect: [SIGNALED-LOCK]\n";
             }
         }
         else
@@ -117,6 +120,7 @@ public:
             EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_SETTINGS);
             srt_close(m_listener_sock);
         }
+        std::cout << "Connect: [UNLOCKING...]\n";
     }
 
     std::map<int, std::string> fam = { {AF_INET, "IPv4"}, {AF_INET6, "IPv6"} };
@@ -124,7 +128,10 @@ public:
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
         EXPECT_NE(fam.count(w.family()), 0U) << "INVALID FAMILY";
-        std::cout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
+        // Printing may happen from different threads, avoid intelining.
+        std::ostringstream sout;
+        sout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
+        std::cout << sout.str();
     }
 
     sockaddr_any DoAccept()
@@ -153,8 +160,8 @@ public:
         }
 
         std::cout << "DoAccept: [LOCK-SIGNAL]\n";
-        // XXX Deadlock here on Travis by unknown reason, hence do relaxed signaling.
-        CSync::notify_all_relaxed(m_ReadyToClose);
+        CSync::lock_notify_all(m_ReadyToClose, m_ReadyToCloseLock);
+        std::cout << "DoAccept: [UNLOCKED]\n";
 
         srt_close(accepted_sock);
         return sn;
@@ -329,8 +336,9 @@ TEST_F(TestIPv6, plsize_faux_v6)
     do std::this_thread::sleep_for(milliseconds(100)); while (!m_CallerStarted);
 
     // Just in case of a test failure, kick CV to avoid deadlock
-    CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
-    before_closing.notify_one();
+    std::cout << "TEST: [LOCK-SIGNAL]\n";
+    CSync::lock_notify_all(m_ReadyToClose, m_ReadyToCloseLock);
+    std::cout << "TEST: [UNLOCKED]\n";
 
     client.join();
 }
