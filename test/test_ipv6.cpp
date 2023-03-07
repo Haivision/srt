@@ -2,6 +2,7 @@
 #include <thread>
 #include <chrono>
 #include <string>
+#include <future>
 #include "srt.h"
 #include "sync.h"
 #include "netinet_any.h"
@@ -39,7 +40,11 @@ protected:
 
         m_listener_sock = srt_create_socket();
         ASSERT_NE(m_listener_sock, SRT_ERROR);
-        m_CallerStarted = false;
+
+        m_CallerStarted.reset(new std::promise<void>);
+        m_ReadyCaller.reset(new std::promise<void>);
+        m_ReadyAccept.reset(new std::promise<void>);
+
     }
 
     void TearDown()
@@ -62,10 +67,8 @@ public:
 
     int m_CallerPayloadSize = 0;
     int m_AcceptedPayloadSize = 0;
-    atomic<bool> m_CallerStarted;
 
-    Condition m_ReadyToClose;
-    Mutex m_ReadyToCloseLock;
+    std::unique_ptr<std::promise<void>> m_CallerStarted, m_ReadyCaller, m_ReadyAccept;
 
     // "default parameter" version. Can't use default parameters because this goes
     // against binding parameters. Nor overloading.
@@ -76,17 +79,15 @@ public:
 
     void ClientThreadFlex(int family, const std::string& address, bool shouldwork)
     {
+        std::future<void> ready_accepter = m_ReadyAccept->get_future();
+
         sockaddr_any sa (family);
         sa.hport(m_listen_port);
         EXPECT_EQ(inet_pton(family, address.c_str(), sa.get_addr()), 1);
 
         std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
 
-        CUniqueSync before_closing(m_ReadyToCloseLock, m_ReadyToClose);
-
-        std::cout << "[LOCKED] Connecting\n";
-
-        m_CallerStarted = true;
+        m_CallerStarted->set_value();
 
         const int connect_res = srt_connect(m_caller_sock, (sockaddr*)&sa, sizeof sa);
 
@@ -98,19 +99,19 @@ public:
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
 
+            m_ReadyCaller->set_value();
+
             PrintAddresses(m_caller_sock, "CALLER");
 
             if (connect_res == SRT_ERROR)
             {
                 std::cout << "Connect failed - [UNLOCK]\n";
-                before_closing.locker().unlock(); // We don't need this lock here and it may deadlock
                 srt_close(m_listener_sock);
             }
             else
             {
-                std::cout << "Connect succeeded, [UNLOCK-WAIT-CV...]\n";
-                bool signaled = before_closing.wait_for(seconds_from(10));
-                std::cout << "Connect: [" << (signaled ? "SIGNALED" : "EXPIRED") << "-LOCK]\n";
+                std::cout << "Connect succeeded, [FUTURE-WAIT...]\n";
+                ready_accepter.wait();
             }
         }
         else
@@ -120,7 +121,7 @@ public:
             EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_SETTINGS);
             srt_close(m_listener_sock);
         }
-        std::cout << "Connect: [UNLOCKING...]\n";
+        std::cout << "Connect: exit\n";
     }
 
     std::map<int, std::string> fam = { {AF_INET, "IPv4"}, {AF_INET6, "IPv6"} };
@@ -138,21 +139,24 @@ public:
     {
         sockaddr_any sc1;
 
-        using namespace std::chrono;
+        // Make sure the caller started
+        m_CallerStarted->get_future().wait();
+        std::cout << "DoAccept: caller started, proceeding to accept\n";
 
         SRTSOCKET accepted_sock = srt_accept(m_listener_sock, sc1.get(), &sc1.len);
         EXPECT_NE(accepted_sock, SRT_INVALID_SOCK) << "accept() failed with: " << srt_getlasterror_str();
         if (accepted_sock == SRT_INVALID_SOCK) {
             return sockaddr_any();
         }
-        int size = sizeof (int);
-        EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
-
         PrintAddresses(accepted_sock, "ACCEPTED");
 
         sockaddr_any sn;
         EXPECT_NE(srt_getsockname(accepted_sock, sn.get(), &sn.len), SRT_ERROR);
         EXPECT_NE(sn.get_addr(), nullptr);
+        int size = sizeof (int);
+        EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
+
+        m_ReadyCaller->get_future().wait();
 
         if (sn.get_addr() != nullptr)
         {
@@ -161,30 +165,8 @@ public:
                 << "EMPTY address in srt_getsockname";
         }
 
-        std::cout << "DoAccept: [LOCK-SIGNAL]\n";
-
-        // Travis makes problems here by unknown reason. Try waiting up to 10s
-        // until it's possible, otherwise simply give up. The intention is to
-        // prevent from closing too soon before the caller thread has a chance
-        // to perform required verifications. After 10s we can consider it enough time.
-
-        int nms = 10;
-        while (!m_ReadyToCloseLock.try_lock())
-        {
-            this_thread::sleep_for(milliseconds_from(100));
-            std::cout << "(lock failed, retrying " << nms << ")...\n";
-            if (--nms == 0)
-                break;
-        }
-
-        std::cout << "(signaling...)\n";
-        CSync::notify_all_relaxed(m_ReadyToClose);
-        if (nms)
-        {
-            std::cout << "(unlocking...)\n";
-            m_ReadyToCloseLock.unlock();
-        }
-        std::cout << "DoAccept: [UNLOCKED] " << nms << "\n";
+        std::cout << "DoAccept: ready accept - promise SET\n";
+        m_ReadyAccept->set_value();
 
         srt_close(accepted_sock);
         return sn;
@@ -356,12 +338,11 @@ TEST_F(TestIPv6, plsize_faux_v6)
     // Sleeping isn't reliable so do a dampened spinlock here.
     // This flag also confirms that the caller acquired the mutex and will
     // unlock it for CV waiting - so we can proceed to notifying it.
-    do std::this_thread::sleep_for(milliseconds(100)); while (!m_CallerStarted);
+    m_CallerStarted->get_future().wait();
 
     // Just in case of a test failure, kick CV to avoid deadlock
-    std::cout << "TEST: [LOCK-SIGNAL]\n";
-    CSync::lock_notify_all(m_ReadyToClose, m_ReadyToCloseLock);
-    std::cout << "TEST: [UNLOCKED]\n";
+    std::cout << "TEST: [PROMISE-SET]\n";
+    m_ReadyAccept->set_value();
 
     client.join();
 }
