@@ -49,9 +49,15 @@ public:
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
         bind_sa.sin_port = htons(5555);
 
+        // NOTE: listener callback must be set BEFORE LISTENING,
+        // otherwise it may potentially change the procedure in the middle of processing
+        // of an incoming connection.
+        ASSERT_NE(srt_listen_callback(server_sock, &SrtTestListenCallback, NULL), -1);
         ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
         ASSERT_NE(srt_listen(server_sock, 5), -1);
-        (void)srt_listen_callback(server_sock, &SrtTestListenCallback, NULL);
+
+        // Check also changing the listener callback AFTER listening - this is expected to fail.
+        ASSERT_EQ(srt_listen_callback(server_sock, &SrtTestListenCallback, NULL), -1);
 
         accept_thread = std::thread([this] { this->AcceptLoop(); });
 
@@ -244,6 +250,8 @@ TEST_F(ListenerCallback, SecureSuccess)
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
 #if SRT_ENABLE_ENCRYPTION
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
+#else
+    std::cout << "NOTE: NO ENCRYPTION IN THIS TEST\n";
 #endif
 
     // EXPECTED RESULT: connected successfully
