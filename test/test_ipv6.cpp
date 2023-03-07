@@ -174,10 +174,14 @@ public:
             this_thread::sleep_for(milliseconds_from(100));
             if (--nms == 0)
                 break;
+            std::cout << "(lock failed, retrying " << nms << ")...\n";
         }
 
         CSync::notify_all_relaxed(m_ReadyToClose);
-        m_ReadyToCloseLock.unlock();
+        if (nms)
+        {
+            m_ReadyToCloseLock.unlock();
+        }
         std::cout << "DoAccept: [UNLOCKED] " << nms << "\n";
 
         srt_close(accepted_sock);
