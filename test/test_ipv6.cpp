@@ -109,8 +109,8 @@ public:
             else
             {
                 std::cout << "Connect succeeded, [UNLOCK-WAIT-CV...]\n";
-                before_closing.wait();
-                std::cout << "Connect: [SIGNALED-LOCK]\n";
+                bool signaled = before_closing.wait_for(seconds_from(10));
+                std::cout << "Connect: [" << (signaled ? "SIGNALED" : "EXPIRED") << "-LOCK]\n";
             }
         }
         else
@@ -138,6 +138,8 @@ public:
     {
         sockaddr_any sc1;
 
+        using namespace std::chrono;
+
         SRTSOCKET accepted_sock = srt_accept(m_listener_sock, sc1.get(), &sc1.len);
         EXPECT_NE(accepted_sock, SRT_INVALID_SOCK) << "accept() failed with: " << srt_getlasterror_str();
         if (accepted_sock == SRT_INVALID_SOCK) {
@@ -160,8 +162,23 @@ public:
         }
 
         std::cout << "DoAccept: [LOCK-SIGNAL]\n";
-        CSync::lock_notify_all(m_ReadyToClose, m_ReadyToCloseLock);
-        std::cout << "DoAccept: [UNLOCKED]\n";
+
+        // Travis makes problems here by unknown reason. Try waiting up to 10s
+        // until it's possible, otherwise simply give up. The intention is to
+        // prevent from closing too soon before the caller thread has a chance
+        // to perform required verifications. After 10s we can consider it enough time.
+
+        int nms = 10;
+        while (!m_ReadyToCloseLock.try_lock())
+        {
+            this_thread::sleep_for(milliseconds_from(100));
+            if (--nms == 0)
+                break;
+        }
+
+        CSync::notify_all_relaxed(m_ReadyToClose);
+        m_ReadyToCloseLock.unlock();
+        std::cout << "DoAccept: [UNLOCKED] " << nms << "\n";
 
         srt_close(accepted_sock);
         return sn;
