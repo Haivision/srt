@@ -250,8 +250,6 @@ TEST_F(ListenerCallback, SecureSuccess)
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_STREAMID, username_spec.c_str(), username_spec.size()), -1);
 #if SRT_ENABLE_ENCRYPTION
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_PASSPHRASE, password.c_str(), password.size()), -1);
-#else
-    std::cout << "NOTE: NO ENCRYPTION IN THIS TEST\n";
 #endif
 
     // EXPECTED RESULT: connected successfully
