@@ -104,7 +104,7 @@ void TestInit::stop()
 
 // This function finds some interesting options among command
 // line arguments and does specific things.
-void TestInit::HandleOptions()
+void TestInit::HandlePerTestOptions()
 {
     // As a short example:
     // use '-logdebug' option to turn on debug logging.
