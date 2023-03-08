@@ -94,7 +94,7 @@ script:
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ulimit -c unlimited;
-        ./test-srt -disable-ipv6
+        ./test-srt -disable-ipv6;
         SUCCESS=$?;
         if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
         test $SUCCESS == 0;
