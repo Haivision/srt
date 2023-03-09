@@ -208,7 +208,7 @@ bool filterConfigSame(const string& config1, const string& config2)
 
 TEST(TestFEC, ConfigExchange)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
@@ -239,7 +239,7 @@ TEST(TestFEC, ConfigExchange)
 
 TEST(TestFEC, ConfigExchangeFaux)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
@@ -277,7 +277,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
 TEST(TestFEC, Connection)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -331,7 +331,7 @@ TEST(TestFEC, Connection)
 
 TEST(TestFEC, ConnectionReorder)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -383,7 +383,7 @@ TEST(TestFEC, ConnectionReorder)
 
 TEST(TestFEC, ConnectionFull1)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -435,7 +435,7 @@ TEST(TestFEC, ConnectionFull1)
 
 TEST(TestFEC, ConnectionFull2)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -487,7 +487,7 @@ TEST(TestFEC, ConnectionFull2)
 
 TEST(TestFEC, ConnectionMess)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -539,7 +539,7 @@ TEST(TestFEC, ConnectionMess)
 
 TEST(TestFEC, ConnectionForced)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -585,7 +585,7 @@ TEST(TestFEC, ConnectionForced)
 
 TEST(TestFEC, RejectionConflict)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -627,7 +627,7 @@ TEST(TestFEC, RejectionConflict)
 
 TEST(TestFEC, RejectionIncompleteEmpty)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -667,7 +667,7 @@ TEST(TestFEC, RejectionIncompleteEmpty)
 
 TEST(TestFEC, RejectionIncomplete)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();

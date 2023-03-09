@@ -12,7 +12,7 @@
 
 TEST(Bonding, SRTConnectGroup)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     struct sockaddr_in sa;
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
@@ -131,8 +131,8 @@ void ConnectCallback(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* 
 
 TEST(Bonding, NonBlockingGroupConnect)
 {
-	srt::TestInit srtinit;
-    
+    srt::TestInit srtinit;
+
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
     std::cout << "Created group socket: " << ss << '\n';
@@ -222,8 +222,8 @@ void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sock
 
 TEST(Bonding, CloseGroupAndSocket)
 {
-	srt::TestInit srtinit;
-    
+    srt::TestInit srtinit;
+
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
     std::cout << "Created group socket: " << ss << '\n';

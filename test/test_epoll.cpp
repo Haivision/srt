@@ -15,7 +15,7 @@ using namespace srt;
 
 TEST(CEPoll, InfiniteWait)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
 
@@ -29,7 +29,7 @@ TEST(CEPoll, InfiniteWait)
 
 TEST(CEPoll, WaitNoSocketsInEpoll)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -49,7 +49,7 @@ TEST(CEPoll, WaitNoSocketsInEpoll)
 
 TEST(CEPoll, WaitNoSocketsInEpoll2)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -64,7 +64,7 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
 TEST(CEPoll, WaitEmptyCall)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -87,7 +87,7 @@ TEST(CEPoll, WaitEmptyCall)
 
 TEST(CEPoll, UWaitEmptyCall)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -110,7 +110,7 @@ TEST(CEPoll, UWaitEmptyCall)
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -144,7 +144,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -173,7 +173,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
 TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
@@ -196,7 +196,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 
 TEST(CEPoll, HandleEpollEvent)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -256,7 +256,7 @@ TEST(CEPoll, HandleEpollEvent)
 // be notified about connection break via polling the accepted socket.
 TEST(CEPoll, NotifyConnectionBreak)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     // 1. Prepare client
     SRTSOCKET client_sock = srt_create_socket();
@@ -371,7 +371,7 @@ TEST(CEPoll, NotifyConnectionBreak)
 
 TEST(CEPoll, HandleEpollEvent2)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -432,7 +432,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
 TEST(CEPoll, HandleEpollNoEvent)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -482,7 +482,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 
 TEST(CEPoll, ThreadedUpdate)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
@@ -676,7 +676,7 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], servsock); // read event is for bind socket    	
+            ASSERT_EQ(read[0], servsock); // read event is for bind socket
         }
 
         sockaddr_in scl;

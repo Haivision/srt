@@ -16,7 +16,7 @@ using namespace srt;
 /// the very last element of the queue (it was skipped).
 TEST(CUnitQueue, Increase)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
@@ -37,7 +37,7 @@ TEST(CUnitQueue, Increase)
 /// beginning of the same queue.
 TEST(CUnitQueue, IncreaseAndFree)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
@@ -62,7 +62,7 @@ TEST(CUnitQueue, IncreaseAndFree)
 /// Thus the test checks if 
 TEST(CUnitQueue, IncreaseAndFreeGrouped)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 

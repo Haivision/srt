@@ -301,7 +301,7 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
         ASSERT_EQ(rlen, 1); // get exactly one read event without writes
         ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-        ASSERT_EQ(read[0], bindsock); // read event is for bind socket    	
+        ASSERT_EQ(read[0], bindsock); // read event is for bind socket
     }
 
     sockaddr_any scl;
@@ -394,7 +394,7 @@ void shutdownListener(SRTSOCKET bindsock)
 
 TEST(ReuseAddr, SameAddr1)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -419,7 +419,7 @@ TEST(ReuseAddr, SameAddr1)
 
 TEST(ReuseAddr, SameAddr2)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
@@ -453,7 +453,7 @@ TEST(ReuseAddr, SameAddr2)
 TEST(ReuseAddr, SameAddrV6)
 {
     SRTST_REQUIRES(IPv6);
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -483,7 +483,7 @@ TEST(ReuseAddr, SameAddrV6)
 
 TEST(ReuseAddr, DiffAddr)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
@@ -512,7 +512,7 @@ TEST(ReuseAddr, DiffAddr)
 
 TEST(ReuseAddr, Wildcard)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
@@ -549,7 +549,7 @@ TEST(ReuseAddr, Wildcard)
 TEST(ReuseAddr, Wildcard6)
 {
     SRTST_REQUIRES(IPv6);
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
@@ -629,7 +629,7 @@ TEST(ReuseAddr, ProtocolVersion6)
 {
     SRTST_REQUIRES(IPv6);
 
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
@@ -667,7 +667,7 @@ TEST(ReuseAddr, ProtocolVersion6)
 TEST(ReuseAddr, ProtocolVersionFaux6)
 {
     SRTST_REQUIRES(IPv6);
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";

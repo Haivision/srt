@@ -30,7 +30,7 @@
 
 TEST(Transmission, FileUpload)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
 
     // Generate the source file
     // We need a file that will contain more data

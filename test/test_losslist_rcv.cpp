@@ -73,7 +73,7 @@ TEST_F(CRcvLossListTest, InsertTwoElemsEdge)
 
 TEST(CRcvFreshLossListTest, CheckFreshLossList)
 {
-	srt::TestInit srtinit;
+    srt::TestInit srtinit;
     std::deque<CRcvFreshLoss> floss {
         CRcvFreshLoss (10, 15, 5),
         CRcvFreshLoss (25, 29, 10),
