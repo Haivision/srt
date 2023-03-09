@@ -5619,8 +5619,8 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         SRT_ASSERT(m_TransferIPVersion != AF_UNSPEC);
         // IMPORTANT:
         // The m_iMaxSRTPayloadSize is the size of the payload in the "SRT packet" that can be sent
-        // over the current connection - which means that if any party is IPv6, then the maximum size
-        // is the one for IPv6 (1444). Only if both parties are IPv4, this maximum size is 1456.
+        // over the current connection - which means that if both parties are IPv6, then the maximum size
+        // is the one for IPv6 (1444). If any party is IPv4, this maximum size is 1456.
         // The family as the first argument is something different - it's for the header size in order
         // to calculate rate and statistics.
 
