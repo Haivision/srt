@@ -1223,12 +1223,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // and therefore take over the leading role in setting the ISN. If the
     // second one fails, too, then the only remaining idle link will simply
     // go with its own original sequence.
-    //
-    // On the opposite side the reader should know that the link is inactive
-    // so the first received payload activates it. Activation of an idle link
-    // means that the very first packet arriving is TAKEN AS A GOOD DEAL, that is,
-    // no LOSSREPORT is sent even if the sequence looks like a "jumped over".
-    // Only for activated links is the LOSSREPORT sent upon seqhole detection.
+
+    // On the opposite side, if the first packet arriving looks like a jump over,
+    // the corresponding LOSSREPORT is sent. For packets that are truly lost,
+    // the sender retransmits them, for packets that before ISN, DROPREQ is sent.
 
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
