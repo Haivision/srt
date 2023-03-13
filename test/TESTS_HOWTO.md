@@ -75,10 +75,10 @@ end the parameter list with the `-/` phrase. The `--` phrase means that the
 rest of command line parameters are arguments for the last specified option,
 even if they start with a dash. Note that a single dash has no special meaning.
 
-From the API perspective, in the `TestEnv::argmap` container there are option
-parameters collected in a vector assigned to particular option as a map key,
-with skipped the initial dash. Free parameters are assigned to an empty string
-key. You can use also two helper methods:
+The `TestEnv::argmap` is using option names (except the initial dash) as keys
+and the value is a vector of the parameters specified after the option. Free
+parameters are collected under an empty string key. For convenience you can
+also use two `TestEnv` helper methods:
 
 * `OptionPresent(name)`: returns true if the option of `name` is present in the
 map (note that options without parameters have simply an empty vector assigned)
@@ -92,15 +92,15 @@ of strings)
 The macro `SRTST_REQUIRE` can be used to check if particular feature of the
 test environment is available. This binds to the `TestEnv::Available_FEATURE`
 option if used as `SRTST_REQUIRE(FEATURE)`. This macro makes the test function
-exit immediately with success and prints the information that the test is
-forced to pass due to unavailable features.
+exit immediately with success. The checking function should take care of
+printing appropriate information about that the test was forcefully passed.
 
-To add more environment availability features, add more `TestEnv::Available_`
+To add more environment availability features, add more `TestEnv::Available_*`
 methods. Methods must return `bool`, but may have parameters, which are passed
 next to the first argument in the macro transparently. Availability can be
-tested internally, or taken as a good deal from options, as it is currently
-done with the IPv6 feature - it is declared as not available when the test
-application gets the `-disable-ipv6` option.
+tested internally, or taken as a good deal basing on options, as it is
+currently done with the IPv6 feature - it is declared as not available when the
+test application gets the `-disable-ipv6` option.
 
 It is unknown what future tests could require particular system features,
 so this solution is open for further extensions.
