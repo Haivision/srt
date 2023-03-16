@@ -711,7 +711,7 @@ public:
     ///
     /// @return true  if the specified time was reached
     ///         false should never happen
-    bool sleep_until(steady_clock::time_point tp);
+    bool sleep_until(steady_clock::time_point tp, const bool& forced);
 
     /// Resets target wait time and interrupts waiting
     /// in sleep_until(..)
@@ -723,6 +723,9 @@ public:
     void tick();
 
 private:
+
+    bool sleep_internal(UniqueLock& ulk, const bool& forced);
+
     CEvent m_event;
     steady_clock::time_point m_tsSchedTime;
 };
