@@ -224,6 +224,20 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
         ) const int* events
          "pinAddr_$csinput"
 
+// --- Map all SRTSOCKET to artificial SRTSOCKET structure 
+%typemap(cstype) SRTSOCKET "SRTSOCKET"
+
+// --- Map srt_getlasterror return type to SRT_ERRNO
+%typemap(csbase) SRT_ERRNO "int"
+%typemap(cstype) int srt_getlasterror "SRT_ERRNO"
+%typemap(csout) int srt_getlasterror { return (SRT_ERRNO)$imcall; }
+
+// --- Map srt_create_socket return type to SRTSOCKET
+%typemap(cstype) int srt_create_socket "SRTSOCKET"
+
+// --- Map srt_accept return type to SRTSOCKET
+%typemap(cstype) int srt_accept "SRTSOCKET"
+
 // --- Map srt_setlogflags member to artificial LogFlag structure 
 // --- structure itself defined in csharp module imports below
 // Type mappings for IM wrapper INT -> managed struct
@@ -778,7 +792,7 @@ public delegate void SrtListenCallbackDelegate(
     IntPtr opaque, 
     int ns, 
     int hsVersion, 
-    [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(SockAddrMarshaler))]IPEndPoint peerAddress, 
+    [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(SockAddrMarshaler))] IPEndPoint peerAddress, 
     string streamId);
 
 /// <summary>
@@ -791,12 +805,12 @@ public delegate void SrtListenCallbackDelegate(
 /// <param name="token">The token value, if it was used for group connection, otherwise -1</param>
 public delegate void SrtConnectCallbackDelegate(
     IntPtr opaque, 
-    int ns, 
-    int errorCode, 
+    int ns,
+    SRT_ERRNO errorCode, 
     [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef = typeof(SockAddrMarshaler))]IPEndPoint peerAddress, 
     int token);
 
-internal static class MarshalExtensions
+public static class MarshalExtensions
 {
     private static readonly FieldInfo SocketAddressBufferField = typeof(SocketAddress).GetField("Buffer", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo SocketAddressInternalSizeField = typeof(SocketAddress).GetField("InternalSize", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -816,52 +830,34 @@ internal static class MarshalExtensions
         IPEndPoint endPoint = new IPEndPoint(IPAddress.Any, 0);
         return (IPEndPoint)endPoint.Create(socketAddress);
     }
+
+    public static void Validate(this int responseCode, string message)
+    {
+        if(responseCode != srt.SRT_ERROR) return;
+        throw new InvalidOperationException($"{message} failed: {srt.srt_getlasterror_str()}");
+    }
+    
+    public static SRTSOCKET Validate(this SRTSOCKET socket)
+    {
+        if(socket.IsValid) return socket;
+        throw new InvalidOperationException($"Socket was not created: {srt.srt_getlasterror_str()}");
+    }
 }
 
 internal class SockAddrMarshaler : ICustomMarshaler
 {
-    private SockAddrMarshaler(string cookies)
-    {
-        Cookies = cookies;
-    }
-
-    /// <summary>
-    /// Required method by NET marshaling implementation
-    /// </summary>
-    /// <param name="cookies"></param>
-    /// <returns></returns>
-    public static ICustomMarshaler GetInstance(string cookies)
-    {
-        return new SockAddrMarshaler(cookies);
-    }
-
+    private SockAddrMarshaler(string cookies) => Cookies = cookies;
     public string Cookies { get; }
 
-    public void CleanUpManagedData(object managedObj)
-    {
-        //Nothing GC will clean up managed object
-    }
+    public static ICustomMarshaler GetInstance(string cookies) => new SockAddrMarshaler(cookies);
 
-    public void CleanUpNativeData(IntPtr pNativeData)
-    {
-        //Nothing
-    }
-
-    public int GetNativeDataSize()
-    {
-        return -1;
-    }
-
-    public IntPtr MarshalManagedToNative(object managedObj)
-    {
-        // We do not support C# to C conversation
-        throw new NotSupportedException();
-    }
-
-    const int DATA_OFFSET = 2;
-
+    public void CleanUpManagedData(object managedObj) { /* Nothing GC will clean up managed object */ }
+    public void CleanUpNativeData(IntPtr pNativeData) { /* Nothing */ }
+    public int GetNativeDataSize() => -1;
+    public IntPtr MarshalManagedToNative(object managedObj) => throw new NotSupportedException();
     public object MarshalNativeToManaged(IntPtr pNativeData)
     {
+        const int DATA_OFFSET = 2;
         var family = Marshal.ReadInt16(pNativeData);
         var dataPointer = pNativeData + DATA_OFFSET;
         var socketAddress = new SocketAddress((AddressFamily) family, 16)
@@ -892,7 +888,7 @@ internal class SockAddrMarshaler : ICustomMarshaler
 static class GCKeeper
 {
     private static readonly ConcurrentDictionary<string, object> _registry = new ConcurrentDictionary<string, object>();
-    public static void Keep(string name, object value)
+    public static void Keep(string name, object value) 
     {
         _registry.AddOrUpdate(name, value, (key, existen) => value);
     }
@@ -900,6 +896,34 @@ static class GCKeeper
     {
         _registry.TryRemove(name, out _);
     }
+}
+
+/// <summary>
+/// Artificial structure that represents SRTSOCKET
+/// </summary>
+public readonly struct SRTSOCKET : IDisposable
+{
+    /// <summary>
+    /// Not initialized socket structure
+    /// </summary>
+    public static readonly SRTSOCKET NotInitialized = 0;
+   
+    /// <summary>
+    /// Check socket is created
+    /// </summary>
+    public bool IsCreated { get { return _value > 0; } }
+    
+    /// <summary>
+    /// Check socket is valid
+    /// </summary>
+    public bool IsValid { get { return _value != -1; } }
+
+    private readonly int _value;
+    SRTSOCKET(int value) => _value = value;
+    public void Dispose() { if(IsCreated) srt.srt_close(_value); }
+    public override string ToString() => $"{_value}";
+    public static implicit operator SRTSOCKET(int b) => new SRTSOCKET(b);
+    public static implicit operator int(SRTSOCKET d) => d._value;
 }
 
 /// <summary>
