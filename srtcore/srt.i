@@ -820,6 +820,23 @@ internal static class MarshalExtensions
 
 internal class SockAddrMarshaler : ICustomMarshaler
 {
+    private SockAddrMarshaler(string cookies)
+    {
+        Cookies = cookies;
+    }
+
+    /// <summary>
+    /// Required method by NET marshaling implementation
+    /// </summary>
+    /// <param name="cookies"></param>
+    /// <returns></returns>
+    public static ICustomMarshaler GetInstance(string cookies)
+    {
+        return new SockAddrMarshaler(cookies);
+    }
+
+    public string Cookies { get; }
+
     public void CleanUpManagedData(object managedObj)
     {
         //Nothing GC will clean up managed object
