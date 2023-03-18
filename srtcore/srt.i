@@ -60,7 +60,9 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) int * "ref int"
 %typemap(csin,
          pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="pin_$csinput.Free();"
+         post="
+            $csinput = (int)pin_$csinput.Target;
+            pin_$csinput.Free();"
         ) int *
          "pin_$csinput.AddrOfPinnedObject()"
 
@@ -68,7 +70,9 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) size_t * "ref ulong"
 %typemap(csin,
          pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="pin_$csinput.Free();"
+         post="
+            $csinput = (ulong)pin_$csinput.Target;
+            pin_$csinput.Free();"
         ) size_t *
          "pin_$csinput.AddrOfPinnedObject()"
 
@@ -171,7 +175,9 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) (int64_t *) "ref long"
 %typemap(csin,
          pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="pin_$csinput.Free();"
+         post="
+            $csinput = (long)pin_$csinput.Target;
+            pin_$csinput.Free();"
         ) int64_t *
          "pin_$csinput.AddrOfPinnedObject()"
 
@@ -201,6 +207,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
         ) srt_connect_callback_fn*
          "delegatePtr_$csinput"
 
+// ---- Nullable SRT_EPOLL_OPT handling
 %typemap(cstype) (const int* events) "SRT_EPOLL_OPT?"
 %typemap(csin,
          pre="    
@@ -217,40 +224,6 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
         ) const int* events
          "pinAddr_$csinput"
 
-/* ------------------------ NOT READY YET
-// ---- OVERRIDE SIGNATURE (SRT_SOCKOPT opt, void* string_val, int* string_len)
-%typemap(in) (SRT_SOCKOPT opt, void* string_val, int* string_len) {
-    TransitiveArguments * args = (TransitiveArguments *)$input;
-    $1 = (SRT_SOCKOPT)(*args->Arg1);
-    $2 = args->Arg2;
-    $3 = args->Arg3;
-}
-%typemap(cstype) (SRT_SOCKOPT opt, void* string_val, int* string_len) "SRT_SOCKOPT"
-%typemap(imtype) (SRT_SOCKOPT opt, void* string_val, int* string_len) "global::System.Runtime.InteropServices.HandleRef"
-%typemap(csin,
-         pre="
-            var sock_$csinput = $csinput.Serialize();
-            var content_$csinput = sock_$csinput.GetInternalBuffer(); 
-            int content_len_$csinput = sock_$csinput.Size; 
-            var pin_content_$csinput = GCHandle.Alloc(content_$csinput, GCHandleType.Pinned);
-            var pin_content_len_$csinput = GCHandle.Alloc(content_len_$csinput, GCHandleType.Pinned);
-
-            var transitive_$csinput = new TransitiveArguments
-            {
-                Arg1 = pin_content_$csinput.AddrOfPinnedObject(),
-                Arg2 = pin_content_len_$csinput.AddrOfPinnedObject()
-            };
-            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
-         post="
-            pin_content_$csinput.Free();
-            pin_content_len_$csinput.Free();
-            transitive_$csinput.Dispose();"
-        ) (SRT_SOCKOPT opt, void* string_val, int* string_len)
-         "input_$csinput"
-
-%typemap(cstype) int srt_getsockflag_string() "string"
------------------------- NOT READY YET */
-
 // --- Map srt_setlogflags member to artificial LogFlag structure 
 // --- structure itself defined in csharp module imports below
 // Type mappings for IM wrapper INT -> managed struct
@@ -261,7 +234,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 
 // Redefine C# method representation
 %ignore srt_setlogflags(int flags);
-void srt_setlogflags(LogFlag flags) { srt_setlogflags(flags); }
+void srt_setlogflags(LogFlag flags);
 
 // Forward constants from C side to C# srt module
 const LogFlag SRT_LOGF_DISABLE_TIME = SRT_LOGF_DISABLE_TIME;
@@ -279,7 +252,7 @@ const LogFlag SRT_LOGF_DISABLE_EOL = SRT_LOGF_DISABLE_EOL;
 
 // Redefine C# method representation
 %ignore srt_setloglevel(int ll);
-void srt_setloglevel(LogLevel logLevel) { srt_setloglevel(logLevel); }
+void srt_setloglevel(LogLevel logLevel);
 
 // Forward constants from C side to C# srt module
 const LogLevel LOG_DEBUG = LOG_DEBUG;
@@ -298,10 +271,10 @@ const LogLevel LOG_CRIT = LOG_CRIT;
 
 // Redefine C# method representation
 %ignore srt_addlogfa(int fa);
-void srt_addlogfa(LogFunctionalArea functionalArea) { srt_addlogfa(functionalArea); }
+void srt_addlogfa(LogFunctionalArea functionalArea);
 
 %ignore srt_dellogfa(int fa);
-void srt_dellogfa(LogFunctionalArea functionalArea) { srt_dellogfa(functionalArea); }
+void srt_dellogfa(LogFunctionalArea functionalArea);
 
 // OVERRIDE SIGNATURE (const int* fara, size_t fara_size)
 %typemap(in) (const int* fara, size_t fara_size) {
@@ -333,6 +306,378 @@ void srt_dellogfa(LogFunctionalArea functionalArea) { srt_dellogfa(functionalAre
         ) (const int* fara, size_t fara_size)
          "input_$csinput"
 
+// ---- ADD ADDITIONAL method for string flags manipulation
+// -- srt_getsockflag_string method
+%typemap(in) (void* stringOptVal, int* stringOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (void* stringOptVal, int* stringOptLen) "out string"
+%typemap(imtype) (void* stringOptVal, int* stringOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var value_len_$csinput = 512;
+            var value_$csinput = new byte[value_len_$csinput];
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            $csinput = Encoding.UTF8.GetString(value_$csinput.AsSpan(0, (int)pin_value_len_$csinput.Target));
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* stringOptVal, int* stringOptLen)
+         "input_$csinput"
+
+// -- srt_setsockflag_string method
+%typemap(in) (void* stringOptVal, int stringOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = *(int*)args->Arg2;
+}
+%typemap(cstype) (void* stringOptVal, int stringOptLen) "string"
+%typemap(imtype) (void* stringOptVal, int stringOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var value_$csinput = Encoding.UTF8.GetBytes($csinput);
+            var value_len_$csinput = value_$csinput.Length;
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* stringOptVal, int stringOptLen)
+         "input_$csinput"
+
+%typemap(csimports) SRT_STRING_SOCKOPT %{
+   using static SRT_SOCKOPT;
+%}
+%inline {
+    typedef enum
+    {
+        SRTO_STRING_BINDTODEVICE    = SRTO_BINDTODEVICE,
+        SRTO_STRING_CONGESTION	    = SRTO_CONGESTION,
+        SRTO_STRING_PACKETFILTER    = SRTO_PACKETFILTER,
+        SRTO_STRING_PASSPHRASE	    = SRTO_PASSPHRASE,
+        SRTO_STRING_STREAMID	    = SRTO_STREAMID,
+    }SRT_STRING_SOCKOPT;
+
+    int srt_getsockflag_string(SRTSOCKET u, SRT_STRING_SOCKOPT opt, void* stringOptVal, int* stringOptLen)
+    { 
+        return srt_getsockflag(u, (SRT_SOCKOPT)opt, stringOptVal, stringOptLen);
+    }
+    
+    int srt_setsockflag_string(SRTSOCKET u, SRT_STRING_SOCKOPT opt, void* stringOptVal, int stringOptLen)
+    { 
+        return srt_setsockflag(u, (SRT_SOCKOPT)opt, stringOptVal, stringOptLen);
+    }
+}
+
+// ---- ADD ADDITIONAL method for bool flags manipulation
+// -- srt_getsockflag_bool method
+%typemap(in) (void* boolOptVal, int* boolOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (void* boolOptVal, int* boolOptLen) "out bool"
+%typemap(imtype) (void* boolOptVal, int* boolOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            byte value_$csinput = default(byte);
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            $csinput = ((byte)pin_value_$csinput.Target) == 1 ? true : false;
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* boolOptVal, int* boolOptLen)
+         "input_$csinput"
+
+// -- srt_setsockflag_bool method
+%typemap(in) (void* boolOptVal, int boolOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = *(int*)args->Arg2;
+}
+%typemap(cstype) (void* boolOptVal, int boolOptLen) "bool"
+%typemap(imtype) (void* boolOptVal, int boolOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var value_$csinput = $csinput ? (byte)1 : (byte)0;
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* boolOptVal, int boolOptLen)
+         "input_$csinput"
+
+%typemap(csimports) SRT_BOOL_SOCKOPT %{
+   using static SRT_SOCKOPT;
+%}
+
+%inline {
+    typedef enum
+    {
+        SRTO_BOOL_DRIFTTRACER = SRTO_DRIFTTRACER,
+        SRTO_BOOL_ENFORCEDENCRYPTION = SRTO_ENFORCEDENCRYPTION,
+        SRTO_BOOL_MESSAGEAPI = SRTO_MESSAGEAPI,
+        SRTO_BOOL_NAKREPORT = SRTO_NAKREPORT,
+        SRTO_BOOL_RCVSYN = SRTO_RCVSYN,
+        SRTO_BOOL_RENDEZVOUS = SRTO_RENDEZVOUS,
+        SRTO_BOOL_REUSEADDR = SRTO_REUSEADDR,
+        SRTO_BOOL_SENDER = SRTO_SENDER,
+        SRTO_BOOL_SNDSYN = SRTO_SNDSYN,
+        SRTO_BOOL_TLPKTDROP = SRTO_TLPKTDROP,
+        SRTO_BOOL_TSBPDMODE = SRTO_TSBPDMODE
+    }SRT_BOOL_SOCKOPT;
+
+    int srt_getsockflag_bool(SRTSOCKET u, SRT_BOOL_SOCKOPT opt, void* boolOptVal, int* boolOptLen)
+    { 
+        return srt_getsockflag(u, (SRT_SOCKOPT)opt, boolOptVal, boolOptLen);
+    }
+    
+    int srt_setsockflag_bool(SRTSOCKET u, SRT_BOOL_SOCKOPT opt, void* boolOptVal, int boolOptLen)
+    { 
+        return srt_setsockflag(u, (SRT_SOCKOPT)opt, boolOptVal, boolOptLen);
+    }
+}
+
+// ---- ADD ADDITIONAL method for long flags manipulation
+// -- srt_getsockflag_long method
+%typemap(in) (void* longOptVal, int* longOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (void* longOptVal, int* longOptLen) "out long"
+%typemap(imtype) (void* longOptVal, int* longOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            long value_$csinput = default(long);
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            $csinput = (long)pin_value_$csinput.Target;
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* longOptVal, int* longOptLen)
+         "input_$csinput"
+
+// -- srt_setsockflag_long method
+%typemap(in) (void* longOptVal, int longOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = *(int*)args->Arg2;
+}
+%typemap(cstype) (void* longOptVal, int longOptLen) "long"
+%typemap(imtype) (void* longOptVal, int longOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var value_$csinput = $csinput;
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* longOptVal, int longOptLen)
+         "input_$csinput"
+
+%typemap(csimports) SRT_LONG_SOCKOPT %{
+   using static SRT_SOCKOPT;
+%}
+
+%inline {
+    typedef enum
+    {
+        SRTO_LONG_INPUTBW = SRTO_INPUTBW,
+        SRTO_LONG_MAXBW = SRTO_MAXBW,
+        SRTO_LONG_MININPUTBW = SRTO_MININPUTBW,
+    }SRT_LONG_SOCKOPT;
+
+    int srt_getsockflag_long(SRTSOCKET u, SRT_LONG_SOCKOPT opt, void* longOptVal, int* longOptLen)
+    { 
+        return srt_getsockflag(u, (SRT_SOCKOPT)opt, longOptVal, longOptLen);
+    }
+    
+    int srt_setsockflag_long(SRTSOCKET u, SRT_LONG_SOCKOPT opt, void* longOptVal, int longOptLen)
+    { 
+        return srt_setsockflag(u, (SRT_SOCKOPT)opt, longOptVal, longOptLen);
+    }
+}
+
+// ---- ADD ADDITIONAL method for int flags manipulation
+// -- srt_getsockflag_int method
+%typemap(in) (void* intOptVal, int* intOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (void* intOptVal, int* intOptLen) "out int"
+%typemap(imtype) (void* intOptVal, int* intOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            int value_$csinput = default(int);
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            $csinput = (int)pin_value_$csinput.Target;
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* intOptVal, int* intOptLen)
+         "input_$csinput"
+
+// -- srt_setsockflag_int method
+%typemap(in) (void* intOptVal, int intOptLen) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = *(int*)args->Arg2;
+}
+%typemap(cstype) (void* intOptVal, int intOptLen) "int"
+%typemap(imtype) (void* intOptVal, int intOptLen) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var value_$csinput = $csinput;
+            var value_len_$csinput = Marshal.SizeOf(value_$csinput.GetType());
+            var pin_value_$csinput = GCHandle.Alloc(value_$csinput, GCHandleType.Pinned);
+            var pin_value_len_$csinput = GCHandle.Alloc(value_len_$csinput, GCHandleType.Pinned);
+
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_value_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_value_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_value_$csinput.Free();
+            pin_value_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (void* intOptVal, int intOptLen)
+         "input_$csinput"
+
+%typemap(csimports) SRT_INT_SOCKOPT %{
+   using static SRT_SOCKOPT;
+%}
+
+%inline {
+    typedef enum
+    {
+        SRTO_INT_CONNTIMEO = SRTO_CONNTIMEO,
+        SRTO_INT_CRYPTOMODE = SRTO_CRYPTOMODE,
+        SRTO_INT_EVENT = SRTO_EVENT,
+        SRTO_INT_FC = SRTO_FC,
+        SRTO_INT_GROUPCONNECT = SRTO_GROUPCONNECT,
+        SRTO_INT_GROUPMINSTABLETIMEO = SRTO_GROUPMINSTABLETIMEO,
+        SRTO_INT_GROUPTYPE = SRTO_GROUPTYPE,
+        SRTO_INT_IPTOS = SRTO_IPTOS,
+        SRTO_INT_IPTTL = SRTO_IPTTL,
+        SRTO_INT_IPV6ONLY = SRTO_IPV6ONLY,
+        SRTO_INT_ISN = SRTO_ISN,
+        SRTO_INT_KMPREANNOUNCE = SRTO_KMPREANNOUNCE,
+        SRTO_INT_KMREFRESHRATE = SRTO_KMREFRESHRATE,
+        SRTO_INT_KMSTATE = SRTO_KMSTATE,
+        SRTO_INT_LATENCY = SRTO_LATENCY,
+        SRTO_INT_LOSSMAXTTL = SRTO_LOSSMAXTTL,
+        SRTO_INT_MINVERSION = SRTO_MINVERSION,
+        SRTO_INT_MSS = SRTO_MSS,
+        SRTO_INT_OHEADBW = SRTO_OHEADBW,
+        SRTO_INT_PAYLOADSIZE = SRTO_PAYLOADSIZE,
+        SRTO_INT_PBKEYLEN = SRTO_PBKEYLEN,
+        SRTO_INT_PEERIDLETIMEO = SRTO_PEERIDLETIMEO,
+        SRTO_INT_PEERLATENCY = SRTO_PEERLATENCY,
+        SRTO_INT_PEERVERSION = SRTO_PEERVERSION,
+        SRTO_INT_RCVBUF = SRTO_RCVBUF,
+        SRTO_INT_RCVDATA = SRTO_RCVDATA,
+        SRTO_INT_RCVKMSTATE = SRTO_RCVKMSTATE,
+        SRTO_INT_RCVLATENCY = SRTO_RCVLATENCY,
+        SRTO_INT_RCVTIMEO = SRTO_RCVTIMEO,
+        SRTO_INT_RETRANSMITALGO = SRTO_RETRANSMITALGO,
+        SRTO_INT_SNDBUF = SRTO_SNDBUF,
+        SRTO_INT_SNDDATA = SRTO_SNDDATA,
+        SRTO_INT_SNDDROPDELAY = SRTO_SNDDROPDELAY,
+        SRTO_INT_SNDKMSTATE = SRTO_SNDKMSTATE,
+        SRTO_INT_SNDTIMEO = SRTO_SNDTIMEO,
+        SRTO_INT_STATE = SRTO_STATE,
+        SRTO_INT_TRANSTYPE = SRTO_TRANSTYPE,
+        SRTO_INT_UDP_RCVBUF = SRTO_UDP_RCVBUF,
+        SRTO_INT_UDP_SNDBUF = SRTO_UDP_SNDBUF,
+        SRTO_INT_VERSION = SRTO_VERSION,
+    }SRT_INT_SOCKOPT;
+
+    int srt_getsockflag_int(SRTSOCKET u, SRT_INT_SOCKOPT opt, void* intOptVal, int* intOptLen)
+    { 
+        return srt_getsockflag(u, (SRT_SOCKOPT)opt, intOptVal, intOptLen);
+    }
+    
+    int srt_setsockflag_int(SRTSOCKET u, SRT_INT_SOCKOPT opt, void* intOptVal, int intOptLen)
+    { 
+        return srt_setsockflag(u, (SRT_SOCKOPT)opt, intOptVal, intOptLen);
+    }
+}
 
 #if defined(SWIGWORDSIZE64)
 %define PRIMITIVE_TYPEMAP(NEW_TYPE, TYPE)
@@ -365,19 +710,7 @@ PRIMITIVE_TYPEMAP(unsigned long int, unsigned long long);
    using static CodeMinor;
 %}
 
-%typemap(csimports) SRT_STRING_SOCKOPT %{
-   using static SRT_SOCKOPT;
-%}
-
-%typemap(csimports) SRT_BOOL_SOCKOPT %{
-   using static SRT_SOCKOPT;
-%}
-
 %typemap(csimports) SRT_INT_SOCKOPT %{
-   using static SRT_SOCKOPT;
-%}
-
-%typemap(csimports) SRT_LONG_SOCKOPT %{
    using static SRT_SOCKOPT;
 %}
 
@@ -385,123 +718,27 @@ PRIMITIVE_TYPEMAP(unsigned long int, unsigned long long);
 
 // Ignore deprecated methods
 %ignore srt_rejectreason_msg;
+%ignore srt_setsockopt;
 
 // General interface definition of wrapper - due to above typemaps and code, we can now just reference the main srt.h file
 %include "srt.h";
 
 // --- C additional definitions
 %inline{
+    #ifndef _WIN32
+        typedef unsigned char byte;
+    #endif
 
-#ifndef _WIN32
-    typedef unsigned char byte;
-#endif
-
-// Structure used for arguments transit
-typedef struct
-{
-    byte *Arg1;
-    byte *Arg2;
-    byte *Arg3;
-    byte *Arg4;
-    byte *Arg5;
-    byte *Arg6;
-} TransitiveArguments;
-
-typedef enum
-{
-    SRTO_STRING_BINDTODEVICE    = SRTO_BINDTODEVICE,
-    SRTO_STRING_CONGESTION	    = SRTO_CONGESTION,
-    SRTO_STRING_PACKETFILTER    = SRTO_PACKETFILTER,
-    SRTO_STRING_PASSPHRASE	    = SRTO_PASSPHRASE,
-    SRTO_STRING_STREAMID	    = SRTO_STREAMID,
-}SRT_STRING_SOCKOPT;
-
-typedef enum
-{
-    SRTO_LONG_INPUTBW = SRTO_INPUTBW,
-    SRTO_LONG_MAXBW = SRTO_MAXBW,
-    SRTO_LONG_MININPUTBW = SRTO_MININPUTBW,
-}SRT_LONG_SOCKOPT;
-
-typedef enum
-{
-    SRTO_BOOL_DRIFTTRACER = SRTO_DRIFTTRACER,
-    SRTO_BOOL_ENFORCEDENCRYPTION = SRTO_ENFORCEDENCRYPTION,
-    SRTO_BOOL_MESSAGEAPI = SRTO_MESSAGEAPI,
-    SRTO_BOOL_NAKREPORT = SRTO_NAKREPORT,
-    SRTO_BOOL_RCVSYN = SRTO_RCVSYN,
-    SRTO_BOOL_RENDEZVOUS = SRTO_RENDEZVOUS,
-    SRTO_BOOL_REUSEADDR = SRTO_REUSEADDR,
-    SRTO_BOOL_SENDER = SRTO_SENDER,
-    SRTO_BOOL_SNDSYN = SRTO_SNDSYN,
-    SRTO_BOOL_TLPKTDROP = SRTO_TLPKTDROP,
-    SRTO_BOOL_TSBPDMODE = SRTO_TSBPDMODE
-}SRT_BOOL_SOCKOPT;
-
-typedef enum
-{
-    SRTO_INT_CONNTIMEO = SRTO_CONNTIMEO,
-    SRTO_INT_CRYPTOMODE = SRTO_CRYPTOMODE,
-    SRTO_INT_EVENT = SRTO_EVENT,
-    SRTO_INT_FC = SRTO_FC,
-    SRTO_INT_GROUPCONNECT = SRTO_GROUPCONNECT,
-    SRTO_INT_GROUPMINSTABLETIMEO = SRTO_GROUPMINSTABLETIMEO,
-    SRTO_INT_GROUPTYPE = SRTO_GROUPTYPE,
-    SRTO_INT_IPTOS = SRTO_IPTOS,
-    SRTO_INT_IPTTL = SRTO_IPTTL,
-    SRTO_INT_IPV6ONLY = SRTO_IPV6ONLY,
-    SRTO_INT_ISN = SRTO_ISN,
-    SRTO_INT_KMPREANNOUNCE = SRTO_KMPREANNOUNCE,
-    SRTO_INT_KMREFRESHRATE = SRTO_KMREFRESHRATE,
-    SRTO_INT_KMSTATE = SRTO_KMSTATE,
-    SRTO_INT_LATENCY = SRTO_LATENCY,
-    SRTO_INT_LOSSMAXTTL = SRTO_LOSSMAXTTL,
-    SRTO_INT_MINVERSION = SRTO_MINVERSION,
-    SRTO_INT_MSS = SRTO_MSS,
-    SRTO_INT_OHEADBW = SRTO_OHEADBW,
-    SRTO_INT_PAYLOADSIZE = SRTO_PAYLOADSIZE,
-    SRTO_INT_PBKEYLEN = SRTO_PBKEYLEN,
-    SRTO_INT_PEERIDLETIMEO = SRTO_PEERIDLETIMEO,
-    SRTO_INT_PEERLATENCY = SRTO_PEERLATENCY,
-    SRTO_INT_PEERVERSION = SRTO_PEERVERSION,
-    SRTO_INT_RCVBUF = SRTO_RCVBUF,
-    SRTO_INT_RCVDATA = SRTO_RCVDATA,
-    SRTO_INT_RCVKMSTATE = SRTO_RCVKMSTATE,
-    SRTO_INT_RCVLATENCY = SRTO_RCVLATENCY,
-    SRTO_INT_RCVTIMEO = SRTO_RCVTIMEO,
-    SRTO_INT_RETRANSMITALGO = SRTO_RETRANSMITALGO,
-    SRTO_INT_SNDBUF = SRTO_SNDBUF,
-    SRTO_INT_SNDDATA = SRTO_SNDDATA,
-    SRTO_INT_SNDDROPDELAY = SRTO_SNDDROPDELAY,
-    SRTO_INT_SNDKMSTATE = SRTO_SNDKMSTATE,
-    SRTO_INT_SNDTIMEO = SRTO_SNDTIMEO,
-    SRTO_INT_STATE = SRTO_STATE,
-    SRTO_INT_TRANSTYPE = SRTO_TRANSTYPE,
-    SRTO_INT_UDP_RCVBUF = SRTO_UDP_RCVBUF,
-    SRTO_INT_UDP_SNDBUF = SRTO_UDP_SNDBUF,
-    SRTO_INT_VERSION = SRTO_VERSION,
-}SRT_INT_SOCKOPT;
-
-int srt_getsockflag_string(SRTSOCKET u, SRT_STRING_SOCKOPT opt, void* string_val, int* string_len)
-{
-    return srt_getsockflag(u, opt, string_val, string_len);
-}
-
-int srt_getsockflag_bool(SRTSOCKET u, SRT_BOOL_SOCKOPT opt, void* string_val, int* string_len)
-{
-    return srt_getsockflag(u, opt, string_val, string_len);
-}
-
-int srt_getsockflag_int(SRTSOCKET u, SRT_INT_SOCKOPT opt, void* string_val, int* string_len)
-{
-    return srt_getsockflag(u, opt, string_val, string_len);
-}
-
-int srt_getsockflag_long(SRTSOCKET u, SRT_LONG_SOCKOPT opt, void* string_val, int* string_len)
-{
-    return srt_getsockflag(u, opt, string_val, string_len);
-}
-
+    // Structure used for arguments transit
+    typedef struct
+    {
+        byte *Arg1;
+        byte *Arg2;
+        byte *Arg3;
+        byte *Arg4;
+        byte *Arg5;
+        byte *Arg6;
+    } TransitiveArguments;
 }
 
 // add top-level code to module file
@@ -510,6 +747,7 @@ int srt_getsockflag_long(SRTSOCKET u, SRT_LONG_SOCKOPT opt, void* string_val, in
 
 using System;
 using System.Linq;
+using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
