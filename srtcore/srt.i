@@ -11,6 +11,7 @@
 /*****************************************************************************
 written by
    Lewis Kirkaldie - Cinegy GmbH
+   Volodymyr Shkolka - Cinegy GmbH
  *****************************************************************************/
 
 /*
@@ -42,7 +43,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %apply int INOUT[]  { const SRTSOCKET listeners[]}
 %apply int INOUT[]  { const int* fara}
 
-// Marshal Pointers to IntPtr
+// ---- Marshal Pointers to IntPtr
 %apply void *VOID_INT_PTR { 
     void *,
     SRT_LOG_HANDLER_FN *,       // Delegate
@@ -55,27 +56,27 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
     SRT_SOCKOPT_CONFIG*
     }
     
-// REF int mapping
+// ---- REF int mapping
 %typemap(cstype) int * "ref int"
 %typemap(csin,
-         pre="    var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="    pin_$csinput.Free();"
+         pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
+         post="pin_$csinput.Free();"
         ) int *
          "pin_$csinput.AddrOfPinnedObject()"
 
-// REF size_t mapping
+// ---- REF size_t mapping
 %typemap(cstype) size_t * "ref ulong"
 %typemap(csin,
-         pre="    var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="    pin_$csinput.Free();"
+         pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
+         post="pin_$csinput.Free();"
         ) size_t *
          "pin_$csinput.AddrOfPinnedObject()"
 
 // ---- OVERRIDE SIGNATURE (struct sockaddr* addr, int* addrlen)
 %typemap(in) (struct sockaddr*, int*) {
     TransitiveArguments * args = (TransitiveArguments *)$input;
-    $1 = args->Arg1;
-    $2 = args->Arg2;
+    $1 = (struct sockaddr *)args->Arg1;
+    $2 = (int *)args->Arg2;
 }
 %typemap(cstype) (struct sockaddr*, int*) "out IPEndPoint"
 %typemap(imtype) (struct sockaddr*, int*) "global::System.Runtime.InteropServices.HandleRef"
@@ -112,7 +113,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 // ---- OVERRIDE SIGNATURE (const struct sockaddr addr, int addrlen)
 %typemap(in) (const struct sockaddr*, int) {
     TransitiveArguments * args = (TransitiveArguments *)$input;
-    $1 = args->Arg1;
+    $1 = (struct sockaddr *)args->Arg1;
     $2 = *args->Arg2;
 }
 %typemap(cstype) (const struct sockaddr*, int) "IPEndPoint"
@@ -162,33 +163,41 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
                 pin_content_$csinput = GCHandle.Alloc(content_$csinput, GCHandleType.Pinned);
                 input_$csinput = pin_content_$csinput.Value.AddrOfPinnedObject();
             }",
-         post="
-            pin_content_$csinput?.Free();"
+         post="pin_content_$csinput?.Free();"
         ) (const struct sockaddr*)
          "input_$csinput"
 
-// REF int64_t mapping
+// ---- REF int64_t mapping
 %typemap(cstype) (int64_t *) "ref long"
 %typemap(csin,
-         pre="    var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
-         post="    pin_$csinput.Free();"
+         pre="var pin_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);",
+         post="pin_$csinput.Free();"
         ) int64_t *
          "pin_$csinput.AddrOfPinnedObject()"
 
+// ---- SRT_LOG_HANDLER_FN to Delegate mapping
 %typemap(cstype) (SRT_LOG_HANDLER_FN *) "SrtLogHandlerDelegate"
 %typemap(csin,
-         pre="    GCKeeper.Keep(nameof(SrtLogHandlerDelegate), $csinput);var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);") SRT_LOG_HANDLER_FN*
+         pre="
+            GCKeeper.Keep(nameof(SrtLogHandlerDelegate), $csinput);
+            var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
+        ) SRT_LOG_HANDLER_FN*
          "delegatePtr_$csinput"
 
+// ---- srt_listen_callback_fn to Delegate mapping
 %typemap(cstype) (srt_listen_callback_fn *) "SrtListenCallbackDelegate"
 %typemap(csin,
-         pre="    GCKeeper.Keep(nameof(SrtListenCallbackDelegate), $csinput);var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
+         pre="
+            GCKeeper.Keep(nameof(SrtListenCallbackDelegate), $csinput);
+            var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_listen_callback_fn*
          "delegatePtr_$csinput"
          
 %typemap(cstype) (srt_connect_callback_fn *) "SrtConnectCallbackDelegate"
 %typemap(csin,
-         pre="    GCKeeper.Keep(nameof(SrtConnectCallbackDelegate), $csinput);var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
+         pre="
+            GCKeeper.Keep(nameof(SrtConnectCallbackDelegate), $csinput);
+            var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_connect_callback_fn*
          "delegatePtr_$csinput"
 
@@ -204,9 +213,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
                 pinAddr_$csinput = pin_$csinput.Value.AddrOfPinnedObject();
             }
          ",
-         post="
-            pin_$csinput?.Free();
-         "
+         post="pin_$csinput?.Free();"
         ) const int* events
          "pinAddr_$csinput"
 
@@ -243,6 +250,89 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 
 %typemap(cstype) int srt_getsockflag_string() "string"
 ------------------------ NOT READY YET */
+
+// --- Map srt_setlogflags member to artificial LogFlag structure 
+// --- structure itself defined in csharp module imports below
+// Type mappings for IM wrapper INT -> managed struct
+%inline{ typedef int LogFlag; }
+
+// Force C# to use LogFlag structure instead original INT
+%typemap(cstype) LogFlag "LogFlag"
+
+// Redefine C# method representation
+%ignore srt_setlogflags(int flags);
+void srt_setlogflags(LogFlag flags) { srt_setlogflags(flags); }
+
+// Forward constants from C side to C# srt module
+const LogFlag SRT_LOGF_DISABLE_TIME = SRT_LOGF_DISABLE_TIME;
+const LogFlag SRT_LOGF_DISABLE_THREADNAME = SRT_LOGF_DISABLE_THREADNAME;
+const LogFlag SRT_LOGF_DISABLE_SEVERITY = SRT_LOGF_DISABLE_SEVERITY;
+const LogFlag SRT_LOGF_DISABLE_EOL = SRT_LOGF_DISABLE_EOL;
+
+// --- Map srt_setloglevel member to artificial LogLevel structure 
+// --- structure itself defined in csharp module imports below
+// Type mappings for IM wrapper INT -> managed struct
+%inline{ typedef int LogLevel; }
+
+// Force C# to use LogLevel structure instead original INT
+%typemap(cstype) LogLevel "LogLevel"
+
+// Redefine C# method representation
+%ignore srt_setloglevel(int ll);
+void srt_setloglevel(LogLevel logLevel) { srt_setloglevel(logLevel); }
+
+// Forward constants from C side to C# srt module
+const LogLevel LOG_DEBUG = LOG_DEBUG;
+const LogLevel LOG_NOTICE = LOG_NOTICE;
+const LogLevel LOG_WARNING = LOG_WARNING;
+const LogLevel LOG_ERR = LOG_ERR;
+const LogLevel LOG_CRIT = LOG_CRIT;
+
+// --- Map srt_addlogfa/srt_dellogfa/srt_resetlogfa members to artificial LogFunctionalArea structure 
+// --- structure itself defined in csharp module imports below
+// Type mappings for IM wrapper INT -> managed struct
+%inline{ typedef int LogFunctionalArea; }
+
+// Force C# to use LogFunctionalArea structure instead original INT
+%typemap(cstype) LogFunctionalArea "LogFunctionalArea"
+
+// Redefine C# method representation
+%ignore srt_addlogfa(int fa);
+void srt_addlogfa(LogFunctionalArea functionalArea) { srt_addlogfa(functionalArea); }
+
+%ignore srt_dellogfa(int fa);
+void srt_dellogfa(LogFunctionalArea functionalArea) { srt_dellogfa(functionalArea); }
+
+// OVERRIDE SIGNATURE (const int* fara, size_t fara_size)
+%typemap(in) (const int* fara, size_t fara_size) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = (int const *)args->Arg1;
+    $2 = (size_t)*args->Arg2;
+}
+
+%typemap(cstype) (const int* fara, size_t fara_size) "params LogFunctionalArea[]"
+%typemap(imtype) (const int* fara, size_t fara_size) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            var array_$csinput = $csinput.Select(x => (int)x).ToArray();
+            int array_len_$csinput = array_$csinput.Length; 
+
+            var pin_array_$csinput = GCHandle.Alloc(array_$csinput, GCHandleType.Pinned);
+            var pin_array_len_$csinput = GCHandle.Alloc(array_len_$csinput, GCHandleType.Pinned);
+            
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_array_$csinput.AddrOfPinnedObject(),
+                Arg2 = pin_array_len_$csinput.AddrOfPinnedObject()
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_array_$csinput.Free();
+            pin_array_len_$csinput.Free();
+            transitive_$csinput.Dispose();"
+        ) (const int* fara, size_t fara_size)
+         "input_$csinput"
+
 
 #if defined(SWIGWORDSIZE64)
 %define PRIMITIVE_TYPEMAP(NEW_TYPE, TYPE)
@@ -299,13 +389,14 @@ PRIMITIVE_TYPEMAP(unsigned long int, unsigned long long);
 // General interface definition of wrapper - due to above typemaps and code, we can now just reference the main srt.h file
 %include "srt.h";
 
-// C additional definitions
+// --- C additional definitions
 %inline{
 
 #ifndef _WIN32
     typedef unsigned char byte;
 #endif
 
+// Structure used for arguments transit
 typedef struct
 {
     byte *Arg1;
@@ -418,6 +509,7 @@ int srt_getsockflag_long(SRTSOCKET u, SRT_LONG_SOCKOPT opt, void* string_val, in
 %pragma(csharp) moduleimports=%{ 
 
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -553,6 +645,227 @@ static class GCKeeper
     {
         _registry.TryRemove(name, out _);
     }
+}
+
+/// <summary>
+/// Artificial structure that represents arguments for srt_setlogflags(LogFlag)
+/// </summary>
+public readonly struct LogFlag
+{
+    /// <summary>
+    /// Do not provide the time in the header
+    /// </summary>
+    public static readonly LogFlag DisableTime = srt.SRT_LOGF_DISABLE_TIME;
+
+    /// <summary>
+    /// Do not provide the thread name in the header
+    /// </summary>
+    public static readonly LogFlag DisableThreadName = srt.SRT_LOGF_DISABLE_THREADNAME;
+
+    /// <summary>
+    /// Do not provide severity information in the header
+    /// </summary>
+    public static readonly LogFlag DisableSeverity = srt.SRT_LOGF_DISABLE_SEVERITY;
+
+    /// <summary>
+    /// Do not add the end-of-line character to the log line
+    /// </summary>
+    public static readonly LogFlag DisableEOL = srt.SRT_LOGF_DISABLE_EOL;
+
+    private readonly int _value;
+    LogFlag(int value) => _value = value;
+    public override string ToString() => $"{_value}";
+    public static implicit operator LogFlag(int b) => new LogFlag(b);
+    public static implicit operator int(LogFlag d) => d._value;
+}
+
+/// <summary>
+/// Artificial structure that represents arguments for srt_setloglevel(LogLevel)
+/// </summary>
+public readonly struct LogLevel
+{
+    /// <summary>
+    /// Highly detailed and very frequent messages
+    /// </summary>
+    public static readonly LogLevel Debug = srt.LOG_DEBUG;
+
+    /// <summary>
+    /// Occasionally displayed information
+    /// </summary>
+    public static readonly LogLevel Notice = srt.LOG_NOTICE;
+
+    /// <summary>
+    /// Unusual behavior
+    /// </summary>
+    public static readonly LogLevel Warning = srt.LOG_WARNING;
+
+    /// <summary>
+    /// Abnormal behavior
+    /// </summary>
+    public static readonly LogLevel Error = srt.LOG_ERR;
+
+    /// <summary>
+    /// Error that makes the current socket unusable
+    /// </summary>
+    public static readonly LogLevel Critical = srt.LOG_CRIT;
+
+    private readonly int _value;
+    LogLevel(int value) => _value = value;
+    public override string ToString() => $"{_value}";
+    public static implicit operator LogLevel(int b) => new LogLevel(b);
+    public static implicit operator int(LogLevel d) => d._value;
+}
+
+/// <summary>
+/// Artificial structure that represents arguments for srt_addlogfa/srt_dellogfa/srt_resetlogfa
+/// </summary>
+public readonly struct LogFunctionalArea
+{
+    /// <summary>
+    /// gglog: General uncategorized log; for serious issues only
+    /// </summary>
+    public static readonly LogFunctionalArea General = srt.SRT_LOGFA_GENERAL;
+
+    /// <summary>
+    /// smlog: Socket create/open/close/configure activities
+    /// </summary>
+    public static readonly LogFunctionalArea SocketManagement = srt.SRT_LOGFA_SOCKMGMT;
+
+    /// <summary>
+    /// cnlog: Connection establishment and handshake
+    /// </summary>
+    public static readonly LogFunctionalArea Connection = srt.SRT_LOGFA_CONN;
+
+    /// <summary>
+    /// xtlog: The checkTimer and around activities
+    /// </summary>
+    public static readonly LogFunctionalArea XTimer = srt.SRT_LOGFA_XTIMER;
+
+    /// <summary>
+    /// tslog: The TsBPD thread
+    /// </summary>
+    public static readonly LogFunctionalArea TsBPD = srt.SRT_LOGFA_TSBPD;
+
+    /// <summary>
+    /// rslog: System resource allocation and management
+    /// </summary>
+    public static readonly LogFunctionalArea ResourceManagement = srt.SRT_LOGFA_RSRC;
+
+    /// <summary>
+    /// cclog: Congestion control module
+    /// </summary>
+    public static readonly LogFunctionalArea Congestion = srt.SRT_LOGFA_CONGEST;
+
+    /// <summary>
+    /// pflog: Packet filter module
+    /// </summary>
+    public static readonly LogFunctionalArea PacketFilter = srt.SRT_LOGFA_PFILTER;
+
+    /// <summary>
+    /// aclog: API part for socket and library management
+    /// </summary>
+    public static readonly LogFunctionalArea SocketApi = srt.SRT_LOGFA_API_CTRL;
+
+    /// <summary>
+    /// qclog: Queue control activities
+    /// </summary>
+    public static readonly LogFunctionalArea QueueControl = srt.SRT_LOGFA_QUE_CTRL;
+
+    /// <summary>
+    /// eilog: EPoll; internal update activities
+    /// </summary>
+    public static readonly LogFunctionalArea EPollActivities = srt.SRT_LOGFA_EPOLL_UPD;
+
+    /// <summary>
+    /// arlog: API part for receiving
+    /// </summary>
+    public static readonly LogFunctionalArea ReceivingApi = srt.SRT_LOGFA_API_RECV;
+
+    /// <summary>
+    /// brlog: Buffer; receiving side
+    /// </summary>
+    public static readonly LogFunctionalArea ReceivingBuffer = srt.SRT_LOGFA_BUF_RECV;
+
+    /// <summary>
+    /// qrlog: Queue; receiving side
+    /// </summary>
+    public static readonly LogFunctionalArea ReceivingQueue = srt.SRT_LOGFA_QUE_RECV;
+
+    /// <summary>
+    /// krlog: CChannel; receiving side
+    /// </summary>
+    public static readonly LogFunctionalArea ReceivingChannel = srt.SRT_LOGFA_CHN_RECV;
+
+    /// <summary>
+    /// grlog: Group; receiving side
+    /// </summary>
+    public static readonly LogFunctionalArea ReceivingGroup = srt.SRT_LOGFA_GRP_RECV;
+
+    /// <summary>
+    /// aslog: API part for sending
+    /// </summary>
+    public static readonly LogFunctionalArea SendingApi = srt.SRT_LOGFA_API_SEND;
+
+    /// <summary>
+    /// bslog: Buffer; sending side
+    /// </summary>
+    public static readonly LogFunctionalArea SendingBuffer = srt.SRT_LOGFA_BUF_SEND;
+
+    /// <summary>
+    /// qslog: Queue; sending side
+    /// </summary>
+    public static readonly LogFunctionalArea SendingQueue = srt.SRT_LOGFA_QUE_SEND;
+
+    /// <summary>
+    /// kslog: CChannel; sending side
+    /// </summary>
+    public static readonly LogFunctionalArea SendingChannel = srt.SRT_LOGFA_CHN_SEND;
+
+    /// <summary>
+    /// gslog: Group; sending side
+    /// </summary>
+    public static readonly LogFunctionalArea SendingGroup = srt.SRT_LOGFA_GRP_SEND;
+
+    /// <summary>
+    /// inlog: Internal activities not connected directly to a socket
+    /// </summary>
+    public static readonly LogFunctionalArea Internal = srt.SRT_LOGFA_INTERNAL;
+
+    /// <summary>
+    /// qmlog: Queue; management part
+    /// </summary>
+    public static readonly LogFunctionalArea ManagementQueue = srt.SRT_LOGFA_QUE_MGMT;
+
+    /// <summary>
+    /// kmlog: CChannel; management part
+    /// </summary>
+    public static readonly LogFunctionalArea ManagementChannel = srt.SRT_LOGFA_CHN_MGMT;
+
+    /// <summary>
+    /// gmlog: Group; management part
+    /// </summary>
+    public static readonly LogFunctionalArea ManagementGroup = srt.SRT_LOGFA_GRP_MGMT;
+
+    /// <summary>
+    /// ealog: EPoll; API part
+    /// </summary>
+    public static readonly LogFunctionalArea EPollApi = srt.SRT_LOGFA_EPOLL_API;
+
+    /// <summary>
+    /// hclog: Haicrypt module area
+    /// </summary>
+    public static readonly LogFunctionalArea HaiCrypt = srt.SRT_LOGFA_HAICRYPT;
+
+    /// <summary>
+    /// aplog: Applications
+    /// </summary>
+    public static readonly LogFunctionalArea Applications = srt.SRT_LOGFA_APPLOG;
+
+    private readonly int _value;
+    LogFunctionalArea(int value) => _value = value;
+    public override string ToString() => $"{_value}";
+    public static implicit operator LogFunctionalArea(int b) => new LogFunctionalArea(b);
+    public static implicit operator int(LogFunctionalArea d) => d._value;
 }
 
 %}
