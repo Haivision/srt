@@ -1405,29 +1405,29 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     // the same time and inject a bug between checking the
     // pointer for NULL and using it.
     int  listener_ret  = SRT_REJ_UNKNOWN;
-    bool have_listener = false;
+    CUDT* listener = 0;
     {
         ScopedLock cg(m_LSLock);
-        if (m_pListener)
-        {
-            LOGC(cnlog.Note, log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
-            listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
+        listener = m_pListener;
+    }
 
-            // This function does return a code, but it's hard to say as to whether
-            // anything can be done about it. In case when it's stated possible, the
-            // listener will try to send some rejection response to the caller, but
-            // that's already done inside this function. So it's only used for
-            // displaying the error in logs.
+    if (listener)
+    {
+        LOGC(cnlog.Note, log << "PASSING request from: " << addr.str() << " to agent:" << listener->socketID());
+        listener_ret = listener->processConnectRequest(addr, unit->m_Packet);
 
-            have_listener = true;
-        }
+        // This function does return a code, but it's hard to say as to whether
+        // anything can be done about it. In case when it's stated possible, the
+        // listener will try to send some rejection response to the caller, but
+        // that's already done inside this function. So it's only used for
+        // displaying the error in logs.
     }
 
     // NOTE: Rendezvous sockets do bind(), but not listen(). It means that the socket is
     // ready to accept connection requests, but they are not being redirected to the listener
     // socket, as this is not a listener socket at all. This goes then HERE.
 
-    if (have_listener) // That is, the above block with m_pListener->processConnectRequest was executed
+    if (listener) // That is, the above block with m_pListener->processConnectRequest was executed
     {
         LOGC(cnlog.Note,
              log << CONID() << "Listener managed the connection request from: " << addr.str()
