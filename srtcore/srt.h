@@ -18,6 +18,8 @@ written by
 
 #include "version.h"
 
+#include "srt_config.h"
+
 #include "platform_sys.h"
 
 #include <string.h>
@@ -239,7 +241,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
 #endif
 
