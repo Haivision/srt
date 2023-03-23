@@ -343,7 +343,7 @@ void srt_dellogfa(LogFunctionalArea functionalArea);
             };
             var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
          post="
-            $csinput = Encoding.UTF8.GetString(value_$csinput.AsSpan(0, (int)pin_value_len_$csinput.Target));
+            $csinput = Encoding.UTF8.GetString(value_$csinput,0, (int)pin_value_len_$csinput.Target);
             pin_value_$csinput.Free();
             pin_value_len_$csinput.Free();
             transitive_$csinput.Dispose();"
