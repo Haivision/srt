@@ -28,7 +28,7 @@ param (
 # cmake can be optionally installed (useful when running interactively on a developer station).
 # The URL for automatic download is defined later in the script, but it should be possible to just vary the 
 # specific version set below and the URL should be stable enough to still work - you have been warned.
-$cmakeVersion = "3.23.2"
+$cmakeVersion = "3.25.3"
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
@@ -57,9 +57,9 @@ if ( $Env:APPVEYOR ) {
     Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
 }
 
-# if running within TeamCity and VS2019 / 2022 compilation, force SWIG and BONDING to ON (to avoid changing default behaviour on pre-existing CI systems)
+# if running within TeamCity and VS2022 compilation, force SWIG and BONDING to ON (to avoid changing default behaviour on pre-existing CI systems)
 # this should be removable ones master branch is merged to always have these params available (so CI can set them reliably itself)
-if($Env:TEAMCITY_VERSION -and ($VS_VERSION -eq "2022" -or $VS_VERSION -eq "2019")){
+if($Env:TEAMCITY_VERSION -and ($VS_VERSION -eq "2022")){
     $ENABLE_SWIG = "ON"
     $BONDING = "ON"
 }
