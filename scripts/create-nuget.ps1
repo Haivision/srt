@@ -20,7 +20,7 @@ Get-ChildItem $packageDir -Filter *.zip | Foreach-Object {
    Expand-Archive -Force -Path $_.FullName -DestinationPath $(Join-Path $packageDir "extracted")
 }
 
-nuget pack .\nuget\SrtSharp\SrtSharp.nuspec -version $VERSION
+nuget pack .\nuget\SrtSharp\SrtSharp.nuspec -version $VERSION-alpha
 
 # if antyhing returned non-zero, throw to cause failure in CI
 if( $LASTEXITCODE -ne 0 ) {

@@ -194,7 +194,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) (srt_listen_callback_fn *) "SrtListenCallbackDelegate"
 %typemap(csin,
          pre="
-            GCKeeper.Keep(nameof(SrtListenCallbackDelegate), $csinput);
+            GCKeeper.Keep($"{nameof(SrtListenCallbackDelegate)}-{clr}", hook_fn);
             var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_listen_callback_fn*
          "delegatePtr_$csinput"
@@ -202,7 +202,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) (srt_connect_callback_fn *) "SrtConnectCallbackDelegate"
 %typemap(csin,
          pre="
-            GCKeeper.Keep(nameof(SrtConnectCallbackDelegate), $csinput);
+            GCKeeper.Keep($"{nameof(SrtConnectCallbackDelegate)}-{clr}", hook_fn);
             var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_connect_callback_fn*
          "delegatePtr_$csinput"
