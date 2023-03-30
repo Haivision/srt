@@ -9193,7 +9193,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
 
         // The packet has been ecrypted, thus the authentication tag is expected to be stored
         // in the SND buffer as well right after the payload.
-        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        if (m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
             w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
         }
