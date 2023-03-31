@@ -5572,7 +5572,7 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
 
     try
     {
-        const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
+        const int authtag = m_config.iCryptoMode != CSrtConfig::CIPHER_MODE_AES_CTR ? HAICRYPT_AUTHTAG_MAX : 0;
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
         SRT_ASSERT(m_iISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
