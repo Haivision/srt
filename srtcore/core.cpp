@@ -2835,6 +2835,9 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 char target[CSrtConfig::MAX_PFILTER_LENGTH + 1];
                 memset((target), 0, CSrtConfig::MAX_PFILTER_LENGTH + 1);
                 memcpy((target), begin + 1, bytelen);
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
+
                 string fltcfg = target;
 
                 HLOGC(cnlog.Debug,
