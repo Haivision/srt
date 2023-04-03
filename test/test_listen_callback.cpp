@@ -1,8 +1,9 @@
-#include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
 #include <string>
 #include <map>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -15,7 +16,7 @@
 srt_listen_callback_fn SrtTestListenCallback;
 
 class ListenerCallback
-    : public testing::Test
+    : public srt::Test
 {
 protected:
     ListenerCallback()
@@ -34,10 +35,8 @@ public:
     sockaddr_in sa;
     sockaddr* psa;
 
-    void SetUp()
+    void setup()
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         // Create server on 127.0.0.1:5555
 
         server_sock = srt_create_socket();
@@ -124,7 +123,7 @@ public:
         srt_epoll_release(eid);
     }
 
-    void TearDown()
+    void teardown()
     {
         std::cout << "TeadDown: closing all sockets\n";
         // Close the socket
@@ -132,11 +131,9 @@ public:
         EXPECT_EQ(srt_close(server_sock), SRT_SUCCESS);
 
         // After that, the thread should exit
-        std::cout << "TearDown: joining accept thread\n";
+        std::cout << "teardown: joining accept thread\n";
         accept_thread.join();
-        std::cout << "TearDown: SRT exit\n";
-
-        srt_cleanup();
+        std::cout << "teardown: SRT exit\n";
     }
 
 };
