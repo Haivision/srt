@@ -321,6 +321,8 @@ TEST_F(TestIPv6, plsize_v4)
 
 TEST_F(TestIPv6, plsize_faux_v6)
 {
+    SRTST_REQUIRES(IPv6);
+
     using namespace std::chrono;
     SetupFileMode();
 
