@@ -138,15 +138,20 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
 
     const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
-    if (!early_update && period_us <= m_InRatePeriod)
+    if (!early_update && period_us < m_InRatePeriod)
         return;
 
-    // Required Byte/sec rate (payload + headers)
     m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
-    m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
-    HLOGC(bslog.Debug,
-            log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
-                << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
+    const int iNewRate = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
+
+    if (iNewRate > m_iInRateBps || m_InRatePeriod == INPUTRATE_FAST_START_US)
+        m_iInRateBps = iNewRate;
+    else
+        m_iInRateBps = avg_iir<16>(m_iInRateBps, iNewRate);
+
+    LOGC(bslog.Note,
+        log << "updateInputRate: sample:" << (iNewRate * 8) / 1000
+        << " kbps, new rate=" << (m_iInRateBps * 8) / 1000 << "kbps");
     m_iInRatePktsCount  = 0;
     m_iInRateBytesCount = 0;
     m_tsInRateStartTime = time;
@@ -154,7 +159,56 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
 }
 
+void CSndRateEstimator::addSample(const time_point& ts, int pkts = 0, int bytes = 0)
+{
+    const int iPeriodIdx = count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    const int delta = NUM_PERIODS - iPeriodIdx;
 
+    // TODO: if delta <= 0, then reset min(-delta + 1, NUM_PERIODS) periods.
+
+    if (delta <= 0)
+    {
+        // TODO: If delta < 0, there are more than one empty entries. Reset them before updating the rate estimation.
+
+        // Update rate estimation.
+        // TODO: First estimation should consider missing entries.
+        Sample sum = {};
+        int iNumEmpty = 0;
+        for (size_t i = 0; i < NUM_PERIODS; ++i)
+        {
+            const Sample& s = m_Samples[m_iFirstSampleIdx + i];
+            sum += s;
+            if (s.empty())
+                ++iNumEmpty;
+        }
+
+        // TODO: What if entries in the middle are empty? Then we have to use them as valid values.
+
+        if (iNumEmpty == NUM_PERIODS)
+            m_iRateBps = 0;
+        else
+        {
+            // TODO: add (sum.m_iPktsCount * CPacket::SRT_DATA_HDR_SIZE)?
+            m_iRateBps = sum.m_iBytesCount / ((NUM_PERIODS - iNumEmpty) * SAMPLE_DURATION_MS);
+        }
+
+
+        // Shift periods.
+        m_Samples[m_iFirstSampleIdx].reset();
+        m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+    }
+
+    m_Samples[iPeriodIdx].m_iBytesCount += bytes;
+    m_Samples[iPeriodIdx].m_iPktsCount += pkts;
+}
+
+int CSndRateEstimator::incSampleIdx(int val) const
+{
+    ++val;
+    if (val >= NUM_PERIODS)
+        val = 0;
+    return val;
+}
 
 }
 
