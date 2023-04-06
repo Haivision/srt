@@ -143,7 +143,7 @@ public:
     int getRate() const { return m_iRateBps; }
 
 private:
-	static const size_t NUM_PERIODS = 10;
+	static const int NUM_PERIODS = 10;
 	static const int SAMPLE_DURATION_MS = 100;  // 100 ms
     struct Sample
     {
@@ -183,12 +183,13 @@ private:
 		}
     };
 
-	int incSampleIdx(int val) const;
+	int incSampleIdx(int val, int inc = 1) const;
 
 	Sample m_Samples[NUM_PERIODS] = {};
 
     time_point m_tsFirstSampleTime; //< Start time of the first sameple.
     int m_iFirstSampleIdx = 0; //< Index of the first sample.
+    int m_iCurSampleIdx = 0; //< Index of the current sample being collected.
     int  m_iRateBps = 0;    // Input Rate in Bytes/sec
 };
 

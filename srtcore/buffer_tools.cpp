@@ -159,54 +159,101 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
 }
 
-void CSndRateEstimator::addSample(const time_point& ts, int pkts = 0, int bytes = 0)
+CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
+    : m_tsFirstSampleTime(tsNow)
 {
-    const int iPeriodIdx = count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
-    const int delta = NUM_PERIODS - iPeriodIdx;
+    
+}
 
-    // TODO: if delta <= 0, then reset min(-delta + 1, NUM_PERIODS) periods.
+void CSndRateEstimator::addSample(const time_point& ts, int pkts, int bytes)
+{
+    const int iSampleDeltaIdx = count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    const int delta = NUM_PERIODS - iSampleDeltaIdx;
 
-    if (delta <= 0)
+    // TODO: -delta <= NUM_PERIODS, then just reset the state on the estimator.
+
+    if (iSampleDeltaIdx > NUM_PERIODS)
     {
-        // TODO: If delta < 0, there are more than one empty entries. Reset them before updating the rate estimation.
-
-        // Update rate estimation.
-        // TODO: First estimation should consider missing entries.
-        Sample sum = {};
-        int iNumEmpty = 0;
-        for (size_t i = 0; i < NUM_PERIODS; ++i)
+        // Just reset the estimator and start like if new.
+        for (int i = 0; i < NUM_PERIODS; ++i)
         {
-            const Sample& s = m_Samples[m_iFirstSampleIdx + i];
-            sum += s;
-            if (s.empty())
-                ++iNumEmpty;
+            const int idx = m_iFirstSampleIdx + i;
+            m_Samples[idx].reset();
+
+            if (idx == m_iCurSampleIdx)
+                break;
         }
 
-        // TODO: What if entries in the middle are empty? Then we have to use them as valid values.
+        m_iFirstSampleIdx = 0;
+        m_iCurSampleIdx = 0;
+        m_iRateBps = 0;
+        m_tsFirstSampleTime += milliseconds_from(iSampleDeltaIdx * SAMPLE_DURATION_MS);
+    }
+    else if (incSampleIdx(m_iFirstSampleIdx, iSampleDeltaIdx) != m_iCurSampleIdx)
+    {
+        // In run-time a constant flow of samples is expected. The iSampleDeltaIdx should be either (NUM_PERIODS - 1),
+        // or NUM_PERIODS. In the later case it means the start of a new sampling period.
+        int d = delta;
+        while (d < 0)
+        {
+            m_Samples[m_iFirstSampleIdx].reset();
+            m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+            m_tsFirstSampleTime += milliseconds_from(SAMPLE_DURATION_MS);
+            m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
+            ++d;
+        }
 
-        if (iNumEmpty == NUM_PERIODS)
+        // Now there should be last NUM_PERIODS ready to be summed, rate estimation updated, after which all the new entry should be added.
+        Sample sum = {};
+        int iNumPeriods = 0;
+        bool bMetNonEmpty = false;
+        for (int i = 0; i < NUM_PERIODS; ++i)
+        {
+            const int idx = incSampleIdx(m_iFirstSampleIdx, i);
+            const Sample& s = m_Samples[idx];
+            sum += s;
+            if (bMetNonEmpty || !s.empty())
+            {
+                ++iNumPeriods;
+                bMetNonEmpty = true;
+            }
+
+            if (idx == m_iCurSampleIdx)
+                break;
+        }
+
+        // TODO: If all empty, align m_iFirstSampleIdx with m_iCurSampleIdx (i.e. reset estimator's state).
+
+        if (iNumPeriods == 0)
             m_iRateBps = 0;
         else
         {
             // TODO: add (sum.m_iPktsCount * CPacket::SRT_DATA_HDR_SIZE)?
-            m_iRateBps = sum.m_iBytesCount / ((NUM_PERIODS - iNumEmpty) * SAMPLE_DURATION_MS);
+            m_iRateBps = sum.m_iBytesCount * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
 
-
-        // Shift periods.
-        m_Samples[m_iFirstSampleIdx].reset();
-        m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+        // Shift one sampling period to start collecting the new one.
+        m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
+        m_Samples[m_iCurSampleIdx].reset();
+        
+        // If all NUM_SAMPLES are recorded, the first position has to be shifted as well.
+        if (delta <= 0)
+        {
+            m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+            m_tsFirstSampleTime += milliseconds_from(SAMPLE_DURATION_MS);
+        }
     }
 
-    m_Samples[iPeriodIdx].m_iBytesCount += bytes;
-    m_Samples[iPeriodIdx].m_iPktsCount += pkts;
+    m_Samples[m_iCurSampleIdx].m_iBytesCount += bytes;
+    m_Samples[m_iCurSampleIdx].m_iPktsCount += pkts;
 }
 
-int CSndRateEstimator::incSampleIdx(int val) const
+int CSndRateEstimator::incSampleIdx(int val, int inc) const
 {
-    ++val;
-    if (val >= NUM_PERIODS)
-        val = 0;
+    SRT_ASSERT(inc >= 0 && inc <= NUM_PERIODS);
+    val += inc;
+    while (val >= NUM_PERIODS)
+        val -= NUM_PERIODS;
     return val;
 }
 
