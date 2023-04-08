@@ -194,7 +194,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) (srt_listen_callback_fn *) "SrtListenCallbackDelegate"
 %typemap(csin,
          pre="
-            GCKeeper.Keep($"{nameof(SrtListenCallbackDelegate)}-{clr}", hook_fn);
+            GCKeeper.Keep($\"{nameof(SrtListenCallbackDelegate)}-{lsn}\", hook_fn);
             var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_listen_callback_fn*
          "delegatePtr_$csinput"
@@ -202,7 +202,7 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 %typemap(cstype) (srt_connect_callback_fn *) "SrtConnectCallbackDelegate"
 %typemap(csin,
          pre="
-            GCKeeper.Keep($"{nameof(SrtConnectCallbackDelegate)}-{clr}", hook_fn);
+            GCKeeper.Keep($\"{nameof(SrtConnectCallbackDelegate)}-{clr}\", hook_fn);
             var delegatePtr_$csinput = Marshal.GetFunctionPointerForDelegate($csinput);"
         ) srt_connect_callback_fn*
          "delegatePtr_$csinput"
@@ -920,7 +920,15 @@ public readonly struct SRTSOCKET : IDisposable
 
     private readonly int _value;
     SRTSOCKET(int value) => _value = value;
-    public void Dispose() { if(IsCreated) srt.srt_close(_value); }
+    public void Dispose() 
+    { 
+         if(IsCreated!) return;
+          
+         srt.srt_close(_value);
+         // Remove any kept delegate pointers associated with an socket
+         GCKeeper.Forget($"{nameof(SrtConnectCallbackDelegate)}-{_value}");
+         GCKeeper.Forget($"{nameof(SrtListenCallbackDelegate)}-{_value}");
+    }
     public override string ToString() => $"{_value}";
     public static implicit operator SRTSOCKET(int b) => new SRTSOCKET(b);
     public static implicit operator int(SRTSOCKET d) => d._value;
