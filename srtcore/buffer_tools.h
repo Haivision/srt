@@ -139,8 +139,11 @@ public:
     /// @param [in] bytes  number of payload bytes in the sample.
     void addSample(const time_point& time, int pkts = 0, size_t bytes = 0);
 
-    /// Retrieve input bitrate in bytes per second
+    /// Retrieve estimated bitrate in bytes per second
     int getRate() const { return m_iRateBps; }
+
+    /// Retrieve estimated bitrate in bytes per second inluding the current sampling interval.
+    int getCurrentRate() const;
 
 private:
     static const int NUM_PERIODS = 10;

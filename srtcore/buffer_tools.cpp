@@ -167,7 +167,7 @@ CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
 
 void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 {
-    const int iSampleDeltaIdx = count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    const int iSampleDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
     const int delta = NUM_PERIODS - iSampleDeltaIdx;
 
     // TODO: -delta <= NUM_PERIODS, then just reset the state on the estimator.
@@ -225,12 +225,17 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         // TODO: If all empty, align m_iFirstSampleIdx with m_iCurSampleIdx (i.e. reset estimator's state).
 
         if (iNumPeriods == 0)
+        {
             m_iRateBps = 0;
+        }
         else
         {
-            // TODO: add (sum.m_iPktsCount * CPacket::SRT_DATA_HDR_SIZE)?
-            m_iRateBps = sum.m_iBytesCount * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
+            m_iRateBps = (sum.m_iBytesCount + sum.m_iPktsCount * CPacket::SRT_DATA_HDR_SIZE) * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
+
+        LOGC(bslog.Note,
+            log << "CSndRateEstimator: new rate estimation :" << (m_iRateBps * 8) / 1000 << " kbps. Based on "
+                 << iNumPeriods << " periods, " << sum.m_iPktsCount << " packets, " << sum.m_iBytesCount << " bytes.");
 
         // Shift one sampling period to start collecting the new one.
         m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
@@ -246,6 +251,12 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 
     m_Samples[m_iCurSampleIdx].m_iBytesCount += bytes;
     m_Samples[m_iCurSampleIdx].m_iPktsCount += pkts;
+}
+
+int CSndRateEstimator::getCurrentRate() const
+{
+    SRT_ASSERT(m_iCurSampleIdx >= 0 && m_iCurSampleIdx < NUM_PERIODS);
+    return (int) avg_iir<16, unsigned long long>(m_iRateBps, (m_Samples[m_iCurSampleIdx].m_iBytesCount + CPacket::SRT_DATA_HDR_SIZE) * 1000 / SAMPLE_DURATION_MS);
 }
 
 int CSndRateEstimator::incSampleIdx(int val, int inc) const
