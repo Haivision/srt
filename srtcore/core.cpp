@@ -307,6 +307,7 @@ void srt::CUDT::construct()
 
 srt::CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
+    , m_SndRexmitRate(sync::steady_clock::now())
     , m_iISN(-1)
     , m_iPeerISN(-1)
 {
@@ -333,6 +334,7 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 
 srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
+    , m_SndRexmitRate(sync::steady_clock::now())
     , m_iISN(-1)
     , m_iPeerISN(-1)
 {
@@ -9274,6 +9276,8 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         }
         setDataPacketTS(w_packet, tsOrigin);
 
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+
         return payload;
     }
 
@@ -9432,6 +9436,16 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     if (tsNextPacket != time_point())
     {
         // Can send original packet, so just send it
+        return false;
+    }
+
+    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
+    const int iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int iRexmitRateLimitBps = 2000000 / 8; // 2 Mbps
+    if (iRexmitRateBps > iRexmitRateLimitBps)
+    {
+        // Too many retransmissions, so don't send anything.
+        // TODO: When to wake up next time?
         return false;
     }
 

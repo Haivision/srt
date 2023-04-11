@@ -66,14 +66,34 @@ TEST_F(CSndRateEstFixture, CBRSending)
 
 }
 
+// Make a 1 second long pause and check that the rate is 0 again
+// only for one sampling period.
 TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
 {
-    //EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
-
     // Send 100 packets with 1000 bytes each
     for (int i = 0; i < 3100; ++i)
     {
         if (i >= 1000 && i < 2000)
+            continue;
+        const auto t = m_tsStart + sync::milliseconds_from(i);
+        m_rateEst.addSample(t, 1, 1316);
+
+        const auto rate = m_rateEst.getRate();
+        if (i >= 100 && !(i >= 2000 && i < 2100))
+            EXPECT_EQ(rate, 1316000) << "i=" << i;
+        else
+            EXPECT_EQ(rate, 0) << "i=" << i;
+    }
+}
+
+// Make a short 0.5 second pause and check the bitrate goes down, but not to 0.
+// Those empty samples should be included in bitrate estimation.
+TEST_F(CSndRateEstFixture, CBRSendingShortPause)
+{
+    // Send 100 packets with 1000 bytes each
+    for (int i = 0; i < 3100; ++i)
+    {
+        if (i >= 1000 && i < 1500)
             continue;
         const auto t = m_tsStart + sync::milliseconds_from(i);
         m_rateEst.addSample(t, 1, 1316);
@@ -84,5 +104,5 @@ TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
         else
             EXPECT_EQ(rate, 0) << "i=" << i;
     }
-
 }
+

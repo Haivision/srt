@@ -165,7 +165,7 @@ CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
     
 }
 
-void CSndRateEstimator::addSample(const time_point& ts, int pkts, int bytes)
+void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 {
     const int iSampleDeltaIdx = count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
     const int delta = NUM_PERIODS - iSampleDeltaIdx;

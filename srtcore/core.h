@@ -822,6 +822,7 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
+    CSndRateEstimator      m_SndRexmitRate;      // Retransmission retae estimation.
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
 
