@@ -9272,7 +9272,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         enterCS(m_StatsLock);
         m_stats.sndr.sentRetrans.count(w_packet.getLength());
         leaveCS(m_StatsLock);
-        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength() + CPacket::SRT_DATA_HDR_SIZE);
 
         // Despite the contextual interpretation of packet.m_iMsgNo around
         // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular

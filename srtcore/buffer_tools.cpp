@@ -230,7 +230,7 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         }
         else
         {
-            m_iRateBps = (sum.m_iBytesCount + sum.m_iPktsCount * CPacket::SRT_DATA_HDR_SIZE) * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
+            m_iRateBps = sum.m_iBytesCount * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
 
         LOGC(bslog.Note,
@@ -256,7 +256,7 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 int CSndRateEstimator::getCurrentRate() const
 {
     SRT_ASSERT(m_iCurSampleIdx >= 0 && m_iCurSampleIdx < NUM_PERIODS);
-    return (int) avg_iir<16, unsigned long long>(m_iRateBps, (m_Samples[m_iCurSampleIdx].m_iBytesCount + CPacket::SRT_DATA_HDR_SIZE) * 1000 / SAMPLE_DURATION_MS);
+    return (int) avg_iir<16, unsigned long long>(m_iRateBps, m_Samples[m_iCurSampleIdx].m_iBytesCount * 1000 / SAMPLE_DURATION_MS);
 }
 
 int CSndRateEstimator::incSampleIdx(int val, int inc) const
