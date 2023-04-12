@@ -549,13 +549,6 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iOverheadBW;
         optlen = sizeof(int32_t);
         break;
-        
-    case SRTO_MAXREXMITBW:
-        if (size_t(optlen) < sizeof(m_config.llMaxRexmitBW))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        *(int64_t*)optval = m_config.llMaxRexmitBW;
-        optlen = sizeof(int64_t);
-        break;
 
     case SRTO_STATE:
         *(int32_t *)optval = uglobal().getStatus(m_SocketID);
@@ -5606,6 +5599,10 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         if (eout)
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
         m_RejectReason = SRT_REJ_RESOURCE;
+        if (eout)
+        {
+            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+        }
         return false;
     }
 
@@ -9270,9 +9267,8 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         ackguard.unlock();
 
         enterCS(m_StatsLock);
-        m_stats.sndr.sentRetrans.count(w_packet.getLength());
+        m_stats.sndr.sentRetrans.count(payload);
         leaveCS(m_StatsLock);
-        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength() + CPacket::SRT_DATA_HDR_SIZE);
 
         // Despite the contextual interpretation of packet.m_iMsgNo around
         // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
@@ -9284,6 +9280,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         }
         setDataPacketTS(w_packet, tsOrigin);
 
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
 
         return payload;
     }
@@ -9447,11 +9444,11 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     }
 
     m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
-    const int iRexmitRateBps = m_SndRexmitRate.getCurrentRate();
-    if (m_config.llMaxRexmitBW > -1 && iRexmitRateBps > m_config.llMaxRexmitBW)
+    const int iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int iRexmitRateLimitBps = 2000000 / 8; // 2 Mbps
+    if (iRexmitRateBps > iRexmitRateLimitBps)
     {
-        LOGC(qslog.Note, log << CONID() << "Rexmit blocked by rate limit.");
-        // Too many retransmissions, don't send anything.
+        // Too many retransmissions, so don't send anything.
         // TODO: When to wake up next time?
         return false;
     }

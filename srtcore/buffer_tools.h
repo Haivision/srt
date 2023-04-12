@@ -55,7 +55,8 @@ modified by
 
 #include "common.h"
 
-namespace srt {
+namespace srt
+{
 
 /// The AvgBufSize class is used to calculate moving average of the buffer (RCV or SND)
 class AvgBufSize
@@ -92,6 +93,7 @@ class CRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
+
 public:
     CRateEstimator();
 
@@ -111,25 +113,25 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
-private:                                                       // Constants
-    static const uint64_t INPUTRATE_FAST_START_US   = 500000;  // 500 ms
-    static const uint64_t INPUTRATE_RUNNING_US      = 100000;  // 100 ms
-    static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
+private:                                                      // Constants
+    static const uint64_t INPUTRATE_FAST_START_US   = 500000; // 500 ms
+    static const uint64_t INPUTRATE_RUNNING_US      = 100000; // 100 ms
+    static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;   // ~ 21 Mbps of 1316 bytes payload
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
     int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime.
     time_point m_tsInRateStartTime;
-    uint64_t   m_InRatePeriod;  // usec
-    int        m_iInRateBps;    // Input Rate in Bytes/sec
+    uint64_t   m_InRatePeriod; // usec
+    int        m_iInRateBps;   // Input Rate in Bytes/sec
 };
-
 
 // TODO: mutex?
 class CSndRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;
+
 public:
     CSndRateEstimator(const time_point& tsNow);
 
@@ -146,8 +148,8 @@ public:
     int getCurrentRate() const;
 
 private:
-    static const int NUM_PERIODS = 10;
-    static const int SAMPLE_DURATION_MS = 100;  // 100 ms
+    static const int NUM_PERIODS        = 10;
+    static const int SAMPLE_DURATION_MS = 100; // 100 ms
     struct Sample
     {
         int m_iPktsCount;  // number of payload packets
@@ -155,23 +157,25 @@ private:
 
         void reset()
         {
-            m_iPktsCount = 0;
+            m_iPktsCount  = 0;
             m_iBytesCount = 0;
         }
 
         Sample()
             : m_iPktsCount(0)
             , m_iBytesCount(0)
-        { }
+        {
+        }
 
         Sample(int iPkts, int iBytes)
             : m_iPktsCount(iPkts)
             , m_iBytesCount(iBytes)
-        { }
+        {
+        }
 
         Sample operator+(const Sample& other)
         {
-            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount );
+            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount);
         }
 
         Sample& operator+=(const Sample& other)
@@ -180,22 +184,19 @@ private:
             return *this;
         }
 
-        bool empty() const
-        {
-            return m_iPktsCount == 0;
-        }
+        bool empty() const { return m_iPktsCount == 0; }
     };
 
     int incSampleIdx(int val, int inc = 1) const;
 
-    Sample m_Samples[NUM_PERIODS] = {};
+    Sample m_Samples[NUM_PERIODS];
 
     time_point m_tsFirstSampleTime; //< Start time of the first sameple.
-    int m_iFirstSampleIdx = 0; //< Index of the first sample.
-    int m_iCurSampleIdx = 0; //< Index of the current sample being collected.
-    int  m_iRateBps = 0;    // Input Rate in Bytes/sec
+    int        m_iFirstSampleIdx;   //< Index of the first sample.
+    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
+    int        m_iRateBps;          // Input Rate in Bytes/sec
 };
 
-}
+} // namespace srt
 
 #endif
