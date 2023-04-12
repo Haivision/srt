@@ -175,12 +175,12 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 
     // TODO: -delta <= NUM_PERIODS, then just reset the state on the estimator.
 
-    if (iSampleDeltaIdx > NUM_PERIODS)
+    if (iSampleDeltaIdx >= 2 * NUM_PERIODS)
     {
         // Just reset the estimator and start like if new.
         for (int i = 0; i < NUM_PERIODS; ++i)
         {
-            const int idx = m_iFirstSampleIdx + i;
+            const int idx = incSampleIdx(m_iFirstSampleIdx, i);
             m_Samples[idx].reset();
 
             if (idx == m_iCurSampleIdx)
