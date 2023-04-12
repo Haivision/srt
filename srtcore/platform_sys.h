@@ -24,7 +24,6 @@
 
 
 #ifdef _WIN32
-   #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>

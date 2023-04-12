@@ -345,13 +345,13 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         {
             offset = col + 1; // +1 because we want it for the next column
             HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "]... (resetting to row 0: +"
-                    << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
+                    << offset << " %" << CSeqNo::incseq(isn, (int32_t)offset) << ")");
         }
         else
         {
             offset += 1 + sizeRow();
             HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "] ... (continue +"
-                    << offset << " %" << CSeqNo::incseq(isn, offset) << ")");
+                    << offset << " %" << CSeqNo::incseq(isn, (int32_t)offset) << ")");
         }
     }
 }
@@ -1129,10 +1129,10 @@ static void DebugPrintCells(int32_t base, const std::deque<bool>& cells, size_t 
     for ( ; i < cells.size(); i += row_size )
     {
         std::ostringstream os;
-        os << "cell[" << i << "-" << (i+row_size-1) << "] %" << CSeqNo::incseq(base, i) << ":";
+        os << "cell[" << i << "-" << (i+row_size-1) << "] %" << CSeqNo::incseq(base, (int32_t)i) << ":";
         for (size_t y = 0; y < row_size; ++y)
         {
-            os << " " << CellMark(cells, i+y);
+            os << " " << CellMark(cells, (int)(i+y));
         }
         LOGP(pflog.Debug, os.str());
     }
@@ -1953,7 +1953,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         {
             HLOGC(pflog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                     << pg.base << " TOO EARLY (last=%"
-                    << CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
+                    << CSeqNo::incseq(pg.base, (int32_t)((sizeCol()-1)*sizeRow()))
                     << ")");
             continue;
         }
@@ -1964,7 +1964,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
 
         HLOGC(pflog.Debug, log << "FEC/V: ... [" << i << "] base=%"
                 << pg.base << " - PAST last=%"
-                << CSeqNo::incseq(pg.base, (sizeCol()-1)*sizeRow())
+                << CSeqNo::incseq(pg.base, (int32_t)((sizeCol()-1)*sizeRow()))
                 << " - collecting losses.");
 
         pg.dismissed = true; // mark irrecover already collected

@@ -614,8 +614,8 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         }
 
         // Fallback: return from internal data
-        strcpy(((char*)optval), m_config.sBindToDevice.c_str());
-        optlen = m_config.sBindToDevice.size();
+        optlen = (int)m_config.sBindToDevice.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
 #else
         LOGC(smlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -737,16 +737,16 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (size_t(optlen) < m_config.sStreamName.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sStreamName.c_str());
-        optlen = (int) m_config.sStreamName.size();
+        optlen = (int)m_config.sStreamName.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_CONGESTION:
         if (size_t(optlen) < m_config.sCongestion.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sCongestion.c_str());
-        optlen = (int) m_config.sCongestion.size();
+        optlen = (int)m_config.sCongestion.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_MESSAGEAPI:
@@ -805,8 +805,8 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (size_t(optlen) < m_config.sPacketFilterConfig.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sPacketFilterConfig.c_str());
-        optlen = (int) m_config.sPacketFilterConfig.size();
+        optlen = (int)m_config.sPacketFilterConfig.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_RETRANSMITALGO:
