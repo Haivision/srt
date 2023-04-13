@@ -192,9 +192,10 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         m_iRateBps = 0;
         m_tsFirstSampleTime += milliseconds_from(iSampleDeltaIdx * SAMPLE_DURATION_MS);
     }
-    else if (incSampleIdx(m_iFirstSampleIdx, iSampleDeltaIdx) != m_iCurSampleIdx)
+    else if (iSampleDeltaIdx > NUM_PERIODS)
     {
-        // In run-time a constant flow of samples is expected. The iSampleDeltaIdx should be either (NUM_PERIODS - 1),
+        // In run-time a constant flow of samples is expected. Once all periods are filled (after 1 second of sampling),
+        // the iSampleDeltaIdx should be either (NUM_PERIODS - 1),
         // or NUM_PERIODS. In the later case it means the start of a new sampling period.
         int d = delta;
         while (d < 0)
@@ -205,9 +206,15 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
             m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
             ++d;
         }
+    }
 
-        // Now there should be last NUM_PERIODS ready to be summed, rate estimation updated, after which all the new entry should be added.
-        Sample sum = {};
+    // Check if the new sample period has started.
+    const int iNewDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    if (incSampleIdx(m_iFirstSampleIdx, iNewDeltaIdx) != m_iCurSampleIdx)
+    {
+        // Now there should be some periods (at most last NUM_PERIODS) ready to be summed,
+        // rate estimation updated, after which all the new entry should be added.
+        Sample sum;
         int iNumPeriods = 0;
         bool bMetNonEmpty = false;
         for (int i = 0; i < NUM_PERIODS; ++i)
@@ -224,8 +231,6 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
             if (idx == m_iCurSampleIdx)
                 break;
         }
-
-        // TODO: If all empty, align m_iFirstSampleIdx with m_iCurSampleIdx (i.e. reset estimator's state).
 
         if (iNumPeriods == 0)
         {

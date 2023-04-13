@@ -99,7 +99,9 @@ TEST_F(CSndRateEstFixture, CBRSendingShortPause)
         m_rateEst.addSample(t, 1, 1316);
 
         const auto rate = m_rateEst.getRate();
-        if (i >= 100)
+        if (i >= 1500 && i < 2000)
+            EXPECT_EQ(rate, 658000) << "i=" << i;
+        else if (i >= 100)
             EXPECT_EQ(rate, 1316000) << "i=" << i;
         else
             EXPECT_EQ(rate, 0) << "i=" << i;
