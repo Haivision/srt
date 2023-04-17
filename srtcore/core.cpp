@@ -4179,7 +4179,7 @@ EConnectStatus srt::CUDT::processRendezvous(
 
     // The CryptoControl must be created by the prepareConnectionObjects() before interpreting and creating HSv5 extensions
     // because the it will be used there.
-    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL))
+    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL) || !prepareBuffers(NULL))
     {
         // m_RejectReason already handled
         HLOGC(cnlog.Debug,
@@ -4734,6 +4734,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // In this situation the interpretation of handshake was already done earlier.
         ok = ok && pResponse->isControl();
         ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
+        ok = ok && prepareBuffers(eout);
 
         if (!ok)
         {
@@ -5548,7 +5549,7 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     // code with HSv5 rendezvous, in which this will be run
     // in a little bit "randomly selected" moment, but must
     // be run once in the whole connection process.
-    if (m_pSndBuffer)
+    if (m_pCryptoControl)
     {
         HLOGC(rslog.Debug, log << CONID() << "prepareConnectionObjects: (lazy) already created.");
         return true;
@@ -5573,9 +5574,29 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         }
     }
 
+    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
+    {
+        if (eout)
+            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+        m_RejectReason = SRT_REJ_RESOURCE;
+        return false;
+    }
+
+    return true;
+}
+
+bool srt::CUDT::prepareBuffers(CUDTException* eout)
+{
+    if (m_pSndBuffer)
+    {
+        HLOGC(rslog.Debug, log << CONID() << "prepareBuffers: (lazy) already created.");
+        return true;
+    }
+    
     try
     {
-        const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
+        // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
+        const int authtag = (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM) ? HAICRYPT_AUTHTAG_MAX : 0;
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
         SRT_ASSERT(m_iISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
@@ -5587,19 +5608,10 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     {
         // Simply reject.
         if (eout)
-        {
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-        }
         m_RejectReason = SRT_REJ_RESOURCE;
         return false;
     }
-
-    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
-    {
-        m_RejectReason = SRT_REJ_RESOURCE;
-        return false;
-    }
-
     return true;
 }
 
@@ -5706,6 +5718,19 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         // Respond with the rejection message and return false from
         // this function so that the caller will know that this new
         // socket should be deleted.
+        w_hs.m_iReqType = URQFailure(m_RejectReason);
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+
+    if (!prepareBuffers(NULL))
+    {
+        HLOGC(cnlog.Debug,
+            log << CONID() << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+        // If the SRT buffers failed to be allocated,
+        // the connection must be rejected.
+        //
+        // Respond with the rejection message and exit with exception
+        // so that the caller will know that this new socket should be deleted.
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
@@ -9196,7 +9221,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
 
         // The packet has been ecrypted, thus the authentication tag is expected to be stored
         // in the SND buffer as well right after the payload.
-        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
             w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
         }
