@@ -1835,6 +1835,8 @@ bool FECFilterBuiltin::CheckEmergencyShrink(size_t n_series, size_t size_in_pack
         rcv.cells.push_back(false);
     }
     rcv.cell_base = newbase;
+
+    return true;
 }
 
 FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, loss_seqs_t& irrecover)
