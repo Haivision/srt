@@ -9444,9 +9444,9 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     }
 
     m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
-    const int iRexmitRateBps = m_SndRexmitRate.getRate();
-    const int iRexmitRateLimitBps = 2000000 / 8; // 2 Mbps
-    if (iRexmitRateBps > iRexmitRateLimitBps)
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
     {
         // Too many retransmissions, so don't send anything.
         // TODO: When to wake up next time?
