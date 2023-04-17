@@ -138,21 +138,16 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
 
     const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
-    if (!early_update && period_us < m_InRatePeriod)
+    if (!early_update && period_us <= m_InRatePeriod)
         return;
 
+    // Required Byte/sec rate (payload + headers)
     m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
-    const int iNewRate = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
-
-    if (iNewRate > m_iInRateBps || m_InRatePeriod == INPUTRATE_FAST_START_US)
-        m_iInRateBps = iNewRate;
-    else
-        m_iInRateBps = avg_iir<16>(m_iInRateBps, iNewRate);
-
-    LOGC(bslog.Note,
-        log << "updateInputRate: sample:" << (iNewRate * 8) / 1000
-        << " kbps, new rate=" << (m_iInRateBps * 8) / 1000 << "kbps");
-    m_iInRatePktsCount  = 0;
+    m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
+    HLOGC(bslog.Debug,
+        log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
+        << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
+    m_iInRatePktsCount = 0;
     m_iInRateBytesCount = 0;
     m_tsInRateStartTime = time;
 

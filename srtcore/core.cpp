@@ -5599,10 +5599,6 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         if (eout)
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
         m_RejectReason = SRT_REJ_RESOURCE;
-        if (eout)
-        {
-            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-        }
         return false;
     }
 

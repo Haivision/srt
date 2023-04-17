@@ -113,10 +113,10 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
-private:                                                      // Constants
-    static const uint64_t INPUTRATE_FAST_START_US   = 500000; // 500 ms
-    static const uint64_t INPUTRATE_RUNNING_US      = 100000; // 100 ms
-    static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;   // ~ 21 Mbps of 1316 bytes payload
+private:                                                       // Constants
+    static const uint64_t INPUTRATE_FAST_START_US   = 500000;  // 500 ms
+    static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
+    static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
