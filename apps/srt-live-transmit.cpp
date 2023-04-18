@@ -854,10 +854,10 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
     char prefix[100] = "";
     if ( opaque ) {
 #ifdef _MSC_VER
-        strncpy_s(prefix, 100, (char*)opaque, _TRUNCATE);
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
 #else
-        strncpy(prefix, (char*)opaque, 99);
-        prefix[99] = '\0';
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
 #endif
     }
     time_t now;
