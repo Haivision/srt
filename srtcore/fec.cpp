@@ -1569,11 +1569,10 @@ size_t FECFilterBuiltin::ExtendRows(size_t rowx)
     const size_t size_in_packets = rowx * numberCols();
     const int n_series = int(rowx / numberRows());
 
-    if (size_in_packets > rcvBufferSize() && n_series > 2)
+    if (CheckEmergencyShrink(n_series, size_in_packets))
     {
-        HLOGC(pflog.Debug, log << "FEC: Emergency resize, rowx=" << rowx << " series=" << n_series
+        HLOGC(pflog.Debug, log << "FEC: DONE Emergency resize, rowx=" << rowx << " series=" << n_series
                 << "npackets=" << size_in_packets << " exceeds buf=" << rcvBufferSize());
-        EmergencyShrink(n_series);
     }
 
     // Create and configure next groups.
@@ -1701,8 +1700,27 @@ bool FECFilterBuiltin::IsLost(int32_t seq) const
     return rcv.cells[offset];
 }
 
-void FECFilterBuiltin::EmergencyShrink(size_t n_series)
+bool FECFilterBuiltin::CheckEmergencyShrink(size_t n_series, size_t size_in_packets)
 {
+    // The minimum required size of the covered sequence range must be such
+    // that groups for packets from the previous range must be still reachable.
+    // It's then "this and previous" series in case of even arrangement.
+    //
+    // For staircase arrangement the potential range for a single column series
+    // (number of columns equal to a row size) spans for 2 matrices (rows * cols)
+    // minus one row. As dismissal is only allowed to be done by one full series
+    // of rows and columns, the history must keep as many groups as needed to reach
+    // out for this very packet of this group and all packets in the same row.
+    // Hence we need two series of columns to cover a similar range as two row, twice.
+
+    const size_t min_series_history = m_arrangement_staircase ? 4 : 2;
+
+    if (n_series <= min_series_history)
+        return false;
+
+    if (size_in_packets < rcvBufferSize() && n_series < SRT_FEC_MAX_RCV_HISTORY)
+        return false;
+
     // Shrink is required in order to prepare place for
     // either vertical or horizontal group in series `n_series`.
 
@@ -1783,7 +1801,7 @@ void FECFilterBuiltin::EmergencyShrink(size_t n_series)
     else
     {
         HLOGC(pflog.Debug, log << "FEC: Shifting rcv row %" << oldbase << " -> %" << newbase);
-        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.end() + shift_rows);
+        rcv.rowq.erase(rcv.rowq.begin(), rcv.rowq.begin() + shift_rows);
     }
 
     const size_t shift_cols = shift_series * numberCols();
@@ -1817,6 +1835,8 @@ void FECFilterBuiltin::EmergencyShrink(size_t n_series)
         rcv.cells.push_back(false);
     }
     rcv.cell_base = newbase;
+
+    return true;
 }
 
 FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangVertical(const CPacket& rpkt, signed char fec_col, loss_seqs_t& irrecover)
@@ -2490,11 +2510,11 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
     // of packets as many as the number of rows, so simply multiply this.
     const size_t size_in_packets = colgx * numberRows();
     const size_t n_series = colgx / numberCols();
-    if (size_in_packets > rcvBufferSize()/2 || n_series > SRT_FEC_MAX_RCV_HISTORY)
+
+    if (CheckEmergencyShrink(n_series, size_in_packets))
     {
-        HLOGC(pflog.Debug, log << "FEC: Emergency resize, colgx=" << colgx << " series=" << n_series
+        HLOGC(pflog.Debug, log << "FEC: DONE Emergency resize, colgx=" << colgx << " series=" << n_series
                 << "npackets=" << size_in_packets << " exceeds buf=" << rcvBufferSize());
-        EmergencyShrink(n_series);
     }
     else
     {
