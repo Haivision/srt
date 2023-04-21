@@ -160,7 +160,6 @@ int crysprMbedtls_AES_CtrCipher( /* AES-CTR128 Encryption */
 static CRYSPR_cb *crysprMbedtls_Open(CRYSPR_methods *cryspr, size_t max_len)
 {
     crysprMbedtls_cb *aes_data;
-    CRYSPR_cb *cryspr_cb;
 
     aes_data = (crysprMbedtls_cb *)crysprHelper_Open(cryspr, sizeof(crysprMbedtls_cb), max_len);
     if (NULL == aes_data) {
