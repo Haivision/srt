@@ -9726,8 +9726,6 @@ void srt::CUDT::processClose()
 
 void srt::CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
 {
-    typedef vector<pair<int32_t, int32_t> > loss_seqs_t;
-
     vector<int32_t> seqbuffer;
     seqbuffer.reserve(2 * loss_seqs.size()); // pessimistic
     for (loss_seqs_t::const_iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
