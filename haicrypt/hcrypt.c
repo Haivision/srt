@@ -339,7 +339,7 @@ int HaiCrypt_Close(HaiCrypt_Handle hhc)
     return rc;
 }
 
-int  HaiCrypt_IsAESGCM_Supported()
+int  HaiCrypt_IsAESGCM_Supported(void)
 {
 #if CRYSPR_HAS_AESGCM
     return 1;

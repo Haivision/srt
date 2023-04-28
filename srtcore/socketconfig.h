@@ -158,6 +158,16 @@ public:
         return set(s.c_str(), s.size());
     }
 
+    size_t copy(char* s, size_t length) const
+    {
+        if (!s)
+            return 0;
+
+        size_t copy_len = std::min((size_t)len, length);
+        memcpy(s, stor, copy_len);
+        return copy_len;
+    }
+
     std::string str() const
     {
         return len == 0 ? std::string() : std::string(stor);
