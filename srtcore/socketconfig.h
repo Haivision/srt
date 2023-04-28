@@ -370,7 +370,7 @@ inline bool cast_optval(const void* optval, int optlen)
 }
 
 
-int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss, int hdr_size);
+int RcvBufferSizeOptionToValue(const int optval, const int flightflag, const int hdr_size);
 
 } // namespace srt
 
