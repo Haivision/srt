@@ -54,11 +54,9 @@ written by
 
 namespace srt
 {
-int RcvBufferSizeOptionToValue(int val, int flightflag, int mss, int hdr_size)
+int RcvBufferSizeOptionToValue(const int val, const int flightflag, const int mssin_size)
 {
     // Mimimum recv buffer size is 32 packets
-    const int mssin_size = mss - hdr_size;
-
     int bufsize;
     if (val > mssin_size * CSrtConfig::DEF_MIN_FLIGHT_PKT)
         bufsize = val / mssin_size;
@@ -149,7 +147,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         if (val <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS, co.bytesPerPkt());
+        co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.bytesPerPkt());
     }
 };
 
