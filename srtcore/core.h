@@ -403,6 +403,11 @@ public: // internal API
         return (int32_t) sync::count_microseconds(from_time - tsStartTime);
     }
 
+    static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
+    {
+        p.m_iTimeStamp = makeTS(ts, start_time);
+    }
+
     /// @brief Set the timestamp field of the packet using the provided value (no check)
     /// @param p the packet structure to set the timestamp on.
     /// @param ts timestamp to use as a source for packet timestamp.

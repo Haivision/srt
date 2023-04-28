@@ -75,7 +75,7 @@ written by
 #define HLOGP LOGP
 #define HLOGF LOGF
 
-#define IF_HEAVY_LOGGING(instr) instr
+#define IF_HEAVY_LOGGING(instr,...) instr,##__VA_ARGS__
 
 #else
 
