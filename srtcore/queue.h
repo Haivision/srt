@@ -438,6 +438,7 @@ public:
     int ioctlQuery(int type) const;
     int sockoptQuery(int level, int type) const;
 
+    void stopWorker();
     void setClosing() { m_bClosing = true; }
 
 private:

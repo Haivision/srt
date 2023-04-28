@@ -434,6 +434,34 @@ srt::CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
+void srt::CSndQueue::stopWorker()
+{
+    // We use the decent way, so we say to the thread "please exit".
+    m_bClosing = true;
+
+    // Sanity check of the function's affinity.
+    if (srt::sync::this_thread::get_id() == m_WorkerThread.get_id())
+    {
+        LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
+        return; // do nothing else, this would cause a hangup or crash.
+    }
+
+    if (m_pTimer != NULL)
+    {
+        m_pTimer->interrupt();
+    }
+
+    // Unblock CSndQueue worker thread if it is waiting.
+    m_pSndUList->signalInterrupt();
+
+    if (m_WorkerThread.joinable())
+    {
+        HLOGC(rslog.Debug, log << "SndQueue: EXIT (forced)");
+        m_WorkerThread.join();
+    }
+}
+
+
 int srt::CSndQueue::ioctlQuery(int type) const
 {
     return m_pChannel->ioctlQuery(type);
@@ -1269,15 +1297,17 @@ void* srt::CRcvQueue::worker(void* param)
             if (self->m_bClosing)
             {
                 HLOGC(qrlog.Debug,
-                      log << self->CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
+                        log << self->CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
             }
             else
             {
                 LOGC(qrlog.Fatal,
-                     log << self->CONID()
-                         << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
+                        log << self->CONID()
+                        << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
             }
             cst = CONN_REJECT;
+
+            // All sockets will be broken, there's no point in doing updateConnStatus
             break;
         }
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
@@ -1327,6 +1357,24 @@ void* srt::CRcvQueue::worker(void* param)
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
     }
+
+    // As this thread is going to quit now, make sure that all sockets
+    // have been taken out the queue.
+    CRNode* ul = self->m_pRcvUList->m_pUList;
+    while (ul)
+    {
+        CUDT* u = ul->m_pUDT;
+
+        HLOGC(qrlog.Debug,
+                log << CUDTUnited::CONID(u->m_SocketID) << " due to RcvQ:worker exit, REMOVING the socket FROM RCV QUEUE/MAP.");
+        // the socket must be removed from Hash table first, then RcvUList
+        self->m_pHash->remove(u->m_SocketID);
+        self->m_pRcvUList->remove(u);
+        u->m_pRNode->m_bOnList = false;
+
+        ul = self->m_pRcvUList->m_pUList;
+    }
+
 
     HLOGC(qrlog.Debug, log << "worker: EXIT");
 
