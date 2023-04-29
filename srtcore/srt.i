@@ -224,13 +224,17 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
         ) const int* events
          "pinAddr_$csinput"
 
-// --- Map all SRTSOCKET to artificial SRTSOCKET structure 
-%typemap(cstype) SRTSOCKET "SRTSOCKET"
-
 // --- Map srt_getlasterror return type to SRT_ERRNO
 %typemap(csbase) SRT_ERRNO "int"
 %typemap(cstype) int srt_getlasterror "SRT_ERRNO"
 %typemap(csout) int srt_getlasterror { return (SRT_ERRNO)$imcall; }
+
+// ------------------------------------------------------------
+// ------------------------- SRTSOCKET ------------------------
+// ------------------------------------------------------------
+
+// --- Map all SRTSOCKET to artificial SRTSOCKET structure 
+%typemap(cstype) SRTSOCKET "SRTSOCKET"
 
 // --- Map srt_create_socket return type to SRTSOCKET
 %typemap(cstype) int srt_create_socket "SRTSOCKET"
@@ -238,6 +242,159 @@ You can now reference the SrtSharp lib in your .Net Core projects.  Ensure the s
 // --- Map srt_accept return type to SRTSOCKET
 %typemap(cstype) int srt_accept "SRTSOCKET"
 
+// ------------------------------------------------------------
+// ------------------------- SYSSOCKET ------------------------
+// ------------------------------------------------------------
+
+// --- Map all SYSSOCKET to artificial SYSSOCKET structure 
+%typemap(cstype) SYSSOCKET "SYSSOCKET"
+
+// ------------------------------------------------------------
+// ------------------------- EPOLL ----------------------------
+// ------------------------------------------------------------
+// --- Map all int eid to artificial EPOLL structure 
+%typemap(cstype) int eid "EPOLL"
+
+// --- Map srt_epoll_create return type to EPOLL
+%typemap(cstype) int srt_epoll_create "EPOLL"
+
+// srt_epoll_wait method parameters transformations
+%typemap(in) (SRTSOCKET* , int*) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (SRTSOCKET* , int*) "SRTSOCKET[]"
+%typemap(imtype) (SRTSOCKET* , int*) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            GCHandle? pin_array_$csinput = null;
+            GCHandle? pin_array_len_$csinput = null;
+            if($csinput != null)
+            {
+                Array.Clear($csinput, 0, $csinput.Length);
+                var array_len_$csinput = $csinput.Length; 
+                pin_array_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);
+                pin_array_len_$csinput = GCHandle.Alloc(array_len_$csinput, GCHandleType.Pinned);
+            }
+            
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_array_$csinput?.AddrOfPinnedObject() ?? IntPtr.Zero,
+                Arg2 = pin_array_len_$csinput?.AddrOfPinnedObject() ?? IntPtr.Zero
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_array_$csinput?.Free();
+            pin_array_len_$csinput?.Free();
+            transitive_$csinput.Dispose();"
+        ) (SRTSOCKET* , int*)
+         "input_$csinput"
+
+// Apply mappings for different functions with the same signature (SRTSOCKET* , int*)
+%apply (SRTSOCKET* , int*) 
+{ 
+    (SRTSOCKET* readfds, int* rnum),
+    (SRTSOCKET* writefds, int* wnum)
+}
+
+%typemap(in) (SYSSOCKET* , int*) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int*)args->Arg2;
+}
+%typemap(cstype) (SYSSOCKET* , int*) "SYSSOCKET[]"
+%typemap(imtype) (SYSSOCKET* , int*) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            GCHandle? pin_array_$csinput = null;
+            GCHandle? pin_array_len_$csinput = null;
+            if($csinput != null)
+            {
+                Array.Clear($csinput, 0, $csinput.Length);
+                var array_len_$csinput = $csinput.Length; 
+                pin_array_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);
+                pin_array_len_$csinput = GCHandle.Alloc(array_len_$csinput, GCHandleType.Pinned);
+            }
+            
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_array_$csinput?.AddrOfPinnedObject() ?? IntPtr.Zero,
+                Arg2 = pin_array_len_$csinput?.AddrOfPinnedObject() ?? IntPtr.Zero
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_array_$csinput?.Free();
+            pin_array_len_$csinput?.Free();
+            transitive_$csinput.Dispose();"
+        ) (SYSSOCKET* , int*)
+         "input_$csinput"
+
+// Apply mappings for different functions with the same signature (SYSSOCKET* , int*)
+%apply (SYSSOCKET* , int*) 
+{ 
+    (SYSSOCKET* lrfds, int* lrnum), 
+    (SYSSOCKET* lwfds, int* lwnum)
+}
+
+// srt_epoll_uwait method parameters transformations
+/*
+%inline
+{ 
+    int srt_getepoll_event_size()
+    { 
+        return sizeof(SRT_EPOLL_EVENT);
+    }
+}
+*/
+
+//%ignore srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+%ignore SRT_EPOLL_EVENT_STR;
+//int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT1* fdsSet, int fdsSize, int64_t msTimeOut);
+
+%typemap(in) (SRT_EPOLL_EVENT* , int) {
+    TransitiveArguments * args = (TransitiveArguments *)$input;
+    $1 = args->Arg1;
+    $2 = (int)args->Arg2;
+}
+%typemap(cstype) (SRT_EPOLL_EVENT* , int) "SRT_EPOLL_EVENT[]"
+%typemap(imtype) (SRT_EPOLL_EVENT* , int) "global::System.Runtime.InteropServices.HandleRef"
+%typemap(csin,
+         pre="
+            GCHandle? pin_array_$csinput = null;
+            int array_len_$csinput = 0;
+            if($csinput != null)
+            {
+                array_len_$csinput = $csinput.Length; 
+                pin_array_$csinput = GCHandle.Alloc($csinput, GCHandleType.Pinned);
+            }
+            
+            var transitive_$csinput = new TransitiveArguments
+            {
+                Arg1 = pin_array_$csinput?.AddrOfPinnedObject() ?? IntPtr.Zero,
+                Arg2 = new IntPtr(array_len_$csinput)
+            };
+            var input_$csinput = TransitiveArguments.getCPtr(transitive_$csinput);",
+         post="
+            pin_array_$csinput?.Free();
+            transitive_$csinput.Dispose();"
+        ) (SRT_EPOLL_EVENT* , int)
+         "input_$csinput"
+
+// Apply mappings for different functions with the same signature (SRT_EPOLL_EVENT* , int)
+%apply (SRT_EPOLL_EVENT* , int) 
+{ 
+    (SRT_EPOLL_EVENT* fdsSet, int fdsSize)
+}
+
+// Rework srt_epoll_set flags type
+%inline{ typedef enum SRT_EPOLL_FLAGS SRT_EPOLL_FLAGS_TRANSIENT; }
+%ignore srt_epoll_set(int eid, int32_t flags);
+int32_t srt_epoll_set(int eid, SRT_EPOLL_FLAGS_TRANSIENT flags);
+
+// ------------------------------------------------------------
+// ------------------------- LOGGING --------------------------
+// ------------------------------------------------------------
 // --- Map srt_setlogflags member to artificial LogFlag structure 
 // --- structure itself defined in csharp module imports below
 // Type mappings for IM wrapper INT -> managed struct
@@ -320,6 +477,9 @@ void srt_dellogfa(LogFunctionalArea functionalArea);
         ) (const int* fara, size_t fara_size)
          "input_$csinput"
 
+// ------------------------------------------------------------
+// ------------------------- FLAGS ----------------------------
+// ------------------------------------------------------------
 // ---- ADD ADDITIONAL method for string flags manipulation
 // -- srt_getsockflag_string method
 %typemap(in) (void* stringOptVal, int* stringOptLen) {
@@ -917,6 +1077,11 @@ public readonly struct SRTSOCKET : IDisposable
     /// Check socket is valid
     /// </summary>
     public bool IsValid { get { return _value != -1; } }
+    
+    /// <summary>
+    /// Get socket status
+    /// </summary>
+    public SRT_SOCKSTATUS Status { get { return srt.srt_getsockstate(_value); } }
 
     private readonly int _value;
     SRTSOCKET(int value) => _value = value;
@@ -932,6 +1097,70 @@ public readonly struct SRTSOCKET : IDisposable
     public override string ToString() => $"{_value}";
     public static implicit operator SRTSOCKET(int b) => new SRTSOCKET(b);
     public static implicit operator int(SRTSOCKET d) => d._value;
+}
+
+/// <summary>
+/// Artificial structure that represents SYSSOCKET
+/// </summary>
+public readonly struct SYSSOCKET : IDisposable
+{
+    /// <summary>
+    /// Not initialized socket structure
+    /// </summary>
+    public static readonly SYSSOCKET NotInitialized = 0;
+   
+    /// <summary>
+    /// Check socket is created
+    /// </summary>
+    public bool IsCreated { get { return _value > 0; } }
+    
+    /// <summary>
+    /// Check socket is valid
+    /// </summary>
+    public bool IsValid { get { return _value != -1; } }
+
+    private readonly int _value;
+    SYSSOCKET(int value) => _value = value;
+    public void Dispose() 
+    { 
+         if(IsCreated!) return;
+    }
+    public override string ToString() => $"{_value}";
+    public static implicit operator SYSSOCKET(int b) => new SYSSOCKET(b);
+    public static implicit operator int(SYSSOCKET d) => d._value;
+}
+
+/// <summary>
+/// Artificial structure that represents EPOLL
+/// </summary>
+public readonly struct EPOLL : IDisposable
+{
+    /// <summary>
+    /// Not initialized epoll structure
+    /// </summary>
+    public static readonly EPOLL NotInitialized = 0;
+   
+    /// <summary>
+    /// Check epoll is created
+    /// </summary>
+    public bool IsCreated { get { return _value > 0; } }
+    
+    /// <summary>
+    /// Check epoll is valid
+    /// </summary>
+    public bool IsValid { get { return _value != -1; } }
+
+    private readonly int _value;
+    EPOLL(int value) => _value = value;
+    public void Dispose() 
+    { 
+         if(IsCreated!) return;
+          
+         srt.srt_epoll_release(_value);
+    }
+    public override string ToString() => $"{_value}";
+    public static implicit operator EPOLL(int b) => new EPOLL(b);
+    public static implicit operator int(EPOLL d) => d._value;
 }
 
 /// <summary>
@@ -1155,4 +1384,20 @@ public readonly struct LogFunctionalArea
     public static implicit operator int(LogFunctionalArea d) => d._value;
 }
 
+/// <summary>
+/// SRT_EPOLL_EVENT structure definition
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct SRT_EPOLL_EVENT
+{
+    /// <summary>
+    /// The user socket (SRT socket)
+    /// </summary>
+    public SRTSOCKET Socket;
+
+    /// <summary>
+    /// Event flags that report readiness of this socket
+    /// </summary>
+    public SRT_EPOLL_OPT Events;
+}
 %}
