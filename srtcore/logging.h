@@ -166,14 +166,24 @@ public:
 
         // See Logger::Logger; we know this has normally 2 characters,
         // except !!FATAL!!, which has 9. Still less than 32.
-        strcpy(prefix, your_pfx);
-
         // If the size of the FA name together with severity exceeds the size,
         // just skip the former.
         if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
         {
-            strcat(prefix, ":");
-            strcat(prefix, logger_pfx);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+            _snprintf(prefix, MAX_PREFIX_SIZE, "%s:%s", your_pfx, logger_pfx);
+#else
+            snprintf(prefix, MAX_PREFIX_SIZE + 1, "%s:%s", your_pfx, logger_pfx);
+#endif
+        }
+        else
+        {
+#ifdef _MSC_VER
+            strncpy_s(prefix, MAX_PREFIX_SIZE + 1, your_pfx, _TRUNCATE);
+#else
+            strncpy(prefix, your_pfx, MAX_PREFIX_SIZE);
+            prefix[MAX_PREFIX_SIZE] = '\0';
+#endif
         }
     }
 

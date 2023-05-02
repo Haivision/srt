@@ -674,7 +674,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group
             CUDTGroup* g = ns->m_GroupOf;
-            ScopedLock glock(g->m_GroupLock);
+            ScopedLock grlock(g->m_GroupLock);
             if (g->m_bClosing)
             {
                 error = 1; // "INTERNAL REJECTION"
