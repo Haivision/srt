@@ -674,7 +674,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group
             CUDTGroup* g = ns->m_GroupOf;
-            ScopedLock glock(g->m_GroupLock);
+            ScopedLock grlock(g->m_GroupLock);
             if (g->m_bClosing)
             {
                 error = 1; // "INTERNAL REJECTION"
@@ -1998,12 +1998,14 @@ int srt::CUDTUnited::close(CUDTSocket* s)
 
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->core().notListening();
+        s->m_Status = SRTS_CLOSING;
 
         // broadcast all "accept" waiting
         CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
     }
     else
     {
+        s->m_Status = SRTS_CLOSING;
         // Note: this call may be done on a socket that hasn't finished
         // sending all packets scheduled for sending, which means, this call
         // may block INDEFINITELY. As long as it's acceptable to block the
@@ -2126,6 +2128,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
     ...
     }
     */
+    CSync::notify_one_relaxed(m_GCStopCond);
 
     return 0;
 }

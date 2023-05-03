@@ -1130,6 +1130,31 @@ undefined behavior:
   happen**, as this may result in having one party's setting of length = 32 be
   overridden by the other party's setting of length = 16.
 
+| Initiator     |             | Responder     |             | Result  |
+|---------------|-------------|---------------|-------------|---------|
+| SRTO_PBKEYLEN | SRTO_SENDER | SRTO_PBKEYLEN | SRTO_SENDER |         |
+|  0            | any         |  0            | any         | AES-128 |
+|  0            | any         | AES-128       | any         | AES-128 |
+|  0            | any         | AES-192       | any         | AES-192 |
+|  0            | any         | AES-256       | any         | AES-256 |
+| AES-128       | any         |  0            | any         | AES-128 |
+| AES-128       | any         | AES-128       | any         | AES-128 |
+| AES-128       | 0           | AES-192       | any         | AES-192 |
+| AES-128       | 0           | AES-256       | any         | AES-256 |
+| AES-128       | 1           | AES-192       | any         | AES-128 |
+| AES-128       | 1           | AES-256       | any         | AES-128 |
+| AES-192       | any         |  0            | any         | AES-192 |
+| AES-192       | 0           | AES-128       | any         | AES-128 |
+| AES-192       | any         | AES-192       | any         | AES-192 |
+| AES-192       | 0           | AES-256       | any         | AES-256 |
+| AES-192       | 1           | AES-128       | any         | AES-192 |
+| AES-192       | 1           | AES-256       | any         | AES-192 |
+| AES-256       | any         |  0            | any         | AES-256 |
+| AES-256       | 0           | AES-128       | any         | AES-128 |
+| AES-256       | 0           | AES-192       | any         | AES-192 |
+| AES-256       | any         | AES-256       | any         | AES-256 |
+| AES-256       | 1           | AES-128       | any         | AES-256 |
+| AES-256       | 1           | AES-192       | any         | AES-256 |
 
 [Return to list](#list-of-options)
 

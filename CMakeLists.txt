@@ -204,6 +204,16 @@ else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
 endif()
 
+# Reduce the frequency of some frequent logs, milliseconds
+set(SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT 1000) # 1s
+if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
+	if (ENABLE_HEAVY_LOGGING)
+		set(SRT_LOG_SLOWDOWN_FREQ_MS 0) # Just show every log message.
+	else()
+		set(SRT_LOG_SLOWDOWN_FREQ_MS ${SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT})
+	endif()
+endif()
+
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
@@ -632,6 +642,9 @@ endif()
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
 	set (SRT_GCC_WARN "-Wall -Wextra")
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
+	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
@@ -1067,6 +1080,8 @@ if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
 endif()
 
+target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
@@ -1437,12 +1452,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
+		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		gtest_add_tests(
-			test-srt
-			""
-			AUTO
+			TEST_LIST tests_srt
+			TARGET test-srt
 		)
+		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
 	endif()
 
 	enable_testing()

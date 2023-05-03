@@ -111,7 +111,7 @@ int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *da
 
 /// @brief Check if the crypto service provider supports AES GCM.
 /// @return returns 1 if AES GCM is supported, 0 otherwise.
-int  HaiCrypt_IsAESGCM_Supported();
+int  HaiCrypt_IsAESGCM_Supported(void);
 
 /* Status values */
 
