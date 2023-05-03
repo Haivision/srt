@@ -1,6 +1,7 @@
-#include <gtest/gtest.h>
 #include <chrono>
 #include <thread>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -13,13 +14,12 @@ typedef int SOCKET;
 #include"platform_sys.h"
 #include "srt.h"
 #include "netinet_any.h"
-#include "testsupport.hpp"
 
 using namespace std;
 
 
 class TestConnectionTimeout
-    : public ::testing::Test
+    : public ::srt::Test
 {
 protected:
     TestConnectionTimeout()
@@ -35,10 +35,8 @@ protected:
 protected:
 
     // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
         m_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -63,12 +61,11 @@ protected:
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
     }
 
-    void TearDown() override
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        ASSERT_NE(closesocket(m_udp_sock), -1);
-        srt_cleanup();
+        EXPECT_NE(closesocket(m_udp_sock), -1);
     }
 
 protected:
@@ -226,7 +223,7 @@ TEST(TestConnectionAPI, Accept)
     const int ev_acp = SRT_EPOLL_IN | SRT_EPOLL_ERR;
     srt_epoll_add_usock(eidl, listener_sock, &ev_acp);
 
-    sockaddr_any sa = CreateAddr("localhost", 5555, AF_INET);
+    sockaddr_any sa = srt::CreateAddr("localhost", 5555, AF_INET);
 
     ASSERT_NE(srt_bind(listener_sock, sa.get(), sa.size()), -1);
     ASSERT_NE(srt_listen(listener_sock, 1), -1);

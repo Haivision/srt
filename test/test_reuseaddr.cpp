@@ -1,14 +1,14 @@
-#include "gtest/gtest.h"
 #include <thread>
 #include <future>
 #ifndef _WIN32
 #include <ifaddrs.h>
 #endif
+#include "gtest/gtest.h"
+#include "test_env.h"
 
 #include "common.h"
 #include "srt.h"
 #include "udt.h"
-#include "testsupport.hpp"
 
 using srt::sockaddr_any;
 
@@ -23,7 +23,6 @@ struct AtReturnJoin
             which_future.wait();
     }
 };
-
 
 #ifdef _WIN32
 
@@ -132,7 +131,7 @@ void clientSocket(std::string ip, int port, bool expect_success)
     int epoll_out = SRT_EPOLL_OUT;
     srt_epoll_add_usock(client_pollid, g_client_sock, &epoll_out);
 
-    sockaddr_any sa = CreateAddr(ip, port, family);
+    sockaddr_any sa = srt::CreateAddr(ip, port, family);
 
     std::cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << std::endl;
 
@@ -215,7 +214,7 @@ SRTSOCKET prepareSocket()
 
 bool bindSocket(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
 {
-    sockaddr_any sa = CreateAddr(ip, port);
+    sockaddr_any sa = srt::CreateAddr(ip, port, AF_INET);
 
     std::string fam = (sa.family() == AF_INET) ? "IPv4" : "IPv6";
 
@@ -302,7 +301,7 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
         ASSERT_EQ(rlen, 1); // get exactly one read event without writes
         ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-        ASSERT_EQ(read[0], bindsock); // read event is for bind socket    	
+        ASSERT_EQ(read[0], bindsock); // read event is for bind socket
     }
 
     sockaddr_any scl;
@@ -395,7 +394,7 @@ void shutdownListener(SRTSOCKET bindsock)
 
 TEST(ReuseAddr, SameAddr1)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -416,16 +415,15 @@ TEST(ReuseAddr, SameAddr1)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddr2)
 {
+    srt::TestInit srtinit;
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -450,12 +448,12 @@ TEST(ReuseAddr, SameAddr2)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, SameAddrV6)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    SRTST_REQUIRES(IPv6);
+    srt::TestInit srtinit;
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -480,17 +478,16 @@ TEST(ReuseAddr, SameAddrV6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 
 TEST(ReuseAddr, DiffAddr)
 {
+    srt::TestInit srtinit;
     std::string localip = GetLocalIP(AF_INET);
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -511,11 +508,11 @@ TEST(ReuseAddr, DiffAddr)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, Wildcard)
 {
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
@@ -528,7 +525,6 @@ TEST(ReuseAddr, Wildcard)
     if (localip == "")
         return; // DISABLE TEST if this doesn't work.
 
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -548,11 +544,12 @@ TEST(ReuseAddr, Wildcard)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, Wildcard6)
 {
+    SRTST_REQUIRES(IPv6);
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
@@ -570,7 +567,6 @@ TEST(ReuseAddr, Wildcard6)
     // performed there.
     std::string localip_v4 = GetLocalIP(AF_INET);
 
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -627,17 +623,18 @@ TEST(ReuseAddr, Wildcard6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, ProtocolVersion6)
 {
+    SRTST_REQUIRES(IPv6);
+
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -665,17 +662,17 @@ TEST(ReuseAddr, ProtocolVersion6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
 
 TEST(ReuseAddr, ProtocolVersionFaux6)
 {
+    SRTST_REQUIRES(IPv6);
+    srt::TestInit srtinit;
 #if defined(_WIN32) || defined(CYGWIN)
     std::cout << "!!!WARNING!!!: On Windows connection to localhost this way isn't possible.\n"
         "Forcing test to pass, PLEASE FIX.\n";
     return;
 #endif
-    ASSERT_EQ(srt_startup(), 0);
 
     client_pollid = srt_epoll_create();
     ASSERT_NE(SRT_ERROR, client_pollid);
@@ -702,5 +699,4 @@ TEST(ReuseAddr, ProtocolVersionFaux6)
 
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
-    srt_cleanup();
 }
