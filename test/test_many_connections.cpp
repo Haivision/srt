@@ -179,5 +179,55 @@ TEST_F(TestConnection, Multiple)
     cerr << "Synchronization done\n";
 }
 
+TEST_F(TestConnection, QuickClose)
+{
+    const sockaddr_in lsa = m_sa;
+    const sockaddr* psa = reinterpret_cast<const sockaddr*>(&lsa);
+
+    auto ex = std::async(std::launch::async, [this] { return AcceptLoop(); });
+
+    cerr << "Opening " << NSOCK << " connections\n";
+
+    int eid = -1;
+
+    for (size_t i = 0; i < NSOCK; i++)
+    {
+        m_connections[i] = srt_create_socket();
+        EXPECT_NE(m_connections[i], SRT_INVALID_SOCK);
+
+        // Add only the FIRST socket to eid epoll
+        if (eid == -1)
+        {
+            eid = srt_epoll_create();
+            int events = SRT_EPOLL_CONNECT;
+            srt_epoll_add_usock(eid, m_connections[i], &events);
+        }
+
+        // Give it 60s timeout, many platforms fail to process
+        // so many connections in a short time.
+        int conntimeo = 60;
+        srt_setsockflag(m_connections[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
+
+        // Set now async sending so that connect isn't blocked
+        int no = 0;
+        ASSERT_NE(srt_setsockflag(m_connections[i], SRTO_SNDSYN, &no, sizeof no), -1);
+
+        EXPECT_NE(srt_connect(m_connections[i], psa, sizeof lsa), SRT_ERROR);
+        // Now quickly close the listener socket while it's not yet processed
+    }
+
+    // Now make sure that at least one connection has succeeded
+    SRT_EPOLL_EVENT ev[2];
+    EXPECT_GT(srt_epoll_uwait(eid, ev, 2, -1), 0);
+
+    EXPECT_EQ(srt_close(m_server_sock), 0);
+
+    for (size_t i = 0; i < NSOCK; i++)
+    {
+        EXPECT_EQ(srt_close(m_connections[i]), SRT_SUCCESS) << "Error conn #" << i << ": " << srt_getlasterror_str();
+    }
+    ex.wait();
+}
+
 
 
