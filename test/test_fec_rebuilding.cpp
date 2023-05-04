@@ -73,7 +73,7 @@ protected:
             // Randomly chose the size
 
             int minsize = 732;
-            int divergence = plsize - minsize - 1;
+            int divergence = int(plsize) - minsize - 1;
             size_t length = minsize + rand() % divergence;
 
             p.setLength(length);
@@ -257,7 +257,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     for (auto badconfig: fec_config_wrong)
     {
-        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, strlen(badconfig)), -1);
+        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, (int)strlen(badconfig)), -1);
     }
 
     TestMockCUDT m1;
