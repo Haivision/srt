@@ -1087,7 +1087,7 @@ public readonly struct SRTSOCKET : IDisposable
     SRTSOCKET(int value) => _value = value;
     public void Dispose() 
     { 
-         if(IsCreated!) return;
+         if(IsCreated) return;
           
          srt.srt_close(_value);
          // Remove any kept delegate pointers associated with an socket
@@ -1123,7 +1123,7 @@ public readonly struct SYSSOCKET : IDisposable
     SYSSOCKET(int value) => _value = value;
     public void Dispose() 
     { 
-         if(IsCreated!) return;
+         if(IsCreated) return;
     }
     public override string ToString() => $"{_value}";
     public static implicit operator SYSSOCKET(int b) => new SYSSOCKET(b);
@@ -1154,7 +1154,7 @@ public readonly struct EPOLL : IDisposable
     EPOLL(int value) => _value = value;
     public void Dispose() 
     { 
-         if(IsCreated!) return;
+         if(IsCreated) return;
           
          srt.srt_epoll_release(_value);
     }
