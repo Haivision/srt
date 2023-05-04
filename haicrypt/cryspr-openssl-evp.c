@@ -49,7 +49,7 @@ int crysprOpenSSL_EVP_AES_SetKey(
     CRYSPR_AESCTX*       aes_key)           /* CRYpto Service PRovider AES Key context */
 {
     const EVP_CIPHER* cipher  = NULL;
-    int               idxKlen = (kstr_len / 8) - 2; /* key_len index in cipher_fnptr array in [0,1,2] range */
+    int               idxKlen = (int)((kstr_len / 8) - 2); /* key_len index in cipher_fnptr array in [0,1,2] range */
 
     switch (cipher_type)
     {
@@ -143,7 +143,7 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
                                     size_t*        outlen_p)       /* in/out dst len */
 {
     int    nmore  = inlen % CRYSPR_AESBLKSZ; /* bytes in last incomplete block */
-    int    nblk   = inlen / CRYSPR_AESBLKSZ + (nmore ? 1 : 0); /* blocks including incomplete */
+    int    nblk   = (int)(inlen / CRYSPR_AESBLKSZ + (nmore ? 1 : 0)); /* blocks including incomplete */
     size_t outsiz = (outlen_p ? *outlen_p : 0);
     int    c_len = 0, f_len = 0;
 
@@ -174,7 +174,7 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
     /* update ciphertext, c_len is filled with the length of ciphertext generated,
      * cryptoPtr->cipher_in_len is the size of plain/cipher text in bytes
      */
-    if (!EVP_CipherUpdate(aes_key, out_txt, &c_len, indata, inlen))
+    if (!EVP_CipherUpdate(aes_key, out_txt, &c_len, indata, (int)inlen))
     {
         HCRYPT_LOG(LOG_ERR, "EVP_CipherUpdate(%p, out, %d, in, %d) failed\n", aes_key, c_len, inlen);
         return -1;
@@ -227,7 +227,7 @@ int crysprOpenSSL_EVP_AES_CtrCipher(bool                 bEncrypt, /* true:encry
     /* update ciphertext, c_len is filled with the length of ciphertext generated,
      * cryptoPtr->cipher_in_len is the size of plain/cipher text in bytes
      */
-    if (!EVP_CipherUpdate(aes_key, out_txt, &c_len, indata, inlen))
+    if (!EVP_CipherUpdate(aes_key, out_txt, &c_len, indata, (int)inlen))
     {
         HCRYPT_LOG(LOG_ERR, "%s\n", "EVP_CipherUpdate() failed");
         return -1;
@@ -341,7 +341,7 @@ int crysprOpenSSL_EVP_KmPbkdf2(CRYSPR_cb*     cryspr_cb,
                                unsigned char* out)        /* derived key */
 {
     (void)cryspr_cb;
-    int rc = PKCS5_PBKDF2_HMAC_SHA1(passwd, passwd_len, salt, salt_len, itr, key_len, out);
+    int rc = PKCS5_PBKDF2_HMAC_SHA1(passwd, (int)passwd_len, salt, (int)salt_len, itr, (int)key_len, out);
     return (rc == 1 ? 0 : -1);
 }
 

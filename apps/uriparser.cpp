@@ -156,7 +156,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     if (idx != string::npos)
     {
         m_host   = strUrl.substr(0, idx);
-        iQueryStart = int(idx) + 1;
+        iQueryStart = (int)(idx + 1);
     }
     else
     {
@@ -297,12 +297,12 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         if (idx != string::npos)
         {
             strQueryPair = strUrl.substr(iQueryStart, idx - iQueryStart);
-            iQueryStart = int(idx) + 1;
+            iQueryStart = (int)(idx + 1);
         }
         else
         {
             strQueryPair = strUrl.substr(iQueryStart, strUrl.size() - iQueryStart);
-            iQueryStart = int(idx);
+            iQueryStart = (int)idx;
         }
 
         idx = strQueryPair.find("=");
