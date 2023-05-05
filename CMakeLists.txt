@@ -1342,17 +1342,19 @@ endif()
 	srt_add_example(testcapi-connect.c)
 endif()
 
+
 #SWIG support - adding bindings for other languages into a new library that statically include the main SRT lib
-cmake_policy(SET CMP0078 NEW)
-cmake_policy(SET CMP0086 NEW)
-
-#older cmakes do not understand this policy, so filter (VS2015 AppVeyor cmake is too old)
-if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.21)
-	cmake_policy(SET CMP0122 NEW)
-endif()
-
-#experimental SWIG support for csharp
 if(ENABLE_SWIG)
+
+	#older cmakes do not understand SWIG in a trusted manner (e.g. VS2015 AppVeyor cmake is too old, and Travis Xenial)
+	if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.21)
+		cmake_policy(SET CMP0078 NEW)
+		cmake_policy(SET CMP0086 NEW)
+		cmake_policy(SET CMP0122 NEW)
+	else
+		message(FATAL_ERROR "ENABLE_SWIG is set, but cmake version is not at least 3.21 and SWIG support may be broken on earlier editions")
+	endif()
+
 	#on windows, there is no swig just in the path - nuget / scripted downloads must be pointed at (linux it just works)
 	if(MICROSOFT)
 		#if nuget has been used to install swig in the project packages, bind to that
