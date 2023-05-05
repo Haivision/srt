@@ -4,13 +4,13 @@
 # Usable on a Windows PC with Powershell and Visual studio, 
 # or called by CI systems like AppVeyor
 #
-# By default produces a VS2019 64-bit Release binary using C++11 threads, without
+# By default produces a VS2022 64-bit Release binary using C++11 threads, without
 # encryption or unit tests enabled, but including test apps.
 # Before enabling any encryption options, install OpenSSL or set VCKPG flag to build
 ################################################################################
 
 param (
-    [Parameter()][String]$VS_VERSION = "2019",
+    [Parameter()][String]$VS_VERSION = "2022",
     [Parameter()][String]$CONFIGURATION = "Release",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
@@ -28,7 +28,7 @@ param (
 # cmake can be optionally installed (useful when running interactively on a developer station).
 # The URL for automatic download is defined later in the script, but it should be possible to just vary the 
 # specific version set below and the URL should be stable enough to still work - you have been warned.
-$cmakeVersion = "3.23.2"
+$cmakeVersion = "3.25.3"
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
@@ -38,6 +38,7 @@ $projectRoot = Join-Path $PSScriptRoot "/.." -Resolve
 # if running within AppVeyor, use environment variables to set params instead of passed-in values
 if ( $Env:APPVEYOR ) { 
     if ( $Env:PLATFORM -eq 'x86' ) { $DEVENV_PLATFORM = 'Win32' } else { $DEVENV_PLATFORM = 'x64' }
+    if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2022' ) { $VS_VERSION='2022' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2019' ) { $VS_VERSION='2019' }
     if ( $Env:APPVEYOR_BUILD_WORKER_IMAGE -eq 'Visual Studio 2015' ) { $VS_VERSION='2015' }
 
@@ -56,9 +57,9 @@ if ( $Env:APPVEYOR ) {
     Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
 }
 
-# if running within TeamCity, force SWIG and BONDING to ON (to avoid changing default behaviour on pre-existing CI systems)
+# if running within TeamCity and VS2022 compilation, force SWIG and BONDING to ON (to avoid changing default behaviour on pre-existing CI systems)
 # this should be removable ones master branch is merged to always have these params available (so CI can set them reliably itself)
-if($Env:TEAMCITY_VERSION){
+if($Env:TEAMCITY_VERSION -and ($VS_VERSION -eq "2022")){
     $ENABLE_SWIG = "ON"
     $BONDING = "ON"
 }
@@ -67,6 +68,7 @@ if($Env:TEAMCITY_VERSION){
 $Env:VS_VERSION = $VS_VERSION
 
 # select the appropriate cmake generator string given the environment
+if ( $VS_VERSION -eq '2022' ) { $CMAKE_GENERATOR = 'Visual Studio 17 2022'; $MSBUILDVER = "17.0"; }
 if ( $VS_VERSION -eq '2019' ) { $CMAKE_GENERATOR = 'Visual Studio 16 2019'; $MSBUILDVER = "16.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'Win32' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015'; $MSBUILDVER = "14.0"; }
 if ( $VS_VERSION -eq '2015' -and $DEVENV_PLATFORM -eq 'x64' ) { $CMAKE_GENERATOR = 'Visual Studio 14 2015 Win64'; $MSBUILDVER = "14.0"; }
@@ -142,9 +144,12 @@ if ( $ENABLE_SWIG -eq "ON" ) {
         Write-Output "Found pre-existing copy of Swigwin 4.1.1 - using this binary"
     }
     else {
+        #originally, script downloaded from sourceforge from link below, but this was flakey
+        #and therefore was copied to a Cinegy-controlled S3 mirror bucket
+        #original source URL: https://deac-fra.dl.sourceforge.net/project/swig/swigwin/swigwin-4.1.1/swigwin-4.1.1.zip
         Write-Output "Swigwin 4.1.1 not found - downloading and unpacking..."
         Remove-Item -LiteralPath $projectRoot/packages/swig/ -Force -Recurse -ErrorAction Ignore
-        Invoke-WebRequest 'https://deac-fra.dl.sourceforge.net/project/swig/swigwin/swigwin-4.1.1/swigwin-4.1.1.zip' -OutFile swig.zip
+        Invoke-WebRequest 'https://caas-deploy.s3.eu-central-1.amazonaws.com/v1/Thirdparty-Swig-v4.x/swigwin-4.1.1.zip' -OutFile swig.zip
         Expand-Archive swig.zip -DestinationPath $projectRoot/packages/swig
         Remove-Item swig.zip
     }
@@ -152,13 +157,13 @@ if ( $ENABLE_SWIG -eq "ON" ) {
 
 # build the cmake command flags from arguments
 $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " + 
-                "-DENABLE_STDCXX_SYNC=$CXX11 " + 
-                "-DENABLE_APPS=$BUILD_APPS " + 
-                "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " + 
-                "-DENABLE_BONDING=$BONDING " + 
-                "-DENABLE_UNITTESTS=$UNIT_TESTS " + 
-                "-DENABLE_SWIG=$ENABLE_SWIG " + 
-                "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
+              "-DENABLE_STDCXX_SYNC=$CXX11 " + 
+              "-DENABLE_APPS=$BUILD_APPS " + 
+              "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " + 
+              "-DENABLE_BONDING=$BONDING " + 
+              "-DENABLE_UNITTESTS=$UNIT_TESTS " + 
+              "-DENABLE_SWIG=$ENABLE_SWIG " + 
+              "-DENABLE_SWIG_CSHARP=$ENABLE_SWIG_CSHARP"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
 if ( $VCPKG_OPENSSL -eq 'ON' ) {    
@@ -201,8 +206,8 @@ else {
     $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
 }
 
-# cmake uses a flag for architecture from vs2019, so add that as a suffix
-if ( $VS_VERSION -eq '2019' ) {    
+# cmake uses a flag for architecture from vs2019 onwards, so add that as a suffix
+if ( $VS_VERSION -eq '2019' -or $VS_VERSION -eq '2022') {    
     $cmakeFlags += " -A `"$DEVENV_PLATFORM`""
 }
 
