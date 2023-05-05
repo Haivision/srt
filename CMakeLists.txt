@@ -1351,7 +1351,7 @@ if(ENABLE_SWIG)
 		cmake_policy(SET CMP0078 NEW)
 		cmake_policy(SET CMP0086 NEW)
 		cmake_policy(SET CMP0122 NEW)
-	else
+	else()
 		message(FATAL_ERROR "ENABLE_SWIG is set, but cmake version is not at least 3.21 and SWIG support may be broken on earlier editions")
 	endif()
 
