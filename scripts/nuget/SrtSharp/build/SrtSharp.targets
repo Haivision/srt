@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <IncludeSrtInterop Condition="'$(IncludeSrtInterop)'==''">True</IncludeSrtInterop>
+    <EmbedSrtInterop Condition="'$(EmbedSrtInterop)'==''">False</EmbedSrtInterop>
+  </PropertyGroup>
+  
+  <!--
+  <ItemGroup>
+    <Reference Include="srt_swig_netcore" Condition="'$(IncludeSrtInterop)'=='True'">
+      <HintPath>$(MSBuildThisFileDirectory)\..\runtimes\any\netstandard2.0\srt_swig_netcore.dll</HintPath>
+      <EmbedInteropTypes Condition="'$(EmbedSrtInterop)'=='True'">True</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+  -->
+
+  <Target Name="Copy Native SRT references" AfterTargets="AfterBuild">
+    <ItemGroup>
+      <SourceFiles Include="$(MSBuildThisFileDirectory)\..\runtimes\win-$(PlatformTarget)\native\release\**\*.dll"/>
+      <SourceFiles Include="$(MSBuildThisFileDirectory)\..\runtimes\win-$(PlatformTarget)\native\release\**\*.pdb"/>
+    </ItemGroup>
+    <Copy SourceFiles="@(SourceFiles)" DestinationFiles="@(SourceFiles->'$(TargetDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
