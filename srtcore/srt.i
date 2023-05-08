@@ -801,7 +801,7 @@ void srt_dellogfa(LogFunctionalArea functionalArea);
     typedef enum
     {
         SRTO_INT_CONNTIMEO = SRTO_CONNTIMEO,
-        SRTO_INT_CRYPTOMODE = SRTO_CRYPTOMODE,
+        //SRTO_INT_CRYPTOMODE = SRTO_CRYPTOMODE,  //TODO: Remove when AEAD option is no longer conditional
         SRTO_INT_EVENT = SRTO_EVENT,
         SRTO_INT_FC = SRTO_FC,
         SRTO_INT_GROUPCONNECT = SRTO_GROUPCONNECT,
