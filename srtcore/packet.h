@@ -150,7 +150,7 @@ const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
 
 inline int32_t CreateControlSeqNo(UDTMessageType type)
 {
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(type));
+    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(uint32_t(type));
 }
 
 inline int32_t CreateControlExtSeqNo(int exttype)

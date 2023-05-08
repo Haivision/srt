@@ -169,7 +169,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
         InsertRebuilt(w_incoming, m_unitq);
 
         ScopedLock lg(m_parent->m_StatsLock);
-        m_parent->m_stats.rcvr.suppliedByFilter.count(nsupply);
+        m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
 
     // Now that all units have been filled as they should be,

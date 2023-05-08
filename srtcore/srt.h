@@ -653,7 +653,7 @@ enum SRT_KM_STATE
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
 #ifdef ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong ccryptographic mode is used, cannot decrypt. Since v1.6.0.
+    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.6.0.
 #endif
 };
 
@@ -849,18 +849,18 @@ SRT_API extern const SRT_MSGCTRL srt_msgctrl_default;
 //
 // Sending functions
 //
-SRT_API  int srt_send    (SRTSOCKET u, const char* buf, int len);
-SRT_API  int srt_sendmsg (SRTSOCKET u, const char* buf, int len, int ttl/* = -1*/, int inorder/* = false*/);
-SRT_API  int srt_sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL *mctrl);
+SRT_API int srt_send    (SRTSOCKET u, const char* buf, int len);
+SRT_API int srt_sendmsg (SRTSOCKET u, const char* buf, int len, int ttl/* = -1*/, int inorder/* = false*/);
+SRT_API int srt_sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL *mctrl);
 
 //
 // Receiving functions
 //
-SRT_API  int srt_recv    (SRTSOCKET u, char* buf, int len);
+SRT_API int srt_recv    (SRTSOCKET u, char* buf, int len);
 
 // srt_recvmsg is actually an alias to srt_recv, it stays under the old name for compat reasons.
-SRT_API  int srt_recvmsg (SRTSOCKET u, char* buf, int len);
-SRT_API  int srt_recvmsg2(SRTSOCKET u, char *buf, int len, SRT_MSGCTRL *mctrl);
+SRT_API int srt_recvmsg (SRTSOCKET u, char* buf, int len);
+SRT_API int srt_recvmsg2(SRTSOCKET u, char *buf, int len, SRT_MSGCTRL *mctrl);
 
 
 // Special send/receive functions for files only.
@@ -878,23 +878,23 @@ SRT_API       void  srt_clearlasterror(void);
 
 // Performance tracking
 // Performance monitor with Byte counters for better bitrate estimation.
-SRT_API  SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
+SRT_API SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 // Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
-SRT_API  SRTSTATUS srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
+SRT_API SRTSTATUS srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
 SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
-SRT_API  int srt_epoll_create(void);
-SRT_API  SRTSTATUS srt_epoll_clear_usocks(int eid);
-SRT_API  SRTSTATUS srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API  SRTSTATUS srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
-SRT_API  SRTSTATUS srt_epoll_remove_usock(int eid, SRTSOCKET u);
-SRT_API  SRTSTATUS srt_epoll_remove_ssock(int eid, SYSSOCKET s);
-SRT_API  SRTSTATUS srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API  SRTSTATUS srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
+SRT_API       int srt_epoll_create(void);
+SRT_API SRTSTATUS srt_epoll_clear_usocks(int eid);
+SRT_API SRTSTATUS srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API SRTSTATUS srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
+SRT_API SRTSTATUS srt_epoll_remove_usock(int eid, SRTSOCKET u);
+SRT_API SRTSTATUS srt_epoll_remove_ssock(int eid, SYSSOCKET s);
+SRT_API SRTSTATUS srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API SRTSTATUS srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
-SRT_API  int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
+SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
 typedef struct SRT_EPOLL_EVENT_STR
 {
@@ -905,7 +905,7 @@ typedef struct SRT_EPOLL_EVENT_STR
     SRT_EPOLL_EVENT_STR(): fd(SRT_INVALID_SOCK), events(0) {} // NOTE: allows singular values, no init.
 #endif
 } SRT_EPOLL_EVENT;
-SRT_API  int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 
 SRT_API int32_t srt_epoll_set(int eid, int32_t flags);
 SRT_API SRTSTATUS srt_epoll_release(int eid);
@@ -923,10 +923,10 @@ SRT_API void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
 SRT_API void srt_setlogflags(int flags);
 
 
-SRT_API  int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
+SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
-SRT_API  int srt_getrejectreason(SRTSOCKET sock);
-SRT_API  SRTSTATUS srt_setrejectreason(SRTSOCKET sock, int value);
+SRT_API int srt_getrejectreason(SRTSOCKET sock);
+SRT_API SRTSTATUS srt_setrejectreason(SRTSOCKET sock, int value);
 // The srt_rejectreason_msg[] array is deprecated (as unsafe).
 // Planned removal: v1.6.0.
 SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];

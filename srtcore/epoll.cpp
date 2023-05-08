@@ -213,8 +213,8 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         }
     }
 
-    for (size_t i = 0; i < cleared.size(); ++i)
-        d.removeSubscription(cleared[i]);
+    for (size_t j = 0; j < cleared.size(); ++j)
+        d.removeSubscription(cleared[j]);
 }
 
 void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
@@ -653,23 +653,23 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
 
 #elif defined(BSD) || TARGET_OS_MAC
                 struct timespec tmout = {0, 0};
-                const int max_events = ed.m_sLocals.size();
+                const int max_events = (int)ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
                 srt::FixedArray<struct kevent> ke(max_events);
 
-                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), ke.size(), &tmout);
+                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), (int)ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
                 {
                     if ((NULL != lrfds) && (ke[i].filter == EVFILT_READ))
                     {
-                        lrfds->insert(ke[i].ident);
+                        lrfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                     if ((NULL != lwfds) && (ke[i].filter == EVFILT_WRITE))
                     {
-                        lwfds->insert(ke[i].ident);
+                        lwfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                 }
@@ -695,7 +695,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
                     if (lwfds)
                         FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
-                        max_fd = *i;
+                        max_fd = (int)*i;
                 }
 
                 IF_HEAVY_LOGGING(const int prev_total = total);

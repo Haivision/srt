@@ -126,6 +126,9 @@ SRTSOCKET srt_connect_bind(SRTSOCKET u,
 SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
+    if (CUDT::isgroup(u))
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+
     bool yes = 1;
     CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
@@ -445,7 +448,7 @@ const char* const srt_rejection_reason_msg [] = {
     "Packet Filter settings error",
     "Group settings collision",
     "Connection timeout"
-#ifdef ENABLE_AEAD_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
     ,"Crypto mode"
 #endif
 };
@@ -469,7 +472,7 @@ extern const char* const srt_rejectreason_msg[] = {
     srt_rejection_reason_msg[14],
     srt_rejection_reason_msg[15],
     srt_rejection_reason_msg[16]
-#ifdef ENABLE_AEAD_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
     , srt_rejection_reason_msg[17]
 #endif
 };

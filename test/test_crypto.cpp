@@ -103,7 +103,6 @@ namespace srt
         // Modify the payload and expect auth to fail.
         pkt_enc->data()[10] = '5';
         EXPECT_EQ(m_crypt.decrypt(*pkt_enc.get()), ENCS_FAILED);
-        
     }
 
 } // namespace srt
