@@ -53,16 +53,6 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
-   // although there's also lots of other options to be set, for which there's a convenience option,
-   // SRTO_TRANSTYPE.
-   // SRT_TRANSTYPE tt = SRTT_LIVE;
-   // if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_TRANSTYPE, &tt, sizeof tt))
-   // {
-   //    cout << "srt_setsockopt: " << srt_getlasterror_str() << endl;
-   //    return 0;
-   // }
-
    bool no = false;
    if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_RCVSYN, &no, sizeof no))
    {

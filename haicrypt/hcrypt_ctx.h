@@ -45,7 +45,7 @@ typedef struct {
 typedef struct tag_hcrypt_Ctx {
         struct tag_hcrypt_Ctx * alt;    /* Alternative ctx (even/odd) */
 
-#define HCRYPT_CTX_F_MSG        0x00FF  /* Aligned wiht message header flags */		
+#define HCRYPT_CTX_F_MSG        0x00FF  /* Aligned with message header flags */
 #define HCRYPT_CTX_F_eSEK       HCRYPT_MSG_F_eSEK
 #define HCRYPT_CTX_F_oSEK       HCRYPT_MSG_F_oSEK
 #define HCRYPT_CTX_F_xSEK       HCRYPT_MSG_F_xSEK

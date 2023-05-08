@@ -32,10 +32,6 @@ written by
 #ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #if defined(_MSC_VER)
-      #pragma warning(disable:4267)
-      #pragma warning(disable:4018)
-   #endif
 #else
    #include <sys/time.h>
 #endif
