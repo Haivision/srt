@@ -670,8 +670,8 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #endif
 
     LOGC(kslog.Debug,
-         log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.m_iID
-             << " size=" << packet.getLength() << " pkt.ts=" << packet.m_iTimeStamp
+         log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.id()
+             << " size=" << packet.getLength() << " pkt.ts=" << packet.timestamp()
              << dsrc.str() << " " << packet.Info());
 #endif
 

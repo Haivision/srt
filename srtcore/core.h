@@ -405,7 +405,7 @@ public: // internal API
 
     static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
     {
-        p.m_iTimeStamp = makeTS(ts, start_time);
+        p.set_timestamp(makeTS(ts, start_time));
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)

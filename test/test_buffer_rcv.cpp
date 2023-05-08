@@ -54,22 +54,27 @@ public:
         EXPECT_NE(unit, nullptr);
 
         CPacket& packet = unit->m_Packet;
-        packet.m_iSeqNo = seqno;
-        packet.m_iTimeStamp = ts;
+        packet.set_seqno(seqno);
+        packet.set_timestamp(ts);
 
         packet.setLength(m_payload_sz);
-        generatePayload(packet.data(), packet.getLength(), packet.m_iSeqNo);
+        generatePayload(packet.data(), packet.getLength(), packet.seqno());
 
-        packet.m_iMsgNo = msgno;
-        packet.m_iMsgNo |= PacketBoundaryBits(PB_SUBSEQUENT);
+        int32_t pktMsgFlags = msgno;
+        pktMsgFlags |= PacketBoundaryBits(PB_SUBSEQUENT);
         if (pb_first)
-            packet.m_iMsgNo |= PacketBoundaryBits(PB_FIRST);
+            pktMsgFlags |= PacketBoundaryBits(PB_FIRST);
         if (pb_last)
-            packet.m_iMsgNo |= PacketBoundaryBits(PB_LAST);
+            pktMsgFlags |= PacketBoundaryBits(PB_LAST);
 
         if (!out_of_order)
         {
-            packet.m_iMsgNo |= MSGNO_PACKET_INORDER::wrap(1);
+            pktMsgFlags |= MSGNO_PACKET_INORDER::wrap(1);
+        }
+        packet.set_msgflags(pktMsgFlags);
+
+        if (!out_of_order)
+        {
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 

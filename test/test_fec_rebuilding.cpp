@@ -783,7 +783,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -860,7 +860,7 @@ TEST_F(TestFECRebuilding, Rebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -878,7 +878,7 @@ TEST_F(TestFECRebuilding, Rebuild)
 
     // Set artificially the SN_REXMIT flag in the skipped source packet
     // because the rebuilt packet shall have REXMIT flag set.
-    skipped.m_iMsgNo |= MSGNO_REXMIT::wrap(true);
+    skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
 
     // Compare the header
     EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);

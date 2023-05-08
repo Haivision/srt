@@ -317,7 +317,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         w_packet.m_pcData = m_pCurrBlock->m_pcData;
         readlen = m_pCurrBlock->m_iLength;
         w_packet.setLength(readlen, m_iBlockLen);
-        w_packet.m_iSeqNo = m_pCurrBlock->m_iSeqNo;
+        w_packet.set_seqno(m_pCurrBlock->m_iSeqNo);
 
         // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
         // 2. The readData() is called to get the original (unique) payload not ever sent yet.
@@ -343,7 +343,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         }
 
         Block* p = m_pCurrBlock;
-        w_packet.m_iMsgNo = m_pCurrBlock->m_iMsgNoBitset;
+        w_packet.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
 
@@ -358,7 +358,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
 
         HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
                 << " #" << w_packet.getMsgSeq()
-                << " %" << w_packet.m_iSeqNo
+                << " %" << w_packet.seqno()
                 << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
         break;
@@ -449,7 +449,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     // This is rexmit request, so the packet should have the sequence number
     // already set when it was once sent uniquely.
-    SRT_ASSERT(p->m_iSeqNo == w_packet.m_iSeqNo);
+    SRT_ASSERT(p->m_iSeqNo == w_packet.seqno());
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
@@ -493,8 +493,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // to simply take the sequence number from the block. But this is a new
         // feature and should be only used after refax for the sender buffer to
         // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
-        w_drop.seqno[Drop::BEGIN] = w_packet.m_iSeqNo;
-        w_drop.seqno[Drop::END] = CSeqNo::incseq(w_packet.m_iSeqNo, msglen - 1);
+        w_drop.seqno[Drop::BEGIN] = w_packet.seqno();
+        w_drop.seqno[Drop::END] = CSeqNo::incseq(w_packet.seqno(), msglen - 1);
 
         // Note the rules: here `p` is pointing to the first block AFTER the
         // message to be dropped, so the end sequence should be one behind
@@ -515,7 +515,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     // encrypted, and with all ENC flags already set. So, the first call to send
     // the packet originally (the other overload of this function) must set these
     // flags.
-    w_packet.m_iMsgNo = p->m_iMsgNoBitset;
+    w_packet.set_msgflags(p->m_iMsgNoBitset);
     w_srctime = p->m_tsOriginTime;
 
     // This function is called when packet retransmission is triggered.
@@ -523,7 +523,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     p->m_tsRexmitTime = steady_clock::now();
 
     HLOGC(qslog.Debug,
-          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.m_iSeqNo
+          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.seqno()
               << " size=" << readlen << " to send [REXMIT]");
 
     return readlen;
