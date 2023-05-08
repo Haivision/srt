@@ -805,7 +805,7 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        m_sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == -1)
             Error(SysError(), "UdpCommon::Setup: socket");
 
@@ -1144,7 +1144,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     }
 
     if (ptr.get())
-        ptr->uri = move(u);
+        ptr->uri = std::move(u);
 
     return ptr;
 }

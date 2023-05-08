@@ -16,7 +16,7 @@ written by
    2022-05-19 (jdube)
         CRYSPR2 adaptation
    2019-06-27 (jdube)
-        GnuTLS/Nettle CRYSPR/4SRT (CRYypto Service PRovider for SRT)
+        MBedTLS CRYSPR/4SRT (CRYypto Service PRovider for SRT)
 *****************************************************************************/
 
 #include "hcrypt.h"
@@ -32,7 +32,7 @@ written by
 static mbedtls_ctr_drbg_context crysprMbedtls_ctr_drbg;
 static mbedtls_entropy_context crysprMbedtls_entropy;
 
-typedef struct tag_crysprGnuTLS_AES_cb {
+typedef struct tag_crysprMBedTLS_AES_cb {
         CRYSPR_cb       ccb;        /* CRYSPR control block */
         /* Add other cryptolib specific data here */
 #ifdef CRYSPR2
@@ -160,7 +160,6 @@ int crysprMbedtls_AES_CtrCipher( /* AES-CTR128 Encryption */
 static CRYSPR_cb *crysprMbedtls_Open(CRYSPR_methods *cryspr, size_t max_len)
 {
     crysprMbedtls_cb *aes_data;
-    CRYSPR_cb *cryspr_cb;
 
     aes_data = (crysprMbedtls_cb *)crysprHelper_Open(cryspr, sizeof(crysprMbedtls_cb), max_len);
     if (NULL == aes_data) {
