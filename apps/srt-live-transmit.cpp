@@ -100,8 +100,8 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> int_state;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     Verb() << "\n-------- REQUESTED INTERRUPT!\n";
@@ -163,7 +163,6 @@ void PrintOptionHelp(const OptionName& opt_names, const string &value, const str
         cerr << ":"  << value;
     cerr << "\t- " << desc << "\n";
 }
-
 
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
@@ -269,12 +268,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         }
 
         cout << "SRT sample application to transmit live streaming.\n";
-        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
-        const uint32_t srtver = srt_getversion();
-        const int major = srtver / 0x10000;
-        const int minor = (srtver / 0x100) % 0x100;
-        const int patch = srtver % 0x100;
-        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 #ifndef _WIN32
@@ -290,7 +284,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         PrintOptionHelp(o_statsout,  "<filename>", "output stats to file");
         PrintOptionHelp(o_statspf,   "<format=default>", "stats printing format {json, csv, default}");
         PrintOptionHelp(o_statsfull, "", "full counters in stats-report (prints total statistics)");
-        PrintOptionHelp(o_loglevel,  "<level=error>", "log level {fatal,error,info,note,warning}");
+        PrintOptionHelp(o_loglevel,  "<level=warn>", "log level {fatal,error,warn,note,info,debug}");
         PrintOptionHelp(o_logfa,     "<fas>", "log functional area (see '-h logging' for more info)");
         //PrintOptionHelp(o_log_internal, "", "use internal logger");
         PrintOptionHelp(o_logfile, "<filename="">", "write logs to file");
@@ -313,7 +307,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_version)
     {
-        cerr << "SRT Library version: " <<  SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
@@ -345,7 +339,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats   = OptionPresent(params, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
+    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
     cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
     cfg.log_internal = OptionPresent(params, o_log_internal);
     cfg.logfile      = Option<OutString>(params, o_logfile);
@@ -434,7 +428,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
@@ -858,8 +852,14 @@ int main(int argc, char** argv)
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
     char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    if ( opaque ) {
+#ifdef _MSC_VER
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
+#else
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
+#endif
+    }
     time_t now;
     time(&now);
     char buf[1024];

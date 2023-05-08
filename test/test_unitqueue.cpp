@@ -3,9 +3,8 @@
 #include "gtest/gtest.h"
 #include "queue.h"
 
-
 using namespace std;
-
+using namespace srt;
 
 /// Create CUnitQueue with queue size of 4 units.
 /// The size of 4 is chosen on purpose, because 
@@ -17,15 +16,14 @@ using namespace std;
 TEST(CUnitQueue, Increase)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue;
-    unit_queue.init(buffer_size_pkts, 1500, AF_INET);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
     vector<CUnit*> taken_units;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
         taken_units.push_back(unit);
     }
 }
@@ -38,15 +36,14 @@ TEST(CUnitQueue, Increase)
 TEST(CUnitQueue, IncreaseAndFree)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue;
-    unit_queue.init(buffer_size_pkts, 1500, AF_INET);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
     CUnit* taken_unit = nullptr;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_unit)
             unit_queue.makeUnitFree(taken_unit);
@@ -63,15 +60,14 @@ TEST(CUnitQueue, IncreaseAndFree)
 TEST(CUnitQueue, IncreaseAndFreeGrouped)
 {
     const int buffer_size_pkts = 4;
-    CUnitQueue unit_queue;
-    unit_queue.init(buffer_size_pkts, 1500, AF_INET);
+    CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
     vector<CUnit*> taken_units;
     for (int i = 0; i < 5 * buffer_size_pkts; ++i)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_units.size() >= buffer_size_pkts)
         {

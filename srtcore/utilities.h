@@ -16,84 +16,11 @@ written by
 #ifndef INC_SRT_UTILITIES_H
 #define INC_SRT_UTILITIES_H
 
-// ATTRIBUTES:
-//
-// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
-// ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
-// ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
-// ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
-// ATR_CONSTEXPR: In C++11: `constexpr`. Otherwise empty.
-// ATR_OVERRIDE: In C++11: `override`. Otherwise empty.
-// ATR_FINAL: In C++11: `final`. Otherwise empty.
-
-
-#ifdef __GNUG__
-#define ATR_UNUSED __attribute__((unused))
-#define ATR_DEPRECATED __attribute__((deprecated))
-#else
-#define ATR_UNUSED
-#define ATR_DEPRECATED
-#endif
-
-#if defined(__cplusplus) && __cplusplus > 199711L
-#define HAVE_CXX11 1
-
-// For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
-// however it's only the "most required C++11 support".
-#if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ == 4 && __GNUC_MINOR__ >= 7 // 4.7 only!
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-#else
-#define HAVE_FULL_CXX11 1
-#define ATR_NOEXCEPT noexcept
-#define ATR_NOTHROW noexcept
-#define ATR_CONSTEXPR constexpr
-#define ATR_OVERRIDE override
-#define ATR_FINAL final
-#endif
-
-// Microsoft Visual Studio supports C++11, but not fully,
-// and still did not change the value of __cplusplus. Treat
-// this special way.
-// _MSC_VER == 1800  means Microsoft Visual Studio 2013.
-#elif defined(_MSC_VER) && _MSC_VER >= 1800
-#define HAVE_CXX11 1
-#if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
-#define HAVE_FULL_CXX11 1
-#define ATR_NOEXCEPT noexcept
-#define ATR_NOTHROW noexcept
-#define ATR_CONSTEXPR constexpr
-#define ATR_OVERRIDE override
-#define ATR_FINAL final
-#else
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-#endif
-#else
-#define HAVE_CXX11 0
-#define ATR_NOEXCEPT
-#define ATR_NOTHROW throw()
-#define ATR_CONSTEXPR
-#define ATR_OVERRIDE
-#define ATR_FINAL
-
-#endif
-
-#if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
-#error "The currently compiled application required C++11, but your compiler doesn't support it."
-#endif
-
-
 // Windows warning disabler
 #define _CRT_SECURE_NO_WARNINGS 1
 
 #include "platform_sys.h"
+#include "srt_attr_defs.h" // defines HAVE_CXX11
 
 // Happens that these are defined, undefine them in advance
 #undef min
@@ -108,7 +35,6 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
-#include <iomanip>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -117,6 +43,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 // -------------- UTILITIES ------------------------
 
@@ -130,7 +57,7 @@ written by
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__)
 
 #	include <endian.h>
 
@@ -188,7 +115,7 @@ written by
 
 #	include <sys/endian.h>
 
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
 
 #	include <sys/endian.h>
 
@@ -212,6 +139,46 @@ written by
 #ifndef le64toh
 #	define le64toh(x) letoh64(x)
 #endif
+
+#elif defined(SUNOS)
+
+   // SunOS/Solaris
+
+   #include <sys/byteorder.h>
+   #include <sys/isa_defs.h>
+
+   #define __LITTLE_ENDIAN 1234
+   #define __BIG_ENDIAN 4321
+
+   # if defined(_BIG_ENDIAN)
+   #define __BYTE_ORDER __BIG_ENDIAN
+   #define be64toh(x) (x)
+   #define be32toh(x) (x)
+   #define be16toh(x) (x)
+   #define le16toh(x) ((uint16_t)BSWAP_16(x))
+   #define le32toh(x) BSWAP_32(x)
+   #define le64toh(x) BSWAP_64(x)
+   #define htobe16(x) (x)
+   #define htole16(x) ((uint16_t)BSWAP_16(x))
+   #define htobe32(x) (x)
+   #define htole32(x) BSWAP_32(x)
+   #define htobe64(x) (x)
+   #define htole64(x) BSWAP_64(x)
+   # else
+   #define __BYTE_ORDER __LITTLE_ENDIAN
+   #define be64toh(x) BSWAP_64(x)
+   #define be32toh(x) ntohl(x)
+   #define be16toh(x) ntohs(x)
+   #define le16toh(x) (x)
+   #define le32toh(x) (x)
+   #define le64toh(x) (x)
+   #define htobe16(x) htons(x)
+   #define htole16(x) (x)
+   #define htobe32(x) htonl(x)
+   #define htole32(x) (x)
+   #define htobe64(x) BSWAP_64(x)
+   #define htole64(x) (x)
+   # endif
 
 #elif defined(__WINDOWS__)
 
@@ -334,7 +301,7 @@ template<size_t R>
 struct BitsetMask<R, R, true>
 {
     static const bool correct = true;
-    static const uint32_t value = 1 << R;
+    static const uint32_t value = 1u << R;
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition
@@ -442,6 +409,88 @@ struct DynamicStruct
     char* raw() { return (char*)inarray; }
 };
 
+
+/// Fixed-size array template class.
+namespace srt {
+
+template <class T>
+class FixedArray
+{
+public:
+    FixedArray(size_t size)
+        : m_size(size)
+        , m_entries(new T[size])
+    {
+    }
+
+    ~FixedArray()
+    {
+        delete [] m_entries;
+    }
+
+public:
+    const T& operator[](size_t index) const
+    {
+        if (index >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    T& operator[](size_t index)
+    {
+        if (index >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    const T& operator[](int index) const
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    T& operator[](int index)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= m_size)
+            raise_expection(index);
+
+        return m_entries[index];
+    }
+
+    size_t size() const { return m_size; }
+
+    typedef T* iterator;
+    typedef const T* const_iterator;
+
+    iterator begin() { return m_entries; }
+    iterator end() { return m_entries + m_size; }
+
+    const_iterator cbegin() const { return m_entries; }
+    const_iterator cend() const { return m_entries + m_size; }
+
+    T* data() { return m_entries; }
+
+private:
+    FixedArray(const FixedArray<T>& );
+    FixedArray<T>& operator=(const FixedArray<T>&);
+
+    void raise_expection(int i) const
+    {
+        std::stringstream ss;
+        ss << "Index " << i << "out of range";
+        throw std::runtime_error(ss.str());
+    }
+
+private:
+    size_t      m_size;
+    T* const    m_entries;
+};
+
+} // namespace srt
 
 // ------------------------------------------------------------
 
@@ -720,7 +769,8 @@ struct CallbackHolder
         // Casting function-to-function, however, should not. Unfortunately
         // newer compilers disallow that, too (when a signature differs), but
         // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) ATR_UNUSED = (void*(*)(void*))f;
+        void* (*testfn)(void*) = (void*(*)(void*))f;
+        (void)(testfn);
 #endif
         opaque = o;
         fn = f;
@@ -791,11 +841,13 @@ public:
         m_qDriftSum += driftval;
         ++m_uDriftSpan;
 
+        // I moved it here to calculate accumulated overdrift.
+        if (CLEAR_ON_UPDATE)
+            m_qOverdrift = 0;
+
         if (m_uDriftSpan < MAX_SPAN)
             return false;
 
-        if (CLEAR_ON_UPDATE)
-            m_qOverdrift = 0;
 
         // Calculate the median of all drift values.
         // In most cases, the divisor should be == MAX_SPAN.

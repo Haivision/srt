@@ -277,10 +277,10 @@ public:
     bool GetEnforcedEncryption(PEER_TYPE peer_type)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        int value = -1;
-        int value_len = sizeof value;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&value, &value_len), SRT_SUCCESS);
-        return value ? true : false;
+        bool optval;
+        int  optlen = sizeof optval;
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_SUCCESS);
+        return optval ? true : false;
     }
 
 
@@ -345,10 +345,15 @@ public:
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
+        // Determine the subcase for the KLUDGE (check the behavior of the decryption failure)
+        const bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
+        const bool case_both_relaxed = !test.enforcedenc[PEER_LISTENER] && !test.enforcedenc[PEER_CALLER];
+        const bool case_sender_enc = test.password[PEER_CALLER] != "";
+
         const TResult &expect = test.expected_result;
 
         // Start testing
-        volatile bool caller_done = false;
+        srt::sync::atomic<bool> caller_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -358,6 +363,8 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
+        SRTSOCKET accepted_socket = -1;
+
         auto accepting_thread = std::thread([&] {
             const int epoll_event = WaitOnEpoll(expect);
 
@@ -366,7 +373,6 @@ public:
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            SRTSOCKET accepted_socket = -1;
             if (epoll_event == SRT_EPOLL_IN)
             {
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
@@ -407,7 +413,7 @@ public:
                     std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
 
-                // We have to wait some time for the socket to be able to process the HS responce from the caller.
+                // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
                 do
@@ -484,6 +490,53 @@ public:
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
+        if (!is_blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
+        {
+            // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            EXPECT_FALSE(accepting_thread.joinable());
+
+            int const epollRead = srt_epoll_create();
+            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            srt_epoll_add_usock(epollRead, accepted_socket, &events);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            {
+                int const epollWrite = srt_epoll_create();
+                events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+                srt_epoll_add_usock(epollWrite, m_caller_socket, &events);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
+                int         socketNum  = 1;
+                const int epoll_res_w = srt_epoll_wait(epollWrite,
+                        nullptr, nullptr, // read
+                        &srtSocket, &socketNum, // write
+                        500,
+                        nullptr, nullptr, nullptr, nullptr); // R/W system sockets
+                std::cout << "W: " << epoll_res_w << std::endl;
+
+                char buffer[1316] = {1, 2, 3, 4};
+                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), SRT_ERROR);
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
+            int         socketNum  = 1;
+            int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
+            std::cout << "R: " << epoll_res_r << std::endl;
+            EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
+            char buffer[1316] = {};
+            EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
+
+            epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
+            EXPECT_LE(epoll_res_r, 0) << "Another?!";
+            //// ! /KLUDGE !
+
+            srt_epoll_release(epollRead);
+        }
+
         if (is_blocking)
         {
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
@@ -503,8 +556,8 @@ private:
 
     int       m_pollid          = 0;
 
-    const int s_yes = 1;
-    const int s_no  = 0;
+    const bool s_yes = true;
+    const bool s_no  = false;
 
     const bool          m_is_tracing = false;
     static const char*  m_km_state[];
