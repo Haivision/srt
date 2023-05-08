@@ -5391,10 +5391,12 @@ void * srt::CUDT::tsbpd(void* param)
                             << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
                             << (timediff_us % 1000) << " ms " << why);
                 }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
                 else
                 {
-                    //LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
+                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
                 }
+#endif
 #endif
 
                 tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
@@ -8931,10 +8933,12 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                             << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
                             << " (SND DROP REQUEST). " << why);
                 }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
                 else
                 {
-                    //LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
+                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
                 }
+#endif
 
                 // Estimate dropped bytes from average payload size.
                 const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
@@ -10038,6 +10042,13 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
                             << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                     }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+                    else
+                    {
+
+                        LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
+                    }
+#endif
                 }
             }
         }

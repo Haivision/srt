@@ -77,6 +77,10 @@ modified by
 
 #include <haicrypt.h>
 
+#ifndef SRT_ENABLE_FREQUENT_LOG_TRACE
+#define SRT_ENABLE_FREQUENT_LOG_TRACE 0
+#endif
+
 
 // TODO: Utility function - to be moved to utilities.h?
 template <class T>
