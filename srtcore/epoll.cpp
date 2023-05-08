@@ -165,7 +165,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return m_iIDSeed;
 }
 
-int srt::CEPoll::clear_usocks(int eid)
+void srt::CEPoll::clear_usocks(int eid)
 {
     // This should remove all SRT sockets from given eid.
    ScopedLock pg (m_EPollLock);
@@ -177,8 +177,6 @@ int srt::CEPoll::clear_usocks(int eid)
    CEPollDesc& d = p->second;
 
    d.clearAll();
-
-   return 0;
 }
 
 
@@ -219,7 +217,7 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         d.removeSubscription(cleared[j]);
 }
 
-int srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
+void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -287,11 +285,9 @@ int srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 #endif
 
    p->second.m_sLocals.insert(s);
-
-   return 0;
 }
 
-int srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
+void srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -317,12 +313,10 @@ int srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 #endif
 
    p->second.m_sLocals.erase(s);
-
-   return 0;
 }
 
 // Need this to atomically modify polled events (ex: remove write/keep read)
-int srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
+void srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     ScopedLock pg(m_EPollLock);
     IF_HEAVY_LOGGING(ostringstream evd);
@@ -391,10 +385,9 @@ int srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* even
         HLOGC(ealog.Debug, log << "srt_epoll_update_usock: REMOVED E" << eid << " socket @" << u);
         d.removeSubscription(u);
     }
-    return 0;
 }
 
-int srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
+void srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -462,10 +455,9 @@ int srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* even
 // Assuming add is used if not inserted
 //   p->second.m_sLocals.insert(s);
 
-   return 0;
 }
 
-int srt::CEPoll::setflags(const int eid, int32_t flags)
+int32_t srt::CEPoll::setflags(const int eid, int32_t flags)
 {
     ScopedLock pg(m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
@@ -845,7 +837,7 @@ bool srt::CEPoll::empty(const CEPollDesc& d) const
     return d.watch_empty();
 }
 
-int srt::CEPoll::release(const int eid)
+void srt::CEPoll::release(const int eid)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -861,8 +853,6 @@ int srt::CEPoll::release(const int eid)
    #endif
 
    m_mPolls.erase(i);
-
-   return 0;
 }
 
 

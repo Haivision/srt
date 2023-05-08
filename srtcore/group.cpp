@@ -249,8 +249,8 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 
 CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
-    , m_GroupID(-1)
-    , m_PeerGroupID(-1)
+    , m_GroupID(SRT_INVALID_SOCK)
+    , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_type(gtype)
     , m_listener()
     , m_iBusy()
@@ -907,7 +907,7 @@ void CUDTGroup::close()
         // removing themselves from the group when closing because they
         // are unaware of being group members.
         m_Group.clear();
-        m_PeerGroupID = -1;
+        m_PeerGroupID = SRT_INVALID_SOCK;
 
         set<int> epollid;
         {

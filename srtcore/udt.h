@@ -166,7 +166,7 @@ typedef std::set<SRTSOCKET> UDSET;
 
 SRT_API extern const SRTSOCKET INVALID_SOCK;
 #undef ERROR
-SRT_API extern const int ERROR;
+SRT_API extern const SRTSTATUS ERROR;
 
 SRT_API int startup();
 SRT_API int cleanup();

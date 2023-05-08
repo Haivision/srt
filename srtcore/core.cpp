@@ -89,8 +89,8 @@ using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
-const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
-const int       UDT::ERROR        = srt::CUDT::ERROR;
+const SRTSOCKET UDT::INVALID_SOCK = SRT_INVALID_SOCK;
+const SRTSTATUS UDT::ERROR        = SRT_ERROR;
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -276,7 +276,7 @@ void srt::CUDT::construct()
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
 
-    m_PeerID              = 0;
+    m_PeerID              = SRT_SOCKID_CONNREQ;
     m_bOpened             = false;
     m_bListening          = false;
     m_bConnecting         = false;
@@ -3062,7 +3062,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     // for consistency and possibly changes in future.
 
     // We are granted these two fields do exist
-    SRTSOCKET grpid = groupdata[GRPD_GROUPID];
+    SRTSOCKET grpid = SRTSOCKET(groupdata[GRPD_GROUPID]);
     uint32_t gd = groupdata[GRPD_GROUPDATA];
 
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));
@@ -3085,7 +3085,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         return false;
     }
 
-    if ((grpid & SRTGROUP_MASK) == 0)
+    if (!isgroup(grpid))
     {
         m_RejectReason = SRT_REJ_ROGUE;
         LOGC(cnlog.Error, log << CONID() << "HS/GROUP: socket ID passed as a group ID is not a group ID");
@@ -3155,7 +3155,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         }
 
         SRTSOCKET peer = pg->peerid();
-        if (peer == -1)
+        if (peer == SRT_INVALID_SOCK)
         {
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
@@ -3197,10 +3197,10 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         // ID to the peer.
 
         SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags);
-        if (!lgid)
+        if (lgid == SRT_SOCKID_CONNREQ)
             return true; // already done
 
-        if (lgid == -1)
+        if (lgid == SRT_INVALID_SOCK)
         {
             // NOTE: This error currently isn't reported by makeMePeerOf,
             // so this is left to handle a possible error introduced in future.
@@ -3257,7 +3257,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
             LOGC(gmlog.Error,
                  log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
                      << " agent group=$" << gp->id() << " type" << gp->type());
-            return -1;
+            return SRT_INVALID_SOCK;
         }
 
         HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
@@ -3274,14 +3274,14 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         catch (...)
         {
             // Expected exceptions are only those referring to system resources
-            return -1;
+            return SRT_INVALID_SOCK;
         }
 
         if (!gp->applyFlags(link_flags, m_SrtHsSide))
         {
             // Wrong settings. Must reject. Delete group.
             uglobal().deleteGroup_LOCKED(gp);
-            return -1;
+            return SRT_INVALID_SOCK;
         }
 
         gp->set_peerid(peergroup);
@@ -3325,7 +3325,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         LOGC(gmlog.Error, log << CONID() << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
         s->m_GroupOf         = gp;
         s->m_GroupMemberData = f;
-        return 0;
+        return SRT_SOCKID_CONNREQ;
     }
 
     s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
@@ -3548,7 +3548,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // control of methods.)
 
     // ID = 0, connection request
-    reqpkt.set_id(0);
+    reqpkt.set_id(SRT_SOCKID_CONNREQ);
 
     size_t hs_size = m_iMaxSRTPayloadSize;
     m_ConnReq.store_to((reqpkt.m_pcData), (hs_size));
@@ -3877,7 +3877,7 @@ bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
           log << CONID() << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
     m_tsLastReqTime = now;
     // ID = 0, connection request
-    reqpkt.set_id(!m_config.bRendezvous ? 0 : m_ConnRes.m_iID);
+    reqpkt.set_id(!m_config.bRendezvous ? SRT_SOCKID_CONNREQ : m_ConnRes.m_iID);
 
     bool status = true;
 
@@ -6953,7 +6953,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
                 return 0;
             // Forced to return error instead of throwing exception.
             if (!by_exception)
-                return APIError(MJ_CONNECTION, MN_CONNLOST, 0);
+                return APIError(MJ_CONNECTION, MN_CONNLOST, 0), int(SRT_ERROR);
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
         else
@@ -7092,7 +7092,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
         {
             // Forced to return 0 instead of throwing exception.
             if (!by_exception)
-                return APIError(MJ_CONNECTION, MN_CONNLOST, 0);
+                return APIError(MJ_CONNECTION, MN_CONNLOST, 0), int(SRT_ERROR);
             if (!m_config.bMessageAPI && m_bShutdown)
                 return 0;
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -7836,7 +7836,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.set_id(m_PeerID);
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -7923,7 +7923,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        if (m_PeerID == 0) // Dont't send SHUTDOWN if we don't know peer ID.
+        if (m_PeerID == SRT_SOCKID_CONNREQ) // Dont't send SHUTDOWN if we don't know peer ID.
             break;
         ctrlpkt.pack(pkttype);
         ctrlpkt.set_id(m_PeerID);
@@ -8950,6 +8950,27 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
+    typedef int32_t expected_t[2];
+    if (ctrlpkt.getLength() < sizeof (expected_t))
+    {
+        // We ALLOW packets that are bigger than this to allow
+        // future extensions, this just interprets the part that
+        // is expected, and reject only those that don't carry
+        // even the required data.
+        LOGC(brlog.Error, log << CONID() << "EPE: Wrong size of the DROPREQ message: " << ctrlpkt.getLength()
+                << " - expected >=" << sizeof(expected_t));
+        return;
+    }
+
+    int32_t msgno = ctrlpkt.getMsgSeq(m_bPeerRexmitFlag);
+
+    // Check for rogue message
+    if (msgno == SRT_MSGNO_NONE)
+    {
+        LOGC(brlog.Warn, log << CONID() << "ROGUE DROPREQ detected with #NONE - fallback: fixing to #CONTROL");
+        msgno = SRT_MSGNO_CONTROL;
+    }
+
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     {
@@ -8960,15 +8981,13 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         // Still remove the record from the loss list to cease further retransmission requests.
         if (!m_bTLPktDrop || !m_bTsbPd)
         {
-            const bool using_rexmit_flag = m_bPeerRexmitFlag;
             ScopedLock rblock(m_RcvBufferLock);
-            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag), CRcvBuffer::KEEP_EXISTING);
+            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], msgno, CRcvBuffer::KEEP_EXISTING);
 
             if (iDropCnt > 0)
             {
                 LOGC(brlog.Warn, log << CONID() << "RCV-DROPPED " << iDropCnt << " packet(s), seqno range %"
-                    << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
-                    << " (SND DROP REQUEST).");
+                    << dropdata[0] << "-%" << dropdata[1] << ", #" << msgno << " (SND DROP REQUEST).");
 
                 enterCS(m_StatsLock);
                 // Estimate dropped bytes from average payload size.
@@ -9057,7 +9076,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
-              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.id());
+              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=@" << ctrlpkt.id());
 
     switch (ctrlpkt.getType())
     {
@@ -11694,7 +11713,7 @@ int srt::CUDT::rejectReason(SRTSOCKET u)
     return s->core().m_RejectReason;
 }
 
-int srt::CUDT::rejectReason(SRTSOCKET u, int value)
+SRTSTATUS srt::CUDT::rejectReason(SRTSOCKET u, int value)
 {
     CUDTSocket* s = uglobal().locateSocket(u);
     if (!s)
@@ -11704,7 +11723,7 @@ int srt::CUDT::rejectReason(SRTSOCKET u, int value)
         return APIError(MJ_NOTSUP, MN_INVAL);
 
     s->core().m_RejectReason = value;
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 int64_t srt::CUDT::socketStartTime(SRTSOCKET u)

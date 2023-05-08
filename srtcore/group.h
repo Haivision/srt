@@ -757,7 +757,7 @@ public:
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_GroupID << ":";
+        os << "$" << m_GroupID << ":";
         return os.str();
 #else
         return "";
