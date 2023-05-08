@@ -87,8 +87,12 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
 
     if (lpMsgBuf)
     {
+#ifdef _MSC_VER
+        strncpy_s(buf, buflen, lpMsgBuf, _TRUNCATE);
+#else
         strncpy(buf, lpMsgBuf, buflen-1);
         buf[buflen-1] = 0;
+#endif
         LocalFree((HLOCAL)lpMsgBuf);
     }
     else
