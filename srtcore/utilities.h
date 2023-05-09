@@ -666,6 +666,15 @@ inline std::string Sprint(const Arg1& arg)
     return sout.str();
 }
 
+// An additional two-argument version
+template <class Arg1, class Arg2>
+inline std::string Sprint(const Arg1& arg, const Arg2& arg2)
+{
+    std::ostringstream sout;
+    sout << arg << arg2;
+    return sout.str();
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
