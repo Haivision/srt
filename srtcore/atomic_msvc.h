@@ -122,7 +122,7 @@ struct interlocked<T, 1> {
 
   static inline T or_fetch(T volatile* x, const T val) {
     return static_cast<T>(_InterlockedOr8(
-        reinterpret_cast<volatile char*>(x), static_cast<const char>(new_val)));
+        reinterpret_cast<volatile char*>(x), static_cast<const char>(val)));
   }
 };
 
