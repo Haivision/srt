@@ -63,81 +63,19 @@ bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
 }
 
 // [[using locked(this->m_GroupLock)]];
-bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_t& w_rcv_isn)
+void CUDTGroup::applyGroupSequences(SRTSOCKET /* not sure if needed */, int32_t& w_snd_isn, int32_t& w_rcv_isn)
 {
-    if (m_bConnected) // You are the first one, no need to change.
-    {
-        IF_HEAVY_LOGGING(string update_reason = "what?");
-        // Find a socket that is declared connected and is not
-        // the socket that caused the call.
-        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-        {
-            if (gi->id == target)
-                continue;
+    // LastSchedSeqNo is initially set to the ISN of first connected socket,
+    // its' also updated in group send functions to the next scheduling seq.
+    w_snd_isn = m_iLastSchedSeqNo;
 
-            CUDT& se = gi->ps->core();
-            if (!se.m_bConnected)
-                continue;
-
-            // Found it. Get the following sequences:
-            // For sending, the sequence that is about to be sent next.
-            // For receiving, the sequence of the latest received packet.
-
-            // SndCurrSeqNo is initially set to ISN-1, this next one is
-            // the sequence that is about to be stamped on the next sent packet
-            // over that socket. Using this field is safer because it is atomic
-            // and its affinity is to the same thread as the sending function.
-
-            // NOTE: the groupwise scheduling sequence might have been set
-            // already. If so, it means that it was set by either:
-            // - the call of this function on the very first conencted socket (see below)
-            // - the call to `sendBroadcast` or `sendBackup`
-            // In both cases, we want THIS EXACTLY value to be reported
-            if (m_iLastSchedSeqNo != -1)
-            {
-                w_snd_isn = m_iLastSchedSeqNo;
-                IF_HEAVY_LOGGING(update_reason = "GROUPWISE snd-seq");
-            }
-            else
-            {
-                w_snd_isn = se.m_iSndNextSeqNo;
-
-                // Write it back to the groupwise scheduling sequence so that
-                // any next connected socket will take this value as well.
-                m_iLastSchedSeqNo = w_snd_isn;
-                IF_HEAVY_LOGGING(update_reason = "existing socket not yet sending");
-            }
-
-            // RcvCurrSeqNo is increased by one because it happens that at the
-            // synchronization moment it's already past reading and delivery.
-            // This is redundancy, so the redundant socket is connected at the moment
-            // when the other one is already transmitting, so skipping one packet
-            // even if later transmitted is less troublesome than requesting a
-            // "mistakenly seen as lost" packet.
-            w_rcv_isn = CSeqNo::incseq(se.m_iRcvCurrSeqNo);
-
-            HLOGC(gmlog.Debug,
-                  log << "applyGroupSequences: @" << target << " gets seq from @" << gi->id << " rcv %" << (w_rcv_isn)
-                      << " snd %" << (w_snd_isn) << " as " << update_reason);
-            return false;
-        }
-    }
-
-    // If the GROUP (!) is not connected, or no running/pending socket has been found.
-    // // That is, given socket is the first one.
-    // The group data should be set up with its own data. They should already be passed here
-    // in the variables.
-    //
-    // Override the schedule sequence of the group in this case because whatever is set now,
-    // it's not valid.
-
-    HLOGC(gmlog.Debug,
-          log << "applyGroupSequences: no socket found connected and transmitting, @" << target
-              << " not changing sequences, storing snd-seq %" << (w_snd_isn));
-
-    set_currentSchedSequence(w_snd_isn);
-
-    return true;
+    // RcvCurrSeqNo is increased by one because it happens that at the
+    // synchronization moment it's already past reading and delivery.
+    // This is redundancy, so the redundant socket is connected at the moment
+    // when the other one is already transmitting, so skipping one packet
+    // even if later transmitted is less troublesome than requesting a
+    // "mistakenly seen as lost" packet.
+    w_rcv_isn = CSeqNo::incseq(m_iRcvCurrSeqNo);
 }
 
 // NOTE: This function is now for DEBUG PURPOSES ONLY.
@@ -263,7 +201,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_bSynSending(true)
     , m_bTsbPd(true)
     , m_bTLPktDrop(true)
-    , m_iTsbPdDelay_us(0)
     // m_*EID and m_*Epolld fields will be initialized
     // in the constructor body.
     , m_iSndTimeOut(-1)
@@ -276,6 +213,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
+    , m_iRcvCurrSeqNo(SRT_SEQNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
     setupMutex(m_RcvDataLock, "RcvData");
@@ -833,8 +771,7 @@ SRT_SOCKSTATUS CUDTGroup::getStatus()
     return SRTS_BROKEN;
 }
 
-// [[using locked(m_GroupLock)]];
-void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
+void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 {
     if (side == HSD_RESPONDER)
     {
@@ -845,23 +782,7 @@ void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
         set_currentSchedSequence(core.ISN());
     }
 
-    // XXX
-    // Might need further investigation as to whether this isn't
-    // wrong for some cases. By having this -1 here the value will be
-    // laziliy set from the first reading one. It is believed that
-    // it covers all possible scenarios, that is:
-    //
-    // - no readers - no problem!
-    // - have some readers and a new is attached - this is set already
-    // - connect multiple links, but none has read yet - you'll be the first.
-    //
-    // Previous implementation used setting to: core.m_iPeerISN
-    resetInitialRxSequence();
-
-    // Get the latency (possibly fixed against the opposite side)
-    // from the first socket (core.m_iTsbPdDelay_ms),
-    // and set it on the current socket.
-    set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
+    m_iRcvCurrSeqNo = core.m_iRcvCurrSeqNo.load();
 }
 
 void CUDTGroup::close()
@@ -2086,6 +2007,22 @@ void CUDTGroup::updateReadState(SRTSOCKET /* not sure if needed */, int32_t sequ
     if (ready)
     {
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
+    }
+}
+
+void CUDTGroup::updateRcvCurrSeqNo(int32_t seq)
+{
+    ScopedLock lg(m_GroupLock);
+
+    if (m_iRcvCurrSeqNo == SRT_SEQNO_NONE)
+    {
+        LOGC(grlog.Error,
+             log << "IPE: CUDTGroup::m_iRcvCurrSeqNo was not initialized by the first member, setting to %" << seq);
+        m_iRcvCurrSeqNo = seq;
+    }
+    else if (CSeqNo::seqcmp(seq, m_iRcvCurrSeqNo) > 0)
+    {
+        m_iRcvCurrSeqNo = seq;
     }
 }
 

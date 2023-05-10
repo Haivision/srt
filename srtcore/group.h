@@ -162,23 +162,8 @@ public:
         {
             m_Group.erase(f);
 
-            // Reset sequence numbers on a dead group so that they are
-            // initialized anew with the new alive connection within
-            // the group.
-            // XXX The problem is that this should be done after the
-            // socket is considered DISCONNECTED, not when it's being
-            // closed. After being disconnected, the sequence numbers
-            // are no longer valid, and will be reinitialized when the
-            // socket is connected again. This may stay as is for now
-            // as in SRT it's not predicted to do anything with the socket
-            // that was disconnected other than immediately closing it.
             if (m_Group.empty())
             {
-                // When the group is empty, there's no danger that this
-                // number will collide with any ISN provided by a socket.
-                // Also since now every socket will derive this ISN.
-                m_iLastSchedSeqNo = generateISN();
-                resetInitialRxSequence();
                 empty = true;
             }
         }
@@ -346,6 +331,7 @@ public:
     /// @param sock member socket ID (unused)
     /// @param sequence the latest packet sequence number available for reading.
     void         updateReadState(SRTSOCKET sock, int32_t sequence);
+    void         updateRcvCurrSeqNo(int32_t seq);
 
     void         updateWriteState();
     void         updateFailedLink();
@@ -372,7 +358,7 @@ public:
     /// @param ack The past-the-last-received ACK sequence number
     void readyPackets(srt::CUDT* core, int32_t ack);
 
-    void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
+    void syncWithFirstSocket(const srt::CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
 
@@ -630,7 +616,6 @@ private:
     bool               m_bSynSending;
     bool               m_bTsbPd;
     bool               m_bTLPktDrop;
-    int64_t            m_iTsbPdDelay_us;
     int                m_RcvEID;
     class CEPollDesc*  m_RcvEpolld;
     int                m_SndEID;
@@ -692,6 +677,7 @@ private:
     sync::Mutex           m_RcvDataLock;
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;
+    sync::atomic<int32_t> m_iRcvCurrSeqNo; // Represetnts the max value of CUDT::m_iRcvCurrSeqNo for all sockets in this group.
     // Statistics
 
     struct Stats
@@ -764,15 +750,6 @@ public:
 #endif
     }
 
-    void resetInitialRxSequence()
-    {
-        // The app-reader doesn't care about the real sequence number.
-        // The first provided one will be taken as a good deal; even if
-        // this is going to be past the ISN, at worst it will be caused
-        // by TLPKTDROP.
-        m_RcvBaseSeqNo = SRT_SEQNO_NONE;
-    }
-
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using srt::sync::is_zero;
@@ -803,7 +780,7 @@ public:
 
     // Live state synchronization
     bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
-    bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
+    void applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
     /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
     /// @param srcMember a reference for synchronization.
@@ -817,7 +794,6 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 

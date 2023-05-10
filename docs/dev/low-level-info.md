@@ -159,8 +159,6 @@ CRcvQueue::worker_TryAsyncRend_OrStore
                      [IF Responder]
                      {
                          CUDT::makeMePeerOf
-                             [LOCKS m_GroupLock]
-                                 CUDTGroup::syncWithSocket
                              CUDTGroup::find --> [LOCKED m_GroupLock]
                      }
                      debugGroup -- > [LOCKED m_GroupLock]
@@ -189,8 +187,6 @@ CRcvQueue::worker_ProcessConnectionRequest
                      [IF Responder]
                      {
                          CUDT::makeMePeerOf
-                             [LOCKS m_GroupLock]
-                                 CUDTGroup::syncWithSocket
                              CUDTGroup::find --> [LOCKED m_GroupLock]
                      }
                      debugGroup -- > [LOCKED m_GroupLock]
