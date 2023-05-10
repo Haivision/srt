@@ -129,7 +129,7 @@ SRTSOCKET srt_connect_bind(SRTSOCKET u,
 SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
-    if (CUDT::isgroup(u))
+    if (isgroup(u))
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     bool yes = 1;
