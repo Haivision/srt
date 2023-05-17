@@ -5456,6 +5456,10 @@ void * srt::CUDT::tsbpd(void* param)
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
+        // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
+        if (self->m_bClosing)
+            break;
+
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
