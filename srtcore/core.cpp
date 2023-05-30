@@ -976,23 +976,28 @@ void srt::CUDT::open()
 
 void srt::CUDT::setListenState()
 {
-    ScopedLock cg(m_ConnectionLock);
+    {
+        ScopedLock cg(m_ConnectionLock);
 
-    if (!m_bOpened)
-        throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+        if (!m_bOpened)
+            throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
-    if (m_bConnecting || m_bConnected)
-        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+        if (m_bConnecting || m_bConnected)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-    // listen can be called more than once
-    if (m_bListening)
-        return;
+        // listen can be called more than once
+        if (m_bListening)
+            return;
+
+        m_bListening = true;
+    }
 
     // if there is already another socket listening on the same port
     if (m_pRcvQueue->setListener(this) < 0)
+    {
+        m_bListening = false;
         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-
-    m_bListening = true;
+    }
 }
 
 size_t srt::CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgtype, int hs_version)

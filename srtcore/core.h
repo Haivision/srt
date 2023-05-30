@@ -406,6 +406,8 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
+        // XXX This is done when closing the socket after setting m_bBroken
+        // Likely m_ConnectionLock is not necessary in this situation.
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
