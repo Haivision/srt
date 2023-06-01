@@ -6848,7 +6848,6 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
             : 0;
         leaveCS(m_RcvBufferLock);
-        w_mctrl.srctime = 0;
 
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
