@@ -7904,7 +7904,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
     int nbsent = 0;
     int local_prevack = 0;
-
+    bool sendAckAgain = false; //Send ack again after a buffer full was detected
 #if ENABLE_HEAVY_LOGGING
     struct SaveBack
     {
@@ -7927,12 +7927,16 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
-
+    if(m_bufferWasFull == true && getAvailRcvBufferSizeNoLock() > 0)
+    {
+        sendAckAgain = true;
+        m_bufferWasFull = false;
+    }
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
         return nbsent;
 
-    if (m_iRcvLastAckAck == ack)
+    if (m_iRcvLastAckAck == ack && !sendAckAgain)
     {
         HLOGC(xtlog.Debug,
               log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
@@ -8101,7 +8105,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // [[using locked(m_RcvBufferLock)]];
 
     // Send out the ACK only if has not been received by the sender before
-    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0)
+    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || sendAckAgain == true)
     {
         // NOTE: The BSTATS feature turns on extra fields above size 6
         // also known as ACKD_TOTAL_SIZE_VER100.
@@ -8119,8 +8123,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         if (data[ACKD_BUFFERLEFT] < 2)
+        {
+            m_bufferWasFull = true;
             data[ACKD_BUFFERLEFT] = 2;
-
+        }
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
         {
             int rcvRate;
