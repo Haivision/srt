@@ -275,7 +275,8 @@ use encryption for the connection.
 
 When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
 The AEAD functionality is only available if OpenSSL EVP is selected as the crypto provider:
-build option `-DUSE_ENCLIB=openssl-evp`.  
+build option should be set to `USE_ENCLIB=openssl-evp`.
+
 The AEAD API is to be official in SRT v1.6.0.
 
 
