@@ -204,7 +204,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
-| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.5.2 | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
@@ -327,7 +327,7 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 | OptName            | Since     | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | --------- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_CRYPTOMODE`  | 1.6.0-dev | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
+| `SRTO_CRYPTOMODE`  | 1.5.2     | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
 
 The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is set.
 

@@ -171,7 +171,7 @@ Since SRT v1.5.0.
 | [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
 | [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
 | [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
-| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.6.0-dev | The connection was rejected due to an unsupported or mismatching encryption mode                               |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
 <h4 id="error-codes">Error Codes</h4>
