@@ -7927,10 +7927,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
-    if(m_bufferWasFull == true && getAvailRcvBufferSizeNoLock() > 0)
+    if(m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0)
     {
         sendAckAgain = true;
-        m_bufferWasFull = false;
+        m_bBufferWasFull = false;
     }
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
@@ -8105,7 +8105,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // [[using locked(m_RcvBufferLock)]];
 
     // Send out the ACK only if has not been received by the sender before
-    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || sendAckAgain == true)
+    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || sendAckAgain)
     {
         // NOTE: The BSTATS feature turns on extra fields above size 6
         // also known as ACKD_TOTAL_SIZE_VER100.
@@ -8124,7 +8124,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
         if (data[ACKD_BUFFERLEFT] < 2)
         {
-            m_bufferWasFull = true;
+            m_bBufferWasFull = true;
             data[ACKD_BUFFERLEFT] = 2;
         }
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
