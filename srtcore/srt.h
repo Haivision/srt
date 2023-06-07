@@ -575,6 +575,37 @@ enum SRT_REJECT_REASON
 #define SRT_REJC_USERDEFINED 2000    // User defined error codes
 
 
+enum SRT_CLOSE_REASON
+{
+    SRT_CLS_UNKNOWN,    // Unset
+    SRT_CLS_INTERNAL,   // Closed by internal reasons during connection attempt
+    SRT_CLS_PEER,       // Received SHUTDOWN message from the peer
+    SRT_CLS_RESOURCE,   // Problem with resource allocation
+    SRT_CLS_ROGUE,      // Received wrong data in the packet
+    SRT_CLS_OVERFLOW,   // Emergency close due to receiver buffer overflow
+    SRT_CLS_IPE,        // Internal program error
+    SRT_CLS_API,        // The application called srt_close().
+    SRT_CLS_FALLBACK,   // Used for peer that do not support close reason featur.
+    SRT_CLS_LATE,       // Accepted-socket late-rejection or in-handshake rollback
+    SRT_CLS_CLEANUP,    // All sockets are being closed due to srt_cleanup() call
+    SRT_CLS_DEADLSN,    // This is an accepted socket off a dead listener
+    SRT_CLS_PEERIDLE,   // Peer didn't send any packet for a time of SRTO_PEERIDLETIMEO
+    SRT_CLS_UNSTABLE,   // Requested to be broken as unstable in Backup group
+
+    SRT_CLS_E_SIZE
+};
+
+typedef struct SRT_CLOSE_INFO
+{
+    enum SRT_CLOSE_REASON agent;
+    enum SRT_CLOSE_REASON peer;
+    int64_t time;
+} SRT_CLOSE_INFO;
+
+#define SRT_CLSC_INTERNAL 0
+#define SRT_CLSC_USER 100
+
+
 // Logging API - specialization for SRT.
 
 // WARNING: This part is generated.
@@ -783,6 +814,8 @@ SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_na
                                     const struct sockaddr* remote_name, int remote_namelen);
 
 SRT_API       int srt_close        (SRTSOCKET u);
+SRT_API       int srt_close_withreason(SRTSOCKET u, int reason);
+SRT_API       int srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);

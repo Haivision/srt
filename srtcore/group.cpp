@@ -944,7 +944,7 @@ void CUDTGroup::close()
     {
         try
         {
-            CUDT::uglobal().close(*i);
+            CUDT::uglobal().close(*i, SRT_CLS_INTERNAL);
         }
         catch (CUDTException&)
         {
@@ -2231,6 +2231,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 LOGC(grlog.Error,
                      log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": SEQUENCE DISCREPANCY: base=%"
                          << m_RcvBaseSeqNo << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
+                ps->core().setAgentCloseReason(SRT_CLS_ROGUE);
                 ps->core().m_bBroken = true;
                 broken.insert(ps);
                 continue;
@@ -3350,7 +3351,7 @@ RetryWaitBlocked:
                     HLOGC(gslog.Debug,
                         log << "grp/sendBackup: swait/ex on @" << (id)
                         << " while waiting for any writable socket - CLOSING");
-                    CUDT::uglobal().close(s); // << LOCKS m_GlobControlLock, then GroupLock!
+                    CUDT::uglobal().close(s, SRT_CLS_INTERNAL); // << LOCKS m_GlobControlLock, then GroupLock!
                 }
                 else
                 {

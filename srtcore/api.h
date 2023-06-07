@@ -186,7 +186,7 @@ public:
     /// from within the GC thread only (that is, only when
     /// the socket should be no longer visible in the
     /// connection, including for sending remaining data).
-    void breakSocket_LOCKED();
+    void breakSocket_LOCKED(int reason);
 
     /// This makes the socket no longer capable of performing any transmission
     /// operation, but continues to be responsive in the connection in order
@@ -233,6 +233,8 @@ public:
 
     // Public constants
     static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1; // maximum value for a regular socket
+    static const int MAX_CLOSE_RECORD_TTL = 10;
+    static const size_t MAX_CLOSE_RECORD_SIZE = 10;
 
 public:
     enum ErrorHandling
@@ -295,8 +297,8 @@ public:
     int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
     int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
-    int  close(const SRTSOCKET u);
-    int  close(CUDTSocket* s);
+    int  close(const SRTSOCKET u, int reason);
+    int  close(CUDTSocket* s, int reason);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
     int  select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
@@ -487,6 +489,25 @@ private:
     void removeSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
+
+    struct CloseInfo
+    {
+        SRT_CLOSE_INFO info;
+        int generation;
+
+        // The value here defines how many GC rolls it takes
+        // to remove the record. As GC rolls every 1 second,
+        // this is more-less the number of seconds this record
+        // will be alive AFTER you close the socket.
+        CloseInfo(): generation(MAX_CLOSE_RECORD_TTL) {}
+    };
+    std::map<SRTSOCKET, CloseInfo> m_ClosedDatabase;
+
+    void checkTemporaryDatabases();
+    void recordCloseReason(CUDTSocket* s);
+
+public:
+    int getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info);
 
 private:
     CUDTUnited(const CUDTUnited&);

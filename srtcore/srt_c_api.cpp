@@ -21,6 +21,7 @@ written by
 #include "common.h"
 #include "packet.h"
 #include "core.h"
+#include "api.h"
 #include "utilities.h"
 
 using namespace std;
@@ -154,7 +155,33 @@ int srt_close(SRTSOCKET u)
         return 0;
     }
 
-    return CUDT::close(u);
+    return CUDT::close(u, SRT_CLS_API);
+}
+
+int srt_close_withreason(SRTSOCKET u, int reason)
+{
+    SRT_SOCKSTATUS st = srt_getsockstate(u);
+
+    if ((st == SRTS_NONEXIST) ||
+        (st == SRTS_CLOSED)   ||
+        (st == SRTS_CLOSING) )
+    {
+        // It's closed already. Do nothing.
+        return 0;
+    }
+
+    if (reason < SRT_CLSC_USER)
+        reason = SRT_CLS_API;
+
+    return CUDT::close(u, reason);
+}
+
+int srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info)
+{
+    if (!info || u == SRT_INVALID_SOCK)
+        return -1;
+
+    return CUDT::uglobal().getCloseReason(u, *info);
 }
 
 int srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
