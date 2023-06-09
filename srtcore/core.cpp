@@ -8121,11 +8121,9 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
         data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
-        // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
-        if (data[ACKD_BUFFERLEFT] < 2)
+        if (data[ACKD_BUFFERLEFT] == 0)
         {
             m_bBufferWasFull = true;
-            data[ACKD_BUFFERLEFT] = 2;
         }
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
         {
