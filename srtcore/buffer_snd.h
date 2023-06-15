@@ -158,6 +158,7 @@ public:
 
     SRT_ATTR_EXCLUDES(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
+    int dropAll(int& bytes);
 
     void updAvgBufSize(const time_point& time);
     int  getAvgBufSize(int& bytes, int& timespan);

@@ -3798,7 +3798,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     // This should resend all packets
     if (m_SenderBuffer.empty())
     {
-        LOGC(gslog.Fatal, log << "IPE: sendBackupRexmit: sender buffer empty");
+        LOGC(gslog.Fatal, log << core.CONID() << "IPE: sendBackupRexmit: sender buffer empty");
 
         // Although act as if it was successful, otherwise you'll get connection break
         return 0;
@@ -3830,8 +3830,9 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // packets that are in the past towards the scheduling sequence.
             skip_initial = -distance;
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-                     << " - DENIED; skip " << skip_initial << " pkts, " << m_SenderBuffer.size() << " pkts in buffer");
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo()
+                     << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " pkts, "
+                     << m_SenderBuffer.size() << " pkts in buffer");
         }
         else
         {
@@ -3840,11 +3841,11 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // sequence with it first so that they go hand-in-hand with
             // sequences already used by the link from which packets were
             // copied to the backup buffer.
-            IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
-            const bool su SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
-            HLOGC(gslog.Debug,
-                  log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
-                      << (su ? " - succeeded" : " - FAILED!"));
+            const int32_t old  SRT_ATR_UNUSED = core.schedSeqNo();
+            const bool success SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
+            LOGC(gslog.Debug,
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
+                     << (success ? " - succeeded" : " - FAILED!"));
         }
     }
 
@@ -3852,8 +3853,8 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     if (skip_initial >= m_SenderBuffer.size())
     {
         LOGC(gslog.Warn,
-            log << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-            << " - DENIED; skip " << skip_initial << " packets");
+             log << core.CONID() << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo()
+                 << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " packets");
         return 0; // can't return any other state, nothing was sent
     }
 
@@ -3869,14 +3870,16 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         {
             // Stop sending if one sending ended up with error
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo() << " and FAILED");
+                 log << core.CONID() << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo()
+                     << " and FAILED");
             return -1;
         }
     }
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
-    HLOGC(gslog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
+    HLOGC(gslog.Debug,
+          log << core.CONID() << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
 }
 
