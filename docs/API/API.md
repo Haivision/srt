@@ -472,7 +472,7 @@ the required operation.
 In non-blocking mode the only difference is that HANGUP, instead of blocking, makes
 the function exit immediately with an appropriate error code (such as SRT_EASYNC*,
 SRT_ETIMEOUT or SRT_ECONGEST) explaining why the function is not ready to perform
-the operation. Refer to the error descriptions in [API-funtions.md](API-funtions.md)
+the operation. Refer to the error descriptions in [API-functions.md](API-functions.md)
 for details.
 
 The following types of operations are involved:

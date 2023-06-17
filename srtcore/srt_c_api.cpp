@@ -438,8 +438,10 @@ const char* const srt_rejection_reason_msg [] = {
     "Congestion controller type collision",
     "Packet Filter settings error",
     "Group settings collision",
-    "Connection timeout",
-    "Crypto mode"
+    "Connection timeout"
+#ifdef ENABLE_AEAD_API_PREVIEW
+    ,"Crypto mode"
+#endif
 };
 
 // Deprecated, available in SRT API.
@@ -460,8 +462,10 @@ extern const char* const srt_rejectreason_msg[] = {
     srt_rejection_reason_msg[13],
     srt_rejection_reason_msg[14],
     srt_rejection_reason_msg[15],
-    srt_rejection_reason_msg[16],
-    srt_rejection_reason_msg[17]
+    srt_rejection_reason_msg[16]
+#ifdef ENABLE_AEAD_API_PREVIEW
+    , srt_rejection_reason_msg[17]
+#endif
 };
 
 const char* srt_rejectreason_str(int id)

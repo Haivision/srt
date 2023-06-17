@@ -242,6 +242,7 @@ srt://:5001?adapter=10.10.10.100
    - *port* part: remote port to connect to (mandatory)
    - **port** parameter: the local port to bind (default: 0 - "system autoselection")
    - **adapter** parameter: the local IP address to bind (default: 0.0.0.0 - "system selected device")
+   - **bind** parameter: a shortcut to set adapter or port by specifying ADAPTER:PORT
 
 ```yaml
 srt://remote.host.com:5001

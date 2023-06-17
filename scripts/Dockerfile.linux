@@ -15,7 +15,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
         build-essential git nano gnupg apt-utils unzip sudo bzip2 \
         apt-transport-https curl wget ca-certificates cpio \
         libssl-dev software-properties-common \
-        p7zip-full swig && \
+        p7zip-full libpcre2-dev bison automake && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/*
 
@@ -33,3 +33,7 @@ RUN mkdir -p /usr/src/cmake \
 && tar -C /usr/src/cmake -xzf /usr/src/cmake/cmake.tar.gz \
 && ln -s /usr/src/cmake/cmake-3.24.1-linux-x86_64/bin/cmake /usr/bin/cmake \
 && rm /usr/src/cmake/cmake.tar.gz
+
+#add swig 4.1
+RUN cd /usr/src && git clone https://github.com/swig/swig.git && cd swig && git checkout release-4.1 \
+&& ./autogen.sh && ./configure && make && make install && cd ../ && rm -rf /usr/src/swig

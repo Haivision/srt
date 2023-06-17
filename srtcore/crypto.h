@@ -67,7 +67,7 @@ private:
     // putting the whole HaiCrypt_Cfg object here.
     int m_KmRefreshRatePkt;
     int m_KmPreAnnouncePkt;
-    bool m_bUseGCM; // Use AES GCM crypto mode.
+    int m_iCryptoMode;
 
     HaiCrypt_Secret m_KmSecret;     //Key material shared secret
     // Sender
@@ -109,6 +109,11 @@ public:
     bool hasPassphrase() const
     {
         return m_KmSecret.len > 0;
+    }
+
+    int getCryptoMode() const
+    {
+        return m_iCryptoMode;
     }
 
     /// Regenerate cryptographic key material if needed.

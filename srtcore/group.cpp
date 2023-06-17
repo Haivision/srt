@@ -231,7 +231,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
     gli_t end = m_Group.end();
     if (m_iMaxPayloadSize == -1)
     {
-        int plsize = data.ps->core().OPT_PayloadSize();
+        int plsize = (int)data.ps->core().OPT_PayloadSize();
         HLOGC(gmlog.Debug,
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
@@ -394,12 +394,6 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     break;
 
-    case SRTO_CONGESTION:
-        // Currently no socket groups allow any other
-        // congestion control mode other than live.
-        LOGP(gmlog.Error, "group option: SRTO_CONGESTION is only allowed as 'live' and cannot be changed");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
     default:
         break;
     }
@@ -554,7 +548,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     if (u->m_config.CryptoSecret.len)
     {
         string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
-        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), password.size()));
+        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), (int)password.size()));
     }
 
     IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
@@ -563,7 +557,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
     string cc = u->m_CongCtl.selected_name();
     if (cc != "live")
     {
-        m_config.push_back(ConfigItem(SRTO_CONGESTION, cc.c_str(), cc.size()));
+        m_config.push_back(ConfigItem(SRTO_CONGESTION, cc.c_str(), (int)cc.size()));
     }
 
     // NOTE: This is based on information extracted from the "semi-copy-constructor" of CUDT class.
@@ -1724,7 +1718,7 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         copyGroupData(*d, (pdata[i]));
     }
 
-    return m_Group.size();
+    return (int)m_Group.size();
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -1898,7 +1892,7 @@ void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTS
         // Don't skip packets that are ahead because if we have a situation
         // that all links are either "elephants" (do not report read readiness)
         // and "kangaroos" (have already delivered an ahead packet) then
-        // omiting kangaroos will result in only elephants to be polled for
+        // omitting kangaroos will result in only elephants to be polled for
         // reading. Due to the strict timing requirements and ensurance that
         // TSBPD on every link will result in exactly the same delivery time
         // for a packet of given sequence, having an elephant and kangaroo in
@@ -3155,7 +3149,7 @@ void CUDTGroup::sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, 
                 << " is qualified as unstable, but does not have the 'unstable since' timestamp. Still marking for closure.");
         }
 
-        const int unstable_for_ms = count_milliseconds(currtime - sock.m_tsUnstableSince);
+        const int unstable_for_ms = (int)count_milliseconds(currtime - sock.m_tsUnstableSince);
         if (unstable_for_ms < sock.peerIdleTimeout_ms())
             continue;
 
@@ -3870,7 +3864,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     {
         // NOTE: an exception from here will interrupt the loop
         // and will be caught in the upper level.
-        stat = core.sendmsg2(i->data, i->size, (i->mc));
+        stat = core.sendmsg2(i->data, (int)i->size, (i->mc));
         if (stat == -1)
         {
             // Stop sending if one sending ended up with error

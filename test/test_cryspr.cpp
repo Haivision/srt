@@ -16,7 +16,7 @@
 
 const void *nullPtr = NULL;
 
-/* TestCRYSPRmethods: Test presense of required cryspr methods */
+/* TestCRYSPRmethods: Test presence of required cryspr methods */
 
 class TestCRYSPRmethods
     : public ::testing::Test
