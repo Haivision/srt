@@ -7927,6 +7927,10 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
+    if(getAvailRcvBufferSizeNoLock() >0 )
+    {
+        sendAckAgain = true;
+    } 
     if(m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0)
     {
         sendAckAgain = true;
@@ -7945,7 +7949,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     // send out a lite ACK
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-    if (size == SEND_LITE_ACK)
+    if (size == SEND_LITE_ACK && !sendAckAgain)
     {
         bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
@@ -8083,7 +8087,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             CGlobEvent::triggerEvent();
         }
     }
-    else if (ack == m_iRcvLastAck)
+    else if (ack == m_iRcvLastAck && !sendAckAgain)
     {
         // If the ACK was just sent already AND elapsed time did not exceed RTT,
         if ((steady_clock::now() - m_tsLastAckTime) <
@@ -8094,7 +8098,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             return nbsent;
         }
     }
-    else
+    else if (!sendAckAgain)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
         LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr %" << ack << " <% last %" << m_iRcvLastAck);
@@ -8265,6 +8269,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
+    static bool m_bBufferWasFull = false;
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
@@ -8298,6 +8303,16 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
+            if(m_iFlowWindowSize == 0)
+            {
+                m_bBufferWasFull = true;
+            }
+            else
+            {
+                m_bBufferWasFull = false;
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+
+            }
         }
 
         return;
@@ -8344,6 +8359,15 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         {
             // Update Flow Window Size, must update before and together with m_iSndLastAck
             m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+            if(m_iFlowWindowSize == 0)
+            {
+                m_bBufferWasFull = true;
+            }
+            else
+            {
+                m_bBufferWasFull = false;
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+            }
             m_iSndLastAck     = ackdata_seqno;
             m_tsLastRspAckTime  = currtime;
             m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
