@@ -647,10 +647,23 @@ and the actual value for connected sockets.
 
 Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
 only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
-(known also as `::`). In this case this option must be also set explicitly to 0 or 1
-before binding, otherwise binding will fail (this is because it is not possible to
-determine the default value of this above-mentioned system option in any portable or
-reliable way). Possible values are:
+(known also as `::`). If you bind to a wildcard address, you have the following
+possibilities:
+
+* IPv4 only: bind to an IPv4 wildcard
+* IPv6 only: bind to an IPv6 wildcard and set this option to 1
+* IPv4 and IPv6: bind to an IPv6 wildcard and set this option to 0
+
+This option's default value is -1 because it is not possible to determine from
+upside the default value on the current platform any portable way, and if you
+bind to an IPv6 wildcard, this value is required prior to binding. In case when
+you bind implicitly when calling `srt_connect` on the socket, this isn't a
+problem - binding will be done using the system-default value and then
+extracted afterwards. But if you want to bind explicitly using `srt_bind`, this
+option must be set explicitly to 0 or 1 because this information is vital for
+determining any potential bind conflicts with other sockets.
+
+Possible values are:
 
 * -1: (default) use system-default value (can be used when not binding to IPv6 wildcard `::`)
 * 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
