@@ -6543,8 +6543,12 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // simply return the size, pretending that it has been sent.
 
         // NOTE: it's assumed that if this is a group member, then
-        // an attempt to call srt_sendmsg2 has been rejected, and so
-        // the pktseq field has been set by the internal group sender function.
+        // an attempt to call srt_sendmsg2 for a single (also member) socket
+        // has been rejected, and so the pktseq field has been set by the
+        // internal group sender function.
+
+        // NOTE 2: it is assumed that if m_GroupOf is not NULL this means
+        // that this function is called under m_parent->m_GroupOf->m_GroupLock locked.
         if (m_parent->m_GroupOf)
         {
             if ( w_mctrl.pktseq != SRT_SEQNO_NONE
