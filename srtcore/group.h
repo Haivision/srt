@@ -194,9 +194,6 @@ public:
             m_bConnected = false;
         }
 
-        // XXX BUGFIX
-        m_Positions.erase(id);
-
         return !empty;
     }
 
@@ -645,20 +642,6 @@ private:
     // this has been already set.
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
-
-    struct ReadPos
-    {
-        std::vector<char> packet;
-        SRT_MSGCTRL       mctrl;
-        ReadPos(int32_t s)
-            : mctrl(srt_msgctrl_default)
-        {
-            mctrl.pktseq = s;
-        }
-    };
-    std::map<SRTSOCKET, ReadPos> m_Positions;
-
-    ReadPos* checkPacketAhead();
 
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
