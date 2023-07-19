@@ -720,6 +720,9 @@ private:
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool isRcvBufferReady() const;
 
+    SRT_ATTR_REQUIRES2(m_RcvBufferLock)
+    bool isRcvBufferReadyNoLock() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 

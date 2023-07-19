@@ -6804,6 +6804,11 @@ bool srt::CUDT::isRcvBufferReady() const
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
+bool srt::CUDT::isRcvBufferReadyNoLock() const
+{
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
