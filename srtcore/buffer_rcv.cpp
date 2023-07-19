@@ -236,10 +236,14 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     m_iStartSeqNo = seqno;
     // Move forward if there are "read/drop" entries.
     releaseNextFillerEntries();
-    // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceding packets are invalid.
-    m_iFirstNonreadPos = m_iStartPos;
-    updateNonreadPos();
+
+    // If the nonread position is now behind the starting position, set it to the starting position and update.
+    // Preceding packets were likely missing, and the non read position can probably be moved further now.
+    if (CSeqNo::seqcmp(m_iFirstNonreadPos, m_iStartPos) < 0)
+    {
+        m_iFirstNonreadPos = m_iStartPos;
+        updateNonreadPos();
+    }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableOutOfOrder();
     return iDropCnt;
