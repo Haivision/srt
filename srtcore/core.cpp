@@ -6057,7 +6057,7 @@ void srt::CUDT::addressAndSend(CPacket& w_pkt)
 }
 
 // [[using maybe_locked(m_GlobControlLock, if called from GC)]]
-bool srt::CUDT::closeInternal()
+bool srt::CUDT::closeInternal(bool lock_connectionLock)
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6169,7 +6169,8 @@ bool srt::CUDT::closeInternal()
 
     HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE. Acquiring connection lock");
 
-    ScopedLock connectguard(m_ConnectionLock);
+    if (lock_connectionLock)
+        enterCS(m_ConnectionLock);
 
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
@@ -6209,6 +6210,9 @@ bool srt::CUDT::closeInternal()
 
         m_bConnected = false;
     }
+
+    if (lock_connectionLock)
+        leaveCS(m_ConnectionLock);
 
     HLOGC(smlog.Debug, log << CONID() << "CLOSING, joining send/receive threads");
 

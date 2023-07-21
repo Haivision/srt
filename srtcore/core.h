@@ -408,7 +408,7 @@ public: // internal API
     {
         // XXX This is done when closing the socket after setting m_bBroken
         // Likely m_ConnectionLock is not necessary in this situation.
-        sync::ScopedLock cg(m_ConnectionLock);
+        //sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
@@ -575,7 +575,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal();
+    bool closeInternal(bool lock_connectionLock = true);
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 

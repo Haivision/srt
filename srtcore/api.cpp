@@ -2783,7 +2783,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     m_ClosedSockets.erase(i);
 
     HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
-    s->core().closeInternal();
+    s->core().closeInternal(false /* DO NOT lock m_ConnectionLock inside */);
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
     HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
