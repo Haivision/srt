@@ -299,7 +299,13 @@ if(WIN32)
 	if(ENABLE_INET_PTON)
 		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
 		check_function_exists(inet_pton HAVE_INET_PTON)
-		add_definitions(-D_WIN32_WINNT=0x0600)
+		try_compile(AT_LEAST_VISTA
+			${CMAKE_BINARY_DIR}
+			"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
+		if(NOT AT_LEAST_VISTA)
+			# force targeting Vista
+			add_definitions(-D_WIN32_WINNT=0x0600)
+		endif()
 	else()
 		add_definitions(-D_WIN32_WINNT=0x0501)
 	endif()
