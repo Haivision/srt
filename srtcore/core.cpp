@@ -5598,9 +5598,9 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
         // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
         const int authtag = (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM) ? HAICRYPT_AUTHTAG_MAX : 0;
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
-        SRT_ASSERT(m_iISN != -1);
-        m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
-        // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
+        SRT_ASSERT(m_iPeerISN != -1);
+        m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
+        // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
     }
