@@ -359,8 +359,12 @@ int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 Binds a socket to a local address and port. Binding specifies the local network
 interface and the UDP port number to be used for the socket. When the local 
 address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
-it's bound to all interfaces (although see `SRTO_IPV6ONLY` and additional
-information below for details about the wildcard address in IPv6).
+it's bound to all interfaces.
+
+**IMPORTANT**: When you bind an IPv6 wildcard address, note that the
+`SRTO_IPV6ONLY` option must be set on the socket explicitly to 1 or 0 prior to
+calling this function. See
+[`SRTO_IPV6ONLY`](API-socket-options.md#SRTO_IPV6ONLY) for more details.
 
 Binding is necessary for every socket to be used for communication. If the socket
 is to be used to initiate a connection to a listener socket, which can be done,
