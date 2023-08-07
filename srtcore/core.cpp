@@ -3689,14 +3689,20 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 if (cst == CONN_CONTINUE)
                     continue;
 
-                // Just in case it wasn't set, set this as a fallback
-                if (m_RejectReason == SRT_REJ_UNKNOWN)
-                    m_RejectReason = SRT_REJ_ROGUE;
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "startConnect: processRendezvous returned cst=" << ConnectStatusStr(cst));
 
-                // rejection or erroneous code.
-                reqpkt.setLength(m_iMaxSRTPayloadSize);
-                reqpkt.setControl(UMSG_HANDSHAKE);
-                sendRendezvousRejection(serv_addr, (reqpkt));
+                if (cst == CONN_REJECT)
+                {
+                    // Just in case it wasn't set, set this as a fallback
+                    if (m_RejectReason == SRT_REJ_UNKNOWN)
+                        m_RejectReason = SRT_REJ_ROGUE;
+
+                    // rejection or erroneous code.
+                    reqpkt.setLength(m_iMaxSRTPayloadSize);
+                    reqpkt.setControl(UMSG_HANDSHAKE);
+                    sendRendezvousRejection(serv_addr, (reqpkt));
+                }
             }
 
             if (cst == CONN_REJECT)
@@ -4679,7 +4685,8 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
 
     HLOGC(cnlog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
-              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
+              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " peer-ISN=" << m_ConnRes.m_iISN
+              << " local-ISN=" << m_iISN
               << " peerID=" << m_ConnRes.m_iID
               << " sourceIP=" << m_SourceAddr.str());
     return true;
