@@ -285,10 +285,10 @@ specify the host as `::`.
 NOTE: Don't use square brackets syntax in the **adapter** parameter
 specification, as in this case only the host is expected.
 
-3. If you bind to an IPv6 wildcard (with listener mode or when using the `bind`
+3. If you bind to an IPv6 wildcard address (with listener mode, or when using the `bind`
 option), setting the `ipv6only` option to 0 or 1 is obligatory, as it is a part
-of the binding definition. If you set it to 1, the binding will concern only
-IPv6 local addresses, and if you set it to 0, it will concern both IPv4 and
+of the binding definition. If you set it to 1, the binding will apply only to
+IPv6 local addresses, and if you set it to 0, it will apply to both IPv4 and
 IPv6 local addresses. See the
 [`SRTO_IPV6ONLY`](../API/API-socket-options.md#SRTO_IPV6ONLY) option
 description for details.

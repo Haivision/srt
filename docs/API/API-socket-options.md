@@ -650,15 +650,14 @@ only when the socket is going to be bound to the IPv6 wildcard address `in6addr_
 (known also as `::`). If you bind to a wildcard address, you have the following
 possibilities:
 
-* IPv4 only: bind to an IPv4 wildcard
-* IPv6 only: bind to an IPv6 wildcard and set this option to 1
-* IPv4 and IPv6: bind to an IPv6 wildcard and set this option to 0
+* IPv4 only: bind to an IPv4 wildcard address
+* IPv6 only: bind to an IPv6 wildcard address and set this option to 1
+* IPv4 and IPv6: bind to an IPv6 wildcard address and set this option to 0
 
-This option's default value is -1 because it is not possible to determine from
-upside the default value on the current platform any portable way, and if you
-bind to an IPv6 wildcard, this value is required prior to binding. In case when
-you bind implicitly when calling `srt_connect` on the socket, this isn't a
-problem - binding will be done using the system-default value and then
+This option's default value is -1 because it is not possible to determine the default 
+value on the current platform, and if you bind to an IPv6 wildcard address, this value 
+is required prior to binding. When you bind implicitly by calling `srt_connect` on the 
+socket, this isn't a problem -- binding will be done using the system-default value and then
 extracted afterwards. But if you want to bind explicitly using `srt_bind`, this
 option must be set explicitly to 0 or 1 because this information is vital for
 determining any potential bind conflicts with other sockets.
