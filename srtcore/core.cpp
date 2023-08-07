@@ -6813,6 +6813,11 @@ bool srt::CUDT::isRcvBufferReady() const
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
+bool srt::CUDT::isRcvBufferReadyNoLock() const
+{
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
@@ -6857,7 +6862,6 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
             : 0;
         leaveCS(m_RcvBufferLock);
-        w_mctrl.srctime = 0;
 
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)

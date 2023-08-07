@@ -2295,13 +2295,14 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         m_stats.recv.count(res);
         updateAvgPayloadSize(res);
 
+        bool canReadFurther = false;
         for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
         {
             CUDTSocket* ps = *si;
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
@@ -2309,57 +2310,21 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               << " packets after reading: m_RcvBaseSeqNo=" << m_RcvBaseSeqNo);
                 }
             }
-        }
-        for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
-        {
-            CUDTSocket* ps = *si;
-            if (!ps->core().isRcvBufferReady())
+
+            if (!ps->core().isRcvBufferReadyNoLock())
                 m_Global.m_EPoll.update_events(ps->m_SocketID, ps->core().m_sPollID, SRT_EPOLL_IN, false);
+            else
+                canReadFurther = true;
         }
+
+        if (!canReadFurther)
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
 
         return res;
     }
     LOGC(grlog.Error, log << "grp/recv: UNEXPECTED RUN PATH, ABANDONING.");
     m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
     throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
-}
-
-// [[using locked(m_GroupLock)]]
-CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
-{
-    typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
-    ReadPos*                                  out = 0;
-
-    // This map no longer maps only ahead links.
-    // Here are all links, and whether ahead, it's defined by the sequence.
-    for (pit_t i = m_Positions.begin(); i != m_Positions.end(); ++i)
-    {
-        // i->first: socket ID
-        // i->second: ReadPos { sequence, packet }
-        // We are not interested with the socket ID because we
-        // aren't going to read from it - we have the packet already.
-        ReadPos& a = i->second;
-
-        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
-        if (seqdiff == 1)
-        {
-            // The very next packet. Return it.
-            HLOGC(grlog.Debug,
-                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
-                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
-            out = &a;
-        }
-        else if (seqdiff < 1 && !a.packet.empty())
-        {
-            HLOGC(grlog.Debug,
-                  log << "group/recv: @" << i->first << " dropping collected ahead %" << a.mctrl.pktseq << "#"
-                      << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
-            a.packet.clear();
-        }
-        // In case when it's >1, keep it in ahead
-    }
-
-    return out;
 }
 
 const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
