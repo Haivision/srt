@@ -7927,14 +7927,9 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
-    if(getAvailRcvBufferSizeNoLock() >0 )
-    {
-        sendAckAgain = true;
-    } 
     if(m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0)
     {
         sendAckAgain = true;
-        m_bBufferWasFull = false;
     }
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
@@ -7942,9 +7937,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     if (m_iRcvLastAckAck == ack && !sendAckAgain)
     {
-        HLOGC(xtlog.Debug,
-              log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
-        return nbsent;
+    return nbsent;
     }
 
     // send out a lite ACK
@@ -8125,10 +8118,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
         data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
-        if (data[ACKD_BUFFERLEFT] == 0)
-        {
-            m_bBufferWasFull = true;
-        }
+        m_bBufferWasFull = data[ACKD_BUFFERLEFT] == 0;
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
         {
             int rcvRate;
@@ -8269,7 +8259,6 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
-    static bool m_bBufferWasFull = false;
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
@@ -8355,23 +8344,25 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             return;
         }
 
-        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
-        {
-            // Update Flow Window Size, must update before and together with m_iSndLastAck
-            m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
-            if(m_iFlowWindowSize == 0)
-            {
-                m_bBufferWasFull = true;
-            }
-            else
-            {
-                m_bBufferWasFull = false;
-                m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
-            }
-            m_iSndLastAck     = ackdata_seqno;
-            m_tsLastRspAckTime  = currtime;
-            m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
-        }
+if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
+{
+    const int cwnd1   = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+    const bool bWasStuck = cwnd1<= getFlightSpan();
+    // Update Flow Window Size, must update before and together with m_iSndLastAck
+    m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+    m_iSndLastAck     = ackdata_seqno;
+    m_tsLastRspAckTime  = currtime;
+    m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+
+    const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+    if (bWasStuck && cwnd > getFlightSpan())
+    {
+        m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+        HLOGC(gglog.Debug,
+            log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+    }
+}
 
         /*
          * We must not ignore full ack received by peer
