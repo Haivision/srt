@@ -4817,7 +4817,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
     // that thinks it's connected, but his last handshake was missed,
-    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // they are collected by CRcvQueue::storePktClone. The removeConnector
     // function will want to delete them all, so it would be nice
     // if these packets can be re-delivered. Of course the listener
     // should be prepared to resend them (as every packet can be lost
