@@ -1,7 +1,9 @@
 HEADERS
 any.hpp
+test_env.h
 
 SOURCES
+test_main.cpp
 test_buffer_rcv.cpp
 test_common.cpp
 test_connection_timeout.cpp
