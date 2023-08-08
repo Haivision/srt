@@ -7904,7 +7904,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
     int nbsent = 0;
     int local_prevack = 0;
-    bool sendAckAgain = false; //Send ack again after a buffer full was detected
 #if ENABLE_HEAVY_LOGGING
     struct SaveBack
     {
@@ -7927,15 +7926,12 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
-    if(m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0)
-    {
-        sendAckAgain = true;
-    }
+    const bool bNeedFullAck = (m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0);
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
         return nbsent;
 
-    if (m_iRcvLastAckAck == ack && !sendAckAgain)
+    if (m_iRcvLastAckAck == ack && !bNeedFullAck)
     {
         HLOGC(xtlog.Debug,      
                 log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");     
@@ -7943,7 +7939,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     }
     // send out a lite ACK
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-    if (size == SEND_LITE_ACK && !sendAckAgain)
+    if (size == SEND_LITE_ACK && !bNeedFullAck)
     {
         bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
@@ -8081,7 +8077,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             CGlobEvent::triggerEvent();
         }
     }
-    else if (ack == m_iRcvLastAck && !sendAckAgain)
+    else if (ack == m_iRcvLastAck && !bNeedFullAck)
     {
         // If the ACK was just sent already AND elapsed time did not exceed RTT,
         if ((steady_clock::now() - m_tsLastAckTime) <
@@ -8092,7 +8088,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             return nbsent;
         }
     }
-    else if (!sendAckAgain)
+    else if (!bNeedFullAck)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
         LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr %" << ack << " <% last %" << m_iRcvLastAck);
@@ -8103,7 +8099,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // [[using locked(m_RcvBufferLock)]];
 
     // Send out the ACK only if has not been received by the sender before
-    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || sendAckAgain)
+    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || bNeedFullAck)
     {
         // NOTE: The BSTATS feature turns on extra fields above size 6
         // also known as ACKD_TOTAL_SIZE_VER100.
