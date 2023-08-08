@@ -1783,7 +1783,11 @@ void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
     {
         // avoid storing too many packets, in case of malfunction or attack
         if (i->second.size() > 16)
+        {
+            delete[] pkt->m_pcData;
+            delete pkt;
             return;
+        }
 
         i->second.push(pkt);
     }
