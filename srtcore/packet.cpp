@@ -561,7 +561,8 @@ CPacket* CPacket::clone() const
 {
     CPacket* pkt = new CPacket;
     memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
-    pkt->allocate(m_PacketVector[PV_DATA].size());
+    pkt->allocate(this->getLength());
+    SRT_ASSERT(this->getLength() == pkt->getLength());
     memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
     pkt->m_DestAddr = m_DestAddr;
 
