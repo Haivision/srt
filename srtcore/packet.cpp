@@ -563,7 +563,7 @@ CPacket* CPacket::clone() const
     memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
     pkt->allocate(this->getLength());
     SRT_ASSERT(this->getLength() == pkt->getLength());
-    memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
+    memcpy((pkt->m_pcData), m_pcData, this->getLength());
     pkt->m_DestAddr = m_DestAddr;
 
     return pkt;
