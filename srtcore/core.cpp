@@ -7926,6 +7926,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
+    // The full ACK should be sent to indicate there is now available space in the RCV buffer
+    // since the last full ACK. It should unblock the sender to proceed further.
     const bool bNeedFullAck = (m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0);
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
