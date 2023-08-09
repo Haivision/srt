@@ -322,9 +322,11 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
     if (bDropByMsgNo)
     {
-        // First try to drop by message number in case the message starts earlier thtan @a seqnolo.
-        // The sender should have the last packet of the message it is requesting to be dropped,
-        // therefore we don't search forward.
+        // If msgno is specified, potentially not the whole message was dropped using seqno range.
+        // The sender might have removed the first packets of the message, and thus @a seqnolo may point to a packet in the middle.
+        // The sender should have the last packet of the message it is requesting to be dropped.
+        // Therefore we don't search forward, but need to check earlier packets in the RCV buffer.
+        // Try to drop by the message number in case the message starts earlier than @a seqnolo.
         const int stop_pos = decPos(m_iStartPos);
         for (int i = start_pos; i != stop_pos; i = decPos(i))
         {
@@ -348,9 +350,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             ++iDropCnt;
             dropUnitInPos(i);
             m_entries[i].status = EntryState_Drop;
+            // As the search goes backward, i is always earlier than minDroppedOffset.
             minDroppedOffset = offPos(m_iStartPos, i);
 
-            // Break the loop if the start of message has been found. No need to search further.
+            // Break the loop if the start of the message has been found. No need to search further.
             if (bnd == PB_FIRST)
                 break;
         }
