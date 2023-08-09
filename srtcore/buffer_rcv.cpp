@@ -261,8 +261,9 @@ int CRcvBuffer::dropAll()
 int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi
-        << ", msgno " << msgno << " m_iStartSeqNo " << m_iStartSeqNo);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage(): %(" << seqnolo << " - " << seqnohi << ")"
+                                  << " #" << msgno << " actionOnExisting=" << actionOnExisting << " m_iStartSeqNo=%"
+                                  << m_iStartSeqNo);
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
@@ -297,7 +298,9 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             if (bKeepExisting && bnd == PB_SOLO)
             {
                 bDropByMsgNo = false; // Solo packet, don't search for the rest of the message.
-                LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): Skipped dropping an exising SOLO packet %" << packetAt(i).getSeqNo() << ".");
+                LOGC(rbuflog.Debug,
+                     log << "CRcvBuffer::dropMessage(): Skipped dropping an existing SOLO packet %"
+                         << packetAt(i).getSeqNo() << ".");
                 continue;
             }
 
@@ -323,13 +326,15 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
     if (bDropByMsgNo)
     {
-        // First try to drop by message number in case the message starts earlier thtan @a seqnolo.
-        // The sender should have the last packet of the message it is requesting to be dropped,
-        // therefore we don't search forward.
+        // If msgno is specified, potentially not the whole message was dropped using seqno range.
+        // The sender might have removed the first packets of the message, and thus @a seqnolo may point to a packet in the middle.
+        // The sender should have the last packet of the message it is requesting to be dropped.
+        // Therefore we don't search forward, but need to check earlier packets in the RCV buffer.
+        // Try to drop by the message number in case the message starts earlier than @a seqnolo.
         const int stop_pos = decPos(m_iStartPos);
         for (int i = start_pos; i != stop_pos; i = decPos(i))
         {
-            // Can't drop is message number is not known.
+            // Can't drop if message number is not known.
             if (!m_entries[i].pUnit) // also dropped earlier.
                 continue;
 
@@ -340,21 +345,19 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
             if (bKeepExisting && bnd == PB_SOLO)
             {
-                LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): Skipped dropping an exising SOLO message packet %"
-                    << packetAt(i).getSeqNo() << ".");
+                LOGC(rbuflog.Debug,
+                     log << "CRcvBuffer::dropMessage(): Skipped dropping an existing SOLO message packet %"
+                         << packetAt(i).getSeqNo() << ".");
                 break;
             }
 
             ++iDropCnt;
             dropUnitInPos(i);
             m_entries[i].status = EntryState_Drop;
+            // As the search goes backward, i is always earlier than minDroppedOffset.
+            minDroppedOffset = offPos(m_iStartPos, i);
 
-            if (minDroppedOffset == -1)
-                minDroppedOffset = offPos(m_iStartPos, i);
-            else
-                minDroppedOffset = min(offPos(m_iStartPos, i), minDroppedOffset);
-
-            // Break the loop if the start of message has been found. No need to search further.
+            // Break the loop if the start of the message has been found. No need to search further.
             if (bnd == PB_FIRST)
                 break;
         }

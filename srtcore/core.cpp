@@ -9769,7 +9769,7 @@ void srt::CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &
 bool srt::CUDT::overrideSndSeqNo(int32_t seq)
 {
     // This function is intended to be called from the socket
-    // group managmenet functions to synchronize the sequnece in
+    // group management functions to synchronize the sequnece in
     // all sockes in the bonding group. THIS sequence given
     // here is the sequence TO BE STAMPED AT THE EXACTLY NEXT
     // sent payload. Therefore, screw up the ISN to exactly this
@@ -9811,9 +9811,9 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     // the latter is ahead with the number of packets already scheduled, but
     // not yet sent.
 
-    HLOGC(gslog.Debug, log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
-        << " (unchanged)"
-        );
+    HLOGC(gslog.Debug,
+          log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
+              << " (unchanged)");
     return true;
 }
 
