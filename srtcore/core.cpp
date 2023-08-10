@@ -4276,6 +4276,7 @@ EConnectStatus srt::CUDT::processRendezvous(
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+                return CONN_REJECT;
             }
         }
         // This should be false, make a kinda assert here.
