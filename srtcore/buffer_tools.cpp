@@ -138,20 +138,20 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
 
     const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
-    if (early_update || period_us > m_InRatePeriod)
-    {
-        // Required Byte/sec rate (payload + headers)
-        m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
-        m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
-        HLOGC(bslog.Debug,
-              log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
-                  << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
-        m_iInRatePktsCount  = 0;
-        m_iInRateBytesCount = 0;
-        m_tsInRateStartTime = time;
+    if (!early_update && period_us <= m_InRatePeriod)
+        return;
 
-        setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
-    }
+    // Required Byte/sec rate (payload + headers)
+    m_iInRateBytesCount += (m_iInRatePktsCount * CPacket::SRT_DATA_HDR_SIZE);
+    m_iInRateBps = (int)(((int64_t)m_iInRateBytesCount * 1000000) / period_us);
+    HLOGC(bslog.Debug,
+            log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
+                << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
+    m_iInRatePktsCount  = 0;
+    m_iInRateBytesCount = 0;
+    m_tsInRateStartTime = time;
+
+    setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
 }
 
 
