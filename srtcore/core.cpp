@@ -305,7 +305,10 @@ void srt::CUDT::construct()
     // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent)
+    : m_parent(parent)
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
 {
     construct();
 
@@ -328,7 +331,10 @@ srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
 
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
+    : m_parent(parent)
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
 {
     construct();
 
