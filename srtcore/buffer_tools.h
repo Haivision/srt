@@ -120,8 +120,8 @@ private:                                                       // Constants
     static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
 
 private:
-    int        m_iInRatePktsCount;  // number of payload bytes added since InRateStartTime
-    int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime
+    int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
+    int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime.
     time_point m_tsInRateStartTime;
     uint64_t   m_InRatePeriod;  // usec
     int        m_iInRateBps;    // Input Rate in Bytes/sec
