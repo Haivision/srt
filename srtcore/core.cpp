@@ -10021,6 +10021,22 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     }
                 }
             }
+            else if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+            {
+                // Unencrypted packets are not allowed.
+                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+
+                const steady_clock::time_point tnow = steady_clock::now();
+                ScopedLock lg(m_StatsLock);
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
+                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                if (frequentLogAllowed(tnow))
+                {
+                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
+                    m_tsLogSlowDown = tnow;
+                }
+            }
         }
 
         if (adding_successful)
