@@ -7,6 +7,8 @@
 using namespace srt;
 using namespace std;
 
+#ifdef ENABLE_MAXREXMITBW
+
 class CSndRateEstFixture
     : public ::testing::Test
 {
@@ -108,3 +110,4 @@ TEST_F(CSndRateEstFixture, CBRSendingShortPause)
     }
 }
 
+#endif // ENABLE_MAXREXMITBW

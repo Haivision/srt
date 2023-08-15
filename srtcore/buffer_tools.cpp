@@ -147,7 +147,7 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     HLOGC(bslog.Debug,
         log << "updateInputRate: pkts:" << m_iInRateBytesCount << " bytes:" << m_iInRatePktsCount
         << " rate=" << (m_iInRateBps * 8) / 1000 << "kbps interval=" << period_us);
-    m_iInRatePktsCount = 0;
+    m_iInRatePktsCount  = 0;
     m_iInRateBytesCount = 0;
     m_tsInRateStartTime = time;
 
@@ -236,7 +236,7 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
             m_iRateBps = sum.m_iBytesCount * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
 
-        LOGC(bslog.Note,
+        HLOGC(bslog.Note,
             log << "CSndRateEstimator: new rate estimation :" << (m_iRateBps * 8) / 1000 << " kbps. Based on "
                  << iNumPeriods << " periods, " << sum.m_iPktsCount << " packets, " << sum.m_iBytesCount << " bytes.");
 

@@ -236,6 +236,7 @@ struct CSrtConfigSetter<SRTO_MAXBW>
     }
 };
 
+#ifdef ENABLE_MAXREXMITBW
 template<>
 struct CSrtConfigSetter<SRTO_MAXREXMITBW>
 {
@@ -248,6 +249,7 @@ struct CSrtConfigSetter<SRTO_MAXREXMITBW>
         co.llMaxRexmitBW = val;
     }
 };
+#endif
 
 template<>
 struct CSrtConfigSetter<SRTO_IPTTL>
@@ -1010,7 +1012,9 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 #ifdef ENABLE_AEAD_API_PREVIEW
         DISPATCH(SRTO_CRYPTOMODE);
 #endif
+#ifdef ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
+#endif
 
 #undef DISPATCH
     default:
