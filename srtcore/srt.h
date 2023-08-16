@@ -242,6 +242,9 @@ typedef enum SRT_SOCKOPT {
 #ifdef ENABLE_AEAD_API_PREVIEW
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
 #endif
+#ifdef ENABLE_MAXREXMITBW
+   SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
+#endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;

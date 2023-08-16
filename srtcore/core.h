@@ -489,7 +489,7 @@ private:
 
     /// Create the CryptoControl object based on the HS packet.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
 
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
@@ -822,6 +822,9 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
+#ifdef ENABLE_MAXREXMITBW
+    CSndRateEstimator      m_SndRexmitRate;      // Retransmission retae estimation.
+#endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
 

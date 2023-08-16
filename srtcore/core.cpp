@@ -307,6 +307,9 @@ void srt::CUDT::construct()
 
 srt::CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
 {
@@ -333,6 +336,9 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 
 srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
 {
@@ -9274,6 +9280,10 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         }
         setDataPacketTS(w_packet, tsOrigin);
 
+#ifdef ENABLE_MAXREXMITBW
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+#endif
+
         return payload;
     }
 
@@ -9434,6 +9444,18 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
         // Can send original packet, so just send it
         return false;
     }
+
+#ifdef ENABLE_MAXREXMITBW
+    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
+    {
+        // Too many retransmissions, so don't send anything.
+        // TODO: When to wake up next time?
+        return false;
+    }
+#endif
 
 #if SRT_DEBUG_TRACE_SND
     g_snd_logger.state.canRexmit = true;

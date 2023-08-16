@@ -224,6 +224,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_LINGER`](#SRTO_LINGER)                           |       | post     | `linger`  | s       | off \*            | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                   | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                             |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
+| [`SRTO_MAXREXMITBW`](#SRTO_MAXREXMITBW)                 | 1.5.3 | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                   | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                   | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                   | 1.3.0 | pre      | `int32_t` | version | 0x010000          | \*       | RW  | GSD   |
@@ -841,6 +842,22 @@ you should make sure that your stream has a fairly constant bitrate, or that
 changes are not abrupt, as high bitrate changes may work against the
 measurement. SRT cannot ensure that this is always the case for a live stream,
 therefore the default -1 remains even in live mode.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_MAXREXMITBW
+
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MAXREXMITBW`   | 1.5.3 | post     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
+
+Maximum BW limit for retransmissions:
+
+- `-1`: unlimited;
+- `0`: do not allow retransmissions.
+- `>0`: BW usage limit in Bytes/sec for packet retransmissions (including 16 bytes of SRT header).
 
 [Return to list](#list-of-options)
 
