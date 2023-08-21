@@ -720,13 +720,13 @@ private:
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool isRcvBufferReady() const;
 
-    SRT_ATTR_REQUIRES2(m_RcvBufferLock)
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     bool isRcvBufferReadyNoLock() const;
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
-    /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
+    /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
@@ -823,7 +823,7 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef ENABLE_MAXREXMITBW
-    CSndRateEstimator      m_SndRexmitRate;      // Retransmission retae estimation.
+    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
 #endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
@@ -866,7 +866,7 @@ private: // Timers
     // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
     // this value is shifted to the acknowledged position, and the blocks are removed from the
     // m_pSndBuffer buffer up to excluding this sequence number.
-    // XXX CONSIDER removing this field and give up the maintenance of this sequence number
+    // XXX CONSIDER removing this field and giving up the maintenance of this sequence number
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
