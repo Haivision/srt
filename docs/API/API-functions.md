@@ -666,7 +666,7 @@ internal use only.
 |      Returns                  |                                                                         |
 |:----------------------------- |:----------------------------------------------------------------------- |
 | socket/group ID               | On success, a valid SRT socket or group ID to be used for transmission. |
-| `SRT_ERROR`                   | (-1) on failure                                                         |
+| `SRT_INVALID_SOCK`            | (-1) on failure                                                         |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                      |                                                                         |
@@ -722,7 +722,7 @@ calling this function.
 |      Returns                  |                                                                        |
 |:----------------------------- |:---------------------------------------------------------------------- |
 | SRT socket<br/>group ID       | On success, a valid SRT socket or group ID to be used for transmission |
-| `SRT_ERROR`      | (-1) on failure                                                        |
+| `SRT_INVALID_SOCK`            | (-1) on failure                                                        |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                      |                                                              |
