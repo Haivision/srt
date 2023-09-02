@@ -3163,10 +3163,10 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
                   log << CONID() << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid()
                       << ", copying characteristic data");
 
-            // The call to syncWithSocket is copying
+            // The call to syncWithFirstSocket is copying
             // some interesting data from the first connected
             // socket. This should be only done for the first successful connection.
-            pg->syncWithSocket(*this, HSD_INITIATOR);
+            pg->syncWithFirstSocket(*this, HSD_INITIATOR);
         }
         // Otherwise the peer id must be the same as existing, otherwise
         // this group is considered already bound to another peer group.
@@ -3248,7 +3248,6 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 
     // Check if there exists a group that this one is a peer of.
     CUDTGroup* gp = uglobal().findPeerGroup_LOCKED(peergroup);
-    bool was_empty = true;
     if (gp)
     {
         if (gp->type() != gtp)
@@ -3260,9 +3259,6 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         }
 
         HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
-
-        if (!gp->groupEmpty())
-            was_empty = false;
     }
     else
     {
@@ -3285,6 +3281,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 
         gp->set_peerid(peergroup);
         gp->deriveSettings(this);
+        gp->syncWithFirstSocket(s->core(), HSD_RESPONDER);
 
         // This can only happen on a listener (it's only called on a site that is
         // HSD_RESPONDER), so it was a response for a groupwise connection.
@@ -3294,19 +3291,6 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         HLOGC(gmlog.Debug,
               log << CONID() << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $"
                   << gp->id());
-    }
-
-    {
-        ScopedLock glock (*gp->exp_groupLock());
-        if (gp->closing())
-        {
-            HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group $" << gp->id() << " is being closed, can't process");
-        }
-
-        if (was_empty)
-        {
-            gp->syncWithSocket(s->core(), HSD_RESPONDER);
-        }
     }
 
     // Setting non-blocking reading for group socket.
@@ -3408,21 +3392,15 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     // These are the values that are normally set initially by setters.
     int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-    if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
-    {
-        HLOGC(gmlog.Debug,
-                log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
-                << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+    gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn));
+    HLOGC(gmlog.Debug,
+          log << CONID() << "synchronizeWithGroup: RCV-ISN=%" << m_iRcvLastAck << " -> %" << rcv_isn << " (shift by "
+              << CSeqNo::seqoff(m_iRcvLastAck, rcv_isn) << ") SND-ISN=%" << m_iSndLastAck << " -> %" << snd_isn
+              << " (shift by " << CSeqNo::seqoff(m_iSndLastAck, snd_isn) << ")");
+    if (rcv_isn != m_iRcvLastAck)
         setInitialRcvSeq(rcv_isn);
+    if (snd_isn != m_iSndLastAck)
         setInitialSndSeq(snd_isn);
-    }
-    else
-    {
-        HLOGC(gmlog.Debug,
-                log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
-                << m_iSndLastAck);
-    }
 }
 #endif
 
@@ -7714,7 +7692,12 @@ void srt::CUDT::dropToGroupRecvBase()
         // Note that getRcvBaseSeqNo() will lock m_GroupOf->m_GroupLock,
         // but this is an intended order.
         if (m_parent->m_GroupOf)
+        {
             group_recv_base = m_parent->m_GroupOf->getRcvBaseSeqNo();
+            // To reduce overhead, especially the m_GlobControlLock,
+            // the group wise recv seq is updated here.
+            m_parent->m_GroupOf->updateRcvCurrSeqNo(m_iRcvCurrSeqNo);
+        }
     }
     if (group_recv_base == SRT_SEQNO_NONE)
         return;
