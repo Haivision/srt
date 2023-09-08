@@ -10,10 +10,11 @@
  *             Haivision Systems Inc.
  */
 
-#include <gtest/gtest.h>
 #include <future>
 #include <thread>
 #include <string>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 // SRT includes
 #include "any.hpp"
@@ -25,7 +26,7 @@ using namespace srt;
 
 
 class TestSocketOptions
-    : public ::testing::Test
+    : public ::srt::Test
 {
 protected:
     TestSocketOptions()
@@ -79,10 +80,9 @@ public:
     }
 
 protected:
-    // SetUp() is run immediately before a test starts.
-    void SetUp()
+    // setup() is run immediately before a test starts.
+    void setup()
     {
-        ASSERT_GE(srt_startup(), 0);
         const int yes = 1;
 
         memset(&m_sa, 0, sizeof m_sa);
@@ -101,13 +101,12 @@ protected:
         ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
     }
 
-    void TearDown()
+    void teardown()
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        ASSERT_NE(srt_close(m_caller_sock), SRT_ERROR);
-        ASSERT_NE(srt_close(m_listen_sock), SRT_ERROR);
-        srt_cleanup();
+        EXPECT_NE(srt_close(m_caller_sock), SRT_ERROR);
+        EXPECT_NE(srt_close(m_listen_sock), SRT_ERROR);
     }
 
 protected:

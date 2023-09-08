@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -30,7 +31,7 @@
 
 TEST(FileTransmission, Upload)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     // Generate the source file
     // We need a file that will contain more data
@@ -196,11 +197,12 @@ TEST(FileTransmission, Upload)
     remove("file.source");
     remove("file.target");
 
-    (void)srt_cleanup();
 }
 
 TEST(FileTransmission, Setup46)
 {
+    SRTST_REQUIRES(IPv6);
+
     using namespace srt;
 
     srt_startup();

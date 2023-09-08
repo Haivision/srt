@@ -774,8 +774,19 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, NULL, NULL);
-    res       = (0 == res) ? size : -1;
+    WSAOVERLAPPED overlapped;
+    SecureZeroMemory((PVOID)&overlapped, sizeof(WSAOVERLAPPED));
+    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
+
+    if (res == SOCKET_ERROR && NET_ERROR == WSA_IO_PENDING)
+    {
+        DWORD dwFlags = 0;
+        const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, true, &dwFlags);
+        WSACloseEvent(overlapped.hEvent);
+        res = bCompleted ? 0 : -1;
+    }
+
+    res = (0 == res) ? size : -1;
 #endif
 
     packet.toHL();

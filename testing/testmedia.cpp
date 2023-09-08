@@ -2783,9 +2783,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
         if (is_multicast)
         {
-            ip_mreq_source mreq_ssm;
             ip_mreq mreq;
-            sockaddr_any maddr;
+            sockaddr_any maddr (AF_INET);
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -2806,6 +2805,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
             if (attr.count("source"))
             {
+#ifdef IP_ADD_SOURCE_MEMBERSHIP
+                ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
                 mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
@@ -2813,6 +2814,9 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
+#else
+                throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
+#endif
             }
             else
             {
