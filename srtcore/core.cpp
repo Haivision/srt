@@ -5678,6 +5678,7 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
                 << (m_TransferIPVersion == AF_INET6 ? "6" : m_TransferIPVersion == AF_INET ? "4" : "???")
                 << " authtag=" << authtag);
 
+        m_pSndBuffer = new CSndBuffer(m_TransferIPVersion, 32, snd_payload_size, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
