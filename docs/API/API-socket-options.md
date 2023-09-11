@@ -940,19 +940,25 @@ This value is a sum of:
 For the default 1500 the "remaining space" part is effectively 1456 for IPv4
 and 1444 for IPv6.
 
-Note that the IP version used here is not the domain of the socket, but the
-in-transmission IP version. This is IPv4 for a case when the current socket's
-binding address is of IPv4 domain, or if it is IPv6, but the peer's address
-is then an IPv6-mapped-IPv4 address. The in-transmission IPv6 is only if the
-peer's address is a true IPv6 address. Hence it is not possible to deteremine
-all these limitations until the connection is established. Parts of SRT that
-must allocate any resources regarding this value prior to connecting are using
-the layout as per IPv4 because this results in a greater available space for
-the "remaining space".
+Note that the IP version used here is not the domain of the underlying UDP
+socket, but the in-transmission IP version. This is effectively IPv4 in the
+following cases:
+
+* when the current socket's binding address is of IPv4 domain
+* when the peer's address is an IPv6-mapped-IPv4 address
+
+The IPv6 in-transmission IP version is assumed only if the peer's address
+is a true IPv6 address (not IPv4 mapped). It is then not possible to determine
+what the payload size limit until the connection is established. Parts of the
+SRT facilities that must allocate any resources according to this value prior
+to connecting are using the layout as per IPv4 because this way they allocate
+more space than needed in the worst case.
 
 This value can be set on both connection parties independently, but after
 connection this option gets an effectively negotiated value, which is the less
-one from both parties.
+one from both parties. If this effective value is too small on any of the
+connection peers, the connection is rejected (or late-rejected on the caller
+side).
 
 This value then effectively controls:
 
@@ -987,12 +993,12 @@ over the link used for the connection). See also limitations for
 In the file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
 for one single packet sending, and therefore bigger portions of data are
 internally split into smaller portions, each one using the maximum available
-"remaining space". The best value for this case is then equal to the current
-network device's MTU size. Setting a greater value is possible (maximum for the
-system API is 65535), but it may lead to packet fragmentation on the system
-level. This is highly unwanted in SRT because:
+"remaining space". The best value of `SRTO_MSS` for this case is then equal to
+the current network device's MTU size. Setting a greater value is possible
+(maximum for the system API is 65535), but it may lead to packet fragmentation
+on the system level. This is highly unwanted in SRT because:
 
-* SRT does also its own fragmentation, so it would be counter-productive
+* Here SRT does also its own fragmentation, so it would be counter-productive
 * It would use more system resources with no advantage
 * SRT is unaware of it, so the statistics will be slightly falsified
 
