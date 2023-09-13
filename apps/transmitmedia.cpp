@@ -848,7 +848,6 @@ protected:
 
         if (is_multicast)
         {
-            ip_mreq_source mreq_ssm;
             ip_mreq mreq;
             sockaddr_any maddr (AF_INET);
             int opt_name;
@@ -872,6 +871,7 @@ protected:
             if (attr.count("source"))
             {
 #ifdef IP_ADD_SOURCE_MEMBERSHIP
+                ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
                 mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;

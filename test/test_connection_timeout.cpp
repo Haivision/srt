@@ -255,7 +255,7 @@ TEST(TestConnectionAPI, Accept)
 
     // Ended up with error, but now you should also expect error on the caller side.
 
-    // Wait 10s until you get a connection broken.
+    // Wait 5s until you get a connection broken.
     nready = srt_epoll_uwait(eidc, ready, 2, 5000);
     EXPECT_EQ(nready, 1);
     if (nready == 1)
