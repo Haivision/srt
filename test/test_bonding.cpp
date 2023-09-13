@@ -29,10 +29,10 @@ TEST(Bonding, SRTConnectGroup)
         targets.push_back(gd);
     }
 
-    std::future<void> closing_promise = std::async(std::launch::async, [](int ss) {
+    std::future<void> closing_promise = std::async(std::launch::async, [](int s) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cerr << "Closing group" << std::endl;
-        srt_close(ss);
+        srt_close(s);
     }, ss);
 
     std::cout << "srt_connect_group calling " << std::endl;

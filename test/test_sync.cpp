@@ -385,9 +385,9 @@ TEST(SyncEvent, WaitForNotifyOne)
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        CUniqueSync cc (*mutex, *cond);
-        return cc.wait_for(timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        CUniqueSync cc (*m, *cv);
+        return cc.wait_for(tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -406,9 +406,9 @@ TEST(SyncEvent, WaitNotifyOne)
     Condition cond;
     cond.init();
 
-    auto wait_async = [](Condition* cond, Mutex* mutex) {
-        UniqueLock lock(*mutex);
-        return cond->wait(lock);
+    auto wait_async = [](Condition* cv, Mutex* m) {
+        UniqueLock lock(*m);
+        return cv->wait(lock);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
@@ -432,9 +432,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     srt::sync::atomic<bool> resource_ready(true);
 
-    auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
-        UniqueLock lock(*mutex);
-        if (cond->wait_for(lock, timeout) && resource_ready)
+    auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
+        UniqueLock lock(*m);
+        if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
@@ -536,9 +536,9 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -565,9 +565,9 @@ TEST(SyncEvent, WaitForNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
