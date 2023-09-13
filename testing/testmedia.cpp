@@ -144,7 +144,7 @@ public:
     {
         ofile.write(data.payload.data(), data.payload.size());
 #ifdef PLEASE_LOG
-        applog.Debug() << "FileTarget::Write: " << data.size() << " written to a file";
+        applog.Debug() << "FileTarget::Write: " << data.payload.size() << " written to a file";
 #endif
     }
 
@@ -361,6 +361,24 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             par["mode"] = "caller";
         }
 #endif
+    }
+
+    if (par.count("bind"))
+    {
+        string bindspec = par.at("bind");
+        UriParser u (bindspec, UriParser::EXPECT_HOST);
+        if ( u.scheme() != ""
+                || u.path() != ""
+                || !u.parameters().empty()
+                || u.portno() == 0)
+        {
+            Error("Invalid syntax in 'bind' option");
+        }
+
+        if (u.host() != "")
+            par["adapter"] = u.host();
+        par["port"] = u.port();
+        par.erase("bind");
     }
 
     string adapter;
@@ -864,6 +882,7 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
+    Verb() << "Binding the caller socket to " << host << ":" << port << " ...";
     auto lsa = CreateAddr(host, port);
     int stat = srt_bind(m_sock, lsa.get(), sizeof lsa);
     if (stat == SRT_ERROR)
@@ -1317,7 +1336,8 @@ void SrtCommon::ConnectClient(string host, int port)
         {
             int reason = srt_getrejectreason(m_sock);
 #if PLEASE_LOG
-            LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock);
+            LOGP(applog.Error, "ERROR reported by srt_connect - closing socket @", m_sock,
+                    " reject reason: ", reason, ": ", srt_rejectreason_str(reason));
 #endif
             if (transmit_retry_connect && (transmit_retry_always || reason == SRT_REJ_TIMEOUT))
             {
@@ -2380,7 +2400,7 @@ Epoll_again:
 #if PLEASE_LOG
         extern srt_logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
-                << BufferStamp(data.data(), stat) << " BELATED: " << ((CTimer::getTime()-mctrl.srctime)/1000.0) << "ms");
+                << BufferStamp(data.data(), stat) << " BELATED: " << ((srt_time_now()-mctrl.srctime)/1000.0) << "ms");
 #endif
 
         Verb() << "(#" << mctrl.msgno << " %" << mctrl.pktseq << "  " << BufferStamp(data.data(), stat) << ") " << VerbNoEOL;
@@ -2754,9 +2774,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
         if (is_multicast)
         {
-            ip_mreq_source mreq_ssm;
             ip_mreq mreq;
-            sockaddr_any maddr;
+            sockaddr_any maddr (AF_INET);
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -2777,6 +2796,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
             if (attr.count("source"))
             {
+#ifdef IP_ADD_SOURCE_MEMBERSHIP
+                ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
                 mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
@@ -2784,6 +2805,9 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
+#else
+                throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
+#endif
             }
             else
             {

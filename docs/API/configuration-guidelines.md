@@ -19,20 +19,29 @@ The default receiver buffer size is 8192 packets. It is approximately:
 
 ### Setting Receiver Buffer Size
 
-As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
 When the `SRTO_RCVBUF` option value is set using the `srt_setsockopt(..)` function,
-the provided size in bytes is internally converted to the corresponding size in packets
-using the configured value of the `SRTO_MSS` option to estimate the maximum possible payload of a packet.
+the provided size in bytes is internally converted to the corresponding size in packets.
+The size of a cell for a single packet in the buffer is defined by the
+`SRTO_MSS` option, which is 1500 by default.  This value, decreased by 28 in
+the case of IPv4 (20 bytes for the IPv4 header and 8 bytes for the UDP header), gives 1472
+bytes per packet to be allocated. The actual memory occupied by the receiver
+buffer will be a multiple of that value. For the default 8192 packets it
+will be 11776 kB (11.5 MB).
 
-The following function returns the buffer size in packets:
+Note that every cell has 16 bytes for the SRT header. The remaining space
+is for the payload.
+
+As already mentioned, the maximum allowed size of the receiver buffer is limited by the value of `SRTO_FC`.
+
+The following function returns the configured buffer size in packets depending on the SRTO_RCVBUF, SRTO_MSS and SRTO_FC values set:
 
 ```c++
 int getRbufSizePkts(int SRTO_RCVBUF, int SRTO_MSS, int SRTO_FC)
 {
-    // UDP header size is assumed to be 28 bytes
+    // UDP/IPv4 header size is assumed to be 28 bytes
     // 20 bytes IPv4 + 8 bytes of UDP
-    const int UDPHDR_SIZE = 28;
-    const int pkts = (rbuf_size / (SRTO_MSS - UDPHDR_SIZE));
+    const int UDP_IPv4_HDR= 28;
+    const int pkts = (rbuf_size / (SRTO_MSS - UDP_IPv4_HDR));
 
     return min(pkts, SRTO_FC);
 }
@@ -56,16 +65,13 @@ where
 
 If the whole remainder of the MTU is expected to be used, payload size is calculated as follows: 
 
-`bytePayloadSize = MSS - 44`
+`bytePayloadSize = MSS - UDP_IPv4_HDR - SRT_HDR`
 
 where
 
-- 44 is the size in bytes of an **IPv4** header: 
-   - 20 bytes **IPv4** 
-   - 8 bytes of UDP
-   - 16 bytes of SRT packet header.
-
-- `MSS` is the Maximum Segment Size (aka MTU); see `SRTO_MSS`.
+- `MSS`: Maximum Segment Size (size of the MTU); see `SRTO_MSS` (default: 1500)
+- `UDP_IPv4_HDR`: 20 bytes for IPv4 + 8 bytes for UDP
+- `SRT_HDR`: 16 bytes of SRT header (belonging to the user space)
 
 ### Calculating Target Size to Set
 

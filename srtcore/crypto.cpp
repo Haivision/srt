@@ -57,6 +57,9 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(SECURING);
         TAKE(NOSECRET);
         TAKE(BADSECRET);
+#ifdef ENABLE_AEAD_API_PREVIEW
+        TAKE(BADCRYPTOMODE);
+#endif
 #undef TAKE
     default:
         {

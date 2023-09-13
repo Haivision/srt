@@ -523,6 +523,8 @@ void* srt::CSndQueue::worker(void* param)
     {
         const steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
 
+        INCREMENT_THREAD_ITERATIONS();
+
         IF_DEBUG_HIGHRATE(self->m_WorkerStats.lIteration++);
 
         if (is_zero(next_time))
@@ -1160,7 +1162,6 @@ srt::CRcvQueue::~CRcvQueue()
         while (!i->second.empty())
         {
             CPacket* pkt = i->second.front();
-            delete[] pkt->m_pcData;
             delete pkt;
             i->second.pop();
         }
@@ -1219,6 +1220,8 @@ void* srt::CRcvQueue::worker(void* param)
     {
         bool        have_received = false;
         EReadStatus rst           = self->worker_RetrieveUnit((id), (unit), (sa));
+
+        INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
             if (id < 0)
@@ -1361,14 +1364,12 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
     {
         // no space, skip this packet
         CPacket temp;
-        temp.m_pcData = new char[m_szPayloadSize];
-        temp.setLength(m_szPayloadSize);
+        temp.allocate(m_szPayloadSize);
         THREAD_PAUSED();
         EReadStatus rst = m_pChannel->recvfrom((w_addr), (temp));
         THREAD_RESUMED();
         // Note: this will print nothing about the packet details unless heavy logging is on.
         LOGC(qrlog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
-        delete[] temp.m_pcData;
 
         // Be transparent for RST_ERROR, but ignore the correct
         // data read and fake that the packet was dropped.
@@ -1537,7 +1538,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUni
         if (cst == CONN_CONFUSED)
         {
             LOGC(cnlog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
-            storePkt(id, unit->m_Packet.clone());
+            storePktClone(id, unit->m_Packet);
             if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &unit->m_Packet, u->m_PeerAddr))
             {
                 // Reuse previous behavior to reject a packet
@@ -1612,7 +1613,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUni
           log << "AsyncOrRND: packet RESOLVED TO ID=" << id << " -- continuing through CENTRAL PACKET QUEUE");
     // This is where also the packets for rendezvous connection will be landing,
     // in case of a synchronous connection.
-    storePkt(id, unit->m_Packet.clone());
+    storePktClone(id, unit->m_Packet);
 
     return CONN_CONTINUE;
 }
@@ -1676,7 +1677,6 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     w_packet.setLength(newpkt->getLength());
     w_packet.m_DestAddr = newpkt->m_DestAddr;
 
-    delete[] newpkt->m_pcData;
     delete newpkt;
 
     // remove this message from queue,
@@ -1731,7 +1731,6 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
               log << "removeConnector: ... and its packet queue with " << i->second.size() << " packets collected");
         while (!i->second.empty())
         {
-            delete[] i->second.front()->m_pcData;
             delete i->second.front();
             i->second.pop();
         }
@@ -1764,7 +1763,7 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
     return u;
 }
 
-void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
+void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
@@ -1772,22 +1771,22 @@ void srt::CRcvQueue::storePkt(int32_t id, CPacket* pkt)
 
     if (i == m_mBuffer.end())
     {
-        m_mBuffer[id].push(pkt);
+        m_mBuffer[id].push(pkt.clone());
         passcond.notify_one();
     }
     else
     {
-        // avoid storing too many packets, in case of malfunction or attack
+        // Avoid storing too many packets, in case of malfunction or attack.
         if (i->second.size() > 16)
             return;
 
-        i->second.push(pkt);
+        i->second.push(pkt.clone());
     }
 }
 
 void srt::CMultiplexer::destroy()
 {
-    // Reverse order of the assigned
+    // Reverse order of the assigned.
     delete m_pRcvQueue;
     delete m_pSndQueue;
     delete m_pTimer;
