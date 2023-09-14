@@ -1418,14 +1418,11 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
         // listener will try to send some rejection response to the caller, but
         // that's already done inside this function. So it's only used for
         // displaying the error in logs.
-    }
 
-    // NOTE: Rendezvous sockets do bind(), but not listen(). It means that the socket is
-    // ready to accept connection requests, but they are not being redirected to the listener
-    // socket, as this is not a listener socket at all. This goes then HERE.
+        // NOTE: Rendezvous sockets do bind(), but not listen(). It means that the socket is
+        // ready to accept connection requests, but they are not being redirected to the listener
+        // socket, as this is not a listener socket at all. This goes then HERE.
 
-    if (listener) // That is, the above block with m_pListener->processConnectRequest was executed
-    {
         LOGC(cnlog.Note,
              log << CONID() << "Listener managed the connection request from: " << addr.str()
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
