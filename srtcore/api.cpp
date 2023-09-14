@@ -3488,7 +3488,7 @@ SRTSOCKET srt::CUDT::getGroupOfSocket(SRTSOCKET socket)
     return s->m_GroupOf->id();
 }
 
-int srt::CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS srt::CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     if (!isgroup(groupid) || !psize)
     {
@@ -3859,16 +3859,16 @@ int srt::CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (bad_alloc&)
     {
-        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "sendmsg: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -3903,12 +3903,12 @@ int srt::CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "recvmsg: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -3921,16 +3921,16 @@ int64_t srt::CUDT::sendfile(SRTSOCKET u, fstream& ifs, int64_t& offset, int64_t 
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int64_t>();
     }
     catch (bad_alloc&)
     {
-        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0).as<int64_t>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "sendfile: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int64_t>();
     }
 }
 
@@ -3942,12 +3942,12 @@ int64_t srt::CUDT::recvfile(SRTSOCKET u, fstream& ofs, int64_t& offset, int64_t 
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int64_t>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "recvfile: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int64_t>();
     }
 }
 
@@ -3955,7 +3955,7 @@ int srt::CUDT::select(int, UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET
 {
     if ((!readfds) && (!writefds) && (!exceptfds))
     {
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
 
     try
@@ -3964,16 +3964,16 @@ int srt::CUDT::select(int, UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (bad_alloc&)
     {
-        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "select: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -3985,7 +3985,7 @@ int srt::CUDT::selectEx(const vector<SRTSOCKET>& fds,
 {
     if ((!readfds) && (!writefds) && (!exceptfds))
     {
-        return APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
 
     try
@@ -3994,16 +3994,16 @@ int srt::CUDT::selectEx(const vector<SRTSOCKET>& fds,
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (bad_alloc&)
     {
-        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "selectEx: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN);
+        return APIError(MJ_UNKNOWN).as<int>();
     }
 }
 
@@ -4015,12 +4015,12 @@ int srt::CUDT::epoll_create()
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "epoll_create: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -4168,12 +4168,12 @@ int srt::CUDT::epoll_wait(const int       eid,
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "epoll_wait: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -4185,12 +4185,12 @@ int srt::CUDT::epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, 
     }
     catch (const CUDTException& e)
     {
-        return APIError(e), int(SRT_ERROR);
+        return APIError(e).as<int>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "epoll_uwait: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0), int(SRT_ERROR);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int>();
     }
 }
 
@@ -4202,12 +4202,12 @@ int32_t srt::CUDT::epoll_set(const int eid, int32_t flags)
     }
     catch (const CUDTException& e)
     {
-        return APIError(e);
+        return APIError(e).as<int32_t>();
     }
     catch (const std::exception& ee)
     {
         LOGC(aclog.Fatal, log << "epoll_set: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
-        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+        return APIError(MJ_UNKNOWN, MN_NONE, 0).as<int32_t>();
     }
 }
 
@@ -4341,27 +4341,27 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 namespace UDT
 {
 
-int startup()
+SRTSTATUS startup()
 {
     return srt::CUDT::startup();
 }
 
-int cleanup()
+SRTSTATUS cleanup()
 {
     return srt::CUDT::cleanup();
 }
 
-int bind(SRTSOCKET u, const struct sockaddr* name, int namelen)
+SRTSTATUS bind(SRTSOCKET u, const struct sockaddr* name, int namelen)
 {
     return srt::CUDT::bind(u, name, namelen);
 }
 
-int bind2(SRTSOCKET u, UDPSOCKET udpsock)
+SRTSTATUS bind2(SRTSOCKET u, UDPSOCKET udpsock)
 {
     return srt::CUDT::bind(u, udpsock);
 }
 
-int listen(SRTSOCKET u, int backlog)
+SRTSTATUS listen(SRTSOCKET u, int backlog)
 {
     return srt::CUDT::listen(u, backlog);
 }
@@ -4371,39 +4371,39 @@ SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen)
     return srt::CUDT::accept(u, addr, addrlen);
 }
 
-int connect(SRTSOCKET u, const struct sockaddr* name, int namelen)
+SRTSOCKET connect(SRTSOCKET u, const struct sockaddr* name, int namelen)
 {
     return srt::CUDT::connect(u, name, namelen, SRT_SEQNO_NONE);
 }
 
-int close(SRTSOCKET u)
+SRTSTATUS close(SRTSOCKET u)
 {
     return srt::CUDT::close(u);
 }
 
-int getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen)
+SRTSTATUS getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen)
 {
     return srt::CUDT::getpeername(u, name, namelen);
 }
 
-int getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen)
+SRTSTATUS getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen)
 {
     return srt::CUDT::getsockname(u, name, namelen);
 }
 
-int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen)
+SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen)
 {
     return srt::CUDT::getsockopt(u, level, optname, optval, optlen);
 }
 
-int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen)
+SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
     return srt::CUDT::setsockopt(u, level, optname, optval, optlen);
 }
 
 // DEVELOPER API
 
-int connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int32_t forced_isn)
+SRTSOCKET connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int32_t forced_isn)
 {
     return srt::CUDT::connect(u, name, namelen, forced_isn);
 }
@@ -4479,37 +4479,37 @@ int epoll_create()
     return srt::CUDT::epoll_create();
 }
 
-int epoll_clear_usocks(int eid)
+SRTSTATUS epoll_clear_usocks(int eid)
 {
     return srt::CUDT::epoll_clear_usocks(eid);
 }
 
-int epoll_add_usock(int eid, SRTSOCKET u, const int* events)
+SRTSTATUS epoll_add_usock(int eid, SRTSOCKET u, const int* events)
 {
     return srt::CUDT::epoll_add_usock(eid, u, events);
 }
 
-int epoll_add_ssock(int eid, SYSSOCKET s, const int* events)
+SRTSTATUS epoll_add_ssock(int eid, SYSSOCKET s, const int* events)
 {
     return srt::CUDT::epoll_add_ssock(eid, s, events);
 }
 
-int epoll_update_usock(int eid, SRTSOCKET u, const int* events)
+SRTSTATUS epoll_update_usock(int eid, SRTSOCKET u, const int* events)
 {
     return srt::CUDT::epoll_update_usock(eid, u, events);
 }
 
-int epoll_update_ssock(int eid, SYSSOCKET s, const int* events)
+SRTSTATUS epoll_update_ssock(int eid, SYSSOCKET s, const int* events)
 {
     return srt::CUDT::epoll_update_ssock(eid, s, events);
 }
 
-int epoll_remove_usock(int eid, SRTSOCKET u)
+SRTSTATUS epoll_remove_usock(int eid, SRTSOCKET u)
 {
     return srt::CUDT::epoll_remove_usock(eid, u);
 }
 
-int epoll_remove_ssock(int eid, SYSSOCKET s)
+SRTSTATUS epoll_remove_ssock(int eid, SYSSOCKET s)
 {
     return srt::CUDT::epoll_remove_ssock(eid, s);
 }
@@ -4600,7 +4600,7 @@ int epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut
     return srt::CUDT::epoll_uwait(eid, fdsSet, fdsSize, msTimeOut);
 }
 
-int epoll_release(int eid)
+SRTSTATUS epoll_release(int eid)
 {
     return srt::CUDT::epoll_release(eid);
 }
@@ -4632,7 +4632,7 @@ const char* geterror_desc(int code, int err)
     return (e.getErrorMessage());
 }
 
-int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
+SRTSTATUS bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear)
 {
     return srt::CUDT::bstats(u, perf, clear);
 }

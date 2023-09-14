@@ -1,7 +1,9 @@
 HEADERS
 any.hpp
+test_env.h
 
 SOURCES
+test_main.cpp
 test_buffer_rcv.cpp
 test_common.cpp
 test_connection_timeout.cpp
@@ -26,6 +28,7 @@ test_unitqueue.cpp
 test_utilities.cpp
 test_reuseaddr.cpp
 test_socketdata.cpp
+test_snd_rate_estimator.cpp
 
 # Tests for bonding only - put here!
 

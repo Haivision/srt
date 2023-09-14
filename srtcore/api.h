@@ -176,7 +176,7 @@ public:
     CUDT&       core() { return m_UDT; }
     const CUDT& core() const { return m_UDT; }
 
-    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(id) << 30) + isn; }
+    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(int32_t(id)) << 30) + isn; }
     int64_t        getPeerSpec() { return getPeerSpec(m_PeerID, m_iISN); }
 
     SRT_SOCKSTATUS getStatus();

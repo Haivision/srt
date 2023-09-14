@@ -134,12 +134,17 @@ written by
 #define SRT_ATR_DEPRECATED
 #endif
 
+// Invert this in order to retest if the symbolic constants
+// have been used properly. With this change the compiler will
+// detect every case when it wasn't.
+typedef int32_t SRTSOCKET;
+typedef int SRTSTATUS;
+//#include "../common/devel_util.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef int32_t SRTSOCKET;
-typedef int SRTSTATUS;
 
 // The most significant bit 31 (sign bit actually) is left unused,
 // so that all people who check the value for < 0 instead of -1
@@ -248,6 +253,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
 #ifdef ENABLE_AEAD_API_PREVIEW
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
+#endif
+#ifdef ENABLE_MAXREXMITBW
+   SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
 #endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
@@ -653,7 +661,7 @@ enum SRT_KM_STATE
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
 #ifdef ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.6.0.
+    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
 #endif
 };
 
@@ -749,14 +757,22 @@ inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
     return SRT_EPOLL_OPT( (int)a1 | (int)a2 );
 }
 
-#endif
+static const SRTSOCKET SRT_INVALID_SOCK (-1);
+static const SRTSOCKET SRT_SOCKID_CONNREQ (0);
+static const SRTSTATUS SRT_ERROR (-1);
+static const SRTSTATUS SRT_STATUS_OK (0);
 
-typedef struct CBytePerfMon SRT_TRACEBSTATS;
+#else
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const SRTSOCKET SRT_SOCKID_CONNREQ = 0;
 static const SRTSTATUS SRT_ERROR = -1;
 static const SRTSTATUS SRT_STATUS_OK = 0;
+
+#endif
+
+typedef struct CBytePerfMon SRT_TRACEBSTATS;
+
 
 // library initialization
 SRT_API       SRTSTATUS srt_startup(void);
@@ -980,7 +996,7 @@ struct SRT_SocketGroupData_
     SRT_SOCKSTATUS sockstate;
     uint16_t weight;
     SRT_MEMBERSTATUS memberstate;
-    int result;
+    SRTSTATUS result;
     int token;
 };
 
@@ -999,7 +1015,7 @@ typedef struct SRT_GroupMemberConfig_
 
 SRT_API SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
 SRT_API SRTSOCKET srt_groupof(SRTSOCKET socket);
-SRT_API int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+SRT_API SRTSTATUS srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 
 SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);

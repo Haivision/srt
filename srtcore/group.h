@@ -194,9 +194,6 @@ public:
             m_bConnected = false;
         }
 
-        // XXX BUGFIX
-        m_Positions.erase(id);
-
         return !empty;
     }
 
@@ -373,8 +370,8 @@ public:
     void readyPackets(srt::CUDT* core, int32_t ack);
 
     void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
-    int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -645,20 +642,6 @@ private:
     // this has been already set.
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
-
-    struct ReadPos
-    {
-        std::vector<char> packet;
-        SRT_MSGCTRL       mctrl;
-        ReadPos(int32_t s)
-            : mctrl(srt_msgctrl_default)
-        {
-            mctrl.pktseq = s;
-        }
-    };
-    std::map<SRTSOCKET, ReadPos> m_Positions;
-
-    ReadPos* checkPacketAhead();
 
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 

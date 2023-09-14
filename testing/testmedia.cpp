@@ -547,7 +547,7 @@ void SrtCommon::AcceptNewClient()
 
         int len = 2;
         SRTSOCKET ready[2];
-        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == SRT_ERROR)
+        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == int(SRT_ERROR))
         {
             if (::transmit_int_state)
                 Error("srt_epoll_wait for srt_accept: interrupt");
@@ -583,7 +583,7 @@ void SrtCommon::AcceptNewClient()
 
 #ifndef SRT_OLD_APP_READER
 
-        if (srt_epoll != SRT_ERROR)
+        if (srt_epoll != int(SRT_ERROR))
         {
             Verb() << "(Group: erasing epoll " << srt_epoll << ") " << VerbNoEOL;
             srt_epoll_release(srt_epoll);
@@ -762,7 +762,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
 int SrtCommon::AddPoller(SRTSOCKET socket, int modes)
 {
     int pollid = srt_epoll_create();
-    if (pollid == SRT_ERROR)
+    if (pollid == int(SRT_ERROR))
         throw std::runtime_error("Can't create epoll in nonblocking mode");
     Verb() << "EPOLL: creating eid=" << pollid << " and adding @" << socket
         << " in " << DirectionName(SRT_EPOLL_OPT(modes)) << " mode";
@@ -978,12 +978,12 @@ void SrtCommon::OpenGroupClient()
     }
 
     m_sock = srt_create_group(type);
-    if (m_sock == SRT_ERROR)
+    if (m_sock == SRT_INVALID_SOCK)
         Error("srt_create_group");
 
     srt_connect_callback(m_sock, &TransmitGroupSocketConnect, this);
 
-    int stat = SRT_ERROR;
+    SRTSTATUS stat = SRT_ERROR;
     if (m_group_config != "")
     {
         Verb() << "Ignoring setting group config: '" << m_group_config;
@@ -1059,9 +1059,9 @@ void SrtCommon::OpenGroupClient()
 Connect_Again:
         Verb() << "Waiting for group connection... " << VerbNoEOL;
 
-        int fisock = srt_connect_group(m_sock, targets.data(), targets.size());
+        SRTSOCKET fisock = srt_connect_group(m_sock, targets.data(), targets.size());
 
-        if (fisock == SRT_ERROR)
+        if (fisock == SRT_INVALID_SOCK)
         {
             // Complete the error information for every member
             ostringstream out;
@@ -1171,7 +1171,7 @@ Connect_Again:
                     ready_conn, &len1,
                     -1, // Wait infinitely
                     NULL, NULL,
-                    NULL, NULL) != SRT_ERROR)
+                    NULL, NULL) != int(SRT_ERROR))
         {
             Verb() << "[C]" << VerbNoEOL;
             for (int i = 0; i < len1; ++i)
@@ -1345,7 +1345,7 @@ void SrtCommon::ConnectClient(string host, int port)
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
         int lenc = 2, lene = 2;
         SRTSOCKET ready_connect[2], ready_error[2];
-        if (srt_epoll_wait(srt_conn_epoll, ready_error, &lene, ready_connect, &lenc, -1, 0, 0, 0, 0) != SRT_ERROR)
+        if (srt_epoll_wait(srt_conn_epoll, ready_error, &lene, ready_connect, &lenc, -1, 0, 0, 0, 0) != (int)SRT_ERROR)
         {
             // We should have just one socket, so check whatever socket
             // is in the transmit_error_storage.
@@ -1445,7 +1445,7 @@ void SrtCommon::SetupRendezvous(string adapter, string host, int port)
     if (target.family() == AF_INET6)
         showhost = "[" + showhost + "]";
     Verb() << "Binding rendezvous: " << showhost << ":" << outport << " ...";
-    int stat = srt_bind(m_sock, localsa.get(), localsa.size());
+    SRTSTATUS stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {
         srt_close(m_sock);
@@ -1519,7 +1519,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         SRTSOCKET id = d.id;
 
         SRT_SOCKSTATUS status = d.sockstate;
-        int result = d.result;
+        SRTSTATUS result = d.result;
         SRT_MEMBERSTATUS mstatus = d.memberstate;
 
         if (result != SRT_ERROR && status == SRTS_CONNECTED)
@@ -1567,8 +1567,8 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
         gd.config = n.options;
         gd.token = n.token;
 
-        int fisock = srt_connect_group(m_sock, &gd, 1);
-        if (fisock == SRT_ERROR)
+        SRTSOCKET fisock = srt_connect_group(m_sock, &gd, 1);
+        if (fisock == SRT_INVALID_SOCK)
         {
             // Whatever. Skip the node.
             Verb() << "FAILED: ";
@@ -2306,7 +2306,7 @@ MediaPacket SrtSource::Read(size_t chunk)
         ::transmit_throw_on_interrupt = true;
         stat = srt_recvmsg2(m_sock, data.data(), chunk, &mctrl);
         ::transmit_throw_on_interrupt = false;
-        if (stat != SRT_ERROR)
+        if (stat != int(SRT_ERROR))
         {
             ready = true;
         }
@@ -2326,13 +2326,13 @@ Epoll_again:
                     int len = 2;
                     SRT_EPOLL_EVENT sready[2];
                     len = srt_epoll_uwait(srt_epoll, sready, len, -1);
-                    if (len != SRT_ERROR)
+                    if (len != int(SRT_ERROR))
                     {
                         Verb() << "... epoll reported ready " << len << " sockets";
                         // If the event was SRT_EPOLL_UPDATE, report it, and still wait.
 
                         bool any_read_ready = false;
-                        vector<int> errored;
+                        vector<SRTSOCKET> errored;
                         for (int i = 0; i < len; ++i)
                         {
                             if (sready[i].events & SRT_EPOLL_UPDATE)
@@ -2426,9 +2426,9 @@ SrtTarget::SrtTarget(std::string host, int port, std::string path, const std::ma
 }
 
 
-int SrtTarget::ConfigurePre(SRTSOCKET sock)
+SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
-    int result = SrtCommon::ConfigurePre(sock);
+    SRTSTATUS result = SrtCommon::ConfigurePre(sock);
     if (result == SRT_ERROR)
         return result;
 
@@ -2441,7 +2441,7 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 void SrtTarget::Write(const MediaPacket& data)
@@ -2457,7 +2457,7 @@ Epoll_again:
         int len = 2;
         SRT_EPOLL_EVENT sready[2];
         len = srt_epoll_uwait(srt_epoll, sready, len, -1);
-        if (len != SRT_ERROR)
+        if (len != int(SRT_ERROR))
         {
             bool any_write_ready = false;
             for (int i = 0; i < len; ++i)
@@ -2506,7 +2506,7 @@ Epoll_again:
     // if ALL links from the group have failed to perform
     // the operation. If only one did, the result will be
     // visible in the status array.
-    if (stat == SRT_ERROR)
+    if (stat == int(SRT_ERROR))
         Error("srt_sendmsg");
     ::transmit_throw_on_interrupt = false;
 
@@ -2754,9 +2754,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
         if (is_multicast)
         {
-            ip_mreq_source mreq_ssm;
             ip_mreq mreq;
-            sockaddr_any maddr;
+            sockaddr_any maddr (AF_INET);
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -2777,6 +2776,8 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
             if (attr.count("source"))
             {
+#ifdef IP_ADD_SOURCE_MEMBERSHIP
+                ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
                 mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
@@ -2784,6 +2785,9 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
+#else
+                throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
+#endif
             }
             else
             {

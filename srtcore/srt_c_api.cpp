@@ -40,7 +40,7 @@ SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
-int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+SRTSTATUS srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
 {
     return CUDT::getGroupData(socketgroup, output, inoutlen);
 }
@@ -186,12 +186,12 @@ int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
     fstream ifs(path, ios::binary | ios::in);
     if (!ifs)
     {
-        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0);
+        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0).as<int>();
     }
     int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
     ifs.close();
@@ -202,12 +202,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
     fstream ofs(path, ios::binary | ios::out);
     if (!ofs)
     {
-        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0);
+        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0).as<int>();
     }
     int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
     ofs.close();

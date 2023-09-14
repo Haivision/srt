@@ -58,23 +58,27 @@ struct SocketOption
     bool applyt(Object socket, std::string value) const;
 
     template <Domain D, typename Object>
-    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size);
+    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size)
+    {
+        typename Object::wrong_version error;
+        return -1;
+    }
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
 };
 
 template<>
-inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, SRTSOCKET>(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return (int)srt_setsockopt(SRTSOCKET(socket), 0, SRT_SOCKOPT(sym), data, (int) size);
+    return (int)srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 #if ENABLE_BONDING
 template<>
 inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
+    return (int)srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
 }
 #endif
 
@@ -184,7 +188,7 @@ inline bool SocketOption::applyt(Object socket, std::string value) const
     int result = -1;
     if (extract<T>(value, o))
         result = setso<D>(socket, protocol, symbol, o.value, o.size);
-    return result != -1;
+    return result != int(SRT_ERROR);
 }
 
 
@@ -257,6 +261,9 @@ const SocketOption srt_options [] {
     { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
 #ifdef ENABLE_AEAD_API_PREVIEW
     ,{ "cryptomode", 0, SRTO_CRYPTOMODE, SocketOption::PRE, SocketOption::INT, nullptr }
+#endif
+#ifdef ENABLE_MAXREXMITBW
+    ,{ "maxrexmitbw", 0, SRTO_MAXREXMITBW, SocketOption::POST, SocketOption::INT64, nullptr }
 #endif
 };
 }

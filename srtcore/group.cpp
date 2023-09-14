@@ -1223,12 +1223,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // and therefore take over the leading role in setting the ISN. If the
     // second one fails, too, then the only remaining idle link will simply
     // go with its own original sequence.
-    //
-    // On the opposite side the reader should know that the link is inactive
-    // so the first received payload activates it. Activation of an idle link
-    // means that the very first packet arriving is TAKEN AS A GOOD DEAL, that is,
-    // no LOSSREPORT is sent even if the sequence looks like a "jumped over".
-    // Only for activated links is the LOSSREPORT sent upon seqhole detection.
+
+    // On the opposite side, if the first packet arriving looks like a jump over,
+    // the corresponding LOSSREPORT is sent. For packets that are truly lost,
+    // the sender retransmits them, for packets that before ISN, DROPREQ is sent.
 
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
@@ -1683,7 +1681,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     return rstat;
 }
 
-int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     if (!psize)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
@@ -1694,7 +1692,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 }
 
 // [[using locked(this->m_GroupLock)]]
-int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     SRT_ASSERT(psize != NULL);
     const size_t size = *psize;
@@ -1703,7 +1701,9 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 
     if (!pdata)
     {
-        return 0;
+        // The request was only to get the number of group members,
+        // already filled.
+        return SRT_STATUS_OK;
     }
 
     if (m_Group.size() > size)
@@ -1718,7 +1718,7 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         copyGroupData(*d, (pdata[i]));
     }
 
-    return (int)m_Group.size();
+    return SRT_STATUS_OK;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -1739,20 +1739,20 @@ void CUDTGroup::copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUP
 
     if (source.sndstate == SRT_GST_RUNNING || source.rcvstate == SRT_GST_RUNNING)
     {
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = SRT_GST_RUNNING;
     }
     // Stats can differ per direction only
     // when at least in one direction it's ACTIVE.
     else if (source.sndstate == SRT_GST_BROKEN || source.rcvstate == SRT_GST_BROKEN)
     {
-        w_target.result      = -1;
+        w_target.result      = SRT_ERROR;
         w_target.memberstate = SRT_GST_BROKEN;
     }
     else
     {
         // IDLE or PENDING
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = source.sndstate;
     }
 
@@ -1808,7 +1808,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
         return;
     }
 
-    int st = getGroupData_LOCKED((grpdata), (&grpdata_size));
+    SRTSTATUS st = getGroupData_LOCKED((grpdata), (&grpdata_size));
 
     // Always write back the size, no matter if the data were filled.
     w_out.grpdata_size = grpdata_size;
@@ -2277,7 +2277,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             // This socket will not be socketToRead in the next turn because receiveMessage() return 0 here.
             continue;
         }
-        if (res == SRT_ERROR)
+        if (res == int(SRT_ERROR))
         {
             LOGC(grlog.Warn,
                  log << "grp/recv: $" << id() << ": @" << socketToRead->m_SocketID << ": " << srt_getlasterror_str()
@@ -2295,13 +2295,14 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         m_stats.recv.count(res);
         updateAvgPayloadSize(res);
 
+        bool canReadFurther = false;
         for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
         {
             CUDTSocket* ps = *si;
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
@@ -2309,57 +2310,21 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               << " packets after reading: m_RcvBaseSeqNo=" << m_RcvBaseSeqNo);
                 }
             }
-        }
-        for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
-        {
-            CUDTSocket* ps = *si;
-            if (!ps->core().isRcvBufferReady())
+
+            if (!ps->core().isRcvBufferReadyNoLock())
                 m_Global.m_EPoll.update_events(ps->m_SocketID, ps->core().m_sPollID, SRT_EPOLL_IN, false);
+            else
+                canReadFurther = true;
         }
+
+        if (!canReadFurther)
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
 
         return res;
     }
     LOGC(grlog.Error, log << "grp/recv: UNEXPECTED RUN PATH, ABANDONING.");
     m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
     throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
-}
-
-// [[using locked(m_GroupLock)]]
-CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
-{
-    typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
-    ReadPos*                                  out = 0;
-
-    // This map no longer maps only ahead links.
-    // Here are all links, and whether ahead, it's defined by the sequence.
-    for (pit_t i = m_Positions.begin(); i != m_Positions.end(); ++i)
-    {
-        // i->first: socket ID
-        // i->second: ReadPos { sequence, packet }
-        // We are not interested with the socket ID because we
-        // aren't going to read from it - we have the packet already.
-        ReadPos& a = i->second;
-
-        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
-        if (seqdiff == 1)
-        {
-            // The very next packet. Return it.
-            HLOGC(grlog.Debug,
-                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
-                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
-            out = &a;
-        }
-        else if (seqdiff < 1 && !a.packet.empty())
-        {
-            HLOGC(grlog.Debug,
-                  log << "group/recv: @" << i->first << " dropping collected ahead %" << a.mctrl.pktseq << "#"
-                      << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
-            a.packet.clear();
-        }
-        // In case when it's >1, keep it in ahead
-    }
-
-    return out;
 }
 
 const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
@@ -3732,7 +3697,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
     SRT_ASSERT(w_nsuccessful == 0);
     SRT_ASSERT(w_maxActiveWeight == 0);
 
-    int group_send_result = SRT_ERROR;
+    int group_send_result = int(SRT_ERROR);
 
     // TODO: implement iterator over active links
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
@@ -3746,7 +3711,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         CUDT& u = d->ps->core();
         const int32_t lastseq = u.schedSeqNo();
-        int sndresult = SRT_ERROR;
+        int sndresult = int(SRT_ERROR);
         try
         {
             // This must be wrapped in try-catch because on error it throws an exception.
@@ -3759,7 +3724,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         {
             w_cx = e;
             erc  = e.getErrorCode();
-            sndresult = SRT_ERROR;
+            sndresult = int(SRT_ERROR);
         }
 
         const bool send_succeeded = sendBackup_CheckSendStatus(
