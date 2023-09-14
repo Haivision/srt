@@ -201,6 +201,8 @@ TEST(FileTransmission, Upload)
 
 TEST(FileTransmission, Setup46)
 {
+    SRTST_REQUIRES(IPv6);
+
     using namespace srt;
 
     srt_startup();

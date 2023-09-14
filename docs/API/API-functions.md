@@ -171,7 +171,7 @@ Since SRT v1.5.0.
 | [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
 | [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
 | [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
-| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.6.0-dev | The connection was rejected due to an unsupported or mismatching encryption mode                               |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
 | [SRT_REJ_SETTINGS](#SRT_REJ_SETTINGS)        | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
@@ -360,8 +360,12 @@ int srt_bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
 Binds a socket to a local address and port. Binding specifies the local network
 interface and the UDP port number to be used for the socket. When the local 
 address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
-it's bound to all interfaces (although see `SRTO_IPV6ONLY` and additional
-information below for details about the wildcard address in IPv6).
+it's bound to all interfaces.
+
+**IMPORTANT**: When you bind an IPv6 wildcard address, note that the
+`SRTO_IPV6ONLY` option must be set on the socket explicitly to 1 or 0 prior to
+calling this function. See
+[`SRTO_IPV6ONLY`](API-socket-options.md#SRTO_IPV6ONLY) for more details.
 
 Binding is necessary for every socket to be used for communication. If the socket
 is to be used to initiate a connection to a listener socket, which can be done,
@@ -663,7 +667,7 @@ internal use only.
 |      Returns                  |                                                                         |
 |:----------------------------- |:----------------------------------------------------------------------- |
 | socket/group ID               | On success, a valid SRT socket or group ID to be used for transmission. |
-| `SRT_ERROR`                   | (-1) on failure                                                         |
+| `SRT_INVALID_SOCK`            | (-1) on failure                                                         |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                      |                                                                         |
@@ -719,7 +723,7 @@ calling this function.
 |      Returns                  |                                                                        |
 |:----------------------------- |:---------------------------------------------------------------------- |
 | SRT socket<br/>group ID       | On success, a valid SRT socket or group ID to be used for transmission |
-| `SRT_ERROR`      | (-1) on failure                                                        |
+| `SRT_INVALID_SOCK`            | (-1) on failure                                                        |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
 |       Errors                      |                                                              |
