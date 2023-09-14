@@ -791,6 +791,19 @@ inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
     return std::pair<Type1&, Type2&>(var1, var2);
 }
 
+// This can be used in conjunction with Tie to simplify the code
+// in loops around a whole container:
+// list<string>::const_iterator it, end;
+// Tie(it, end) = All(list_container);
+template<class Container>
+std::pair<typename Container::iterator, typename Container::iterator>
+inline All(Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+template<class Container>
+std::pair<typename Container::const_iterator, typename Container::const_iterator>
+inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+
 template <class Container, class Value>
 inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
 {
