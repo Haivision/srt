@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.2)
+set (SRT_VERSION 1.5.3)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -153,6 +153,7 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
@@ -299,7 +300,13 @@ if(WIN32)
 	if(ENABLE_INET_PTON)
 		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
 		check_function_exists(inet_pton HAVE_INET_PTON)
-		add_definitions(-D_WIN32_WINNT=0x0600)
+		try_compile(AT_LEAST_VISTA
+			${CMAKE_BINARY_DIR}
+			"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
+		if(NOT AT_LEAST_VISTA)
+			# force targeting Vista
+			add_definitions(-D_WIN32_WINNT=0x0600)
+		endif()
 	else()
 		add_definitions(-D_WIN32_WINNT=0x0501)
 	endif()
@@ -458,6 +465,13 @@ if (USE_GNUSTL)
 	link_directories(${GNUSTL_LIBRARY_DIRS})
 	include_directories(${GNUSTL_INCLUDE_DIRS})
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
+if (ENABLE_MAXREXMITBW)
+	add_definitions(-DENABLE_MAXREXMITBW)
+	message(STATUS "MAXREXMITBW API: ENABLED")
+else()
+	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
