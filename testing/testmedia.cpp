@@ -498,7 +498,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if (!m_blocking_mode)
     {
-        srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_IN);
     }
 
     auto sa = CreateAddr(host, port);
@@ -547,7 +547,7 @@ void SrtCommon::AcceptNewClient()
 
         int len = 2;
         SRTSOCKET ready[2];
-        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == -1)
+        while (srt_epoll_wait(srt_conn_epoll, ready, &len, 0, 0, 1000, 0, 0, 0, 0) == -1)
         {
             if (::transmit_int_state)
                 Error("srt_epoll_wait for srt_accept: interrupt");

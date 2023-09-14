@@ -10851,6 +10851,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: received a connection request");
 
+    // NOTE (IMPORTANT!!!)
+    //
+    // The current CUDT object represents a LISTENER SOCKET to which
+    // the request was redirected from the receiver queue.
+
     if (m_bClosing)
     {
         m_RejectReason = SRT_REJ_CLOSE;
