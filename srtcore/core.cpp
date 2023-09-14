@@ -10221,13 +10221,13 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
                 const steady_clock::time_point tnow = steady_clock::now();
                 ScopedLock lg(m_StatsLock);
-                m_stats.rcvr.dropped.count(stats::BytesPacketsCount(iDropCnt* rpkt.getLength(), iDropCnt));
-                m_stats.rcvr.undecrypted.count(stats::BytesPacketsCount(rpkt.getLength(), 1));
-                if (frequentLogAllowed(tnow))
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
+                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                 {
                     LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
-                    m_tsLogSlowDown = tnow;
+                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                 }
             }
         }
