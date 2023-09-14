@@ -4,10 +4,10 @@
 #include <iostream>
 
 #include "gtest/gtest.h"
+#include "test_env.h"
 
 #include "srt.h"
 #include "netinet_any.h"
-#include "apputil.hpp"
 
 using namespace std;
 using namespace std::chrono;
@@ -15,6 +15,8 @@ using namespace srt;
 
 TEST(SocketData, PeerName)
 {
+    srt::TestInit srtinit;
+
     // Single-threaded one-app connect/accept action
 
     int csock = srt_create_socket();
@@ -25,7 +27,7 @@ TEST(SocketData, PeerName)
     srt_setsockflag(csock, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
     //srt_setsockflag(lsock, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
 
-    sockaddr_any addr = CreateAddr("127.0.0.1", 5000, AF_INET);
+    sockaddr_any addr = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
 
     ASSERT_NE(srt_bind(lsock, addr.get(), addr.size()), -1);
 

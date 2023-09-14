@@ -258,6 +258,9 @@ const SocketOption srt_options [] {
 #ifdef ENABLE_AEAD_API_PREVIEW
     ,{ "cryptomode", 0, SRTO_CRYPTOMODE, SocketOption::PRE, SocketOption::INT, nullptr }
 #endif
+#ifdef ENABLE_MAXREXMITBW
+    ,{ "maxrexmitbw", 0, SRTO_MAXREXMITBW, SocketOption::POST, SocketOption::INT64, nullptr }
+#endif
 };
 }
 
