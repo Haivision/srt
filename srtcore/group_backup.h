@@ -79,6 +79,7 @@ namespace groups
             : m_stateCounter() // default init with zeros
             , m_activeMaxWeight()
             , m_standbyMaxWeight()
+            , m_rateEstimate(AF_INET6) // XXX Probably the whole solution is wrong
         {
         }
 
