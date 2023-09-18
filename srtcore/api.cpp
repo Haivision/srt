@@ -3160,7 +3160,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
         // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
         // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
-        size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+        const size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
 
         HLOGC(smlog.Debug, log << s->core().CONID() << "updateMux: config rcv queue qsize=" << 128
                 << " plsize=" << payload_size << " hsize=" << 1024);
