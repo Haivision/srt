@@ -205,7 +205,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     {
         // Check if the peer address is a model of IPv4-mapped-on-IPv6.
         // If so, it means that the `ip` array should be interpreted as IPv4.
-        const bool is_mapped_ipv4 = checkMappedIPv4((uint16_t*)peer.sin6.sin6_addr.s6_addr);
+        const bool is_mapped_ipv4 = checkMappedIPv4(peer.sin6);
 
         sockaddr_in6* a = (&w_addr.sin6);
 
