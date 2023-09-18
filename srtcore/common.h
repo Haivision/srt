@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_COMMON_H
 #define INC_SRT_COMMON_H
 
-#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
@@ -1393,8 +1392,11 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 inline int32_t SrtParseVersion(const char* v)
 {
     int major, minor, patch;
+#if defined(_MSC_VER)
+    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
+#else
     int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-
+#endif
     if (result != 3)
     {
         return 0;
@@ -1419,6 +1421,15 @@ inline std::string SrtVersionString(int version)
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
 
 } // namespace srt
 

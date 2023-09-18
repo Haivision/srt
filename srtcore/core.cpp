@@ -305,7 +305,13 @@ void srt::CUDT::construct()
     // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent)
+    : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
 {
     construct();
 
@@ -328,7 +334,13 @@ srt::CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
 
 }
 
-srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
+srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
+    : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
 {
     construct();
 
@@ -614,8 +626,8 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         }
 
         // Fallback: return from internal data
-        strcpy(((char*)optval), m_config.sBindToDevice.c_str());
-        optlen = m_config.sBindToDevice.size();
+        optlen = (int)m_config.sBindToDevice.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
 #else
         LOGC(smlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -737,16 +749,16 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (size_t(optlen) < m_config.sStreamName.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sStreamName.c_str());
-        optlen = (int) m_config.sStreamName.size();
+        optlen = (int)m_config.sStreamName.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_CONGESTION:
         if (size_t(optlen) < m_config.sCongestion.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sCongestion.c_str());
-        optlen = (int) m_config.sCongestion.size();
+        optlen = (int)m_config.sCongestion.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_MESSAGEAPI:
@@ -805,8 +817,8 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (size_t(optlen) < m_config.sPacketFilterConfig.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_config.sPacketFilterConfig.c_str());
-        optlen = (int) m_config.sPacketFilterConfig.size();
+        optlen = (int)m_config.sPacketFilterConfig.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_RETRANSMITALGO:
@@ -2835,6 +2847,9 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 char target[CSrtConfig::MAX_PFILTER_LENGTH + 1];
                 memset((target), 0, CSrtConfig::MAX_PFILTER_LENGTH + 1);
                 memcpy((target), begin + 1, bytelen);
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
+
                 string fltcfg = target;
 
                 HLOGC(cnlog.Debug,
@@ -3686,14 +3701,20 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 if (cst == CONN_CONTINUE)
                     continue;
 
-                // Just in case it wasn't set, set this as a fallback
-                if (m_RejectReason == SRT_REJ_UNKNOWN)
-                    m_RejectReason = SRT_REJ_ROGUE;
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "startConnect: processRendezvous returned cst=" << ConnectStatusStr(cst));
 
-                // rejection or erroneous code.
-                reqpkt.setLength(m_iMaxSRTPayloadSize);
-                reqpkt.setControl(UMSG_HANDSHAKE);
-                sendRendezvousRejection(serv_addr, (reqpkt));
+                if (cst == CONN_REJECT)
+                {
+                    // Just in case it wasn't set, set this as a fallback
+                    if (m_RejectReason == SRT_REJ_UNKNOWN)
+                        m_RejectReason = SRT_REJ_ROGUE;
+
+                    // rejection or erroneous code.
+                    reqpkt.setLength(m_iMaxSRTPayloadSize);
+                    reqpkt.setControl(UMSG_HANDSHAKE);
+                    sendRendezvousRejection(serv_addr, (reqpkt));
+                }
             }
 
             if (cst == CONN_REJECT)
@@ -4176,7 +4197,7 @@ EConnectStatus srt::CUDT::processRendezvous(
 
     // The CryptoControl must be created by the prepareConnectionObjects() before interpreting and creating HSv5 extensions
     // because the it will be used there.
-    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL))
+    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL) || !prepareBuffers(NULL))
     {
         // m_RejectReason already handled
         HLOGC(cnlog.Debug,
@@ -4273,6 +4294,7 @@ EConnectStatus srt::CUDT::processRendezvous(
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+                return CONN_REJECT;
             }
         }
         // This should be false, make a kinda assert here.
@@ -4676,7 +4698,8 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
 
     HLOGC(cnlog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
-              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
+              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " peer-ISN=" << m_ConnRes.m_iISN
+              << " local-ISN=" << m_iISN
               << " peerID=" << m_ConnRes.m_iID
               << " sourceIP=" << m_SourceAddr.str());
     return true;
@@ -4731,6 +4754,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // In this situation the interpretation of handshake was already done earlier.
         ok = ok && pResponse->isControl();
         ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
+        ok = ok && prepareBuffers(eout);
 
         if (!ok)
         {
@@ -4813,7 +4837,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
     // that thinks it's connected, but his last handshake was missed,
-    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // they are collected by CRcvQueue::storePktClone. The removeConnector
     // function will want to delete them all, so it would be nice
     // if these packets can be re-delivered. Of course the listener
     // should be prepared to resend them (as every packet can be lost
@@ -5452,6 +5476,10 @@ void * srt::CUDT::tsbpd(void* param)
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
+        // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
+        if (self->m_bClosing)
+            break;
+
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -5545,7 +5573,7 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     // code with HSv5 rendezvous, in which this will be run
     // in a little bit "randomly selected" moment, but must
     // be run once in the whole connection process.
-    if (m_pSndBuffer)
+    if (m_pCryptoControl)
     {
         HLOGC(rslog.Debug, log << CONID() << "prepareConnectionObjects: (lazy) already created.");
         return true;
@@ -5570,13 +5598,33 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
         }
     }
 
+    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
+    {
+        if (eout)
+            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+        m_RejectReason = SRT_REJ_RESOURCE;
+        return false;
+    }
+
+    return true;
+}
+
+bool srt::CUDT::prepareBuffers(CUDTException* eout)
+{
+    if (m_pSndBuffer)
+    {
+        HLOGC(rslog.Debug, log << CONID() << "prepareBuffers: (lazy) already created.");
+        return true;
+    }
+    
     try
     {
-        const int authtag = m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM ? HAICRYPT_AUTHTAG_MAX : 0;
+        // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
+        const int authtag = (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM) ? HAICRYPT_AUTHTAG_MAX : 0;
         m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize, authtag);
-        SRT_ASSERT(m_iISN != -1);
-        m_pRcvBuffer = new srt::CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
-        // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
+        SRT_ASSERT(m_iPeerISN != -1);
+        m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
+        // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
     }
@@ -5584,19 +5632,10 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     {
         // Simply reject.
         if (eout)
-        {
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-        }
         m_RejectReason = SRT_REJ_RESOURCE;
         return false;
     }
-
-    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
-    {
-        m_RejectReason = SRT_REJ_RESOURCE;
-        return false;
-    }
-
     return true;
 }
 
@@ -5703,6 +5742,19 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         // Respond with the rejection message and return false from
         // this function so that the caller will know that this new
         // socket should be deleted.
+        w_hs.m_iReqType = URQFailure(m_RejectReason);
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+
+    if (!prepareBuffers(NULL))
+    {
+        HLOGC(cnlog.Debug,
+            log << CONID() << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+        // If the SRT buffers failed to be allocated,
+        // the connection must be rejected.
+        //
+        // Respond with the rejection message and exit with exception
+        // so that the caller will know that this new socket should be deleted.
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
@@ -6776,6 +6828,11 @@ bool srt::CUDT::isRcvBufferReady() const
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
+bool srt::CUDT::isRcvBufferReadyNoLock() const
+{
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
@@ -6820,7 +6877,6 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
             : 0;
         leaveCS(m_RcvBufferLock);
-        w_mctrl.srctime = 0;
 
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
@@ -7876,7 +7932,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
     int nbsent = 0;
     int local_prevack = 0;
-
 #if ENABLE_HEAVY_LOGGING
     struct SaveBack
     {
@@ -7899,21 +7954,22 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
     UniqueLock bufflock(m_RcvBufferLock);
-
+    // The full ACK should be sent to indicate there is now available space in the RCV buffer
+    // since the last full ACK. It should unblock the sender to proceed further.
+    const bool bNeedFullAck = (m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0);
     int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
     if (!getFirstNoncontSequence((ack), (reason)))
         return nbsent;
 
-    if (m_iRcvLastAckAck == ack)
+    if (m_iRcvLastAckAck == ack && !bNeedFullAck)
     {
-        HLOGC(xtlog.Debug,
-              log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
-        return nbsent;
+        HLOGC(xtlog.Debug,      
+                log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");     
+        return nbsent;    
     }
-
     // send out a lite ACK
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-    if (size == SEND_LITE_ACK)
+    if (size == SEND_LITE_ACK && !bNeedFullAck)
     {
         bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
@@ -8051,7 +8107,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             CGlobEvent::triggerEvent();
         }
     }
-    else if (ack == m_iRcvLastAck)
+    else if (ack == m_iRcvLastAck && !bNeedFullAck)
     {
         // If the ACK was just sent already AND elapsed time did not exceed RTT,
         if ((steady_clock::now() - m_tsLastAckTime) <
@@ -8062,7 +8118,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             return nbsent;
         }
     }
-    else
+    else if (!bNeedFullAck)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
         LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr %" << ack << " <% last %" << m_iRcvLastAck);
@@ -8073,7 +8129,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // [[using locked(m_RcvBufferLock)]];
 
     // Send out the ACK only if has not been received by the sender before
-    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0)
+    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || bNeedFullAck)
     {
         // NOTE: The BSTATS feature turns on extra fields above size 6
         // also known as ACKD_TOTAL_SIZE_VER100.
@@ -8089,10 +8145,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
         data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
-        // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
-        if (data[ACKD_BUFFERLEFT] < 2)
-            data[ACKD_BUFFERLEFT] = 2;
-
+        m_bBufferWasFull = data[ACKD_BUFFERLEFT] == 0;
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
         {
             int rcvRate;
@@ -8267,7 +8320,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
         }
-
         return;
     }
 
@@ -8308,14 +8360,25 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             return;
         }
 
-        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
+    if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
+    {
+        const int cwnd1   = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        const bool bWasStuck = cwnd1<= getFlightSpan();
+        // Update Flow Window Size, must update before and together with m_iSndLastAck
+        m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+        m_iSndLastAck     = ackdata_seqno;
+        m_tsLastRspAckTime  = currtime;
+        m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+
+        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
+        if (bWasStuck && cwnd > getFlightSpan())
         {
-            // Update Flow Window Size, must update before and together with m_iSndLastAck
-            m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
-            m_iSndLastAck     = ackdata_seqno;
-            m_tsLastRspAckTime  = currtime;
-            m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+            HLOGC(gglog.Debug,
+                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                    << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
         }
+    }
 
         /*
          * We must not ignore full ack received by peer
@@ -9193,7 +9256,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
 
         // The packet has been ecrypted, thus the authentication tag is expected to be stored
         // in the SND buffer as well right after the payload.
-        if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+        if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
             w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
         }
@@ -9216,6 +9279,10 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             w_packet.m_iMsgNo |= PACKET_SND_REXMIT;
         }
         setDataPacketTS(w_packet, tsOrigin);
+
+#ifdef ENABLE_MAXREXMITBW
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+#endif
 
         return payload;
     }
@@ -9377,6 +9444,18 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
         // Can send original packet, so just send it
         return false;
     }
+
+#ifdef ENABLE_MAXREXMITBW
+    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
+    {
+        // Too many retransmissions, so don't send anything.
+        // TODO: When to wake up next time?
+        return false;
+    }
+#endif
 
 #if SRT_DEBUG_TRACE_SND
     g_snd_logger.state.canRexmit = true;
@@ -9698,8 +9777,6 @@ void srt::CUDT::processClose()
 
 void srt::CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
 {
-    typedef vector<pair<int32_t, int32_t> > loss_seqs_t;
-
     vector<int32_t> seqbuffer;
     seqbuffer.reserve(2 * loss_seqs.size()); // pessimistic
     for (loss_seqs_t::const_iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
@@ -9728,7 +9805,7 @@ void srt::CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &
 bool srt::CUDT::overrideSndSeqNo(int32_t seq)
 {
     // This function is intended to be called from the socket
-    // group managmenet functions to synchronize the sequnece in
+    // group management functions to synchronize the sequnece in
     // all sockes in the bonding group. THIS sequence given
     // here is the sequence TO BE STAMPED AT THE EXACTLY NEXT
     // sent payload. Therefore, screw up the ISN to exactly this
@@ -9770,9 +9847,9 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     // the latter is ahead with the number of packets already scheduled, but
     // not yet sent.
 
-    HLOGC(gslog.Debug, log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
-        << " (unchanged)"
-        );
+    HLOGC(gslog.Debug,
+          log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
+              << " (unchanged)");
     return true;
 }
 
@@ -9964,6 +10041,22 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                             << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
                         m_tsLogSlowDown = tnow;
                     }
+                }
+            }
+            else if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+            {
+                // Unencrypted packets are not allowed.
+                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+
+                const steady_clock::time_point tnow = steady_clock::now();
+                ScopedLock lg(m_StatsLock);
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
+                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                if (frequentLogAllowed(tnow))
+                {
+                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
+                    m_tsLogSlowDown = tnow;
                 }
             }
         }

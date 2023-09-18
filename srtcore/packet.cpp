@@ -221,6 +221,7 @@ void CPacket::deallocate()
     if (m_data_owned)
         delete[](char*) m_PacketVector[PV_DATA].data();
     m_PacketVector[PV_DATA].set(NULL, 0);
+    m_data_owned = false;
 }
 
 char* CPacket::release()
@@ -241,8 +242,7 @@ CPacket::~CPacket()
 {
     // PV_HEADER is always owned, PV_DATA may use a "borrowed" buffer.
     // Delete the internal buffer only if it was declared as owned.
-    if (m_data_owned)
-        delete[](char*) m_PacketVector[PV_DATA].data();
+    deallocate();
 }
 
 size_t CPacket::getLength() const
@@ -561,10 +561,9 @@ CPacket* CPacket::clone() const
 {
     CPacket* pkt = new CPacket;
     memcpy((pkt->m_nHeader), m_nHeader, HDR_SIZE);
-    pkt->m_pcData = new char[m_PacketVector[PV_DATA].size()];
-    memcpy((pkt->m_pcData), m_pcData, m_PacketVector[PV_DATA].size());
-    pkt->m_PacketVector[PV_DATA].setLength(m_PacketVector[PV_DATA].size());
-
+    pkt->allocate(this->getLength());
+    SRT_ASSERT(this->getLength() == pkt->getLength());
+    memcpy((pkt->m_pcData), m_pcData, this->getLength());
     pkt->m_DestAddr = m_DestAddr;
 
     return pkt;
