@@ -927,17 +927,17 @@ The default value is 0x010000 (SRT v1.0.0).
 Maximum Segment Size. This value represents the maximum size of a UDP packet
 sent by the system. Therefore the value of `SRTO_MSS` must not exceed the
 values of `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`. It is used for buffer
-allocation and rate calculation using packet counter assuming fully filled
+allocation and rate calculation using a packet counter that assumes fully filled
 packets. 
 
 This value is a sum of:
 
-* IP header (20 bytes for IPv4 or 32 bytes for IPv6)
+* IP header (20 bytes for IPv4, or 32 bytes for IPv6)
 * UDP header (8 bytes)
 * SRT header (16 bytes)
 * remaining space (as the maximum payload size available for a packet)
 
-For the default 1500 the "remaining space" part is effectively 1456 for IPv4
+For the default 1500 the "remaining space" is effectively 1456 for IPv4
 and 1444 for IPv6.
 
 Note that the IP version used here is not the domain of the underlying UDP
@@ -951,7 +951,7 @@ The IPv6 transmission case is assumed only if the peer's address is a true IPv6 
 (not IPv4 mapped). It is then not possible to determine the payload size limit 
 until the connection is established. SRT operations that must allocate any 
 resources according to this value prior to connecting will assume IPv4 transmission 
-because this way, in the worst case, they allocate more space than needed .
+because this way, in the worst case, they allocate more space than needed.
 
 This value can be set on both connection parties independently, but after
 connection `SRTO_MSS` gets a negotiated value, which is the lesser
@@ -988,8 +988,8 @@ the peer is trusted (that is, you can be certain that you will never receive an 
 packet over the link used for the connection). You should also consider the limitations of
 `SRTO_PAYLOADSIZE`.
 
-In the file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
-for one single packet sending, and therefore bigger portions of data are
+In file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
+for sending a single packet, and therefore bigger portions of data are
 internally split into smaller portions, each one using the maximum available
 "remaining space". The best value of `SRTO_MSS` for this case is then equal to
 the current network device's MTU size. Setting a greater value is possible
