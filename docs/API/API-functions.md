@@ -752,7 +752,7 @@ connection has been accepted.
 **Arguments**:
 
 * `lsn`: Listening socket where you want to install the callback hook
-* `hook_fn`: The callback hook function pointer
+* `hook_fn`: The callback hook function pointer (or NULL to remove the callback)
 * `hook_opaque`: The pointer value that will be passed to the callback function
 
 |      Returns                  |                                                            |
@@ -763,7 +763,7 @@ connection has been accepted.
 
 |       Errors                      |                                           |
 |:--------------------------------- |:----------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | Reported when `hook_fn` is a null pointer |
+| [`SRT_ECONNSOCK`](#srt_econnsock) | It can't be modified in a connected socket|
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 The callback function has the signature as per this type definition:
@@ -1032,7 +1032,7 @@ connection failures.
 **Arguments**:
 
 * [`u`](#u): Socket or group that will be used for connecting and for which the hook is installed
-* `hook_fn`: The callback hook function pointer
+* `hook_fn`: The callback hook function pointer (or NULL to remove the callback)
 * `hook_opaque`: The pointer value that will be passed to the callback function
 
 
@@ -1044,7 +1044,7 @@ connection failures.
 
 |       Errors                       |                                           |
 |:---------------------------------- |:------------------------------------------|
-| [`SRT_EINVPARAM`](#srt_einvparam)  | Reported when `hook_fn` is a null pointer |
+| [`SRT_ECONNSOCK`](#srt_econnsock)  | It can't be modified in a connected socket|
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
 

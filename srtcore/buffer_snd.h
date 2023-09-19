@@ -87,7 +87,7 @@ public:
     /// @param size initial number of blocks (each block to store one packet payload).
     /// @param maxpld maximum packet payload (including auth tag).
     /// @param authtag auth tag length in bytes (16 for GCM, 0 otherwise).
-    CSndBuffer(int size = 32, int maxpld = 1500, int authtag = 0);
+    CSndBuffer(int ip_family, int size, int maxpld, int authtag);
     ~CSndBuffer();
 
 public:
