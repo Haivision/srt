@@ -489,7 +489,7 @@ private:
 
     /// Create the CryptoControl object based on the HS packet.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout);
+    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
 
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
@@ -720,10 +720,13 @@ private:
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool isRcvBufferReady() const;
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    bool isRcvBufferReadyNoLock() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
-    /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
+    /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
@@ -819,6 +822,9 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
+#ifdef ENABLE_MAXREXMITBW
+    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
+#endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
 
@@ -860,7 +866,7 @@ private: // Timers
     // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
     // this value is shifted to the acknowledged position, and the blocks are removed from the
     // m_pSndBuffer buffer up to excluding this sequence number.
-    // XXX CONSIDER removing this field and give up the maintenance of this sequence number
+    // XXX CONSIDER removing this field and giving up the maintenance of this sequence number
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
@@ -934,7 +940,7 @@ private: // Receiving related data
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.
     int32_t m_iRcvCurrPhySeqNo;                  // Same as m_iRcvCurrSeqNo, but physical only (disregarding a filter)
-
+    bool m_bBufferWasFull;                        // Indicate that RX buffer was full last time a ack was sent
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
 
     uint32_t m_uPeerSrtVersion;
@@ -958,11 +964,17 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbAcceptHook.set(opaq, hook);
     }
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbConnectHook.set(opaq, hook);
     }
 

@@ -178,7 +178,7 @@ TEST(CircularBuffer, Overall)
     int offset = 9;
     IF_HEAVY_LOGGING(cerr << "Forced adding at position 9 with dropping (capacity: " << buf.capacity() << "):\n");
     // State we already know it has failed. Calculate drop size.
-    int dropshift = offset - (buf.capacity() - 1); // buf.capacity()-1 is the latest position
+    int dropshift = offset - int(buf.capacity() - 1); // buf.capacity()-1 is the latest position
     offset -= dropshift;
     IF_HEAVY_LOGGING(cerr << "Need to drop: " << dropshift << " New offset:" << offset << endl);
     ASSERT_GE(dropshift, 0);
