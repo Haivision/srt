@@ -1155,45 +1155,52 @@ encrypted connection, they have to simply set the same passphrase.
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_PAYLOADSIZE`   | 1.3.0 | pre      | `int32_t`  | bytes   | \*       | 0.. \* | W   | GSD    |
 
-Sets the data limitation mode and the maximum data size for sending at once.
+Sets the mode that determines the limitations on how data is sent, including the maximum 
+size of payload data sent within a single UDP packet. This option can be only set prior
+to connecting, but it can be read also after the connection has been established.
 
-The default value is 0 in the file mode and 1316 in live mode (this is one of
-the options modified together with `SRTO_TRANSTYPE`).
+The default value is 1316 in live mode (which is default) and 0 in file mode (when file
+mode is set through the `SRTO_TRANSTYPE` option).
 
-If the value is 0, this means a "file mode", in which the call to `srt_send*`
-is not limited to a size fitting in one single packet, that is, the supplied
-data will be split into multiple pieces fitting in a single UDP packet, if
-necessary, as well as every packet will use the maximum space available
-in a UDP packet (except the last in the stream or in the message) according to
-the `SRTO_MSS` setting and others that may influence this size (such as
-`SRTO_PACKETFILTER` and `SRTO_CRYPTOMODE`).
+In file mode (`SRTO_PAYLOADSIZE` = 0) the call to `srt_send*` is not limited to the size
+of a single packet. If necessary, the supplied data will be split into multiple pieces,
+each fitting into a single UDP packet. Every data payload (except the last one in the
+stream or in the message) will use the maximum space available in a UDP packet,
+as determined by `SRTO_MSS` and other settings that may influence this size 
+(such as [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER) and 
+[`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)).
 
-If the value is greater than 0, this means a "live mode", and the value
-defines the maximum size of:
+Also when this option is set to 0 prior to connecting, then reading this option
+from a connected socket will return the maximum size of the payload that fits
+in a single packet according to the current connection parameters.
 
-* the single call to a sending function (`srt_send*`)
-* the payload supplied in every single data packet
+In live mode (`SRTO_PAYLOADSIZE` > 0) the value defines the maximum size of:
+
+* a single call to a sending function (`srt_send*`)
+* the payload supplied in each data packet
+
+as well as the minimum size of the buffer used for the `srt_recv*` call.
 
 This value can be set to a greater value than the default 1316, but the maximum
 possible value is limited by the following factors:
 
-* 1500 is the default MSS (see `SRTO_MSS`), including headers, which are:
-   * 20 bytes for IPv4 or 32 bytes for IPv6
+* 1500 bytes is the default MSS (see [`SRTO_MSS`](#SRTO_MSS)), including headers, which occupy:
+   * 20 bytes for IPv4, or 32 bytes for IPv6
    * 8 bytes for UDP
    * 16 bytes for SRT
 
-This alone gives the limit of 1456 for IPv4 and 1444 for IPv6. This limit may
-be however further decreased in the following cases:
+This alone gives a limit of 1456 for IPv4 and 1444 for IPv6. This limit may
+be further decreased in the following cases:
 
-* 4 bytes reserved for FEC, if you use the builtin FEC packet filter (see `SRTO_PACKETFILTER`)
-* 16 bytes reserved for the authentication tag, if you use AES GCM (see `SRTO_CRYPTOMODE`)
+* 4 bytes reserved for FEC, if you use the built in FEC packet filter (see [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER))
+* 16 bytes reserved for the authentication tag, if you use AES GCM (see [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE))
 
-**WARNING**: The option setter will reject the setting if this value is too
-great, but note that not every limitation can be checked prior to connection.
+**WARNING**: The party setting the options will reject a value that is too
+large, but note that not every limitation can be checked prior to connection.
 This includes:
 
-* MSS defined by the peer, which may override MSS set in the agent
-* The in-transmission IP version - see `SRTO_MSS` for details
+* the MSS value defined by a peer, which may override the MSS set by an agent
+* the in-transmission IP version (see [SRTO_MSS](#SRTO_MSS) for details)
 
 These values also influence the "remaining space" in the packet to be used for
 payload. If during the handshake it turns out that this "remaining space" is
