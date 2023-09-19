@@ -403,6 +403,11 @@ public: // internal API
         return (int32_t) sync::count_microseconds(from_time - tsStartTime);
     }
 
+    static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
+    {
+        p.m_iTimeStamp = makeTS(ts, start_time);
+    }
+
     /// @brief Set the timestamp field of the packet using the provided value (no check)
     /// @param p the packet structure to set the timestamp on.
     /// @param ts timestamp to use as a source for packet timestamp.
@@ -971,11 +976,17 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbAcceptHook.set(opaq, hook);
     }
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbConnectHook.set(opaq, hook);
     }
 

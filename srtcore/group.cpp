@@ -278,8 +278,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
-    setupMutex(m_RcvDataLock, "RcvData");
-    setupCond(m_RcvDataCond, "RcvData");
+    setupMutex(m_RcvDataLock, "G/RcvData");
+    setupCond(m_RcvDataCond, "G/RcvData");
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
 
@@ -861,7 +861,7 @@ void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
     // and set it on the current socket.
-    set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
+    set_latency_us(core.m_iTsbPdDelay_ms * int64_t(1000));
 }
 
 void CUDTGroup::close()

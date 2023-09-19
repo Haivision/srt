@@ -52,6 +52,30 @@ written by
 #include "srt.h"
 #include "socketconfig.h"
 
+namespace srt
+{
+int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
+{
+    // Mimimum recv buffer size is 32 packets
+    // We take the size per packet as maximum allowed for AF_INET,
+    // as we don't know which one is used, and this requires more
+    // space than AF_INET6.
+    const int mssin_size = mss - CPacket::udpHeaderSize(AF_INET);
+
+    int bufsize;
+    if (val > mssin_size * CSrtConfig::DEF_MIN_FLIGHT_PKT)
+        bufsize = val / mssin_size;
+    else
+        bufsize = CSrtConfig::DEF_MIN_FLIGHT_PKT;
+
+    // recv buffer MUST not be greater than FC size
+    if (bufsize > flightflag)
+        bufsize = flightflag;
+
+    return bufsize;
+}
+}
+
 using namespace srt;
 extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
 
@@ -128,7 +152,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         if (val <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        // Mimimum recv buffer size is 32 packets
+        co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS);
         const int mssin_size = co.bytesPerPkt();
 
         if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
@@ -1021,7 +1045,7 @@ bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errms
         // and the fix to the maximum payload size was already applied.
         // This needs to be checked now.
         SrtFilterConfig fc;
-        if (!this->sPacketFilterConfig.empty() && !ParseFilterConfig(this->sPacketFilterConfig.str(), (fc)))
+        if (!ParseFilterConfig(this->sPacketFilterConfig.str(), (fc)))
         {
             // Break silently. This should not happen
             w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";

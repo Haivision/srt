@@ -11415,7 +11415,7 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
         // Application will detect this when it calls any UDT methods next time.
         //
         HLOGC(xtlog.Debug,
-              log << CONID() << "CONNECTION EXPIRED after " << count_milliseconds(currtime - last_rsp_time) << "ms");
+              log << CONID() << "CONNECTION EXPIRED after " << FormatDuration<DUNIT_MS>(currtime - last_rsp_time) << " - BREAKING");
         m_bClosing       = true;
         m_bBroken        = true;
         m_iBrokenCounter = 30;
@@ -11643,6 +11643,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
     {
         // XXX This somehow can cause a deadlock
         // uglobal()->close(m_parent);
+        LOGC(smlog.Debug, log << "updateBrokenConnection...: BROKEN SOCKET @" << m_SocketID << " - CLOSING, to be removed from group.");
         m_parent->setBrokenClosed();
     }
 #endif
