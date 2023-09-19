@@ -668,6 +668,8 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
