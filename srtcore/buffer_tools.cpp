@@ -102,7 +102,7 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
-CRateEstimator::CRateEstimator(int family)
+CRateEstimator::CRateEstimator(int /*family*/)
     : m_iInRatePktsCount(0)
     , m_iInRateBytesCount(0)
     , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
