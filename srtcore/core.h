@@ -318,6 +318,7 @@ public: // internal API
 #endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
     int32_t     deliveryRate()      const { return m_iDeliveryRate; }
     int         bandwidth()         const { return m_iBandwidth; }
@@ -365,6 +366,7 @@ public: // internal API
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @returns The number of packets in flight belonging to the interval [0; ...)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t getFlightSpan() const
     {
         return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
