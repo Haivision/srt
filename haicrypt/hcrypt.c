@@ -240,7 +240,8 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 
     if (tx) {
         HaiCrypt_Cfg crypto_config;
-        HaiCrypt_ExtractConfig(hhcSrc, &crypto_config);
+        if (-1 == HaiCrypt_ExtractConfig(hhcSrc, &crypto_config))
+            return -1;
 
         /*
          * Just invert the direction written in flags and use the
@@ -339,7 +340,7 @@ int HaiCrypt_Close(HaiCrypt_Handle hhc)
     return rc;
 }
 
-int  HaiCrypt_IsAESGCM_Supported()
+int  HaiCrypt_IsAESGCM_Supported(void)
 {
 #if CRYSPR_HAS_AESGCM
     return 1;

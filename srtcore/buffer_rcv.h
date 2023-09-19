@@ -420,6 +420,12 @@ public:
         return m_iMaxPosOff;
     }
 
+    // Unfortunately it still needs locking.
+    bool full() const
+    {
+        return size() == capacity();
+    }
+
     int64_t getDrift() const { return m_tsbpd.drift(); }
 
     // TODO: make thread safe?

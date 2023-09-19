@@ -158,6 +158,16 @@ public:
         return set(s.c_str(), s.size());
     }
 
+    size_t copy(char* s, size_t length) const
+    {
+        if (!s)
+            return 0;
+
+        size_t copy_len = std::min((size_t)len, length);
+        memcpy(s, stor, copy_len);
+        return copy_len;
+    }
+
     std::string str() const
     {
         return len == 0 ? std::string() : std::string(stor);
@@ -217,6 +227,9 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
+#ifdef ENABLE_MAXREXMITBW
+    int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
+#endif
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
@@ -279,6 +292,9 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
+#ifdef ENABLE_MAXREXMITBW
+        , llMaxRexmitBW(-1)
+#endif
         , bDataSender(false)
         , bMessageAPI(true)
         , bTSBPD(true)

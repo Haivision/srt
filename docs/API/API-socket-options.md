@@ -204,7 +204,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
-| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.5.2 | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
@@ -224,6 +224,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_LINGER`](#SRTO_LINGER)                           |       | post     | `linger`  | s       | off \*            | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                   | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                             |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
+| [`SRTO_MAXREXMITBW`](#SRTO_MAXREXMITBW)                 | 1.5.3 | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                   | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                   | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                   | 1.3.0 | pre      | `int32_t` | version | 0x010000          | \*       | RW  | GSD   |
@@ -327,7 +328,7 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 | OptName            | Since     | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | --------- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_CRYPTOMODE`  | 1.6.0-dev | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
+| `SRTO_CRYPTOMODE`  | 1.5.2     | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
 
 The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is set.
 
@@ -647,10 +648,22 @@ and the actual value for connected sockets.
 
 Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
 only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
-(known also as `::`). In this case this option must be also set explicitly to 0 or 1
-before binding, otherwise binding will fail (this is because it is not possible to
-determine the default value of this above-mentioned system option in any portable or
-reliable way). Possible values are:
+(known also as `::`). If you bind to a wildcard address, you have the following
+possibilities:
+
+* IPv4 only: bind to an IPv4 wildcard address
+* IPv6 only: bind to an IPv6 wildcard address and set this option to 1
+* IPv4 and IPv6: bind to an IPv6 wildcard address and set this option to 0
+
+This option's default value is -1 because it is not possible to determine the default 
+value on the current platform, and if you bind to an IPv6 wildcard address, this value 
+is required prior to binding. When you bind implicitly by calling `srt_connect` on the 
+socket, this isn't a problem -- binding will be done using the system-default value and then
+extracted afterwards. But if you want to bind explicitly using `srt_bind`, this
+option must be set explicitly to 0 or 1 because this information is vital for
+determining any potential bind conflicts with other sockets.
+
+Possible values are:
 
 * -1: (default) use system-default value (can be used when not binding to IPv6 wildcard `::`)
 * 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
@@ -829,6 +842,22 @@ you should make sure that your stream has a fairly constant bitrate, or that
 changes are not abrupt, as high bitrate changes may work against the
 measurement. SRT cannot ensure that this is always the case for a live stream,
 therefore the default -1 remains even in live mode.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_MAXREXMITBW
+
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MAXREXMITBW`   | 1.5.3 | post     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
+
+Maximum BW limit for retransmissions:
+
+- `-1`: unlimited;
+- `0`: do not allow retransmissions.
+- `>0`: BW usage limit in Bytes/sec for packet retransmissions (including 16 bytes of SRT header).
 
 [Return to list](#list-of-options)
 

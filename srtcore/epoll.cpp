@@ -215,8 +215,8 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         }
     }
 
-    for (size_t i = 0; i < cleared.size(); ++i)
-        d.removeSubscription(cleared[i]);
+    for (size_t j = 0; j < cleared.size(); ++j)
+        d.removeSubscription(cleared[j]);
 }
 
 int srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
