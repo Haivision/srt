@@ -344,13 +344,13 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
         if (col % numberRows() == numberRows() - 1)
         {
             offset = col + 1; // +1 because we want it for the next column
-            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "]... (resetting to row 0: +"
+            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (int(col)+1) << "]... (resetting to row 0: +"
                     << offset << " %" << CSeqNo::incseq(isn, (int32_t)offset) << ")");
         }
         else
         {
             offset += 1 + sizeRow();
-            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (col+1) << "] ... (continue +"
+            HLOGC(pflog.Debug, log << "ConfigureColumns: [" << (int(col)+1) << "] ... (continue +"
                     << offset << " %" << CSeqNo::incseq(isn, (int32_t)offset) << ")");
         }
     }

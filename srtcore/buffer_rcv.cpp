@@ -132,7 +132,7 @@ CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool b
     , m_bMessageAPI(bMessageAPI)
     , m_iBytesCount(0)
     , m_iPktsCount(0)
-    , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
+    , m_uAvgPayloadSz(0)
 {
     SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
 }
