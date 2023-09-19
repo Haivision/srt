@@ -1003,7 +1003,7 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return dispatchSet(optName, *this, optval, optlen);
 }
 
-bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
+bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_errmsg) ATR_NOTHROW
 {
     if (!this->sPacketFilterConfig.empty())
     {
