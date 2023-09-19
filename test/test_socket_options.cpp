@@ -251,7 +251,7 @@ void CheckGetSockOpt<strptr>(const OptionTestEntry& entry, SRTSOCKET sock, const
     EXPECT_EQ(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
-    EXPECT_EQ(strncmp(opt_val, value, min<int>(opt_len, entry.opt_len)), 0) << desc << ": Wrong " << entry.optname << " value " << opt_val;
+    EXPECT_EQ(strncmp(opt_val, value, min(opt_len, (int)entry.opt_len)), 0) << desc << ": Wrong " << entry.optname << " value " << opt_val;
     EXPECT_EQ(opt_len, entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
 }
 
@@ -259,7 +259,7 @@ template<class ValueType>
 void CheckSetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, int expect_return, const char* desc)
 {
     ValueType opt_val = value;
-    int opt_len = entry.opt_len;
+    int opt_len = (int)entry.opt_len;
     EXPECT_EQ(srt_setsockopt(sock, 0, entry.optid, &opt_val, opt_len), expect_return)
         << "Setting " << entry.optname << " to " << opt_val << " must " << (expect_return == SRT_SUCCESS ? "succeed" : "fail");
 
@@ -858,7 +858,7 @@ TEST_F(TestSocketOptions, StreamIDOdd)
     // 13 characters, that is, 3*4+1
     string sid_odd = "something1234";
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), sid_odd.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), (int)sid_odd.size()), SRT_SUCCESS);
 
     char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
     int buffer_len = sizeof buffer;
@@ -887,7 +887,7 @@ TEST_F(TestSocketOptions, StreamIDEven)
     // 12 characters = 4*3, that is, aligned to 4
     string sid_even = "123412341234";
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_even.c_str(), sid_even.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_even.c_str(), (int)sid_even.size()), SRT_SUCCESS);
 
     char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
     int buffer_len = sizeof buffer;
@@ -923,7 +923,7 @@ TEST_F(TestSocketOptions, StreamIDAlmostFull)
     sid_amost_full[size-2] = 'y';
     sid_amost_full[size-1] = 'z';
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_amost_full.c_str(), sid_amost_full.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_amost_full.c_str(), (int)sid_amost_full.size()), SRT_SUCCESS);
 
     char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
     int buffer_len = sizeof buffer;
@@ -959,7 +959,7 @@ TEST_F(TestSocketOptions, StreamIDFull)
     sid_full[size-2] = 'y';
     sid_full[size-1] = 'z';
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_full.c_str(), sid_full.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_full.c_str(), (int)sid_full.size()), SRT_SUCCESS);
 
     char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
     int buffer_len = sizeof buffer;
@@ -989,7 +989,7 @@ TEST_F(TestSocketOptions, StreamIDLenListener)
 {
     string stream_id_13 = "something1234";
 
-    EXPECT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_STREAMID, stream_id_13.c_str(), stream_id_13.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_STREAMID, stream_id_13.c_str(), (int)stream_id_13.size()), SRT_SUCCESS);
 
     char buffer[648];
     int buffer_len = sizeof buffer;

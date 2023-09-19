@@ -150,7 +150,7 @@ TEST(Transmission, FileUpload)
         size_t shift = 0;
         while (n > 0)
         {
-            const int st = srt_send(sock_clr, buf.data()+shift, n);
+            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
             ASSERT_GT(st, 0) << srt_getlasterror_str();
 
             n -= st;

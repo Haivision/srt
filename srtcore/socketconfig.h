@@ -342,6 +342,9 @@ struct CSrtConfig: CSrtMuxerConfig
     }
 
     int set(SRT_SOCKOPT optName, const void* val, int size);
+
+    bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
 };
 
 template <typename T>
@@ -378,6 +381,9 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
 
 } // namespace srt
 

@@ -332,6 +332,20 @@ public: // internal API
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
+    size_t          payloadSize()           const
+    {
+        // If payloadsize is set, it should already be checked that
+        // it is less than the possible maximum payload size. So return it
+        // if it is set to nonzero value. In case when the connection isn't
+        // yet established, return also 0, if the value wasn't set.
+        if (m_config.zExpPayloadSize || !m_bConnected)
+            return m_config.zExpPayloadSize;
+
+        // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
+        // then return the maximum payload size per packet.
+        return m_iMaxSRTPayloadSize;
+    }
+
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
@@ -391,6 +405,11 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         SRT_ASSERT(from_time >= tsStartTime);
         return (int32_t) sync::count_microseconds(from_time - tsStartTime);
+    }
+
+    static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
+    {
+        p.m_iTimeStamp = makeTS(ts, start_time);
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)
@@ -739,13 +758,6 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    CRateEstimator getRateEstimator() const
-    {
-        if (!m_pSndBuffer)
-            return CRateEstimator();
-        return m_pSndBuffer->getRateEstimator();
-    }
-
     void setRateEstimator(const CRateEstimator& rate)
     {
         if (!m_pSndBuffer)
@@ -875,6 +887,7 @@ private: // Timers
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
     sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
@@ -974,11 +987,17 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbAcceptHook.set(opaq, hook);
     }
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbConnectHook.set(opaq, hook);
     }
 
@@ -991,7 +1010,7 @@ private: // synchronization: mutexes and conditions
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
+    mutable sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
 
     sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
     sync::Mutex m_RecvLock;                      // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
