@@ -1001,7 +1001,7 @@ on the system level. This is highly unwanted in SRT because:
 * SRT is unaware of it, so the resulting statistics would be slightly misleading
 
 System-level packet fragmentation cannot be reliably turned off,
-so safest approach is to avoid it by using appropriate parameters.
+so the safest approach is to avoid it by using appropriate parameters.
 
 [Return to list](#list-of-options)
 
