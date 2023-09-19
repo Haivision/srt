@@ -947,20 +947,19 @@ following cases:
 * when the current socket's binding address is of IPv4 domain
 * when the peer's address is an IPv6-mapped-IPv4 address
 
-The IPv6 in-transmission IP version is assumed only if the peer's address
-is a true IPv6 address (not IPv4 mapped). It is then not possible to determine
-what the payload size limit until the connection is established. Parts of the
-SRT facilities that must allocate any resources according to this value prior
-to connecting are using the layout as per IPv4 because this way they allocate
-more space than needed in the worst case.
+The IPv6 transmission case is assumed only if the peer's address is a true IPv6 address 
+(not IPv4 mapped). It is then not possible to determine the payload size limit 
+until the connection is established. SRT operations that must allocate any 
+resources according to this value prior to connecting will assume IPv4 transmission 
+because this way, in the worst case, they allocate more space than needed .
 
 This value can be set on both connection parties independently, but after
-connection this option gets an effectively negotiated value, which is the less
-one from both parties. If this effective value is too small on any of the
+connection `SRTO_MSS` gets a negotiated value, which is the lesser
+of the two. If this effective value is too small for either of the
 connection peers, the connection is rejected (or late-rejected on the caller
 side).
 
-This value then effectively controls:
+This value then controls:
 
 * The maximum size of the payload in a single UDP packet ("remaining space"). 
 
@@ -970,24 +969,23 @@ in the IPv4 layout case (1472 bytes per packet for MSS=1500). The reason for it
 is that some buffer resources are allocated prior to the connection, so this
 value must fit both IPv4 and IPv6 for buffer memory allocation.
 
-The default value 1500 matches the standard MTU size for network devices. It
-is recommended that this value be set at maximum to the value of MTU size of
-the network device that you will use for connection.
+The default value of 1500 corresponds to the standard MTU size for network devices. It
+is recommended that this value be set to the maximum MTU size of
+the network device that you will use for the connection.
 
-Detailed recommendations for this value differ in the file and live mode.
+The recommendations for the value of `SRTO_MSS` differ between file and live modes.
 
-In the live mode a single call to `srt_send*` function may only send data
-that fit in one packet. This size is defined by the `SRTO_PAYLOADSIZE`
-option (defult: 1316) and it is also the size of the data in a single UDP
-packet. To save memory space, you may want then to set MSS in live mode to
-a value for which the "remaining space" matches `SRTO_PAYLOADSIZE` value (for
-default 1316 it will be 1360 for IPv4 and 1372 for IPv6). This is not done by
-default for security reasons: this may potentially lead to inability to read an
-incoming UDP packet if its size is by some reason bigger than the negotiated MSS.
-This may lead to misleading situations and hard to detect errors. You should
-set such a value only if the peer is trusted (that is, you can be certain that
-it will never come to a situation of having received an oversized UDP packet
-over the link used for the connection). See also limitations for
+In live mode a single call to the `srt_send*` function may only send data
+that fits in one packet. This size is defined by the `SRTO_PAYLOADSIZE`
+option (defult: 1316), and it is also the size of the data in a single UDP
+packet. To save memory space, you may want then to set `SRTO_MSS` in live mode to
+a value for which the "remaining space" matches the `SRTO_PAYLOADSIZE` value (for
+the default value of 1316 this will be 1360 for IPv4 and 1372 for IPv6). For security reasons, 
+this is not done by default: it may potentially lead to the inability to read an incoming UDP 
+packet if its size is for some reason bigger than the negotiated MSS, which may in turn lead 
+to unpredictable behaviour and hard-to-detect errors. You should set such a value only if 
+the peer is trusted (that is, you can be certain that you will never receive an oversized UDP 
+packet over the link used for the connection). You should also consider the limitations of
 `SRTO_PAYLOADSIZE`.
 
 In the file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
@@ -998,12 +996,12 @@ the current network device's MTU size. Setting a greater value is possible
 (maximum for the system API is 65535), but it may lead to packet fragmentation
 on the system level. This is highly unwanted in SRT because:
 
-* Here SRT does also its own fragmentation, so it would be counter-productive
-* It would use more system resources with no advantage
-* SRT is unaware of it, so the statistics will be slightly falsified
+* SRT also performs its own fragmentation, so it would be counter-productive
+* It would use more system resources to no advantage
+* SRT is unaware of it, so the resulting statistics would be slightly misleading
 
-The system-level packet fragmentation cannot be however reliably turned off;
-the best approach is then to avoid it by using appropriate parameters.
+System-level packet fragmentation cannot be reliably turned off,
+so safest approach is to avoid it by using appropriate parameters.
 
 [Return to list](#list-of-options)
 
