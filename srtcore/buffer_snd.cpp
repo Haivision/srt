@@ -64,7 +64,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace sync;
 
-CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
+CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     : m_BufLock()
     , m_pBlock(NULL)
     , m_pFirstBlock(NULL)
@@ -77,6 +77,7 @@ CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
     , m_iAuthTagSize(authtag)
     , m_iCount(0)
     , m_iBytesCount(0)
+    , m_rateEstimator(ip_family)
 {
     // initial physical buffer of "size"
     m_pBuffer           = new Buffer;
