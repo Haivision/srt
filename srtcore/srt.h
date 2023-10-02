@@ -413,6 +413,12 @@ struct CBytePerfMon
    int64_t  pktRecvUnique;              // number of packets to be received by the application
    uint64_t byteSentUnique;             // number of data bytes, sent by the application
    uint64_t byteRecvUnique;             // number of data bytes to be received by the application
+
+   uint64_t usInterSendingJitter;       // NOT IMPLEMENTED! RFC3550 inter jitter jitter of data packets
+   uint64_t usInterArrivalJitter;       // RFC3550 inter arrival jitter of data packets
+   uint64_t usDeliveryJitter;           // RFC3550 inter delivery jitter of data packets
+   uint64_t usSendingJitter;            // RFC3550 inter sending jitter of data packets (excluding probing packets)
+   int64_t usDrift;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

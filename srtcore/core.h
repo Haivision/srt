@@ -69,6 +69,7 @@ modified by
 #include "handshake.h"
 #include "congctl.h"
 #include "packetfilter.h"
+#include "jitter_tracer.h"
 #include "socketconfig.h"
 #include "utilities.h"
 #include "logger_defs.h"
@@ -954,6 +955,7 @@ private: // Receiving related data
 
     CACKWindow<ACK_WND_SIZE> m_ACKWindow;        // ACK history window
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
+    CJitterTracer m_JitterTracer;                //< RFC3550-like packet jitter tracer
 
     int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
 #ifdef ENABLE_LOGGING
@@ -1171,6 +1173,7 @@ private: // Trace
         int traceReorderDistance;
         double traceBelatedTime;
         
+        uint64_t ullJitter;                 // Packet inter-arrival jitter (microseconds)
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
 
