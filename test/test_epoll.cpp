@@ -68,6 +68,7 @@ TEST(CEPoll, WaitEmptyCall)
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -91,6 +92,7 @@ TEST(CEPoll, UWaitEmptyCall)
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -114,6 +116,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no = 0;
@@ -148,6 +151,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no = 0;
@@ -168,7 +172,6 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
     ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
-
 }
 
 TEST(CEPoll, WrongEpoll_idOnAddUSock)
@@ -177,6 +180,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int no  = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -200,6 +204,7 @@ TEST(CEPoll, HandleEpollEvent)
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -261,6 +266,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     // 1. Prepare client
     SRTSOCKET client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes SRT_ATR_UNUSED = 1;
     const int no SRT_ATR_UNUSED = 0;
@@ -283,6 +289,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     // 2. Prepare server
     SRTSOCKET server_sock = srt_create_socket();
     ASSERT_NE(server_sock, SRT_ERROR);
+    srtinit.remember(server_sock);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -375,6 +382,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -436,6 +444,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -486,6 +495,7 @@ TEST(CEPoll, ThreadedUpdate)
 
     SRTSOCKET client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
+    srtinit.remember(client_sock);
 
     const int no  = 0;
     EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
@@ -764,5 +774,6 @@ TEST_F(TestEPoll, SimpleAsync)
     client.join(); // Make sure client has exit before you delete the socket
 
     srt_close(m_client_sock); // cannot close m_client_sock after srt_sendmsg because of issue in api.c:2346 
+    srt_close(ss);
 }
 

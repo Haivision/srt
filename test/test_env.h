@@ -49,9 +49,17 @@ class TestInit
 {
 public:
     int ninst;
+    // Directly use int32_t instead of SRTSOCKET in order
+    // not to derive the srt.h API
+    static std::vector<int32_t> used_sockets;
 
     static void start(int& w_retstatus);
     static void stop();
+
+    static void remember(int32_t s)
+    {
+        used_sockets.push_back(s);
+    }
 
     TestInit() { start((ninst)); }
     ~TestInit() { stop(); }

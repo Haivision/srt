@@ -91,14 +91,19 @@ bool TestEnv::Allowed_IPv6()
     return true;
 }
 
+std::vector<int32_t> TestInit::used_sockets;
 
 void TestInit::start(int& w_retstatus)
 {
     ASSERT_GE(w_retstatus = srt_startup(), 0);
+    used_sockets.clear(); // just in case
 }
 
 void TestInit::stop()
 {
+    for (SRTSOCKET s: used_sockets)
+        srt_close(s);
+    used_sockets.clear();
     EXPECT_NE(srt_cleanup(), -1);
 }
 
