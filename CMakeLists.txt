@@ -83,6 +83,27 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
+set (SRT_FIXED_DEFINES
+	ENABLE_BONDING
+	ENABLE_AEAD_API_PREVIEW
+	ENABLE_MAXREXMITBW)
+
+set (PKGCONFIG_ADD_DEFINES "")
+
+macro (CheckFixedDefines defname)
+	# We only support boolean enabler flags
+	# Pity no IN_LIST operator available in 2.18
+	# The same can be achieved here by using the searched
+	# macro name as a regex expression
+	string(REGEX MATCH ${defname} CheckFixedDefines_DEFNAME ${SRT_FIXED_DEFINES})
+	if (${defname} STREQUAL ${CheckFixedDefines_DEFNAME})
+		string(APPEND PKGCONFIG_ADD_DEFINES " -D${defname}=1")
+	endif()
+endmacro ()
+
+# Since now, every flag that is normally added as "compile definitions" and
+# is found in this pool, must be pasted into PKGCONFIG_ADD_DEFINES
+
 getVarsWith(ENFORCE_ enforcers)
 foreach(ef ${enforcers})
 	set (val ${${ef}})
@@ -95,6 +116,7 @@ foreach(ef ${enforcers})
 	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
 	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
 	add_definitions(-D${ef}${val})
+	CheckFixedDefines(${ef})
 endforeach()
 
 # NOTE: Known options you can change using ENFORCE_ variables:
@@ -488,6 +510,7 @@ if (ENABLE_ENCRYPTION)
 	if (ENABLE_AEAD_API_PREVIEW)
 		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
+			CheckFixedDefines("ENABLE_AEAD_API_PREVIEW")
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
 			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
@@ -510,6 +533,7 @@ endif()
 
 if (ENABLE_MAXREXMITBW)
 	add_definitions(-DENABLE_MAXREXMITBW)
+	CheckFixedDefines("ENABLE_MAXREXMITBW")
 	message(STATUS "MAXREXMITBW API: ENABLED")
 else()
 	message(STATUS "MAXREXMITBW API: DISABLED")
@@ -823,6 +847,7 @@ endif()
 
 if (ENABLE_BONDING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
+	CheckFixedDefines("ENABLE_BONDING")
 	message(STATUS "ENABLE_BONDING: ON")
 else()
 	message(STATUS "ENABLE_BONDING: OFF")
