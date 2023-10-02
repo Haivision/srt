@@ -5670,7 +5670,7 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
         // The family as the first argument is something different - it's for the header size in order
         // to calculate rate and statistics.
 
-        int snd_payload_size = m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+        int snd_payload_size = m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(m_TransferIPVersion);
         SRT_ASSERT(m_iMaxSRTPayloadSize <= snd_payload_size);
 
         HLOGC(rslog.Debug, log << CONID() << "Creating buffers: snd-plsize=" << snd_payload_size
