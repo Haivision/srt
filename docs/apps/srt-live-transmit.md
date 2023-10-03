@@ -293,7 +293,7 @@ IPv6 local addresses. See the
 [`SRTO_IPV6ONLY`](../API/API-socket-options.md#SRTO_IPV6ONLY) option
 description for details.
 
-4. In rendezvous mode you may only interconnect both parties using IPv4, 
+4. In rendezvous mode you may only interconnect both parties using IPv4,
 or both using IPv6. Unlike listener mode, if you want to leave the socket
 default-bound (you don't specify `adapter`), the socket will be bound with the
 same IP version as the target address. If you do specify `adapter`,
@@ -406,7 +406,7 @@ but this space must be part of the parameter and not extracted by a
 shell (using **"** **"** quotes or backslash).
 
 - **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
-  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
+  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started.
   - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
 - **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.

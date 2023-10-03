@@ -32,7 +32,7 @@ The table below provides a summary of SRT socket statistics: name, type, unit of
 There are three types of statistics:
 
 - **Accumulated:** the statistic is accumulated since the time an SRT socket has been created (after the successful call to `srt_connect(...)` or `srt_bind(...)` function), e.g., [pktSentTotal](#pktSentTotal), etc.,
-- **Interval-based:** the statistic is accumulated during a specified time interval (e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds) from the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`, 
+- **Interval-based:** the statistic is accumulated during a specified time interval (e.g., 100 milliseconds if SRT statistics is collected each 100 milliseconds) from the time an SRT socket has been created, e.g., [pktSent](#pktSent), etc. The value of the statistic can be reset by calling the `srt_bstats(..., int clear)` function with `clear = 1`,
 - **Instantaneous:** the statistic is obtained at the moment the `srt_bistats()` function is called, e.g., [msRTT](#msRTT), etc.
 
 See sections [Accumulated Statistics](#accumulated-statistics), [Interval-Based Statistics](#interval-based-statistics), and [Instantaneous Statistics](#instantaneous-statistics) for a detailed description of each statistic.
@@ -142,9 +142,9 @@ The total number of received DATA packets, including retransmitted packets ([pkt
 
 If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), this statistic counts received packet filter control packets ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)) as well. Introduced in SRT v1.4.0.
 
-#### pktSentUniqueTotal 
+#### pktSentUniqueTotal
 
-The total number of *unique* DATA packets sent by the SRT sender. Available for sender. 
+The total number of *unique* DATA packets sent by the SRT sender. Available for sender.
 
 This value contains only *unique* *original* DATA packets. Retransmitted DATA packets ([pktRetransTotal](#pktRetransTotal)) are not taken into account. If the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)), packet filter control packets ([pktSndFilterExtraTotal](#pktSndFilterExtraTotal)) are also not taken into account.
 
@@ -154,7 +154,7 @@ This value corresponds to the number of original DATA packets sent by the SRT se
 
 The total number of *unique* original, retransmitted or recovered by the packet filter DATA packets *received in time*, *decrypted without errors* and, as a result, scheduled for delivery to the upstream application by the SRT receiver. Available for receiver.
 
-Unique means "first arrived" DATA packets. There is no difference whether a packet is original or, in case of loss, retransmitted or recovered by the packet filter. Whichever packet comes first is taken into account. 
+Unique means "first arrived" DATA packets. There is no difference whether a packet is original or, in case of loss, retransmitted or recovered by the packet filter. Whichever packet comes first is taken into account.
 
 This statistic doesn't count
 
@@ -168,7 +168,7 @@ DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFi
 
 The total number of data packets considered or reported as lost at the sender side. Does not correspond to the packets detected as lost at the receiver side. Available for sender.
 
-A packet is considered lost in two cases: 
+A packet is considered lost in two cases:
 1. Sender receives a loss report from a receiver,
 2. Sender initiates retransmission after not receiving an ACK packet for a certain timeout. Refer to `FASTREXMIT` and `LATEREXMIT` algorithms.
 
@@ -226,7 +226,7 @@ The total number of _dropped_ by the SRT sender DATA packets that have no chance
 
 Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [SRT API Socket Options](API-socket-options.md).
 
-The delay before TLPKTDROP mechanism is triggered is calculated as follows 
+The delay before TLPKTDROP mechanism is triggered is calculated as follows
 `SRTO_PEERLATENCY + SRTO_SNDDROPDELAY + 2 * interval between sending ACKs`,
 where `SRTO_PEERLATENCY` is the configured SRT latency, `SRTO_SNDDROPDELAY` adds an extra to `SRTO_PEERLATENCY` delay, the default `interval between sending ACKs` is 10 milliseconds. The minimum delay is `1000 + 2 * interval between sending ACKs` milliseconds. Refer to `SRTO_PEERLATENCY`, `SRTO_SNDDROPDELAY` socket options in [SRT API Socket Options](API-socket-options.md).
 
@@ -410,9 +410,9 @@ The number of packets received but IGNORED due to having arrived too late.
 
 Makes sense only if TSBPD and TLPKTDROP are enabled.
 
-An offset between sequence numbers of the newly arrived DATA packet and latest 
+An offset between sequence numbers of the newly arrived DATA packet and latest
 acknowledged DATA packet is calculated.
-If the offset is negative, the packet is considered late, meaning that it was 
+If the offset is negative, the packet is considered late, meaning that it was
 either already acknowledged or dropped by TSBPD as too late to be delivered.
 
 Retransmitted packets can also be considered late.
@@ -470,7 +470,7 @@ Same as [byteRcvUndecryptTotal](#byteRcvUndecryptTotal), but for a specified int
 
 #### usPktSndPeriod
 
-Current minimum time interval between which consecutive packets are sent, in 
+Current minimum time interval between which consecutive packets are sent, in
 microseconds. Sender only.
 
 Note that several sockets sharing one outgoing port use the same sending queue.
@@ -479,8 +479,8 @@ be placed in the same sending queue, which may affect the send timing.
 
 `usPktSndPeriod` is the minimum time (sending period) that must be kept
 between two packets sent consecutively over the link used by an SRT socket.
-It is not the EXACT time interval between two consecutive packets. In the case where the time spent by an 
-application between sending two consecutive packets exceeds `usPktSndPeriod`, the next 
+It is not the EXACT time interval between two consecutive packets. In the case where the time spent by an
+application between sending two consecutive packets exceeds `usPktSndPeriod`, the next
 packet will be sent faster, or even immediately, to preserve the average sending rate.
 
 **Note**: Does not apply to probing packets.
@@ -522,8 +522,8 @@ The number of packets in flight. Sender only.
 
 `pktFlightSize <= pktFlowWindow` and `pktFlightSize <= pktCongestionWindow`
 
-This is the distance 
-between the packet sequence number that was last reported by an ACK message and 
+This is the distance
+between the packet sequence number that was last reported by an ACK message and
 the sequence number of the latest packet sent (at the moment when the statistics
 are being read).
 
@@ -562,8 +562,8 @@ The receiver then sends back a running average calculation to the sender with an
 
 The available space in the sender's buffer, in bytes. Sender only.
 
-This value decreases with data scheduled for sending by the application, and increases 
-with every ACK received from the receiver, after the packets are sent over 
+This value decreases with data scheduled for sending by the application, and increases
+with every ACK received from the receiver, after the packets are sent over
 the UDP link.
 
 #### byteAvailRcvBuf
@@ -577,10 +577,10 @@ from the sender over the UDP link.
 #### mbpsMaxBW
 
 Transmission bandwidth limit, in Mbps. Sender only.
-Usually this is the setting from 
-the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain 
-conditions a nonzero value might be be provided by a congestion 
-control module, although none of the built-in congestion control modules 
+Usually this is the setting from
+the `SRTO_MAXBW` option, which may include the value 0 (unlimited). Under certain
+conditions a nonzero value might be be provided by a congestion
+control module, although none of the built-in congestion control modules
 currently use it.
 
 Refer to `SRTO_MAXBW` and `SRTO_INPUTBW` in [SRT API Socket Options](API-socket-options.md).
@@ -597,7 +597,7 @@ Refer to `SRTO_MSS` in [SRT API Socket Options](API-socket-options.md).
 
 #### pktSndBuf
 
-The number of packets in the sender's buffer that are already 
+The number of packets in the sender's buffer that are already
 scheduled for sending or even possibly sent, but not yet acknowledged.
 Sender only.
 
@@ -629,7 +629,7 @@ The current state is returned if `srt_bistats(...)` is called with `instantaneou
 #### msSndTsbPdDelay
 
 Timestamp-based Packet Delivery Delay value of the peer.
-If `SRTO_TSBPDMODE` is on (default for **live mode**), it 
+If `SRTO_TSBPDMODE` is on (default for **live mode**), it
 returns the value of `SRTO_PEERLATENCY`, otherwise 0.
 The sender reports the TSBPD delay value of the receiver.
 The receiver reports the TSBPD delay of the sender.
@@ -657,7 +657,7 @@ The timespan (msec) of acknowledged packets in the receiver's buffer. Receiver s
 
 If TSBPD mode is enabled (defualt for **live mode**),
 a packet can be acknowledged, but not yet ready to play.
-This range includes all packets regardless of whether 
+This range includes all packets regardless of whether
 they are ready to play or not.
 
 A moving average value is reported when the value is retrieved by calling
@@ -710,7 +710,7 @@ The packet with sequence number 9 is reported lost.
 
 #### pktRcvAvgBelatedTime
 
-Accumulated difference between the current time and the time-to-play of a packet 
+Accumulated difference between the current time and the time-to-play of a packet
 that is received late.
 
 
@@ -744,7 +744,7 @@ The table below provides a summary of SRT group statistics: name, type, unit of 
 
 #### msTimeStamp <a name="group-msTimeStamp"></a>
 
-The time elapsed, in milliseconds, since the time ("connection" time) when the initial group connection has been initiated (the time when the first connection in the group has been made and therefore made the group connected). This "connection" time will be then set in this statistic in every next socket that will become a member of the group as the new connections are established. A new connection to an already connected group doesn’t change the value of "connection" time. Available both for sender and receiver. 
+The time elapsed, in milliseconds, since the time ("connection" time) when the initial group connection has been initiated (the time when the first connection in the group has been made and therefore made the group connected). This "connection" time will be then set in this statistic in every next socket that will become a member of the group as the new connections are established. A new connection to an already connected group doesn’t change the value of "connection" time. Available both for sender and receiver.
 
 #### pktSentUniqueTotal <a name="group-pktSentUniqueTotal"></a>
 
@@ -821,5 +821,5 @@ The ratio of unrecovered by the socket group packets `Dropped Packets Ratio` can
 
 ```
 Dropped Packets Ratio = pktRcvDropTotal / pktSentUniqueTotal; in case both sender and receiver statistics is available
-Dropped Packets Ratio = pktRcvDropTotal / (pktRecvUniqueTotal + pktRcvDropTotal); in case receiver only statistics is available 
+Dropped Packets Ratio = pktRcvDropTotal / (pktRecvUniqueTotal + pktRcvDropTotal); in case receiver only statistics is available
 ```

@@ -8,7 +8,7 @@ for SRT. These functions may be useful in certain situations.
 
 There are some example applications so that you can see how the API is being used,
 including `srt-live-transmit` and `srt-file-transmit`. All SRT related material is contained
-in `transmitmedia.*` files in the `apps` directory 
+in `transmitmedia.*` files in the `apps` directory
 which is used by all applications. See `SrtSource::Read` and `SrtTarget::Write`
 as examples of how data are read and written in SRT.
 
@@ -205,8 +205,8 @@ and `write` functions.
 The **rich API** includes the `srt_sendmsg` and `srt_recvmsg` functions. Actually
 `srt_recvmsg` is provided for convenience and backward compatibility, as it is
 identical to `srt_recv`. The `srt_sendmsg` receives more parameters, specifically
-for messages. The `srt_sendmsg2` and `srt_recvmsg2` functions receive the socket, 
-buffer, and the `SRT_MSGCTRL` object, which is an input-output object specifying 
+for messages. The `srt_sendmsg2` and `srt_recvmsg2` functions receive the socket,
+buffer, and the `SRT_MSGCTRL` object, which is an input-output object specifying
 extra data for the operation.
 
 Functions with the `msg2` suffix use the `SRT_MSGCTRL` object, and have the
