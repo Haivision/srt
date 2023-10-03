@@ -165,7 +165,7 @@ Since SRT v1.5.0.
 | [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                   |
 | [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
 | [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                    |
-| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passprhase for connection and they differ                                          |
+| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                          |
 | [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                |
 | [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
 | [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
@@ -190,7 +190,7 @@ Since SRT v1.5.0.
 [`SRT_ECONNLOST`](#srt_econnlost)                   | The socket was properly connected, but the connection has been broken                                          |
 [`SRT_ENOCONN`](#srt_enoconn)                       | The socket is not connected                                                                                    |
 [`SRT_ERESOURCE`](#srt_eresource)                   | System or standard library error reported unexpectedly for unknown purpose                                     |
-[`SRT_ETHREAD`](#srt_ethread)                       | System was unable to spawn a new thread when requried                                                          |
+[`SRT_ETHREAD`](#srt_ethread)                       | System was unable to spawn a new thread when required                                                          |
 [`SRT_ENOBUF`](#srt_enobuf)                         | System was unable to allocate memory for buffers                                                               |
 [`SRT_ESYSOBJ`](#srt_esysobj)                       | System was unable to allocate system specific objects                                                          |
 [`SRT_EFILE`](#srt_efile)                           | General filesystem error (for functions operating with file transmission)                                      |
@@ -1262,7 +1262,7 @@ Retrieves the group SRT socket ID that corresponds to the member socket ID `memb
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
 | `SRTSOCKET`                   | Corresponding group SRT socket ID of the member socket.   |
-| `SRT_INVALID_SOCK`            | The socket doesn't exist, it is not a member of any grou, or bonding API is disabled. |
+| `SRT_INVALID_SOCK`            | The socket doesn't exist, it is not a member of any group, or bonding API is disabled. |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 
 
@@ -2763,7 +2763,7 @@ and `msTimeStamp` value of the `SRT_TRACEBSTATS` (see [SRT Statistics](statistic
 int srt_clock_type(void);
 ```
 
-Get the type of clock used internally by SRT to be used only for informtational peurpose.
+Get the type of clock used internally by SRT to be used only for informational purposes.
 Using any time source except for [`srt_time_now()`](#srt_time_now) and [`srt_connection_time(SRTSOCKET)`](#srt_connection_time)
 to timestamp packets submitted to SRT is not recommended and must be done with awareness and at your own risk.
 
