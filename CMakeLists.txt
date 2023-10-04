@@ -88,7 +88,8 @@ set (SRT_FIXED_DEFINES
 	ENABLE_AEAD_API_PREVIEW
 	ENABLE_MAXREXMITBW)
 
-set (PKGCONFIG_ADD_DEFINES "")
+set (SRT_CONFIG_ADD_DEFINES SRT_CONFIG_PROVIDED)
+set (SRT_CONFIG_DEFINES "")
 
 macro (CheckFixedDefines defname)
 	# We only support boolean enabler flags
@@ -97,7 +98,7 @@ macro (CheckFixedDefines defname)
 	# macro name as a regex expression
 	string(REGEX MATCH ${defname} CheckFixedDefines_DEFNAME ${SRT_FIXED_DEFINES})
 	if (${defname} STREQUAL ${CheckFixedDefines_DEFNAME})
-		string(APPEND PKGCONFIG_ADD_DEFINES " -D${defname}=1")
+		list(APPEND SRT_CONFIG_ADD_DEFINES ${defname})
 	endif()
 endmacro ()
 
@@ -153,14 +154,17 @@ elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
 
+set (ENABLE_CXX11_DEFAULT ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	set (ENABLE_CXX11_DEFAULT OFF)
+endif()
+
+
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
-else()
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
-endif()
+option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ${ENABLE_CXX11_DEFAULT})
+option(ENABLE_CONFIG_HEADER "Should the build configuration macros be placed in the version.h file" OFF)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
@@ -200,6 +204,10 @@ if (ATOMIC_USE_SRT_SYNC_MUTEX)
 endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
+
+# Declare that the config is known when compiling SRT itself and
+# also all libraries.
+add_definitions(-DSRT_CONFIG_PROVIDED)
 
 # Use application-defined group reader
 # (currently the only one implemented)
@@ -1031,6 +1039,14 @@ if(DEFINED ENV{TEAMCITY_VERSION})
 	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
 endif()
 
+if (ENABLE_CONFIG_HEADER)
+	set (SRT_CONFIG_DEFINES "")
+	foreach (def ${SRT_CONFIG_ADD_DEFINES})
+		string(APPEND SRT_CONFIG_DEFINES "#define ${def} 1
+")
+	endforeach()
+endif()
+
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
 
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
@@ -1266,6 +1282,9 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
+	foreach(def ${SRT_CONFIG_ADD_DEFINES})
+		string(APPEND PKGCONFIG_ADD_DEFINES " -D${def}=1")
+	endforeach()
 	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
 	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
