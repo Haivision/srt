@@ -44,6 +44,7 @@ set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
 set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
+set_if(PKG_CONFIG_CAPABLE LINUX OR GNU OR SUNOS OR BSD)
 
 include(GNUInstallDirs)
 
@@ -160,7 +161,6 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION
 endif()
 
 
-
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ${ENABLE_CXX11_DEFAULT})
@@ -201,6 +201,16 @@ option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
 if (ATOMIC_USE_SRT_SYNC_MUTEX)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
+endif()
+
+# Postfix: ENABLE_CONFIG_HEADER must be forcefully turned on on build systems
+# that do not utilize pkg-config.
+
+if (NOT PKG_CONFIG_CAPABLE)
+	if (NOT ENABLE_CONFIG_HEADER)
+		message(INFO "Configuration forcefully placed in version.h file as this platform doesn't feature pkg-config.")
+	endif()
+	set (ENABLE_CONFIG_HEADER ON)
 endif()
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
