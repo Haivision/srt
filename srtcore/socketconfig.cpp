@@ -57,7 +57,10 @@ namespace srt
 int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
 {
     // Mimimum recv buffer size is 32 packets
-    const int mssin_size = mss - CPacket::UDP_HDR_SIZE;
+    // We take the size per packet as maximum allowed for AF_INET,
+    // as we don't know which one is used, and this requires more
+    // space than AF_INET6.
+    const int mssin_size = mss - CPacket::udpHeaderSize(AF_INET);
 
     int bufsize;
     if (val > mssin_size * CSrtConfig::DEF_MIN_FLIGHT_PKT)
@@ -90,9 +93,15 @@ struct CSrtConfigSetter<SRTO_MSS>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        using namespace srt_logging;
         const int ival = cast_optval<int>(optval, optlen);
-        if (ival < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
+        const int handshake_size = CHandShake::m_iContentSize + (sizeof(uint32_t) * SRT_HS_E_SIZE);
+        const int minval = int(CPacket::udpHeaderSize(AF_INET6) + CPacket::HDR_SIZE + handshake_size);
+        if (ival < minval)
+        {
+            LOGC(kmlog.Error, log << "SRTO_MSS: minimum value allowed is " << minval << " = [IPv6][UDP][SRT] headers + minimum SRT handshake");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 
         co.iMSS = ival;
 
@@ -130,7 +139,7 @@ struct CSrtConfigSetter<SRTO_SNDBUF>
         if (bs <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iSndBufSize = bs / (co.iMSS - CPacket::UDP_HDR_SIZE);
+        co.iSndBufSize = bs / co.bytesPerPkt();
     }
 };
 
@@ -144,6 +153,16 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS);
+        const int mssin_size = co.bytesPerPkt();
+
+        if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
+            co.iRcvBufSize = val / mssin_size;
+        else
+            co.iRcvBufSize = co.DEF_MIN_FLIGHT_PKT;
+
+        // recv buffer MUST not be greater than FC size
+        if (co.iRcvBufSize > co.iFlightFlagSize)
+            co.iRcvBufSize = co.iFlightFlagSize;
     }
 };
 
@@ -635,9 +654,13 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (val > SRT_LIVE_MAX_PLSIZE)
+        // We don't know at this point, how bit the payloadsize can be set,
+        // so we limit it to the biggest value of the two.
+        // When this payloadsize would be then too big to be used with given MSS and IPv6,
+        // this problem should be reported appropriately from srt_connect and srt_bind calls.
+        if (val > SRT_MAX_PLSIZE_AF_INET)
         {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << ", maximum payload per MTU.");
+            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_MAX_PLSIZE_AF_INET << ", maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
@@ -840,7 +863,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+        size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET - fc.extra_size;
         if (co.zExpPayloadSize > efc_max_payload_size)
         {
             LOGC(aclog.Warn,
@@ -1014,7 +1037,7 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return dispatchSet(optName, *this, optval, optlen);
 }
 
-bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_errmsg) ATR_NOTHROW
+bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
 {
     if (!this->sPacketFilterConfig.empty())
     {
@@ -1022,18 +1045,18 @@ bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_e
         // and the fix to the maximum payload size was already applied.
         // This needs to be checked now.
         SrtFilterConfig fc;
-        if (!ParseFilterConfig(this->sPacketFilterConfig.str(), fc))
+        if (!ParseFilterConfig(this->sPacketFilterConfig.str(), (fc)))
         {
             // Break silently. This should not happen
             w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
             return false;
         }
 
-        const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+        const size_t efc_max_payload_size = CPacket::srtPayloadSize(ip_family) - fc.extra_size;
         if (size_t(val) > efc_max_payload_size)
         {
             std::ostringstream log;
-            log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << fc.extra_size
+            log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family) << " bytes decreased by " << fc.extra_size
                 << " required for packet filter header";
             w_errmsg = log.str();
             return false;
@@ -1042,10 +1065,10 @@ bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_e
 
     // Not checking AUTO to allow defaul 1456 bytes.
     if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-            && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
+            && (val > (CPacket::srtPayloadSize(ip_family) - HAICRYPT_AUTHTAG_MAX)))
     {
         std::ostringstream log;
-        log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE
+        log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family)
             << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
             << " required for AES-GCM.";
         w_errmsg = log.str();

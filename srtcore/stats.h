@@ -103,7 +103,7 @@ public:
 
     // Set IPv4-based header size value as a fallback. This will be fixed upon connection.
     BytesPackets()
-        : m_zPacketHeaderSize(CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE)
+        : m_zPacketHeaderSize(CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE)
     {}
 
 public:

@@ -344,14 +344,15 @@ void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_succes
 
     char pattern[4] = {1, 2, 3, 4};
 
-    ASSERT_EQ(srt_recvmsg(accepted_sock, buffer, sizeof buffer),
+    EXPECT_EQ(srt_recvmsg(accepted_sock, buffer, sizeof buffer),
               1316);
 
     EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
 
     std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << " LSN:@" << bindsock << " CLR:@" << g_client_sock << " ...\n";
-    ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
-    ASSERT_NE(srt_close(g_client_sock), SRT_ERROR); // cannot close g_client_sock after srt_sendmsg because of issue in api.c:2346 
+    EXPECT_NE(srt_close(accepted_sock), SRT_ERROR) << "ERROR: " << srt_getlasterror_str();
+    // cannot close g_client_sock after srt_sendmsg because of issue in api.c:2346 
+    EXPECT_NE(srt_close(g_client_sock), SRT_ERROR) << "ERROR: " << srt_getlasterror_str();
 
     std::cout << "[T/S] joining client async...\n";
     launched.get();

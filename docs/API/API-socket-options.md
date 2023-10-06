@@ -922,20 +922,86 @@ The default value is 0x010000 (SRT v1.0.0).
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
+| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 116..  | RW  | GSD    |
 
-Maximum Segment Size. Used for buffer allocation and rate calculation using
-packet counter assuming fully filled packets. Each party can set its own MSS
-value independently. During a handshake the parties exchange MSS values, and
-the lowest is used.
+Maximum Segment Size. This value represents the maximum size of a UDP packet
+sent by the system. Therefore the value of `SRTO_MSS` must not exceed the
+values of `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`. It is used for buffer
+allocation and rate calculation using a packet counter that assumes fully filled
+packets. 
 
-*Generally on the internet MSS is 1500 by default. This is the maximum
-size of a UDP packet and can be only decreased, unless you have some unusual
-dedicated network settings. MSS is not to be confused with the size of the UDP
-payload or SRT payload - this size is the size of the IP packet, including the
-UDP and SRT headers*
+This value is a sum of:
 
-THe value of `SRTO_MSS` must not exceed `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`.
+* IP header (20 bytes for IPv4, or 32 bytes for IPv6)
+* UDP header (8 bytes)
+* SRT header (16 bytes)
+* remaining space (as the maximum payload size available for a packet)
+
+For the default 1500 the "remaining space" is effectively 1456 for IPv4
+and 1444 for IPv6.
+
+Note that the IP version used here is not the domain of the underlying UDP
+socket, but the in-transmission IP version. This is effectively IPv4 in the
+following cases:
+
+* when the current socket's binding address is of IPv4 domain
+* when the peer's address is an IPv6-mapped-IPv4 address
+
+The IPv6 transmission case is assumed only if the peer's address is a true IPv6 address 
+(not IPv4 mapped). It is then not possible to determine the payload size limit 
+until the connection is established. SRT operations that must allocate any 
+resources according to this value prior to connecting will assume IPv4 transmission 
+because this way, in the worst case, they allocate more space than needed.
+
+This value can be set on both connection parties independently, but after
+connection `SRTO_MSS` gets a negotiated value, which is the lesser
+of the two. If this effective value is too small for either of the
+connection peers, the connection is rejected (or late-rejected on the caller
+side).
+
+This value then controls:
+
+* The maximum size of the payload in a single UDP packet ("remaining space"). 
+
+* The size of the memory space allocated for a single packet in the sender
+and receiver buffers. This value is equal to "SRT header" + "remaining space"
+in the IPv4 layout case (1472 bytes per packet for MSS=1500). The reason for it
+is that some buffer resources are allocated prior to the connection, so this
+value must fit both IPv4 and IPv6 for buffer memory allocation.
+
+The default value of 1500 corresponds to the standard MTU size for network devices. It
+is recommended that this value be set to the maximum MTU size of
+the network device that you will use for the connection.
+
+The recommendations for the value of `SRTO_MSS` differ between file and live modes.
+
+In live mode a single call to the `srt_send*` function may only send data
+that fits in one packet. This size is defined by the `SRTO_PAYLOADSIZE`
+option (defult: 1316), and it is also the size of the data in a single UDP
+packet. To save memory space, you may want then to set `SRTO_MSS` in live mode to
+a value for which the "remaining space" matches the `SRTO_PAYLOADSIZE` value (for
+the default value of 1316 this will be 1360 for IPv4 and 1372 for IPv6). For security reasons, 
+this is not done by default: it may potentially lead to the inability to read an incoming UDP 
+packet if its size is for some reason bigger than the negotiated MSS, which may in turn lead 
+to unpredictable behaviour and hard-to-detect errors. You should set such a value only if 
+the peer is trusted (that is, you can be certain that you will never receive an oversized UDP 
+packet over the link used for the connection). You should also consider the limitations of
+`SRTO_PAYLOADSIZE`.
+
+In file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
+for sending a single packet, and therefore bigger portions of data are
+internally split into smaller portions, each one using the maximum available
+"remaining space". The best value of `SRTO_MSS` for this case is then equal to
+the current network device's MTU size. Setting a greater value is possible
+(maximum for the system API is 65535), but it may lead to packet fragmentation
+on the system level. This is highly unwanted in SRT because:
+
+* SRT also performs its own fragmentation, so it would be counter-productive
+* It would use more system resources to no advantage
+* SRT is unaware of it, so the resulting statistics would be slightly misleading
+
+System-level packet fragmentation cannot be reliably turned off,
+so the safest approach is to avoid it by using appropriate parameters.
 
 [Return to list](#list-of-options)
 
@@ -1032,7 +1098,7 @@ Cases when negotiation succeeds:
 | fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even                  
 | fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase 
 
-In these cases the configuration is rejected with SRT_REJ_FILTER code:
+In these cases the configuration is rejected with `SRT_REJ_FILTER` code:
 
 | Peer A                | Peer B              | Error reason
 |-----------------------|---------------------|--------------------------
@@ -1089,12 +1155,58 @@ encrypted connection, they have to simply set the same passphrase.
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
 | `SRTO_PAYLOADSIZE`   | 1.3.0 | pre      | `int32_t`  | bytes   | \*       | 0.. \* | W   | GSD    |
 
-Sets the maximum declared size of a single call to sending function in Live
-mode. When set to 0, there's no limit for a single sending call.
+Sets the mode that determines the limitations on how data is sent, including the maximum 
+size of payload data sent within a single UDP packet. This option can be only set prior
+to connecting, but it can be read also after the connection has been established.
 
-For Live mode: Default value is 1316, but can be increased up to 1456. Note that
-with the `SRTO_PACKETFILTER` option additional header space is usually required,
-which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
+The default value is 1316 in live mode (which is default) and 0 in file mode (when file
+mode is set through the `SRTO_TRANSTYPE` option).
+
+In file mode (`SRTO_PAYLOADSIZE` = 0) the call to `srt_send*` is not limited to the size
+of a single packet. If necessary, the supplied data will be split into multiple pieces,
+each fitting into a single UDP packet. Every data payload (except the last one in the
+stream or in the message) will use the maximum space available in a UDP packet,
+as determined by `SRTO_MSS` and other settings that may influence this size 
+(such as [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER) and 
+[`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)).
+
+Also when this option is set to 0 prior to connecting, then reading this option
+from a connected socket will return the maximum size of the payload that fits
+in a single packet according to the current connection parameters.
+
+In live mode (`SRTO_PAYLOADSIZE` > 0) the value defines the maximum size of:
+
+* a single call to a sending function (`srt_send*`)
+* the payload supplied in each data packet
+
+as well as the minimum size of the buffer used for the `srt_recv*` call.
+
+This value can be set to a greater value than the default 1316, but the maximum
+possible value is limited by the following factors:
+
+* 1500 bytes is the default MSS (see [`SRTO_MSS`](#SRTO_MSS)), including headers, which occupy:
+   * 20 bytes for IPv4, or 32 bytes for IPv6
+   * 8 bytes for UDP
+   * 16 bytes for SRT
+
+This alone gives a limit of 1456 for IPv4 and 1444 for IPv6. This limit may
+be further decreased in the following cases:
+
+* 4 bytes reserved for FEC, if you use the built in FEC packet filter (see [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER))
+* 16 bytes reserved for the authentication tag, if you use AES GCM (see [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE))
+
+**WARNING**: The party setting the options will reject a value that is too
+large, but note that not every limitation can be checked prior to connection.
+This includes:
+
+* the MSS value defined by a peer, which may override the MSS set by an agent
+* the in-transmission IP version (see [SRTO_MSS](#SRTO_MSS) for details)
+
+These values also influence the "remaining space" in the packet to be used for
+payload. If during the handshake it turns out that this "remaining space" is
+less than the value set for `SRTO_PAYLOADSIZE` (including when it remains with
+the default value), the connection will be rejected with the `SRT_REJ_SETTINGS`
+code.
 
 For File mode: Default value is 0 and it's recommended not to be changed.
 

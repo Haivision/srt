@@ -1170,7 +1170,7 @@ private: // Trace
         time_point tsLastSampleTime;        // last performance sample time
         int traceReorderDistance;
         double traceBelatedTime;
-        
+
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
 
@@ -1214,6 +1214,7 @@ private: // for UDP multiplexer
     sockaddr_any m_PeerAddr;   // peer address
     sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
+    int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
