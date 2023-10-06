@@ -395,3 +395,91 @@ TEST(FileTransmission, Setup66)
     EXPECT_EQ(rcv_stats.pktRecvUniqueTotal, 2);
 
 }
+
+TEST(FileTransmission, Message)
+{
+    using namespace srt;
+
+    TestInit srtinit;
+
+    SRTSOCKET client = srt_create_socket(), server = srt_create_socket();
+
+    int yes = 1;
+    int tt_file = SRTT_FILE;
+
+    srt_setsockflag(client, SRTO_TRANSTYPE, &tt_file, sizeof tt_file);
+    srt_setsockflag(client, SRTO_MESSAGEAPI, &yes, sizeof yes);
+
+    srt_setsockflag(server, SRTO_TRANSTYPE, &tt_file, sizeof tt_file);
+    srt_setsockflag(server, SRTO_MESSAGEAPI, &yes, sizeof yes);
+
+    sockaddr_any sa(AF_INET);
+    sa.hport(5555);
+
+    ASSERT_NE(srt_bind(server, sa.get(), sa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(server, 1), SRT_ERROR);
+
+    std::thread acceptor( [server]() {
+        // Accept the connection and try to read a message to
+        // a buffer of size 2000.
+        sockaddr_any sar(AF_INET);
+        SRTSOCKET acp = srt_accept(server, sar.get(), &sar.len);
+
+        int recv_timeout = 5000;
+        srt_setsockflag(acp, SRTO_RCVTIMEO, &recv_timeout, sizeof recv_timeout);
+        EXPECT_NE(acp, -1);
+
+        char recvm[4096];
+
+        // First try to read using a too small buffer
+        SRT_MSGCTRL mc = srt_msgctrl_default;
+        int size1 = srt_recvmsg2(acp, recvm, 2000, &mc);
+        int recverr = srt_getlasterror(NULL);
+
+        EXPECT_EQ(size1, -1);
+        EXPECT_EQ(recverr, SRT_ELARGEMSG);
+
+        // Still, even if the message wasn't retrieved, the msgno
+        // value should be returned.
+        int msgno_was = mc.msgno;
+
+        // Moreover, after this failure the message should be
+        // still extractable, as long as you provide a large
+        // enough buffer.
+        mc = srt_msgctrl_default;
+        int size2 = srt_recvmsg2(acp, recvm, 4096, &mc);
+
+        EXPECT_EQ(size2, 4096);
+        EXPECT_EQ(mc.msgno, msgno_was);
+
+        srt_close(acp);
+    });
+
+    struct CloseThread
+    {
+        std::thread& c;
+        CloseThread(std::thread& cc): c(cc) {}
+        ~CloseThread()
+        {
+            if (c.joinable())
+                c.join();
+        }
+    };
+
+    char message[4096]; // large enough to exceed 2 packets
+
+    memset(message, 'A', sizeof(message)-1);
+    message[sizeof(message)-1] = 0;
+
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin.sin_addr), 1);
+
+    ASSERT_NE(srt_connect(client, sa.get(), sa.size()), -1);
+
+    ASSERT_EQ(srt_send(client, message, 4096), 4096);
+
+    acceptor.join();
+
+    srt_close(client);
+    srt_close(server);
+}
+
