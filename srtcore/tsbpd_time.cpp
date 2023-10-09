@@ -220,7 +220,16 @@ CTsbpdTime::time_point CTsbpdTime::getTsbPdTimeBase(uint32_t timestamp_us) const
 
 CTsbpdTime::time_point CTsbpdTime::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
-    return getPktTsbPdBaseTime(usPktTimestamp) + m_tdTsbPdDelay + microseconds_from(m_DriftTracer.drift());
+    time_point value = getPktTsbPdBaseTime(usPktTimestamp) + m_tdTsbPdDelay + microseconds_from(m_DriftTracer.drift());
+
+    /*
+    HLOGC(brlog.Debug, log << "getPktTsbPdTime:"
+            << " BASE=" << FormatTime(m_tsTsbPdTimeBase)
+            << " TS=" << usPktTimestamp << "us, lat=" << FormatDuration<DUNIT_US>(m_tdTsbPdDelay)
+            << " DRF=" << m_DriftTracer.drift() << "us = " << FormatTime(value));
+            */
+
+    return value;
 }
 
 CTsbpdTime::time_point CTsbpdTime::getPktTsbPdBaseTime(uint32_t usPktTimestamp) const

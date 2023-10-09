@@ -1016,6 +1016,15 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
             if ((msg_flags & errmsgflg[i].first) != 0)
                 flg << " " << errmsgflg[i].second;
 
+        if (msg_flags & MSG_TRUNC)
+        {
+            // Additionally show buffer information in this case
+            flg << " buffers: ";
+            for (size_t i = 0; i < CPacket::PV_SIZE; ++i)
+            {
+                flg << "[" << w_packet.m_PacketVector[i].iov_len << "] ";
+            }
+        }
         // This doesn't work the same way on Windows, so on Windows just skip it.
 #endif
 

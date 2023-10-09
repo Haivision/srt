@@ -148,6 +148,41 @@ string UriParser::queryValue(const string& strKey) const
     return m_mapQuery.at(strKey);
 }
 
+// NOTE: handles percent encoded single byte ASCII / Latin-1 characters but not unicode characters and encodings
+
+static string url_decode(const string& str)
+{
+    string ret;
+    size_t prev_idx;
+    size_t idx;
+
+    for (prev_idx = 0; string::npos != (idx = str.find('%', prev_idx)); prev_idx = idx + 3)
+    {
+        char     tmp[3];
+        unsigned hex;
+
+        if (idx + 2 >= str.size()) // bad percent encoding
+            break;
+
+        tmp[0] = str[idx + 1];
+        tmp[1] = str[idx + 2];
+        tmp[2] = '\0';
+
+        if (!isxdigit((unsigned char) tmp[0]) || // bad percent encoding
+            !isxdigit((unsigned char) tmp[1]) ||
+            1 != sscanf(tmp, "%x", &hex)      ||
+            0 == hex)
+            break;
+
+        ret += str.substr(prev_idx, idx - prev_idx);
+        ret += (char) hex;
+    }
+
+    ret += str.substr(prev_idx, str.size() - prev_idx);
+
+    return ret;
+}
+
 void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 {
     int iQueryStart = -1;
@@ -308,7 +343,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         idx = strQueryPair.find("=");
         if (idx != string::npos)
         {
-            m_mapQuery[strQueryPair.substr(0, idx)] = strQueryPair.substr(idx + 1, strQueryPair.size() - (idx + 1));
+            m_mapQuery[url_decode(strQueryPair.substr(0, idx))] = url_decode(strQueryPair.substr(idx + 1, strQueryPair.size() - (idx + 1)));
         }
     }
 

@@ -108,6 +108,7 @@ endforeach()
 # SRT_DEBUG_BONDING_STATES 1
 # SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+# SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
@@ -232,7 +233,7 @@ if (NOT USE_ENCLIB)
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls" "botan")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -404,6 +405,46 @@ if (ENABLE_ENCRYPTION)
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+	elseif ("${USE_ENCLIB}" STREQUAL "botan")
+		add_definitions(-DUSE_BOTAN=1 -DCRYSPR2)
+		set (SSL_REQUIRED_MODULES "botan")
+		find_package(Botan 3.0.0 REQUIRED)
+		botan_generate(
+			botan
+			ffi
+			nist_keywrap
+			aes_armv8
+			aes_ni
+			aes_power8
+			aes_vperm
+			idea_sse2
+			serpent_avx2
+			shacal2_armv8
+			shacal2_avx2
+			shacal2_x86
+			sm4_armv8
+			rdseed
+			sha1_armv8
+			sha1_sse2
+			sha1_x86
+			sha2_32_armv8
+			sha2_32_bmi2
+			sha2_32_x86
+			sha2_64_bmi2
+			sha3_bmi2
+			zfec_sse2
+			zfec_vperm
+			argon2_avx2
+			argon2_ssse3
+			processor_rng
+			chacha_avx2
+			ghash_cpu
+			ghash_vperm
+			simd
+			simd_avx2)
+		target_compile_features("botan" PRIVATE "cxx_std_20")
+		set (SSL_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR})
+		set (SSL_LIBRARIES "botan")
 	else() # openssl
 		# Openssl (Direct-AES API) can use CRYSPR2
 		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
@@ -445,11 +486,11 @@ if (ENABLE_ENCRYPTION)
 	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
 
 	if (ENABLE_AEAD_API_PREVIEW)
-		if ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
-			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
 		endif()
 	else()
 		message(STATUS "ENCRYPTION AEAD API: DISABLED")
@@ -1009,10 +1050,12 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)
-			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
-		else()
-			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
+			if (OPENSSL_USE_STATIC_LIBS)
+				target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
+			else()
+				set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+			endif()
 		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32 ws2_32)
@@ -1095,6 +1138,10 @@ if (ENABLE_SHARED)
 endif()
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
+if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
+	add_dependencies(srt_virtual botan)
+endif()
 
 if (srt_libspec_shared)
 	if (MICROSOFT)
