@@ -432,7 +432,7 @@ public:
     const T& operator[](size_t index) const
     {
         if (index >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -440,7 +440,7 @@ public:
     T& operator[](size_t index)
     {
         if (index >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -448,7 +448,7 @@ public:
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -456,7 +456,7 @@ public:
     T& operator[](int index)
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -478,7 +478,7 @@ private:
     FixedArray(const FixedArray<T>& );
     FixedArray<T>& operator=(const FixedArray<T>&);
 
-    void raise_expection(int i) const
+    void throw_invalid_index(int i) const
     {
         std::stringstream ss;
         ss << "Index " << i << "out of range";
@@ -531,6 +531,34 @@ namespace srt_pair_op
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
+    }
+}
+
+namespace any_op
+{
+    template <class T>
+    struct AnyProxy
+    {
+        const T& value;
+        bool result;
+
+        AnyProxy(const T& x, bool res): value(x), result(res) {}
+
+        AnyProxy<T>& operator,(const T& val)
+        {
+            if (result)
+                return *this;
+            result = value == val;
+            return *this;
+        }
+
+        operator bool() { return result; }
+    };
+
+    template <class T> inline
+    AnyProxy<T> EqualAny(const T& checked_val)
+    {
+        return AnyProxy<T>(checked_val, false);
     }
 }
 
@@ -666,6 +694,15 @@ inline std::string Sprint(const Arg1& arg)
     return sout.str();
 }
 
+// Ok, let it be 2-arg, in case when a manipulator is needed
+template <class Arg1, class Arg2>
+inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
+{
+    std::ostringstream sout;
+    sout << arg1 << arg2;
+    return sout.str();
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -746,6 +783,32 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
         return;
 
     v.push_back(val);
+}
+
+template <class Type1, class Type2>
+inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+{
+    return std::pair<Type1&, Type2&>(var1, var2);
+}
+
+// This can be used in conjunction with Tie to simplify the code
+// in loops around a whole container:
+// list<string>::const_iterator it, end;
+// Tie(it, end) = All(list_container);
+template<class Container>
+std::pair<typename Container::iterator, typename Container::iterator>
+inline All(Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+template<class Container>
+std::pair<typename Container::const_iterator, typename Container::const_iterator>
+inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+
+template <class Container, class Value>
+inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
+{
+    for (typename Container::const_iterator i = from.begin(); i != from.end(); ++i)
+        ++out[*i];
 }
 
 template <class Signature>
@@ -1058,11 +1121,11 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 // This relies only on a convention, which is the following:
 //
 // V x = object.prop(); <-- get the property's value
-// object.prop(x); <-- set the property a value
+// object.set_prop(x); <-- set the property a value
 //
 // Properties might be also chained when setting:
 //
-// object.prop1(v1).prop2(v2).prop3(v3);
+// object.set_prop1(v1).set_prop2(v2).set_prop3(v3);
 //
 // Properties may be defined various even very complicated
 // ways, which is simply providing a method with body. In order

@@ -64,7 +64,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace sync;
 
-CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
+CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     : m_BufLock()
     , m_pBlock(NULL)
     , m_pFirstBlock(NULL)
@@ -77,6 +77,7 @@ CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
     , m_iAuthTagSize(authtag)
     , m_iCount(0)
     , m_iBytesCount(0)
+    , m_rateEstimator(ip_family)
 {
     // initial physical buffer of "size"
     m_pBuffer           = new Buffer;
@@ -355,7 +356,11 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             continue;
         }
 
-        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: extracting packet size=" << readlen << " to send");
+        HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
+                << " #" << w_packet.getMsgSeq()
+                << " %" << w_packet.m_iSeqNo
+                << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+
         break;
     }
 

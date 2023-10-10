@@ -35,6 +35,7 @@ Option details are given further below.
 | [`ENABLE_DEBUG`](#enable_debug)                              | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable.                                                                                |
 | [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature, with dependency on an external encryption library.                                                                       |
 | [`ENABLE_AEAD_API_PREVIEW`](#enable_aead_api_preview)        | 1.5.2 | `BOOL`    | OFF        | Enables AEAD preview API (encryption with integrity check).                                                                                          |
+| [`ENABLE_MAXREXMITBW`](#enable_maxrexmitbw)                  | 1.5.3 | `BOOL`    | OFF        | Enables SRTO_MAXREXMITBW (v1.6.0 API).                                                                                                               |
 | [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name.                  |
 | [`ENABLE_HAICRYPT_LOGGING`](#enable_haicrypt_logging)        | 1.3.1 | `BOOL`    | OFF        | Enables logging in the *haicrypt* module, which serves as a connector to an encryption library.                                                      |
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
@@ -60,7 +61,7 @@ Option details are given further below.
 | [`SRT_LOG_SLOWDOWN_FREQ_MS`](#SRT_LOG_SLOWDOWN_FREQ_MS)      | 1.5.2 | `INT`     | 1000\*     | Reduce the frequency of some frequent logs, milliseconds.                                                                                            |
 | [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load.                                                                      |
 | [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling.                                                                          |
-| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`).                                                         |
+| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`, `botan` (since 1.6.0)).                                                         |
 | [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.                                 |
 | [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.                                                                                                          |
 | [`OPENSSL_USE_STATIC_LIBS`](#openssl_use_static_libs)        | 1.5.0 | `BOOL`    | OFF        | Link OpenSSL statically.                                                                                                                             |
@@ -274,9 +275,16 @@ use encryption for the connection.
 **`--enable-aead-api-preview`** (default: OFF)
 
 When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
-The AEAD functionality is only available if OpenSSL EVP is selected as the crypto provider:
-build option `-DUSE_ENCLIB=openssl-evp`.  
+The AEAD functionality is only available if either OpenSSL EVP or Botan is selected
+as the crypto provider:
+build option `-DUSE_ENCLIB=[openssl-evp | botan]`.  
+
 The AEAD API is to be official in SRT v1.6.0.
+
+#### ENABLE_MAXREXMITBW
+**`--enable-maxrexmitbw`** (default: OFF)
+
+When ON, the `SRTO_MAXREXMITBW` is enabled (to become official in SRT v1.6.0).
 
 
 #### ENABLE_GETNAMEINFO
@@ -593,6 +601,7 @@ Encryption library to be used. Possible options for `<name>`:
 * openssl-evp (OpenSSL EVP API, since 1.5.1)
 * gnutls (with nettle)
 * mbedtls
+* botan
 
 
 #### USE_GNUSTL

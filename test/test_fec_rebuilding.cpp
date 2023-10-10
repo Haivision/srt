@@ -3,6 +3,7 @@
 #include <future>
 
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "packet.h"
 #include "fec.h"
 #include "core.h"
@@ -15,7 +16,7 @@
 using namespace std;
 using namespace srt;
 
-class TestFECRebuilding: public testing::Test
+class TestFECRebuilding: public srt::Test
 {
 protected:
     FECFilterBuiltin* fec = nullptr;
@@ -31,7 +32,7 @@ protected:
         PacketFilter::globalInit();
     }
 
-    void SetUp() override
+    void setup() override
     {
         int timestamp = 10;
 
@@ -72,7 +73,7 @@ protected:
             // Randomly chose the size
 
             int minsize = 732;
-            int divergence = plsize - minsize - 1;
+            int divergence = int(plsize) - minsize - 1;
             size_t length = minsize + rand() % divergence;
 
             p.setLength(length);
@@ -86,7 +87,7 @@ protected:
         }
     }
 
-    void TearDown() override
+    void teardown() override
     {
         delete fec;
     }
@@ -207,7 +208,7 @@ bool filterConfigSame(const string& config1, const string& config2)
 
 TEST(TestFEC, ConfigExchange)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
@@ -234,12 +235,11 @@ TEST(TestFEC, ConfigExchange)
     string exp_config = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
-    srt_cleanup();
 }
 
 TEST(TestFEC, ConfigExchangeFaux)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
@@ -257,7 +257,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     for (auto badconfig: fec_config_wrong)
     {
-        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, strlen(badconfig)), -1);
+        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, (int)strlen(badconfig)), -1);
     }
 
     TestMockCUDT m1;
@@ -273,12 +273,11 @@ TEST(TestFEC, ConfigExchangeFaux)
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, Connection)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -328,12 +327,11 @@ TEST(TestFEC, Connection)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, ConnectionReorder)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -381,12 +379,11 @@ TEST(TestFEC, ConnectionReorder)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, ConnectionFull1)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -434,11 +431,11 @@ TEST(TestFEC, ConnectionFull1)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
 }
+
 TEST(TestFEC, ConnectionFull2)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -486,12 +483,11 @@ TEST(TestFEC, ConnectionFull2)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, ConnectionMess)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -539,12 +535,11 @@ TEST(TestFEC, ConnectionMess)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, ConnectionForced)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -586,12 +581,11 @@ TEST(TestFEC, ConnectionForced)
     EXPECT_TRUE(filterConfigSame(result_config1, fec_config_final));
     EXPECT_TRUE(filterConfigSame(result_config2, fec_config_final));
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, RejectionConflict)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -629,12 +623,11 @@ TEST(TestFEC, RejectionConflict)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
 }
 
 TEST(TestFEC, RejectionIncompleteEmpty)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -669,13 +662,12 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
 }
 
 
 TEST(TestFEC, RejectionIncomplete)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -713,7 +705,6 @@ TEST(TestFEC, RejectionIncomplete)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
 }
 
 TEST_F(TestFECRebuilding, Prepare)

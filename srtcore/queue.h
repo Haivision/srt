@@ -551,7 +551,7 @@ private:
     bool  ifNewEntry();
     CUDT* getNewEntry();
 
-    void storePkt(int32_t id, CPacket* pkt);
+    void storePktClone(int32_t id, const CPacket& pkt);
 
 private:
     sync::Mutex       m_LSLock;
