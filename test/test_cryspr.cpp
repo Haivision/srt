@@ -16,7 +16,7 @@
 
 const void *nullPtr = NULL;
 
-/* TestCRYSPRmethods: Test presense of required cryspr methods */
+/* TestCRYSPRmethods: Test presence of required cryspr methods */
 
 class TestCRYSPRmethods
     : public ::testing::Test
@@ -411,7 +411,7 @@ void test_kmwrap(
                 cryspr_cb,
                 wrap,
                 tv->sek,
-                tv->seklen);
+                uint32_t(tv->seklen));
 
             ASSERT_EQ(rc1, 0);
             ASSERT_EQ(rc2, 0);
@@ -447,7 +447,7 @@ void test_kmunwrap(
                 cryspr_cb,
                 sek,
                 tv->wrap,
-                wraplen);
+                uint32_t(wraplen));
 
             ASSERT_EQ(rc1, 0);
             ASSERT_EQ(rc2, 0);

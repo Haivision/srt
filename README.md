@@ -1,6 +1,6 @@
 # Secure Reliable Transport (SRT) Protocol
 
-[About SRT](#what-is-srt) | [Features](#features) | [Getting Started](#getting-started-with-srt) | [Builds](#build-instructions) | [Sample Apps and Tools](#sample-applications-and-tools) | [Contribute](#contributing) | [License](#license) | [Releases](#release-history)
+[About SRT](#what-is-srt) | [Features](#features) | [Getting Started](#getting-started-with-srt) | [Build Instructions](#build-instructions) | [Sample Apps and Tools](#sample-applications-and-tools) | [Contribute](#contributing) | [License](#license) | [Releases](#release-history)
 
 <p align="left">
   <a href="http://srtalliance.org/">
@@ -10,12 +10,17 @@
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
-[![Debian Badge][debian-badge]][debian-package]
-[![LGTM Code Quality][lgtm-quality-badge]][lgtm-project]
-[![LGTM Alerts][lgtm-alerts-badge]][lgtm-project]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
+
+[![Ubuntu 23.04][Ubuntu-badge]][Ubuntu-package]
+[![Fedora 37][fedora-badge]][fedora-package]
+[![Debian][debian-badge]][debian-package]
+[![Homebrew][Homebrew-badge]][Homebrew-package]
+[![Vcpkg][Vcpkg-badge]][Vcpkg-package]
+[![ConanCenter][ConanCenter-badge]][ConanCenter-package]
+
 
 ## What is SRT?
 
@@ -29,7 +34,7 @@ SRT is applied to contribution and distribution endpoints as part of a video str
 | **R**eliable  | Recovers from severe packet loss                  |
 | **T**ransport | Dynamically adapts to changing network conditions |
 
-In live streaming configurations, the SRT protocol maintains a constant end-to-end latency. This allows the live stream’s signal characteristics to be recreated on the receiver side, reducing the need for buffering. As packets are streamed from source to destination, SRT detects and adapts to real-time network conditions between the two endpoints. It helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks.
+In live streaming configurations, the SRT protocol maintains a constant end-to-end latency. This allows the live stream's signal characteristics to be recreated on the receiver side, reducing the need for buffering. As packets are streamed from source to destination, SRT detects and adapts to real-time network conditions between the two endpoints. It helps compensate for jitter and bandwidth fluctuations due to congestion over noisy networks.
 
 [SRT implements AES encryption](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-6) to protect the payload of the media streams, and offers various error recovery mechanisms for minimizing the packet loss that is typical of Internet connections, of which Automatic Repeat reQuest (ARQ) is the primary method. With ARQ, when a receiver detects that a packet is missing it sends an alert to the sender requesting retransmission of this missing packet. [Forward Error Correction (FEC)](./docs/features/packet-filtering-and-fec.md) and [Connection Bonding](./docs/features/bonding-quick-start.md), which adds seamless stream protection and hitless failover, are also supported by the protocol.
 
@@ -139,14 +144,14 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 ## Getting Started with SRT
 
-|                                                                                                                               |                                                                                    |                                                                                   |
-|:-----------------------------------------------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
-| [The SRT API](./docs#srt-api-documents)                                                                                       | [IETF Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01)    | [Sample Apps](./docs#sample-applications)                                         |
-| Reference documentation for the SRT library API                                                                               | The SRT Protocol Internet Draft                                                    | Instructions for using test apps (`srt-live-transmit`, `srt-file-transmit`, etc.) |
-| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www.srtalliance.org/srt-deployment-guide/)          | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
-| Early draft technical overview (precursor to the Internet Draft)                                                          | A comprehensive overview of the protocol with deployment guidelines                | Development notes on the SRT protocol                                             |
-| [Innovation Labs Blog](https://medium.com/innovation-labs-blog/tagged/secure-reliable-transport)                              | [SRTLab YouTube Channel](https://www.youtube.com/channel/UCr35JJ32jKKWIYymR1PTdpA) | [Slack](https://srtalliance.slack.com)                                            |
-| The blog on Medium with SRT-related technical articles                                                                        | Technical YouTube channel with useful videos                                       | Slack channels to get the latest updates and ask questions                        |
+|                                                                                                                               |                                                                                      |                                                                                   |
+|:-----------------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
+| [The SRT API](./docs#srt-api-documents)                                                                                       | [IETF Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Sample Apps](./docs#sample-applications)                                         |
+| Reference documentation for the SRT library API                                                                               | The SRT Protocol Internet Draft                                                      | Instructions for using test apps (`srt-live-transmit`, `srt-file-transmit`, etc.) |
+| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www.srtalliance.org/srt-deployment-guide/)            | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
+| Early draft technical overview (precursor to the Internet Draft)                                                              | A comprehensive overview of the protocol with deployment guidelines                  | Development notes on the SRT protocol                                             |
+| [Innovation Labs Blog](https://medium.com/innovation-labs-blog/tagged/secure-reliable-transport)                              | [SRTLab YouTube Channel](https://www.youtube.com/channel/UCr35JJ32jKKWIYymR1PTdpA)   | [Slack](https://srtalliance.slack.com)                                            |
+| The blog on Medium with SRT-related technical articles                                                                        | Technical YouTube channel with useful videos                                         | Slack channels to get the latest updates and ask questions <br />[Join SRT Alliance on Slack](https://slackin-srtalliance.azurewebsites.net/) |
 
 ### Additional Documentation
 
@@ -157,7 +162,7 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 ## Build Instructions
 
-[Linux (Ubuntu/CentOS)](./docs/build/build-linux.md) | [Windows](./docs/build/build-win.md) | [macOS](./docs/build/build-macOS.md) | [iOS](./docs/build/build-iOS.md) | [Android](./docs/build/build-android.md)
+[Linux (Ubuntu/CentOS)](./docs/build/build-linux.md) | [Windows](./docs/build/build-win.md) | [macOS](./docs/build/build-macOS.md) | [iOS](./docs/build/build-iOS.md) | [Android](./docs/build/build-android.md) | [Package Managers](./docs/build/package-managers.md)
 
 ### Requirements
 
@@ -214,9 +219,11 @@ By contributing code to the SRT project, you agree to license your contribution 
 [travis]: https://travis-ci.org/Haivision/srt
 [license-badge]: https://img.shields.io/badge/License-MPLv2.0-blue
 
-[lgtm-alerts-badge]: https://img.shields.io/lgtm/alerts/github/Haivision/srt
-[lgtm-quality-badge]: https://img.shields.io/lgtm/grade/cpp/github/Haivision/srt
-[lgtm-project]: https://lgtm.com/projects/g/Haivision/srt/
+[Vcpkg-package]: https://repology.org/project/srt/versions
+[Vcpkg-badge]: https://repology.org/badge/version-for-repo/vcpkg/srt.svg
+
+[ConanCenter-package]: https://repology.org/project/srt/versions
+[ConanCenter-badge]: https://repology.org/badge/version-for-repo/conancenter/srt.svg
 
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg
@@ -226,3 +233,12 @@ By contributing code to the SRT project, you agree to license your contribution 
 
 [debian-badge]: https://badges.debian.net/badges/debian/testing/libsrt1.5-gnutls/version.svg
 [debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls
+
+[fedora-package]: https://repology.org/project/srt/versions
+[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_37/srt.svg
+
+[homebrew-package]: https://repology.org/project/srt/versions
+[homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
+
+[Ubuntu-package]: https://repology.org/project/srt/versions
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_23_04/srt.svg

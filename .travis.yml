@@ -10,6 +10,7 @@ addons:
         - libssl-dev
         - build-essential
         - libmbedtls-dev
+        - gdb
     sonarcloud:
         organization: "haivision"
         token:
@@ -70,7 +71,6 @@ matrix:
           - BUILD_TYPE=Release
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
-    - TESTS_IPv6="TestMuxer.IPv4_and_IPv6:TestIPv6.v6_calls_v6*:ReuseAddr.ProtocolVersion" ; # Tests to skip due to lack of IPv6 support
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
@@ -93,8 +93,13 @@ script:
         make -j$(nproc);
       fi
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
-        ./test-srt --gtest_filter="-$TESTS_IPv6";
+        ulimit -c unlimited;
+        ./test-srt -disable-ipv6;
+        SUCCESS=$?;
+        if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
       fi
+after_success:
     - if (( "$RUN_CODECOV" )); then
         source ./scripts/collect-gcov.sh;
         bash <(curl -s https://codecov.io/bash);

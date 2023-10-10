@@ -10,10 +10,11 @@
  *             Haivision Systems Inc.
  */
 
-#include <gtest/gtest.h>
 #include <thread>
 #include <condition_variable> 
 #include <mutex>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #include "srt.h"
 #include "sync.h"
@@ -214,7 +215,7 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 
 
 class TestEnforcedEncryption
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     TestEnforcedEncryption()
@@ -230,10 +231,8 @@ protected:
 protected:
 
     // SetUp() is run immediately before a test starts.
-    void SetUp()
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_pollid = srt_epoll_create();
         ASSERT_GE(m_pollid, 0);
 
@@ -254,13 +253,12 @@ protected:
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
     }
 
-    void TearDown()
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        ASSERT_NE(srt_close(m_caller_socket),   SRT_ERROR);
-        ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
-        srt_cleanup();
+        EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
+        EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
     }
 
 
@@ -345,6 +343,11 @@ public:
         ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
         ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
 
+        // Determine the subcase for the KLUDGE (check the behavior of the decryption failure)
+        const bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
+        const bool case_both_relaxed = !test.enforcedenc[PEER_LISTENER] && !test.enforcedenc[PEER_CALLER];
+        const bool case_sender_enc = test.password[PEER_CALLER] != "";
+
         const TResult &expect = test.expected_result;
 
         // Start testing
@@ -358,6 +361,8 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
+        SRTSOCKET accepted_socket = -1;
+
         auto accepting_thread = std::thread([&] {
             const int epoll_event = WaitOnEpoll(expect);
 
@@ -366,7 +371,6 @@ public:
             // otherwise SRT_INVALID_SOCKET after the listening socket is closed.
             sockaddr_in client_address;
             int length = sizeof(sockaddr_in);
-            SRTSOCKET accepted_socket = -1;
             if (epoll_event == SRT_EPOLL_IN)
             {
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
@@ -407,7 +411,7 @@ public:
                     std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
 
-                // We have to wait some time for the socket to be able to process the HS responce from the caller.
+                // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
                 do
@@ -484,6 +488,53 @@ public:
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
+        if (!is_blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
+        {
+            // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            EXPECT_FALSE(accepting_thread.joinable());
+
+            int const epollRead = srt_epoll_create();
+            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            srt_epoll_add_usock(epollRead, accepted_socket, &events);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            {
+                int const epollWrite = srt_epoll_create();
+                events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
+                srt_epoll_add_usock(epollWrite, m_caller_socket, &events);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
+                int         socketNum  = 1;
+                const int epoll_res_w = srt_epoll_wait(epollWrite,
+                        nullptr, nullptr, // read
+                        &srtSocket, &socketNum, // write
+                        500,
+                        nullptr, nullptr, nullptr, nullptr); // R/W system sockets
+                std::cout << "W: " << epoll_res_w << std::endl;
+
+                char buffer[1316] = {1, 2, 3, 4};
+                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), SRT_ERROR);
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
+            int         socketNum  = 1;
+            int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
+            std::cout << "R: " << epoll_res_r << std::endl;
+            EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
+            char buffer[1316] = {};
+            EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
+
+            epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
+            EXPECT_LE(epoll_res_r, 0) << "Another?!";
+            //// ! /KLUDGE !
+
+            srt_epoll_release(epollRead);
+        }
+
         if (is_blocking)
         {
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
@@ -530,7 +581,7 @@ static std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events
         make_pair(SRT_EPOLL_UPDATE, "U")
     };
 
-    int N = Size(namemap);
+    const int N = (int)Size(namemap);
 
     for (int i = 0; i < N; ++i)
     {

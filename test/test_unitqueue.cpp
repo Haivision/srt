@@ -1,6 +1,7 @@
 #include <array>
 #include <vector>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "queue.h"
 
 using namespace std;
@@ -15,6 +16,7 @@ using namespace srt;
 /// the very last element of the queue (it was skipped).
 TEST(CUnitQueue, Increase)
 {
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
@@ -23,7 +25,7 @@ TEST(CUnitQueue, Increase)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
         taken_units.push_back(unit);
     }
 }
@@ -35,6 +37,7 @@ TEST(CUnitQueue, Increase)
 /// beginning of the same queue.
 TEST(CUnitQueue, IncreaseAndFree)
 {
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
@@ -43,7 +46,7 @@ TEST(CUnitQueue, IncreaseAndFree)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_unit)
             unit_queue.makeUnitFree(taken_unit);
@@ -59,6 +62,7 @@ TEST(CUnitQueue, IncreaseAndFree)
 /// Thus the test checks if 
 TEST(CUnitQueue, IncreaseAndFreeGrouped)
 {
+    srt::TestInit srtinit;
     const int buffer_size_pkts = 4;
     CUnitQueue unit_queue(buffer_size_pkts, 1500);
 
@@ -67,7 +71,7 @@ TEST(CUnitQueue, IncreaseAndFreeGrouped)
     {
         CUnit* unit = unit_queue.getNextAvailUnit();
         ASSERT_NE(unit, nullptr);
-        unit_queue.makeUnitGood(unit);
+        unit_queue.makeUnitTaken(unit);
 
         if (taken_units.size() >= buffer_size_pkts)
         {

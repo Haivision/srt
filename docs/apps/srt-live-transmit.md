@@ -242,6 +242,7 @@ srt://:5001?adapter=10.10.10.100
    - *port* part: remote port to connect to (mandatory)
    - **port** parameter: the local port to bind (default: 0 - "system autoselection")
    - **adapter** parameter: the local IP address to bind (default: 0.0.0.0 - "system selected device")
+   - **bind** parameter: a shortcut to set adapter or port by specifying ADAPTER:PORT
 
 ```yaml
 srt://remote.host.com:5001
@@ -284,11 +285,13 @@ specify the host as `::`.
 NOTE: Don't use square brackets syntax in the **adapter** parameter
 specification, as in this case only the host is expected.
 
-3. If you want to listen for connections from both IPv4 and IPv6, mind the
-`ipv6only` option. The default value for this option is system default (see
-system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
-enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
-connections by the same listener, or set `ipv6only=1` to accept exclusively IPv6.
+3. If you bind to an IPv6 wildcard address (with listener mode, or when using the `bind`
+option), setting the `ipv6only` option to 0 or 1 is obligatory, as it is a part
+of the binding definition. If you set it to 1, the binding will apply only to
+IPv6 local addresses, and if you set it to 0, it will apply to both IPv4 and
+IPv6 local addresses. See the
+[`SRTO_IPV6ONLY`](../API/API-socket-options.md#SRTO_IPV6ONLY) option
+description for details.
 
 4. In rendezvous mode you may only interconnect both parties using IPv4, 
 or both using IPv6. Unlike listener mode, if you want to leave the socket
@@ -302,9 +305,8 @@ Examples:
 
 * `srt://[::]:5000` defines caller mode (!) with IPv6.
 
-* `srt://[::]:5000?mode=listener` defines listener mode with IPv6. If the
-    default value for `IPV6_V6ONLY` system socket option is 0, it will accept
-    also IPv4 connections.
+* `srt://[::]:5000?mode=listener&ipv6only=1` defines listener mode with IPv6.
+    Only connections from IPv6 callers will be accepted.
 
 * `srt://192.168.0.5:5000?mode=rendezvous` will make a rendezvous connection
     with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
@@ -336,6 +338,7 @@ following type specification:
 | -------------------- | ---------------- | ------------------------- | ----------- |
 | `congestion`         | {`live`, `file`} | `SRTO_CONGESTION`         | Type of congestion control. |
 | `conntimeo`          | `ms`             | `SRTO_CONNTIMEO`          | Connection timeout. |
+| `cryptomode`         | 0..2             | `SRTO_CRYPTOMODE`         | Cryptographic mode. |
 | `drifttracer`        | `bool`           | `SRTO_DRIFTTRACER`        | Enable drift tracer. |
 | `enforcedencryption` | `bool`           | `SRTO_ENFORCEDENCRYPTION` | Reject connection if parties set different passphrase. |
 | `fc`                 | `bytes`          | `SRTO_FC`                 | Flow control window size. |

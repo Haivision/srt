@@ -1,29 +1,19 @@
-
-#include <stdio.h>
-#include <stdlib.h>
 #include <future>
 #include <thread>
 #include <chrono>
 #include <vector>
 #include <functional>
-#ifdef _WIN32
-#define usleep(x) Sleep(x / 1000)
-#else
-#include <unistd.h>
-#endif
-
-#if ENABLE_BONDING
 
 #include "gtest/gtest.h"
+#include "test_env.h"
 
 #include "srt.h"
 #include "netinet_any.h"
 
 TEST(Bonding, SRTConnectGroup)
 {
+    srt::TestInit srtinit;
     struct sockaddr_in sa;
-
-    srt_startup();
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -39,10 +29,10 @@ TEST(Bonding, SRTConnectGroup)
         targets.push_back(gd);
     }
 
-    std::future<void> closing_promise = std::async(std::launch::async, [](int ss) {
+    std::future<void> closing_promise = std::async(std::launch::async, [](int s) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cerr << "Closing group" << std::endl;
-        srt_close(ss);
+        srt_close(s);
     }, ss);
 
     std::cout << "srt_connect_group calling " << std::endl;
@@ -64,10 +54,9 @@ TEST(Bonding, SRTConnectGroup)
     {
         std::cerr << "srt_close: " << srt_getlasterror_str() << std::endl;
     }
-
-    srt_cleanup();
 }
 
+#define ASSERT_SRT_SUCCESS(callform) ASSERT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
 
 void listening_thread(bool should_read)
 {
@@ -78,33 +67,33 @@ void listening_thread(bool should_read)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
     bind_sa.sin_port = htons(4200);
 
-    ASSERT_NE(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    ASSERT_SRT_SUCCESS(srt_bind(server_sock, (sockaddr*)&bind_sa, sizeof bind_sa));
     const int yes = 1;
-    srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &yes, sizeof yes));
 
     const int no = 1;
-    srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no);
+    ASSERT_SRT_SUCCESS(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no));
 
     const int eid = srt_epoll_create();
     const int listen_event = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-    srt_epoll_add_usock(eid, server_sock, &listen_event);
+    ASSERT_SRT_SUCCESS(srt_epoll_add_usock(eid, server_sock, &listen_event));
 
-    ASSERT_NE(srt_listen(server_sock, 5), -1);
+    ASSERT_SRT_SUCCESS(srt_listen(server_sock, 5));
     std::cout << "Listen: wait for acceptability\n";
     int fds[2];
     int fds_len = 2;
     int ers[2];
     int ers_len = 2;
-    int wr = srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
-            0, 0, 0, 0);
+    ASSERT_SRT_SUCCESS(srt_epoll_wait(eid, fds, &fds_len, ers, &ers_len, 5000,
+            0, 0, 0, 0));
 
-    ASSERT_NE(wr, -1);
     std::cout << "Listen: reported " << fds_len << " acceptable and " << ers_len << " errors\n";
     ASSERT_GT(fds_len, 0);
     ASSERT_EQ(fds[0], server_sock);
 
     srt::sockaddr_any scl;
     int acp = srt_accept(server_sock, (scl.get()), (&scl.len));
+    ASSERT_SRT_SUCCESS(acp);
     ASSERT_NE(acp & SRTGROUP_MASK, 0);
 
     if (should_read)
@@ -126,6 +115,7 @@ void listening_thread(bool should_read)
     }
 
     srt_close(acp);
+    srt_close(server_sock);
 
     std::cout << "Listen: wait 7 seconds\n";
     std::this_thread::sleep_for(std::chrono::seconds(7));
@@ -141,8 +131,8 @@ void ConnectCallback(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* 
 
 TEST(Bonding, NonBlockingGroupConnect)
 {
-    srt_startup();
-    
+    srt::TestInit srtinit;
+
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
     std::cout << "Created group socket: " << ss << '\n';
@@ -215,8 +205,6 @@ TEST(Bonding, NonBlockingGroupConnect)
     listen_promise.wait();
 
     EXPECT_EQ(srt_close(ss), 0) << "srt_close: %s\n" << srt_getlasterror_str();
-
-    srt_cleanup();
 }
 
 void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
@@ -234,8 +222,8 @@ void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sock
 
 TEST(Bonding, CloseGroupAndSocket)
 {
-    srt_startup();
-    
+    srt::TestInit srtinit;
+
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
     std::cout << "Created group socket: " << ss << '\n';
@@ -340,8 +328,5 @@ TEST(Bonding, CloseGroupAndSocket)
     std::cout << "CLOSED GROUP. Now waiting for sender to exit...\n";
     sender.join();
     listen_promise.wait();
-
-    srt_cleanup();
 }
 
-#endif // ENABLE_BONDING

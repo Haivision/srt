@@ -313,7 +313,7 @@ bool PrepareStreamNames(const map<string,vector<string>>& params, bool mode_outp
     return true;
 }
 
-bool SelectAndLink(SrtModel& m, string id, bool mode_output)
+bool SelectAndLink(SrtModel& m, string id, bool mode_output, string& w_msg)
 {
     // So, we have made a connection that is now contained in m.
     // For that connection we need to select appropriate stream
@@ -331,6 +331,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     {
         // No medium available for that stream, ignore it.
         m.Close();
+        w_msg = "No medium available for that stream";
         return false;
     }
 
@@ -345,12 +346,18 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
 
     if ( mode_output )
     {
+        target = Target::Create(medium);
+        if (!target)
+        {
+            m.Close();
+            w_msg = "Unable to create target medium: " + medium;
+            return false;
+        }
+
         // Create Source out of SrtModel and Target from the given medium
         auto s = new SrtSource();
         s->StealFrom(m);
         source.reset(s);
-
-        target = Target::Create(medium);
 
         os << m.m_host << ":" << m.m_port << "[" << id << "]%" << sock << "  ->  " << medium;
         thread_name = "TL>" + medium;
@@ -359,6 +366,13 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     {
         // Create Source of given medium and Target of SrtModel.
         source = Source::Create(medium);
+        if (!source)
+        {
+            m.Close();
+            w_msg = "Unable to create source medium: " + medium;
+            return false;
+        }
+
         auto t = new SrtTarget();
         t->StealFrom(m);
         target.reset(t);
@@ -607,12 +621,17 @@ int main( int argc, char** argv )
             // the local resource of this id, and if this failed, simply
             // close the stream and ignore it.
 
+            string msg;
             // Select medium from parameters.
-            if (SelectAndLink(m, id, mode_output))
+            if (SelectAndLink((m), id, mode_output, (msg)))
             {
                 ids.erase(id);
                 if (ids.empty())
                     break;
+            }
+            else
+            {
+                applog.Error() << "Unable to select a link for id=" << id << ": " << msg;
             }
 
             srt::ThreadName::set("main");

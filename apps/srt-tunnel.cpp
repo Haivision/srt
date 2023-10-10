@@ -299,7 +299,7 @@ public:
 
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         parent_box(m),
-        med_acp(move(acp)), med_clr(move(clr)),
+        med_acp(std::move(acp)), med_clr(std::move(clr)),
         acp_to_clr(this, med_acp.get(), med_clr.get(), med_acp->id() + ">" + med_clr->id()),
         clr_to_acp(this, med_clr.get(), med_acp.get(), med_clr->id() + ">" + med_acp->id())
     {
@@ -649,7 +649,7 @@ void TcpMedium::CreateListener()
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    m_socket = socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 
     int stat = ::bind(m_socket, sa.get(), sa.size());
@@ -694,7 +694,7 @@ unique_ptr<Medium> SrtMedium::Accept()
 unique_ptr<Medium> TcpMedium::Accept()
 {
     sockaddr_any sa;
-    int s = ::accept(m_socket, (sa.get()), (&sa.syslen()));
+    int s = (int)::accept(m_socket, (sa.get()), (&sa.syslen()));
     if (s == -1)
     {
         Error(errno, "accept");
@@ -726,7 +726,7 @@ void SrtMedium::CreateCaller()
 
 void TcpMedium::CreateCaller()
 {
-    m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 }
 
@@ -850,7 +850,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
     size_t pred_size = shift + m_chunk;
 
     w_output.resize(pred_size);
-    int st = ReadInternal((w_output.data() + shift), m_chunk);
+    int st = ReadInternal((w_output.data() + shift), (int)m_chunk);
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -884,7 +884,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
 
 void SrtMedium::Write(bytevector& w_buffer)
 {
-    int st = srt_send(m_socket, w_buffer.data(), w_buffer.size());
+    int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
     if (st == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_send");
@@ -907,7 +907,7 @@ void SrtMedium::Write(bytevector& w_buffer)
 
 void TcpMedium::Write(bytevector& w_buffer)
 {
-    int st = ::send(m_socket, w_buffer.data(), w_buffer.size(), DEF_SEND_FLAG);
+    int st = ::send(m_socket, w_buffer.data(), (int)w_buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -971,7 +971,7 @@ struct Tunnelbox
         lock_guard<std::mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
-        tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
+        tunnels.emplace_back(new Tunnel(this, std::move(acp), std::move(clr)));
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
@@ -1191,7 +1191,7 @@ int main( int argc, char** argv )
             Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
-            g_tunnels.install(move(accepted), move(caller));
+            g_tunnels.install(std::move(accepted), std::move(caller));
         }
         catch (...)
         {

@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -29,7 +30,7 @@
 
 TEST(Transmission, FileUpload)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     // Generate the source file
     // We need a file that will contain more data
@@ -149,7 +150,7 @@ TEST(Transmission, FileUpload)
         size_t shift = 0;
         while (n > 0)
         {
-            const int st = srt_send(sock_clr, buf.data()+shift, n);
+            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
             ASSERT_GT(st, 0) << srt_getlasterror_str();
 
             n -= st;
@@ -195,5 +196,4 @@ TEST(Transmission, FileUpload)
     remove("file.source");
     remove("file.target");
 
-    (void)srt_cleanup();
 }

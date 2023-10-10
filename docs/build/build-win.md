@@ -5,16 +5,16 @@
 - [1. Prerequisites](#1-prerequisites)
   - [1.1. Build Tool Dependencies](#11-build-tool-dependencies)
   - [1.2. External Library Dependencies](#12-external-library-dependencies)
-    - [1.2.1. Cryptographic Library](#121-Cryptographic-library)
+    - [1.2.1. Cryptographic Library](#121-cryptographic-library)
     - [1.2.2. Threading Library](#122-threading-library)
   - [1.3. Package Managers](#13-package-managers)
     - [1.3.1. VCpkg Packet Manager (optional)](#131-vcpkg-packet-manager-optional)
     - [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)
 - [2. Preparing Dependencies](#2-preparing-dependencies)
-  - [2.1. Cryptographic Library](#21-Cryptographic-library)
+  - [2.1. Cryptographic Library](#21-cryptographic-library)
     - [2.1.1. Install OpenSSL](#211-install-openssl)
       - [2.1.1.1. Using vcpkg](#2111-using-vcpkg)
-      - [2.1.1.2. Using Installer](#2112-using-installer)
+      - [2.1.1.2. Using Installer](#2112-using-installer-windows)
       - [2.1.1.3. Build from Sources](#2113-build-from-sources)
     - [2.1.2. Install MbedTLS](#212-install-mbedtls)
     - [2.1.3. Install LibreSSL](#213-install-libressl)
@@ -23,11 +23,11 @@
     - [2.2.2. Building PThreads](#222-building-pthreads)
       - [2.2.2.1. Using vcpkg](#2221-using-vcpkg)
       - [2.2.2.2. Using NuGet](#2222-using-nuget)
-      - [2.2.2.3. Build pthreads4w from Sources](#2114-build-pthreads4w-from-sources)
-      - [2.2.2.4. Build pthread-win32 from Sources](#2114-build-pthread-win32-from-sources)
+      - [2.2.2.3. Build pthreads4w from Sources](#2223-build-pthreads4w-from-sources)
+      - [2.2.2.4. Build pthread-win32 from Sources](#2224-build-pthread-win32-from-sources)
 - [3. Building SRT](#3-building-srt)
   - [3.1. Cloning the Source Code](#31-cloning-the-source-code)
-  - [3.2. Generate Build Files](#32-generating-build-files)
+  - [3.2. Generate Build Files](#32-generate-build-files)
   - [3.3. Build SRT](#33-build-srt)
 
 <!-- /TOC -->
@@ -67,7 +67,8 @@ SRT as of v1.4.2 supports two threading libraries:
 
 The `pthreads` library is provided out-of-the-box on all POSIX-based systems.
 On Windows it can be provided as a 3rd party library (see below).
-However the C++ standard thread library is recommended to be used on Windows.
+However, using pthread wrapper on Windows comes with limitations, e.g. converting time from POSIX-based to Windows-based might loose precision, monotonic clock implementation eventually uses wall clock, etc.  
+**The C++11 standard thread library is recommended to be used on Windows.**
 
 ### 1.3. Package Managers
 
@@ -150,7 +151,7 @@ CMake will be able to find openssl given the following option is provided:
 ##### 2.1.1.2. Using Installer (Windows)
 
 The 64-bit OpenSSL package for Windows can be downloaded using
-the following link: [Win64OpenSSL_Light-1_1_1c](http://slproweb.com/download/Win64OpenSSL_Light-1_1_1c.exe).
+the following link: [Win64OpenSSL-3_0_5](https://slproweb.com/download/Win64OpenSSL-3_0_5.exe).
 
 **Note!** The last letter or version number may change and older versions may become no longer available. In that case find the appropriate installer here: [Win32OpenSSL](http://slproweb.com/products/Win32OpenSSL.html).
 
