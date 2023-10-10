@@ -356,7 +356,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));
 
     return 0;
 }
@@ -857,7 +857,7 @@ int main( int argc, char** argv )
     if (stoptime != 0)
     {
         int elapsed = end_time - start_time;
-        int remain = stoptime - elapsed;
+        int remain = int(stoptime) - elapsed;
 
         if (remain <= final_delay)
         {
@@ -918,7 +918,7 @@ int main( int argc, char** argv )
             if (stoptime != 0)
             {
                 int elapsed = time(0) - end_time;
-                int remain = stoptime - final_delay - elapsed;
+                int remain = int(stoptime - final_delay - elapsed);
                 if (remain < 0)
                 {
                     Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";

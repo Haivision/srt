@@ -77,6 +77,10 @@ modified by
 
 #include <haicrypt.h>
 
+#ifndef SRT_ENABLE_FREQUENT_LOG_TRACE
+#define SRT_ENABLE_FREQUENT_LOG_TRACE 0
+#endif
+
 
 // TODO: Utility function - to be moved to utilities.h?
 template <class T>
@@ -328,6 +332,20 @@ public: // internal API
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
+    size_t          payloadSize()           const
+    {
+        // If payloadsize is set, it should already be checked that
+        // it is less than the possible maximum payload size. So return it
+        // if it is set to nonzero value. In case when the connection isn't
+        // yet established, return also 0, if the value wasn't set.
+        if (m_config.zExpPayloadSize || !m_bConnected)
+            return m_config.zExpPayloadSize;
+
+        // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
+        // then return the maximum payload size per packet.
+        return m_iMaxSRTPayloadSize;
+    }
+
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
@@ -387,6 +405,11 @@ public: // internal API
         // So, this can be simply defined as: TS = (RTS - STS) % (MAX_TIMESTAMP+1)
         SRT_ASSERT(from_time >= tsStartTime);
         return (int32_t) sync::count_microseconds(from_time - tsStartTime);
+    }
+
+    static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
+    {
+        p.set_timestamp(makeTS(ts, start_time));
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)
@@ -735,13 +758,6 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    CRateEstimator getRateEstimator() const
-    {
-        if (!m_pSndBuffer)
-            return CRateEstimator();
-        return m_pSndBuffer->getRateEstimator();
-    }
-
     void setRateEstimator(const CRateEstimator& rate)
     {
         if (!m_pSndBuffer)
@@ -871,6 +887,7 @@ private: // Timers
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
     sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
@@ -909,14 +926,20 @@ private: // Timers
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
-    time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
+    static const size_t
+                MAX_FREQLOGFA = 2,
+                FREQLOGFA_ENCRYPTION_FAILURE = 0,
+                FREQLOGFA_RCV_DROPPED = 1;
+    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
                                                  // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
                                                  // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+    sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
 
     /// @brief Check if a frequent log can be shown.
     /// @param tnow current time
     /// @return true if it is ok to print a frequent log message.
-    bool frequentLogAllowed(const time_point& tnow) const;
+    bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
 
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
@@ -964,11 +987,17 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbAcceptHook.set(opaq, hook);
     }
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbConnectHook.set(opaq, hook);
     }
 
@@ -981,7 +1010,7 @@ private: // synchronization: mutexes and conditions
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
+    mutable sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
 
     sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
     sync::Mutex m_RecvLock;                      // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
@@ -1144,6 +1173,13 @@ private: // Trace
         
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
+
+        void setupHeaderSize(int hsize)
+        {
+            sndr.setupHeaderSize(hsize);
+            rcvr.setupHeaderSize(hsize);
+        }
+
     } m_stats;
 
 public:

@@ -130,7 +130,7 @@ CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool b
     , m_bMessageAPI(bMessageAPI)
     , m_iBytesCount(0)
     , m_iPktsCount(0)
-    , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
+    , m_uAvgPayloadSz(0)
 {
     SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
 }
@@ -758,7 +758,12 @@ void CRcvBuffer::countBytes(int pkts, int bytes)
     m_iBytesCount += bytes; // added or removed bytes from rcv buffer
     m_iPktsCount  += pkts;
     if (bytes > 0)          // Assuming one pkt when adding bytes
-        m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+    {
+        if (!m_uAvgPayloadSz)
+            m_uAvgPayloadSz = bytes;
+        else
+            m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+    }
 }
 
 void CRcvBuffer::releaseUnitInPos(int pos)
