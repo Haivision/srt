@@ -134,12 +134,21 @@ written by
 #define SRT_ATR_DEPRECATED
 #endif
 
-// Invert this in order to retest if the symbolic constants
+// Unblock this in order to retest if the symbolic constants
 // have been used properly. With this change the compiler will
 // detect every case when it wasn't.
+// Important: you need to --use-c++-std=c++20 to compile SRT
+// with this enabled.
+//#define SRT_TEST_FORCED_CONSTANT
+
+#ifndef SRT_TEST_FORCED_CONSTANT
+// This is normal and should be normally used.
 typedef int32_t SRTSOCKET;
 typedef int SRTSTATUS;
-//#include "../common/devel_util.h"
+#else
+// Used for development only.
+#include "../common/devel_util.h"
+#endif
 
 
 #ifdef __cplusplus

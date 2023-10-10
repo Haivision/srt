@@ -75,7 +75,7 @@ SRTSTATUS srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::C
 SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
 SRTSTATUS srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 
-SRTSTATUS srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+SRTSOCKET srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0), SRT_INVALID_SOCK; }
 
 #endif
 

@@ -64,21 +64,21 @@ enum TEST_CASE
 
 struct TestResultNonBlocking
 {
-    int     connect_ret;
-    int     accept_ret;
+    SRTSOCKET  connect_ret;
+    SRTSOCKET  accept_ret;
     int     epoll_wait_ret;
     int     epoll_event;
-    int     socket_state[CHECK_SOCKET_COUNT];
-    int     km_state    [CHECK_SOCKET_COUNT];
+    SRT_SOCKSTATUS socket_state[CHECK_SOCKET_COUNT];
+    SRT_KM_STATE km_state    [CHECK_SOCKET_COUNT];
 };
 
 
 struct TestResultBlocking
 {
-    int     connect_ret;
-    int     accept_ret;
-    int     socket_state[CHECK_SOCKET_COUNT];
-    int     km_state[CHECK_SOCKET_COUNT];
+    SRTSOCKET  connect_ret;
+    SRTSOCKET  accept_ret;
+    SRT_SOCKSTATUS socket_state[CHECK_SOCKET_COUNT];
+    SRT_KM_STATE km_state[CHECK_SOCKET_COUNT];
 };
 
 
@@ -137,35 +137,37 @@ static const std::string s_pwd_no("");
  */
 
 const int IGNORE_EPOLL = -2;
-const int IGNORE_SRTS = -1;
+const SRT_SOCKSTATUS IGNORE_SRTS = (SRT_SOCKSTATUS)-1;
+const SRT_KM_STATE IGNORE_KMSTATE = (SRT_KM_STATE)-1;
+const SRTSOCKET IGNORE_ACCEPT = (SRTSOCKET)-2;
 
 const TestCaseNonBlocking g_test_matrix_non_blocking[] =
 {
-        // ENFORCEDENC       |  Password           |                                | EPoll wait                       | socket_state                            |  KM State
-        // caller | listener |  caller  | listener |  connect_ret   accept_ret      |  ret         | event             | caller              accepted |  caller              listener
-/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+        // ENFORCEDENC       |  Password           |                                         | EPoll wait                       | socket_state                            |  KM State
+        // caller | listener |  caller  | listener |         connect_ret   accept_ret        |  ret         | event             | caller              accepted |  caller              listener
+/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
-/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
-/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
+/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 };
 
 
@@ -185,31 +187,31 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  */
 const TestCaseBlocking g_test_matrix_blocking[] =
 {
-        // ENFORCEDENC       |  Password           |                                      | socket_state                   |  KM State
-        // caller | listener |  caller  | listener |  connect_ret         accept_ret      | caller                accepted |  caller              listener
-/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+        // ENFORCEDENC       |  Password           |                                          | socket_state                   |  KM State
+        // caller | listener |  caller  | listener |    connect_ret         accept_ret        | caller                accepted |  caller              listener
+/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,               -2, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
-/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
-/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
+/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 };
 
 
@@ -240,13 +242,13 @@ protected:
         ASSERT_NE(m_caller_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_caller_socket,    SRTO_SENDER,    &s_yes, sizeof s_yes), SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_caller_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(m_caller_socket, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         m_listener_socket = srt_create_socket();
         ASSERT_NE(m_listener_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_listener_socket,    SRTO_SENDER,    &s_no,  sizeof s_no),  SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
@@ -265,10 +267,10 @@ protected:
 public:
 
 
-    int SetEnforcedEncryption(PEER_TYPE peer, bool value)
+    SRTSTATUS SetEnforcedEncryption(PEER_TYPE peer, bool value)
     {
         const SRTSOCKET &socket = peer == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
+        return srt_setsockflag(socket, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
     }
 
 
@@ -277,15 +279,15 @@ public:
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
         bool optval;
         int  optlen = sizeof optval;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_STATUS_OK);
         return optval ? true : false;
     }
 
 
-    int SetPassword(PEER_TYPE peer_type, const std::basic_string<char> &pwd)
+    SRTSTATUS SetPassword(PEER_TYPE peer_type, const std::basic_string<char> &pwd)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_PASSPHRASE, pwd.c_str(), (int) pwd.size());
+        return srt_setsockflag(socket, SRTO_PASSPHRASE, pwd.c_str(), (int) pwd.size());
     }
 
 
@@ -293,8 +295,8 @@ public:
     {
         int km_state = 0;
         int opt_size = sizeof km_state;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_KMSTATE, reinterpret_cast<void*>(&km_state), &opt_size), SRT_SUCCESS);
-        
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_KMSTATE, reinterpret_cast<void*>(&km_state), &opt_size), SRT_STATUS_OK);
+
         return km_state;
     }
 
@@ -303,7 +305,7 @@ public:
     {
         int val = 0;
         int size = sizeof val;
-        EXPECT_EQ(srt_getsockopt(socket, 0, opt, reinterpret_cast<void*>(&val), &size), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, opt, reinterpret_cast<void*>(&val), &size), SRT_STATUS_OK);
 
         return val;
     }
@@ -322,26 +324,26 @@ public:
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
         }
         else
         {
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
         }
 
         // Prepare input state
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
-        ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_SUCCESS);
-        ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_SUCCESS);
+        ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
+        ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_STATUS_OK);
 
-        ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
-        ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
+        ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_STATUS_OK);
+        ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_STATUS_OK);
 
         // Determine the subcase for the KLUDGE (check the behavior of the decryption failure)
         const bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
@@ -361,7 +363,7 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
-        SRTSOCKET accepted_socket = -1;
+        SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
             const int epoll_event = WaitOnEpoll(expect);
@@ -390,12 +392,12 @@ public:
                 std::cerr << "[T] ACCEPT SUCCEEDED: @" << accepted_socket << "\n";
             }
 
-            EXPECT_NE(accepted_socket, 0);
+            EXPECT_NE(accepted_socket, SRT_SOCKID_CONNREQ);
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
             }
-            else if (expect.accept_ret != -2)
+            else if (expect.accept_ret != IGNORE_ACCEPT)
             {
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
             }
@@ -441,10 +443,10 @@ public:
             }
         });
 
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        const SRTSOCKET connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        if (connect_ret == SRT_INVALID_SOCK && connect_ret != expect.connect_ret)
         {
             std::cerr << "UNEXPECTED! srt_connect returned error: "
                 << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
@@ -516,7 +518,7 @@ public:
                 std::cout << "W: " << epoll_res_w << std::endl;
 
                 char buffer[1316] = {1, 2, 3, 4};
-                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), SRT_ERROR);
+                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
 
@@ -615,13 +617,13 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
     }
     std::cerr << std::endl;
 
-    // Expect: -2 means that 
+    // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
     {
         EXPECT_EQ(epoll_res, expect.epoll_wait_ret);
     }
 
-    if (epoll_res == SRT_ERROR)
+    if (epoll_res == int(SRT_ERROR))
     {
         std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
         return 0;
@@ -687,8 +689,8 @@ TEST_F(TestEnforcedEncryption, PasswordLength)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
-    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_STATUS_OK);
+    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_STATUS_OK);
 
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("too_short")), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("too_short")), SRT_ERROR);
@@ -706,8 +708,8 @@ TEST_F(TestEnforcedEncryption, PasswordLength)
     EXPECT_EQ(SetPassword(PEER_CALLER,   long_pwd), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, long_pwd), SRT_ERROR);
 
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
-    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_STATUS_OK);
+    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_STATUS_OK);
 #else
     EXPECT_EQ(SetPassword(PEER_CALLER, "whateverpassword"), SRT_ERROR);
 #endif
@@ -723,8 +725,8 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
     EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   true);
     EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), true);
 
-    EXPECT_EQ(SetEnforcedEncryption(PEER_CALLER,    false), SRT_SUCCESS);
-    EXPECT_EQ(SetEnforcedEncryption(PEER_LISTENER,  false), SRT_SUCCESS);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_CALLER,    false), SRT_STATUS_OK);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_LISTENER,  false), SRT_STATUS_OK);
 
     EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   false);
     EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), false);

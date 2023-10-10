@@ -1,4 +1,11 @@
 
+#include <ostream>
+
+template <typename T, typename OS>
+concept Streamable = requires(OS& os, T value) {
+    { os << value };
+};
+
 template<class INT, int ambg>
 struct IntWrapper
 {
@@ -22,16 +29,23 @@ struct IntWrapper
         return v;
     }
 
-    template<class I, class T>
-    friend T& operator<<(T& out, const IntWrapper<I, ambg>& x)
+    bool operator<(const IntWrapper& w) const
+    {
+        return v < w.v;
+    }
+
+    template<class Str>
+    requires Streamable<Str, INT>
+    friend Str& operator<<(Str& out, const IntWrapper<INT, ambg>& x)
     {
         out << x.v;
         return out;
     }
 
-    bool operator<(const IntWrapper& w) const
+    friend std::ostream& operator<<(std::ostream& out, const IntWrapper<INT, ambg>& x)
     {
-        return v < w.v;
+        out << x.v;
+        return out;
     }
 };
 
@@ -71,4 +85,5 @@ struct IntWrapperLoose: IntWrapper<INT, ambg>
 typedef IntWrapper<int32_t, 0> SRTSOCKET;
 typedef IntWrapper<int, 1> SRTSTATUS;
 typedef IntWrapperLoose<int, 1> SRTSTATUS_LOOSE;
+
 

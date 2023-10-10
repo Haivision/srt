@@ -50,21 +50,22 @@ TEST(Transmission, FileUpload)
 
     // Find unused a port not used by any other service.    
     // Otherwise srt_connect may actually connect.
-    int bind_res = -1;
+    SRTSTATUS bind_res = SRT_ERROR;
     for (int port = 5000; port <= 5555; ++port)
     {
         sa_lsn.sin_port = htons(port);
         bind_res = srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
-        if (bind_res == 0)
+        int bind_err = srt_getlasterror(NULL);
+        if (bind_res == SRT_STATUS_OK)
         {
             std::cout << "Running test on port " << port << "\n";
             break;
         }
 
-        ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
+        ASSERT_TRUE(bind_err == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_err;
     }
 
-    ASSERT_GE(bind_res, 0);
+    ASSERT_GE((int)bind_res, 0);
 
     srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
 
