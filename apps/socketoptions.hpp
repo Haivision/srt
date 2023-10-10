@@ -58,7 +58,7 @@ struct SocketOption
     bool applyt(Object socket, std::string value) const;
 
     template <Domain D, typename Object>
-    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size)
+    static int setso(Object , int , int , const void* , size_t)
     {
         typename Object::wrong_version error;
         return -1;
@@ -71,7 +71,7 @@ struct SocketOption
 template<>
 inline int SocketOption::setso<SocketOption::SRT, SRTSOCKET>(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
-    return (int)srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
+    return (int)srt_setsockflag(socket, SRT_SOCKOPT(sym), data, (int) size);
 }
 
 #if ENABLE_BONDING
