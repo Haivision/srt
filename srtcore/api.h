@@ -275,7 +275,10 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
+#if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::set<SRTSOCKET>& sockets);
+#endif
 
     int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);

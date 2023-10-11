@@ -890,8 +890,6 @@ int srt::CUDTUnited::checkQueuedSocketsEvents(const set<SRTSOCKET>& sockets)
     // that they should re-read the group list and re-check readiness.
 
     // Now we can do lock once and for all
-    //ScopedLock glk (m_GlobControlLock); // XXX DEADLOCKS
-
     for (set<SRTSOCKET>::iterator i = sockets.begin(); i != sockets.end(); ++i)
     {
         CUDTSocket* s = locateSocket_LOCKED(*i);
@@ -2438,14 +2436,19 @@ int srt::CUDTUnited::epoll_add_usock(const int eid, const SRTSOCKET u, const int
     }
 #endif
 
-    CUDTSocket* s = locateSocket(u);
-    if (s)
+    // The call to epoll_add_usock_INTERNAL is expected
+    // to be called under m_GlobControlLock, so use this lock here, too.
     {
-        ret = epoll_add_usock_INTERNAL(eid, s, events);
-    }
-    else
-    {
-        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
+        ScopedLock cs (m_GlobControlLock);
+        CUDTSocket* s = locateSocket_LOCKED(u);
+        if (s)
+        {
+            ret = epoll_add_usock_INTERNAL(eid, s, events);
+        }
+        else
+        {
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
+        }
     }
 
     return ret;
