@@ -545,80 +545,159 @@ TEST(CEPoll, ThreadedUpdate)
     }
 }
 
-TEST(CEPoll, LateListenerReady)
+void testListenerReady(const bool LATE_CALL, size_t nmembers)
 {
-    ASSERT_EQ(srt_startup(), 0);
-
-    int server_sock = srt_create_socket(), caller_sock = srt_create_socket();
-
     sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
     sa.sin_family = AF_INET;
     sa.sin_port = htons(5555);
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
+    TestInit init;
+
+    SRTSOCKET server_sock, caller_sock;
+    server_sock = srt_create_socket();
+
+    if (nmembers > 0)
+    {
+        caller_sock = srt_create_group(SRT_GTYPE_BROADCAST);
+        int on = 1;
+        EXPECT_NE(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &on, sizeof on), SRT_ERROR);
+    }
+    else
+    {
+        caller_sock = srt_create_socket();
+        nmembers = 1; // Set to 1 so that caller starts at least once.
+    }
+
     srt_bind(server_sock, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(server_sock, 1);
+    srt_listen(server_sock, nmembers+1);
 
     srt::setopt(server_sock)[SRTO_RCVSYN] = false;
 
     // Ok, the listener socket is ready; now make a call, but
     // do not do anything on the listener socket yet.
 
-// This macro is to manipulate with the moment when the call is made
-// towards the eid subscription. If 1, then the call is made first,
-// and then subsciption after a 1s time. Set it to 0 to see how it
-// works when the subscription is made first, so the readiness is from
-// the listener changing the state.
-#define LATE_CALL 1
+    std::cout << "Using " << (LATE_CALL ? "LATE" : "EARLY") << " call\n";
 
-#if LATE_CALL
+    std::vector<std::future<int>> connect_res;
 
-    // We don't need the caller to be async, it can hang up here.
-    auto connect_res = std::async(std::launch::async, [&caller_sock, &sa]() {
-        return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
-    });
+    if (LATE_CALL)
+    {
+        // We don't need the caller to be async, it can hang up here.
+        for (size_t i = 0; i < nmembers; ++i)
+        {
+            connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa]() {
+                return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+            }));
+        }
 
-#endif
+        std::cout << "STARTED connecting...\n";
+    }
+
+    std::cout << "Sleeping 1s...\n";
     this_thread::sleep_for(chrono::milliseconds(1000));
 
     // What is important is that the accepted socket is now reporting in
     // on the listener socket. So let's create an epoll.
 
     int eid = srt_epoll_create();
+    int eid_postcheck = srt_epoll_create();
 
     // and add this listener to it
     int modes = SRT_EPOLL_IN;
+    int modes_postcheck = SRT_EPOLL_IN | SRT_EPOLL_UPDATE;
     EXPECT_NE(srt_epoll_add_usock(eid, server_sock, &modes), SRT_ERROR);
+    EXPECT_NE(srt_epoll_add_usock(eid_postcheck, server_sock, &modes_postcheck), SRT_ERROR);
 
-#if !LATE_CALL
+    if (!LATE_CALL)
+    {
+        // We don't need the caller to be async, it can hang up here.
+        for (size_t i = 0; i < nmembers; ++i)
+        {
+            connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa]() {
+                return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+            }));
+        }
 
-    // We don't need the caller to be async, it can hang up here.
-    auto connect_res = std::async(std::launch::async, [&caller_sock, &sa]() {
-        return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
-    });
+        std::cout << "STARTED connecting...\n";
+    }
 
-#endif
-
+    std::cout << "Waiting for readiness...\n";
     // And see now if the waiting accepted socket reports it.
     SRT_EPOLL_EVENT fdset[1];
     EXPECT_EQ(srt_epoll_uwait(eid, fdset, 1, 5000), 1);
 
+    std::cout << "Accepting...\n";
     sockaddr_in scl;
     int sclen = sizeof scl;
     SRTSOCKET sock = srt_accept(server_sock, (sockaddr*)& scl, &sclen);
     EXPECT_NE(sock, SRT_INVALID_SOCK);
 
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    if (nmembers > 1)
+    {
+        std::cout << "With >1 members, check if there's still UPDATE pending\n";
+        // Spawn yet another connection within the group, just to get the update
+        auto extra_call = std::async(std::launch::async, [&caller_sock, &sa]() {
+                    return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+                    });
+        // For 2+ members, additionally check if there AREN'T any
+        // further acceptance members, but there are UPDATEs.
+        EXPECT_EQ(srt_epoll_uwait(eid_postcheck, fdset, 1, 5000), 1);
+
+        // SUBSCRIBED EVENTS: IN, UPDATE.
+        // expected: UPDATE only.
+        EXPECT_EQ(fdset[0].events, SRT_EPOLL_UPDATE);
+        EXPECT_NE(extra_call.get(), SRT_INVALID_SOCK);
+    }
+
+    std::cout << "Joining connector thread(s)\n";
+    for (size_t i = 0; i < nmembers; ++i)
+    {
+        EXPECT_NE(connect_res[i].get(), SRT_INVALID_SOCK);
+    }
 
     srt_epoll_release(eid);
-    srt_close(sock);
+    srt_epoll_release(eid_postcheck);
+
     srt_close(server_sock);
     srt_close(caller_sock);
-
-    EXPECT_EQ(srt_cleanup(), 0);
+    srt_close(sock);
 }
 
+TEST(CEPoll, EarlyListenerReady)
+{
+    testListenerReady(false, 0);
+}
+
+TEST(CEPoll, LateListenerReady)
+{
+    testListenerReady(true, 0);
+}
+
+#if ENABLE_BONDING
+
+TEST(CEPoll, EarlyGroupListenerReady_1)
+{
+    testListenerReady(false, 1);
+}
+
+TEST(CEPoll, LateGroupListenerReady_1)
+{
+    testListenerReady(true, 1);
+}
+
+TEST(CEPoll, EarlyGroupListenerReady_3)
+{
+    testListenerReady(false, 3);
+}
+
+TEST(CEPoll, LateGroupListenerReady_3)
+{
+    testListenerReady(true, 3);
+}
+
+#endif
 
 class TestEPoll: public srt::Test
 {

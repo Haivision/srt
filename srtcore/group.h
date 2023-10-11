@@ -203,9 +203,9 @@ public:
         return m_Group.empty();
     }
 
-    bool groupConnected()
+    bool groupPending()
     {
-        return m_bConnected;
+        return m_bPending;
     }
 
     void setGroupConnected();
@@ -664,8 +664,21 @@ private:
     // from the first delivering socket will be taken as a good deal.
     sync::atomic<int32_t> m_RcvBaseSeqNo;
 
-    bool m_bOpened;    // Set to true when at least one link is at least pending
-    bool m_bConnected; // Set to true on first link confirmed connected
+    /// True: at least one socket has joined the group in at least pending state
+    bool m_bOpened;
+
+    /// True: at least one socket is connected, even if pending from the listener
+    bool m_bConnected;
+
+    /// True: this group was created on the listner side for the first socket
+    /// that is pending connection, so the group is about to be reported for the
+    /// srt_accept() call, but the application hasn't retrieved the group yet.
+    /// Not in use in case of caller-side groups.
+    // NOTE: using atomic in otder to allow this variable to be changed independently
+    // on any mutex locks.
+    sync::atomic<bool> m_bPending;
+
+    /// True: the group was requested to close and it should not allow any operations.
     bool m_bClosing;
 
     // There's no simple way of transforming config

@@ -697,6 +697,12 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                 }
             }
 
+            // This is set to true only if the group is to be reported
+            // from the accept call for the first time. Once it is extracted
+            // this way, this flag is cleared.
+            if (should_submit_to_accept)
+                g->m_bPending = true;
+
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
             CUDTGroup::SocketData* gm = ns->m_GroupMemberData;
@@ -850,8 +856,8 @@ SRT_EPOLL_T srt::CUDTSocket::getListenerEvents()
     // matter is simple - if it's present, you light up the
     // SRT_EPOLL_ACCEPT flag.
 
-//#if !ENABLE_BONDING
-#if 1
+#if !ENABLE_BONDING
+//#if 1
     ScopedLock accept_lock (m_AcceptLock);
 
     // Make it simplified here - nonempty container = have acceptable sockets.
@@ -891,7 +897,14 @@ int srt::CUDTUnited::checkQueuedSocketsEvents(const set<SRTSOCKET>& sockets)
         CUDTSocket* s = locateSocket_LOCKED(*i);
         if (!s)
             continue; // wiped in the meantime - ignore
-        if (s->m_GroupOf && s->m_GroupOf->groupConnected())
+
+        // If this pending socket is a group member, but the group
+        // to which it belongs is NOT waiting to be accepted, then
+        // light up the UPDATE event only. Light up ACCEPT only if
+        // this is a single socket, or this single socket has turned
+        // the mirror group to be first time available for accept(),
+        // and this accept() hasn't been done yet.
+        if (s->m_GroupOf && !s->m_GroupOf->groupPending())
             flags |= SRT_EPOLL_UPDATE;
         else
             flags |= SRT_EPOLL_ACCEPT;
@@ -1222,6 +1235,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         {
             u                                = s->m_GroupOf->m_GroupID;
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
+            s->m_GroupOf->m_bPending = false;
 
             // Mark the beginning of the connection at the moment
             // when the group ID is returned to the app caller
