@@ -12,7 +12,8 @@
 using namespace std;
 using namespace srt;
 
-static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0)
+namespace {
+ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0)
 {
     static pair<int, const char*> const namemap [] = {
         make_pair(SRT_EPOLL_IN, "R"),
@@ -40,6 +41,7 @@ static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0)
         os << "[]";
 
     return os;
+}
 }
 
 
