@@ -3944,6 +3944,7 @@ void CUDTGroup::setGroupConnected()
 {
     if (!m_bConnected)
     {
+        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED");
         // Switch to connected state and give appropriate signal
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
@@ -4015,6 +4016,25 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
         targets[i]->updateIdleLinkFrom(source);
     }
 }
+
+struct FExtractGroupID
+{
+    SRTSOCKET operator()(const groups::SocketData& d)
+    {
+        return d.id;
+    }
+};
+
+void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
+{
+    ScopedLock gl (m_GroupLock);
+
+    for (cgli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        w_ids.push_back(gi->id);
+    }
+}
+
 
 void CUDTGroup::activateUpdateEvent(bool still_have_items)
 {

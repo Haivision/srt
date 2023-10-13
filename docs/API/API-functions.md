@@ -652,16 +652,52 @@ the call will block until the incoming connection is ready. Otherwise, the
 call always returns immediately. The `SRT_EPOLL_IN` epoll event should be
 checked on the `lsn` socket prior to calling this function in that case.
 
-If the pending connection is a group connection (initiated on the peer side by 
-calling the connection function using a group ID, and permitted on the listener 
-socket by the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) 
-flag), then the value returned is a group ID. This function then creates a new 
-group, as well as a new socket for this connection, that will be added to the 
-group. Once the group is created this way, further connections within the same 
-group, as well as sockets for them, will be created in the background. The 
-[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) event is raised on the `lsn` socket when 
-a new background connection is attached to the group, although it's usually for 
-internal use only.
+Note that this event might sometimes be spurious in case when the link for
+the pending connection gets broken before the accepting operation is finished.
+The `SRT_EPOLL_IN` flag set for the listener socket is still not a guarantee
+that the following call to `srt_accept` will succeed.
+
+If the listener socket is allowed to accept group connections, if it is set the
+[`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) flag, then
+a group ID will be returned, if it's a pending group connection. This can be
+recognized by checking if `SRTGROUP_MASK` is set on the returned value.
+Accepting a group connection differs to accepting a single socket connection
+by that:
+
+1. The connection is reported only for the very first socket that has been
+successfully connected. Only for this case will the `SRT_EPOLL_IN` flag be
+set on the listener and only in this case will the `srt_accept` call report
+the connection.
+
+2. Further member connections of the group that has been already once accepted
+will be handled in the background, and the listener socket will no longer get
+the `SRT_EPOLL_IN` flag set when it happens. Instead the
+[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) flag will be set. This flag is
+edge-triggered-only because there is no operation to be performed in response
+that could make this flag cleared. It's mostly used internally and the
+application may use it to update its group data cache.
+
+3. If your application has created more than one listener socket that has
+allowed group connections, every newly connected socket that is a member of an
+already connected group will join this group no matter to which listener
+socket it was reported. If you want to use this feature, you should take special
+care of how you perform the accept operation. The group connection may be
+accepted off any of these listener sockets, but still only once. It is then
+recommended:
+
+   * In non-blocking mode, poll on all listener sockets that are expected to
+     get a group connection at once
+
+   * In blocking mode, use `srt_accept_bond` instead (it uses epoll internally)
+
+Note also that in this case there are more chances for `SRT_EPOLL_IN` flag
+to be spurious. For example, if you have two listener sockets configured for
+group connection and on each of them there's a pending connection, you will
+have `SRT_EPOLL_IN` flag set on both listener sockets. However, once you
+accept the group connection on any of them, the other pending connection will
+get automatically handled in the background and the existing `SRT_EPOLL_IN`
+flag will be spurious (calling `srt_accept` on that listener socket will fail).
+
 
 |      Returns                  |                                                                         |
 |:----------------------------- |:----------------------------------------------------------------------- |

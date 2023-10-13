@@ -681,6 +681,17 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                 goto ERR_ROLLBACK;
             }
 
+            // Acceptance of the group will have to be done through accepting
+            // of one of the pending sockets. There can be, however, multiple
+            // such sockets at a time, some of them might get broken before
+            // being accepted, and therefore we need to make all sockets ready.
+            // But then, acceptance of a group may happen only once, so if any
+            // sockets of the same group were submitted to accept, they must
+            // be removed from the accept queue at this time.
+            should_submit_to_accept = g->groupPending();
+
+            /* XXX remove if no longer informational
+
             // Check if this is the first socket in the group.
             // If so, give it up to accept, otherwise just do nothing
             // The client will be informed about the newly added connection at the
@@ -696,12 +707,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                     break;
                 }
             }
-
-            // This is set to true only if the group is to be reported
-            // from the accept call for the first time. Once it is extracted
-            // this way, this flag is cleared.
-            if (should_submit_to_accept)
-                g->m_bPending = true;
+            */
 
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
@@ -714,11 +720,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             gm->rcvstate   = SRT_GST_IDLE;
             gm->laststatus = SRTS_CONNECTED;
 
-            if (!g->m_bConnected)
-            {
-                HLOGC(cnlog.Debug, log << "newConnection(GROUP): First socket connected, SETTING GROUP CONNECTED");
-                g->m_bConnected = true;
-            }
+            g->setGroupConnected();
 
             // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
             // but groupwise connections could be accepted from multiple listeners for the same group!
@@ -1231,13 +1233,16 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         // it's a theoretically possible scenario
         if (s->m_GroupOf)
         {
-            u                                = s->m_GroupOf->m_GroupID;
-            s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
-            s->m_GroupOf->m_bPending = false;
-
+            CUDTGroup* g = s->m_GroupOf;
             // Mark the beginning of the connection at the moment
             // when the group ID is returned to the app caller
-            s->m_GroupOf->m_stats.tsLastSampleTime = steady_clock::now();
+            g->m_stats.tsLastSampleTime = steady_clock::now();
+
+            HLOGC(cnlog.Debug, log << "accept: reporting group $" << g->m_GroupID << " instead of member socket @" << u);
+            u                                = g->m_GroupID;
+            s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
+            g->m_bPending = false;
+            CUDT::uglobal().removePendingForGroup(g);
         }
         else
         {
@@ -1262,6 +1267,79 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 
     return u;
 }
+
+#if ENABLE_BONDING
+
+// [[using locked(m_GlobControlLock)]]
+void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g)
+{
+    // We don't have a list of listener sockets that have ever
+    // reported a pending connection for a group, so the only
+    // way to find them is to ride over the list of all sockets...
+
+    list<SRTSOCKET> members;
+    g->getMemberSockets((members));
+
+    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        CUDTSocket* s = i->second;
+        // Check if any of them is a listener socket...
+
+        /* XXX This is left for information only that we are only
+           interested with listener sockets - with the current
+           implementation checking it is pointless because the
+           m_QueuedSockets structure is present in every socket
+           anyway even if it's not a listener, and only listener
+           sockets may have this container nonempty. So checking
+           the container should suffice.
+
+        if (!s->core().m_bListening)
+            continue;
+            */
+
+        if (s->m_QueuedSockets.empty())
+            continue;
+
+        // Somehow fortunate for us that it's a set, so we
+        // can simply check if this allegedly listener socket
+        // contains any of them.
+        for (list<SRTSOCKET>::iterator m = members.begin(), mx = m; m != members.end(); m = mx)
+        {
+            ++mx;
+            std::set<SRTSOCKET>::iterator q = s->m_QueuedSockets.find(*m);
+            if (q != s->m_QueuedSockets.end())
+            {
+                HLOGC(cnlog.Debug, log << "accept: listener @" << s->m_SocketID
+                        << " had ququed member @" << *m << " -- removed");
+                // Found an intersection socket.
+                // Remove it from the listener queue
+                s->m_QueuedSockets.erase(q);
+
+                // NOTE ALSO that after this removal the queue may be EMPTY,
+                // and if so, the listener socket should be no longer ready for accept.
+                if (s->m_QueuedSockets.empty())
+                {
+                    m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
+                }
+
+                // and remove it also from the members list.
+                // This can be done safely because we use a SAFE LOOP.
+                // We can also do it safely because a socket may be
+                // present in only one listener socket in the whole app.
+                members.erase(m);
+            }
+        }
+
+        // It may happen that the list of members can be
+        // eventually purged even if we haven't checked every socket.
+        // If it happens so, quit immediately because there's nothing
+        // left to do.
+        if (members.empty())
+            return;
+    }
+}
+
+#endif
 
 int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int namelen)
 {

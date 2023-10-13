@@ -12,6 +12,36 @@
 using namespace std;
 using namespace srt;
 
+static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0)
+{
+    static pair<int, const char*> const namemap [] = {
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
+    };
+    bool any = false;
+
+    const int N = (int)Size(namemap);
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (events & namemap[i].first)
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+            any = true;
+        }
+    }
+
+    if (!any)
+        os << "[]";
+
+    return os;
+}
+
 
 TEST(CEPoll, InfiniteWait)
 {
@@ -697,7 +727,182 @@ TEST(CEPoll, LateGroupListenerReady_3)
     testListenerReady(true, 3);
 }
 
+
+void testMultipleListenerReady(const bool LATE_CALL)
+{
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    sockaddr_in sa2;
+    memset(&sa2, 0, sizeof sa2);
+    sa2.sin_family = AF_INET;
+    sa2.sin_port = htons(5556);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa2.sin_addr), 1);
+
+    TestInit init;
+
+    SRTSOCKET server_sock, server_sock2, caller_sock;
+    server_sock = srt_create_socket();
+    server_sock2 = srt_create_socket();
+
+    caller_sock = srt_create_group(SRT_GTYPE_BROADCAST);
+    int on = 1;
+    EXPECT_NE(srt_setsockflag(server_sock, SRTO_GROUPCONNECT, &on, sizeof on), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(server_sock2, SRTO_GROUPCONNECT, &on, sizeof on), SRT_ERROR);
+
+    srt_bind(server_sock, (sockaddr*)& sa, sizeof(sa));
+    srt_listen(server_sock, 3);
+    srt::setopt(server_sock)[SRTO_RCVSYN] = false;
+
+    srt_bind(server_sock2, (sockaddr*)& sa2, sizeof(sa2));
+    srt_listen(server_sock2, 3);
+    srt::setopt(server_sock2)[SRTO_RCVSYN] = false;
+
+    // Ok, the listener socket is ready; now make a call, but
+    // do not do anything on the listener socket yet.
+
+    std::cout << "Using " << (LATE_CALL ? "LATE" : "EARLY") << " call\n";
+
+    std::vector<std::future<int>> connect_res;
+
+    if (LATE_CALL)
+    {
+        connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa]() {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+        }));
+
+        connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa2]() {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa));
+        }));
+
+
+        std::cout << "STARTED connecting...\n";
+    }
+
+    std::cout << "Sleeping 1s...\n";
+    this_thread::sleep_for(chrono::milliseconds(1000));
+
+    // What is important is that the accepted socket is now reporting in
+    // on the listener socket. So let's create an epoll.
+
+    int eid = srt_epoll_create();
+    int eid_postcheck = srt_epoll_create();
+
+    // and add this listener to it
+    int modes = SRT_EPOLL_IN;
+    int modes_postcheck = SRT_EPOLL_IN | SRT_EPOLL_UPDATE;
+    EXPECT_NE(srt_epoll_add_usock(eid, server_sock, &modes), SRT_ERROR);
+    EXPECT_NE(srt_epoll_add_usock(eid, server_sock2, &modes), SRT_ERROR);
+    EXPECT_NE(srt_epoll_add_usock(eid_postcheck, server_sock, &modes_postcheck), SRT_ERROR);
+    EXPECT_NE(srt_epoll_add_usock(eid_postcheck, server_sock2, &modes_postcheck), SRT_ERROR);
+
+    if (!LATE_CALL)
+    {
+        connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa]() {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+        }));
+
+        connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa2]() {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa));
+        }));
+
+        std::cout << "STARTED connecting...\n";
+    }
+
+    // Sleep to make sure that the connection process has started.
+    this_thread::sleep_for(chrono::milliseconds(100));
+
+    std::cout << "Waiting for readiness on @" << server_sock << " and @" << server_sock2 << "\n";
+    // And see now if the waiting accepted socket reports it.
+
+    // This time we should expect that the connection reports in
+    // on two listener sockets
+    SRT_EPOLL_EVENT fdset[2] = {};
+    std::ostringstream out;
+
+    int nready = srt_epoll_uwait(eid, fdset, 2, 5000);
+    EXPECT_EQ(nready, 2);
+    out << "Ready socks:";
+    for (int i = 0; i < nready; ++i)
+    {
+        out << " @" << fdset[i].fd;
+        PrintEpollEvent(out, fdset[i].events);
+    }
+    out << std::endl;
+    std::cout << out.str();
+
+    std::cout << "Accepting...\n";
+    sockaddr_in scl;
+    int sclen = sizeof scl;
+
+    // We choose the SECOND one to extract the group connection.
+    SRTSOCKET sock = srt_accept(server_sock2, (sockaddr*)& scl, &sclen);
+    EXPECT_NE(sock, SRT_INVALID_SOCK);
+
+    // Make sure this time that the accepted connection is a group.
+    EXPECT_EQ(sock & SRTGROUP_MASK, SRTGROUP_MASK);
+
+    std::cout << "Check if there's still UPDATE pending\n";
+    // Spawn yet another connection within the group, just to get the update
+    auto extra_call = std::async(std::launch::async, [&caller_sock, &sa]() {
+            return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
+            });
+    // For 2+ members, additionally check if there AREN'T any
+    // further acceptance members, but there are UPDATEs.
+    // Note that if this was done AFTER accepting, the UPDATE would
+    // be only set one one socket.
+    nready = srt_epoll_uwait(eid_postcheck, fdset, 1, 5000);
+    EXPECT_EQ(nready, 1);
+
+    std::cout << "Ready socks:";
+    for (int i = 0; i < nready; ++i)
+    {
+        std::cout << " @" << fdset[i].fd;
+        PrintEpollEvent(std::cout, fdset[i].events);
+    }
+    std::cout << std::endl;
+
+    // SUBSCRIBED EVENTS: IN, UPDATE.
+    // expected: UPDATE only.
+    EXPECT_EQ(fdset[0].events, SRT_EPOLL_UPDATE);
+    EXPECT_NE(extra_call.get(), SRT_INVALID_SOCK);
+
+    std::cout << "Joining connector thread(s)\n";
+    for (size_t i = 0; i < connect_res.size(); ++i)
+    {
+        EXPECT_NE(connect_res[i].get(), SRT_INVALID_SOCK);
+    }
+
+    srt_epoll_release(eid);
+    srt_epoll_release(eid_postcheck);
+
+    srt_close(server_sock);
+    srt_close(server_sock2);
+    srt_close(caller_sock);
+    srt_close(sock);
+}
+
+TEST(CEPoll, EarlyGroupMultiListenerReady)
+{
+    testMultipleListenerReady(false);
+}
+
+TEST(CEPoll, LateGroupMultiListenerReady)
+{
+    testMultipleListenerReady(true);
+}
+
+
+
 #endif
+
 
 class TestEPoll: public srt::Test
 {

@@ -101,6 +101,7 @@ public:
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;
+    typedef group_t::const_iterator     cgli_t;
     typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
     struct Sendstate
@@ -402,7 +403,7 @@ private:
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
     srt::CUDTUnited&  m_Global;
-    srt::sync::Mutex  m_GroupLock;
+    mutable srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
@@ -431,6 +432,8 @@ private:
 
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
+        cgli_t       begin() const { return m_List.begin(); }
+        cgli_t       end() const { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
@@ -752,7 +755,14 @@ public:
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
-    void setOpen() { m_bOpened = true; }
+    // However, after creation it will be still waiting for being
+    // extracted by the application in `srt_accept`, and until then
+    // it stays as pending.
+    void setOpenPending()
+    {
+        m_bOpened = true;
+        m_bPending = true;
+    }
 
     std::string CONID() const
     {
@@ -811,6 +821,8 @@ public:
     void synchronizeDrift(const srt::CUDT* srcMember);
 
     void updateLatestRcv(srt::CUDTSocket*);
+
+    void getMemberSockets(std::list<SRTSOCKET>&) const;
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
