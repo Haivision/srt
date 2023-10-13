@@ -627,76 +627,106 @@ the listener socket to accept group connections
 SRTSOCKET srt_accept(SRTSOCKET lsn, struct sockaddr* addr, int* addrlen);
 ```
 
-Accepts a pending connection, then creates and returns a new socket or
-group ID that handles this connection. The group and socket can be
-distinguished by checking the `SRTGROUP_MASK` bit on the returned ID.
+Extracts the first connection request on the queue of pending connections for
+the listening socket, `lsn`, then creates and returns a new socket or group ID
+that handles this connection. The group and socket can be distinguished by
+checking the `SRTGROUP_MASK` bit on the returned ID. Note that by default group
+connections will be rejected - this feature can be only enabled on demand (see
+below).
 
-* `lsn`: the listener socket previously configured by [`srt_listen`](#srt_listen)
-* `addr`: the IP address and port specification for the remote party
+* `lsn`: the listening socket
+* `addr`: a location to store the remote IP address and port for the connection
 * `addrlen`: INPUT: size of `addr` pointed object. OUTPUT: real size of the
 returned object
 
-**NOTE:** `addr` is allowed to be NULL, in which case it's understood that the
-application is not interested in the address from which the connection originated.
-Otherwise `addr` should specify an object into which the address will be written, 
-and `addrlen` must also specify a variable to contain the object size. Note also
-that in the case of group connection only the initial connection that
-establishes the group connection is returned, together with its address. As
-member connections are added or broken within the group, you can obtain this
-information through [`srt_group_data`](#srt_group_data) or the data filled by 
-[`srt_sendmsg2`](#srt_sendmsg) and [`srt_recvmsg2`](#srt_recvmsg2).
+General requirements for parameter correctness:
 
-If the `lsn` listener socket is configured for blocking mode
-([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) set to true, default),
-the call will block until the incoming connection is ready. Otherwise, the
-call always returns immediately. The `SRT_EPOLL_IN` epoll event should be
-checked on the `lsn` socket prior to calling this function in that case.
+* `lsn` must be first [bound](#srt_bind) and [listening](#srt_listen)
 
-Note that this event might sometimes be spurious in case when the link for
-the pending connection gets broken before the accepting operation is finished.
-The `SRT_EPOLL_IN` flag set for the listener socket is still not a guarantee
-that the following call to `srt_accept` will succeed.
+* `addr` may be NULL, or otherwise it must be a pointer to an object
+that can be treated as an instance of `sockaddr_in` or `sockaddr_in6`
 
-If the listener socket is allowed to accept group connections, if it is set the
-[`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) flag, then
-a group ID will be returned, if it's a pending group connection. This can be
-recognized by checking if `SRTGROUP_MASK` is set on the returned value.
-Accepting a group connection differs to accepting a single socket connection
-by that:
+* `addrlen` should be a pointer to a variable set to the size of the object
+specified in `addr`, if `addr` is not NULL. Otherwise it's ignored.
 
-1. The connection is reported only for the very first socket that has been
-successfully connected. Only for this case will the `SRT_EPOLL_IN` flag be
-set on the listener and only in this case will the `srt_accept` call report
-the connection.
+If `addr` is not NULL, the information about the source IP address and
+port of the peer will be written into this object. Note that whichever
+type of object is expected here (`sockaddr_in` or `sockaddr_in6`), it
+depends on the address type used in the `srt_bind` call for `lsn`.
+If unsure in a particular situation, it is recommended that you use
+`sockaddr_storage` or `srt::sockaddr_any`.
 
-2. Further member connections of the group that has been already once accepted
-will be handled in the background, and the listener socket will no longer get
-the `SRT_EPOLL_IN` flag set when it happens. Instead the
-[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) flag will be set. This flag is
-edge-triggered-only because there is no operation to be performed in response
-that could make this flag cleared. It's mostly used internally and the
-application may use it to update its group data cache.
+If the `lsn` listener socket is blocking mode (if
+[`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to true,
+which is default), the call will block until the incoming connection is ready
+for extraction. Otherwise, the call always returns immediately, possibly with
+failure, if there was no pending connection waiting on the listening socket
+`lsn`.
 
-3. If your application has created more than one listener socket that has
-allowed group connections, every newly connected socket that is a member of an
-already connected group will join this group no matter to which listener
-socket it was reported. If you want to use this feature, you should take special
-care of how you perform the accept operation. The group connection may be
-accepted off any of these listener sockets, but still only once. It is then
-recommended:
+The listener socket can be checked for any pending connections prior to calling
+`srt_accept` by checking the `SRT_EPOLL_ACCEPT` epoll event (which is an alias
+to `SRT_EPOLL_IN`). This event might be spurious in certain cases though, for
+example, when the connection has been closed by the peer or broken before the
+application extracts it. The call to `srt_accept` would then still fail in
+such a case.
 
-   * In non-blocking mode, poll on all listener sockets that are expected to
-     get a group connection at once
+In order to allow the listening socket `lsn` to accept a group connection,
+the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) socket option
+for the listening socket must be set to 1. Note that single socket connections
+can still be reported to that socket. The application can distinguish the socket
+and group connection by checking the `SRTGROUP_MASK` bit on the returned
+successful value. There are some important differences to single socket
+connections:
 
-   * In blocking mode, use `srt_accept_bond` instead (it uses epoll internally)
+1. Accepting a group connection can be done only once per connection. The
+actual connection reporter is a socket, like before, but once you call
+`srt_accept` and receive this group ID, it is the group considered connected,
+and any other member connections of the same group will be handled in the
+background.
 
-Note also that in this case there are more chances for `SRT_EPOLL_IN` flag
-to be spurious. For example, if you have two listener sockets configured for
-group connection and on each of them there's a pending connection, you will
-have `SRT_EPOLL_IN` flag set on both listener sockets. However, once you
-accept the group connection on any of them, the other pending connection will
-get automatically handled in the background and the existing `SRT_EPOLL_IN`
-flag will be spurious (calling `srt_accept` on that listener socket will fail).
+2. If a group was extracted from the `srt_accept` call, the address reported in
+`addr` parameter is still the address of the connection that has triggered the
+group connection extraction. While the group is connected, potentially new
+connections may be added and any existing ones get broken at any time. The
+information about all member connections, that are active at the moment, can be
+obtained at any time through [`srt_group_data`](#srt_group_data) or the data
+filled by [`srt_sendmsg2`](#srt_sendmsg2) and [`srt_recvmsg2`](#srt_recvmsg2)
+in the [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure.
+
+3. Listening sockets are not bound to groups anyhow. You can allow multiple
+listening sockets to accept group connections and the connection extracted
+from the listener, if it is declared to be a group member, will join its
+group, no matter which of the listening sockets has received the connection
+request. This feature is prone to more tricky rules, however:
+
+    * If you use multiple listener sockets, all of them in blocking mode,
+      allowed for group connections, and receiving connection requests for
+      the same group at the moment, and you run one thread per `srt_accept`
+      call, it is undefined, which of them will extract the group ID
+      for the connection, but still only one will, while the others will
+      continue blocking. If you want to use only one thread for accepting
+      connections from potentially multiple listening sockets in the blocking
+      mode, you should use [`srt_accept_bond`](#srt_accept_bond) instead.
+   
+    * If at the moment multiple listener sockets have received connection
+      request and you query them all for readiness epoll flags (by calling
+      an epoll waiting function), all of them will get the `SRT_EPOLL_ACCEPT`
+      flag set, but still only one of them will return the group ID from the
+      `srt_accept` call. After this call, from all listener sockets in the
+      whole application the `SRT_EPOLL_ACCEPT` flag, that was set by the reason
+      of a pending connection for the same group, will be withdrawn (that is,
+      it will be cleared if there are no other pending connections). This is
+      then yet another situation when this flag can be spurious.
+
+4. If you query a listening socket for epoll flags after the `srt_accept`
+function has once returned the group ID, the listening sockets that have
+received new member connection requests within that group will report only the
+[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) flag. This flag is edge-triggered-only
+because there is no operation you can perform in response in order to clear
+this flag. This flag is mostly used internally and the application may use it
+if it would like to trigger updating the current group information due to
+having one newly added member connection.
+
 
 
 |      Returns                  |                                                                         |
@@ -707,7 +737,7 @@ flag will be spurious (calling `srt_accept` on that listener socket will fail).
 
 |       Errors                      |                                                                         |
 |:--------------------------------- |:----------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | NULL specified as `addrlen`, when `addr` is not NULL  |
+| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the begininng) |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
