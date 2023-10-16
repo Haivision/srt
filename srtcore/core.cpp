@@ -2786,7 +2786,21 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // Un-swap on big endian machines
                 ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
 
-                m_config.sStreamName.set(target, strlen(target));
+                // Determine the length by dropping all but one of terminal NUL characters.
+
+                size_t targetlen = bytelen;
+                for (size_t pos = bytelen - 1; pos != 0; --pos)
+                {
+                    if (target[pos])
+                    {
+                        // Found the first non-NUL character backwards
+                        // So the length is pos+1
+                        targetlen = pos + 1;
+                        break;
+                    }
+                }
+
+                m_config.sStreamName.set(target, targetlen);
                 HLOGC(cnlog.Debug,
                       log << CONID() << "CONNECTOR'S REQUESTED SID [" << m_config.sStreamName.c_str()
                           << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
