@@ -859,7 +859,6 @@ SRT_EPOLL_T srt::CUDTSocket::getListenerEvents()
     // SRT_EPOLL_ACCEPT flag.
 
 #if !ENABLE_BONDING
-//#if 1
     ScopedLock accept_lock (m_AcceptLock);
 
     // Make it simplified here - nonempty container = have acceptable sockets.

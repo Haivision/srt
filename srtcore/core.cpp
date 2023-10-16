@@ -11676,7 +11676,6 @@ void srt::CUDT::addEPoll(const int eid)
     m_sPollID.insert(eid);
     leaveCS(uglobal().m_EPoll.m_EPollLock);
 
-    //*
     if (m_bListening)
     {
         // A listener socket can only get readiness on SRT_EPOLL_ACCEPT
@@ -11694,7 +11693,6 @@ void srt::CUDT::addEPoll(const int eid)
         // used for listening and nothing else.
         return;
     }
-    // */
 
     if (!stillConnected())
         return;

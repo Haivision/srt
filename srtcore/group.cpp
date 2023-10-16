@@ -4017,14 +4017,6 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
     }
 }
 
-struct FExtractGroupID
-{
-    SRTSOCKET operator()(const groups::SocketData& d)
-    {
-        return d.id;
-    }
-};
-
 void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
 {
     ScopedLock gl (m_GroupLock);
@@ -4034,7 +4026,6 @@ void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
         w_ids.push_back(gi->id);
     }
 }
-
 
 void CUDTGroup::activateUpdateEvent(bool still_have_items)
 {

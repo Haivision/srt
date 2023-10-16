@@ -12,37 +12,6 @@
 using namespace std;
 using namespace srt;
 
-namespace {
-ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0)
-{
-    static pair<int, const char*> const namemap [] = {
-        make_pair(SRT_EPOLL_IN, "R"),
-        make_pair(SRT_EPOLL_OUT, "W"),
-        make_pair(SRT_EPOLL_ERR, "E"),
-        make_pair(SRT_EPOLL_UPDATE, "U")
-    };
-    bool any = false;
-
-    const int N = (int)Size(namemap);
-
-    for (int i = 0; i < N; ++i)
-    {
-        if (events & namemap[i].first)
-        {
-            os << "[";
-            if (et_events & namemap[i].first)
-                os << "^";
-            os << namemap[i].second << "]";
-            any = true;
-        }
-    }
-
-    if (!any)
-        os << "[]";
-
-    return os;
-}
-}
 
 
 TEST(CEPoll, InfiniteWait)
