@@ -569,11 +569,11 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
-    SRT_REJ_TIMEOUT,     // connection timeout
+    SRT_REJ_TIMEOUT = 16,// connection timeout
 #ifdef ENABLE_AEAD_API_PREVIEW
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
 #endif
-    SRT_REJ_SETTINGS,    // socket settings on both sides collide and can't be negotiated
+    SRT_REJ_CONFIG = 18,    // socket settings on both sides collide and can't be negotiated
 
     SRT_REJ_E_SIZE,
 };

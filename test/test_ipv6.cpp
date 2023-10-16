@@ -117,7 +117,7 @@ public:
         {
             // Version with expected failure
             EXPECT_EQ(connect_res, SRT_ERROR);
-            EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_SETTINGS);
+            EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_CONFIG);
             srt_close(m_listener_sock);
         }
         std::cout << "Connect: exit\n";

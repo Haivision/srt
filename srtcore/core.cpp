@@ -4711,7 +4711,7 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
         LOGC(cnlog.Error, log << CONID() << "applyResponseSettings: negotiated MSS=" << m_config.iMSS
                 << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
                 << m_config.zExpPayloadSize);
-        m_RejectReason = SRT_REJ_SETTINGS;
+        m_RejectReason = SRT_REJ_CONFIG;
         return false;
     }
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
@@ -5733,7 +5733,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         LOGC(cnlog.Error, log << CONID() << "acceptAndRespond: negotiated MSS=" << m_config.iMSS
                 << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
                 << m_config.zExpPayloadSize);
-        m_RejectReason = SRT_REJ_SETTINGS;
+        m_RejectReason = SRT_REJ_CONFIG;
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
