@@ -44,7 +44,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
+unsigned long transmit_chunk_size = SRT_MAX_PLSIZE_AF_INET6;
 
 class FileSource: public Source
 {
@@ -179,6 +179,36 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
+    int fam_to_limit_size = AF_INET6; // take the less one as default
+
+    // Try to interpret host and adapter first
+    sockaddr_any host_sa, adapter_sa;
+
+    if (host != "")
+    {
+        host_sa = CreateAddr(host);
+        fam_to_limit_size = host_sa.family();
+        if (fam_to_limit_size == AF_UNSPEC)
+            Error("Failed to interpret 'host' spec: " + host);
+    }
+
+    if (adapter != "" && adapter != host)
+    {
+        adapter_sa = CreateAddr(adapter);
+        fam_to_limit_size = adapter_sa.family();
+
+        if (fam_to_limit_size == AF_UNSPEC)
+            Error("Failed to interpret 'adapter' spec: " + adapter);
+
+        if (host_sa.family() != AF_UNSPEC && host_sa.family() != adapter_sa.family())
+        {
+            Error("Both host and adapter specified and they use different IP versions");
+        }
+    }
+
+    if (fam_to_limit_size != AF_INET)
+        fam_to_limit_size = AF_INET6;
+
     if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
@@ -195,8 +225,9 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     if ((par.count("transtype") == 0 || par["transtype"] != "file")
         && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-            throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        size_t size_limit = (size_t)SRT_MAX_PLSIZE(fam_to_limit_size);
+        if (transmit_chunk_size > size_limit)
+            throw std::runtime_error(Sprint("Chunk size in live mode exceeds ", size_limit, " bytes; this is not supported"));
 
         par["payloadsize"] = Sprint(transmit_chunk_size);
     }
