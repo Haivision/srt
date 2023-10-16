@@ -124,7 +124,7 @@ The SRT installation has the following folders:
 
 ## Versioning
 
-The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.  
+The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.
 Due to legacy reasons SRT library version also defines SRT protocol version, announced in the dedicated field of the handshake packet (see the Handshake section of the [SRT Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-3.2.1).
 
 The patch version upgrade usually means improvements and/or bug fixes, that do not affect SRT [API/ABI compatibility](https://community.kde.org/Policies/Binary_Compatibility_Issues_With_C++) and do not significantly change the library behavior. Thus, an application can relatively safely update onto the next SRT patch release.
@@ -187,7 +187,7 @@ The format of the commit message is `[<tag>] <Message>`, where possible commits 
 ## Generated files
 
 Please note *before modifying any files* that some of them are generated. This is
-indicated after the file header, or in any section of a file that needs to be replaced by 
+indicated after the file header, or in any section of a file that needs to be replaced by
 generated code if related changes are added. The following sections require attention:
 
 ### Logging functional areas
