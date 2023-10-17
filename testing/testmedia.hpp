@@ -104,6 +104,7 @@ protected:
     string m_mode;
     string m_adapter;
     map<string, string> m_options; // All other options, as provided in the URI
+    SRT_TRANSTYPE m_transtype = SRTT_LIVE;
     vector<Connection> m_group_nodes;
     string m_group_type;
     string m_group_config;

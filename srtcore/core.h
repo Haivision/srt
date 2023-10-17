@@ -245,6 +245,7 @@ public: //API
     static int rejectReason(SRTSOCKET s);
     static int rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
+    static int getMaxPayloadSize(SRTSOCKET u);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.

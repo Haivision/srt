@@ -312,9 +312,6 @@ SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 
 static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
 static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
 
-// A macro for these above in case when the IP family is passed as a runtime value.
-#define SRT_MAX_PLSIZE(famspec) ((famspec) == AF_INET ? SRT_MAX_PLSIZE_AF_INET : SRT_MAX_PLSIZE_AF_INET6)
-
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
 
@@ -804,6 +801,9 @@ SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCK
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+
+SRT_API int srt_getmaxpayloadsize(SRTSOCKET sock);
+
 
 typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 

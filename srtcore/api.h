@@ -412,6 +412,8 @@ private:
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
+    int getMaxPayloadSize(SRTSOCKET u);
+
 #if ENABLE_BONDING
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTGroup* acquireSocketsGroup(CUDTSocket* s);

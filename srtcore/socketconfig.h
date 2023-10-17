@@ -348,6 +348,8 @@ struct CSrtConfig: CSrtMuxerConfig
     // This function returns the number of bytes that are allocated
     // for a single packet in the sender and receiver buffer.
     int bytesPerPkt() const { return iMSS - int(CPacket::udpHeaderSize(AF_INET)); }
+
+    int extraPayloadReserve(std::string& w_errmsg) ATR_NOTHROW;
 };
 
 template <typename T>

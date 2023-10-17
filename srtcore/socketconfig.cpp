@@ -1037,8 +1037,10 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return dispatchSet(optName, *this, optval, optlen);
 }
 
-bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
+int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
 {
+    int resv = 0;
+
     if (!this->sPacketFilterConfig.empty())
     {
         // This means that the filter might have been installed before,
@@ -1048,29 +1050,41 @@ bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errms
         if (!ParseFilterConfig(this->sPacketFilterConfig.str(), (fc)))
         {
             // Break silently. This should not happen
-            w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
-            return false;
+            w_info = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
+            return -1;
         }
 
-        const size_t efc_max_payload_size = CPacket::srtPayloadSize(ip_family) - fc.extra_size;
-        if (size_t(val) > efc_max_payload_size)
-        {
-            std::ostringstream log;
-            log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family) << " bytes decreased by " << fc.extra_size
-                << " required for packet filter header";
-            w_errmsg = log.str();
-            return false;
-        }
+        resv += fc.extra_size;
+        w_info = "Packet Filter";
     }
 
-    // Not checking AUTO to allow defaul 1456 bytes.
-    if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
-            && (val > (CPacket::srtPayloadSize(ip_family) - HAICRYPT_AUTHTAG_MAX)))
+    if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM))
+    {
+        resv += HAICRYPT_AUTHTAG_MAX;
+        if (!w_info.empty())
+            w_info += " and ";
+        w_info += "AES_GCM mode";
+    }
+
+    return resv;
+}
+
+bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
+{
+    int resv = extraPayloadReserve((w_errmsg));
+    if (resv == -1)
+        return false;
+
+    size_t valmax = CPacket::srtPayloadSize(ip_family) - resv;
+
+    if (val > valmax)
     {
         std::ostringstream log;
-        log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family)
-            << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
-            << " required for AES-GCM.";
+        log << "SRTO_PAYLOADSIZE: value " << val << "exceeds " << valmax
+            << " bytes";
+        if (!w_errmsg.empty())
+            log << " as limited by " << w_errmsg;
+
         w_errmsg = log.str();
         return false;
     }

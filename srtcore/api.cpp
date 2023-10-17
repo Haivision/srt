@@ -4331,6 +4331,47 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
     }
 }
 
+int srt::CUDT::getMaxPayloadSize(SRTSOCKET id)
+{
+    return uglobal().getMaxPayloadSize(id);
+}
+
+int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
+{
+    CUDTSocket* s = locateSocket(id);
+    if (!s)
+    {
+        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL);
+    }
+
+    if (s->m_SelfAddr.family() == AF_UNSPEC)
+    {
+        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND);
+    }
+
+    int fam = s->m_SelfAddr.family();
+    CUDT& u = s->core();
+
+    std::string errmsg;
+    int extra = u.m_config.extraPayloadReserve((errmsg));
+    if (extra == -1)
+    {
+        LOGP(aclog.Error, errmsg);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+    }
+
+    // Prefer transfer IP version, if defined. This is defined after
+    // the connection is established. Note that the call is rejected
+    // if the socket isn't bound, be it explicitly or implicitly by
+    // calling srt_connect().
+    if (u.m_TransferIPVersion != AF_UNSPEC)
+        fam = u.m_TransferIPVersion;
+
+    int payload_size = u.m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(fam) - extra;
+
+    return payload_size;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace UDT
