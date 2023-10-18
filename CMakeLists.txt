@@ -108,6 +108,7 @@ endforeach()
 # SRT_DEBUG_BONDING_STATES 1
 # SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+# SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)

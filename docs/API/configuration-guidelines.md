@@ -14,7 +14,7 @@ The default flow control window size is 25600 packets. It is approximately:
 - **270 Mbits** of payload in the default live streaming configuration with an SRT payload size of **1316 bytes**;
 - **300 Mbits** of payload in the default file transfer configuration with an SRT payload size of **1456 bytes**.
 
-The default receiver buffer size is 8192 packets. It is approximately: 
+The default receiver buffer size is 8192 packets. It is approximately:
 - **86 Mbits** of payload with the effective SRT payload size of **1316 bytes**.
 
 ### Setting Receiver Buffer Size
@@ -63,7 +63,7 @@ where
 
 - `bytePayloadSize` is the expected size of the payload of the SRT data packet.
 
-If the whole remainder of the MTU is expected to be used, payload size is calculated as follows: 
+If the whole remainder of the MTU is expected to be used, payload size is calculated as follows:
 
 `bytePayloadSize = MSS - UDP_IPv4_HDR - SRT_HDR`
 
@@ -79,9 +79,9 @@ To determine the value to pass in `srt_setsockopt(..)` with `SRTO_RCVBUF`
 the size in packets `pktsRBufSize` must be converted to the size in bytes
 assuming the internal conversion of the `srt_setsockopt(..)` function.
 
-The target size of the payload stored by the receiver buffer would be: 
+The target size of the payload stored by the receiver buffer would be:
 
-`SRTO_RCVBUF = pktsRBufSize × (SRTO_MSS - UDPHDR_SIZE)`  
+`SRTO_RCVBUF = pktsRBufSize × (SRTO_MSS - UDPHDR_SIZE)`
 
 where
 
