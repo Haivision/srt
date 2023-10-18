@@ -22,8 +22,6 @@ namespace stats
 class Packets
 {
 public:
-    typedef Packets count_type;
-
     Packets() : m_count(0) {}
 
     Packets(uint32_t num) : m_count(num) {}
@@ -48,15 +46,15 @@ private:
     uint32_t m_count;
 };
 
-class BytesPacketsCount
+class BytesPackets
 {
 public:
-    BytesPacketsCount()
+    BytesPackets()
         : m_bytes(0)
         , m_packets(0)
     {}
 
-    BytesPacketsCount(uint64_t bytes, uint32_t n = 1)
+    BytesPackets(uint64_t bytes, uint32_t n = 1)
         : m_bytes(bytes)
         , m_packets(n)
     {}
@@ -84,11 +82,16 @@ public:
         return m_packets;
     }
 
-    BytesPacketsCount& operator+= (const BytesPacketsCount& other)
+    BytesPackets& operator+= (const BytesPackets& other)
     {
         m_bytes   += other.m_bytes;
         m_packets += other.m_packets;
         return *this;
+    }
+
+    uint64_t bytesWithHdr(size_t hdr_size) const
+    {
+        return m_bytes + m_packets * hdr_size;
     }
 
 protected:
@@ -96,31 +99,6 @@ protected:
     uint32_t m_packets;
 };
 
-class BytesPackets: public BytesPacketsCount
-{
-public:
-    typedef BytesPacketsCount count_type;
-
-    // Set IPv4-based header size value as a fallback. This will be fixed upon connection.
-    BytesPackets()
-        : m_zPacketHeaderSize(CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE)
-    {}
-
-public:
-
-    void setupHeaderSize(int size)
-    {
-        m_zPacketHeaderSize = uint64_t(size);
-    }
-
-    uint64_t bytesWithHdr() const
-    {
-        return m_bytes + m_packets * m_zPacketHeaderSize;
-    }
-
-private:
-    uint64_t m_zPacketHeaderSize;
-};
 
 template <class METRIC_TYPE, class BASE_METRIC_TYPE = METRIC_TYPE>
 struct Metric
@@ -128,7 +106,7 @@ struct Metric
     METRIC_TYPE trace;
     METRIC_TYPE total;
 
-    void count(typename METRIC_TYPE::count_type val)
+    void count(BASE_METRIC_TYPE val)
     {
         trace += val;
         total += val;
@@ -165,16 +143,6 @@ struct Sender
     
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
-
-    void setupHeaderSize(int hdr_size)
-    {
-#define SETHSIZE(var) var.setupHeaderSize(hdr_size)
-        SETHSIZE(sent);
-        SETHSIZE(sentUnique);
-        SETHSIZE(sentRetrans);
-        SETHSIZE(dropped);
-#undef SETHSIZE
-    }
 
     void reset()
     {
@@ -218,19 +186,6 @@ struct Receiver
 
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
-
-    void setupHeaderSize(int hdr_size)
-    {
-#define SETHSIZE(var) var.setupHeaderSize(hdr_size)
-        SETHSIZE(recvd);
-        SETHSIZE(recvdUnique);
-        SETHSIZE(recvdRetrans);
-        SETHSIZE(lost);
-        SETHSIZE(dropped);
-        SETHSIZE(recvdBelated);
-        SETHSIZE(undecrypted);
-#undef SETHSIZE
-    }
 
     void reset()
     {
