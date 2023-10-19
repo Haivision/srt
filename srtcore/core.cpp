@@ -6384,7 +6384,7 @@ int srt::CUDT::receiveBuffer(char *data, int len)
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
 
-        // Kick TsbPd thread to schedule next wakeup (if running)
+        // Kick TsbPd thread to schedule the next wakeup (if running)
         if (m_config.iRcvTimeOut < 0)
         {
             THREAD_PAUSED();
@@ -6495,7 +6495,7 @@ int srt::CUDT::sndDropTooLate()
 
     // If some packets were dropped update stats, socket state, loss list and the parent group if any.
     enterCS(m_StatsLock);
-    m_stats.sndr.dropped.count(dbytes);;
+    m_stats.sndr.dropped.count(stats::BytesPacketsCount((uint64_t) dbytes, (uint32_t) dpkts));
     leaveCS(m_StatsLock);
 
     IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
