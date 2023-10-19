@@ -19,6 +19,7 @@
 | [srt_bind_acquire](#srt_bind_acquire)             | Acquires a given UDP socket instead of creating one                                                            |
 | [srt_getsockstate](#srt_getsockstate)             | Gets the current status of the socket                                                                          |
 | [srt_getsndbuffer](#srt_getsndbuffer)             | Retrieves information about the sender buffer                                                                  |
+| [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)   | Retrieves the information about the maximum payload size in a single packet                                    |
 | [srt_close](#srt_close)                           | Closes the socket or group and frees all used resources                                                        |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
@@ -293,6 +294,7 @@ This means that if you call [`srt_startup`](#srt_startup) multiple times, you ne
 * [srt_bind_acquire](#srt_bind_acquire)
 * [srt_getsockstate](#srt_getsockstate)
 * [srt_getsndbuffer](#srt_getsndbuffer)
+* [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)
 * [srt_close](#srt_close)
 
 
@@ -538,6 +540,58 @@ Retrieves information about the sender buffer.
 
 This function can be used for diagnostics. It is especially useful when the
 socket needs to be closed asynchronously.
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_getmaxpayloadsize
+
+```
+int srt_getmaxpayloadsize(SRTSOCKET u);
+```
+
+Returns the maximum number of bytes that fit in a single packet. Useful only in
+live mode (when `SRTO_TSBPDMODE` is true). The socket must be bound (see
+[srt_bind](#srt_bind)) or connected (see [srt_connect](#srt_connect))
+to use this function. Note that in case when the socket is bound to an IPv6
+wildcard address and it is dual-stack (`SRTO_IPV6ONLY` is set to false), this
+function returns the correct value only if the socket is connected, otherwise
+it will return the value always as if the connection was made from an IPv6 peer
+(including when you call it on a listening socket).
+
+This function is only useful for the application to check if it is able to use
+a payload of certain size in the live mode, or after connection, if the application
+can send payloads of certain size. This is useful only in assertions, as if the
+[`SRTO_PAYLOADSIZE`](API_socket-options.md#SRTO_PAYLOADSIZE) option is to be
+set to a non-default value (for which the one returned by this function is the
+maximum value), this option should be modified before connection and on both
+parties, regarding the settings applied on the socket.
+
+The returned value is the maximum number of bytes that can be put in a single
+packet regarding:
+
+* The current MTU size (`SRTO_MSS`)
+* The IP version (IPv4 or IPv6)
+* The `SRTO_CRYPTOMODE` setting (bytes reserved for AEAD authentication tag)
+* The `SRTO_PACKETFILTER` setting (bytes reserved for extra field in a FEC control packet)
+
+With default options this value should be 1456 for IPv4 and 1444 for IPv6.
+
+
+|      Returns                  |                                                   |
+|:----------------------------- |:------------------------------------------------- |
+| The maximum payload size (>0) | If succeeded                                      |
+| `SRT_ERROR`                   | Usage error                                       |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                     |
+
+|       Errors                            |                                                 |
+|:--------------------------------------- |:----------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)         | Socket [`u`](#u) indicates no valid socket ID   |
+| [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) | Socket [`u`](#u) is not bound                   |
+| <img width=240px height=1px/>           | <img width=710px height=1px/>                   |
+
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
