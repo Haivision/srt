@@ -1170,15 +1170,9 @@ private: // Trace
         time_point tsLastSampleTime;        // last performance sample time
         int traceReorderDistance;
         double traceBelatedTime;
-        
+
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
-
-        void setupHeaderSize(int hsize)
-        {
-            sndr.setupHeaderSize(hsize);
-            rcvr.setupHeaderSize(hsize);
-        }
 
     } m_stats;
 
