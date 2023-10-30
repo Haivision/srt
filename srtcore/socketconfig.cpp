@@ -1058,7 +1058,7 @@ int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
         w_info = "Packet Filter";
     }
 
-    if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM))
+    if (this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
     {
         resv += HAICRYPT_AUTHTAG_MAX;
         if (!w_info.empty())
