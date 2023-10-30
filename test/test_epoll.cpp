@@ -823,7 +823,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
 
         connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa2]() {
             this_thread::sleep_for(chrono::milliseconds(1));
-            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa));
+            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa2));
         }));
 
 
@@ -856,7 +856,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
 
         connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa2]() {
             this_thread::sleep_for(chrono::milliseconds(1));
-            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa));
+            return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa2));
         }));
 
         std::cout << "STARTED connecting...\n";
