@@ -190,7 +190,7 @@ struct CSrtConfig: CSrtMuxerConfig
     static const int
         DEF_MSS = 1500,
         DEF_FLIGHT_SIZE = 25600,
-        DEF_BUFFER_SIZE = 8192, //Rcv buffer MUST NOT be bigger than Flight Flag size
+        DEF_BUFFER_SIZE = 16384, //Rcv buffer MUST NOT be bigger than Flight Flag size
         DEF_LINGER_S = 3*60,    // 3 minutes
         DEF_CONNTIMEO_S = 3;    // 3 seconds
 
@@ -280,7 +280,7 @@ struct CSrtConfig: CSrtMuxerConfig
 
     CSrtConfig()
         : iMSS(DEF_MSS)
-        , zExpPayloadSize(SRT_LIVE_DEF_PLSIZE)
+        , zExpPayloadSize(SRT_LIVE_MAX_PLSIZE)
         , bSynSending(true)
         , bSynRecving(true)
         , iFlightFlagSize(DEF_FLIGHT_SIZE)
