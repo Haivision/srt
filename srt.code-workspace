@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.c": "c",
+			"*.cpp": "cpp",
+			"functional": "cpp",
+			"atomic": "cpp",
+			"*.tcc": "cpp",
+			"fstream": "cpp",
+			"sstream": "cpp",
+			"regex": "cpp"
+		}
+	}
+}
