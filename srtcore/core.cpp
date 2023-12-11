@@ -3555,8 +3555,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
-    resetBufferWasFull();
-
+    
+    m_bBufferWasFull = false; //set BufferWasFull to false to avoid unwarranted acks
     // Inform the server my configurations.
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);
