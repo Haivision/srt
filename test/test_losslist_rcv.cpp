@@ -1,5 +1,6 @@
 #include <iostream>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "common.h"
 #include "list.h"
 
@@ -72,6 +73,7 @@ TEST_F(CRcvLossListTest, InsertTwoElemsEdge)
 
 TEST(CRcvFreshLossListTest, CheckFreshLossList)
 {
+    srt::TestInit srtinit;
     std::deque<CRcvFreshLoss> floss {
         CRcvFreshLoss (10, 15, 5),
         CRcvFreshLoss (25, 29, 10),

@@ -194,9 +194,6 @@ public:
             m_bConnected = false;
         }
 
-        // XXX BUGFIX
-        m_Positions.erase(id);
-
         return !empty;
     }
 
@@ -614,7 +611,7 @@ public:
 
 private:
     // Fields required for SRT_GTYPE_BACKUP groups.
-    senderBuffer_t        m_SenderBuffer;
+    senderBuffer_t        m_SenderBuffer; // This mechanism is to be removed on group-common sndbuf
     int32_t               m_iSndOldestMsgNo; // oldest position in the sender buffer
     sync::atomic<int32_t> m_iSndAckedMsgNo;
     uint32_t              m_uOPT_MinStabilityTimeout_us;
@@ -645,20 +642,6 @@ private:
     // this has been already set.
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
-
-    struct ReadPos
-    {
-        std::vector<char> packet;
-        SRT_MSGCTRL       mctrl;
-        ReadPos(int32_t s)
-            : mctrl(srt_msgctrl_default)
-        {
-            mctrl.pktseq = s;
-        }
-    };
-    std::map<SRTSOCKET, ReadPos> m_Positions;
-
-    ReadPos* checkPacketAhead();
 
     void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
 
@@ -817,7 +800,7 @@ public:
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
-    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency, m_iTsbPdDelay_us);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency_us, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
 };
 

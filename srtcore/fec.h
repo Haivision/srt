@@ -222,7 +222,7 @@ private:
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
-    void EmergencyShrink(size_t n_series);
+    bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);
 
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);

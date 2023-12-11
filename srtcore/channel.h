@@ -129,6 +129,21 @@ public:
 
     void setConfig(const CSrtMuxerConfig& config);
 
+    void getSocketOption(int level, int sockoptname, char* pw_dataptr, socklen_t& w_len, int& w_status);
+
+    template<class Type>
+    Type sockopt(int level, int sockoptname, Type deflt)
+    {
+        Type retval;
+        socklen_t socklen = sizeof retval;
+        int status;
+        getSocketOption(level, sockoptname, ((char*)&retval), (socklen), (status));
+        if (status == -1)
+            return deflt;
+
+        return retval;
+    }
+
     /// Get the IP TTL.
     /// @param [in] ttl IP Time To Live.
     /// @return TTL.

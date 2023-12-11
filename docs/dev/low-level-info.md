@@ -95,7 +95,7 @@ mutexes for which the locking order must be preserved.
         - CUDTGroup::m_GroupLock  || CSndUList::m_ListLock(T)
 
      - CUDT::m_ConnectionLock
-          
+
               - CRendezvousQueue::m_RIDVectorLock
 
  - CUDT::m_SendLock
@@ -227,12 +227,12 @@ CRcvQueue::worker_ProcessConnectionRequest
          CEPoll::update_events
 }
 
--- CUDT::bstats: TRT-LOCKED m_ConnectionLock 
+-- CUDT::bstats: TRT-LOCKED m_ConnectionLock
 
 -- CUDT::packData
 
 CSndQueue::worker
  CSndUList::pop -- > [LOCKED m_ListLock]
-     CUDT::packData 
+     CUDT::packData
 
 ```

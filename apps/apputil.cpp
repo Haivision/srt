@@ -49,9 +49,12 @@ int inet_pton(int af, const char * src, void * dst)
    ZeroMemory(&ss, sizeof(ss));
 
    // work around non-const API
-   strncpy(srcCopy, src, INET6_ADDRSTRLEN + 1);
+#ifdef _MSC_VER
+   strncpy_s(srcCopy, INET6_ADDRSTRLEN + 1, src, _TRUNCATE);
+#else
+   strncpy(srcCopy, src, INET6_ADDRSTRLEN);
    srcCopy[INET6_ADDRSTRLEN] = '\0';
-
+#endif
    if (WSAStringToAddress(
       srcCopy, af, NULL, (struct sockaddr *)&ss, &ssSize) != 0)
    {
