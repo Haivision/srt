@@ -474,7 +474,7 @@ The default flow control window size is 25600 packets. It is approximately:
 - 300 Mbits of payload with an SRT payload size of 1456 bytes.
 
 The minimum number of packets in flight should be (assuming max payload size):
-`FCmin = bps / 8 × RTTsec / (MSS - 44)`,
+`FCmin = bps / 8 × latency_sec / (MSS - 44)`,
 where
 - `bps` - is the payload bitrate of the stream in bits per second;
 - `RTTsec` - RTT of the network connection in seconds;
