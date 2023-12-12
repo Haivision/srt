@@ -456,6 +456,8 @@ private:
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
     void removeMux(CUDTSocket* s);
+
+    // m_GlobControlLock must be NOT locked to call this.
     void killMux(CUDTSocket* s);
 
     // Utility functions for updateMux

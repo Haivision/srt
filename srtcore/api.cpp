@@ -478,7 +478,6 @@ void srt::CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, CUDTUnited
     if (!lateremove)
     {
         m_Sockets.erase(id);
-        killMux(s);
     }
 }
 
@@ -2056,6 +2055,10 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         CGlobEvent::triggerEvent();
     }
 
+    // Force the worker threads to exit and all active status cleared,
+    // without explicitly removing the muxer, only if the muxer is unique-owned.
+    killMux(s);
+
     HLOGC(smlog.Debug, log << "@" << u << ": GLOBAL: CLOSING DONE");
 
     // Check if the ID is still in closed sockets before you access it
@@ -2694,7 +2697,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         if (closed_ago > seconds_from(1))
         {
             CRNode* rnode = j->second->core().m_pRNode;
-            if (!rnode || !rnode->m_bOnList)
+            if (!rnode || !rnode->isOnList())
             {
                 HLOGC(smlog.Debug,
                       log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
@@ -2738,11 +2741,11 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     // threads. If that's the case, SKIP IT THIS TIME. The
     // socket will be checked next time the GC rollover starts.
     CSNode* sn = s->core().m_pSNode;
-    if (sn && sn->m_iHeapLoc != -1)
+    if (sn && sn->isOnList())
         return;
 
     CRNode* rn = s->core().m_pRNode;
-    if (rn && rn->m_bOnList)
+    if (rn && rn->isOnList())
         return;
 
 #if ENABLE_BONDING
@@ -2854,7 +2857,6 @@ void srt::CUDTUnited::removeMux(CUDTSocket* s)
     }
 }
 
-// [[using locked(m_GlobControlLock)]]
 void srt::CUDTUnited::killMux(CUDTSocket* s)
 {
     int mid = s->m_iMuxID;

@@ -653,9 +653,21 @@ srt::CRcvUList::~CRcvUList() {}
 void srt::CRcvUList::insert(const CUDT* u)
 {
     CRNode* n        = u->m_pRNode;
-    n->m_tsTimeStamp = steady_clock::now();
 
-    if (NULL == m_pUList)
+    // The NODE is builtin into u, initially with m_bOnList = false.
+    // This should be set to true when the node is really on this list.
+    // Therefore check this because it may be that it can potentially
+    // already be on some list already.
+    if (n->m_bOnList)
+    {
+        LOGC(cnlog.Error, log << u->CONID() << " being inserted into the list is already on one!");
+        return; // do not add, this would cause data mess
+    }
+
+    n->m_tsTimeStamp = steady_clock::now();
+    n->m_bOnList     = true;
+
+    if (!m_pUList)
     {
         // empty list, insert as the single node
         n->m_pPrev = n->m_pNext = NULL;
@@ -700,6 +712,7 @@ void srt::CRcvUList::remove(const CUDT* u)
     }
 
     n->m_pNext = n->m_pPrev = NULL;
+    n->m_bOnList = false;
 }
 
 void srt::CRcvUList::update(const CUDT* u)
@@ -1300,13 +1313,13 @@ void* srt::CRcvQueue::worker(void* param)
             if (self->m_bClosing)
             {
                 HLOGC(qrlog.Debug,
-                        log << self->CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
+                      log << self->CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
             }
             else
             {
                 LOGC(qrlog.Fatal,
-                        log << self->CONID()
-                        << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
+                     log << self->CONID()
+                         << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
             }
             cst = CONN_REJECT;
 
@@ -1336,7 +1349,6 @@ void* srt::CRcvQueue::worker(void* param)
                 // the socket must be removed from Hash table first, then RcvUList
                 self->m_pHash->remove(u->m_SocketID);
                 self->m_pRcvUList->remove(u);
-                u->m_pRNode->m_bOnList = false;
             }
 
             ul = self->m_pRcvUList->m_pUList;
@@ -1373,7 +1385,6 @@ void* srt::CRcvQueue::worker(void* param)
         // the socket must be removed from Hash table first, then RcvUList
         self->m_pHash->remove(u->m_SocketID);
         self->m_pRcvUList->remove(u);
-        u->m_pRNode->m_bOnList = false;
 
         ul = self->m_pRcvUList->m_pUList;
     }

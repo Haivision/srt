@@ -137,10 +137,21 @@ private:
 
 struct CSNode
 {
+private:
     CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp;
 
     sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
+
+    friend class CSndUList;
+
+public:
+    CSNode(CUDT* u, const sync::steady_clock::time_point& time)
+        :m_pUDT(u), m_tsTimeStamp(time), m_iHeapLoc(-1)
+    {
+    }
+
+    bool isOnList() const { return m_iHeapLoc != -1; }
 };
 
 class CSndUList
@@ -221,6 +232,7 @@ private:
 
 struct CRNode
 {
+private:
     CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
 
@@ -228,6 +240,18 @@ struct CRNode
     CRNode* m_pNext; // next link
 
     sync::atomic<bool> m_bOnList; // if the node is already on the list
+
+    friend class CRcvUList;
+    friend class CRcvQueue;
+
+public:
+
+    CRNode(CUDT* u, const sync::steady_clock::time_point& time)
+        :m_pUDT(u), m_tsTimeStamp(time), m_pPrev(NULL), m_pNext(NULL), m_bOnList(false)
+    {
+    }
+
+    bool isOnList() const { return m_bOnList; }
 };
 
 class CRcvUList

@@ -700,3 +700,57 @@ TEST(ReuseAddr, ProtocolVersionFaux6)
     (void)srt_epoll_release(client_pollid);
     (void)srt_epoll_release(server_pollid);
 }
+
+TEST(ReuseAddr, QuickClose)
+{
+    srt::TestInit srtinit;
+
+    client_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, client_pollid);
+
+    server_pollid = srt_epoll_create();
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+
+    SRTSOCKET bindsock_1 = createBinder("127.0.0.1", 5000, true);
+    SRTSOCKET bindsock_2 = createListener("127.0.0.1", 5000, true);
+
+    testAccept(bindsock_2, "127.0.0.1", 5000, true);
+
+    std::thread s1(shutdownListener, bindsock_1);
+    std::thread s2(shutdownListener, bindsock_2);
+
+    s1.join();
+    s2.join();
+
+    SRTSOCKET endpoint = createListener("127.0.0.1", 5001, true);
+
+    for (int i = 0; i < 10; ++i)
+    {
+        SRTSOCKET next_binder = prepareSocket();
+        EXPECT_NE(next_binder, SRT_INVALID_SOCK);
+
+        int no = 0;
+        EXPECT_NE(srt_setsockflag(next_binder, SRTO_REUSEADDR, &no, sizeof no), SRT_ERROR);
+
+        bool succeed = bindSocket(next_binder, "127.0.0.1", 5000, true);
+
+        sockaddr_any endsa = srt::CreateAddr("127.0.0.1", 5001, AF_INET);
+        EXPECT_NE(srt_connect(next_binder, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
+
+        SRT_EPOLL_EVENT ev[2];
+        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+
+        SRTSOCKET accepted = srt_accept(endpoint, 0, 0);
+        EXPECT_NE(accepted, SRT_INVALID_SOCK);
+
+        srt_close(next_binder);
+        srt_close(accepted);
+
+        if (!succeed || accepted == SRT_INVALID_SOCK)
+            break;
+    }
+
+    (void)srt_epoll_release(client_pollid);
+    (void)srt_epoll_release(server_pollid);
+}
