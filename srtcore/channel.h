@@ -170,6 +170,9 @@ private:
 
 private:
     UDPSOCKET m_iSocket; // socket descriptor
+#ifdef _WIN32
+    mutable WSAOVERLAPPED m_SendOverlapped;
+#endif
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,
