@@ -297,6 +297,7 @@ void srt::CUDT::construct()
     m_bTsbPdAckWakeup     = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
+    m_bBufferWasFull      = false;
 
     // Initilize mutex and condition variables.
     initSynch();
@@ -3556,7 +3557,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     setInitialSndSeq(m_iISN);
     
-    m_bBufferWasFull = false; //set BufferWasFull to false to avoid unwarranted acks
     // Inform the server my configurations.
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);
