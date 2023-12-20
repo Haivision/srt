@@ -297,6 +297,7 @@ void srt::CUDT::construct()
     m_bTsbPdAckWakeup     = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
+    m_bBufferWasFull      = false;
 
     // Initilize mutex and condition variables.
     initSynch();
@@ -3530,7 +3531,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
-
     // Inform the server my configurations.
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);

@@ -956,7 +956,6 @@ private: // Receiving related data
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
-
     // FORWARDER
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
