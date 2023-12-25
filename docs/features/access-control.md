@@ -258,7 +258,7 @@ This may apply to read-only or write-only resources, as well for when interactiv
 
 #### SRT_REJX_UNACCEPTABLE
 
-Applies when the parameters specified in SocketID cannot be satisfied for the
+Applies when the parameters specified in StreamID cannot be satisfied for the
 requested resource, or when `m=publish` but the data format is not acceptable.
 This is a general error reporting an unsupported format for data that appears to
 be wrong when sending, or a restriction on the data format (as specified in the
