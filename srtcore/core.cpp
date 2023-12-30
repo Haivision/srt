@@ -10038,18 +10038,29 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // which never contains losses, so discarding this packet does not
         // discard a loss coverage, even if this were past ACK.
 
+        // NOTE: if we have a situation when there are any packets in the
+        // acknowledged area, but they aren't retrieved, this area DOES NOT
+        // contain any losses.
+
+        // In case when a loss would be abandoned (TLPKTDROP), there must at
+        // some point happen to be an empty first cell in the buffer, followed
+        // somewhere by a valid packet. In this case the acknowledgement sequence
+        // should be equal to the beginning of the buffer.
+        //
+        // Next, if these empty cells are abandoned by TSBPD thread, these
+        // empty cells will be shifted out, up to the first found valid packet,
+        // after which the m_iRcvLastAck field will be set to a value in the
+        // past of the buffer. This case will be rejected by the buffer < 0
+        // condition, and the second condition will be in that case satisfied
+        // as well in every case. These will not be true simultaneously only
+        // in case when the buffer contains an initial continuous region,
+        // in which case this condition only cuts off the LAST FOUND initial
+        // contiguous region. If there are any packets following ACK, it doesn't
+        // matter. Important is to not disregard a packet that would seal a loss.
+
         if (bufidx < 0 || CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvLastAck) < 0)
         {
-            time_point pts = getPktTsbPdTime(NULL, rpkt);
-
-            enterCS(m_StatsLock);
-            const double bltime = (double) CountIIR<uint64_t>(
-                    uint64_t(m_stats.traceBelatedTime) * 1000,
-                    count_microseconds(steady_clock::now() - pts), 0.2);
-
-            m_stats.traceBelatedTime = bltime / 1000.0;
-            m_stats.rcvr.recvdBelated.count(rpkt.getLength());
-            leaveCS(m_StatsLock);
+            IF_HEAVY_LOGGING(exc_type = "BELATED");
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: %" << rpkt.m_iSeqNo << " bufidx=" << bufidx << " (BELATED/"
                     << s_rexmitstat_str[pktrexmitflag] << ") with ACK %" << m_iRcvLastAck
@@ -10287,23 +10298,62 @@ int srt::CUDT::processData(CUnit* in_unit)
 #endif
     }
 
-#if ENABLE_HEAVY_LOGGING
-   {
-       steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+    duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
+    time_point pts = getPktTsbPdTime(NULL, packet);
+    // It's easier to remove the latency factor from this value than to add a function
+    // that exposes the details basing on which this value is calculated.
+    time_point ets = pts - tsbpddelay;
 
-       // It's easier to remove the latency factor from this value than to add a function
-       // that exposes the details basing on which this value is calculated.
-       steady_clock::time_point pts = m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
-       steady_clock::time_point ets = pts - tsbpddelay;
+    const int64_t bltime_us = count_microseconds(m_tsLastRspTime.load() - ets);
+    HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
+            << " %" << packet.getSeqNo()
+            << " off-ACK=" << CSeqNo::seqoff(m_iRcvLastAck, packet.m_iSeqNo)
+            << " off-BUF=" << CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), packet.m_iSeqNo)
+            // XXX FIX IT. OTS should represent the original sending time, but it's relative.
+            //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
+            << " ETS=" << FormatTime(ets)
+            << " PTS=" << FormatTime(pts)
+            << " ETS DELAY=" << FormatDuration<DUNIT_MS>(m_tsLastRspTime.load() - ets));
 
-       HLOGC(qrlog.Debug, log << CONID() << "processData: RECEIVED DATA: size=" << packet.getLength()
-           << " seq=" << packet.getSeqNo()
-           // XXX FIX IT. OTS should represent the original sending time, but it's relative.
-           //<< " OTS=" << FormatTime(packet.getMsgTimeStamp())
-           << " ETS=" << FormatTime(ets)
-           << " PTS=" << FormatTime(pts));
-   }
-#endif
+    // Note: if the sender is < 1.3.0 (HSv4) it will then kinda falsify these
+    // stats because it will include actual retransmitted packets which may
+    // make the resulting delay value a bit exaggerated. An alternative would be
+    // to simply never update this value (keep 0) in case of HSv4 sender.
+    const bool regular_delayed = bltime_us > 0 && (!m_bPeerRexmitFlag || !packet.getRexmitFlag());
+
+    const bool inthepast = CSeqNo::seqcmp(packet.m_iSeqNo, m_pRcvBuffer->getStartSeqNo()) < 0;
+
+    // This is used because the lock is needed for EITHER of these conditions,
+    // however if NONE of them is true, locking/unlocking is not necessary.
+    const bool dolock = inthepast || regular_delayed;
+
+    if (dolock)
+        enterCS(m_StatsLock);
+
+    // Count only when the value is > 0; normally it will always be so
+    // because usually the travel time is small at the handshake time, but
+    // then it grows along the transmission. This value should give you some
+    // orientation 
+    if (regular_delayed)
+    {
+        const int64_t current = m_stats.traceBelatedTime * 1000;
+
+        const double avg_bltime = current
+            ? (double) avg_iir<5>(current, bltime_us)
+            : bltime_us;
+
+        m_stats.traceBelatedTime = avg_bltime / 1000.0;
+        HLOGC(qrlog.Debug, log << CONID() << "processData: DELAY TIME: [ " << current
+                << " << " << std::fixed << bltime_us << "[us] ] = " << avg_bltime
+                << "[us] = " << m_stats.traceBelatedTime << "[ms]");
+    }
+    if (inthepast)
+    {
+        m_stats.rcvr.recvdBelated.count(packet.getLength());
+    }
+
+    if (dolock)
+        leaveCS(m_StatsLock);
 
     updateCC(TEV_RECEIVE, EventVariant(&packet));
     ++m_iPktCount;
