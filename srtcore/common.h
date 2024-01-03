@@ -78,8 +78,13 @@ modified by
 #endif
 
 #ifdef _DEBUG
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
+#define SRT_ASSERT(cond) ASSERT(cond)
+#else
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
+#endif
 #else
 #define SRT_ASSERT(cond)
 #endif
