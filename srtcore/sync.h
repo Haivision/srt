@@ -669,6 +669,7 @@ public:
 
     UniqueLock& locker() { return m_ulock; }
 
+    SRT_ATTR_ACQUIRE(this->m_ulock.mutex())
     CUniqueSync(Mutex& mut, Condition& cnd)
         : CSync(cnd, m_ulock)
         , m_ulock(mut)
@@ -680,6 +681,9 @@ public:
         , m_ulock(event.mutex())
     {
     }
+
+    SRT_ATTR_RELEASE(this->m_ulock.mutex())
+    ~CUniqueSync() {}
 
     // These functions can be used safely because
     // this whole class guarantees that whatever happens
@@ -771,7 +775,7 @@ struct DurationUnitName<DUNIT_S>
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
-    return Sprint(DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
+    return Sprint(std::fixed, DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)

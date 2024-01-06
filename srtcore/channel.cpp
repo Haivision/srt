@@ -143,6 +143,14 @@ srt::CChannel::CChannel()
     , m_bBindMasked(true)
 #endif
 {
+#ifdef _WIN32
+    SecureZeroMemory((PVOID)&m_SendOverlapped, sizeof(WSAOVERLAPPED));
+    m_SendOverlapped.hEvent = WSACreateEvent();
+    if (m_SendOverlapped.hEvent == NULL) {
+        LOGC(kmlog.Error, log << CONID() << "IPE: WSACreateEvent failed with error: " << NET_ERROR);
+        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+    }
+#endif
 #ifdef SRT_ENABLE_PKTINFO
    // Do the check for ancillary data buffer size, kinda assertion
    static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6);
@@ -158,7 +166,12 @@ srt::CChannel::CChannel()
 #endif
 }
 
-srt::CChannel::~CChannel() {}
+srt::CChannel::~CChannel()
+{
+#ifdef _WIN32
+    WSACloseEvent(m_SendOverlapped.hEvent);
+#endif
+}
 
 void srt::CChannel::createSocket(int family)
 {
@@ -774,8 +787,33 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, NULL, NULL);
-    res       = (0 == res) ? size : -1;
+
+    int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &m_SendOverlapped, NULL);
+
+    if (res == SOCKET_ERROR)
+    {
+        if (NET_ERROR == WSA_IO_PENDING)
+        {
+            res = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
+            if (res == WAIT_FAILED)
+            {
+                LOGC(kslog.Warn, log << "CChannel::WSAWaitForMultipleEvents: failed with " << NET_ERROR);
+                res = -1;
+            }
+            else
+            {
+                DWORD dwFlags = 0;
+                const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &m_SendOverlapped, &size, false, &dwFlags);
+                res = bCompleted ? 0 : -1;
+            }
+        }
+        else
+        {
+            LOGC(kmlog.Error, log << CONID() << "WSASendTo failed with error: " << NET_ERROR);
+        }
+    }
+    WSAResetEvent(m_SendOverlapped.hEvent);
+    res = (0 == res) ? size : -1;
 #endif
 
     packet.toHL();
@@ -1005,6 +1043,15 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
             if ((msg_flags & errmsgflg[i].first) != 0)
                 flg << " " << errmsgflg[i].second;
 
+        if (msg_flags & MSG_TRUNC)
+        {
+            // Additionally show buffer information in this case
+            flg << " buffers: ";
+            for (size_t i = 0; i < CPacket::PV_SIZE; ++i)
+            {
+                flg << "[" << w_packet.m_PacketVector[i].iov_len << "] ";
+            }
+        }
         // This doesn't work the same way on Windows, so on Windows just skip it.
 #endif
 

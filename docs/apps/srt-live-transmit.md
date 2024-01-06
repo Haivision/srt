@@ -285,13 +285,15 @@ specify the host as `::`.
 NOTE: Don't use square brackets syntax in the **adapter** parameter
 specification, as in this case only the host is expected.
 
-3. If you want to listen for connections from both IPv4 and IPv6, mind the
-`ipv6only` option. The default value for this option is system default (see
-system manual for `IPV6_V6ONLY` socket option); if unsure, you might want to
-enforce `ipv6only=0` in order to be able to accept both IPv4 and IPv6
-connections by the same listener, or set `ipv6only=1` to accept exclusively IPv6.
+3. If you bind to an IPv6 wildcard address (with listener mode, or when using the `bind`
+option), setting the `ipv6only` option to 0 or 1 is obligatory, as it is a part
+of the binding definition. If you set it to 1, the binding will apply only to
+IPv6 local addresses, and if you set it to 0, it will apply to both IPv4 and
+IPv6 local addresses. See the
+[`SRTO_IPV6ONLY`](../API/API-socket-options.md#SRTO_IPV6ONLY) option
+description for details.
 
-4. In rendezvous mode you may only interconnect both parties using IPv4, 
+4. In rendezvous mode you may only interconnect both parties using IPv4,
 or both using IPv6. Unlike listener mode, if you want to leave the socket
 default-bound (you don't specify `adapter`), the socket will be bound with the
 same IP version as the target address. If you do specify `adapter`,
@@ -303,9 +305,8 @@ Examples:
 
 * `srt://[::]:5000` defines caller mode (!) with IPv6.
 
-* `srt://[::]:5000?mode=listener` defines listener mode with IPv6. If the
-    default value for `IPV6_V6ONLY` system socket option is 0, it will accept
-    also IPv4 connections.
+* `srt://[::]:5000?mode=listener&ipv6only=1` defines listener mode with IPv6.
+    Only connections from IPv6 callers will be accepted.
 
 * `srt://192.168.0.5:5000?mode=rendezvous` will make a rendezvous connection
     with local address `INADDR_ANY` (IPv4) and port 5000 to a destination with
@@ -405,7 +406,7 @@ but this space must be part of the parameter and not extracted by a
 shell (using **"** **"** quotes or backslash).
 
 - **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
-  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
+  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started.
   - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
 - **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.

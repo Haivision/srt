@@ -170,7 +170,7 @@ public:
 
     std::string str() const
     {
-        return len == 0 ? std::string() : std::string(stor);
+        return len == 0 ? std::string() : std::string(stor, len);
     }
 
     const char* c_str() const
@@ -227,6 +227,9 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
+#ifdef ENABLE_MAXREXMITBW
+    int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
+#endif
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
@@ -289,6 +292,9 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
+#ifdef ENABLE_MAXREXMITBW
+        , llMaxRexmitBW(-1)
+#endif
         , bDataSender(false)
         , bMessageAPI(true)
         , bTSBPD(true)
@@ -336,6 +342,12 @@ struct CSrtConfig: CSrtMuxerConfig
     }
 
     int set(SRT_SOCKOPT optName, const void* val, int size);
+
+    bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // This function returns the number of bytes that are allocated
+    // for a single packet in the sender and receiver buffer.
+    int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
 };
 
 template <typename T>
@@ -372,6 +384,9 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
 
 } // namespace srt
 

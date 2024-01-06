@@ -240,7 +240,8 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 
     if (tx) {
         HaiCrypt_Cfg crypto_config;
-        HaiCrypt_ExtractConfig(hhcSrc, &crypto_config);
+        if (-1 == HaiCrypt_ExtractConfig(hhcSrc, &crypto_config))
+            return -1;
 
         /*
          * Just invert the direction written in flags and use the

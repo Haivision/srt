@@ -67,7 +67,7 @@ set cmake_options {
     enable-clang-tsa "Enable Clang's Thread-Safety-Analysis (default: OFF)"
     atomic-use-srt-sync-mutex "Use mutex to implement atomics (alias: --with-atomic=sync-mutex) (default: OFF)"
 
-    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls"
+    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls, botan"
     enable-debug=<0,1,2> "Enable debug mode (0=disabled, 1=debug, 2=rel-with-debug)"
     pkg-config-executable=<filepath> "pkg-config executable"
     openssl-crypto-library=<filepath> "OpenSSL: Path to a libcrypto library."
@@ -374,6 +374,10 @@ proc postprocess {} {
 	if { $::HAVE_DARWIN && !$toolchain_changed } {
 		set use_brew 1
 	}
+	if { [info exists ::optval(--use-enclib)] && $::optval(--use-enclib) == "botan"} {
+		set use_brew 0
+	}
+
 	if { $use_brew } {
 		foreach item $::cmakeopt {
 			if { [string first "Android" $item] != -1 } {

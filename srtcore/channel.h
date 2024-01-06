@@ -49,7 +49,13 @@ written by
 modified by
    Haivision Systems Inc.
 *****************************************************************************/
-
+#if HAVE_CXX11
+#define SRT_ATR_ALIGNAS(n) alignas(n)
+#elif HAVE_GCC
+#define SRT_ATR_ALIGNAS(n) __attribute__((aligned(n)))
+#else
+#define SRT_ATR_ALIGNAS(n)
+#endif
 #ifndef INC_SRT_CHANNEL_H
 #define INC_SRT_CHANNEL_H
 
@@ -170,6 +176,9 @@ private:
 
 private:
     UDPSOCKET m_iSocket; // socket descriptor
+#ifdef _WIN32
+    mutable WSAOVERLAPPED m_SendOverlapped;
+#endif
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,
@@ -208,8 +217,8 @@ private:
 
     // This is 'mutable' because it's a utility buffer defined here
     // to avoid unnecessary re-allocations.
-    mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
-    mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
+     SRT_ATR_ALIGNAS(8) mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
+     SRT_ATR_ALIGNAS(8) mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
 
     // IMPORTANT!!! This function shall be called EXCLUSIVELY just after
     // calling ::recvmsg function. It uses a static buffer to supply data
