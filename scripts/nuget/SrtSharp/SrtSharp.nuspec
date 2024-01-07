@@ -17,5 +17,6 @@
 
 	<files>
 		<file src="..\..\..\package\**" target="."/>
+		<file src="readme.md" target="."/>
 	</files>
 </package>
