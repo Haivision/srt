@@ -10,7 +10,7 @@
 		<requireLicenseAcceptance>false</requireLicenseAcceptance>
 		<description>Secure, Reliable Transport Library with C# bindings, published by Cinegy GmbH</description>
 		<copyright>2019 SRT Haivision Systems Inc (packaged by Cinegy GmbH). All rights reserved.</copyright>  
-		<PackageReadmeFile>readme.md</PackageReadmeFile>
+		<readme>readme.md</readme>
 		<dependencies>
       		<group targetFramework="netstandard2.0" />
     	</dependencies>
