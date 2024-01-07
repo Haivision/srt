@@ -7,20 +7,19 @@
 ################################################################################
 
 param (
-    [Parameter()][String]$PACKAGEFOLDER = "package",
-    [Parameter()][String]$VERSION = "1.5.1.0"
+    [Parameter()][String]$VERSION = "1.5.1.10199",
+	[Parameter()][String]$BUILD_DIR = "_nuget"
 )
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
 
-$packageDir = Join-Path $PSScriptRoot "../" $PACKAGEFOLDER -Resolve
+$projectRoot = Join-Path $PSScriptRoot "/.." -Resolve
+$sourceDir = Join-Path "$projectRoot" "package"
+$targetDir = Join-Path "$projectRoot" "$BUILD_DIR"
+$nuspecPath = Join-Path "$projectRoot" "scripts/nuget/SrtSharp/SrtSharp.nuspec"
 
-Get-ChildItem $packageDir -Filter *.zip | Foreach-Object {
-   Expand-Archive -Force -Path $_.FullName -DestinationPath $(Join-Path $packageDir "extracted")
-}
-
-nuget pack .\nuget\SrtSharp\SrtSharp.nuspec -version $VERSION-alpha
+nuget pack $nuspecPath -version $VERSION-alpha -OutputDirectory $targetDir
 
 # if antyhing returned non-zero, throw to cause failure in CI
 if( $LASTEXITCODE -ne 0 ) {
