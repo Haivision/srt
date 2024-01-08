@@ -1,0 +1,39 @@
+FROM debian:bullseye
+
+LABEL maintainer="Lewis Kirkaldie <lewis@cinegy.com>"
+
+ENV TZ=Europe/Berlin
+ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+#base dev packages and OS tools, including mono and boost other library dependencies
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+        build-essential git nano gnupg apt-utils unzip sudo bzip2 \
+        apt-transport-https curl wget ca-certificates cpio \
+        libssl-dev software-properties-common \
+        p7zip-full libpcre2-dev bison automake && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/*
+
+# add powershell core & dotnet 6.0
+# RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+#   sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-debian-bullseye-prod bullseye main" > /etc/apt/sources.list.d/microsoft.list' && \
+#   apt update && sudo apt install -y powershell && \
+#   apt-get install -y dotnet-sdk-6.0 && \
+#   apt-get clean && \
+#   rm -rf /var/lib/apt/lists/*
+
+#add cmake 3.24.1
+RUN mkdir -p /usr/src/cmake \
+&& curl -L https://github.com/Kitware/CMake/releases/download/v3.24.1/cmake-3.24.1-linux-x86_64.tar.gz -o /usr/src/cmake/cmake.tar.gz -sS \
+&& tar -C /usr/src/cmake -xzf /usr/src/cmake/cmake.tar.gz \
+&& ln -s /usr/src/cmake/cmake-3.24.1-linux-x86_64/bin/cmake /usr/bin/cmake \
+&& rm /usr/src/cmake/cmake.tar.gz
+
+#add swig 4.1
+RUN cd /usr/src && git clone https://github.com/swig/swig.git && cd swig && git checkout release-4.1 \
+&& ./autogen.sh && ./configure && make && make install && cd ../ && rm -rf /usr/src/swig

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package >
+	<metadata>
+		<id>SrtSharp</id>
+		<title>SRT Library wrapped for C#</title>
+		<version>$version$-beta</version>
+		<authors>Cinegy GmbH</authors>
+		<owners>Cinegy GmbH</owners>
+		<license type="expression">MPL-2.0</license>
+		<requireLicenseAcceptance>false</requireLicenseAcceptance>
+		<description>Secure, Reliable Transport Library with C# bindings, published by Cinegy GmbH</description>
+		<copyright>2019 SRT Haivision Systems Inc (packaged by Cinegy GmbH). All rights reserved.</copyright>  
+		<readme>readme.md</readme>
+		<dependencies>
+      		<group targetFramework="netstandard2.0" />
+    	</dependencies>
+	</metadata>
+
+	<files>
+		<file src="..\..\..\package\**" target="."/>
+		<file src="readme.md" target="."/>
+	</files>
+</package>
