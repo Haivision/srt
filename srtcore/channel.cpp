@@ -756,6 +756,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     mh.msg_iov        = (iovec*)packet.m_PacketVector;
     mh.msg_iovlen     = 2;
     bool have_set_src = false;
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
 
 #ifdef SRT_ENABLE_PKTINFO
 
@@ -763,7 +764,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
     if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
-        if (!setSourceAddress(mh, source_addr))
+        if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
         {
             LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
         }
@@ -847,6 +848,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 
 #ifndef _WIN32
     msghdr mh; // will not be used on failure
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
 
     if (select_ret > 0)
     {
@@ -868,8 +870,9 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
             // data. This might be interesting for the connection to
             // know to which address the packet should be sent back during
             // the handshake and then addressed when sending during connection.
-            mh.msg_control = (m_acCmsgRecvBuffer);
-            mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
+            mh.msg_control = mh_crtl_buf;
+            mh.msg_controllen = (sizeof(mh_crtl_buf));
+
         }
 #endif
 
