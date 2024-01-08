@@ -534,6 +534,15 @@ int main(int argc, char** argv)
                         return 1;
                     }
                     break;
+                case UriParser::RTP:
+                    if (srt_epoll_add_ssock(pollid,
+                        src->GetSysSocket(), &events))
+                    {
+                        cerr << "Failed to add RTP source to poll, "
+                            << src->GetSysSocket() << endl;
+                        return 1;
+                    }
+                    break;
                 case UriParser::FILE:
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
