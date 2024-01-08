@@ -211,21 +211,10 @@ private:
         cmsghdr hdr;
     };
 
-    // This is 'mutable' because it's a utility buffer defined here
-    // to avoid unnecessary re-allocations.
-//     SRT_ATR_ALIGNAS(8) mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
-//     SRT_ATR_ALIGNAS(8) mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
-           
-            union m_acCmsgSendBufferv6 {
-            //char buf[CMSG_SPACE(sizeof(struct in6_pktinfo) + sizeof(struct in_pktinfo) + 2*sizeof(cmsghdr))];
-            char buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
-            //struct cmsghdr align;
-        } ;
-
     sockaddr_any getTargetAddress(const msghdr& msg) const
     {
         // Loop through IP header messages
-        cmsghdr* cmsg;// = CMSG_FIRSTHDR(&msg);
+        cmsghdr* cmsg;
         for (cmsg = CMSG_FIRSTHDR(&msg);
                 cmsg != NULL;
                 cmsg = CMSG_NXTHDR(((msghdr*)&msg), cmsg))
@@ -264,11 +253,8 @@ private:
 
         if (adr.family() == AF_INET)
         {
-
-
             mh.msg_control = (void *) buf;
             mh.msg_controllen = sizeof(struct in_pktinfo) + sizeof(cmsghdr);
-
 
             cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
             // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
@@ -288,11 +274,12 @@ private:
         {
             mh.msg_control = buf;
             mh.msg_controllen = sizeof(struct in6_pktinfo) + sizeof(cmsghdr);
-            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
 
+            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
             cmsg_send->cmsg_level = IPPROTO_IPV6;
             cmsg_send->cmsg_type = IPV6_PKTINFO;
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
+
             in6_pktinfo* pktinfo = (in6_pktinfo*) CMSG_DATA(cmsg_send);
             pktinfo->ipi6_ifindex = 0;
             pktinfo->ipi6_addr = adr.sin6.sin6_addr;

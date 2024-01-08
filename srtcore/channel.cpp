@@ -872,7 +872,6 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
             // the handshake and then addressed when sending during connection.
             mh.msg_control = mh_crtl_buf;
             mh.msg_controllen = (sizeof(mh_crtl_buf));
-
         }
 #endif
 
