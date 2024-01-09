@@ -16,7 +16,7 @@ srt-live-transmit <input-uri> <output-uri> [options]
 The following medium types are handled by `srt-live-transmit`:
 
 - SRT - use SRT for reading or writing, in listener, caller or rendezvous mode, with possibly additional parameters
-- UDP - read or write the given UDP address (also multicast)
+- UDP/RTP - read or write the given UDP address (also multicast)
 - Local file - read or store the stream into the file
 - Process's pipeline - use the process's `stdin` and `stdout` standard streams
 
@@ -86,6 +86,7 @@ The applications supports the following schemes:
 
 - `file` - for file or standard input and output
 - `udp` - UDP output (unicast and multicast)
+- `rtp` - RTP over UDP input or output (unicast and multicast)
 - `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
@@ -182,6 +183,19 @@ instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
+
+### Medium: RTP
+
+RTP over UDP is supported for both input and output.
+
+As an output, and as an input with no RTP-specific URI parameters, RTP medium functions identically to UDP medium as described above. 
+
+As an input, additional RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP.
+
+- **droprtpheader**: (`bool` as defined in SRT section) - when true, drop the first 12 bytes of each received packet
+- **rtpheadersize**: sets the number of bytes to drop from the beginning of each received packet. Ignored if **droprtpheader** is not truthy.
+
+> NOTE: No effort is made in the initial implementation to attempt to parse the RTP headers in any way eg for reordering, extracting timing, detecting length.
 
 ### Medium: SRT
 
