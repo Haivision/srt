@@ -850,6 +850,15 @@ TEST_F(TestSocketOptions, StreamIDWrongLen)
     EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
 }
 
+//Check if setting -1 as optlen returns an error 
+TEST_F(TestSocketOptions, StringOptLenInvalid)
+{
+
+    string stream_id = "test123";
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, stream_id.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+}
+
 // Try to set/get a 13-character string in SRTO_STREAMID.
 // This tests checks that the StreamID is set to the correct size
 // while it is transmitted as 16 characters in the Stream ID HS extension.
