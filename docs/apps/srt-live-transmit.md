@@ -16,7 +16,8 @@ srt-live-transmit <input-uri> <output-uri> [options]
 The following medium types are handled by `srt-live-transmit`:
 
 - SRT - use SRT for reading or writing, in listener, caller or rendezvous mode, with possibly additional parameters
-- UDP/RTP - read or write the given UDP address (also multicast)
+- UDP - read or write the given UDP address (also multicast)
+- RTP - read RTP over UDP from the given address (also multicast)
 - Local file - read or store the stream into the file
 - Process's pipeline - use the process's `stdin` and `stdout` standard streams
 
@@ -86,7 +87,7 @@ The applications supports the following schemes:
 
 - `file` - for file or standard input and output
 - `udp` - UDP output (unicast and multicast)
-- `rtp` - RTP over UDP input or output (unicast and multicast)
+- `rtp` - RTP over UDP input (unicast and multicast)
 - `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
@@ -186,11 +187,11 @@ manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
 ### Medium: RTP
 
-RTP over UDP is supported for both input and output.
+RTP over UDP is supported for input only.
 
-As an output, and as an input with no RTP-specific URI parameters, RTP medium functions identically to UDP medium as described above. 
+With no RTP-specific URI parameters, RTP medium functions identically to UDP medium as described above.
 
-As an input, additional RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP.
+Additional RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP.
 
 - **droprtpheader**: (`bool` as defined in SRT section) - when true, drop the first 12 bytes of each received packet
 - **rtpheadersize**: sets the number of bytes to drop from the beginning of each received packet. Ignored if **droprtpheader** is not truthy.

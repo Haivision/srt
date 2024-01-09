@@ -1205,6 +1205,11 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         break;
 
     case UriParser::RTP:
+        if (IsOutput<Base>())
+        {
+            cerr << "RTP not supported as an output\n";
+            throw invalid_argument("Invalid output protocol: RTP");
+        }
         iport = atoi(u.port().c_str());
         if ( iport < 1024 )
         {
