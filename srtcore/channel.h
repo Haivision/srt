@@ -185,6 +185,7 @@ private:
 
     // This feature is not enabled on Windows, for now.
     // This is also turned off in case of MinGW
+#ifdef SRT_ENABLE_PKTINFO
     bool                    m_bBindMasked; // True if m_BindAddr is INADDR_ANY. Need for quick check.
 
     // Calculating the required space is extremely tricky, and whereas on most
@@ -290,6 +291,7 @@ private:
         return false;
     }
 
+#endif //SRT_ENABLE_PKTINFO
 
 };
 
