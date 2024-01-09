@@ -756,12 +756,12 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     mh.msg_iov        = (iovec*)packet.m_PacketVector;
     mh.msg_iovlen     = 2;
     bool have_set_src = false;
-    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
 
 #ifdef SRT_ENABLE_PKTINFO
 
     // Note that even if PKTINFO is desired, the first caller's packet will be sent
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
     if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
         if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
@@ -848,7 +848,6 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 
 #ifndef _WIN32
     msghdr mh; // will not be used on failure
-    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
 
     if (select_ret > 0)
     {
@@ -864,6 +863,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifdef SRT_ENABLE_PKTINFO
         // Without m_bBindMasked, we don't need ancillary data - the source
         // address will always be the bound address.
+        char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
         if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary

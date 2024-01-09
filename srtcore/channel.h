@@ -223,14 +223,14 @@ private:
             // IPv4 headers or IPv6 headers.
             if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
             {
-                in_pktinfo dest_ip_ptr;// = (in_pktinfo*)CMSG_DATA(cmsg);
+                in_pktinfo dest_ip_ptr;
                 memcpy(&dest_ip_ptr, CMSG_DATA(cmsg), sizeof(struct in_pktinfo));
                 return sockaddr_any(dest_ip_ptr.ipi_addr, 0);
             }
 
             if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
             {
-                in6_pktinfo dest_ip_ptr;// = (in6_pktinfo*)CMSG_DATA(cmsg);
+                in6_pktinfo dest_ip_ptr;
                 memcpy(&dest_ip_ptr, CMSG_DATA(cmsg), sizeof(struct in6_pktinfo));
                 return sockaddr_any(dest_ip_ptr.ipi6_addr, 0);
             }
