@@ -196,7 +196,7 @@ parameter:
 - **rtpheadersize**: sets the number of bytes to drop from the beginning of
 each received packet. Defaults to 12 if not provided. Minimum value is 12.
 
-A lenght of **rtpheadersize** bytes will always be dropped. If you wish to pass
+A length of **rtpheadersize** bytes will always be dropped. If you wish to pass
 the entire packet, including RTP header, to the output medium, you should
 instead specify UDP as the input medium.
 
