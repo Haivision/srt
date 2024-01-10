@@ -1087,7 +1087,7 @@ class RtpSource: public UdpSource
 {
     // for now, make no effort to parse the header, just assume it is always
     // fixed length and either a user-configurable value, or twelve bytes.
-    const int MINIMUM_RTP_HEADER_SIZE = 0;
+    const int MINIMUM_RTP_HEADER_SIZE = 12;
     int bytes_to_skip = MINIMUM_RTP_HEADER_SIZE;
 public:
     RtpSource(string host, int port, const map<string,string>& attr) :
