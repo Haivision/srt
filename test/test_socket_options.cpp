@@ -853,9 +853,20 @@ TEST_F(TestSocketOptions, StreamIDWrongLen)
 //Check if setting -1 as optlen returns an error 
 TEST_F(TestSocketOptions, StringOptLenInvalid)
 {
+    string test_string = "test123";
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
 
-    string stream_id = "test123";
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, stream_id.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_BINDTODEVICE, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_CONGESTION, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_PACKETFILTER, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_PASSPHRASE, test_string.c_str(), -1), SRT_ERROR);
     EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
 }
 
