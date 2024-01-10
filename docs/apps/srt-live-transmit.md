@@ -189,12 +189,10 @@ manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
 RTP over UDP is supported for input only.
 
-With no RTP-specific URI parameters, RTP medium functions identically to UDP medium as described above.
+RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP. When no RTP-specific URI parameters are provided, RTP medium functions identically to UDP medium as described above.
 
-Additional RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP.
-
-- **droprtpheader**: (`bool` as defined in SRT section) - when true, drop the first 12 bytes of each received packet
-- **rtpheadersize**: sets the number of bytes to drop from the beginning of each received packet. Ignored if **droprtpheader** is not truthy.
+- **droprtpheader**: (`bool` as defined in SRT section) - when true, drop the first `rtpheadersize` bytes of each received packet. Defaults to false if not provided.
+- **rtpheadersize**: sets the number of bytes to drop from the beginning of each received packet. Defaults to 12 if not provided. Ignored if **droprtpheader** is not truthy.
 
 > NOTE: No effort is made in the initial implementation to attempt to parse the RTP headers in any way eg for reordering, extracting timing, detecting length.
 
