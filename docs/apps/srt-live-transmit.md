@@ -17,7 +17,7 @@ The following medium types are handled by `srt-live-transmit`:
 
 - SRT - use SRT for reading or writing, in listener, caller or rendezvous mode, with possibly additional parameters
 - UDP - read or write the given UDP address (also multicast)
-- RTP - read RTP over UDP from the given address (also multicast)
+- RTP - read RTP from the given address (also multicast)
 - Local file - read or store the stream into the file
 - Process's pipeline - use the process's `stdin` and `stdout` standard streams
 
@@ -87,7 +87,7 @@ The applications supports the following schemes:
 
 - `file` - for file or standard input and output
 - `udp` - UDP output (unicast and multicast)
-- `rtp` - RTP over UDP input (unicast and multicast)
+- `rtp` - RTP input (unicast and multicast)
 - `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
@@ -187,14 +187,22 @@ manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
 
 ### Medium: RTP
 
-RTP over UDP is supported for input only.
+RTP is supported for input only.
 
-RTP-specific options are available through URI parameters. These options enable dropping of bytes from the head of the input buffer allowing, for example, the RTP header to be dropped for use cases where the receiving end cannot accept RTP. When no RTP-specific URI parameters are provided, RTP medium functions identically to UDP medium as described above.
+All URI parameters described in the [Medium: UDP](#medium-udp) section above
+also apply to RTP. A further RTP-specific option is available as an URI
+parameter:
 
-- **droprtpheader**: (`bool` as defined in SRT section) - when true, drop the first `rtpheadersize` bytes of each received packet. Defaults to false if not provided.
-- **rtpheadersize**: sets the number of bytes to drop from the beginning of each received packet. Defaults to 12 if not provided. Ignored if **droprtpheader** is not truthy.
+- **rtpheadersize**: sets the number of bytes to drop from the beginning of
+each received packet. Defaults to 12 if not provided. Minimum value is 12.
 
-> NOTE: No effort is made in the initial implementation to attempt to parse the RTP headers in any way eg for reordering, extracting timing, detecting length.
+A lenght of **rtpheadersize** bytes will always be dropped. If you wish to pass
+the entire packet, including RTP header, to the output medium, you should
+instead specify UDP as the input medium.
+
+> NOTE: No effort is made in the initial implementation to attempt to parse
+the RTP headers in any way eg for validation, reordering, extracting timing,
+length detection of checking.
 
 ### Medium: SRT
 

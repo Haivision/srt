@@ -1087,19 +1087,25 @@ class RtpSource: public UdpSource
 {
     // for now, make no effort to parse the header, just assume it is always
     // fixed length and either a user-configurable value, or twelve bytes.
-    const int DEFAULT_RTP_HEADER_SIZE = 12;
-    const int rtp_header_size = DEFAULT_RTP_HEADER_SIZE;
-
-    const int bytes_to_skip = 0;
+    const int MINIMUM_RTP_HEADER_SIZE = 0;
+    int bytes_to_skip = MINIMUM_RTP_HEADER_SIZE;
 public:
     RtpSource(string host, int port, const map<string,string>& attr) :
-        UdpSource { host, port, attr },
-        rtp_header_size {
-            attr.count("rtpheadersize") ? stoi(attr.at("rtpheadersize"), 0, 0) : DEFAULT_RTP_HEADER_SIZE
-        },
-        bytes_to_skip {
-            (attr.count("droprtpheader") && true_names.count(attr.at("droprtpheader"))) ? rtp_header_size : 0
-        } {}
+        UdpSource { host, port, attr }
+        {
+            if (attr.count("rtpheadersize"))
+            {
+                const int header_size = stoi(attr.at("rtpheadersize"), 0, 0);
+                if (header_size < MINIMUM_RTP_HEADER_SIZE)
+                {
+                    cerr << "Invalid RTP header size provided: " << header_size
+                        << ", minimum allowed is " << MINIMUM_RTP_HEADER_SIZE
+                        << endl;
+                    throw invalid_argument("Invalid RTP header size");
+                }
+                bytes_to_skip = header_size;
+            }
+        }
 
     int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
@@ -1107,8 +1113,8 @@ public:
 
         if (length < 1 || !bytes_to_skip)
         {
-            // something went wrong, or we're passing headers through
-            // just return the length read via the base method
+            // something went wrong, or we're not skipping bytes for some
+            // reason, just return the length read via the base method
             return length;
         }
 
