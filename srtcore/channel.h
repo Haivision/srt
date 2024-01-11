@@ -227,16 +227,16 @@ private:
             // IPv4 headers or IPv6 headers.
             if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
             {
-                in_pktinfo dest_ip_ptr;
-                memcpy(&dest_ip_ptr, CMSG_DATA(cmsg), sizeof(struct in_pktinfo));
-                return sockaddr_any(dest_ip_ptr.ipi_addr, 0);
+                in_pktinfo dest_ip;
+                memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in_pktinfo));
+                return sockaddr_any(dest_ip.ipi_addr, 0);
             }
 
             if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
             {
-                in6_pktinfo dest_ip_ptr;
-                memcpy(&dest_ip_ptr, CMSG_DATA(cmsg), sizeof(struct in6_pktinfo));
-                return sockaddr_any(dest_ip_ptr.ipi6_addr, 0);
+                in6_pktinfo dest_ip;
+                memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in6_pktinfo));
+                return sockaddr_any(dest_ip.ipi6_addr, 0);
             }
         }
 
@@ -248,7 +248,7 @@ private:
     // calling ::sendmsg function. It uses a static buffer to supply data
     // for the call, and it's stated that only one thread is trying to
     // use a CChannel object in sending mode.
-    bool setSourceAddress(msghdr& mh, void *buf, const sockaddr_any& adr) const
+    bool setSourceAddress(msghdr& mh, char *buf, const sockaddr_any& adr) const
     {
         // In contrast to an advice followed on the net, there's no case of putting
         // both IPv4 and IPv6 ancillary data, case we could have them. Only one
@@ -258,10 +258,9 @@ private:
         if (adr.family() == AF_INET)
         {
             mh.msg_control = (void *) buf;
-            mh.msg_controllen = sizeof(struct in_pktinfo) + sizeof(cmsghdr);
+            mh.msg_controllen = CMSG_SPACE(sizeof(struct in_pktinfo));
 
             cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
-            // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
             cmsg_send->cmsg_level = IPPROTO_IP;
             cmsg_send->cmsg_type = IP_PKTINFO;
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
@@ -277,7 +276,7 @@ private:
         if (adr.family() == AF_INET6)
         {
             mh.msg_control = buf;
-            mh.msg_controllen = sizeof(struct in6_pktinfo) + sizeof(cmsghdr);
+            mh.msg_controllen = CMSG_SPACE(sizeof(struct in6_pktinfo));
 
             cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
             cmsg_send->cmsg_level = IPPROTO_IPV6;
