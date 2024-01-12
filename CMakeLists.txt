@@ -24,7 +24,7 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
-if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28.1")
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
 	cmake_policy(SET CMP0054 NEW)
 endif ()
 
