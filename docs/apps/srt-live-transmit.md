@@ -17,6 +17,7 @@ The following medium types are handled by `srt-live-transmit`:
 
 - SRT - use SRT for reading or writing, in listener, caller or rendezvous mode, with possibly additional parameters
 - UDP - read or write the given UDP address (also multicast)
+- RTP - read RTP from the given address (also multicast)
 - Local file - read or store the stream into the file
 - Process's pipeline - use the process's `stdin` and `stdout` standard streams
 
@@ -86,6 +87,7 @@ The applications supports the following schemes:
 
 - `file` - for file or standard input and output
 - `udp` - UDP output (unicast and multicast)
+- `rtp` - RTP input (unicast and multicast)
 - `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
@@ -182,6 +184,25 @@ instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
+
+### Medium: RTP
+
+RTP is supported for input only.
+
+All URI parameters described in the [Medium: UDP](#medium-udp) section above
+also apply to RTP. A further RTP-specific option is available as an URI
+parameter:
+
+- **rtpheadersize**: sets the number of bytes to drop from the beginning of
+each received packet. Defaults to 12 if not provided. Minimum value is 12.
+
+A length of **rtpheadersize** bytes will always be dropped. If you wish to pass
+the entire packet, including RTP header, to the output medium, you should
+instead specify UDP as the input medium.
+
+> NOTE: No effort is made in the initial implementation to attempt to parse
+the RTP headers in any way eg for validation, reordering, extracting timing,
+length detection of checking.
 
 ### Medium: SRT
 
