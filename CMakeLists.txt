@@ -24,6 +24,10 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
+if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28.1")
+	cmake_policy(SET CMP0054 NEW)
+endif ()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
