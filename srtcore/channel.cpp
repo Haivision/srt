@@ -761,9 +761,10 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 
     // Note that even if PKTINFO is desired, the first caller's packet will be sent
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
     if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
-        if (!setSourceAddress(mh, source_addr))
+        if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
         {
             LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
         }
@@ -862,14 +863,15 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifdef SRT_ENABLE_PKTINFO
         // Without m_bBindMasked, we don't need ancillary data - the source
         // address will always be the bound address.
+        char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
         if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary
             // data. This might be interesting for the connection to
             // know to which address the packet should be sent back during
             // the handshake and then addressed when sending during connection.
-            mh.msg_control = (m_acCmsgRecvBuffer);
-            mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
+            mh.msg_control = (mh_crtl_buf);
+            mh.msg_controllen = sizeof mh_crtl_buf;
         }
 #endif
 
