@@ -972,16 +972,37 @@ public delegate void SrtConnectCallbackDelegate(
 
 public static class MarshalExtensions
 {
-    private static readonly FieldInfo SocketAddressBufferField = typeof(SocketAddress).GetField("Buffer", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo SocketAddressInternalSizeField = typeof(SocketAddress).GetField("InternalSize", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo SocketAddressBufferField;
+    private static readonly FieldInfo SocketAddressInternalSizeField;
+
+    static MarshalExtensions()
+    {
+        // Internal fields of SocketAddress class are used to access the internal buffer and size
+        // But starting from NET 8 internal fields were renamed, so we need to find them in a different way
+        var socketAddressFields = typeof(SocketAddress).GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+        SocketAddressBufferField = socketAddressFields.FirstOrDefault(f => f.FieldType == typeof(byte[]));
+        SocketAddressInternalSizeField = socketAddressFields.FirstOrDefault(f => f.FieldType == typeof(int));
+    }
 
     internal static byte[] GetInternalBuffer(this SocketAddress socketAddress)
     {
+        if (SocketAddressBufferField == null)
+        {
+            var message = $"Unable to find the internal buffer field in the {nameof(SocketAddress)} class.";
+            throw new PlatformNotSupportedException(message);
+        }
+
         return (byte[])SocketAddressBufferField.GetValue(socketAddress);
     }
     
     internal static void SetInternalSize(this SocketAddress socketAddress, int size)
     {
+        if (SocketAddressInternalSizeField == null)
+        {
+            var message = $"Unable to find the internal buffer size field in the {nameof(SocketAddress)} class.";
+            throw new PlatformNotSupportedException(message);
+        }
+
         SocketAddressInternalSizeField.SetValue(socketAddress, size);
     }
     
