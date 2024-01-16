@@ -852,7 +852,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     loss_seqs_t irrecover_row, irrecover_col;
 
 #if ENABLE_HEAVY_LOGGING
-    static string hangname [] = {"SUCCESS", "PAST", "CRAZY", "NOT-DONE"};
+    static string hangname [] = {"NOT-DONE", "SUCCESS", "PAST", "CRAZY"};
 #endif
 
     // Required for EHangStatus

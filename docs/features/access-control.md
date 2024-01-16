@@ -36,7 +36,7 @@ For example, the listener (server) can check if it knows the user and set the co
 3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
 If a correct passphrase is not provided by the client (caller), the request from caller will be rejected by SRT library (not application or programmer).
 
-**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons. 
+**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons.
 The only way to make the app check the passphrase is to set the passphrase on the socket by using the `SRTO_PASSPHRASE` option. This lets SRT to reject connection on mismatch.
 
 ## Character Encoding
@@ -258,11 +258,11 @@ This may apply to read-only or write-only resources, as well for when interactiv
 
 #### SRT_REJX_UNACCEPTABLE
 
-Applies when the parameters specified in SocketID cannot be satisfied for the
+Applies when the parameters specified in StreamID cannot be satisfied for the
 requested resource, or when `m=publish` but the data format is not acceptable.
-This is a general error reporting an unsupported format for data that appears to 
-be wrong when sending, or a restriction on the data format (as specified in the 
-details of the resource specification) such that it cannot be provided 
+This is a general error reporting an unsupported format for data that appears to
+be wrong when sending, or a restriction on the data format (as specified in the
+details of the resource specification) such that it cannot be provided
 when receiving.
 
 #### SRT_REJX_CONFLICT
@@ -288,8 +288,8 @@ is not obliged to support all of the standard types.
 #### SRT_REJX_LOCKED
 
 The resource being accessed is locked against any access. This is similar to
-`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading 
-and writing. This is for when the resource should be shown as existing and 
+`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading
+and writing. This is for when the resource should be shown as existing and
 available to the client, but access is temporarily blocked.
 
 #### SRT_REJX_FAILED_DEPEND
