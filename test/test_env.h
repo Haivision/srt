@@ -49,23 +49,51 @@ class TestInit
 {
 public:
     int ninst;
-    // Directly use int32_t instead of SRTSOCKET in order
-    // not to derive the srt.h API
-    static std::vector<int32_t> used_sockets;
 
     static void start(int& w_retstatus);
     static void stop();
-
-    static void remember(int32_t s)
-    {
-        used_sockets.push_back(s);
-    }
 
     TestInit() { start((ninst)); }
     ~TestInit() { stop(); }
 
     void HandlePerTestOptions();
 
+};
+
+class UniqueSocket
+{
+    int32_t sock;
+
+public:
+    UniqueSocket(int32_t s): sock(s)
+    {
+        if (s == -1)
+            throw std::invalid_argument("Invalid socket");
+    }
+
+    UniqueSocket(): sock(-1)
+    {
+    }
+
+    ~UniqueSocket();
+
+    operator int32_t() const
+    {
+        return sock;
+    }
+
+    int32_t& ref() { return sock; }
+
+    /*
+       IF NEEDED, MOVE to test_main.cpp
+    UniqueSocket& operator=(int32_t s)
+    {
+        if (sock == s)
+            return;
+        srt_close(sock);
+        sock = s;
+    }
+    */
 };
 
 class Test: public testing::Test

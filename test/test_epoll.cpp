@@ -66,9 +66,8 @@ TEST(CEPoll, WaitEmptyCall)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -90,9 +89,8 @@ TEST(CEPoll, UWaitEmptyCall)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int no = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -114,9 +112,8 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no = 0;
@@ -149,9 +146,8 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no = 0;
@@ -178,9 +174,8 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int no  = 0;
     ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -202,9 +197,8 @@ TEST(CEPoll, HandleEpollEvent)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -264,9 +258,8 @@ TEST(CEPoll, NotifyConnectionBreak)
     srt::TestInit srtinit;
 
     // 1. Prepare client
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes SRT_ATR_UNUSED = 1;
     const int no SRT_ATR_UNUSED = 0;
@@ -287,9 +280,8 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa_client.sin_addr), 1);
 
     // 2. Prepare server
-    SRTSOCKET server_sock = srt_create_socket();
+    srt::UniqueSocket server_sock = srt_create_socket();
     ASSERT_NE(server_sock, SRT_ERROR);
-    srtinit.remember(server_sock);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -380,9 +372,8 @@ TEST(CEPoll, HandleEpollEvent2)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -442,9 +433,8 @@ TEST(CEPoll, HandleEpollNoEvent)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int yes = 1;
     const int no  = 0;
@@ -493,9 +483,8 @@ TEST(CEPoll, ThreadedUpdate)
 {
     srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
-    srtinit.remember(client_sock);
 
     const int no  = 0;
     EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
@@ -764,8 +753,8 @@ protected:
 
 TEST_F(TestEPoll, SimpleAsync)
 {
-    SRTSOCKET ss = SRT_INVALID_SOCK;
-    createServerSocket( (ss) );
+    srt::UniqueSocket ss;
+    createServerSocket( (ss.ref()) );
 
     std::thread client([this] { clientSocket(); });
 
@@ -774,6 +763,5 @@ TEST_F(TestEPoll, SimpleAsync)
     client.join(); // Make sure client has exit before you delete the socket
 
     srt_close(m_client_sock); // cannot close m_client_sock after srt_sendmsg because of issue in api.c:2346 
-    srt_close(ss);
 }
 
