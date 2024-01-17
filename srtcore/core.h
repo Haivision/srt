@@ -1319,6 +1319,9 @@ DENY_UPDATE(TEV_RECEIVE);
 template <ETransmissionEvent Ev> inline
 bool CUDT::updateCC(typename EventMapping<Ev>::type arg)
 {
+    // Special things that must be done HERE, not in SrtCongestion,
+    // because it involves the input buffer in CUDT. It would be
+    // slightly dangerous to give SrtCongestion access to it.
 	using namespace srt_logging;
 
     typedef typename EventMapping<Ev>::type arg_t;

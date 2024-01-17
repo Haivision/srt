@@ -7601,7 +7601,7 @@ bool srt::CUDT::updateCC_Checks()
     if (!m_CongCtl.ready() || !m_pSndBuffer)
     {
         LOGC(rslog.Error,
-             log << "updateCC: CAN'T DO UPDATE - congctl " << (m_CongCtl.ready() ? "ready" : "NOT READY")
+             log << CONID() << "updateCC: CAN'T DO UPDATE - congctl " << (m_CongCtl.ready() ? "ready" : "NOT READY")
                  << "; sending buffer " << (m_pSndBuffer ? "NOT CREATED" : "created"));
 
         return false;
@@ -7617,7 +7617,6 @@ void srt::CUDT::updateCC_INIT(EInitEvent only_input)
     // 1: SRTO_INPUTBW was changed
     // 2: SRTO_OHEADBW was changed
 
-    // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
 
     if (only_input != TEV_INIT_RESET && m_config.llMaxBW)
     {
