@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(logging::LogLevel::debug);
+   srt_setloglevel(srt_logging::LogLevel::debug);
 
    addrinfo hints;
    addrinfo* res;
@@ -46,22 +46,12 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   SRTSOCKET sfd = srt_socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+   SRTSOCKET sfd = srt_create_socket();
    if (SRT_INVALID_SOCK == sfd)
    {
       cout << "srt_socket: " << srt_getlasterror_str() << endl;
       return 0;
    }
-
-   // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
-   // although there's also lots of other options to be set, for which there's a convenience option,
-   // SRTO_TRANSTYPE.
-   // SRT_TRANSTYPE tt = SRTT_LIVE;
-   // if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_TRANSTYPE, &tt, sizeof tt))
-   // {
-   //    cout << "srt_setsockopt: " << srt_getlasterror_str() << endl;
-   //    return 0;
-   // }
 
    bool no = false;
    if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_RCVSYN, &no, sizeof no))
@@ -69,6 +59,9 @@ int main(int argc, char* argv[])
       cout << "srt_setsockopt: " << srt_getlasterror_str() << endl;
       return 0;
    }
+
+   // Test the deprecated option feature here:
+   //srt_setsockopt(sfd, 0, SRTO_STRICTENC, &no, sizeof no);
 
    // Windows UDP issue
    // For better performance, modify HKLM\System\CurrentControlSet\Services\Afd\Parameters\FastSendDatagramThreshold
@@ -110,7 +103,7 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   constexpr int srtrfdslenmax = 100;
+   const int srtrfdslenmax = 100;
    SRTSOCKET srtrfds[srtrfdslenmax];
    char data[1500];
 

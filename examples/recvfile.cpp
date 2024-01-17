@@ -21,7 +21,7 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   // use this function to initialize the UDT library
+   // Use this function to initialize the UDT library
    srt_startup();
 
    srt_setloglevel(srt_logging::LogLevel::debug);
@@ -33,7 +33,7 @@ int main(int argc, char* argv[])
    hints.ai_family = AF_INET;
    hints.ai_socktype = SOCK_DGRAM;
 
-   SRTSOCKET fhandle = srt_socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
+   SRTSOCKET fhandle = srt_create_socket();
    // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
    // although there's also lots of other options to be set, for which there's a convenience option,
    // SRTO_TRANSTYPE.
@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   // connect to the server, implict bind
+   // Connect to the server, implicit bind.
    if (SRT_ERROR == srt_connect(fhandle, peer->ai_addr, peer->ai_addrlen))
    {
       cout << "connect: " << srt_getlasterror_str() << endl;
@@ -55,8 +55,7 @@ int main(int argc, char* argv[])
 
    freeaddrinfo(peer);
 
-
-   // send name information of the requested file
+   // Send name information of the requested file.
    int len = strlen(argv[3]);
 
    if (SRT_ERROR == srt_send(fhandle, (char*)&len, sizeof(int)))
@@ -71,7 +70,7 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   // get size information
+   // Get size information.
    int64_t size;
 
    if (SRT_ERROR == srt_recv(fhandle, (char*)&size, sizeof(int64_t)))
@@ -86,8 +85,7 @@ int main(int argc, char* argv[])
       return -1;
    }
 
-   // receive the file
-   //fstream ofs(argv[4], ios::out | ios::binary | ios::trunc);
+   // Receive the file.
    int64_t recvsize; 
    int64_t offset = 0;
 
@@ -108,9 +106,7 @@ int main(int argc, char* argv[])
 
    srt_close(fhandle);
 
-   //ofs.close();
-
-   // use this function to release the UDT library
+   // Signal to the SRT library to clean up all allocated sockets and resources.
    srt_cleanup();
 
    return 0;

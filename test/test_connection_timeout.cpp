@@ -1,19 +1,9 @@
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
-#define _WINSOCKAPI_ // to include Winsock2.h instead of Winsock.h from windows.h
-#include <winsock2.h>
-
-#if defined(__GNUC__) || defined(__MINGW32__)
-extern "C" {
-    WINSOCK_API_LINKAGE  INT WSAAPI inet_pton( INT Family, PCSTR pszAddrString, PVOID pAddrBuf);
-    WINSOCK_API_LINKAGE  PCSTR WSAAPI inet_ntop(INT  Family, PVOID pAddr, PSTR pStringBuf, size_t StringBufSize);
-}
-#endif
-
-#define INC__WIN_WINTIME // exclude gettimeofday from srt headers
-
+#define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
 #else
 typedef int SOCKET;
 #define INVALID_SOCKET ((SOCKET)-1)
@@ -27,7 +17,7 @@ using namespace std;
 
 
 class TestConnectionTimeout
-    : public ::testing::Test
+    : public ::srt::Test
 {
 protected:
     TestConnectionTimeout()
@@ -43,10 +33,8 @@ protected:
 protected:
 
     // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
         m_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -71,12 +59,11 @@ protected:
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
     }
 
-    void TearDown() override
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        ASSERT_NE(closesocket(m_udp_sock), -1);
-        srt_cleanup();
+        EXPECT_NE(closesocket(m_udp_sock), -1);
     }
 
 protected:
@@ -111,7 +98,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
-    const int connection_timeout_ms = 500;
+    const int connection_timeout_ms = 300;
     EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
 
     const int yes = 1;
@@ -137,7 +124,6 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         int wlen = 2;
         SRTSOCKET write[2];
 
-        using namespace std;
         const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
 
         // Here we check the connection timeout.
@@ -153,10 +139,9 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         // Check the actual timeout
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
-        // Confidence interval border : +/-50 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 50);
-        EXPECT_GE(delta_ms, connection_timeout_ms - 50);
-        cerr << "Timeout was: " << delta_ms << "\n";
+        // Confidence interval border : +/-80 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 80) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 80) << "Timeout was: " << delta_ms;
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
@@ -197,7 +182,13 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
     for (int i = 0; i < 10; ++i)
     {
+        const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
         EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+
+        const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - chrono_ts_start).count();
+        // Confidence interval border : +/-200 ms
+        EXPECT_LE(delta_ms, connection_timeout_ms + 200) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 200) << "Timeout was: " << delta_ms;
 
         const int error_code = srt_getlasterror(nullptr);
         EXPECT_EQ(error_code, SRT_ENOSERVER);

@@ -87,73 +87,44 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
 }
 
 
-std::string FormatTime(uint64_t time)
-{
-    using namespace std;
-
-    time_t sec = time/1000000;
-    time_t usec = time%1000000;
-
-    time_t tt = sec;
-    struct tm tm = SysLocalTime(tt);
-
-    char tmp_buf[512];
-#ifdef _WIN32
-    strftime(tmp_buf, 512, "%X.", &tm);
-#else
-    strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << usec;
-    return out.str();
-}
-// Some logging imps
 #if ENABLE_LOGGING
 
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
 {
-	if (that_enabled)
-	{
+    if (that_enabled)
+    {
         i_file = "";
         i_line = 0;
         flags = that.src_config->flags;
-		// Create logger prefix
-		that.CreateLogLinePrefix(os);
-	}
+        // Create logger prefix
+        that.CreateLogLinePrefix(os);
+    }
 }
 
 LogDispatcher::Proxy LogDispatcher::operator()()
 {
-	return Proxy(*this);
+    return Proxy(*this);
 }
 
 void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
+    using namespace srt;
 
-    char tmp_buf[512];
+    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
+                      "ThreadName::BUFSIZE is too small to be used for strftime");
+    char tmp_buf[ThreadName::BUFSIZE];
     if ( !isset(SRT_LOGF_DISABLE_TIME) )
     {
         // Not necessary if sending through the queue.
         timeval tv;
-        gettimeofday(&tv, 0);
-        time_t t = tv.tv_sec;
-        struct tm tm = SysLocalTime(t);
+        gettimeofday(&tv, NULL);
+        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
 
-        // Nice to have %T as "standard time format" for logs,
-        // but it's Single Unix Specification and doesn't exist
-        // on Windows. Use %X on Windows (it's described as
-        // current time without date according to locale spec).
-        //
-        // XXX Consider using %X everywhere, as it should work
-        // on both systems.
-#ifdef _WIN32
-        strftime(tmp_buf, 512, "%X.", &tm);
-#else
-        strftime(tmp_buf, 512, "%T.", &tm);
-#endif
-
-        serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
+        {
+            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+        }
     }
 
     string out_prefix;
@@ -237,4 +208,5 @@ std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 }
 #endif
 
-} // namespace
+} // (end namespace srt_logging)
+

@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "gtest/gtest.h"
+
+#ifdef SRT_ENABLE_ENCRYPTION
 #include "common.h"
 #include "hcrypt.h"
 #include "version.h"
@@ -14,7 +16,7 @@
 
 const void *nullPtr = NULL;
 
-/* TestCRYSPRmethods: Test presense of required cryspr methods */
+/* TestCRYSPRmethods: Test presence of required cryspr methods */
 
 class TestCRYSPRmethods
     : public ::testing::Test
@@ -137,11 +139,11 @@ TEST_F(TestCRYSPRmethods, SHA1)
 
 
 /* CRYSPR control block test */
-class TestCRYSPRcypto
+class TestCRYSPRcrypto
     : public ::testing::Test
 {
 protected:
-    TestCRYSPRcypto()
+    TestCRYSPRcrypto()
     {
         // initialization code here
         cryspr_m = NULL;
@@ -149,7 +151,7 @@ protected:
         cryspr_cb = NULL;
     }
 
-    ~TestCRYSPRcypto()
+    ~TestCRYSPRcrypto()
     {
         // cleanup any pending stuff, but no exceptions allowed
     }
@@ -190,7 +192,7 @@ protected:
     CRYSPR_cb *cryspr_cb;       /* Control block */
 };
 
-TEST_F(TestCRYSPRcypto, CtrlBlock)
+TEST_F(TestCRYSPRcrypto, CtrlBlock)
 {
     EXPECT_EQ(cryspr_m, cryspr_cb->cryspr); //methods set in control block
 }
@@ -304,37 +306,37 @@ void test_pbkdf2(
 }
 
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k128)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k128)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 0);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k192)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k192)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 1);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv1_k256)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv1_k256)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 2);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i1)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i1)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 3);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i20)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i20)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 4);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv2_i4096)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv2_i4096)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 5);
 }
 
-TEST_F(TestCRYSPRcypto, PBKDF2_tv3_0)
+TEST_F(TestCRYSPRcrypto, PBKDF2_tv3_0)
 {
     test_pbkdf2(cryspr_m, cryspr_cb, 6);
 }
@@ -409,7 +411,7 @@ void test_kmwrap(
                 cryspr_cb,
                 wrap,
                 tv->sek,
-                tv->seklen);
+                uint32_t(tv->seklen));
 
             ASSERT_EQ(rc1, 0);
             ASSERT_EQ(rc2, 0);
@@ -445,7 +447,7 @@ void test_kmunwrap(
                 cryspr_cb,
                 sek,
                 tv->wrap,
-                wraplen);
+                uint32_t(wraplen));
 
             ASSERT_EQ(rc1, 0);
             ASSERT_EQ(rc2, 0);
@@ -455,28 +457,28 @@ void test_kmunwrap(
 }
 
 
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k128)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k128)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 0);
 }
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k192)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k192)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 1);
 }
-TEST_F(TestCRYSPRcypto, KMWRAP_tv1_k256)
+TEST_F(TestCRYSPRcrypto, KMWRAP_tv1_k256)
 {
     test_kmwrap(cryspr_m, cryspr_cb, 2);
 }
 
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k128)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k128)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 0);
 }
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k192)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k192)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 1);
 }
-TEST_F(TestCRYSPRcypto, KMUNWRAP_tv1_k256)
+TEST_F(TestCRYSPRcrypto, KMUNWRAP_tv1_k256)
 {
     test_kmunwrap(cryspr_m, cryspr_cb, 2);
 }
@@ -572,14 +574,11 @@ void test_AESecb(
         ASSERT_NE(cryspr_m->aes_ecb_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+            HCRYPT_CTX_MODE_AESECB,
             bEncrypt,
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0]);
-#else
-            &cryspr_cb->aes_sek[0]);
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0));
         if(bEncrypt) {
             intxt=(unsigned char *)tv->cleartxt;
             outtxt=(unsigned char *)tv->ciphertxt;
@@ -590,11 +589,7 @@ void test_AESecb(
 
         rc2 = cryspr_m->aes_ecb_cipher(
             bEncrypt,                   /* true:encrypt, false:decrypt */
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#else
-            &cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0),/* CRYpto Service PRovider AES Key context */
             intxt,                      /* src */
             txtlen,                     /* length */
             result,                     /* dest */
@@ -611,51 +606,51 @@ void test_AESecb(
 #define ENCRYPT true
 #define DECRYPT false
 
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 0, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 1, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv1_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv1_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 2, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 3, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 4, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESecb_tv2_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESecb_tv2_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 5, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 0, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 1, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv1_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv1_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 2, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_128)
 {
     test_AESecb(cryspr_m, cryspr_cb, 3, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_192)
 {
     test_AESecb(cryspr_m, cryspr_cb, 4, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESecb_tv2_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESecb_tv2_256)
 {
     test_AESecb(cryspr_m, cryspr_cb, 5, DECRYPT);
 }
@@ -727,14 +722,11 @@ void test_AESctr(
         ASSERT_NE(cryspr_m->aes_ctr_cipher, nullPtr);
 
         rc1 = cryspr_m->aes_set_key(
+            HCRYPT_CTX_MODE_AESCTR,
             true,       //For CTR, Encrypt key is used for both encryption and decryption
             tv->sek,    /* Stream encrypting Key */
             tv->seklen,
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0]);
-#else
-            &cryspr_cb->aes_sek[0]);
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0));
         if(bEncrypt) {
             intxt=(unsigned char *)tv->cleartxt;
             outtxt=(unsigned char *)tv->ciphertxt;
@@ -746,11 +738,7 @@ void test_AESctr(
         memcpy(ivec, tv->iv, sizeof(ivec)); //cipher ivec not const
         rc2 = cryspr_m->aes_ctr_cipher(
             bEncrypt,                   /* true:encrypt, false:decrypt */
-#if WITH_FIPSMODE
-            cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#else
-            &cryspr_cb->aes_sek[0],      /* CRYpto Service PRovider AES Key context */
-#endif
+            CRYSPR_GETSEK(cryspr_cb, 0),/* CRYpto Service PRovider AES Key context */
             ivec,                       /* iv */
             intxt,                      /* src */
             txtlen,                     /* length */
@@ -766,28 +754,30 @@ void test_AESctr(
 #define ENCRYPT true
 #define DECRYPT false
 
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_128)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_128)
 {
     test_AESctr(cryspr_m, cryspr_cb, 0, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_192)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_192)
 {
     test_AESctr(cryspr_m, cryspr_cb, 1, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, EncryptAESctr_tv1_256)
+TEST_F(TestCRYSPRcrypto, EncryptAESctr_tv1_256)
 {
     test_AESctr(cryspr_m, cryspr_cb, 2, ENCRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_128)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_128)
 {
     test_AESctr(cryspr_m, cryspr_cb, 0, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_192)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_192)
 {
     test_AESctr(cryspr_m, cryspr_cb, 1, DECRYPT);
 }
-TEST_F(TestCRYSPRcypto, DecryptAESctr_tv1_256)
+TEST_F(TestCRYSPRcrypto, DecryptAESctr_tv1_256)
 {
     test_AESctr(cryspr_m, cryspr_cb, 2, DECRYPT);
 }
 #endif /* CRYSPR_HAS_AESCTR */
+
+#endif /* SRT_ENABLE_ENCRYPTION */

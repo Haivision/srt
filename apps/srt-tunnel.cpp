@@ -27,7 +27,7 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -59,6 +59,15 @@ testmedia.cpp
 */
 
 using namespace std;
+using namespace srt;
+
+const srt_logging::LogFA SRT_LOGFA_APP = 10;
+namespace srt_logging
+{
+Logger applog(SRT_LOGFA_APP, srt_logger_config, "TUNNELAPP");
+}
+
+using srt_logging::applog;
 
 class Medium
 {
@@ -86,12 +95,13 @@ protected:
     bool m_eof = false;
     bool m_broken = false;
 
-    mutex access; // For closing
+    std::mutex access; // For closing
 
     template <class DerivedMedium, class SocketType>
-    static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
+    static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
     {
-        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + SockaddrToString((sockaddr*)&sa)), chunk);
+        string addr = sockaddr_any(sa.get(), sizeof sa).str();
+        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
     }
@@ -106,19 +116,35 @@ public:
         return os.str();
     }
 
-    Medium(UriParser u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
+    Medium(const UriParser& u, size_t ch): m_counter(s_counter++), m_uri(u), m_chunk(ch) {}
     Medium(): m_counter(s_counter++) {}
 
     virtual const char* type() = 0;
     virtual bool IsOpen() = 0;
-    virtual void Close() = 0;
+    virtual void CloseInternal() = 0;
+
+    void CloseState()
+    {
+        m_open = false;
+        m_broken = true;
+    }
+
+    // External API for this class that allows to close
+    // the entity on request. The CloseInternal should
+    // redirect to a type-specific function, the same that
+    // should be also called in destructor.
+    void Close()
+    {
+        CloseState();
+        CloseInternal();
+    }
     virtual bool End() = 0;
 
     virtual int ReadInternal(char* output, int size) = 0;
     virtual bool IsErrorAgain() = 0;
 
-    ReadStatus Read(ref_t<bytevector> output);
-    virtual void Write(ref_t<bytevector> portion) = 0;
+    ReadStatus Read(bytevector& output);
+    virtual void Write(bytevector& portion) = 0;
 
     virtual void CreateListener() = 0;
     virtual void CreateCaller() = 0;
@@ -153,6 +179,7 @@ public:
 
     virtual ~Medium()
     {
+        CloseState();
     }
 
 protected:
@@ -197,25 +224,25 @@ public:
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
         :
 #ifdef HAVE_FULL_CXX11
-		media {m1, m2},
+        media {m1, m2},
 #endif
-		parent_tunnel(p), nameid(nid)
+        parent_tunnel(p), nameid(nid)
     {
 #ifndef HAVE_FULL_CXX11
-		// MSVC is not exactly C++11 compliant and complains around
-		// initialization of an array.
-		// Leaving this method of initialization for clarity and
-		// possibly more preferred performance.
-		media[0] = m1;
-		media[1] = m2;
+        // MSVC is not exactly C++11 compliant and complains around
+        // initialization of an array.
+        // Leaving this method of initialization for clarity and
+        // possibly more preferred performance.
+        media[0] = m1;
+        media[1] = m2;
 #endif
     }
 
     void Start()
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
-        std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        ThreadName tn(thrn.c_str());
+        const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
+        srt::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }
@@ -225,6 +252,13 @@ public:
         // If this thread is already stopped, don't stop.
         if (thr.joinable())
         {
+            LOGP(applog.Debug, "Engine::Stop: Closing media:");
+            // Close both media as a hanged up reading thread
+            // will block joining.
+            media[0]->Close();
+            media[1]->Close();
+
+            LOGP(applog.Debug, "Engine::Stop: media closed, joining engine thread:");
             if (thr.get_id() == std::this_thread::get_id())
             {
                 // If this is this thread which called this, no need
@@ -232,10 +266,12 @@ public:
                 // You must, however, detach yourself, or otherwise the thr's
                 // destructor would kill the program.
                 thr.detach();
+                LOGP(applog.Debug, "DETACHED.");
             }
             else
             {
                 thr.join();
+                LOGP(applog.Debug, "Joined.");
             }
         }
     }
@@ -251,8 +287,8 @@ class Tunnel
     Tunnelbox* parent_box;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
-    volatile bool running = true;
-    mutex access;
+    srt::sync::atomic<bool> running{true};
+    std::mutex access;
 
 public:
 
@@ -263,7 +299,7 @@ public:
 
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         parent_box(m),
-        med_acp(move(acp)), med_clr(move(clr)),
+        med_acp(std::move(acp)), med_clr(std::move(clr)),
         acp_to_clr(this, med_acp.get(), med_clr.get(), med_acp->id() + ">" + med_clr->id()),
         clr_to_acp(this, med_clr.get(), med_acp.get(), med_clr->id() + ">" + med_acp->id())
     {
@@ -289,7 +325,7 @@ public:
 
         /*
         {
-            lock_guard<mutex> lk(access);
+            lock_guard<std::mutex> lk(access);
             if (acp_to_clr.stat() == -1 && clr_to_acp.stat() == -1)
             {
                 Verb() << "Tunnel: Both engine decommissioned, will stop the tunnel.";
@@ -334,14 +370,14 @@ void Engine::Worker()
         try
         {
             which_medium = media[DIR_IN];
-            rdst = media[DIR_IN]->Read(Ref(outbuf));
+            rdst = media[DIR_IN]->Read((outbuf));
             switch (rdst)
             {
             case Medium::RD_DATA:
                 {
                     which_medium = media[DIR_OUT];
                     // We get the data, write them to the output
-                    media[DIR_OUT]->Write(Ref(outbuf));
+                    media[DIR_OUT]->Write((outbuf));
                 }
                 break;
 
@@ -350,6 +386,10 @@ void Engine::Worker()
                 throw Medium::ReadEOF("");
 
             case Medium::RD_AGAIN:
+                // Theoreticall RD_AGAIN should not be reported
+                // because it should be taken care of internally by
+                // repeated sending - unless we get m_broken set.
+                // If it is, however, it should be handled just like error.
             case Medium::RD_ERROR:
                 status = -1;
                 Medium::Error("Error while reading");
@@ -357,7 +397,7 @@ void Engine::Worker()
         }
         catch (Medium::ReadEOF&)
         {
-            Verb() << "EOF. Exitting engine.";
+            Verb() << "EOF. Exiting engine.";
             break;
         }
         catch (Medium::TransmissionError& er)
@@ -396,30 +436,35 @@ public:
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void Close() override
+    void CloseSrt()
     {
         Verb() << "Closing SRT socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == SRT_ERROR)
             return;
         srt_close(m_socket);
         m_socket = SRT_ERROR;
     }
 
-    virtual const char* type() override { return "srt"; }
-    virtual int ReadInternal(char* output, int size) override;
-    virtual bool IsErrorAgain() override;
+    // Forwarded in order to separate the implementation from
+    // the virtual function so that virtual function is not
+    // being called in destructor.
+    void CloseInternal() override { return CloseSrt(); }
 
-    virtual void Write(ref_t<bytevector> portion) override;
-    virtual void CreateListener() override;
-    virtual void CreateCaller() override;
-    virtual unique_ptr<Medium> Accept() override;
-    virtual void Connect() override;
+    const char* type() override { return "srt"; }
+    int ReadInternal(char* output, int size) override;
+    bool IsErrorAgain() override;
+
+    void Write(bytevector& portion) override;
+    void CreateListener() override;
+    void CreateCaller() override;
+    unique_ptr<Medium> Accept() override;
+    void Connect() override;
 
 protected:
-    virtual void Init() override;
+    void Init() override;
 
-    void ConfigurePre(SRTSOCKET socket);
+    void ConfigurePre();
     void ConfigurePost(SRTSOCKET socket);
 
     using Medium::Error;
@@ -429,9 +474,10 @@ protected:
         throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
     }
 
-    virtual ~SrtMedium() override
+    ~SrtMedium() override
     {
-        Close();
+        CloseState();
+        CloseSrt();
     }
 };
 
@@ -450,34 +496,64 @@ public:
 
 #endif
 
+#ifdef _WIN32
+    static int tcp_close(int socket)
+    {
+        return ::closesocket(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#elif defined(LINUX) || defined(GNU) || defined(CYGWIN)
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = MSG_NOSIGNAL };
+
+#else
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#endif
+
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
 
-    void Close() override
+    void CloseTcp()
     {
         Verb() << "Closing TCP socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == -1)
             return;
-        ::close(m_socket);
+        tcp_close(m_socket);
         m_socket = -1;
     }
+    void CloseInternal() override { return CloseTcp(); }
 
-    virtual const char* type() override { return "tcp"; }
-    virtual int ReadInternal(char* output, int size) override;
-    virtual bool IsErrorAgain() override;
-    virtual void Write(ref_t<bytevector> portion) override;
-    virtual void CreateListener() override;
-    virtual void CreateCaller() override;
-    virtual unique_ptr<Medium> Accept() override;
-    virtual void Connect() override;
+    const char* type() override { return "tcp"; }
+    int ReadInternal(char* output, int size) override;
+    bool IsErrorAgain() override;
+    void Write(bytevector& portion) override;
+    void CreateListener() override;
+    void CreateCaller() override;
+    unique_ptr<Medium> Accept() override;
+    void Connect() override;
 
 protected:
 
-    // Just models. No options are predicted for now.
-    void ConfigurePre(int )
+    void ConfigurePre()
     {
+#if defined(__APPLE__)
+        int optval = 1;
+        setsockopt(m_socket, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
+#endif
     }
 
     void ConfigurePost(int)
@@ -494,7 +570,8 @@ protected:
 
     virtual ~TcpMedium()
     {
-        Close();
+        CloseState();
+        CloseTcp();
     }
 };
 
@@ -516,11 +593,11 @@ void SrtMedium::Init()
     m_options["transtype"] = "file";
 }
 
-void SrtMedium::ConfigurePre(SRTSOCKET so)
+void SrtMedium::ConfigurePre()
 {
     vector<string> fails;
     m_options["mode"] = "caller";
-    SrtConfigurePre(so, "", m_options, &fails);
+    SrtConfigurePre(m_socket, "", m_options, &fails);
     if (!fails.empty())
     {
         cerr << "Failed options: " << Printable(fails) << endl;
@@ -543,11 +620,11 @@ void SrtMedium::CreateListener()
 
     m_socket = srt_create_socket();
 
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = srt_bind(m_socket, (sockaddr*)&sa, sizeof sa);
+    int stat = srt_bind(m_socket, sa.get(), sizeof sa);
 
     if ( stat == SRT_ERROR )
     {
@@ -569,23 +646,24 @@ void TcpMedium::CreateListener()
 {
     int backlog = 5; // hardcoded!
 
-    m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
 
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = ::bind(m_socket, (sockaddr*)&sa, sizeof sa);
+    m_socket = (int)socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    ConfigurePre();
+
+    int stat = ::bind(m_socket, sa.get(), sa.size());
 
     if (stat == -1)
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "bind");
     }
 
     stat = listen(m_socket, backlog);
     if ( stat == -1 )
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "listen");
     }
 
@@ -594,15 +672,19 @@ void TcpMedium::CreateListener()
 
 unique_ptr<Medium> SrtMedium::Accept()
 {
-    sockaddr_in sa;
-    int salen = sizeof sa;
-    SRTSOCKET s = srt_accept(m_socket, (sockaddr*)&sa, &salen);
+    sockaddr_any sa;
+    SRTSOCKET s = srt_accept(m_socket, (sa.get()), (&sa.len));
     if (s == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_accept");
     }
 
     ConfigurePost(s);
+
+    // Configure 1s timeout
+    int timeout_1s = 1000;
+    srt_setsockflag(m_socket, SRTO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
+
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
 
@@ -611,13 +693,22 @@ unique_ptr<Medium> SrtMedium::Accept()
 
 unique_ptr<Medium> TcpMedium::Accept()
 {
-    sockaddr_in sa;
-    socklen_t salen = sizeof sa;
-    int s = ::accept(m_socket, (sockaddr*)&sa, &salen);
+    sockaddr_any sa;
+    int s = (int)::accept(m_socket, (sa.get()), (&sa.syslen()));
     if (s == -1)
     {
         Error(errno, "accept");
     }
+
+    // Configure 1s timeout
+    timeval timeout_1s { 1, 0 };
+    int st SRT_ATR_UNUSED = setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
+    timeval re;
+    socklen_t size = sizeof re;
+    int st2 SRT_ATR_UNUSED = getsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&re, &size);
+
+    LOGP(applog.Debug, "Setting SO_RCVTIMEO to @", m_socket, ": ", st == -1 ? "FAILED" : "SUCCEEDED",
+            ", read-back value: ", st2 == -1 ? int64_t(-1) : (int64_t(re.tv_sec)*1000000 + re.tv_usec)/1000, "ms");
 
     unique_ptr<Medium> med(CreateAcceptor(this, sa, s, m_chunk));
     Verb() << "accepted a connection from " << med->uri();
@@ -628,50 +719,93 @@ unique_ptr<Medium> TcpMedium::Accept()
 void SrtMedium::CreateCaller()
 {
     m_socket = srt_create_socket();
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     // XXX setting up outgoing port not supported
 }
 
 void TcpMedium::CreateCaller()
 {
-    m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
+    m_socket = (int)::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    ConfigurePre();
 }
 
 void SrtMedium::Connect()
 {
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = srt_connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    int st = srt_connect(m_socket, sa.get(), sizeof sa);
     if (st == SRT_ERROR)
         Error(UDT::getlasterror(), "srt_connect");
 
     ConfigurePost(m_socket);
+
+    // Configure 1s timeout
+    int timeout_1s = 1000;
+    srt_setsockflag(m_socket, SRTO_RCVTIMEO, &timeout_1s, sizeof timeout_1s);
 }
 
 void TcpMedium::Connect()
 {
-    sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
+    sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = ::connect(m_socket, (sockaddr*)&sa, sizeof sa);
+    int st = ::connect(m_socket, sa.get(), sa.size());
     if (st == -1)
         Error(errno, "connect");
 
     ConfigurePost(m_socket);
+
+    // Configure 1s timeout
+    timeval timeout_1s { 1, 0 };
+    setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_1s, sizeof timeout_1s);
 }
 
-int SrtMedium::ReadInternal(char* buffer, int size)
+int SrtMedium::ReadInternal(char* w_buffer, int size)
 {
-    int st = srt_recv(m_socket, buffer, size);
-    if (st == SRT_ERROR)
-        return -1;
+    int st = -1;
+    do
+    {
+        st = srt_recv(m_socket, (w_buffer), size);
+        if (st == SRT_ERROR)
+        {
+            int syserr;
+            if (srt_getlasterror(&syserr) == SRT_EASYNCRCV && !m_broken)
+                continue;
+        }
+        break;
+
+    } while (true);
+
     return st;
 }
 
-int TcpMedium::ReadInternal(char* buffer, int size)
+int TcpMedium::ReadInternal(char* w_buffer, int size)
 {
-    return read(m_socket, buffer, size);
+    int st = -1;
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - begin");
+    do
+    {
+        st = ::recv(m_socket, (w_buffer), size, 0);
+        if (st == -1)
+        {
+            if ((errno == EAGAIN || errno == EWOULDBLOCK))
+            {
+                if (!m_broken)
+                {
+                    LOGP(applog.Debug, "TcpMedium: read:AGAIN, repeating");
+                    continue;
+                }
+                LOGP(applog.Debug, "TcpMedium: read:AGAIN, not repeating - already broken");
+            }
+            else
+            {
+                LOGP(applog.Debug, "TcpMedium: read:ERROR: ", errno);
+            }
+        }
+        break;
+    } while (true);
+    LOGP(applog.Debug, "TcpMedium:recv @", m_socket, " - result: ", st);
+    return st;
 }
 
 bool SrtMedium::IsErrorAgain()
@@ -692,19 +826,17 @@ bool TcpMedium::IsErrorAgain()
 // This will cause the worker loop to redirect to Write immediately
 // thereafter and possibly will flush out the remains of the buffer.
 // It's still possible that the buffer won't be completely purged
-Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
+Medium::ReadStatus Medium::Read(bytevector& w_output)
 {
-    bytevector& output = *r_output;
-
     // Don't read, but fake that you read
-    if (output.size() > m_chunk)
+    if (w_output.size() > m_chunk)
     {
         Verb() << "BUFFER EXCEEDED";
         return RD_DATA;
     }
 
     // Resize to maximum first
-    size_t shift = output.size();
+    size_t shift = w_output.size();
     if (shift && m_eof)
     {
         // You have nonempty buffer, but eof was already
@@ -717,8 +849,8 @@ Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
 
     size_t pred_size = shift + m_chunk;
 
-    output.resize(pred_size);
-    int st = ReadInternal(output.data() + shift, m_chunk);
+    w_output.resize(pred_size);
+    int st = ReadInternal((w_output.data() + shift), (int)m_chunk);
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -739,22 +871,20 @@ Medium::ReadStatus Medium::Read(ref_t<bytevector> r_output)
             //
             // Set back the size this buffer had before we attempted
             // to read into it.
-            output.resize(shift);
+            w_output.resize(shift);
             return RD_DATA;
         }
-        output.clear();
+        w_output.clear();
         return RD_EOF;
     }
 
-    output.resize(shift+st);
+    w_output.resize(shift+st);
     return RD_DATA;
 }
 
-void SrtMedium::Write(ref_t<bytevector> r_buffer)
+void SrtMedium::Write(bytevector& w_buffer)
 {
-    bytevector& buffer = *r_buffer;
-
-    int st = srt_send(m_socket, buffer.data(), buffer.size());
+    int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
     if (st == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_send");
@@ -762,8 +892,8 @@ void SrtMedium::Write(ref_t<bytevector> r_buffer)
 
     // This should be ==, whereas > is not possible, but
     // this should simply embrace this case as a sanity check.
-    if (st >= int(buffer.size()))
-        buffer.clear();
+    if (st >= int(w_buffer.size()))
+        w_buffer.clear();
     else if (st == 0)
     {
         Error("Unexpected EOF on Write");
@@ -771,15 +901,13 @@ void SrtMedium::Write(ref_t<bytevector> r_buffer)
     else
     {
         // Remove only those bytes that were sent
-        buffer.erase(buffer.begin(), buffer.begin()+st);
+        w_buffer.erase(w_buffer.begin(), w_buffer.begin()+st);
     }
 }
 
-void TcpMedium::Write(ref_t<bytevector> r_buffer)
+void TcpMedium::Write(bytevector& w_buffer)
 {
-    bytevector& buffer = *r_buffer;
-
-    int st = ::write(m_socket, buffer.data(), buffer.size());
+    int st = ::send(m_socket, w_buffer.data(), (int)w_buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -787,8 +915,8 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
 
     // This should be ==, whereas > is not possible, but
     // this should simply embrace this case as a sanity check.
-    if (st >= int(buffer.size()))
-        buffer.clear();
+    if (st >= int(w_buffer.size()))
+        w_buffer.clear();
     else if (st == 0)
     {
         Error("Unexpected EOF on Write");
@@ -796,7 +924,7 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
     else
     {
         // Remove only those bytes that were sent
-        buffer.erase(buffer.begin(), buffer.begin()+st);
+        w_buffer.erase(w_buffer.begin(), w_buffer.begin()+st);
     }
 }
 
@@ -827,23 +955,23 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
 struct Tunnelbox
 {
     list<unique_ptr<Tunnel>> tunnels;
-    mutex access;
+    std::mutex access;
     condition_variable decom_ready;
     bool main_running = true;
     thread thr;
 
     void signal_decommission()
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         decom_ready.notify_one();
     }
 
     void install(std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
-        tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
+        tunnels.emplace_back(new Tunnel(this, std::move(acp), std::move(clr)));
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
@@ -865,7 +993,7 @@ private:
 
     void CleanupWorker()
     {
-        unique_lock<mutex> lk(access);
+        unique_lock<std::mutex> lk(access);
 
         while (main_running)
         {
@@ -882,7 +1010,7 @@ private:
                 // the one critical section - make sure no other thread
                 // is accessing it at the same time and also make join all
                 // threads that might have been accessing it. After
-                // exitting as true (meaning that it was decommissioned
+                // exiting as true (meaning that it was decommissioned
                 // as expected) it can be safely deleted.
                 if ((*i)->decommission_if_dead(main_running))
                 {
@@ -891,7 +1019,6 @@ private:
             }
         }
     }
-
 };
 
 void Tunnel::Stop()
@@ -901,7 +1028,7 @@ void Tunnel::Stop()
     if (!running)
         return; // already stopped
 
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
 
     // Ok, you are the first to make the tunnel
     // not running and inform the tunnelbox.
@@ -911,7 +1038,7 @@ void Tunnel::Stop()
 
 bool Tunnel::decommission_if_dead(bool forced)
 {
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
     if (running && !forced)
         return false; // working, not to be decommissioned
 
@@ -933,8 +1060,6 @@ std::unique_ptr<Medium> main_listener;
 
 size_t default_chunk = 4096;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-
 int OnINT_StopService(int)
 {
     g_tunnels.main_running = false;
@@ -948,9 +1073,15 @@ int OnINT_StopService(int)
 
 int main( int argc, char** argv )
 {
+    if (!SysInitializeNetwork())
+    {
+        cerr << "Fail to initialize network module.";
+        return 1;
+    }
+
     size_t chunk = default_chunk;
 
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_logfa = { "lf", "logfa" },
         o_chunk = {"c", "chunk" },
@@ -985,21 +1116,21 @@ int main( int argc, char** argv )
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
+    srt::setloglevel(lev);
     if (logfa == "")
     {
-        UDT::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(SRT_LOGFA_APP);
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
         set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
-        UDT::resetlogfa(fas);
+        srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            UDT::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(SRT_LOGFA_APP);
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);
@@ -1048,7 +1179,7 @@ int main( int argc, char** argv )
             std::unique_ptr<Medium> accepted = main_listener->Accept();
             if (!g_tunnels.main_running)
             {
-                Verb() << "Service stopped. Exitting.";
+                Verb() << "Service stopped. Exiting.";
                 break;
             }
             Verb() << "Connection accepted. Connecting to the relay...";
@@ -1060,7 +1191,7 @@ int main( int argc, char** argv )
             Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
-            g_tunnels.install(move(accepted), move(caller));
+            g_tunnels.install(std::move(accepted), std::move(caller));
         }
         catch (...)
         {

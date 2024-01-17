@@ -1,0 +1,23 @@
+name: cxx11
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    name: ubuntu
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: configure
+      run: |
+        mkdir _build && cd _build
+        cmake ../ -DENABLE_STDCXX_SYNC=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON
+    - name: build
+      run: cd _build && cmake --build ./
+    - name: test
+      run: cd _build && ctest --extra-verbose

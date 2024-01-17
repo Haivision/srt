@@ -3,8 +3,11 @@
 SOURCES
 srt-test-live.cpp
 testmedia.cpp
+../apps/apputil.cpp
+../apps/statswriter.cpp
 ../apps/verbose.cpp
 ../apps/socketoptions.cpp
 ../apps/uriparser.cpp
 ../apps/logsupport.cpp
+../apps/logsupport_appdefs.cpp
 

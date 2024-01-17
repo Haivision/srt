@@ -50,15 +50,19 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+#include "platform_sys.h"
+
 #include <cmath>
 #include <cstring>
-#include <algorithm>
 #include "common.h"
 #include "window.h"
-#include "utilities.h"
+#include <algorithm>
 
 using namespace std;
+using namespace srt::sync;
 
+namespace srt
+{
 namespace ACKWindowTools
 {
 
@@ -66,7 +70,7 @@ void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t s
 {
    r_aSeq[r_iHead].iACKSeqNo = seq;
    r_aSeq[r_iHead].iACK = ack;
-   r_aSeq[r_iHead].TimeStamp = CTimer::getTime();
+   r_aSeq[r_iHead].tsTimeStamp = steady_clock::now();
 
    r_iHead = (r_iHead + 1) % size;
 
@@ -75,27 +79,26 @@ void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t s
       r_iTail = (r_iTail + 1) % size;
 }
 
-int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack)
+int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack, const steady_clock::time_point& currtime)
 {
+   // Head has not exceeded the physical boundary of the window
    if (r_iHead >= r_iTail)
    {
-      // Head has not exceeded the physical boundary of the window
-
       for (int i = r_iTail, n = r_iHead; i < n; ++ i)
       {
-         // looking for indentical ACK Seq. No.
+         // Looking for an identical ACK Seq. No.
          if (seq == r_aSeq[i].iACKSeqNo)
          {
-            // return the Data ACK it carried
+            // Return the Data ACK it carried
             r_ack = r_aSeq[i].iACK;
 
-            // calculate RTT
-            int rtt = int(CTimer::getTime() - r_aSeq[i].TimeStamp);
+            // Calculate RTT estimate
+            const int rtt = (int)count_microseconds(currtime - r_aSeq[i].tsTimeStamp);
 
             if (i + 1 == r_iHead)
             {
                r_iTail = r_iHead = 0;
-               r_aSeq[0].iACKSeqNo = -1;
+               r_aSeq[0].iACKSeqNo = SRT_SEQNO_NONE;
             }
             else
                r_iTail = (i + 1) % size;
@@ -104,22 +107,22 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
          }
       }
 
-      // Bad input, the ACK node has been overwritten
+      // The record about ACK is not found in the buffer, RTT can not be calculated
       return -1;
    }
 
    // Head has exceeded the physical window boundary, so it is behind tail
-   for (int j = r_iTail, n = r_iHead + size; j < n; ++ j)
+   for (int j = r_iTail, n = r_iHead + (int)size; j < n; ++ j)
    {
-      // looking for indentical ACK seq. no.
+      // Looking for an identical ACK Seq. No.
       if (seq == r_aSeq[j % size].iACKSeqNo)
       {
-         // return Data ACK
+         // Return the Data ACK it carried
          j %= size;
          r_ack = r_aSeq[j].iACK;
 
-         // calculate RTT
-         int rtt = int(CTimer::getTime() - r_aSeq[j].TimeStamp);
+         // Calculate RTT estimate
+         const int rtt = (int)count_microseconds(currtime - r_aSeq[j].tsTimeStamp);
 
          if (j == r_iHead)
          {
@@ -133,14 +136,16 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
       }
    }
 
-   // bad input, the ACK node has been overwritten
+   // The record about ACK is not found in the buffer, RTT can not be calculated
    return -1;
 }
-}
+
+} // namespace AckTools
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize)
+void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size)
 {
    for (size_t i = 0; i < asize; ++ i)
       r_pktWindow[i] = 1000000;   //1 sec -> 1 pkt/sec
@@ -149,47 +154,93 @@ void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeW
       r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
 
    for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = CPacket::SRT_MAX_PAYLOAD_SIZE; //based on 1 pkt/sec set in r_pktWindow[i]
+      r_bytesWindow[i] = max_payload_size; //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 
-int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, int& bytesps)
+int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& bytesps)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, asize);
 
     unsigned count = 0;
     int sum = 0;
+
     bytesps = 0;
     unsigned long bytes = 0;
-
-	// (explicit specialization due to problems on MSVC 2013 and 2015)
+    // // (explicit specialization due to problems on MSVC 2013 and 2015)
     AccumulatePassFilterParallel<unsigned, unsigned long>(window, window + asize, filter, abytes,
-            Ref(sum), Ref(count), Ref(bytes));
+            (sum), (count), (bytes));
 
-   // calculate speed, or return 0 if not enough valid value
-   if (count > (asize >> 1))
-   {
-      bytes += (CPacket::SRT_DATA_HDR_SIZE * count); //Add protocol headers to bytes received
-      bytesps = (unsigned long)ceil(1000000.0 / (double(sum) / double(bytes)));
-      return (int)ceil(1000000.0 / (sum / count));
-   }
-   else
-   {
-      bytesps = 0;
-      return 0;
-   }
+    // claculate speed, or return 0 if not enough valid value
+    if (count > (asize >> 1))
+    {
+        bytes += (hdr_size * count); //Add protocol headers to bytes received
+        bytesps = (int)ceil(1000000.0 / (double(sum) / double(bytes)));
+        return (int)ceil(1000000.0 / (sum / count));
+    }
+    else
+    {
+        bytesps = 0;
+        return 0;
+    }
 }
 
-int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
+int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
-    PassFilter<int> filter = GetPeakRange(window, replica, psize);
+// XXX REPLACE ->
+//     int count;
+//    int sum;
+//    Tie2(sum, count) = AccumulatePassFilter(window, window + psize, filter);
+//    count += 1;
+//    sum += filter.median;
 
-    int count;
-    int sum;
-    Tie2(sum, count) = AccumulatePassFilter(window, window + psize, filter);
-    count += 1;
-    sum += filter.median;
+    // This calculation does more-less the following:
+    //
+    // 1. Having example window:
+    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+    // 2. This window is now sorted, but we only know the value in the middle:
+    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+    // 3. Now calculate:
+    //   - lower: 90/8 = 11.25
+    //   - upper: 90*8 = 720
+    // 4. Now calculate the arithmetic median from all these values,
+    //    but drop those from outside the <lower, upper> range:
+    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
+    // 5. Calculate the median from the extracted range,
+    //    NOTE: the median is actually repeated once, so size is +1.
+    //
+    //    values = { 50, 51, 55, 80, 90, 100, 600 };
+    //    sum = 90 + accumulate(values); ==> 1026
+    //    median = sum/(1 + values.size()); ==> 147
+    //
+    // For comparison: the overall arithmetic median from this window == 430
+    //
+    // 6. Returned value = 1M/median
 
-    return (int)ceil(1000000.0 / (double(sum) / double(count)));
+   // get median value, but cannot change the original value order in the window
+   std::copy(window, window + psize - 1, replica);
+   std::nth_element(replica, replica + (psize / 2), replica + psize - 1);
+   //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
+   int median = replica[psize / 2];
+
+   int count = 1;
+   int sum = median;
+   int upper = median << 3; // median*8
+   int lower = median >> 3; // median/8
+
+   // median filtering
+   const int* p = window;
+   for (int i = 0, n = (int)psize; i < n; ++ i)
+   {
+      if ((*p < upper) && (*p > lower))
+      {
+         ++ count;
+         sum += *p;
+      }
+      ++ p;
+   }
+// XXX <-
+   return (int)ceil(1000000.0 / (double(sum) / double(count)));
 }
+
 
