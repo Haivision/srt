@@ -158,7 +158,6 @@ private:
 
     /// @brief On RTO event update an inter-packet send interval.
     /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
-    
     void onRTO(ETransmissionEvent , ECheckTimerStage stage)
     {
         if (stage != TEV_CHT_INIT)

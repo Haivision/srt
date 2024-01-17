@@ -1066,7 +1066,9 @@ private: // Common connection Congestion Control setup
     bool updateCC(typename EventMapping<Ev>::type arg);
 
 public:
-    // Parts. Made public due to being called from external structs.
+    // Parts. Made public due to being called from external structs
+    // that are necessary to forward to a real caller or empty caller
+    // depending on whether allowed for particular event type.
     bool updateCC_Checks();
     void updateCC_INIT(EInitEvent istage);
     void updateCC_GETRATE();
@@ -1291,6 +1293,7 @@ template<> struct updateCC_CallIf_GETRATE<event> \
 ALLOW_GETRATE(TEV_ACK);
 ALLOW_GETRATE(TEV_LOSSREPORT);
 ALLOW_GETRATE(TEV_CHECKTIMER);
+ALLOW_GETRATE(TEV_SYNC);
 #undef ALLOW_GETRATE
 
 // UPDATE part - allow for others, except given
@@ -1320,20 +1323,20 @@ bool CUDT::updateCC(typename EventMapping<Ev>::type arg)
 
     typedef typename EventMapping<Ev>::type arg_t;
 
-    HLOGC(rslog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(Ev));
-
     if (!updateCC_Checks())
     {
         HLOGC(rslog.Error, log << "updateCC: EVENT FAILED:" << TransmissionEventStr(Ev));
         return false;
     }
 
+    HLOGC(rslog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(Ev));
+
     // --> Follow: updateCC_INIT(), only if Ev == TEV_INIT
     updateCC_CallIf_INIT<Ev, arg_t>::call(this, arg);
 
-    // --> Follow: updateCC_GETRATE(), only if Ev is ACK, LOSSREPORT, CHECKTIMER
+    // --> Follow: updateCC_GETRATE(), only if Ev is ACK, LOSSREPORT, CHECKTIMER, SYNC
     updateCC_CallIf_GETRATE<Ev>::call(this);
-    // This part is also required only by LiveSmoother, however not
+    // This part is also required only by LiveCC, however not
     // moved there due to that it needs access to CSndBuffer.
 
     EmitSignal<Ev>(arg);

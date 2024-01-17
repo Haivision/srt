@@ -482,5 +482,5 @@ inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int lin
 
 }
 
-#endif // INC__SRT_LOGGING_H
+#endif // INC_SRT_LOGGING_H
 

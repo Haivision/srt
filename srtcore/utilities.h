@@ -871,6 +871,10 @@ struct PassFilter
     T lower, median, upper;
 };
 
+// This utility is used in window.cpp where it is required to calculate
+// the median value basing on the value in the very middle and filtered
+// out values exceeding its range of 1/8 and 8 times. Returned is a structure
+// that shows the median and also the lower and upper value used for filtering.
 inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size)
 {
     // This calculation does more-less the following:
@@ -909,6 +913,9 @@ inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size
     return filter;
 }
 
+// This function sums up all values in the array (from p to end),
+// except those that don't fit in the low- and high-pass filter.
+// Returned is the sum and the number of elements taken into account.
 inline std::pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFilter<int> filter)
 {
     int count = 0;
@@ -926,6 +933,13 @@ inline std::pair<int, int> AccumulatePassFilter(const int* p, const int* end, Pa
     return std::make_pair(sum, count);
 }
 
+// This function sums up all values in the array (from p to end)
+// and simultaneously elements from `para`, stated it points to
+// an array of the same size. The first array is used as a driver
+// for which elements to include and which to skip, and this is done
+// for both arrays at particular index position. Returner is the sum
+// of the elements passed from the first array and from the `para`
+// array, as well as the number of included elements.
 template <class IntCount, class IntParaCount>
 inline void AccumulatePassFilterParallel(const int* p, const int* end, PassFilter<int> filter,
         const int* para,
