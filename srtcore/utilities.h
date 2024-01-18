@@ -916,14 +916,15 @@ inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size
 // This function sums up all values in the array (from p to end),
 // except those that don't fit in the low- and high-pass filter.
 // Returned is the sum and the number of elements taken into account.
-inline std::pair<int, int> AccumulatePassFilter(const int* p, const int* end, PassFilter<int> filter)
+inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassFilter<int> filter)
 {
     int count = 0;
     int sum = 0;
+    const int* const end = p + size;
     for (; p != end; ++p)
     {
         // Throw away those that don't fit in the filter
-        if (*p < filter.lower || *p > filter.upper)
+        if (*p <= filter.lower || *p >= filter.upper)
             continue;
 
         sum += *p;
@@ -941,13 +942,14 @@ inline std::pair<int, int> AccumulatePassFilter(const int* p, const int* end, Pa
 // of the elements passed from the first array and from the `para`
 // array, as well as the number of included elements.
 template <class IntCount, class IntParaCount>
-inline void AccumulatePassFilterParallel(const int* p, const int* end, PassFilter<int> filter,
+inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<int> filter,
         const int* para,
         int& w_sum, IntCount& w_count, IntParaCount& w_paracount)
 {
     IntCount count = 0;
     int sum = 0;
     IntParaCount parasum = 0;
+    const int* const end = p + size;
     for (; p != end; ++p, ++para)
     {
         // Throw away those that don't fit in the filter
