@@ -158,99 +158,44 @@ void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_p
 }
 
 
-int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& bytesps)
+int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
 {
-   // get median value, but cannot change the original value order in the window
-   std::copy(window, window + asize, replica);
-   std::nth_element(replica, replica + (asize / 2), replica + asize);
-   //std::sort(replica, replica + asize);
-   int median = replica[asize / 2];
+    PassFilter<int> filter = GetPeakRange(window, replica, asize);
 
-   unsigned count = 0;
-   int sum = 0;
-   int upper = median << 3;
-   int lower = median >> 3;
+    unsigned count = 0;
+    int sum = 0;
 
-   bytesps = 0;
-   unsigned long bytes = 0;
-   const int* bp = abytes;
-   // median filtering
-   const int* p = window;
-   for (int i = 0, n = (int)asize; i < n; ++ i)
-   {
-      if ((*p < upper) && (*p > lower))
-      {
-         ++ count;  //packet counter
-         sum += *p; //usec counter
-         bytes += (unsigned long)*bp;   //byte counter
-      }
-      ++ p;     //advance packet pointer
-      ++ bp;    //advance bytes pointer
-   }
+    w_bytesps = 0;
+    unsigned long bytes = 0;
+    // // (explicit specialization due to problems on MSVC 2013 and 2015)
+    AccumulatePassFilterParallel<unsigned, unsigned long>(window, window + asize, filter, abytes,
+            (sum), (count), (bytes));
 
-   // claculate speed, or return 0 if not enough valid value
-   if (count > (asize >> 1))
-   {
-      bytes += (hdr_size * count); //Add protocol headers to bytes received
-      bytesps = (int)ceil(1000000.0 / (double(sum) / double(bytes)));
-      return (int)ceil(1000000.0 / (sum / count));
-   }
-   else
-   {
-      bytesps = 0;
-      return 0;
-   }
+    // claculate speed, or return 0 if not enough valid value
+    if (count > (asize >> 1))
+    {
+        bytes += (hdr_size * count); //Add protocol headers to bytes received
+        w_bytesps = (int)ceil(1000000.0 / (double(sum) / double(bytes)));
+        return (int)ceil(1000000.0 / (sum / count));
+    }
+    else
+    {
+        w_bytesps = 0;
+        return 0;
+    }
 }
 
 int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
-    // This calculation does more-less the following:
-    //
-    // 1. Having example window:
-    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
-    // 2. This window is now sorted, but we only know the value in the middle:
-    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
-    // 3. Now calculate:
-    //   - lower: 90/8 = 11.25
-    //   - upper: 90*8 = 720
-    // 4. Now calculate the arithmetic median from all these values,
-    //    but drop those from outside the <lower, upper> range:
-    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
-    // 5. Calculate the median from the extracted range,
-    //    NOTE: the median is actually repeated once, so size is +1.
-    //
-    //    values = { 50, 51, 55, 80, 90, 100, 600 };
-    //    sum = 90 + accumulate(values); ==> 1026
-    //    median = sum/(1 + values.size()); ==> 147
-    //
-    // For comparison: the overall arithmetic median from this window == 430
-    //
-    // 6. Returned value = 1M/median
+    PassFilter<int> filter = GetPeakRange(window, replica, psize);
 
-   // get median value, but cannot change the original value order in the window
-   std::copy(window, window + psize - 1, replica);
-   std::nth_element(replica, replica + (psize / 2), replica + psize - 1);
-   //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
-   int median = replica[psize / 2];
+    int count;
+    int sum;
+    Tie2(sum, count) = AccumulatePassFilter(window, window + psize, filter);
+    count += 1;
+    sum += filter.median;
 
-   int count = 1;
-   int sum = median;
-   int upper = median << 3; // median*8
-   int lower = median >> 3; // median/8
-
-   // median filtering
-   const int* p = window;
-   for (int i = 0, n = (int)psize; i < n; ++ i)
-   {
-      if ((*p < upper) && (*p > lower))
-      {
-         ++ count;
-         sum += *p;
-      }
-      ++ p;
-   }
-
-   return (int)ceil(1000000.0 / (double(sum) / double(count)));
+    return (int)ceil(1000000.0 / (double(sum) / double(count)));
 }
 
 
