@@ -116,7 +116,7 @@ struct LogConfig
     void* loghandler_opaque;
     srt::sync::Mutex mutex;
     int flags;
-    std::vector<class LogDispatcher*> loggers;
+    std::vector<struct LogDispatcher*> loggers;
 
     LogConfig(const fa_bitset_t& efa,
             LogLevel::type l = LogLevel::warning,
