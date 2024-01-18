@@ -106,9 +106,63 @@ mutexes for which the locking order must be preserved.
 
  - CUDT::m_RecvAckLock || CUDT::m_SendBlockLock
 ------------------
+```
 
-ANALYSIS ON: m_ConnectionLock
+ANALYSIS ON: `m_ConnectionLock`
 
+**NOTE**: There is a potential of reporting a deadlock due to lock
+inversion between `CRcvQueue::m_LSLock` and `CUDT::m_ConnectionLock`.
+This is false.
+
+According to the below description, you need to know which objects
+exactly are taken into account. The CRcvQueue object is an underlying
+object of CMultiplexer, which is shared between sockets, and also it
+is definitely shared between the listener socket and the accepted
+socket spawn out of it. We have then two scenarios here that seem
+to be in conflict:
+
+1. Setting a new listener on the multiplexer by calling `srt_listen()`
+or removing the listener from the multiplexer by calling `srt_close()`
+on the listener socket. This calls `CUDT::setListenState`, which is done under
+a lock for `m_ConnectionLock` of the socket that is being set up as listener.
+Then inside the CRcvQueue::setListener it locks `m_LSLock`.
+
+
+2. Processing the new connection from the incoming connection request
+processed in `CUDT::processConnectRequest`. It is called under the lock
+of `m_LSLock`. Then inside it calls `CUDT::open` and `CUDT::acceptAndRespond`
+that lock `m_ConnectionLock`.
+
+However, the methods that potentially lock `m_ConnectionLock` are
+called for the sake of the **newly created socket** that is about to
+be reported as the accepted one from `srt_accept()`, **not the listener
+socket**.
+
+Now; a potential situation when these two things could be in collision, as
+theoretically these mutexes are in two different objects and the accepted
+socket shares always the listener with the listening socket, then just as well
+if `srt_listen()` is called on an accepted socket (which will always fail and
+makes no sense, but still it must be somehow recognized and rejected by the
+internals), it will go through the sequence of first `m_ConnectionLock` and
+then `m_LSLock`, while for the same object the order was that the `m_LSLock`
+was locked before its creation in response to the connection handler and
+then `m_ConnectionLock` was applied for it.
+
+These two situations, however, cannot occur simultaneously. This is because
+those activities that occur during the connection processing that apply
+`m_ConnectionLock` under a lock of `m_LSLock` are performed during the time
+when the socket is just created and is still under processing for connection.
+A potential of calling `srt_listen()`, just as well as `srt_close()` on it,
+or even breaking it, will be only possible when this activity is finished
+and no more locks are applied on `m_ConnectionLock`.
+
+A theoretical potential exists if you try to call `srt_listen()` on a
+potentially accepted socket in the listener callback. The result will
+only be such that this function call will hang up due to inability to
+lock `m_LSLock`.
+
+
+```
 
 -- CUDT::startConnect flow
 
