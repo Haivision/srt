@@ -985,6 +985,7 @@ protected:
 
 class UdpSource: public Source, public UdpCommon
 {
+protected:
     bool eof = true;
 public:
 
@@ -1082,6 +1083,74 @@ template <> struct Udp<Target> { typedef UdpTarget type; };
 template <class Iface>
 Iface* CreateUdp(const string& host, int port, const map<string,string>& par) { return new typename Udp<Iface>::type (host, port, par); }
 
+class RtpSource: public UdpSource
+{
+    // for now, make no effort to parse the header, just assume it is always
+    // fixed length and either a user-configurable value, or twelve bytes.
+    const int MINIMUM_RTP_HEADER_SIZE = 12;
+    int bytes_to_skip = MINIMUM_RTP_HEADER_SIZE;
+public:
+    RtpSource(string host, int port, const map<string,string>& attr) :
+        UdpSource { host, port, attr }
+        {
+            if (attr.count("rtpheadersize"))
+            {
+                const int header_size = stoi(attr.at("rtpheadersize"), 0, 0);
+                if (header_size < MINIMUM_RTP_HEADER_SIZE)
+                {
+                    cerr << "Invalid RTP header size provided: " << header_size
+                        << ", minimum allowed is " << MINIMUM_RTP_HEADER_SIZE
+                        << endl;
+                    throw invalid_argument("Invalid RTP header size");
+                }
+                bytes_to_skip = header_size;
+            }
+        }
+
+    int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
+    {
+        const int length = UdpSource::Read(chunk, pkt);
+
+        if (length < 1 || !bytes_to_skip)
+        {
+            // something went wrong, or we're not skipping bytes for some
+            // reason, just return the length read via the base method
+            return length;
+        }
+
+        // we got some data and we're supposed to skip some of it
+        // check there's enough bytes for our intended skip
+        if (length < bytes_to_skip)
+        {
+            // something went wrong here
+            cerr << "RTP packet too short (" << length
+                << " bytes) to remove headers (needed "
+                << bytes_to_skip << ")" << endl;
+            throw std::runtime_error("Unexpected RTP packet length");
+        }
+
+        pkt.payload.erase(
+            pkt.payload.begin(),
+            pkt.payload.begin() + bytes_to_skip
+        );
+
+        return length - bytes_to_skip;
+    }
+};
+
+class RtpTarget : public UdpTarget {
+public:
+    RtpTarget(string host, int port, const map<string,string>& attr ) :
+        UdpTarget { host, port, attr } {}
+};
+
+template <class Iface> struct Rtp;
+template <> struct Rtp<Source> { typedef RtpSource type; };
+template <> struct Rtp<Target> { typedef RtpTarget type; };
+
+template <class Iface>
+Iface* CreateRtp(const string& host, int port, const map<string,string>& par) { return new typename Rtp<Iface>::type (host, port, par); }
+
 template<class Base>
 inline bool IsOutput() { return false; }
 
@@ -1141,6 +1210,20 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
         ptr.reset( CreateUdp<Base>(u.host(), iport, u.parameters()) );
         break;
 
+    case UriParser::RTP:
+        if (IsOutput<Base>())
+        {
+            cerr << "RTP not supported as an output\n";
+            throw invalid_argument("Invalid output protocol: RTP");
+        }
+        iport = atoi(u.port().c_str());
+        if ( iport < 1024 )
+        {
+            cerr << "Port value invalid: " << iport << " - must be >=1024\n";
+            throw invalid_argument("Invalid port number");
+        }
+        ptr.reset( CreateRtp<Base>(u.host(), iport, u.parameters()) );
+        break;
     }
 
     if (ptr.get())
