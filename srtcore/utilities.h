@@ -869,6 +869,12 @@ template<class T>
 struct PassFilter
 {
     T lower, median, upper;
+
+    bool encloses(const T& value)
+    {
+        // Throw away those that don't fit in the filter
+        return value > lower && value < upper;
+    }
 };
 
 // This utility is used in window.cpp where it is required to calculate
@@ -924,7 +930,7 @@ inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassF
     for (; p != end; ++p)
     {
         // Throw away those that don't fit in the filter
-        if (*p <= filter.lower || *p >= filter.upper)
+        if (!filter.encloses(*p))
             continue;
 
         sum += *p;
@@ -953,7 +959,7 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     for (; p != end; ++p, ++para)
     {
         // Throw away those that don't fit in the filter
-        if (*p < filter.lower || *p > filter.upper)
+        if (!filter.encloses(*p))
             continue;
 
         sum += *p;
