@@ -138,7 +138,7 @@ called for the sake of the **newly created socket** that is about to
 be reported as the accepted one from `srt_accept()`, **not the listener
 socket**.
 
-Now; a potential situation when these two things could be in collision, as
+That said, a potential situation when these two things could be in collision, as
 theoretically these mutexes are in two different objects and the accepted
 socket shares always the listener with the listening socket, then just as well
 if `srt_listen()` is called on an accepted socket (which will always fail and
