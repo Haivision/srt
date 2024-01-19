@@ -27,6 +27,9 @@ written by
 // You can use the instances of sockaddr_any in every place where sockaddr is
 // required.
 
+namespace srt
+{
+
 struct sockaddr_any
 {
     union
@@ -417,5 +420,7 @@ template <>
 inline sockaddr_any::TypeMap<AF_INET>::type& sockaddr_any::get<AF_INET>() { return sin; }
 template <>
 inline sockaddr_any::TypeMap<AF_INET6>::type& sockaddr_any::get<AF_INET6>() { return sin6; }
+
+} // namespace srt
 
 #endif

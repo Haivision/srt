@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -18,16 +19,18 @@
 
 #include "srt.h"
 
+#include <array>
 #include <thread>
 #include <fstream>
 #include <ctime>
+#include <random>
 #include <vector>
 
 //#pragma comment (lib, "ws2_32.lib")
 
 TEST(Transmission, FileUpload)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     // Generate the source file
     // We need a file that will contain more data
@@ -35,7 +38,7 @@ TEST(Transmission, FileUpload)
 
     SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
 
-    int tt = SRTT_FILE;
+    const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
 
@@ -45,23 +48,43 @@ TEST(Transmission, FileUpload)
     sa_lsn.sin_addr.s_addr = INADDR_ANY;
     sa_lsn.sin_port = htons(5555);
 
+    // Find unused a port not used by any other service.    
+    // Otherwise srt_connect may actually connect.
+    int bind_res = -1;
+    for (int port = 5000; port <= 5555; ++port)
+    {
+        sa_lsn.sin_port = htons(port);
+        bind_res = srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
+        if (bind_res == 0)
+        {
+            std::cout << "Running test on port " << port << "\n";
+            break;
+        }
+
+        ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
+    }
+
+    ASSERT_GE(bind_res, 0);
+
     srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
 
     int optval = 0;
     int optlen = sizeof optval;
     ASSERT_EQ(srt_getsockflag(sock_lsn, SRTO_SNDBUF, &optval, &optlen), 0);
-    size_t filesize = 7 * optval;
+    const size_t filesize = 7 * optval;
 
     {
         std::cout << "WILL CREATE source file with size=" << filesize << " (= 7 * " << optval << "[sndbuf])\n";
         std::ofstream outfile("file.source", std::ios::out | std::ios::binary);
-        ASSERT_EQ(!!outfile, true);
+        ASSERT_EQ(!!outfile, true) << srt_getlasterror_str();
 
-        srand(time(0));
+        std::random_device rd;
+        std::mt19937 mtrd(rd());
+        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
         for (size_t i = 0; i < filesize; ++i)
         {
-            char outbyte = rand() % 255;
+            char outbyte = dis(mtrd);
             outfile.write(&outbyte, 1);
         }
     }
@@ -96,6 +119,7 @@ TEST(Transmission, FileUpload)
             ASSERT_NE(n, SRT_ERROR);
             if (n == 0)
             {
+                std::cerr << "Received 0 bytes, breaking.\n";
                 break;
             }
 
@@ -110,7 +134,7 @@ TEST(Transmission, FileUpload)
 
     sockaddr_in sa = sockaddr_in();
     sa.sin_family = AF_INET;
-    sa.sin_port = htons(5555);
+    sa.sin_port = sa_lsn.sin_port;
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
@@ -126,8 +150,8 @@ TEST(Transmission, FileUpload)
         size_t shift = 0;
         while (n > 0)
         {
-            int st = srt_send(sock_clr, buf.data()+shift, n);
-            ASSERT_GT(st, 0);
+            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
+            ASSERT_GT(st, 0) << srt_getlasterror_str();
 
             n -= st;
             shift += st;
@@ -172,5 +196,4 @@ TEST(Transmission, FileUpload)
     remove("file.source");
     remove("file.target");
 
-    (void)srt_cleanup();
 }

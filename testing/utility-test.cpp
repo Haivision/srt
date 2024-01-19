@@ -18,6 +18,8 @@
 #include <crypto.h>
 #include <common.h>
 
+using namespace srt;
+
 void ShowDistance(int32_t s1, int32_t s2)
 {
     using namespace std;
