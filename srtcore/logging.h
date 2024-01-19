@@ -106,8 +106,6 @@ written by
 namespace srt_logging
 {
 
-class LogDispatcher;
-
 struct LogConfig
 {
     typedef std::bitset<SRT_LOGFA_LASTNONE+1> fa_bitset_t;
@@ -118,7 +116,7 @@ struct LogConfig
     void* loghandler_opaque;
     srt::sync::Mutex mutex;
     int flags;
-    std::vector<LogDispatcher*> loggers;
+    std::vector<struct LogDispatcher*> loggers;
 
     LogConfig(const fa_bitset_t& efa,
             LogLevel::type l = LogLevel::warning,
@@ -142,9 +140,9 @@ struct LogConfig
     SRT_ATTR_RELEASE(mutex)
     void unlock() { mutex.unlock(); }
 
-    void advise(LogDispatcher*);
-    void prevent(LogDispatcher*);
-    void announce();
+    void subscribe(LogDispatcher*);
+    void unsubscribe(LogDispatcher*);
+    void updateLoggersState();
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -195,13 +193,13 @@ public:
             prefix[MAX_PREFIX_SIZE] = '\0';
 #endif
         }
-        config.advise(this);
+        config.subscribe(this);
         Update();
     }
 
     ~LogDispatcher()
     {
-        src_config->prevent(this);
+        src_config->unsubscribe(this);
     }
 
     void Update();

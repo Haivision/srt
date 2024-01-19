@@ -157,6 +157,11 @@ void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_p
       r_bytesWindow[i] = max_payload_size; //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
+int srt::CPktTimeWindowTools::ceilPerMega(double value, double count)
+{
+    static const double MEGA = 1000.0 * 1000.0;
+    return ::ceil(MEGA / (value / count));
+}
 
 int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
 {
@@ -168,34 +173,31 @@ int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica,
     w_bytesps = 0;
     unsigned long bytes = 0;
     // // (explicit specialization due to problems on MSVC 2013 and 2015)
-    AccumulatePassFilterParallel<unsigned, unsigned long>(window, window + asize, filter, abytes,
+    AccumulatePassFilterParallel<unsigned, unsigned long>(window, asize, filter, abytes,
             (sum), (count), (bytes));
 
     // claculate speed, or return 0 if not enough valid value
-    if (count > (asize >> 1))
-    {
-        bytes += (hdr_size * count); //Add protocol headers to bytes received
-        w_bytesps = (int)ceil(1000000.0 / (double(sum) / double(bytes)));
-        return (int)ceil(1000000.0 / (sum / count));
-    }
-    else
+    if (count <= (asize/2))
     {
         w_bytesps = 0;
         return 0;
     }
+
+    bytes += (hdr_size * count); //Add protocol headers to bytes received
+    w_bytesps = ceilPerMega(sum, bytes);
+    return ceilPerMega(sum, count);
 }
 
 int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, psize);
 
-    int count;
-    int sum;
-    Tie2(sum, count) = AccumulatePassFilter(window, window + psize, filter);
+    int sum, count;
+    Tie2(sum, count) = AccumulatePassFilter(window, psize, filter);
+    sum   += filter.median;
     count += 1;
-    sum += filter.median;
 
-    return (int)ceil(1000000.0 / (double(sum) / double(count)));
+    return ceilPerMega(sum, count);
 }
 
 

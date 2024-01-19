@@ -525,8 +525,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 }
 #endif
 
-// Logging system implementation
-
 
 } // (end namespace srt_logging)
 

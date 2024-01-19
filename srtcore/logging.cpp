@@ -23,7 +23,7 @@ using namespace std;
 namespace srt_logging
 {
 
-// Note: advise() and prevent() functions are being called
+// Note: subscribe() and unsubscribe() functions are being called
 // in the global constructor and destructor only, as the
 // Logger objects (and inside them also their LogDispatcher)
 // are being created. It's not predicted that LogDispatcher
@@ -31,7 +31,7 @@ namespace srt_logging
 // global objects. Therefore the construction and destruction
 // of them happens always in the main thread.
 
-void LogConfig::advise(LogDispatcher* lg)
+void LogConfig::subscribe(LogDispatcher* lg)
 {
     vector<LogDispatcher*>::iterator p = std::find(loggers.begin(), loggers.end(), lg);
     if (p != loggers.end())
@@ -40,7 +40,7 @@ void LogConfig::advise(LogDispatcher* lg)
     loggers.push_back(lg);
 }
 
-void LogConfig::prevent(LogDispatcher* lg)
+void LogConfig::unsubscribe(LogDispatcher* lg)
 {
     vector<LogDispatcher*>::iterator p = std::find(loggers.begin(), loggers.end(), lg);
     if (p != loggers.end())
@@ -52,7 +52,7 @@ void LogConfig::prevent(LogDispatcher* lg)
 // This function doesn't have any protection on itself,
 // however the API functions from which it is called, call
 // it already under a mutex protection.
-void LogConfig::announce()
+void LogConfig::updateLoggersState()
 {
     for (vector<LogDispatcher*>::iterator p = loggers.begin();
             p != loggers.end(); ++p)
