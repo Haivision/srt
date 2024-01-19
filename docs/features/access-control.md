@@ -2,11 +2,11 @@
 
 ## Motivation
 
-One type of information that can be interchanged when a connection is being
-established in SRT is "Stream ID", which can be used in a caller-listener
-connection layout. This is a string of maximum 512 characters set on the caller
+One type of information that an SRT caller can share with an SRT listener during a connection negotiation
+is the "Stream ID". This is a string of maximum 512 characters set on the caller
 side. It can be retrieved at the listener side on the newly accepted socket
 through a socket option (see `SRTO_STREAMID` in [SRT API Socket Options](../API/API-socket-options.md)).
+**Only caller-listener connections are supported.**
 
 As of SRT version 1.3.3 a callback can be registered on the listener socket for
 an application to make decisions on incoming caller connections. This callback,
@@ -17,22 +17,26 @@ the connection.
 
 ## Purpose
 
-The Stream ID value can be used as free-form, but there is a recommended
-convention so that all SRT users speak the same language. The intent of the
-convention is to:
+There are two target use-cases of the Stream ID:
+- identify the file name of a stream that is about to be sent (simple use case);
+- identify a user, the purpose of the connection (receive or send), the resources, and more (advanced use case).
+
+The Stream ID can be provided as free-form value, especially when targeting the simple use case.
+However, there is a recommended convention so that all SRT users speak the same language.
+The intent of the convention is to:
 
 - promote readability and consistency among free-form names
 - interpret some typical data in the key-value style
 
 In short,
 
-1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and state what it wants.
+1. `SRTO_STREAMID` is designed for a caller (client) to be able to identify itself, and to state its intent (send/receive, live/file, etc.).
 2. `srt_listen_callback(...)` function is used by a listener (server) to check what a caller (client) has provided in `SRTO_STREAMID` **before** the connection is established.
 For example, the listener (server) can check if it knows the user and set the corresponding passphrase for a connection to be accepted.
 3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
 If a correct passphrase is not provided by the client (caller), the request from caller will be rejected by SRT library (not application or programmer).
 
-**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons. 
+**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons.
 The only way to make the app check the passphrase is to set the passphrase on the socket by using the `SRTO_PASSPHRASE` option. This lets SRT to reject connection on mismatch.
 
 ## Character Encoding
@@ -41,23 +45,23 @@ The Stream ID uses UTF-8 encoding.
 
 ## General Syntax
 
-This recommended syntax starts with the characters known as an executable
-specification in POSIX: `#!`.
+The recommended syntax starts with the characters known as an executable specification in POSIX: `#!`.
 
-The next two characters are:
+The next character defines the format used for the following key-value pair syntax.
+At the moment, there is only one supported syntax identified by `:` and described below.
 
-- `:` - this marks the YAML format, the only one currently used
-- The content format, which is either:
-  - `:` - the comma-separated keys with no nesting
-  - `{` - like above, but nesting is allowed and must end with `}`
+Everything that comes after a syntax identifier is further referenced as the content of the Stream ID.
 
-(Nesting means that you can have multiple level brace-enclosed parts inside.)
+The content starts with a `:` or `{` character identifying its format:
 
-The form of the key-value pair is:
+- `:` : comma-separated key-value pairs with no nesting,
+- `{` : a nested block with one or several key-value pairs that must end with a `}` character. Nesting means that multiple level brace-enclosed parts are allowed.
 
-```js
-key1=value1,key2=value2...
-```
+The form of the key-value pair is
+
+~~~
+key1=value1,key2=value2,...
+~~~
 
 ## Standard Keys
 
@@ -254,11 +258,11 @@ This may apply to read-only or write-only resources, as well for when interactiv
 
 #### SRT_REJX_UNACCEPTABLE
 
-Applies when the parameters specified in SocketID cannot be satisfied for the
+Applies when the parameters specified in StreamID cannot be satisfied for the
 requested resource, or when `m=publish` but the data format is not acceptable.
-This is a general error reporting an unsupported format for data that appears to 
-be wrong when sending, or a restriction on the data format (as specified in the 
-details of the resource specification) such that it cannot be provided 
+This is a general error reporting an unsupported format for data that appears to
+be wrong when sending, or a restriction on the data format (as specified in the
+details of the resource specification) such that it cannot be provided
 when receiving.
 
 #### SRT_REJX_CONFLICT
@@ -284,8 +288,8 @@ is not obliged to support all of the standard types.
 #### SRT_REJX_LOCKED
 
 The resource being accessed is locked against any access. This is similar to
-`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading 
-and writing. This is for when the resource should be shown as existing and 
+`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading
+and writing. This is for when the resource should be shown as existing and
 available to the client, but access is temporarily blocked.
 
 #### SRT_REJX_FAILED_DEPEND

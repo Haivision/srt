@@ -34,9 +34,10 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
+
+namespace srt {
 
 SrtCongestionControlBase::SrtCongestionControlBase(CUDT* parent)
 {
@@ -62,6 +63,7 @@ class LiveCC: public SrtCongestionControlBase
     int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
     srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
+    size_t   m_zHeaderSize;
 
     // NAKREPORT stuff.
     int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
@@ -76,12 +78,14 @@ public:
     {
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
-        if ( m_zMaxPayloadSize == 0 )
+        if (m_zMaxPayloadSize == 0)
             m_zMaxPayloadSize = parent->maxPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 
+        m_zHeaderSize = parent->m_config.iMSS - parent->maxPayloadSize();
+
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
-        m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator
+        m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator (send periodic NAK every RTT/2)
 
         HLOGC(cclog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_zSndAvgPayloadSize);
 
@@ -92,11 +96,11 @@ public:
         // from receiving thread.
         parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
 
-        /*
-         * Readjust the max SndPeriod onACK (and onTimeout)
-         */
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(updatePktSndPeriod_onTimer));
-        parent->ConnectSignal(TEV_ACK, SSLOT(updatePktSndPeriod_onAck));
+        //
+        // Adjust the max SndPeriod onACK and onTimeout.
+        //
+        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(onRTO));
+        parent->ConnectSignal(TEV_ACK, SSLOT(onAck));
     }
 
     bool checkTransArgs(SrtCongestion::TransAPI api, SrtCongestion::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
@@ -153,21 +157,26 @@ private:
         HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
     }
 
-    void updatePktSndPeriod_onTimer(ETransmissionEvent , EventVariant var)
+    /// @brief On RTO event update an inter-packet send interval.
+    /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
+    void onRTO(ETransmissionEvent , EventVariant var)
     {
-        if ( var.get<EventVariant::STAGE>() != TEV_CHT_INIT )
+        if (var.get<EventVariant::STAGE>() != TEV_CHT_INIT )
             updatePktSndPeriod();
     }
 
-    void updatePktSndPeriod_onAck(ETransmissionEvent , EventVariant )
+    /// @brief Handle an incoming ACK event.
+    /// Mainly updates a send interval between packets relying on the maximum BW limit.
+    void onAck(ETransmissionEvent, EventVariant )
     {
         updatePktSndPeriod();
     }
 
+    /// @brief Updates a send interval between packets relying on the maximum BW limit.
     void updatePktSndPeriod()
     {
         // packet = payload + header
-        const double pktsize = (double) m_zSndAvgPayloadSize.load() + CPacket::SRT_DATA_HDR_SIZE;
+        const double pktsize = (double) m_zSndAvgPayloadSize.load() + m_zHeaderSize;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
                 << " by avg pktsize=" << m_zSndAvgPayloadSize
@@ -224,7 +233,7 @@ private:
          * For realtime Transport Stream content, pkts/sec is not a good indication of time to transmit
          * since packets are not filled to m_iMSS and packet size average is lower than (7*188)
          * for low bit rates.
-         * If NAK report is lost, another cycle (RTT) is requred which is bad for low latency so we
+         * If NAK report is lost, another cycle (RTT) is required which is bad for low latency so we
          * accelerate the NAK Reports frequency, at the cost of possible duplicate resend.
          * Finally, the UDT4 native minimum NAK interval (m_ullMinNakInt_tk) is 300 ms which is too high
          * (~10 i30 video frames) to maintain low latency.
@@ -289,9 +298,9 @@ public:
         m_dCWndSize = 16;
         m_dPktSndPeriod = 1;
 
-        parent->ConnectSignal(TEV_ACK,        SSLOT(updateSndPeriod));
-        parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(slowdownSndPeriod));
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(speedupToWindowSize));
+        parent->ConnectSignal(TEV_ACK,        SSLOT(onACK));
+        parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(onLossReport));
+        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(onRTO));
 
         HLOGC(cclog.Debug, log << "Creating FileCC");
     }
@@ -305,10 +314,11 @@ public:
         return true;
     }
 
+    /// Tells if an early ACK is needed (before the next Full ACK happening every 10ms).
+    /// In FileCC, treat non-full-payload as an end-of-message (stream)
+    /// and request ACK to be sent immediately.
     bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
     {
-        // For FileCC, treat non-full-buffer situation as an end-of-message situation;
-        // request ACK to be sent immediately.
         if (pkt.getLength() < m_parent->maxPayloadSize())
         {
             // This is not a regular fixed size packet...
@@ -329,9 +339,10 @@ public:
     }
 
 private:
-
-    // SLOTS
-    void updateSndPeriod(ETransmissionEvent, EventVariant arg)
+    /// Handle icoming ACK event.
+    /// In slow start stage increase CWND. Leave slow start once maximum CWND is reached.
+    /// In congestion avoidance stage adjust inter packet send interval value to achieve maximum rate.
+    void onACK(ETransmissionEvent, EventVariant arg)
     {
         const int ack = arg.get<EventVariant::ACK>();
 
@@ -392,7 +403,7 @@ private:
             else
             {
                 double inc = 0;
-                const int loss_bw = 2 * (1000000 / m_dLastDecPeriod); // 2 times last loss point
+                const int loss_bw = static_cast<int>(2 * (1000000 / m_dLastDecPeriod)); // 2 times last loss point
                 const int bw_pktps = min(loss_bw, m_parent->bandwidth());
 
                 int64_t B = (int64_t)(bw_pktps - 1000000.0 / m_dPktSndPeriod);
@@ -455,9 +466,10 @@ private:
 
     }
 
-    // When a lossreport has been received, it might be due to having
-    // reached the available bandwidth limit. Slowdown to avoid further losses.
-    void slowdownSndPeriod(ETransmissionEvent, EventVariant arg)
+    /// When a lossreport has been received, it might be due to having
+    /// reached the available bandwidth limit. Slowdown to avoid further losses.
+    /// Leave the slow start stage if it was active.
+    void onLossReport(ETransmissionEvent, EventVariant arg)
     {
         const int32_t* losslist = arg.get_ptr();
         size_t losslist_size = arg.get_len();
@@ -492,7 +504,7 @@ private:
         m_bLoss = true;
 
         // TODO: const int pktsInFlight = CSeqNo::seqoff(m_iLastAck, m_parent->sndSeqNo());
-        const int pktsInFlight = m_parent->SRTT() / m_dPktSndPeriod;
+        const int pktsInFlight = static_cast<int>(m_parent->SRTT() / m_dPktSndPeriod);
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
@@ -526,8 +538,7 @@ private:
 
             m_iLastDecSeq = m_parent->sndSeqNo();
 
-            // remove global synchronization using randomization.
-            m_iDecRandom = genRandomInt(1, m_iAvgNAKNum);
+            m_iDecRandom = m_iAvgNAKNum > 1 ? genRandomInt(1, m_iAvgNAKNum) : 1;
             SRT_ASSERT(m_iDecRandom >= 1);
             HLOGC(cclog.Debug, log << "FileCC: LOSS:NEW lseqno=" << lossbegin
                 << ", lastsentseqno=" << m_iLastDecSeq
@@ -559,7 +570,9 @@ private:
         }
     }
 
-    void speedupToWindowSize(ETransmissionEvent, EventVariant arg)
+    /// @brief  On retransmission timeout leave slow start stage if it was active.
+    /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
+    void onRTO(ETransmissionEvent, EventVariant arg)
     {
         ECheckTimerStage stg = arg.get<EventVariant::STAGE>();
 
@@ -646,3 +659,5 @@ SrtCongestion::~SrtCongestion()
 {
     dispose();
 }
+
+} // namespace srt

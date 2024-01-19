@@ -1,9 +1,10 @@
 #include <iostream>
 #include "gtest/gtest.h"
 #include "common.h"
+#include "list.h"
 
 using namespace std;
-#include "list.h"
+using namespace srt;
 
 class CSndLossListTest
     : public ::testing::Test
@@ -22,12 +23,12 @@ protected:
     void CheckEmptyArray()
     {
         EXPECT_EQ(m_lossList->getLossLength(), 0);
-        EXPECT_EQ(m_lossList->popLostSeq(), -1);
+        EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     }
 
     void CleanUpList()
     {
-        while (m_lossList->popLostSeq() != -1);
+        while (m_lossList->popLostSeq() != SRT_SEQNO_NONE);
     }
 
     CSndLossList* m_lossList;

@@ -15,14 +15,17 @@
 #include <map>
 #include <stdexcept>
 #include <deque>
+#include <atomic>
 
+#include "apputil.hpp"
+#include "statswriter.hpp"
 #include "testmediabase.hpp"
 #include <udt.h> // Needs access to CUDTException
 #include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
-extern volatile bool transmit_int_state;
+extern std::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -58,8 +61,8 @@ protected:
         int port;
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
-        sockaddr_any source;
-        sockaddr_any target;
+        srt::sockaddr_any source;
+        srt::sockaddr_any target;
         int token = -1;
 
         ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
@@ -67,7 +70,7 @@ protected:
 
     struct Connection: ConnectionBase
     {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         SRT_SOCKOPT_CONFIG* options = nullptr;
 #endif
         int error = SRT_SUCCESS;
@@ -76,7 +79,7 @@ protected:
         Connection(string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             if (old.options)
             {
                 options = old.options;
@@ -86,7 +89,7 @@ protected:
         }
         ~Connection()
         {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             srt_delete_config(options);
 #endif
         }
@@ -104,7 +107,7 @@ protected:
     vector<Connection> m_group_nodes;
     string m_group_type;
     string m_group_config;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;
@@ -154,7 +157,7 @@ protected:
     virtual int ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(string host, int port);
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     void OpenGroupClient();
 #endif
     void PrepareClient();
@@ -296,6 +299,55 @@ public:
             m_sock = SRT_INVALID_SOCK;
         }
     }
+};
+
+class UdpCommon
+{
+protected:
+    int m_sock = -1;
+    srt::sockaddr_any sadr;
+    std::string adapter;
+    std::map<std::string, std::string> m_options;
+    void Setup(std::string host, int port, std::map<std::string,std::string> attr);
+    void Error(int err, std::string src);
+
+    ~UdpCommon();
+};
+
+
+class UdpSource: public virtual Source, public virtual UdpCommon
+{
+    bool eof = true;
+public:
+
+    UdpSource(string host, int port, const map<string,string>& attr);
+
+    MediaPacket Read(size_t chunk) override;
+
+    bool IsOpen() override { return m_sock != -1; }
+    bool End() override { return eof; }
+};
+
+class UdpTarget: public virtual Target, public virtual UdpCommon
+{
+public:
+    UdpTarget(string host, int port, const map<string,string>& attr);
+
+    void Write(const MediaPacket& data) override;
+    bool IsOpen() override { return m_sock != -1; }
+    bool Broken() override { return false; }
+};
+
+class UdpRelay: public Relay, public UdpSource, public UdpTarget
+{
+public:
+    UdpRelay(string host, int port, const map<string,string>& attr):
+        UdpSource(host, port, attr),
+        UdpTarget(host, port, attr)
+    {
+    }
+
+    bool IsOpen() override { return m_sock != -1; }
 };
 
 

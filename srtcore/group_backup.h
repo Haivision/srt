@@ -79,6 +79,14 @@ namespace groups
             : m_stateCounter() // default init with zeros
             , m_activeMaxWeight()
             , m_standbyMaxWeight()
+            // XXX Setting AF_INET6 is a temporary solution for using rate estimator
+            // that counts a rate based on the current link's IP version. The results
+            // for links using IPv4 could be slightly falsified due to that (16 bytes
+            // more per a packet), but this makes the estimation results the same for
+            // the same data sent over the group, regardless of the IP version used
+            // for the currently active link (which in reality results in different
+            // load for the same stream, if links use different IP version).
+            , m_rateEstimate(AF_INET6)
         {
         }
 
@@ -110,11 +118,16 @@ namespace groups
 
         std::string printMembers() const;
 
+        void setRateEstimate(const CRateEstimator& rate) { m_rateEstimate = rate; }
+
+        const CRateEstimator& getRateEstimate() const { return m_rateEstimate; }
+
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?
         unsigned m_stateCounter[BKUPST_E_SIZE];
         uint16_t m_activeMaxWeight;
         uint16_t m_standbyMaxWeight;
+        CRateEstimator m_rateEstimate; // The rate estimator state of the active link to copy to a backup on activation.
     };
 
 } // namespace groups

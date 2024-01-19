@@ -47,7 +47,7 @@ written by
 
 using namespace std;
 
-CInfoBlock& CInfoBlock::copyFrom(const CInfoBlock& obj)
+srt::CInfoBlock& srt::CInfoBlock::copyFrom(const CInfoBlock& obj)
 {
    std::copy(obj.m_piIP, obj.m_piIP + 4, m_piIP);
    m_iIPversion       = obj.m_iIPversion;
@@ -62,7 +62,7 @@ CInfoBlock& CInfoBlock::copyFrom(const CInfoBlock& obj)
    return *this;
 }
 
-bool CInfoBlock::operator==(const CInfoBlock& obj)
+bool srt::CInfoBlock::operator==(const CInfoBlock& obj) const
 {
    if (m_iIPversion != obj.m_iIPversion)
       return false;
@@ -79,7 +79,7 @@ bool CInfoBlock::operator==(const CInfoBlock& obj)
    return true;
 }
 
-CInfoBlock* CInfoBlock::clone()
+srt::CInfoBlock* srt::CInfoBlock::clone()
 {
    CInfoBlock* obj = new CInfoBlock;
 
@@ -96,7 +96,7 @@ CInfoBlock* CInfoBlock::clone()
    return obj;
 }
 
-int CInfoBlock::getKey()
+int srt::CInfoBlock::getKey()
 {
    if (m_iIPversion == AF_INET)
       return m_piIP[0];
@@ -104,7 +104,7 @@ int CInfoBlock::getKey()
    return m_piIP[0] + m_piIP[1] + m_piIP[2] + m_piIP[3];
 }
 
-void CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
+void srt::CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
 {
    if (addr.family() == AF_INET)
    {

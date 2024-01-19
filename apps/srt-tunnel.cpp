@@ -59,6 +59,7 @@ testmedia.cpp
 */
 
 using namespace std;
+using namespace srt;
 
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
 namespace srt_logging
@@ -94,7 +95,7 @@ protected:
     bool m_eof = false;
     bool m_broken = false;
 
-    mutex access; // For closing
+    std::mutex access; // For closing
 
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_any& sa, SocketType sock, size_t chunk)
@@ -223,25 +224,25 @@ public:
     Engine(Tunnel* p, Medium* m1, Medium* m2, const std::string& nid)
         :
 #ifdef HAVE_FULL_CXX11
-		media {m1, m2},
+        media {m1, m2},
 #endif
-		parent_tunnel(p), nameid(nid)
+        parent_tunnel(p), nameid(nid)
     {
 #ifndef HAVE_FULL_CXX11
-		// MSVC is not exactly C++11 compliant and complains around
-		// initialization of an array.
-		// Leaving this method of initialization for clarity and
-		// possibly more preferred performance.
-		media[0] = m1;
-		media[1] = m2;
+        // MSVC is not exactly C++11 compliant and complains around
+        // initialization of an array.
+        // Leaving this method of initialization for clarity and
+        // possibly more preferred performance.
+        media[0] = m1;
+        media[1] = m2;
 #endif
     }
 
     void Start()
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
-        std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        ThreadName tn(thrn.c_str());
+        const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
+        srt::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }
@@ -286,8 +287,8 @@ class Tunnel
     Tunnelbox* parent_box;
     std::unique_ptr<Medium> med_acp, med_clr;
     Engine acp_to_clr, clr_to_acp;
-    volatile bool running = true;
-    mutex access;
+    srt::sync::atomic<bool> running{true};
+    std::mutex access;
 
 public:
 
@@ -298,7 +299,7 @@ public:
 
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         parent_box(m),
-        med_acp(move(acp)), med_clr(move(clr)),
+        med_acp(std::move(acp)), med_clr(std::move(clr)),
         acp_to_clr(this, med_acp.get(), med_clr.get(), med_acp->id() + ">" + med_clr->id()),
         clr_to_acp(this, med_clr.get(), med_acp.get(), med_clr->id() + ">" + med_acp->id())
     {
@@ -324,7 +325,7 @@ public:
 
         /*
         {
-            lock_guard<mutex> lk(access);
+            lock_guard<std::mutex> lk(access);
             if (acp_to_clr.stat() == -1 && clr_to_acp.stat() == -1)
             {
                 Verb() << "Tunnel: Both engine decommissioned, will stop the tunnel.";
@@ -438,7 +439,7 @@ public:
     void CloseSrt()
     {
         Verb() << "Closing SRT socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == SRT_ERROR)
             return;
         srt_close(m_socket);
@@ -528,7 +529,7 @@ public:
     void CloseTcp()
     {
         Verb() << "Closing TCP socket for " << uri();
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         if (m_socket == -1)
             return;
         tcp_close(m_socket);
@@ -648,7 +649,7 @@ void TcpMedium::CreateListener()
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    m_socket = socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 
     int stat = ::bind(m_socket, sa.get(), sa.size());
@@ -693,7 +694,7 @@ unique_ptr<Medium> SrtMedium::Accept()
 unique_ptr<Medium> TcpMedium::Accept()
 {
     sockaddr_any sa;
-    int s = ::accept(m_socket, (sa.get()), (&sa.syslen()));
+    int s = (int)::accept(m_socket, (sa.get()), (&sa.syslen()));
     if (s == -1)
     {
         Error(errno, "accept");
@@ -725,7 +726,7 @@ void SrtMedium::CreateCaller()
 
 void TcpMedium::CreateCaller()
 {
-    m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 }
 
@@ -849,7 +850,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
     size_t pred_size = shift + m_chunk;
 
     w_output.resize(pred_size);
-    int st = ReadInternal((w_output.data() + shift), m_chunk);
+    int st = ReadInternal((w_output.data() + shift), (int)m_chunk);
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -883,7 +884,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
 
 void SrtMedium::Write(bytevector& w_buffer)
 {
-    int st = srt_send(m_socket, w_buffer.data(), w_buffer.size());
+    int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
     if (st == SRT_ERROR)
     {
         Error(UDT::getlasterror(), "srt_send");
@@ -906,7 +907,7 @@ void SrtMedium::Write(bytevector& w_buffer)
 
 void TcpMedium::Write(bytevector& w_buffer)
 {
-    int st = ::send(m_socket, w_buffer.data(), w_buffer.size(), DEF_SEND_FLAG);
+    int st = ::send(m_socket, w_buffer.data(), (int)w_buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -954,23 +955,23 @@ std::unique_ptr<Medium> Medium::Create(const std::string& url, size_t chunk, Med
 struct Tunnelbox
 {
     list<unique_ptr<Tunnel>> tunnels;
-    mutex access;
+    std::mutex access;
     condition_variable decom_ready;
     bool main_running = true;
     thread thr;
 
     void signal_decommission()
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         decom_ready.notify_one();
     }
 
     void install(std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr)
     {
-        lock_guard<mutex> lk(access);
+        lock_guard<std::mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
-        tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
+        tunnels.emplace_back(new Tunnel(this, std::move(acp), std::move(clr)));
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
@@ -992,7 +993,7 @@ private:
 
     void CleanupWorker()
     {
-        unique_lock<mutex> lk(access);
+        unique_lock<std::mutex> lk(access);
 
         while (main_running)
         {
@@ -1027,7 +1028,7 @@ void Tunnel::Stop()
     if (!running)
         return; // already stopped
 
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
 
     // Ok, you are the first to make the tunnel
     // not running and inform the tunnelbox.
@@ -1037,7 +1038,7 @@ void Tunnel::Stop()
 
 bool Tunnel::decommission_if_dead(bool forced)
 {
-    lock_guard<mutex> lk(access);
+    lock_guard<std::mutex> lk(access);
     if (running && !forced)
         return false; // working, not to be decommissioned
 
@@ -1190,7 +1191,7 @@ int main( int argc, char** argv )
             Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
-            g_tunnels.install(move(accepted), move(caller));
+            g_tunnels.install(std::move(accepted), std::move(caller));
         }
         catch (...)
         {

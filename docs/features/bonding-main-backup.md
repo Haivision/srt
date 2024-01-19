@@ -1,9 +1,9 @@
 # SRT Connection Bonding: Main/Backup
 
-I. [Introduction](#i-introduction)  
-II. [Mode Overview](#ii-mode-overview)  
-III. [Sender Logic](#iii-sender-logic)  
-IV. [Sending Algorithm](#iV-sending-algorithm)  
+I. [Introduction](#i-introduction)
+II. [Mode Overview](#ii-mode-overview)
+III. [Sender Logic](#iii-sender-logic)
+IV. [Sending Algorithm](#iV-sending-algorithm)
 
 ## I. Introduction
 
@@ -116,9 +116,9 @@ An idle link to be activated is taken from the top of the list of idle links, so
 
 A member remains in the  **SRT_GST_RUNNING**: **Fresh-Activated** state while `CurrentTime - tsFreshActivation > ProbingPeriod`, i.e. for the whole probing period:
 
- `ProbingPeriod = ILST + 50ms` 
+ `ProbingPeriod = ILST + 50ms`
 
-Here **Initial Link Stability Timeout** `ILST = max(LSTmin; SRTO_PEERLATENCY)`, 
+Here **Initial Link Stability Timeout** `ILST = max(LSTmin; SRTO_PEERLATENCY)`,
 
 - `LSTmin = 60ms` ;
 - `SRTO_PEERLATENCY` is the corresponding socket option value on a connected socket.
@@ -161,7 +161,7 @@ This error indicates that there was not enough free space in the sender's buffer
 
 #### Unstable due to sender-side packet drops
 
-If a member has dropped a packet (see SRT RFC [Too-Late Packet Drop](https://tools.ietf.org/html/draft-sharabayko-srt-00#section-4.6) section) **since the previous submission of a data packet** for sending (previous call to `srt_sendmsg2(..)`), it transitions to the **q3** (**SRT_GST_RUNNING**: **Unstable**) state.
+If a member has dropped a packet (see [Too-Late Packet Drop](https://tools.ietf.org/html/draft-sharabayko-srt-01#section-4.6) section of the Internet Draft) **since the previous submission of a data packet** for sending (previous call to `srt_sendmsg2(..)`), it transitions to the **q3** (**SRT_GST_RUNNING**: **Unstable**) state.
 
 #### Unstable due to receiver-side packet drops (TBD)
 

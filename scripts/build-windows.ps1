@@ -19,13 +19,14 @@ param (
     [Parameter()][String]$BUILD_APPS = "ON",
     [Parameter()][String]$UNIT_TESTS = "OFF",
     [Parameter()][String]$BUILD_DIR = "_build",
-    [Parameter()][String]$VCPKG_OPENSSL = "OFF"
+    [Parameter()][String]$VCPKG_OPENSSL = "OFF",
+    [Parameter()][String]$BONDING = "OFF"
 )
 
 # cmake can be optionally installed (useful when running interactively on a developer station).
 # The URL for automatic download is defined later in the script, but it should be possible to just vary the 
 # specific version set below and the URL should be stable enough to still work - you have been warned.
-$cmakeVersion = "3.17.3"
+$cmakeVersion = "3.23.2"
 
 # make all errors trigger a script stop, rather than just carry on
 $ErrorActionPreference = "Stop"
@@ -100,7 +101,7 @@ if ( $null -eq (Get-Command "cmake.exe" -ErrorAction SilentlyContinue) ) {
 
 # get pthreads from nuget if CXX11 is not enabled
 if ( $CXX11 -eq "OFF" ) {
-    # get pthreads (this is legacy, and is only availble in nuget for VS2015 and VS2013)
+    # get pthreads (this is legacy, and is only available in nuget for VS2015 and VS2013)
     if ( $VS_VERSION -gt 2015 ) { 
         Write-Output "Pthreads is not recommended for use beyond VS2015 and is not supported by this build script - aborting build"
         throw
@@ -136,6 +137,7 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_STDCXX_SYNC=$CXX11 " + 
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
+                "-DENABLE_BONDING=$BONDING " +
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package

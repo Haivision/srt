@@ -17,10 +17,9 @@
 #include <utility>
 
 namespace srt {
-    class CUDT;
-}
-class SrtCongestionControlBase;
 
+class CUDT;
+class SrtCongestionControlBase;
 typedef SrtCongestionControlBase* srtcc_create_t(srt::CUDT* parent);
 
 class SrtCongestion
@@ -53,8 +52,8 @@ public:
 
     struct IsName
     {
-        std::string n;
-        IsName(std::string nn): n(nn) {}
+        const std::string n;
+        IsName(const std::string& nn): n(nn) {}
         bool operator()(NamePtr np) { return n == np.first; }
     };
 
@@ -131,9 +130,7 @@ public:
     };
 };
 
-namespace srt {
-    class CPacket;
-}
+class CPacket;
 
 class SrtCongestionControlBase
 {
@@ -224,6 +221,6 @@ public:
 };
 
 
-
+} // namespace srt
 
 #endif

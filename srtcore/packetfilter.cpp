@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -43,7 +43,7 @@ bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::F
     return true;
 }
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config)
 {
     return ParseFilterConfig(s, (w_config), NULL);
 }
@@ -130,7 +130,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_iFlag = CUnit::GOOD;
+        unit->m_bTaken = true;
         HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         w_incoming.push_back(unit);
     }
@@ -138,8 +138,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
     {
         // Packet not to be passthru, update stats
         ScopedLock lg(m_parent->m_StatsLock);
-        ++m_parent->m_stats.rcvFilterExtra;
-        ++m_parent->m_stats.rcvFilterExtraTotal;
+        m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
     }
 
     // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
@@ -152,8 +151,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
         if (dist > 0)
         {
             ScopedLock lg(m_parent->m_StatsLock);
-            m_parent->m_stats.rcvFilterLoss += dist;
-            m_parent->m_stats.rcvFilterLossTotal += dist;
+            m_parent->m_stats.rcvr.lossFilter.count(dist);
         }
         else
         {
@@ -171,8 +169,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
         InsertRebuilt(w_incoming, m_unitq);
 
         ScopedLock lg(m_parent->m_StatsLock);
-        m_parent->m_stats.rcvFilterSupply += nsupply;
-        m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
+        m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
 
     // Now that all units have been filled as they should be,
@@ -181,11 +178,11 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
     // Wanted units will be set GOOD flag, unwanted will remain
     // with FREE and therefore will be returned at the next
     // call to getNextAvailUnit().
-    unit->m_iFlag = CUnit::FREE;
+    unit->m_bTaken = false;
     for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
     {
         CUnit* u = *i;
-        u->m_iFlag = CUnit::FREE;
+        u->m_bTaken = false;
     }
 
     // Packets must be sorted by sequence number, ascending, in order
@@ -254,9 +251,9 @@ void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
             break;
         }
 
-        // LOCK the unit as GOOD because otherwise the next
+        // LOCK the unit as taken because otherwise the next
         // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_iFlag = CUnit::GOOD;
+        u->m_bTaken = true;
         // After returning from this function, all units will be
         // set back to FREE so that the buffer can decide whether
         // it wants them or not.
