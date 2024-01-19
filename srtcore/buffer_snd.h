@@ -149,9 +149,9 @@ public:
     /// CUDT::m_iSndLastDataAck field that should represent the oldest packet
     /// still in the buffer.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
-    /// @param [in,out] packet the packet to read.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [out] msglen length of the message
+    /// @param [in,out] w_packet storage for the packet, preinitialized with sequence number
+    /// @param [out] w_origintime origin time stamp of the message
+    /// @param [out] w_drop the drop information in case when dropping is to be done instead
     /// @retval >0 Length of the data read.
     /// @retval READ_NONE No data available or @a offset points out of the buffer occupied space.
     /// @retval READ_DROP The call requested data drop due to TTL exceeded, to be handled first.
