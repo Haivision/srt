@@ -627,6 +627,10 @@ endif()
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
+if (ENABLE_CXX11)
+	add_definitions(-DENABLE_CXX11=1)
+endif()
+
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
 endif()
