@@ -148,8 +148,7 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
-    // TODO: Use m_RcvBufferLock here (CUDT::isRcvReadReady())?
-    if (m_UDT.m_bConnected && m_UDT.m_pRcvBuffer->isRcvDataReady())
+    if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
         return true;
 
     if (m_UDT.m_bListening)
@@ -2611,20 +2610,23 @@ void srt::CUDTUnited::checkBrokenSockets()
             if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
                 continue;
         }
-        else if ((s->core().m_pRcvBuffer != NULL)
-        // FIXED: calling isRcvDataAvailable() just to get the information
-        // whether there are any data waiting in the buffer,
-        // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
-        // this function is called (isRcvDataReady also checks if the
-        // available data is "ready to play").
-                 && s->core().m_pRcvBuffer->hasAvailablePackets())
+        else
         {
-            const int bc = s->core().m_iBrokenCounter.load();
-            if (bc > 0)
+            CUDT& u = s->core();
+
+            enterCS(u.m_RcvBufferLock);
+            bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
+            leaveCS(u.m_RcvBufferLock);
+
+            if (has_avail_packets)
             {
-                // if there is still data in the receiver buffer, wait longer
-                s->core().m_iBrokenCounter.store(bc - 1);
-                continue;
+                const int bc = u.m_iBrokenCounter.load();
+                if (bc > 0)
+                {
+                    // if there is still data in the receiver buffer, wait longer
+                    s->core().m_iBrokenCounter.store(bc - 1);
+                    continue;
+                }
             }
         }
 

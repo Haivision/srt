@@ -219,7 +219,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     }
     m_pLastBlock = s;
 
-    m_iCount += iNumBlocks;
+    m_iCount = m_iCount + iNumBlocks;
     m_iBytesCount += len;
 
     m_rateEstimator.updateInputRate(m_tsLastOriginTime, iNumBlocks, len);
@@ -293,7 +293,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     m_pLastBlock = s;
 
     enterCS(m_BufLock);
-    m_iCount += iNumBlocks;
+    m_iCount = m_iCount + iNumBlocks;
     m_iBytesCount += total;
 
     leaveCS(m_BufLock);
@@ -547,7 +547,7 @@ void CSndBuffer::ackData(int offset)
     if (move)
         m_pCurrBlock = m_pFirstBlock;
 
-    m_iCount -= offset;
+    m_iCount = m_iCount - offset;
 
     updAvgBufSize(steady_clock::now());
 }
@@ -653,7 +653,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     {
         m_pCurrBlock = m_pFirstBlock;
     }
-    m_iCount -= dpkts;
+    m_iCount = m_iCount - dpkts;
 
     m_iBytesCount -= dbytes;
     w_bytes = dbytes;
