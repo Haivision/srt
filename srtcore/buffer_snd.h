@@ -241,7 +241,11 @@ private:
     int m_iSize; // buffer size (number of packets)
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
     const int m_iAuthTagSize; // Authentication tag size (if GCM is enabled).
-    int m_iCount; // number of used blocks
+
+    // NOTE: This is atomic AND under lock because the function getCurrBufSize()
+    // is returning it WITHOUT locking. Modification, however, must stay under
+    // a lock.
+    sync::atomic<int> m_iCount; // number of used blocks
 
     int        m_iBytesCount; // number of payload bytes in queue
     time_point m_tsLastOriginTime;

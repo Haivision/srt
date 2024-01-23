@@ -24,6 +24,10 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
+	cmake_policy(SET CMP0054 NEW)
+endif ()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -358,6 +362,9 @@ if (ENABLE_ENCRYPTION)
 		endif()
 		if ("${SSL_LIBRARIES}" STREQUAL "")
 			set (SSL_LIBRARIES  mbedtls mbedcrypto)
+			if (WIN32)
+				set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
+			endif()
 		endif()
 		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 

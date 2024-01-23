@@ -235,6 +235,7 @@ TEST(TestFEC, ConfigExchange)
     string exp_config = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
+    srt_close(sid1);
 }
 
 TEST(TestFEC, ConfigExchangeFaux)
@@ -273,6 +274,7 @@ TEST(TestFEC, ConfigExchangeFaux)
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
+    srt_close(sid1);
 }
 
 TEST(TestFEC, Connection)
@@ -327,6 +329,9 @@ TEST(TestFEC, Connection)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionReorder)
@@ -379,6 +384,9 @@ TEST(TestFEC, ConnectionReorder)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionFull1)
@@ -431,6 +439,9 @@ TEST(TestFEC, ConnectionFull1)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionFull2)
@@ -483,6 +494,9 @@ TEST(TestFEC, ConnectionFull2)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionMess)
@@ -535,6 +549,9 @@ TEST(TestFEC, ConnectionMess)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionForced)
@@ -581,6 +598,9 @@ TEST(TestFEC, ConnectionForced)
     EXPECT_TRUE(filterConfigSame(result_config1, fec_config_final));
     EXPECT_TRUE(filterConfigSame(result_config2, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionConflict)
@@ -623,6 +643,8 @@ TEST(TestFEC, RejectionConflict)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionIncompleteEmpty)
@@ -662,6 +684,8 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 
@@ -705,6 +729,8 @@ TEST(TestFEC, RejectionIncomplete)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST_F(TestFECRebuilding, Prepare)
