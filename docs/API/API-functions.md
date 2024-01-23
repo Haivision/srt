@@ -639,7 +639,7 @@ below).
 * `addrlen`: INPUT: size of `addr` pointed object. OUTPUT: real size of the
 returned object
 
-General requirements for parameter correctness:
+General requirements for a parameter correctness:
 
 * `lsn` must be first [bound](#srt_bind) and [listening](#srt_listen)
 
@@ -656,7 +656,7 @@ depends on the address type used in the `srt_bind` call for `lsn`.
 If unsure in a particular situation, it is recommended that you use
 `sockaddr_storage` or `srt::sockaddr_any`.
 
-If the `lsn` listener socket is blocking mode (if
+If the `lsn` listener socket is in the blocking mode (if
 [`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to true,
 which is default), the call will block until the incoming connection is ready
 for extraction. Otherwise, the call always returns immediately, possibly with
@@ -707,6 +707,8 @@ request. This feature is prone to more tricky rules, however:
       continue blocking. If you want to use only one thread for accepting
       connections from potentially multiple listening sockets in the blocking
       mode, you should use [`srt_accept_bond`](#srt_accept_bond) instead.
+      Note though that this function is actually a wrapper that changes locally 
+      to the nonblocking mode on all these listeners and uses epoll internally.
    
     * If at the moment multiple listener sockets have received connection
       request and you query them all for readiness epoll flags (by calling

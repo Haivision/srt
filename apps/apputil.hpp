@@ -350,22 +350,41 @@ struct OptionSetterProxy
 
     struct OptionProxy
     {
-        const OptionSetterProxy& parent;
+        OptionSetterProxy& parent;
         SRT_SOCKOPT opt;
 
-        template<class Type>
-        OptionProxy& operator=(Type&& val)
+#define SPEC(type) \
+        OptionProxy& operator=(const type& val)\
+        {\
+            parent.result = srt_setsockflag(parent.s, opt, &val, sizeof val);\
+            return *this;\
+        }
+
+        SPEC(int32_t);
+        SPEC(int64_t);
+        SPEC(bool);
+#undef SPEC
+
+        template<size_t N>
+        OptionProxy& operator=(const char (&val)[N])
         {
-            Type vc(val);
-            srt_setsockflag(parent.s, opt, &vc, sizeof vc);
+            parent.result = srt_setsockflag(parent.s, opt, val, N-1);
+            return *this;
+        }
+
+        OptionProxy& operator=(const std::string& val)
+        {
+            parent.result = srt_setsockflag(parent.s, opt, val.c_str(), val.size());
             return *this;
         }
     };
 
-    OptionProxy operator[](SRT_SOCKOPT opt) const
+    OptionProxy operator[](SRT_SOCKOPT opt)
     {
         return OptionProxy {*this, opt};
     }
+
+    operator int() { return result; }
 };
 
 inline OptionSetterProxy setopt(SRTSOCKET socket)
