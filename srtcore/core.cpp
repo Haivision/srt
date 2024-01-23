@@ -7706,7 +7706,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // - m_dPktSndPeriod
         // - m_dCWndSize
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
-        double cgwindow = m_CongCtl->cgWindowSize();
+        const double cgwindow = m_CongCtl->cgWindowSize();
         m_iCongestionWindow = cgwindow;
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
