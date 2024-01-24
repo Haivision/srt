@@ -59,7 +59,9 @@ matrix:
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
             - cd ..
-          env: BUILD_TYPE=Release
+          env:
+          - BUILD_TYPE=Release
+          - BUILD_OPTS='-DENABLE_STDCXX_SYNC=ON -DENABLE_CXX11=ON`
 
          # Power jobs
         - os: linux
