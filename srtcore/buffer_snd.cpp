@@ -422,7 +422,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, Drop& w_drop)
+int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     // NOTE: w_packet.m_iSeqNo is expected to be set to the value
     // of the sequence number with which this packet should be sent.
@@ -493,15 +493,15 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // to simply take the sequence number from the block. But this is a new
         // feature and should be only used after refax for the sender buffer to
         // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
-        w_drop.seqno[Drop::BEGIN] = w_packet.m_iSeqNo;
-        w_drop.seqno[Drop::END] = CSeqNo::incseq(w_packet.m_iSeqNo, msglen - 1);
+        w_drop.seqno[DropRange::BEGIN] = w_packet.m_iSeqNo;
+        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.m_iSeqNo, msglen - 1);
 
         // Note the rules: here `p` is pointing to the first block AFTER the
         // message to be dropped, so the end sequence should be one behind
         // the one for p. Note that the loop rolls until hitting the first
         // packet that doesn't belong to the message or m_pLastBlock, which
         // is past-the-end for the occupied range in the sender buffer.
-        SRT_ASSERT(w_drop.seqno[Drop::END] == CSeqNo::decseq(p->m_iSeqNo));
+        SRT_ASSERT(w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
         return READ_DROP;
     }
 

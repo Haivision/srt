@@ -9326,22 +9326,24 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             }
         }
 
-        CSndBuffer::Drop buffer_drop;
+        typedef CSndBuffer::DropRange DropRange;
+
+        DropRange buffer_drop;
         steady_clock::time_point tsOrigin;
         const int payload = m_pSndBuffer->readData(offset, (w_packet), (tsOrigin), (buffer_drop));
         if (payload == CSndBuffer::READ_DROP)
         {
-            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[CSndBuffer::Drop::BEGIN], buffer_drop.seqno[CSndBuffer::Drop::END]) >= 0);
+            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[DropRange::BEGIN], buffer_drop.seqno[DropRange::END]) >= 0);
 
             HLOGC(qrlog.Debug,
                   log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
-                      << buffer_drop.msgno << " %(" << buffer_drop.seqno[CSndBuffer::Drop::BEGIN] << " - "
-                      << buffer_drop.seqno[CSndBuffer::Drop::END] << ")");
+                      << buffer_drop.msgno << " %(" << buffer_drop.seqno[DropRange::BEGIN] << " - "
+                      << buffer_drop.seqno[DropRange::END] << ")");
             sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
 
             // skip all dropped packets
-            m_pSndLossList->removeUpTo(buffer_drop.seqno[CSndBuffer::Drop::END]);
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[CSndBuffer::Drop::END]);
+            m_pSndLossList->removeUpTo(buffer_drop.seqno[DropRange::END]);
+            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[DropRange::END]);
             continue;
         }
         else if (payload == CSndBuffer::READ_NONE)

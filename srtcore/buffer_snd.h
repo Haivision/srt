@@ -134,7 +134,7 @@ public:
     SRT_ATTR_EXCLUDES(m_BufLock)
     time_point peekNextOriginal() const;
 
-    struct Drop
+    struct DropRange
     {
         static const size_t BEGIN = 0, END = 1;
         int32_t seqno[2];
@@ -156,7 +156,7 @@ public:
     /// @retval READ_NONE No data available or @a offset points out of the buffer occupied space.
     /// @retval READ_DROP The call requested data drop due to TTL exceeded, to be handled first.
     SRT_ATTR_EXCLUDES(m_BufLock)
-    int readData(const int offset, CPacket& w_packet, time_point& w_origintime, Drop& w_drop);
+    int readData(const int offset, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
