@@ -76,7 +76,7 @@ script:
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
-        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="OFF" -DUSE_OPENSSL_PC="OFF" -DOPENSSL_ROOT_DIR="$PWD/openssl" -DCMAKE_SYSTEM_NAME="Windows";
+        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_STDCXX_SYNC="ON" -DENABLE_CXX11="ON" -DENABLE_UNITTESTS="OFF" -DUSE_OPENSSL_PC="OFF" -DOPENSSL_ROOT_DIR="$PWD/openssl" -DCMAKE_SYSTEM_NAME="Windows";
       elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
