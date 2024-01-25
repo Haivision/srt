@@ -3807,7 +3807,7 @@ int srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optval
 
 int srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
-    if (!optval)
+    if (!optval || optlen < 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     try
