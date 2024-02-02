@@ -49,13 +49,6 @@ written by
 modified by
    Haivision Systems Inc.
 *****************************************************************************/
-#if HAVE_CXX11
-#define SRT_ATR_ALIGNAS(n) alignas(n)
-#elif HAVE_GCC
-#define SRT_ATR_ALIGNAS(n) __attribute__((aligned(n)))
-#else
-#define SRT_ATR_ALIGNAS(n)
-#endif
 #ifndef INC_SRT_CHANNEL_H
 #define INC_SRT_CHANNEL_H
 
