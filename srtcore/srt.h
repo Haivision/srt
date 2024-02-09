@@ -33,7 +33,7 @@ written by
 //if compiling with MinGW, it only works on XP or above
 //use -D_WIN32_WINNT=0x0501
 
-
+#ifndef SRT_API
 #ifdef _WIN32
    #ifndef __MINGW32__
       // Explicitly define 32-bit and 64-bit numbers
@@ -58,6 +58,7 @@ written by
    #endif
 #else
    #define SRT_API __attribute__ ((visibility("default")))
+#endif
 #endif
 
 
