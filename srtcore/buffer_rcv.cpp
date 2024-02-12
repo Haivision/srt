@@ -239,7 +239,7 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
 
     // If the nonread position is now behind the starting position, set it to the starting position and update.
     // Preceding packets were likely missing, and the non read position can probably be moved further now.
-    if (CSeqNo::seqcmp(m_iFirstNonreadPos, m_iStartPos) < 0)
+    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         updateNonreadPos();
