@@ -239,9 +239,15 @@ private:
     inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
     inline int offPos(int pos1, int pos2) const { return (pos2 >= pos1) ? (pos2 - pos1) : int(m_szSize + pos2 - pos1); }
+
+    /// @brief Compares the two positions in the receiver buffer relative to the starting position.
+    /// @param pos2 a position in the receiver buffer.
+    /// @param pos1 a position in the receiver buffer.
+    /// @return a positive value if pos2 is ahead of pos1; a negative value, if pos2 is behind pos1; otherwise returns 0.
     inline int cmpPos(int pos2, int pos1) const
     {
-        // XXX maybe not the best implementation, but this keeps up to the rule
+        // XXX maybe not the best implementation, but this keeps up to the rule.
+        // Maybe use m_iMaxPosOff to ensure a position is not behind the m_iStartPos.
         const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
         const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
