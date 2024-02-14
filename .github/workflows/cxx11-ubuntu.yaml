@@ -22,8 +22,6 @@ jobs:
     - name: test
       run: |
         cd _build && ctest --extra-verbose
-        ulimit -c unlimited
-        ./test-srt
         cd ../
         source ./scripts/collect-gcov.sh
         bash <(curl -s https://codecov.io/bash)
