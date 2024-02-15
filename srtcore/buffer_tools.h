@@ -94,7 +94,7 @@ class CRateEstimator
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 public:
-    CRateEstimator();
+    CRateEstimator(int family);
 
 public:
     uint64_t getInRatePeriod() const { return m_InRatePeriod; }
@@ -124,6 +124,7 @@ private:
     time_point m_tsInRateStartTime;
     uint64_t   m_InRatePeriod; // usec
     int        m_iInRateBps;   // Input Rate in Bytes/sec
+    int        m_iFullHeaderSize;
 };
 
 

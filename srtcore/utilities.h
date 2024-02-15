@@ -432,7 +432,7 @@ public:
     const T& operator[](size_t index) const
     {
         if (index >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -440,7 +440,7 @@ public:
     T& operator[](size_t index)
     {
         if (index >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -448,7 +448,7 @@ public:
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -456,7 +456,7 @@ public:
     T& operator[](int index)
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
-            raise_expection(index);
+            throw_invalid_index(index);
 
         return m_entries[index];
     }
@@ -478,7 +478,7 @@ private:
     FixedArray(const FixedArray<T>& );
     FixedArray<T>& operator=(const FixedArray<T>&);
 
-    void raise_expection(int i) const
+    void throw_invalid_index(int i) const
     {
         std::stringstream ss;
         ss << "Index " << i << "out of range";
@@ -531,6 +531,34 @@ namespace srt_pair_op
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
+    }
+}
+
+namespace any_op
+{
+    template <class T>
+    struct AnyProxy
+    {
+        const T& value;
+        bool result;
+
+        AnyProxy(const T& x, bool res): value(x), result(res) {}
+
+        AnyProxy<T>& operator,(const T& val)
+        {
+            if (result)
+                return *this;
+            result = value == val;
+            return *this;
+        }
+
+        operator bool() { return result; }
+    };
+
+    template <class T> inline
+    AnyProxy<T> EqualAny(const T& checked_val)
+    {
+        return AnyProxy<T>(checked_val, false);
     }
 }
 
@@ -666,6 +694,15 @@ inline std::string Sprint(const Arg1& arg)
     return sout.str();
 }
 
+// Ok, let it be 2-arg, in case when a manipulator is needed
+template <class Arg1, class Arg2>
+inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
+{
+    std::ostringstream sout;
+    sout << arg1 << arg2;
+    return sout.str();
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -748,6 +785,32 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
     v.push_back(val);
 }
 
+template <class Type1, class Type2>
+inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+{
+    return std::pair<Type1&, Type2&>(var1, var2);
+}
+
+// This can be used in conjunction with Tie to simplify the code
+// in loops around a whole container:
+// list<string>::const_iterator it, end;
+// Tie(it, end) = All(list_container);
+template<class Container>
+std::pair<typename Container::iterator, typename Container::iterator>
+inline All(Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+template<class Container>
+std::pair<typename Container::const_iterator, typename Container::const_iterator>
+inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
+
+
+template <class Container, class Value>
+inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
+{
+    for (typename Container::const_iterator i = from.begin(); i != from.end(); ++i)
+        ++out[*i];
+}
+
 template <class Signature>
 struct CallbackHolder
 {
@@ -780,6 +843,134 @@ struct CallbackHolder
 };
 
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
+// The version of std::tie from C++11, but for pairs only.
+template <class T1, class T2>
+struct PairProxy
+{
+    T1& v1;
+    T2& v2;
+
+    PairProxy(T1& c1, T2& c2): v1(c1), v2(c2) {}
+
+    void operator=(const std::pair<T1, T2>& p)
+    {
+        v1 = p.first;
+        v2 = p.second;
+    }
+};
+
+template <class T1, class T2> inline
+PairProxy<T1, T2> Tie2(T1& v1, T2& v2)
+{
+    return PairProxy<T1, T2>(v1, v2);
+}
+
+template<class T>
+struct PassFilter
+{
+    T lower, median, upper;
+
+    bool encloses(const T& value)
+    {
+        // Throw away those that don't fit in the filter
+        return value > lower && value < upper;
+    }
+};
+
+// This utility is used in window.cpp where it is required to calculate
+// the median value basing on the value in the very middle and filtered
+// out values exceeding its range of 1/8 and 8 times. Returned is a structure
+// that shows the median and also the lower and upper value used for filtering.
+inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size)
+{
+    // This calculation does more-less the following:
+    //
+    // 1. Having example window:
+    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+    // 2. This window is now sorted, but we only know the value in the middle:
+    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+    // 3. Now calculate:
+    //   - lower: 90/8 = 11.25
+    //   - upper: 90*8 = 720
+    // 4. Now calculate the arithmetic median from all these values,
+    //    but drop those from outside the <lower, upper> range:
+    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
+    // 5. Calculate the median from the extracted range,
+    //    NOTE: the median is actually repeated once, so size is +1.
+    //
+    //    values = { 50, 51, 55, 80, 90, 100, 600 };
+    //    sum = 90 + accumulate(values); ==> 1026
+    //    median = sum/(1 + values.size()); ==> 147
+    //
+    // For comparison: the overall arithmetic median from this window == 430
+    //
+    // 6. Returned value = 1M/median
+
+    // get median value, but cannot change the original value order in the window
+    std::copy(window, window + size, replica);
+    std::nth_element(replica, replica + (size / 2), replica + size);
+    //std::sort(replica, replica + psize); <--- was used for debug, just leave it as a mark
+
+    PassFilter<int> filter;
+    filter.median = replica[size / 2];
+    filter.upper = filter.median << 3; // median*8
+    filter.lower = filter.median >> 3; // median/8
+
+    return filter;
+}
+
+// This function sums up all values in the array (from p to end),
+// except those that don't fit in the low- and high-pass filter.
+// Returned is the sum and the number of elements taken into account.
+inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassFilter<int> filter)
+{
+    int count = 0;
+    int sum = 0;
+    const int* const end = p + size;
+    for (; p != end; ++p)
+    {
+        // Throw away those that don't fit in the filter
+        if (!filter.encloses(*p))
+            continue;
+
+        sum += *p;
+        ++count;
+    }
+
+    return std::make_pair(sum, count);
+}
+
+// This function sums up all values in the array (from p to end)
+// and simultaneously elements from `para`, stated it points to
+// an array of the same size. The first array is used as a driver
+// for which elements to include and which to skip, and this is done
+// for both arrays at particular index position. Returner is the sum
+// of the elements passed from the first array and from the `para`
+// array, as well as the number of included elements.
+template <class IntCount, class IntParaCount>
+inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<int> filter,
+        const int* para,
+        int& w_sum, IntCount& w_count, IntParaCount& w_paracount)
+{
+    IntCount count = 0;
+    int sum = 0;
+    IntParaCount parasum = 0;
+    const int* const end = p + size;
+    for (; p != end; ++p, ++para)
+    {
+        // Throw away those that don't fit in the filter
+        if (!filter.encloses(*p))
+            continue;
+
+        sum += *p;
+        parasum += *para;
+        ++count;
+    }
+    w_count = count;
+    w_sum = sum;
+    w_paracount = parasum;
+}
+
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
@@ -1058,11 +1249,11 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 // This relies only on a convention, which is the following:
 //
 // V x = object.prop(); <-- get the property's value
-// object.prop(x); <-- set the property a value
+// object.set_prop(x); <-- set the property a value
 //
 // Properties might be also chained when setting:
 //
-// object.prop1(v1).prop2(v2).prop3(v3);
+// object.set_prop1(v1).set_prop2(v2).set_prop3(v3);
 //
 // Properties may be defined various even very complicated
 // ways, which is simply providing a method with body. In order

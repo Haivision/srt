@@ -148,8 +148,7 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
-    // TODO: Use m_RcvBufferLock here (CUDT::isRcvReadReady())?
-    if (m_UDT.m_bConnected && m_UDT.m_pRcvBuffer->isRcvDataReady())
+    if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
         return true;
 
     if (m_UDT.m_bListening)
@@ -2611,20 +2610,23 @@ void srt::CUDTUnited::checkBrokenSockets()
             if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
                 continue;
         }
-        else if ((s->core().m_pRcvBuffer != NULL)
-        // FIXED: calling isRcvDataAvailable() just to get the information
-        // whether there are any data waiting in the buffer,
-        // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
-        // this function is called (isRcvDataReady also checks if the
-        // available data is "ready to play").
-                 && s->core().m_pRcvBuffer->hasAvailablePackets())
+        else
         {
-            const int bc = s->core().m_iBrokenCounter.load();
-            if (bc > 0)
+            CUDT& u = s->core();
+
+            enterCS(u.m_RcvBufferLock);
+            bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
+            leaveCS(u.m_RcvBufferLock);
+
+            if (has_avail_packets)
             {
-                // if there is still data in the receiver buffer, wait longer
-                s->core().m_iBrokenCounter.store(bc - 1);
-                continue;
+                const int bc = u.m_iBrokenCounter.load();
+                if (bc > 0)
+                {
+                    // if there is still data in the receiver buffer, wait longer
+                    s->core().m_iBrokenCounter.store(bc - 1);
+                    continue;
+                }
             }
         }
 
@@ -2782,8 +2784,20 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     // delete this one
     m_ClosedSockets.erase(i);
 
+   // XXX This below section can unlock m_GlobControlLock
+   // just for calling CUDT::closeInternal(), which is needed
+   // to avoid locking m_ConnectionLock after m_GlobControlLock,
+   // while m_ConnectionLock orders BEFORE m_GlobControlLock.
+   // This should be perfectly safe thing to do after the socket
+   // ID has been erased from m_ClosedSockets. No container access
+   // is done in this case.
+   //
+   // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
+
     HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+    leaveCS(m_GlobControlLock);
     s->core().closeInternal();
+    enterCS(m_GlobControlLock);
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
     HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
@@ -3793,7 +3807,7 @@ int srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optval
 
 int srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
-    if (!optval)
+    if (!optval || optlen < 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     try
@@ -4639,18 +4653,21 @@ void setloglevel(LogLevel::type ll)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
+    srt_logger_config.updateLoggersState();
 }
 
 void addlogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
+    srt_logger_config.updateLoggersState();
 }
 
 void dellogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
+    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(set<LogFA> fas)
@@ -4658,6 +4675,7 @@ void resetlogfa(set<LogFA> fas)
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
+    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
@@ -4666,6 +4684,7 @@ void resetlogfa(const int* fara, size_t fara_size)
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
+    srt_logger_config.updateLoggersState();
 }
 
 void setlogstream(std::ostream& stream)

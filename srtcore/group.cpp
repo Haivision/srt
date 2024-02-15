@@ -278,8 +278,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
-    setupMutex(m_RcvDataLock, "RcvData");
-    setupCond(m_RcvDataCond, "RcvData");
+    setupMutex(m_RcvDataLock, "G/RcvData");
+    setupCond(m_RcvDataCond, "G/RcvData");
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
 
@@ -861,7 +861,7 @@ void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
     // and set it on the current socket.
-    set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
+    set_latency_us(core.m_iTsbPdDelay_ms * int64_t(1000));
 }
 
 void CUDTGroup::close()
@@ -2379,6 +2379,12 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 
     const steady_clock::time_point currtime = steady_clock::now();
 
+    // NOTE: Potentially in the group we might be using both IPv4 and IPv6
+    // links and sending a single packet over these two links could be different.
+    // These stats then don't make much sense in this form, this has to be
+    // redesigned. We use the header size as per IPv4, as it was everywhere.
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
     memset(perf, 0, sizeof *perf);
 
     ScopedLock gg(m_GroupLock);
@@ -2389,17 +2395,17 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     perf->pktRecvUnique = m_stats.recv.trace.count();
     perf->pktRcvDrop    = m_stats.recvDrop.trace.count();
 
-    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr();
-    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr();
-    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr();
+    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr(pktHdrSize);
+    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr(pktHdrSize);
+    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr(pktHdrSize);
 
     perf->pktSentUniqueTotal = m_stats.sent.total.count();
     perf->pktRecvUniqueTotal = m_stats.recv.total.count();
     perf->pktRcvDropTotal    = m_stats.recvDrop.total.count();
 
-    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr();
-    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr();
-    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr();
+    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr(pktHdrSize);
+    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr(pktHdrSize);
+    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr(pktHdrSize);
 
     const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
     perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
