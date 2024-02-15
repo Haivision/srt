@@ -1,18 +1,18 @@
-General statement about the latency
+General statement about latency
 ===================================
 
-In the live streaming, where we transmit what really is happening through the
-camera, there are many things happening between the camera's objective and the
-screen of the video player. The view of the player is then delayed and this
-delay is called "latency". But this is an overall latency, which includes
-everything in between: the camera frame grabber device passing to the encoder,
-encoding, multiplexing, sending over the network, splitting, decoding and
-then finally displaying. What is defined in SRT as "latency" is only the
-part referring to sending over the network: it's the time between the moment
-when the `srt_sendmsg2` function is called at the sender side up to the moment
-when the `srt_recvmsg2` function is called at the receiver side. Note however
-that this is the "true latency", that is, the actual time difference between
-these two events.
+In the live streaming there are many things happening between the 
+camera's lens and the screen of the video player, all of which contribute 
+to a delay that is generally referred to as "latency". This overall latency 
+includes the time it takes for the camera frame grabber device to pass 
+frames to the encoder, encoding, multiplexing, **sending over the network**, 
+splitting, decoding and then finally displaying. 
+
+In SRT, however, "latency" is defined as only the delay introduced by **sending 
+over the network**. It's the time between the moment when the `srt_sendmsg2` 
+function is called at the sender side up to the moment when the `srt_recvmsg2` 
+function is called at the receiver side. This SRT latency is the actual time difference 
+between these two events.
 
 The goal of the latency (TSBPD) mechanism
 =========================================

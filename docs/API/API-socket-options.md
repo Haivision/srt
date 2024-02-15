@@ -1648,7 +1648,7 @@ enabled in sender if receiver supports it.
 
 Sets the transmission type for the socket, in particular, setting this option
 sets multiple other parameters to their default values as required for a
-particular transmission type. This set the following options to their defaults
+particular transmission type. This sets the following options to their defaults
 in particular mode:
 
 * [`SRTO_CONGESTION`](#SRTO_CONGESTION)
