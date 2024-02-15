@@ -14,15 +14,16 @@ function is called at the sender side up to the moment when the `srt_recvmsg2`
 function is called at the receiver side. This SRT latency is the actual time difference 
 between these two events.
 
+
 The goal of the latency (TSBPD) mechanism
 =========================================
 
-The strict goal of this mechanism is to have the time distance between two
-consecutive packets on the receiver side identical as they were at the
-sender side. Obviously this requires some extra delay defined from upside
-that should define when exactly the packet can be retrieved by the receiver
-application, and if the packet arrived earlier than this time, it will have to
-wait in the receiver buffer until this time comes. This time for the packet N
+SRT employs a TimeStamp Based Packet Delivery (TSBPD) mechanism 
+with strict goal of keeping the time interval between two consecutive packets 
+on the receiver side identical to what they were at the sender side. This 
+requires introducing an extra delay that should define when exactly the packet 
+can be retrieved by the receiver application -- if the packet arrives early, it must
+wait in the receiver buffer until the delivery time. This time for a packet N
 is roughly defined as:
 
 ```
@@ -31,10 +32,10 @@ PTS[N] = ETS[N] + LATENCY(option)
 
 where `ETS[N]` is the time when the packet would arrive, if all delays
 from the network and the processing software on both sides are identical
-as they were for the very first received data packet. This means that
+to what they were for the very first received data packet. This means that
 for the very first packet `ETS[0]` is equal to this packet's arrival time.
-For every next packet the delivery time distance should be equal to the same
-packet's declared scheduling time distance.
+For every following packet the delivery time interval should be equal to the
+that packet's declared scheduling time interval.
 
 
 SRT's approach to packet arrival time
