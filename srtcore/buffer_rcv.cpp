@@ -364,6 +364,11 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
         avail_packet = &packetAt(m_iDropPos);
         avail_range = 1;
     }
+    else
+    {
+        avail_packet = NULL;
+        avail_range = 0;
+    }
 
     IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
     IF_HEAVY_LOGGING(debugShowState((debug_source + " ok").c_str()));
