@@ -653,6 +653,8 @@ bool srt::CRcvLossList::remove(int32_t seqno)
         }
 
         m_iLength--;
+        if (0 == m_iLength)
+            m_iLargestSeq = SRT_SEQNO_NONE;
 
         return true;
     }
@@ -708,6 +710,8 @@ bool srt::CRcvLossList::remove(int32_t seqno)
     }
 
     m_iLength--;
+    if (0 == m_iLength)
+        m_iLargestSeq = SRT_SEQNO_NONE;
 
     return true;
 }
