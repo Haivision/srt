@@ -5649,6 +5649,14 @@ bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd
     return true;
 }
 
+int srt::CUDT::getAuthTagSize() const
+{
+    if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+        return HAICRYPT_AUTHTAG_MAX;
+
+    return 0;
+}
+
 bool srt::CUDT::prepareBuffers(CUDTException* eout)
 {
     if (m_pSndBuffer)
@@ -5660,7 +5668,7 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
     try
     {
         // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
-        const int authtag = (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM) ? HAICRYPT_AUTHTAG_MAX : 0;
+        const int authtag = getAuthTagSize();
 
         SRT_ASSERT(m_iMaxSRTPayloadSize != 0);
 

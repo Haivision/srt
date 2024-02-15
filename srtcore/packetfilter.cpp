@@ -314,8 +314,14 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
     init.socket_id = parent->socketID();
     init.snd_isn = parent->sndSeqNo();
     init.rcv_isn = parent->rcvSeqNo();
-    init.payload_size = parent->OPT_PayloadSize();
+
+    // XXX This is a formula for a full "SRT payload" part that undergoes transmission,
+    // might be nice to have this formula as something more general.
+    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize();
     init.rcvbuf_size = parent->m_config.iRcvBufSize;
+
+    HLOGC(pflog.Debug, log << "PFILTER: @" << init.socket_id << " payload size="
+            << init.payload_size << " rcvbuf size=" << init.rcvbuf_size);
 
     // Found a filter, so call the creation function
     m_filter = selector->second->Create(init, m_provided, confstr);
