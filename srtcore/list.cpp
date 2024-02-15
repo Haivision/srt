@@ -653,7 +653,7 @@ bool srt::CRcvLossList::remove(int32_t seqno)
         }
 
         m_iLength--;
-        if (0 == m_iLength)
+        if (m_iLength == 0)
             m_iLargestSeq = SRT_SEQNO_NONE;
 
         return true;
