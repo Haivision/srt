@@ -986,20 +986,34 @@ int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan) const
 
 CRcvBuffer::PacketInfo CRcvBuffer::getFirstValidPacketInfo() const
 {
-    // Check the state of the very first packet first
+    // Default: no packet available.
+    PacketInfo pi = { SRT_SEQNO_NONE, false, time_point() };
+
+    const CPacket* pkt = NULL;
+
+    // Very first packet available with no gap.
     if (m_entries[m_iStartPos].status == EntryState_Avail)
     {
         SRT_ASSERT(m_entries[m_iStartPos].pUnit);
-        return { m_iStartSeqNo, false /*no gap*/, getPktTsbPdTime(packetAt(m_iStartPos).getMsgTimeStamp()) };
+        pkt = &packetAt(m_iStartPos);
     }
     // If not, get the information from the drop
-    if (m_iDropPos != m_iEndPos)
+    else if (m_iDropPos != m_iEndPos)
     {
-        const CPacket& pkt = packetAt(m_iDropPos);
-        return { pkt.getSeqNo(), true, getPktTsbPdTime(pkt.getMsgTimeStamp()) };
+        SRT_ASSERT(m_entries[m_iDropPos].pUnit);
+        pkt = &packetAt(m_iDropPos);
+        pi.seq_gap = true; // Available, but after a drop.
+    }
+    else
+    {
+        // If none of them point to a valid packet,
+        // there is no packet available;
+        return pi;
     }
 
-    return { SRT_SEQNO_NONE, false, time_point() };
+    pi.seqno = pkt->getSeqNo();
+    pi.tsbpd_time = getPktTsbPdTime(pkt->getMsgTimeStamp());
+    return pi;
 }
 
 std::pair<int, int> CRcvBuffer::getAvailablePacketsRange() const
