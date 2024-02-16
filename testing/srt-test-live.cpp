@@ -279,7 +279,7 @@ namespace srt_logging
     extern Logger glog;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -356,7 +356,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));
 
     return 0;
 }
@@ -415,7 +415,7 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
@@ -430,7 +430,7 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
 #endif
     vector<string> source_items, target_items;
@@ -439,7 +439,7 @@ int main( int argc, char** argv )
     {
         // You may still need help.
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -646,7 +646,7 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
@@ -857,7 +857,7 @@ int main( int argc, char** argv )
     if (stoptime != 0)
     {
         int elapsed = end_time - start_time;
-        int remain = stoptime - elapsed;
+        int remain = int(stoptime) - elapsed;
 
         if (remain <= final_delay)
         {
@@ -918,7 +918,7 @@ int main( int argc, char** argv )
             if (stoptime != 0)
             {
                 int elapsed = time(0) - end_time;
-                int remain = stoptime - final_delay - elapsed;
+                int remain = int(stoptime - final_delay - elapsed);
                 if (remain < 0)
                 {
                     Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
@@ -994,8 +994,14 @@ int main( int argc, char** argv )
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
     char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    if ( opaque ) {
+#ifdef _MSC_VER
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
+#else
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
+#endif
+    }
     time_t now;
     time(&now);
     char buf[1024];

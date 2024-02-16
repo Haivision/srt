@@ -66,12 +66,15 @@ modified by
 #include "epoll.h"
 #include "logging.h"
 #include "udt.h"
+#include "utilities.h"
 
 using namespace std;
 using namespace srt::sync;
 
 #if ENABLE_HEAVY_LOGGING
+namespace srt {
 static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0);
+}
 #endif
 
 namespace srt_logging
@@ -85,19 +88,19 @@ using namespace srt_logging;
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
 #endif
 
-CEPoll::CEPoll():
+srt::CEPoll::CEPoll():
 m_iIDSeed(0)
 {
    // Exception -> CUDTUnited ctor.
    setupMutex(m_EPollLock, "EPoll");
 }
 
-CEPoll::~CEPoll()
+srt::CEPoll::~CEPoll()
 {
    releaseMutex(m_EPollLock);
 }
 
-int CEPoll::create(CEPollDesc** pout)
+int srt::CEPoll::create(CEPollDesc** pout)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -162,7 +165,7 @@ ENOMEM: There was insufficient memory to create the kernel object.
    return m_iIDSeed;
 }
 
-int CEPoll::clear_usocks(int eid)
+int srt::CEPoll::clear_usocks(int eid)
 {
     // This should remove all SRT sockets from given eid.
    ScopedLock pg (m_EPollLock);
@@ -179,7 +182,7 @@ int CEPoll::clear_usocks(int eid)
 }
 
 
-void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
+void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
     if ((direction & ~SRT_EPOLL_EVENTTYPES) != 0)
     {
@@ -212,11 +215,11 @@ void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         }
     }
 
-    for (size_t i = 0; i < cleared.size(); ++i)
-        d.removeSubscription(cleared[i]);
+    for (size_t j = 0; j < cleared.size(); ++j)
+        d.removeSubscription(cleared[j]);
 }
 
-int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
+int srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -288,7 +291,7 @@ int CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
+int srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -319,7 +322,7 @@ int CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 }
 
 // Need this to atomically modify polled events (ex: remove write/keep read)
-int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
+int srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     ScopedLock pg(m_EPollLock);
     IF_HEAVY_LOGGING(ostringstream evd);
@@ -391,7 +394,7 @@ int CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
     return 0;
 }
 
-int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
+int srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -462,7 +465,7 @@ int CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
    return 0;
 }
 
-int CEPoll::setflags(const int eid, int32_t flags)
+int srt::CEPoll::setflags(const int eid, int32_t flags)
 {
     ScopedLock pg(m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
@@ -487,7 +490,7 @@ int CEPoll::setflags(const int eid, int32_t flags)
     return oflags;
 }
 
-int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
+int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
     // It is allowed to call this function witn fdsSize == 0
     // and therefore also NULL fdsSet. This will then only report
@@ -552,7 +555,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
     return 0;
 }
 
-int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
+int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
     // if all fields is NULL and waiting time is infinite, then this would be a deadlock
     if (!readfds && !writefds && !lrfds && !lwfds && (msTimeOut < 0))
@@ -637,8 +640,8 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 #ifdef LINUX
                 const int max_events = ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                epoll_event ev[max_events];
-                int nfds = ::epoll_wait(ed.m_iLocalID, ev, max_events, 0);
+                srt::FixedArray<epoll_event> ev(max_events);
+                int nfds = ::epoll_wait(ed.m_iLocalID, ev.data(), ev.size(), 0);
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
                 for (int i = 0; i < nfds; ++ i)
@@ -658,23 +661,23 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
 
 #elif defined(BSD) || TARGET_OS_MAC
                 struct timespec tmout = {0, 0};
-                const int max_events = ed.m_sLocals.size();
+                const int max_events = (int)ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                struct kevent ke[max_events];
+                srt::FixedArray<struct kevent> ke(max_events);
 
-                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke, max_events, &tmout);
+                int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), (int)ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
 
                 for (int i = 0; i < nfds; ++ i)
                 {
                     if ((NULL != lrfds) && (ke[i].filter == EVFILT_READ))
                     {
-                        lrfds->insert(ke[i].ident);
+                        lrfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                     if ((NULL != lwfds) && (ke[i].filter == EVFILT_WRITE))
                     {
-                        lwfds->insert(ke[i].ident);
+                        lwfds->insert((int)ke[i].ident);
                         ++ total;
                     }
                 }
@@ -700,7 +703,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
                     if (lwfds)
                         FD_SET(*i, &rqwritefds);
                     if ((int)*i > max_fd)
-                        max_fd = *i;
+                        max_fd = (int)*i;
                 }
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
@@ -749,7 +752,7 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     return 0;
 }
 
-int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
+int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
         ScopedLock lg (m_EPollLock);
@@ -836,13 +839,13 @@ int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, boo
     return 0;
 }
 
-bool CEPoll::empty(const CEPollDesc& d) const
+bool srt::CEPoll::empty(const CEPollDesc& d) const
 {
     ScopedLock lg (m_EPollLock);
     return d.watch_empty();
 }
 
-int CEPoll::release(const int eid)
+int srt::CEPoll::release(const int eid)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -863,7 +866,7 @@ int CEPoll::release(const int eid)
 }
 
 
-int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int events, const bool enable)
+int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int events, const bool enable)
 {
     // As event flags no longer contain only event types, check now.
     if ((events & ~SRT_EPOLL_EVENTTYPES) != 0)
@@ -950,6 +953,9 @@ int CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int e
 
 // Debug use only.
 #if ENABLE_HEAVY_LOGGING
+namespace srt
+{
+
 static ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 {
     static pair<int, const char*> const namemap [] = {
@@ -959,7 +965,7 @@ static ostream& PrintEpollEvent(ostream& os, int events, int et_events)
         make_pair(SRT_EPOLL_UPDATE, "U")
     };
 
-    int N = Size(namemap);
+    const int N = (int)Size(namemap);
 
     for (int i = 0; i < N; ++i)
     {
@@ -1001,5 +1007,7 @@ string CEPollDesc::DisplayEpollWatch()
 
     return os.str();
 }
+
+} // namespace srt
 
 #endif

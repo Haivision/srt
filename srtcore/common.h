@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_COMMON_H
 #define INC_SRT_COMMON_H
 
-#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
@@ -79,8 +78,13 @@ modified by
 #endif
 
 #ifdef _DEBUG
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
+#define SRT_ASSERT(cond) ASSERT(cond)
+#else
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
+#endif
 #else
 #define SRT_ASSERT(cond)
 #endif
@@ -92,6 +96,17 @@ modified by
 #endif
 
 #include <exception>
+
+namespace srt_logging
+{
+    std::string SockStatusStr(SRT_SOCKSTATUS s);
+#if ENABLE_BONDING
+    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+#endif
+}
+
+namespace srt
+{
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
@@ -312,9 +327,7 @@ enum EInitEvent
     TEV_INIT_OHEADBW
 };
 
-namespace srt {
-    class CPacket;
-}
+class CPacket;
 
 // XXX Use some more standard less hand-crafted solution, if possible
 // XXX Consider creating a mapping between TEV_* values and associated types,
@@ -1375,14 +1388,6 @@ public:
     }
 };
 
-namespace srt_logging
-{
-std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_EXPERIMENTAL_BONDING
-std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
-}
-
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 {
@@ -1392,8 +1397,11 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 inline int32_t SrtParseVersion(const char* v)
 {
     int major, minor, patch;
+#if defined(_MSC_VER)
+    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
+#else
     int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-
+#endif
     if (result != 3)
     {
         return 0;
@@ -1408,11 +1416,43 @@ inline std::string SrtVersionString(int version)
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
 
-    char buf[20];
-    sprintf(buf, "%d.%d.%d", major, minor, patch);
+    char buf[22];
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
+#else
+    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
+#endif
     return buf;
 }
 
-bool SrtParseConfig(std::string s, srt::SrtConfig& w_config);
+bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
+inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+{
+    std::ostringstream os;
+
+    os << "[ ";
+    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    {
+        int len = CSeqNo::seqoff(i->first, i->second);
+        os << "%" << i->first;
+        if (len > 1)
+            os << "+" << len;
+        os << " ";
+    }
+
+    os << "]";
+    return os.str();
+}
+
+} // namespace srt
 
 #endif

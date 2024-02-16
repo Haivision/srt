@@ -1,10 +1,11 @@
 #define _CRT_RAND_S // For Windows, rand_s 
 
-#include <gtest/gtest.h>
 #include <array>
 #include <chrono>
 #include <future>
 #include <random>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #include <stdlib.h>
@@ -22,10 +23,11 @@ typedef int SOCKET;
 #include "api.h"
 
 using namespace std;
+using srt::sockaddr_any;
 
 
 class TestConnection
-    : public ::testing::Test
+    : public ::srt::Test
 {
 protected:
     TestConnection()
@@ -44,11 +46,8 @@ protected:
     static const size_t NSOCK = 60;
 
 protected:
-    // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
 
@@ -82,9 +81,8 @@ protected:
         ASSERT_NE(srt_listen(m_server_sock, NSOCK), -1);
     }
 
-    void TearDown() override
+    void teardown() override
     {
-        srt_cleanup();
     }
 
     void AcceptLoop()

@@ -73,6 +73,9 @@ written by
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
 
+namespace srt
+{
+
 struct CSrtMuxerConfig
 {
     static const int DEF_UDP_BUFFER_SIZE = 65536;
@@ -88,19 +91,27 @@ struct CSrtMuxerConfig
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
 
-    bool operator==(const CSrtMuxerConfig& other) const
+    // NOTE: this operator is not reversable. The syntax must use:
+    //  muxer_entry == socket_entry
+    bool isCompatWith(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
-            && CEQUAL(iIpV6Only)
             && CEQUAL(bReuseAddr)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
             && CEQUAL(iUDPSndBufSize)
-            && CEQUAL(iUDPRcvBufSize);
+            && CEQUAL(iUDPRcvBufSize)
+            && (other.iIpV6Only == -1 || CEQUAL(iIpV6Only))
+            // NOTE: iIpV6Only is not regarded because
+            // this matches only in case of IPv6 with "any" address.
+            // And this aspect must be checked separately because here
+            // this procedure has no access to neither the address,
+            // nor the IP version (family).
 #undef CEQUAL
+            && true;
     }
 
     CSrtMuxerConfig()
@@ -147,9 +158,19 @@ public:
         return set(s.c_str(), s.size());
     }
 
+    size_t copy(char* s, size_t length) const
+    {
+        if (!s)
+            return 0;
+
+        size_t copy_len = std::min((size_t)len, length);
+        memcpy(s, stor, copy_len);
+        return copy_len;
+    }
+
     std::string str() const
     {
-        return len == 0 ? std::string() : std::string(stor);
+        return len == 0 ? std::string() : std::string(stor, len);
     }
 
     const char* c_str() const
@@ -173,6 +194,13 @@ struct CSrtConfig: CSrtMuxerConfig
         DEF_LINGER_S = 3*60,    // 3 minutes
         DEF_CONNTIMEO_S = 3;    // 3 seconds
 
+    enum
+    {
+        CIPHER_MODE_AUTO = 0,
+        CIPHER_MODE_AES_CTR = 1,
+        CIPHER_MODE_AES_GCM = 2
+    };
+
     static const int      COMM_RESPONSE_TIMEOUT_MS      = 5 * 1000; // 5 seconds
     static const uint32_t COMM_DEF_MIN_STABILITY_TIMEOUT_MS = 60;   // 60 ms
 
@@ -186,8 +214,8 @@ struct CSrtConfig: CSrtMuxerConfig
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
-    bool   bSynSending;     // Sending syncronization mode
-    bool   bSynRecving;     // Receiving syncronization mode
+    bool   bSynSending;     // Sending synchronization mode
+    bool   bSynRecving;     // Receiving synchronization mode
     int    iFlightFlagSize; // Maximum number of packets in flight from the peer side
     int    iSndBufSize;     // Maximum UDT sender buffer size
     int    iRcvBufSize;     // Maximum UDT receiver buffer size
@@ -199,6 +227,9 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
+#ifdef ENABLE_MAXREXMITBW
+    int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
+#endif
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
@@ -221,6 +252,7 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iPeerIdleTimeout_ms; // Timeout for hearing anything from the peer (ms).
     uint32_t uMinStabilityTimeout_ms;
     int      iRetransmitAlgo;
+    int      iCryptoMode; // SRTO_CRYPTOMODE
 
     int64_t llInputBW;         // Input stream rate (bytes/sec). 0: use internally estimated input bandwidth
     int64_t llMinInputBW;      // Minimum input stream rate estimate (bytes/sec)
@@ -260,6 +292,9 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
+#ifdef ENABLE_MAXREXMITBW
+        , llMaxRexmitBW(-1)
+#endif
         , bDataSender(false)
         , bMessageAPI(true)
         , bTSBPD(true)
@@ -272,6 +307,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iPeerIdleTimeout_ms(COMM_RESPONSE_TIMEOUT_MS)
         , uMinStabilityTimeout_ms(COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
         , iRetransmitAlgo(1)
+        , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
         , iOverheadBW(25)
@@ -306,38 +342,13 @@ struct CSrtConfig: CSrtMuxerConfig
     }
 
     int set(SRT_SOCKOPT optName, const void* val, int size);
+
+    bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // This function returns the number of bytes that are allocated
+    // for a single packet in the sender and receiver buffer.
+    int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
 };
-
-
-#if ENABLE_EXPERIMENTAL_BONDING
-
-struct SRT_SocketOptionObject
-{
-    struct SingleOption
-    {
-        uint16_t      option;
-        uint16_t      length;
-        unsigned char storage[1]; // NOTE: Variable length object!
-    };
-
-
-    std::vector<SingleOption*> options;
-
-    SRT_SocketOptionObject() {}
-
-    ~SRT_SocketOptionObject()
-    {
-        for (size_t i = 0; i < options.size(); ++i)
-        {
-            // Convert back
-            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
-            delete[] mem;
-        }
-    }
-
-    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
-};
-#endif
 
 template <typename T>
 inline T cast_optval(const void* optval)
@@ -373,5 +384,36 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
+
+} // namespace srt
+
+struct SRT_SocketOptionObject
+{
+    struct SingleOption
+    {
+        uint16_t      option;
+        uint16_t      length;
+        unsigned char storage[1]; // NOTE: Variable length object!
+    };
+
+    std::vector<SingleOption*> options;
+
+    SRT_SocketOptionObject() {}
+
+    ~SRT_SocketOptionObject()
+    {
+        for (size_t i = 0; i < options.size(); ++i)
+        {
+            // Convert back
+            unsigned char* mem = reinterpret_cast<unsigned char*>(options[i]);
+            delete[] mem;
+        }
+    }
+
+    bool add(SRT_SOCKOPT optname, const void* optval, size_t optlen);
+};
 
 #endif

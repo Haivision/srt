@@ -48,6 +48,9 @@ written by
 #include "netinet_any.h"
 #include "udt.h"
 
+namespace srt
+{
+
 class CCacheItem
 {
 public:
@@ -250,7 +253,7 @@ public:
    CInfoBlock& copyFrom(const CInfoBlock& obj);
    CInfoBlock(const CInfoBlock& src) { copyFrom(src); }
    CInfoBlock& operator=(const CInfoBlock& src) { return copyFrom(src); }
-   bool operator==(const CInfoBlock& obj);
+   bool operator==(const CInfoBlock& obj) const;
    CInfoBlock* clone();
    int getKey();
    void release() {}
@@ -265,5 +268,6 @@ public:
    static void convert(const sockaddr_any& addr, uint32_t ip[4]);
 };
 
+} // namespace srt
 
 #endif

@@ -51,6 +51,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "crypto.h"
 #include "utilities.h"
 
+namespace srt
+{
+
 typedef Bits<31, 16> HS_CMDSPEC_CMD;
 typedef Bits<15, 0> HS_CMDSPEC_SIZE;
 
@@ -126,7 +129,6 @@ struct SrtHandshakeExtension
 // Implemented in core.cpp, so far
 void SrtExtractHandshakeExtensions(const char* bufbegin, size_t size,
         std::vector<SrtHandshakeExtension>& w_output);
-
 
 
 struct SrtHSRequest: public SrtHandshakeExtension
@@ -309,6 +311,8 @@ public:
     // Applicable only when m_iVersion == HS_VERSION_SRT1
     int32_t flags() { return m_iType; }
 
+    bool v5orHigher() { return m_iVersion > 4; }
+
 public:
     int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
     int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
@@ -359,5 +363,6 @@ public:
 
 };
 
+} // namespace srt
 
 #endif

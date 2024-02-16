@@ -59,11 +59,21 @@ modified by
 #include <list>
 #include "udt.h"
 
+namespace srt
+{
+
+class CUDT;
+class CRendezvousQueue;
+class CUDTGroup;
+
 
 class CEPollDesc
 {
+#ifdef __GNUG__
    const int m_iID;                                // epoll ID
-
+#else
+   const int m_iID SRT_ATR_UNUSED;                 // epoll ID
+#endif
    struct Wait;
 
    struct Notice: public SRT_EPOLL_EVENT
@@ -348,13 +358,6 @@ std::string DisplayEpollWatch();
    }
 };
 
-namespace srt
-{
-    class CUDT;
-    class CRendezvousQueue;
-    class CUDTGroup;
-}
-
 class CEPoll
 {
 friend class srt::CUDT;
@@ -499,6 +502,8 @@ private:
 #if ENABLE_HEAVY_LOGGING
 std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
 #endif
+
+} // namespace srt
 
 
 #endif

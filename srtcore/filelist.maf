@@ -2,8 +2,9 @@
 
 SOURCES
 api.cpp
-buffer.cpp
+buffer_snd.cpp
 buffer_rcv.cpp
+buffer_tools.cpp
 cache.cpp
 channel.cpp
 common.cpp
@@ -15,6 +16,7 @@ handshake.cpp
 list.cpp
 logger_default.cpp
 logger_defs.cpp
+logging.cpp
 md5.cpp
 packet.cpp
 packetfilter.cpp
@@ -28,7 +30,7 @@ sync.cpp
 tsbpd_time.cpp
 window.cpp
 
-SOURCES - ENABLE_EXPERIMENTAL_BONDING
+SOURCES - ENABLE_BONDING
 group.cpp
 group_backup.cpp
 group_common.cpp
@@ -53,8 +55,9 @@ udt.h
 
 PRIVATE HEADERS
 api.h
-buffer.h
+buffer_snd.h
 buffer_rcv.h
+buffer_tools.h
 cache.h
 channel.h
 common.h
@@ -78,7 +81,7 @@ tsbpd_time.h
 utilities.h
 window.h
 
-PRIVATE HEADERS - ENABLE_EXPERIMENTAL_BONDING
+PRIVATE HEADERS - ENABLE_BONDING
 group.h
 group_backup.h
 group_common.h

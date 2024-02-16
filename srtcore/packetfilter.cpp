@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -43,7 +43,7 @@ bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config, PacketFilter::F
     return true;
 }
 
-bool srt::ParseFilterConfig(string s, SrtFilterConfig& w_config)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config)
 {
     return ParseFilterConfig(s, (w_config), NULL);
 }
@@ -130,7 +130,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_iFlag = CUnit::GOOD;
+        unit->m_bTaken = true;
         HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         w_incoming.push_back(unit);
     }
@@ -169,7 +169,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
         InsertRebuilt(w_incoming, m_unitq);
 
         ScopedLock lg(m_parent->m_StatsLock);
-        m_parent->m_stats.rcvr.suppliedByFilter.count(nsupply);
+        m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
 
     // Now that all units have been filled as they should be,
@@ -178,11 +178,11 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
     // Wanted units will be set GOOD flag, unwanted will remain
     // with FREE and therefore will be returned at the next
     // call to getNextAvailUnit().
-    unit->m_iFlag = CUnit::FREE;
+    unit->m_bTaken = false;
     for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
     {
         CUnit* u = *i;
-        u->m_iFlag = CUnit::FREE;
+        u->m_bTaken = false;
     }
 
     // Packets must be sorted by sequence number, ascending, in order
@@ -226,7 +226,7 @@ bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_pack
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    w_packet.m_iMsgNo = SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    w_packet.set_msgflags(SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
@@ -251,9 +251,9 @@ void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
             break;
         }
 
-        // LOCK the unit as GOOD because otherwise the next
+        // LOCK the unit as taken because otherwise the next
         // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_iFlag = CUnit::GOOD;
+        u->m_bTaken = true;
         // After returning from this function, all units will be
         // set back to FREE so that the buffer can decide whether
         // it wants them or not.
@@ -314,8 +314,14 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
     init.socket_id = parent->socketID();
     init.snd_isn = parent->sndSeqNo();
     init.rcv_isn = parent->rcvSeqNo();
-    init.payload_size = parent->OPT_PayloadSize();
+
+    // XXX This is a formula for a full "SRT payload" part that undergoes transmission,
+    // might be nice to have this formula as something more general.
+    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize();
     init.rcvbuf_size = parent->m_config.iRcvBufSize;
+
+    HLOGC(pflog.Debug, log << "PFILTER: @" << init.socket_id << " payload size="
+            << init.payload_size << " rcvbuf size=" << init.rcvbuf_size);
 
     // Found a filter, so call the creation function
     m_filter = selector->second->Create(init, m_provided, confstr);

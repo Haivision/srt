@@ -151,13 +151,13 @@ TEST(SyncDuration, OperatorMultIntEq)
 
 TEST(SyncRandom, GenRandomInt)
 {
-    array<int, 64> mn = {};
+    array<size_t, 64> mn = {};
 
     // Check generated values are in the specified range.
     const size_t n = 2048;
     for (size_t i = 0; i < n; ++i)
     {
-        const int rand_val = genRandomInt(0, mn.size() - 1);
+        const int rand_val = genRandomInt(0, int(mn.size()) - 1);
         ASSERT_GE(rand_val, 0);
         ASSERT_LT(rand_val, mn.size());
         ++mn[rand_val];
@@ -166,14 +166,15 @@ TEST(SyncRandom, GenRandomInt)
     // Check the distribution is more or less uniform.
     // 100% uniform if each value is generated (n / (2 * mn.size())) times.
     // We expect at least half of that value for a random uniform distribution.
-    const int min_value = n / (2 * mn.size()) - 1;
-    cout << "min value: " << min_value << endl;
+    ASSERT_GT(n / (2 * mn.size()), 4u);
+    const size_t min_value = n / (2 * mn.size()) - 4u; // Subtracting 4 to tolerate possible deviations.
     for (size_t i = 0; i < mn.size(); ++i)
     {
         EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
     }
 
     // Uncomment to see the distribution.
+    //cout << "min value: " << min_value << endl;
     //for (size_t i = 0; i < mn.size(); ++i)
     //{
     //    cout << i << '\t';
@@ -384,9 +385,9 @@ TEST(SyncEvent, WaitForNotifyOne)
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        CUniqueSync cc (*m, *cv);
+        return cc.wait_for(tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -405,9 +406,9 @@ TEST(SyncEvent, WaitNotifyOne)
     Condition cond;
     cond.init();
 
-    auto wait_async = [](Condition* cond, Mutex* mutex) {
-        UniqueLock lock(*mutex);
-        return cond->wait(lock);
+    auto wait_async = [](Condition* cv, Mutex* m) {
+        UniqueLock lock(*m);
+        return cv->wait(lock);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
@@ -431,9 +432,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     srt::sync::atomic<bool> resource_ready(true);
 
-    auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
-        UniqueLock lock(*mutex);
-        if (cond->wait_for(lock, timeout) && resource_ready)
+    auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
+        UniqueLock lock(*m);
+        if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
@@ -535,9 +536,9 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -564,9 +565,9 @@ TEST(SyncEvent, WaitForNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 

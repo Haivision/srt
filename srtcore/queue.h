@@ -71,57 +71,33 @@ class CUDT;
 struct CUnit
 {
     CPacket m_Packet; // packet
-    enum Flag
-    {
-        FREE    = 0,
-        GOOD    = 1,
-        PASSACK = 2,
-        DROPPED = 3
-    };
-    Flag m_iFlag; // 0: free, 1: occupied, 2: msg read but not freed (out-of-order), 3: msg dropped
-    // TODO: Transition to the new RcvBuffer allows to use bool here.
+    sync::atomic<bool> m_bTaken; // true if the unit is is use (can be stored in the RCV buffer).
 };
 
 class CUnitQueue
 {
-
 public:
-    CUnitQueue();
+    /// @brief Construct a unit queue.
+    /// @param mss Initial number of units to allocate.
+    /// @param mss Maximum segment size meaning the size of each unit.
+    /// @throws CUDTException SRT_ENOBUF.
+    CUnitQueue(int initNumUnits, int mss);
     ~CUnitQueue();
 
-public: // Storage size operations
-        /// Initialize the unit queue.
-        /// @param [in] size queue size
-        /// @param [in] mss maximum segment size
-        /// @param [in] version IP version
-        /// @return 0: success, -1: failure.
-    int init(int size, int mss, int version);
-
-    /// Increase (double) the unit queue size.
-    /// @return 0: success, -1: failure.
-
-    int increase();
-
-    /// Decrease (halve) the unit queue size.
-    /// @return 0: success, -1: failure.
-
-    int shrink();
+public:
+    int capacity() const { return m_iSize; }
+    int size() const { return m_iSize - m_iNumTaken; }
 
 public:
-    int size() const { return m_iSize - m_iCount; }
-    int capacity() const { return m_iSize; }
-
-public: // Operations on units
-        /// find an available unit for incoming packet.
-        /// @return Pointer to the available unit, NULL if not found.
+    /// @brief Find an available unit for incoming packet. Allocate new units if 90% or more are in use.
+    /// @note This function is not thread-safe. Currently only CRcvQueue::worker thread calls it, thus
+    /// it is not an issue. However, must be protected if used from several threads in the future.
+    /// @return Pointer to the available unit, NULL if not found.
     CUnit* getNextAvailUnit();
 
     void makeUnitFree(CUnit* unit);
 
-    void makeUnitGood(CUnit* unit);
-
-public:
-    inline int getIPversion() const { return m_iIPversion; }
+    void makeUnitTaken(CUnit* unit);
 
 private:
     struct CQEntry
@@ -131,17 +107,28 @@ private:
         int    m_iSize;   // size of each queue
 
         CQEntry* m_pNext;
-    } * m_pQEntry,     // pointer to the first unit queue
-        *m_pCurrQueue, // pointer to the current available queue
-        *m_pLastQueue; // pointer to the last unit queue
+    };
 
+    /// Increase the unit queue size (by @a m_iBlockSize units).
+    /// Uses m_mtx to protect access and changes of the queue state.
+    /// @return 0: success, -1: failure.
+    int increase_();
+
+    /// @brief Allocated a CQEntry of iNumUnits with each unit of mss bytes.
+    /// @param iNumUnits a number of units to allocate
+    /// @param mss the size of each unit in bytes.
+    /// @return a pointer to a newly allocated entry on success, NULL otherwise.
+    static CQEntry* allocateEntry(const int iNumUnits, const int mss);
+
+private:
+    CQEntry* m_pQEntry;    // pointer to the first unit queue
+    CQEntry* m_pCurrQueue; // pointer to the current available queue
+    CQEntry* m_pLastQueue; // pointer to the last unit queue
     CUnit* m_pAvailUnit; // recent available unit
-
     int m_iSize;  // total size of the unit queue, in number of packets
-    srt::sync::atomic<int> m_iCount;        // total number of valid (occupied) packets in the queue
-
-    int m_iMSS;       // unit buffer size
-    int m_iIPversion; // IP version
+    sync::atomic<int> m_iNumTaken; // total number of valid (occupied) packets in the queue
+    const int m_iMSS; // unit buffer size
+    const int m_iBlockSize; // Number of units in each CQEntry.
 
 private:
     CUnitQueue(const CUnitQueue&);
@@ -153,7 +140,7 @@ struct CSNode
     CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp;
 
-    srt::sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
+    sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
 };
 
 class CSndUList
@@ -207,7 +194,7 @@ private:
     void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
 
     /// Insert a new UDT instance into the list without realloc.
-    /// Should be called if there is a gauranteed space for the element.
+    /// Should be called if there is a guaranteed space for the element.
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
@@ -240,7 +227,7 @@ struct CRNode
     CRNode* m_pPrev; // previous link
     CRNode* m_pNext; // next link
 
-    srt::sync::atomic<bool> m_bOnList;              // if the node is already on the list
+    sync::atomic<bool> m_bOnList; // if the node is already on the list
 };
 
 class CRcvUList
@@ -394,10 +381,10 @@ private:
 private:
     struct CRL
     {
-        SRTSOCKET                           m_iID;      // SRT socket ID (self)
-        CUDT*                               m_pUDT;     // CUDT instance
-        sockaddr_any                        m_PeerAddr; // SRT sonnection peer address
-        srt::sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
+        SRTSOCKET                      m_iID;      // SRT socket ID (self)
+        CUDT*                          m_pUDT;     // CUDT instance
+        sockaddr_any                   m_PeerAddr; // SRT sonnection peer address
+        sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
     };
     std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
 
@@ -423,25 +410,25 @@ public:
     /// Initialize the sending queue.
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t Timer
+    void init(CChannel* c, sync::CTimer* t);
 
-    void init(CChannel* c, srt::sync::CTimer* t);
-
-    /// Send out a packet to a given address.
+    /// Send out a packet to a given address. The @a src parameter is
+    /// blindly passed by the caller down the call with intention to
+    /// be received eventually by CChannel::sendto, and used only if
+    /// appropriate conditions state so.
     /// @param [in] addr destination address
-    /// @param [in] packet packet to be sent out
+    /// @param [in,ref] packet packet to be sent out
+    /// @param [in] src The source IP address (details above)
     /// @return Size of data sent out.
-
-    int sendto(const sockaddr_any& addr, CPacket& packet);
+    int sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& src);
 
     /// Get the IP TTL.
     /// @param [in] ttl IP Time To Live.
     /// @return TTL.
-
     int getIpTTL() const;
 
     /// Get the IP Type of Service.
     /// @return ToS.
-
     int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
@@ -454,19 +441,20 @@ public:
     void setClosing() { m_bClosing = true; }
 
 private:
-    static void*       worker(void* param);
-    srt::sync::CThread m_WorkerThread;
+    static void*  worker(void* param);
+    sync::CThread m_WorkerThread;
 
 private:
-    CSndUList*         m_pSndUList; // List of UDT instances for data sending
-    CChannel*          m_pChannel;  // The UDP channel for data sending
-    srt::sync::CTimer* m_pTimer;    // Timing facility
+    CSndUList*    m_pSndUList; // List of UDT instances for data sending
+    CChannel*     m_pChannel;  // The UDP channel for data sending
+    sync::CTimer* m_pTimer;    // Timing facility
 
-    srt::sync::atomic<bool> m_bClosing;            // closing the worker
+    sync::atomic<bool> m_bClosing;            // closing the worker
 
+public:
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
-    uint64_t m_ullDbgPeriod;
-    uint64_t m_ullDbgTime;
+    sync::steady_clock::duration m_DbgPeriod;
+    mutable sync::steady_clock::time_point m_DbgTime;
     struct
     {
         unsigned long lIteration;   //
@@ -475,14 +463,15 @@ private:
         unsigned long lSendTo;
         unsigned long lNotReadyTs;
         unsigned long lCondWait; // block on m_WindowCond
-    } m_WorkerStats;
+    } mutable m_WorkerStats;
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+
+private:
 
 #if ENABLE_LOGGING
     static int m_counter;
 #endif
 
-private:
     CSndQueue(const CSndQueue&);
     CSndQueue& operator=(const CSndQueue&);
 };
@@ -510,19 +499,19 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
-
     void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID
     /// @param [out] packet received packet
     /// @return Data size of the packet
-
     int recvfrom(int32_t id, CPacket& to_packet);
 
     void stopWorker();
 
     void setClosing() { m_bClosing = true; }
+
+    int getIPversion() { return m_iIPversion; }
 
 private:
     static void*  worker(void* param);
@@ -534,17 +523,18 @@ private:
     EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
 
 private:
-    CUnitQueue    m_UnitQueue; // The received packet queue
-    CRcvUList*    m_pRcvUList; // List of UDT instances that will read packets from the queue
-    CHash*        m_pHash;     // Hash table for UDT socket looking up
-    CChannel*     m_pChannel;  // UDP channel for receving packets
-    sync::CTimer* m_pTimer;    // shared timer with the snd queue
+    CUnitQueue*   m_pUnitQueue; // The received packet queue
+    CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
+    CHash*        m_pHash;      // Hash table for UDT socket looking up
+    CChannel*     m_pChannel;   // UDP channel for receiving packets
+    sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
-    size_t m_szPayloadSize; // packet payload size
+    int m_iIPversion;           // IP version
+    size_t m_szPayloadSize;     // packet payload size
 
-    srt::sync::atomic<bool> m_bClosing;            // closing the worker
+    sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static int m_counter;
+    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:
@@ -561,7 +551,7 @@ private:
     bool  ifNewEntry();
     CUDT* getNewEntry();
 
-    void storePkt(int32_t id, CPacket* pkt);
+    void storePktClone(int32_t id, const CPacket& pkt);
 
 private:
     sync::Mutex       m_LSLock;

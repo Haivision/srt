@@ -31,6 +31,14 @@ used by SRT library internally.
 #define ATR_DEPRECATED
 #endif
 
+#if HAVE_CXX11
+#define SRT_ATR_ALIGNAS(n) alignas(n)
+#elif HAVE_GCC
+#define SRT_ATR_ALIGNAS(n) __attribute__((aligned(n)))
+#else
+#define SRT_ATR_ALIGNAS(n)
+#endif
+
 #if defined(__cplusplus) && __cplusplus > 199711L
 #define HAVE_CXX11 1
 // For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
@@ -89,7 +97,7 @@ used by SRT library internally.
 // - Other compilers: none.
 ///////////////////////////////////////////////////////////////////////////////
 #if _MSC_VER >= 1920
-// In case of MSVC these attributes have to preceed the attributed objects (variable, function).
+// In case of MSVC these attributes have to precede the attributed objects (variable, function).
 // E.g. SRT_ATTR_GUARDED_BY(mtx) int object;
 // It is tricky to annotate e.g. the following function, as clang complaints it does not know 'm'.
 // SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m)
@@ -101,6 +109,7 @@ used by SRT library internally.
 #define SRT_ATTR_ACQUIRED_BEFORE(...)
 #define SRT_ATTR_ACQUIRED_AFTER(...)
 #define SRT_ATTR_REQUIRES(expr) _Requires_lock_held_(expr)
+#define SRT_ATTR_REQUIRES2(expr1, expr2) _Requires_lock_held_(expr1) _Requires_lock_held_(expr2)
 #define SRT_ATTR_REQUIRES_SHARED(...)
 #define SRT_ATTR_ACQUIRE(expr) _Acquires_nonreentrant_lock_(expr)
 #define SRT_ATTR_ACQUIRE_SHARED(...)
@@ -141,6 +150,9 @@ used by SRT library internally.
   THREAD_ANNOTATION_ATTRIBUTE__(acquired_after(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
+
+#define SRT_ATTR_REQUIRES2(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
 
 #define SRT_ATTR_REQUIRES_SHARED(...) \
