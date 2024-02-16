@@ -682,7 +682,7 @@ public:
     bool operator==(const element_type* two) const { return get() == two; }
     bool operator!=(const element_type* two) const { return get() != two; }
 
-    operator bool () { return 0!= get(); }
+    operator bool () const { return 0!= get(); }
 };
 
 // A primitive one-argument versions of Sprint and Printable
