@@ -143,6 +143,14 @@ srt::CChannel::CChannel()
     , m_bBindMasked(true)
 #endif
 {
+#ifdef _WIN32
+    SecureZeroMemory((PVOID)&m_SendOverlapped, sizeof(WSAOVERLAPPED));
+    m_SendOverlapped.hEvent = WSACreateEvent();
+    if (m_SendOverlapped.hEvent == NULL) {
+        LOGC(kmlog.Error, log << CONID() << "IPE: WSACreateEvent failed with error: " << NET_ERROR);
+        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+    }
+#endif
 #ifdef SRT_ENABLE_PKTINFO
    // Do the check for ancillary data buffer size, kinda assertion
    static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6);
@@ -158,7 +166,12 @@ srt::CChannel::CChannel()
 #endif
 }
 
-srt::CChannel::~CChannel() {}
+srt::CChannel::~CChannel()
+{
+#ifdef _WIN32
+    WSACloseEvent(m_SendOverlapped.hEvent);
+#endif
+}
 
 void srt::CChannel::createSocket(int family)
 {
@@ -748,9 +761,10 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 
     // Note that even if PKTINFO is desired, the first caller's packet will be sent
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
     if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
     {
-        if (!setSourceAddress(mh, source_addr))
+        if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
         {
             LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
         }
@@ -774,18 +788,32 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
-    WSAOVERLAPPED overlapped;
-    SecureZeroMemory((PVOID)&overlapped, sizeof(WSAOVERLAPPED));
-    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
-    if (res == SOCKET_ERROR && NET_ERROR == WSA_IO_PENDING)
+    int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &m_SendOverlapped, NULL);
+
+    if (res == SOCKET_ERROR)
     {
-        DWORD dwFlags = 0;
-        const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, true, &dwFlags);
-        WSACloseEvent(overlapped.hEvent);
-        res = bCompleted ? 0 : -1;
+        if (NET_ERROR == WSA_IO_PENDING)
+        {
+            res = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
+            if (res == WAIT_FAILED)
+            {
+                LOGC(kslog.Warn, log << "CChannel::WSAWaitForMultipleEvents: failed with " << NET_ERROR);
+                res = -1;
+            }
+            else
+            {
+                DWORD dwFlags = 0;
+                const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &m_SendOverlapped, &size, false, &dwFlags);
+                res = bCompleted ? 0 : -1;
+            }
+        }
+        else
+        {
+            LOGC(kmlog.Error, log << CONID() << "WSASendTo failed with error: " << NET_ERROR);
+        }
     }
-
+    WSAResetEvent(m_SendOverlapped.hEvent);
     res = (0 == res) ? size : -1;
 #endif
 
@@ -835,14 +863,15 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifdef SRT_ENABLE_PKTINFO
         // Without m_bBindMasked, we don't need ancillary data - the source
         // address will always be the bound address.
+        char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
         if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary
             // data. This might be interesting for the connection to
             // know to which address the packet should be sent back during
             // the handshake and then addressed when sending during connection.
-            mh.msg_control = (m_acCmsgRecvBuffer);
-            mh.msg_controllen = sizeof m_acCmsgRecvBuffer;
+            mh.msg_control = (mh_crtl_buf);
+            mh.msg_controllen = sizeof mh_crtl_buf;
         }
 #endif
 

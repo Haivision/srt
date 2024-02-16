@@ -134,6 +134,8 @@ public:
    static int getBandwidth_in(const int* window, int* replica, size_t psize);
 
    static void initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size);
+
+   static int ceilPerMega(double value, double count);
 };
 
 template <size_t ASIZE = 16, size_t PSIZE = 16>

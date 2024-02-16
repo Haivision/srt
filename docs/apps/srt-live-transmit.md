@@ -17,6 +17,7 @@ The following medium types are handled by `srt-live-transmit`:
 
 - SRT - use SRT for reading or writing, in listener, caller or rendezvous mode, with possibly additional parameters
 - UDP - read or write the given UDP address (also multicast)
+- RTP - read RTP from the given address (also multicast)
 - Local file - read or store the stream into the file
 - Process's pipeline - use the process's `stdin` and `stdout` standard streams
 
@@ -86,6 +87,7 @@ The applications supports the following schemes:
 
 - `file` - for file or standard input and output
 - `udp` - UDP output (unicast and multicast)
+- `rtp` - RTP input (unicast and multicast)
 - `srt` - SRT connection
 
 Note that this application doesn't support file as a medium, but this
@@ -182,6 +184,25 @@ instead of `IP_ADD_MEMBERSHIP` and the value is set to `imr_sourceaddr` field.
 
 Explanations for the symbols and terms used above can be found in POSIX
 manual pages, like `ip(7)` and on Microsoft docs pages under `IPPROTO_IP`.
+
+### Medium: RTP
+
+RTP is supported for input only.
+
+All URI parameters described in the [Medium: UDP](#medium-udp) section above
+also apply to RTP. A further RTP-specific option is available as an URI
+parameter:
+
+- **rtpheadersize**: sets the number of bytes to drop from the beginning of
+each received packet. Defaults to 12 if not provided. Minimum value is 12.
+
+A length of **rtpheadersize** bytes will always be dropped. If you wish to pass
+the entire packet, including RTP header, to the output medium, you should
+instead specify UDP as the input medium.
+
+> NOTE: No effort is made in the initial implementation to attempt to parse
+the RTP headers in any way eg for validation, reordering, extracting timing,
+length detection of checking.
 
 ### Medium: SRT
 
@@ -293,7 +314,7 @@ IPv6 local addresses. See the
 [`SRTO_IPV6ONLY`](../API/API-socket-options.md#SRTO_IPV6ONLY) option
 description for details.
 
-4. In rendezvous mode you may only interconnect both parties using IPv4, 
+4. In rendezvous mode you may only interconnect both parties using IPv4,
 or both using IPv6. Unlike listener mode, if you want to leave the socket
 default-bound (you don't specify `adapter`), the socket will be bound with the
 same IP version as the target address. If you do specify `adapter`,
@@ -406,7 +427,7 @@ but this space must be part of the parameter and not extracted by a
 shell (using **"** **"** quotes or backslash).
 
 - **-timeout, -t, -to** - Sets the timeout for any activity from any medium (in seconds). Default is 0 for infinite (that is, turn this mechanism off). The mechanism is such that the SIGALRM is set up to be called after the given time and it's reset after every reading succeeded. When the alarm expires due to no reading activity in defined time, it will break the application. **Notes:**
-  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started. 
+  - The alarm is set up after the reading loop has started, **not when the application has started**. That is, a caller will still wait the standard timeout to connect, and a listener may wait infinitely until some peer connects; only after the connection is established is the alarm counting started.
   - **The timeout mechanism doesn't work on Windows at all.** It behaves as if the timeout was set to **-1** and it's not modifiable.
 - **-timeout-mode, -tm** - Timeout mode used. Default is 0 - timeout will happen after the specified time. Mode 1 cancels the timeout if the connection was established.
 - **-st, -srctime, -sourcetime** - Enable source time passthrough. Default: disabled. It is recommended to build SRT with monotonic (`-DENABLE_MONOTONIC_CLOCK=ON`) or C++ 11 steady (`-DENABLE_STDCXX_SYNC=ON`) clock to use this feature.

@@ -35,7 +35,8 @@ set (CMAKE_OSX_DEPLOYMENT_TARGET "" CACHE STRING "Force unset of the deployment 
 # Determine the cmake host system version so we know where to find the iOS SDKs
 find_program (CMAKE_UNAME uname /bin /usr/bin /usr/local/bin)
 if (CMAKE_UNAME)
-	exec_program(uname ARGS -r OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
+	execute_process(COMMAND uname -r
+			OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
 	string (REGEX REPLACE "^([0-9]+)\\.([0-9]+).*$" "\\1" DARWIN_MAJOR_VERSION "${CMAKE_HOST_SYSTEM_VERSION}")
 endif (CMAKE_UNAME)
 
@@ -119,7 +120,9 @@ endif (${IOS_PLATFORM} STREQUAL OS)
 
 # Setup iOS developer location unless specified manually with CMAKE_IOS_DEVELOPER_ROOT
 if (NOT DEFINED CMAKE_IOS_DEVELOPER_ROOT)
-	exec_program(/usr/bin/xcode-select ARGS -print-path OUTPUT_VARIABLE CMAKE_XCODE_DEVELOPER_DIR)
+	execute_process(COMMAND /usr/bin/xcode-select -print-path
+			OUTPUT_VARIABLE CMAKE_XCODE_DEVELOPER_DIR)
+	string(STRIP "${CMAKE_XCODE_DEVELOPER_DIR}" CMAKE_XCODE_DEVELOPER_DIR) # FIXED: remove new line character, otherwise it complain no iOS SDK's found in default search path
 	set (CMAKE_IOS_DEVELOPER_ROOT "${CMAKE_XCODE_DEVELOPER_DIR}/Platforms/${IOS_PLATFORM_LOCATION}/Developer")
 endif (NOT DEFINED CMAKE_IOS_DEVELOPER_ROOT)
 set (CMAKE_IOS_DEVELOPER_ROOT ${CMAKE_IOS_DEVELOPER_ROOT} CACHE PATH "Location of iOS Platform")
