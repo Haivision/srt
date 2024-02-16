@@ -133,10 +133,9 @@ both machines with identical time bases and speeds, then:
 
 * `ATS[x] = program_delay[x] + network_delay[x] + STS[x]`
 
-(The only problem with treating this above formula too seriously
-is that there doesn't exist the common clock base for two
-network-communicating machines, so these components should be
-treated as something that does exist, but isn't exactly measurable).
+Note that two machines communicating over a network do not typically have a
+common clock base. Therefore, although this formula is correct, it involves
+components that can neither be measured nor captured at the receiver side.
 
 This formula for ATS doesn't apply to the real latency, which is based strictly 
 on ETS. But you can apply this formula for the very first arriving packet, 
@@ -189,8 +188,9 @@ We can now get the true network latency in SRT by moving STS to the other side:
 The DRIFT
 =========
 
-The DRIFT, for simplifyint the calculations above, should be treated as 0,
-which is the initial state. In time, however, it gets changed basing on the
+The DRIFT is a measure of the variance over time of the base time. 
+To simplify the calculations above, DRIFT is considered to be 0,
+which is the initial state. In time, however, it changes based on the
 value of the Arrival Time Deviation:
 
 * `ATD[x] = ATS[x] - ETS[x]`

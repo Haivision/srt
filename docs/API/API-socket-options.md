@@ -1309,11 +1309,11 @@ is determined by the negotiation in the connection establishment (handshake exch
 The general idea for the latency mechanism is to keep the time distance between two consecutive
 received packets the same as the time when these same packets were scheduled for sending by the
 sender application (or per the time explicitly declared when sending - see
-[`srt_sendmsg2`](API-functions.md#srt_sendmsg2) for details). This makes the packets, that have arrived
-earlier than their delivery time, kept in the receiver buffer until this time comes. This should
-compensate any jitter in the network and an extra delay needed for a packet retransmission.
+[`srt_sendmsg2`](API-functions.md#srt_sendmsg2) for details). This keeps any packets that have arrived
+earlier than their delivery time in the receiver buffer until their delivery time comes. This should
+compensate for any jitter in the network and provides an extra delay needed for a packet retransmission.
 
-For the detailed information on how the latency setting influences the actual packet delivery time and
+For detailed information on how the latency setting influences the actual packet delivery time and
 how this time is defined, refer to the [latency documentation](../features/latency.md).
 
 Reading the `SRTO_RCVLATENCY` value on a socket after the connection is established provides the actual (negotiated)
