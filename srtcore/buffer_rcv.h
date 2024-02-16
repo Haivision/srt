@@ -244,16 +244,45 @@ public:
 
     };
 
-    /// Insert a unit into the buffer.
-    /// Similar to CRcvBuffer::addData(CUnit* unit, int offset)
+    /// Inserts the unit with the data packet into the receiver buffer.
+    /// The result inform about the situation with the packet attempted
+    /// to be inserted and the readability of the buffer.
     ///
-    /// @param [in] unit pointer to a data unit containing new packet
-    /// @param [in] offset offset from last ACK point.
+    /// @param [PASS] unit The unit that should be placed in the buffer
     ///
-    /// @return  0 on success, -1 if packet is already in buffer, -2 if packet is before m_iStartSeqNo.
-    /// -3 if a packet is offset is ahead the buffer capacity.
-    // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
+    /// @return The InsertInfo structure where:
+    ///   * result: the result of insertion, which is:
+    ///      * INSERTED: successfully placed in the buffer
+    ///      * REDUNDANT: not placed, the packet is already there
+    ///      * BELATED: not placed, its sequence is in the past
+    ///      * DISCREPANCY: not placed, the sequence is far future or OOTB
+    ///   * first_seq: the earliest sequence number now avail for reading
+    ///   * avail_range: how many packets are available for reading (1 if unknown)
+    ///   * first_time: the play time of the earliest read-available packet
+    /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
+    ///
     InsertInfo insert(CUnit* unit);
+
+    /// Update the values of `m_iEndPos` and `m_iDropPos` in
+    /// case when `m_iEndPos` was updated to a position of a
+    /// nonempty cell.
+    ///
+    /// This function should be called after having m_iEndPos
+    /// has somehow be set to position of a non-empty cell.
+    /// This can happen by two reasons:
+    ///
+    ///  - the cell has been filled by incoming packet
+    ///  - the value has been reset due to shifted m_iStartPos
+    ///
+    /// This means that you have to search for a new gap and
+    /// update the m_iEndPos and m_iDropPos fields, or set them
+    /// both to the end of range if there are no loss gaps.
+    ///
+    /// The @a prev_max_pos parameter is passed here because it is already
+    /// calculated in insert(), otherwise it would have to be calculated here again.
+    ///
+    /// @param prev_max_pos buffer position represented by `m_iMaxPosOff`
+    ///
     void updateGapInfo(int prev_max_pos);
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
@@ -495,12 +524,12 @@ private:
     int findLastMessagePkt();
 
     /// Scan for availability of out of order packets.
-    void onInsertNotInOrderPacket(int insertpos);
-    // Check if m_iFirstRandomMsgPos is still readable.
-    bool checkFirstReadableRandom();
-    void updateFirstReadableRandom();
-    int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
-    int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
+    void onInsertNonOrderPacket(int insertpos);
+    // Check if m_iFirstNonOrderMsgPos is still readable.
+    bool checkFirstReadableNonOrder();
+    void updateFirstReadableNonOrder();
+    int  scanNonOrderMessageRight(int startPos, int msgNo) const;
+    int  scanNonOrderMessageLeft(int startPos, int msgNo) const;
 
     typedef bool copy_to_dst_f(char* data, int len, int dst_offset, void* arg);
 
@@ -566,12 +595,12 @@ private:
     int m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)
 
-    size_t m_numRandomPackets;  // The number of stored packets with "inorder" flag set to false
+    size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
 
     /// Points to the first packet of a message that has out-of-order flag
     /// and is complete (all packets from first to last are in the buffer).
     /// If there is no such message in the buffer, it contains -1.
-    int m_iFirstRandomMsgPos;
+    int m_iFirstNonOrderMsgPos;
     bool m_bPeerRexmitFlag;         // Needed to read message number correctly
     const bool m_bMessageAPI;       // Operation mode flag: message or stream.
 
