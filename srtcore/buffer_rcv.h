@@ -106,6 +106,8 @@ namespace srt
 //                 [D]   [C]             [B]                   [A] (insertion cases)
 //  | (start) --- (end) ===[gap]=== (after-loss) ... (max-pos) |
 //
+// See the CRcvBuffer::updatePosInfo method for detailed implementation.
+//
 // WHEN INSERTING A NEW PACKET:
 //
 // If the incoming sequence maps to newpktpos that is:
@@ -262,6 +264,10 @@ public:
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
     InsertInfo insert(CUnit* unit);
+
+    time_point updatePosInfo(const CUnit* unit, const int prev_max_off, const int newpktpos, const bool extended_end);
+    const CPacket* tryAvailPacketAt(int pos, int& w_span);
+    void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
     /// case when `m_iEndPos` was updated to a position of a

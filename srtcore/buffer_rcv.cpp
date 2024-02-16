@@ -144,7 +144,7 @@ CRcvBuffer::~CRcvBuffer()
     {
         if (!it->pUnit)
             continue;
-        
+
         m_pUnitQueue->makeUnitFree(it->pUnit);
         it->pUnit = NULL;
     }
@@ -167,9 +167,6 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
     IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
-    int32_t avail_seq;
-    int avail_range;
-
     if (offset < 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
@@ -181,31 +178,12 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -3");
 
-        // Calculation done for the sake of possible discrepancy
-        // in order to inform the caller what to do.
-        if (m_entries[m_iStartPos].status == EntryState_Avail)
-        {
-            avail_seq = packetAt(m_iStartPos).getSeqNo();
-            avail_range = m_iEndPos - m_iStartPos;
-        }
-        else if (m_iDropPos == m_iEndPos)
-        {
-            avail_seq = SRT_SEQNO_NONE;
-            avail_range = 0;
-        }
-        else
-        {
-            avail_seq = packetAt(m_iDropPos).getSeqNo();
-
-            // We don't know how many packets follow it exactly,
-            // but in this case it doesn't matter. We know that
-            // at least one is there.
-            avail_range = 1;
-        }
+        InsertInfo ireport (InsertInfo::DISCREPANCY);
+        getAvailInfo((ireport));
 
         IF_HEAVY_LOGGING(debugShowState((debug_source + " overflow").c_str()));
 
-        return InsertInfo(InsertInfo::DISCREPANCY, avail_seq, avail_range);
+        return ireport;
     }
 
     // TODO: Don't do assert here. Process this situation somehow.
@@ -243,95 +221,10 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
     // Set to a value, if due to insertion there was added
     // a packet that is earlier to be retrieved than the earliest
     // currently available packet.
-    time_point earlier_time;
+    time_point earlier_time = updatePosInfo(unit, prev_max_off, newpktpos, extended_end);
 
-    int prev_max_pos = incPos(m_iStartPos, prev_max_off);
-
-    // Update flags
-    // Case [A]
-    if (extended_end)
-    {
-        // THIS means that the buffer WAS CONTIGUOUS BEFORE.
-        if (m_iEndPos == prev_max_pos)
-        {
-            // THIS means that the new packet didn't CAUSE a gap
-            if (m_iMaxPosOff == prev_max_off + 1)
-            {
-                // This means that m_iEndPos now shifts by 1,
-                // and m_iDropPos must be shifted together with it,
-                // as there's no drop to point.
-                m_iEndPos = incPos(m_iStartPos, m_iMaxPosOff);
-                m_iDropPos = m_iEndPos;
-            }
-            else
-            {
-                // Otherwise we have a drop-after-gap candidate
-                // which is the currently inserted packet.
-                // Therefore m_iEndPos STAYS WHERE IT IS.
-                m_iDropPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
-            }
-        }
-    }
-    //
-    // Since this place, every newpktpos is in the range
-    // between m_iEndPos (inclusive) and a position for m_iMaxPosOff.
-
-    // Here you can use prev_max_pos as the position represented
-    // by m_iMaxPosOff, as if !extended_end, it was unchanged.
-    else if (newpktpos == m_iEndPos)
-    {
-        // Case [D]: inserted a packet at the first gap following the
-        // contiguous region. This makes a potential to extend the
-        // contiguous region and we need to find its end.
-
-        // If insertion happened at the very first packet, it is the
-        // new earliest packet now. In any other situation under this
-        // condition there's some contiguous packet range preceding
-        // this position.
-        if (m_iEndPos == m_iStartPos)
-        {
-            earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
-        }
-
-        updateGapInfo(prev_max_pos);
-    }
-    // XXX Not sure if that's the best performant comparison
-    // What is meant here is that newpktpos is between
-    // m_iEndPos and m_iDropPos, though we know it's after m_iEndPos.
-    // CONSIDER: make m_iDropPos rather m_iDropOff, this will make
-    // this comparison a simple subtraction. Note that offset will
-    // have to be updated on every shift of m_iStartPos.
-    else if (cmpPos(newpktpos, m_iDropPos) < 0)
-    {
-        // Case [C]: the newly inserted packet precedes the
-        // previous earliest delivery position after drop,
-        // that is, there is now a "better" after-drop delivery
-        // candidate.
-
-        // New position updated a valid packet on an earlier
-        // position than the drop position was before, although still
-        // following a gap.
-        //
-        // We know it because if the position has filled a gap following
-        // a valid packet, this preceding valid packet would be pointed
-        // by m_iDropPos, or it would point to some earlier packet in a
-        // contiguous series of valid packets following a gap, hence
-        // the above condition wouldn't be satisfied.
-        m_iDropPos = newpktpos;
-
-        // If there's an inserted packet BEFORE drop-pos (which makes it
-        // a new drop-pos), while the very first packet is absent (the
-        // below condition), it means we have a new earliest-available
-        // packet. Otherwise we would have only a newly updated drop
-        // position, but still following some earlier contiguous range
-        // of valid packets - so it's earlier than previous drop, but
-        // not earlier than the earliest packet.
-        if (m_iStartPos == m_iEndPos)
-        {
-            earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
-        }
-    }
-    // OTHERWISE: case [D] in which nothing is to be updated.
+    InsertInfo ireport (InsertInfo::INSERTED);
+    ireport.first_time = earlier_time;
 
     // If packet "in order" flag is zero, it can be read out of order.
     // With TSBPD enabled packets are always assumed in order (the flag is ignored).
@@ -343,40 +236,164 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
 
     updateNonreadPos();
 
-    CPacket* avail_packet = NULL;
-
-    if (m_entries[m_iStartPos].pUnit && m_entries[m_iStartPos].status == EntryState_Avail)
-    {
-        avail_packet = &packetAt(m_iStartPos);
-        avail_range = offPos(m_iStartPos, m_iEndPos);
-    }
-    else if (!m_tsbpd.isEnabled() && m_iFirstNonOrderMsgPos != -1)
-    {
-        // In case when TSBPD is off, we take into account the message mode
-        // where messages may potentially span for multiple packets, therefore
-        // the only "next deliverable" is the first complete message that satisfies
-        // the order requirement.
-        avail_packet = &packetAt(m_iFirstNonOrderMsgPos);
-        avail_range = 1;
-    }
-    else if (m_iDropPos != m_iEndPos)
-    {
-        avail_packet = &packetAt(m_iDropPos);
-        avail_range = 1;
-    }
-    else
-    {
-        avail_packet = NULL;
-        avail_range = 0;
-    }
+    // This updates only the first_seq and avail_range fields.
+    getAvailInfo((ireport));
 
     IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
     IF_HEAVY_LOGGING(debugShowState((debug_source + " ok").c_str()));
 
-    if (avail_packet)
-        return InsertInfo(InsertInfo::INSERTED, avail_packet->getSeqNo(), avail_range, earlier_time);
-    else
-        return InsertInfo(InsertInfo::INSERTED); // No packet candidate (NOTE: impossible in live mode)
+    return ireport;
+}
+
+void CRcvBuffer::getAvailInfo(CRcvBuffer::InsertInfo& w_if)
+{
+   int fallback_pos = -1;
+   if (!m_tsbpd.isEnabled())
+   {
+       // In case when TSBPD is off, we take into account the message mode
+       // where messages may potentially span for multiple packets, therefore
+       // the only "next deliverable" is the first complete message that satisfies
+       // the order requirement.
+       // NOTE THAT this field can as well be -1 already.
+       fallback_pos = m_iFirstNonOrderMsgPos;
+   }
+   else if (m_iDropPos != m_iEndPos)
+   {
+       // With TSBPD regard the drop position (regardless if
+       // TLPKTDROP is currently on or off), if "exists", that
+       // is, m_iDropPos != m_iEndPos.
+       fallback_pos = m_iDropPos;
+   }
+
+   // This finds the first possible available packet, which is
+   // preferably at cell 0, but if not available, try also with
+   // given fallback position (unless it's -1).
+   const CPacket* pkt = tryAvailPacketAt(fallback_pos, (w_if.avail_range));
+   if (pkt)
+   {
+       w_if.first_seq = pkt->getSeqNo();
+   }
+}
+
+
+const CPacket* CRcvBuffer::tryAvailPacketAt(int pos, int& w_span)
+{
+   if (m_entries[m_iStartPos].status == EntryState_Avail)
+   {
+       pos = m_iStartPos;
+       w_span = offPos(m_iStartPos, m_iEndPos);
+   }
+
+   if (pos == -1)
+   {
+       w_span = 0;
+       return NULL;
+   }
+
+   SRT_ASSERT(m_entries[pos].pUnit != NULL);
+
+   // TODO: we know that at least 1 packet is available, but only
+   // with m_iEndPos we know where the true range is. This could also
+   // be implemented for message mode, but still this would employ
+   // a separate begin-end range declared for a complete out-of-order
+   // message.
+   w_span = 1;
+   return &packetAt(pos);
+}
+
+CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const int prev_max_off, const int newpktpos, const bool extended_end)
+{
+   time_point earlier_time;
+
+   int prev_max_pos = incPos(m_iStartPos, prev_max_off);
+
+   // Update flags
+   // Case [A]
+   if (extended_end)
+   {
+       // THIS means that the buffer WAS CONTIGUOUS BEFORE.
+       if (m_iEndPos == prev_max_pos)
+       {
+           // THIS means that the new packet didn't CAUSE a gap
+           if (m_iMaxPosOff == prev_max_off + 1)
+           {
+               // This means that m_iEndPos now shifts by 1,
+               // and m_iDropPos must be shifted together with it,
+               // as there's no drop to point.
+               m_iEndPos = incPos(m_iStartPos, m_iMaxPosOff);
+               m_iDropPos = m_iEndPos;
+           }
+           else
+           {
+               // Otherwise we have a drop-after-gap candidate
+               // which is the currently inserted packet.
+               // Therefore m_iEndPos STAYS WHERE IT IS.
+               m_iDropPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
+           }
+       }
+   }
+   //
+   // Since this place, every newpktpos is in the range
+   // between m_iEndPos (inclusive) and a position for m_iMaxPosOff.
+
+   // Here you can use prev_max_pos as the position represented
+   // by m_iMaxPosOff, as if !extended_end, it was unchanged.
+   else if (newpktpos == m_iEndPos)
+   {
+       // Case [D]: inserted a packet at the first gap following the
+       // contiguous region. This makes a potential to extend the
+       // contiguous region and we need to find its end.
+
+       // If insertion happened at the very first packet, it is the
+       // new earliest packet now. In any other situation under this
+       // condition there's some contiguous packet range preceding
+       // this position.
+       if (m_iEndPos == m_iStartPos)
+       {
+           earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
+       }
+
+       updateGapInfo(prev_max_pos);
+   }
+   // XXX Not sure if that's the best performant comparison
+   // What is meant here is that newpktpos is between
+   // m_iEndPos and m_iDropPos, though we know it's after m_iEndPos.
+   // CONSIDER: make m_iDropPos rather m_iDropOff, this will make
+   // this comparison a simple subtraction. Note that offset will
+   // have to be updated on every shift of m_iStartPos.
+   else if (cmpPos(newpktpos, m_iDropPos) < 0)
+   {
+       // Case [C]: the newly inserted packet precedes the
+       // previous earliest delivery position after drop,
+       // that is, there is now a "better" after-drop delivery
+       // candidate.
+
+       // New position updated a valid packet on an earlier
+       // position than the drop position was before, although still
+       // following a gap.
+       //
+       // We know it because if the position has filled a gap following
+       // a valid packet, this preceding valid packet would be pointed
+       // by m_iDropPos, or it would point to some earlier packet in a
+       // contiguous series of valid packets following a gap, hence
+       // the above condition wouldn't be satisfied.
+       m_iDropPos = newpktpos;
+
+       // If there's an inserted packet BEFORE drop-pos (which makes it
+       // a new drop-pos), while the very first packet is absent (the
+       // below condition), it means we have a new earliest-available
+       // packet. Otherwise we would have only a newly updated drop
+       // position, but still following some earlier contiguous range
+       // of valid packets - so it's earlier than previous drop, but
+       // not earlier than the earliest packet.
+       if (m_iStartPos == m_iEndPos)
+       {
+           earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
+       }
+   }
+   // OTHERWISE: case [D] in which nothing is to be updated.
+
+   return earlier_time;
 }
 
 void CRcvBuffer::updateGapInfo(int prev_max_pos)
