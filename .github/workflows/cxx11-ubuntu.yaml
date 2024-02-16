@@ -22,6 +22,7 @@ jobs:
     - name: test
       run: |
         cd _build && ctest --extra-verbose
-        cd ../
+    - name: codecov
+      run: |
         source ./scripts/collect-gcov.sh
         bash <(curl -s https://codecov.io/bash)
