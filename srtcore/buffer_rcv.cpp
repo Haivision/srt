@@ -1495,7 +1495,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     }
 
     // Start position
-    int pos = incPos(m_iStartPos, offset);
+    int frompos = incPos(m_iStartPos, offset);
 
     // Ok; likely we should stand at the m_iEndPos position.
     // If this given position is earlier than this, then
@@ -1506,7 +1506,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     int ret_off = m_iMaxPosOff;
 
     int end_off = offPos(m_iStartPos, m_iEndPos);
-    if (pos < end_off)
+    if (frompos < end_off)
     {
         // If m_iEndPos has such a value, then there are
         // no loss packets at all.
@@ -1560,7 +1560,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     }
 
     // Fallback - this should be impossible, so issue a log.
-    LOGC(rbuflog.Error, log << "IPE: empty cell pos=" << pos << " %" << CSeqNo::incseq(m_iStartSeqNo, ret_off) << " not followed by any valid cell");
+    LOGC(rbuflog.Error, log << "IPE: empty cell pos=" << frompos << " %" << CSeqNo::incseq(m_iStartSeqNo, ret_off) << " not followed by any valid cell");
 
     // Return this in the last resort - this could only be a situation when
     // a packet has somehow disappeared, but it contains empty cells up to the
