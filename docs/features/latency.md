@@ -1,5 +1,4 @@
-General statement about latency
-===================================
+## General statement about latency
 
 In the live streaming there are many things happening between the 
 camera's lens and the screen of the video player, all of which contribute 
@@ -15,8 +14,7 @@ function is called at the receiver side. This SRT latency is the actual time dif
 between these two events.
 
 
-The goal of the latency (TSBPD) mechanism
-=========================================
+## The goal of the latency (TSBPD) mechanism
 
 SRT employs a TimeStamp Based Packet Delivery (TSBPD) mechanism 
 with strict goal of keeping the time interval between two consecutive packets 
@@ -38,8 +36,7 @@ For every following packet the delivery time interval should be equal to the
 that packet's declared scheduling time interval.
 
 
-SRT's approach to packet arrival time
-=====================================
+## SRT's approach to packet arrival time
 
 SRT provides two socket options `SRTO_PEERLATENCY` and `SRTO_RCVLATENCY`.
 While they have "latency" in their names, they do *not* define the true time
@@ -75,8 +72,7 @@ the sender application is calling any of the `srt_send*` functions
 (see [`srt_sendmsg2`](../API/API-functions.md#srt_sendmsg2) for details).
 
 
-SRT latency components
-======================
+## SRT latency components
 
 To understand the latency components we need also other definitions:
 
@@ -185,8 +181,7 @@ We can now get the true network latency in SRT by moving STS to the other side:
 * `PTS[x] - STS[x] = prg_delay[0] + net_delay[0] + LATENCY + DRIFT`
 
 
-The DRIFT
-=========
+## The DRIFT
 
 The DRIFT is a measure of the variance over time of the base time. 
 To simplify the calculations above, DRIFT is considered to be 0,
