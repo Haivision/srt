@@ -245,7 +245,7 @@ public:
 
     /// initialize the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
-    SRTSTATUS startup();
+    SRTRUNSTATUS startup();
 
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.

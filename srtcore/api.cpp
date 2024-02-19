@@ -236,12 +236,12 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     return os.str();
 }
 
-SRTSTATUS srt::CUDTUnited::startup()
+SRTRUNSTATUS srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
 
     if (m_iInstanceCount++ > 0)
-        return SRTSTATUS(1);
+        return SRT_RUN_ALREADY;
 
         // Global initialization code
 #ifdef _WIN32
@@ -258,18 +258,18 @@ SRTSTATUS srt::CUDTUnited::startup()
     PacketFilter::globalInit();
 
     if (m_bGCStatus)
-        return SRTSTATUS(1);
+        return SRT_RUN_ALREADY;
 
     m_bClosing = false;
 
     if (!StartThread(m_GCThread, garbageCollect, this, "SRT:GC"))
-        return SRT_ERROR;
+        return SRT_RUN_ERROR;
 
     m_bGCStatus = true;
 
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 
-    return SRT_STATUS_OK;
+    return SRT_RUN_OK;
 }
 
 SRTSTATUS srt::CUDTUnited::cleanup()
@@ -3363,7 +3363,7 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SRTSTATUS srt::CUDT::startup()
+SRTRUNSTATUS srt::CUDT::startup()
 {
     return uglobal().startup();
 }
@@ -4355,7 +4355,7 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 namespace UDT
 {
 
-SRTSTATUS startup()
+SRTRUNSTATUS startup()
 {
     return srt::CUDT::startup();
 }

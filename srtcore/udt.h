@@ -168,7 +168,7 @@ SRT_API extern const SRTSOCKET INVALID_SOCK;
 #undef ERROR
 SRT_API extern const SRTSTATUS ERROR;
 
-SRT_API SRTSTATUS startup();
+SRT_API SRTRUNSTATUS startup();
 SRT_API SRTSTATUS cleanup();
 SRT_API SRTSOCKET socket();
 inline SRTSOCKET socket(int , int , int ) { return socket(); }

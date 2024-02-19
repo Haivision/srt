@@ -190,7 +190,7 @@ private: // constructor and desctructor
     ~CUDT();
 
 public: //API
-    static SRTSTATUS startup();
+    static SRTRUNSTATUS startup();
     static SRTSTATUS cleanup();
     static SRTSOCKET socket();
 #if ENABLE_BONDING

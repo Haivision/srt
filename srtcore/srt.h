@@ -145,6 +145,7 @@ written by
 // This is normal and should be normally used.
 typedef int32_t SRTSOCKET;
 typedef int SRTSTATUS;
+typedef int SRTRUNSTATUS;
 #else
 // Used for development only.
 #include "../common/devel_util.h"
@@ -770,21 +771,29 @@ static const SRTSOCKET SRT_INVALID_SOCK (-1);
 static const SRTSOCKET SRT_SOCKID_CONNREQ (0);
 static const SRTSTATUS SRT_ERROR (-1);
 static const SRTSTATUS SRT_STATUS_OK (0);
+static const SRTRUNSTATUS SRT_RUN_ERROR (-1);
+static const SRTRUNSTATUS SRT_RUN_OK (0);
+static const SRTRUNSTATUS SRT_RUN_ALREADY (1);
 
-#else
+
+#else // C version
 
 static const SRTSOCKET SRT_INVALID_SOCK = -1;
 static const SRTSOCKET SRT_SOCKID_CONNREQ = 0;
 static const SRTSTATUS SRT_ERROR = -1;
 static const SRTSTATUS SRT_STATUS_OK = 0;
+static const SRTRUNSTATUS SRT_RUN_ERROR = -1;
+static const SRTRUNSTATUS SRT_RUN_OK = 0;
+static const SRTRUNSTATUS SRT_RUN_ALREADY = 1;
 
 #endif
+
 
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 
 // library initialization
-SRT_API       SRTSTATUS srt_startup(void);
+SRT_API    SRTRUNSTATUS srt_startup(void);
 SRT_API       SRTSTATUS srt_cleanup(void);
 
 //

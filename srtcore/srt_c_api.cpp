@@ -29,7 +29,7 @@ using namespace srt;
 
 extern "C" {
 
-SRTSTATUS srt_startup() { return CUDT::startup(); }
+SRTRUNSTATUS srt_startup() { return CUDT::startup(); }
 SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 
 // Socket creation.

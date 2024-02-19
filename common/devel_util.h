@@ -84,6 +84,7 @@ struct IntWrapperLoose: IntWrapper<INT, ambg>
 
 typedef IntWrapper<int32_t, 0> SRTSOCKET;
 typedef IntWrapper<int, 1> SRTSTATUS;
+typedef IntWrapper<int, 2> SRTRUNSTATUS;
 typedef IntWrapperLoose<int, 1> SRTSTATUS_LOOSE;
 
 
