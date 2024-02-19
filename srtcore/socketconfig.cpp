@@ -292,10 +292,8 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
         using namespace std;
 
         string val;
-        if (optlen == -1)
-            val = (const char *)optval;
-        else
-            val.assign((const char *)optval, optlen);
+
+        val.assign((const char *)optval, optlen);
         if (val.size() >= IFNAMSIZ)
         {
             LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE: device name too long (max: IFNAMSIZ=" << IFNAMSIZ << ")");
@@ -597,10 +595,7 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         std::string val;
-        if (optlen == -1)
-            val = (const char*)optval;
-        else
-            val.assign((const char*)optval, optlen);
+        val.assign((const char*)optval, optlen);
 
         // Translate alias
         if (val == "vod")

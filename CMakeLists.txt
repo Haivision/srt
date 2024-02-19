@@ -24,6 +24,10 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
+	cmake_policy(SET CMP0054 NEW)
+endif ()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -358,6 +362,9 @@ if (ENABLE_ENCRYPTION)
 		endif()
 		if ("${SSL_LIBRARIES}" STREQUAL "")
 			set (SSL_LIBRARIES  mbedtls mbedcrypto)
+			if (WIN32)
+				set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
+			endif()
 		endif()
 		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 
@@ -695,7 +702,7 @@ if (FORCE_CXX_STANDARD)
 endif()
 
 # add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
+if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
@@ -1515,15 +1522,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
-		gtest_add_tests(
-			TEST_LIST tests_srt
-			TARGET test-srt
-		)
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
-
 endif()
 
 

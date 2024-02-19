@@ -68,9 +68,7 @@ public:
             pktMsgFlags |= PacketBoundaryBits(PB_LAST);
 
         if (!out_of_order)
-        {
             pktMsgFlags |= MSGNO_PACKET_INORDER::wrap(1);
-        }
         packet.set_msgflags(pktMsgFlags);
 
         if (!out_of_order)

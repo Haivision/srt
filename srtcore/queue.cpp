@@ -1749,6 +1749,7 @@ void srt::CRcvQueue::setNewEntry(CUDT* u)
 
 bool srt::CRcvQueue::ifNewEntry()
 {
+    ScopedLock listguard(m_IDLock);
     return !(m_vNewEntry.empty());
 }
 

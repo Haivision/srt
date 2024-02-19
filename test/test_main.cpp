@@ -176,5 +176,9 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
     return result;
 }
 
+UniqueSocket::~UniqueSocket()
+{
+    srt_close(sock);
+}
 
 }
