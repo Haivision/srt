@@ -559,6 +559,15 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
+#ifdef ENABLE_MAXREXMITBW
+    case SRTO_MAXREXMITBW:
+        if (size_t(optlen) < sizeof(m_config.llMaxRexmitBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        *(int64_t*)optval = m_config.llMaxRexmitBW;
+        optlen = sizeof(int64_t);
+        break;
+#endif
+
     case SRTO_STATE:
         *(int32_t *)optval = uglobal().getStatus(m_SocketID);
         optlen             = sizeof(int32_t);
