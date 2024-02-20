@@ -70,6 +70,9 @@ public:
         };
         auto accept_res = async(launch::async, accept_async, m_listen_sock);
 
+        // Make sure the thread was kicked
+        this_thread::yield();
+
         const int connect_res = Connect();
         EXPECT_EQ(connect_res, SRT_SUCCESS);
 
