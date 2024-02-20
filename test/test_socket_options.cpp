@@ -189,6 +189,9 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_LINGER
     { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
     //SRTO_MAXBW
+#ifdef ENABLE_MAXREXMITBW
+    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),            -1ll, INT64_MAX,    - 1ll,     200000ll,  {-2ll}},
+#endif
     { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
     //SRTO_MININPUTBW
     { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
@@ -234,7 +237,7 @@ template<class ValueType>
 void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, const char* desc)
 {
     ValueType opt_val;
-    int opt_len = 0;
+    int opt_len = entry.opt_len;
     EXPECT_EQ(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
