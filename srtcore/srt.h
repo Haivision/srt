@@ -164,12 +164,6 @@ extern "C" {
 // socket or a socket group.
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
-#ifdef __cplusplus
-namespace srt {
-inline bool isgroup(SRTSOCKET sid) { return (int32_t(sid) & SRTGROUP_MASK) != 0; }
-}
-#endif
-
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
 #else

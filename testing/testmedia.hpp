@@ -142,7 +142,7 @@ public:
     void Acquire(SRTSOCKET s)
     {
         m_sock = s;
-        if (srt::isgroup(s))
+        if (int32_t(s) & SRTGROUP_MASK)
             m_listener_group = true;
     }
 

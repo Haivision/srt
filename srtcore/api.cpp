@@ -874,7 +874,7 @@ SRTSTATUS srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_cal
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             GroupKeeper k(*this, u, ERH_THROW);
             k.group->installConnectHook(hook, opaq);
@@ -1214,7 +1214,7 @@ SRTSOCKET srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const s
     // Check affiliation of the socket. It's now allowed for it to be
     // a group or socket. For a group, add automatically a socket to
     // the group.
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
     {
         GroupKeeper k(*this, u, ERH_THROW);
         // Note: forced_isn is ignored when connecting a group.
@@ -1255,7 +1255,7 @@ SRTSOCKET srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int 
     // Check affiliation of the socket. It's now allowed for it to be
     // a group or socket. For a group, add automatically a socket to
     // the group.
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
     {
         GroupKeeper k(*this, u, ERH_THROW);
 
@@ -1894,7 +1894,7 @@ void srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, 
 SRTSTATUS srt::CUDTUnited::close(const SRTSOCKET u)
 {
 #if ENABLE_BONDING
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
     {
         GroupKeeper k(*this, u, ERH_THROW);
         k.group->close();
@@ -2352,7 +2352,7 @@ void srt::CUDTUnited::epoll_clear_usocks(int eid)
 void srt::CUDTUnited::epoll_add_usock(const int eid, const SRTSOCKET u, const int* events)
 {
 #if ENABLE_BONDING
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
     {
         GroupKeeper k(*this, u, ERH_THROW);
         m_EPoll.update_usock(eid, u, events);
@@ -2430,7 +2430,7 @@ void srt::CUDTUnited::epoll_remove_usock(const int eid, const SRTSOCKET u)
 
 #if ENABLE_BONDING
     CUDTGroup* g = 0;
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
     {
         GroupKeeper k(*this, u, ERH_THROW);
         g = k.group;
@@ -3504,7 +3504,7 @@ SRTSOCKET srt::CUDT::getGroupOfSocket(SRTSOCKET socket)
 
 SRTSTATUS srt::CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
-    if (!isgroup(groupid) || !psize)
+    if (!CUDT::isgroup(groupid) || !psize)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -3675,7 +3675,7 @@ SRTSOCKET srt::CUDT::connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG targets[], 
     if (arraysize <= 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0), SRT_INVALID_SOCK;
 
-    if (!isgroup(grp))
+    if (!CUDT::isgroup(grp))
     {
         // connectLinks accepts only GROUP id, not socket id.
         return APIError(MJ_NOTSUP, MN_SIDINVAL, 0), SRT_INVALID_SOCK;
@@ -3786,7 +3786,7 @@ SRTSTATUS srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             k.group->getOpt(optname, (pw_optval), (*pw_optlen));
@@ -3817,7 +3817,7 @@ SRTSTATUS srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const voi
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             k.group->setOpt(optname, optval, optlen);
@@ -3862,7 +3862,7 @@ int srt::CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             return k.group->send(buf, len, (w_m));
@@ -3906,7 +3906,7 @@ int srt::CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             return k.group->recv(buf, len, (w_m));
@@ -4251,7 +4251,7 @@ srt::CUDTException& srt::CUDT::getlasterror()
 SRTSTATUS srt::CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instantaneous)
 {
 #if ENABLE_BONDING
-    if (isgroup(u))
+    if (CUDT::isgroup(u))
         return groupsockbstats(u, perf, clear);
 #endif
 
@@ -4329,7 +4329,7 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
     try
     {
 #if ENABLE_BONDING
-        if (isgroup(u))
+        if (CUDT::isgroup(u))
         {
             CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
             return k.group->getStatus();

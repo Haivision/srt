@@ -570,7 +570,7 @@ void SrtCommon::AcceptNewClient()
     }
 
 #if ENABLE_BONDING
-    if (srt::isgroup(m_sock))
+    if (int32_t(m_sock) & SRTGROUP_MASK)
     {
         m_listener_group = true;
         if (m_group_config != "")

@@ -1,3 +1,31 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
+// IMPORTANT!!!
+//
+// This is normally not a part of SRT source files. This is a developer utility
+// that allows developers to perform a compile test on a version instrumented
+// with type checks. To do that, you can do one of two things:
+//
+// - configure the compiling process with extra -DSRT_TEST_FORCED_CONSTANT=1 flag
+// - unblock the commented out #define in srt.h file for that constant
+//
+// Note that there's no use of such a compiled code. This is done only so that
+// the compiler can detect any misuses of the SRT symbolic type names and
+// constants.
+
 
 #include <ostream>
 
