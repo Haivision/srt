@@ -750,11 +750,18 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
+    enum DropReason
+    {
+        DROP_FORGET, //< Drop to keep up to the live pace (TLPKTDROP)
+        DROP_WINK    //< Drop because another member already provided these packets (group synch)
+    };
+
     /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
+    /// @param rsn Declare why dropping is requested (see @a DropReason)
     /// @return The number of packets dropped.
-    int rcvDropTooLateUpTo(int seqno);
+    int rcvDropTooLateUpTo(int seqno, DropReason rsn = DROP_FORGET);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);

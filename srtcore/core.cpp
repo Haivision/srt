@@ -5562,7 +5562,7 @@ void * srt::CUDT::tsbpd(void* param)
     return NULL;
 }
 
-int srt::CUDT::rcvDropTooLateUpTo(int seqno)
+int srt::CUDT::rcvDropTooLateUpTo(int seqno, srt::CUDT::DropReason reason)
 {
     // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
     if (CSeqNo::seqcmp(seqno, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
@@ -5571,7 +5571,11 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
     dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
 
     const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
-    if (iDropCnt > 0)
+
+    // Count missing packets as dropped if found any and this
+    // dropping was not because of having these packets already
+    // covered as per reception from the other member.
+    if (iDropCnt > 0 && reason != DROP_WINK)
     {
         enterCS(m_StatsLock);
         // Estimate dropped bytes from average payload size.
@@ -7821,7 +7825,9 @@ void srt::CUDT::dropToGroupRecvBase()
         return;
 
     ScopedLock lck(m_RcvBufferLock);
-    int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base));
+    // Use DROP_WINK so that if there are any missing packets in this row
+    // they will not be counted as dropped.
+    int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base), DROP_WINK);
     if (cnt > 0)
     {
         HLOGC(grlog.Debug,
