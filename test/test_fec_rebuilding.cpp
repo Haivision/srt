@@ -305,9 +305,12 @@ TEST(TestFEC, Connection)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
-    SRTSOCKET la[] = { l };
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
+    SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
@@ -361,6 +364,9 @@ TEST(TestFEC, ConnectionReorder)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
@@ -417,6 +423,9 @@ TEST(TestFEC, ConnectionFull1)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
@@ -471,6 +480,9 @@ TEST(TestFEC, ConnectionFull2)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
@@ -527,6 +539,9 @@ TEST(TestFEC, ConnectionMess)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
@@ -580,6 +595,9 @@ TEST(TestFEC, ConnectionForced)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
@@ -630,6 +648,9 @@ TEST(TestFEC, RejectionConflict)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
 
@@ -670,6 +691,9 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -715,6 +739,9 @@ TEST(TestFEC, RejectionIncomplete)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
