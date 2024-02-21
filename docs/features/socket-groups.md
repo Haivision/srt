@@ -305,7 +305,7 @@ that is, over a direct connection.
 
 The general idea of groups is that there can be multiple sockets belonging
 to a group, and various operations, normally done on single sockets, can
-be simply done on a group. How an operation done on a group is then 
+be simply done on a group. How an operation done on a group is then
 implemented by doing operations on sockets, depends on the group type and
 the operation itself.
 
@@ -686,7 +686,7 @@ set the `groupconnect` option (here let's say you get the source signal
 from a device that streams to this machine to port 5555):
 
 ```
-./srt-test-live udp://:5555 srt://:5000?groupconnect=true
+./srt-test-live udp://:5555 srt://:5000?groupconnect=1
 ```
 
 At the caller side you can also use some group-member specific options.

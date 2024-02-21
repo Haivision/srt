@@ -1,13 +1,15 @@
-#include "gtest/gtest.h"
 #include <thread>
 #include <string>
+#include "gtest/gtest.h"
+#include "test_env.h"
+
 #include "srt.h"
 #include "netinet_any.h"
 
 using srt::sockaddr_any;
 
 class TestIPv6
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     int yes = 1;
@@ -25,10 +27,8 @@ protected:
 
 protected:
     // SetUp() is run immediately before a test starts.
-    void SetUp()
+    void setup() override
     {
-        ASSERT_GE(srt_startup(), 0);
-
         m_caller_sock = srt_create_socket();
         ASSERT_NE(m_caller_sock, SRT_ERROR);
         // IPv6 calling IPv4 would otherwise fail if the system-default net.ipv6.bindv6only=1.
@@ -38,13 +38,12 @@ protected:
         ASSERT_NE(m_listener_sock, SRT_ERROR);
     }
 
-    void TearDown()
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
         srt_close(m_listener_sock);
         srt_close(m_caller_sock);
-        srt_cleanup();
     }
 
 public:
@@ -140,6 +139,8 @@ TEST_F(TestIPv6, v4_calls_v6_mapped)
 
 TEST_F(TestIPv6, v6_calls_v6_mapped)
 {
+    SRTST_REQUIRES(IPv6);
+
     sockaddr_any sa (AF_INET6);
     sa.hport(m_listen_port);
 
@@ -157,6 +158,8 @@ TEST_F(TestIPv6, v6_calls_v6_mapped)
 
 TEST_F(TestIPv6, v6_calls_v6)
 {
+    SRTST_REQUIRES(IPv6);
+
     sockaddr_any sa (AF_INET6);
     sa.hport(m_listen_port);
 

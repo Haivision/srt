@@ -20,6 +20,7 @@ written by
 #include <iostream>
 #include <iomanip>
 #include <set>
+#include <vector>
 #include <sstream>
 #include <cstdarg>
 #ifdef _WIN32
@@ -115,6 +116,7 @@ struct LogConfig
     void* loghandler_opaque;
     srt::sync::Mutex mutex;
     int flags;
+    std::vector<struct LogDispatcher*> loggers;
 
     LogConfig(const fa_bitset_t& efa,
             LogLevel::type l = LogLevel::warning,
@@ -137,6 +139,10 @@ struct LogConfig
 
     SRT_ATTR_RELEASE(mutex)
     void unlock() { mutex.unlock(); }
+
+    void subscribe(LogDispatcher*);
+    void unsubscribe(LogDispatcher*);
+    void updateLoggersState();
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -148,6 +154,7 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
+    bool enabled;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -158,6 +165,7 @@ public:
             const char* logger_pfx /*[[nullable]]*/, LogConfig& config):
         fa(functional_area),
         level(log_level),
+        enabled(false),
         src_config(&config)
     {
         // XXX stpcpy desired, but not enough portable
@@ -166,22 +174,37 @@ public:
 
         // See Logger::Logger; we know this has normally 2 characters,
         // except !!FATAL!!, which has 9. Still less than 32.
-        strcpy(prefix, your_pfx);
-
         // If the size of the FA name together with severity exceeds the size,
         // just skip the former.
         if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
         {
-            strcat(prefix, ":");
-            strcat(prefix, logger_pfx);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+            _snprintf(prefix, MAX_PREFIX_SIZE, "%s:%s", your_pfx, logger_pfx);
+#else
+            snprintf(prefix, MAX_PREFIX_SIZE + 1, "%s:%s", your_pfx, logger_pfx);
+#endif
         }
+        else
+        {
+#ifdef _MSC_VER
+            strncpy_s(prefix, MAX_PREFIX_SIZE + 1, your_pfx, _TRUNCATE);
+#else
+            strncpy(prefix, your_pfx, MAX_PREFIX_SIZE);
+            prefix[MAX_PREFIX_SIZE] = '\0';
+#endif
+        }
+        config.subscribe(this);
+        Update();
     }
 
     ~LogDispatcher()
     {
+        src_config->unsubscribe(this);
     }
 
-    bool CheckEnabled();
+    void Update();
+
+    bool CheckEnabled() { return enabled; }
 
     void CreateLogLinePrefix(std::ostringstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
@@ -359,7 +382,11 @@ struct LogDispatcher::Proxy
     {
         char buf[512];
 
-        vsprintf(buf, fmts, ap);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+        _vsnprintf(buf, sizeof(buf) - 1, fmts, ap);
+#else
+        vsnprintf(buf, sizeof(buf), fmts, ap);
+#endif
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {
@@ -399,24 +426,7 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!", logger_pfx, m_config )
     {
     }
-
 };
-
-inline bool LogDispatcher::CheckEnabled()
-{
-    // Don't use enabler caching. Check enabled state every time.
-
-    // These assume to be atomically read, so the lock is not needed
-    // (note that writing to this field is still mutex-protected).
-    // It's also no problem if the level was changed at the moment
-    // when the enabler check is tested here. Worst case, the log
-    // will be printed just a moment after it was turned off.
-    const LogConfig* config = src_config; // to enforce using const operator[]
-    int configured_enabled_fa = config->enabled_fa[fa];
-    int configured_maxlevel = config->max_level;
-
-    return configured_enabled_fa && level <= configured_maxlevel;
-}
 
 
 #if HAVE_CXX11
@@ -448,7 +458,7 @@ inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int lin
 #endif
 }
 
-#else
+#else // !HAVE_CXX11
 
 template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
@@ -466,26 +476,9 @@ inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int lin
 #endif
 }
 
-#endif
-
-// SendLogLine can be compiled normally. It's intermediately used by:
-// - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
-// - PrintLogLine, which has empty body when !ENABLE_LOGGING
-inline void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
-{
-    src_config->lock();
-    if ( src_config->loghandler_fn )
-    {
-        (*src_config->loghandler_fn)(src_config->loghandler_opaque, int(level), file, line, area.c_str(), msg.c_str());
-    }
-    else if ( src_config->log_stream )
-    {
-        (*src_config->log_stream) << msg;
-        (*src_config->log_stream).flush();
-    }
-    src_config->unlock();
-}
+#endif // HAVE_CXX11
 
 }
 
-#endif
+#endif // INC_SRT_LOGGING_H
+

@@ -3,11 +3,10 @@
 
 #include "gtest/gtest.h"
 
-#ifdef SRT_ENABLE_ENCRYPTION
+#if defined(SRT_ENABLE_ENCRYPTION) && defined(ENABLE_AEAD_API_PREVIEW)
 #include "crypto.h"
 #include "hcrypt.h" // Imports the CRYSPR_HAS_AESGCM definition.
 #include "socketconfig.h"
-
 
 namespace srt
 {
@@ -109,4 +108,4 @@ namespace srt
 
 } // namespace srt
 
-#endif //SRT_ENABLE_ENCRYPTION
+#endif //SRT_ENABLE_ENCRYPTION && ENABLE_AEAD_API_PREVIEW

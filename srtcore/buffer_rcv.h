@@ -106,6 +106,8 @@ namespace srt
 //                 [D]   [C]             [B]                   [A] (insertion cases)
 //  | (start) --- (end) ===[gap]=== (after-loss) ... (max-pos) |
 //
+// See the CRcvBuffer::updatePosInfo method for detailed implementation.
+//
 // WHEN INSERTING A NEW PACKET:
 //
 // If the incoming sequence maps to newpktpos that is:
@@ -244,16 +246,49 @@ public:
 
     };
 
-    /// Insert a unit into the buffer.
-    /// Similar to CRcvBuffer::addData(CUnit* unit, int offset)
+    /// Inserts the unit with the data packet into the receiver buffer.
+    /// The result inform about the situation with the packet attempted
+    /// to be inserted and the readability of the buffer.
     ///
-    /// @param [in] unit pointer to a data unit containing new packet
-    /// @param [in] offset offset from last ACK point.
+    /// @param [PASS] unit The unit that should be placed in the buffer
     ///
-    /// @return  0 on success, -1 if packet is already in buffer, -2 if packet is before m_iStartSeqNo.
-    /// -3 if a packet is offset is ahead the buffer capacity.
-    // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
+    /// @return The InsertInfo structure where:
+    ///   * result: the result of insertion, which is:
+    ///      * INSERTED: successfully placed in the buffer
+    ///      * REDUNDANT: not placed, the packet is already there
+    ///      * BELATED: not placed, its sequence is in the past
+    ///      * DISCREPANCY: not placed, the sequence is far future or OOTB
+    ///   * first_seq: the earliest sequence number now avail for reading
+    ///   * avail_range: how many packets are available for reading (1 if unknown)
+    ///   * first_time: the play time of the earliest read-available packet
+    /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
+    ///
     InsertInfo insert(CUnit* unit);
+
+    time_point updatePosInfo(const CUnit* unit, const int prev_max_off, const int newpktpos, const bool extended_end);
+    const CPacket* tryAvailPacketAt(int pos, int& w_span);
+    void getAvailInfo(InsertInfo& w_if);
+
+    /// Update the values of `m_iEndPos` and `m_iDropPos` in
+    /// case when `m_iEndPos` was updated to a position of a
+    /// nonempty cell.
+    ///
+    /// This function should be called after having m_iEndPos
+    /// has somehow be set to position of a non-empty cell.
+    /// This can happen by two reasons:
+    ///
+    ///  - the cell has been filled by incoming packet
+    ///  - the value has been reset due to shifted m_iStartPos
+    ///
+    /// This means that you have to search for a new gap and
+    /// update the m_iEndPos and m_iDropPos fields, or set them
+    /// both to the end of range if there are no loss gaps.
+    ///
+    /// The @a prev_max_pos parameter is passed here because it is already
+    /// calculated in insert(), otherwise it would have to be calculated here again.
+    ///
+    /// @param prev_max_pos buffer position represented by `m_iMaxPosOff`
+    ///
     void updateGapInfo(int prev_max_pos);
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
@@ -266,14 +301,29 @@ public:
     /// @return the number of dropped packets.
     int dropAll();
 
-    /// @brief Drop the whole message from the buffer.
+    enum DropActionIfExists {
+        DROP_EXISTING = 0,
+        KEEP_EXISTING = 1
+    };
+
+    /// @brief Drop a sequence of packets from the buffer.
+    /// If @a msgno is valid, sender has requested to drop the whole message by TTL. In this case it has to also provide a pkt seqno range.
+    /// However, if a message has been partially acknowledged and already removed from the SND buffer,
+    /// the @a seqnolo might specify some position in the middle of the message, not the very first packet.
+    /// If those packets have been acknowledged, they must exist in the receiver buffer unless already read.
+    /// In this case the @a msgno should be used to determine starting packets of the message.
+    /// Some packets of the message can be missing on the receiver, therefore the actual drop should still be performed by pkt seqno range.
     /// If message number is 0 or SRT_MSGNO_NONE, then use sequence numbers to locate sequence range to drop [seqnolo, seqnohi].
-    /// When one packet of the message is in the range of dropping, the whole message is to be dropped.
+    /// A SOLO message packet can be kept depending on @a actionOnExisting value.
+    /// TODO: A message in general can be kept if all of its packets are in the buffer, depending on @a actionOnExisting value.
+    /// This is done to avoid dropping existing packet when the sender was asked to re-transmit a packet from an outdated loss report,
+    /// which is already not available in the SND buffer.
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
+    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
-    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno);
+    int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
     /// Extract the "expected next" packet sequence.
     /// Extract the past-the-end sequence for the first packet
@@ -339,6 +389,7 @@ public:
     }
 
     /// @brief Checks if the buffer has packets available for reading regardless of the TSBPD.
+    /// A message is available for reading only if all of its packets are present in the buffer.
     /// @return true if there are packets available for reading, false otherwise.
     bool hasAvailablePackets() const;
 
@@ -405,6 +456,12 @@ public:
         return m_iMaxPosOff;
     }
 
+    // Unfortunately it still needs locking.
+    bool full() const
+    {
+        return size() == capacity();
+    }
+
     int64_t getDrift() const { return m_tsbpd.drift(); }
 
     // TODO: make thread safe?
@@ -435,11 +492,17 @@ private:
     inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
     inline int offPos(int pos1, int pos2) const { return (pos2 >= pos1) ? (pos2 - pos1) : int(m_szSize + pos2 - pos1); }
+
+    /// @brief Compares the two positions in the receiver buffer relative to the starting position.
+    /// @param pos2 a position in the receiver buffer.
+    /// @param pos1 a position in the receiver buffer.
+    /// @return a positive value if pos2 is ahead of pos1; a negative value, if pos2 is behind pos1; otherwise returns 0.
     inline int cmpPos(int pos2, int pos1) const
     {
-        // XXX maybe not the best implementation, but this keeps up to the rule
-        int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + m_szSize - m_iStartPos;
-        int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + m_szSize - m_iStartPos;
+        // XXX maybe not the best implementation, but this keeps up to the rule.
+        // Maybe use m_iMaxPosOff to ensure a position is not behind the m_iStartPos.
+        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
+        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
         return off2 - off1;
     }
@@ -468,12 +531,12 @@ private:
     int findLastMessagePkt();
 
     /// Scan for availability of out of order packets.
-    void onInsertNotInOrderPacket(int insertpos);
-    // Check if m_iFirstRandomMsgPos is still readable.
-    bool checkFirstReadableRandom();
-    void updateFirstReadableRandom();
-    int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
-    int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
+    void onInsertNonOrderPacket(int insertpos);
+    // Check if m_iFirstNonOrderMsgPos is still readable.
+    bool checkFirstReadableNonOrder();
+    void updateFirstReadableNonOrder();
+    int  scanNonOrderMessageRight(int startPos, int msgNo) const;
+    int  scanNonOrderMessageLeft(int startPos, int msgNo) const;
 
     typedef bool copy_to_dst_f(char* data, int len, int dst_offset, void* arg);
 
@@ -543,12 +606,12 @@ private:
     int m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)
 
-    size_t m_numRandomPackets;  // The number of stored packets with "inorder" flag set to false
+    size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
 
     /// Points to the first packet of a message that has out-of-order flag
     /// and is complete (all packets from first to last are in the buffer).
     /// If there is no such message in the buffer, it contains -1.
-    int m_iFirstRandomMsgPos;
+    int m_iFirstNonOrderMsgPos;
     bool m_bPeerRexmitFlag;         // Needed to read message number correctly
     const bool m_bMessageAPI;       // Operation mode flag: message or stream.
 

@@ -99,8 +99,7 @@ srt::CSndLossList::~CSndLossList()
 
 void srt::CSndLossList::traceState() const
 {
-    traceState(std::cout);
-    std::cout << "\n";
+    traceState(std::cout) << "\n";
 }
 
 int srt::CSndLossList::insert(int32_t seqlo, int32_t seqhi)

@@ -200,9 +200,6 @@ public:
             m_bConnected = false;
         }
 
-        // XXX BUGFIX
-        m_Positions.erase(id);
-
         return !empty;
     }
 
@@ -726,21 +723,8 @@ private:
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
 
-    struct ReadPos
-    {
-        std::vector<char> packet;
-        SRT_MSGCTRL       mctrl;
-        ReadPos(int32_t s)
-            : mctrl(srt_msgctrl_default)
-        {
-            mctrl.pktseq = s;
-        }
-    };
-    std::map<SRTSOCKET, ReadPos> m_Positions;
-
     sync::atomic<int32_t> m_RcvLastSeqNo;
     sync::AtomicClock<sync::steady_clock> m_RcvFurthestPacketTime;
-
     sync::atomic<int32_t> m_SndLastDataAck;
 
     // This is required as a value with its own lock.

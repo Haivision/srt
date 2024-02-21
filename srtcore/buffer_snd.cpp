@@ -64,7 +64,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace sync;
 
-CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
+CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     : m_BufLock()
     , m_pBlock(NULL)
     , m_pFirstBlock(NULL)
@@ -77,6 +77,7 @@ CSndBuffer::CSndBuffer(int size, int maxpld, int authtag)
     , m_iAuthTagSize(authtag)
     , m_iCount(0)
     , m_iBytesCount(0)
+    , m_rateEstimator(ip_family)
 {
     // initial physical buffer of "size"
     m_pBuffer           = new Buffer;
@@ -132,14 +133,12 @@ CSndBuffer::~CSndBuffer()
 
 void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    int32_t& w_msgno    = w_mctrl.msgno;
-    int32_t& w_seqno    = w_mctrl.pktseq;
-    int64_t& w_srctime  = w_mctrl.srctime;
-    const int& ttl      = w_mctrl.msgttl;
-    const int iPktLen   = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
-    int      iNumBlocks = len / iPktLen;
-    if ((len % m_iBlockLen) != 0)
-        ++iNumBlocks;
+    int32_t& w_msgno     = w_mctrl.msgno;
+    int32_t& w_seqno     = w_mctrl.pktseq;
+    int64_t& w_srctime   = w_mctrl.srctime;
+    const int& ttl       = w_mctrl.msgttl;
+    const int iPktLen    = getMaxPacketLen();
+    const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
@@ -220,7 +219,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     }
     m_pLastBlock = s;
 
-    m_iCount += iNumBlocks;
+    m_iCount = m_iCount + iNumBlocks;
     m_iBytesCount += len;
 
     m_rateEstimator.updateInputRate(m_tsLastOriginTime, iNumBlocks, len);
@@ -239,20 +238,18 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 {
-    const int iPktLen   = m_iBlockLen - m_iAuthTagSize; // Payload length per packet.
-    int      iNumBlocks = len / iPktLen;
-    if ((len % m_iBlockLen) != 0)
-        ++iNumBlocks;
+    const int iPktLen    = getMaxPacketLen();
+    const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
           log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << iPktLen
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
-    while (iPktLen + m_iCount >= m_iSize)
+    while (iNumBlocks + m_iCount >= m_iSize)
     {
         HLOGC(bslog.Debug,
-              log << "addBufferFromFile: ... still lacking " << (iPktLen + m_iCount - m_iSize) << " buffers...");
+              log << "addBufferFromFile: ... still lacking " << (iNumBlocks + m_iCount - m_iSize) << " buffers...");
         increase();
     }
 
@@ -262,7 +259,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 
     Block* s     = m_pLastBlock;
     int    total = 0;
-    for (int i = 0; i < iPktLen; ++i)
+    for (int i = 0; i < iNumBlocks; ++i)
     {
         if (ifs.bad() || ifs.fail() || ifs.eof())
             break;
@@ -282,7 +279,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
         s->m_iMsgNoBitset = m_iNextMsgNo | MSGNO_PACKET_INORDER::mask;
         if (i == 0)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_FIRST);
-        if (i == iPktLen - 1)
+        if (i == iNumBlocks - 1)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_LAST);
         // NOTE: PB_FIRST | PB_LAST == PB_SOLO.
         // none of PB_FIRST & PB_LAST == PB_SUBSEQUENT.
@@ -296,7 +293,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     m_pLastBlock = s;
 
     enterCS(m_BufLock);
-    m_iCount += iPktLen;
+    m_iCount = m_iCount + iNumBlocks;
     m_iBytesCount += total;
 
     leaveCS(m_BufLock);
@@ -425,9 +422,10 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, int& w_msglen)
+int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
-    int32_t& msgno_bitset = w_packet.m_iMsgNo;
+    // NOTE: w_packet.m_iSeqNo is expected to be set to the value
+    // of the sequence number with which this packet should be sent.
 
     ScopedLock bufferguard(m_BufLock);
 
@@ -442,19 +440,23 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     if (p == m_pLastBlock)
     {
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
-        return 0;
+        return READ_NONE;
     }
 #if ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
 #endif
 
+    // This is rexmit request, so the packet should have the sequence number
+    // already set when it was once sent uniquely.
+    SRT_ASSERT(p->m_iSeqNo == w_packet.m_iSeqNo);
+
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
     // If so, then inform the caller that it should first take care of the whole
     // message (all blocks with that message id). Shift the m_pCurrBlock pointer
     // to the position past the last of them. Then return -1 and set the
-    // msgno_bitset return reference to the message id that should be dropped as
+    // msgno bitset packet field to the message id that should be dropped as
     // a whole.
 
     // After taking care of that, the caller should immediately call this function again,
@@ -466,11 +468,11 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
     {
-        int32_t msgno = p->getMsgSeq();
-        w_msglen      = 1;
-        p             = p->m_pNext;
-        bool move     = false;
-        while (p != m_pLastBlock && msgno == p->getMsgSeq())
+        w_drop.msgno = p->getMsgSeq();
+        int msglen   = 1;
+        p            = p->m_pNext;
+        bool move    = false;
+        while (p != m_pLastBlock && w_drop.msgno == p->getMsgSeq())
         {
 #if ENABLE_HEAVY_LOGGING
             last_seq = p->m_iSeqNo;
@@ -480,18 +482,27 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
             p = p->m_pNext;
             if (move)
                 m_pCurrBlock = p;
-            w_msglen++;
+            msglen++;
         }
 
         HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, SEQ " << first_seq << " - " << last_seq << ", "
-                  << w_msglen << " packets to drop, msgno=" << msgno);
+              log << "CSndBuffer::readData: due to TTL exceeded, %(" << first_seq << " - " << last_seq << "), "
+                  << msglen << " packets to drop with #" << w_drop.msgno);
 
-        // If readData returns -1, then msgno_bitset is understood as a Message ID to drop.
-        // This means that in this case it should be written by the message sequence value only
-        // (not the whole 4-byte bitset written at PH_MSGNO).
-        msgno_bitset = msgno;
-        return -1;
+        // Theoretically as the seq numbers are being tracked, you should be able
+        // to simply take the sequence number from the block. But this is a new
+        // feature and should be only used after refax for the sender buffer to
+        // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
+        w_drop.seqno[DropRange::BEGIN] = w_packet.m_iSeqNo;
+        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.m_iSeqNo, msglen - 1);
+
+        // Note the rules: here `p` is pointing to the first block AFTER the
+        // message to be dropped, so the end sequence should be one behind
+        // the one for p. Note that the loop rolls until hitting the first
+        // packet that doesn't belong to the message or m_pLastBlock, which
+        // is past-the-end for the occupied range in the sender buffer.
+        SRT_ASSERT(w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
+        return READ_DROP;
     }
 
     w_packet.m_pcData = p->m_pcData;
@@ -558,7 +569,7 @@ void CSndBuffer::ackData(int offset)
     if (move)
         m_pCurrBlock = m_pFirstBlock;
 
-    m_iCount -= offset;
+    m_iCount = m_iCount - offset;
 
     updAvgBufSize(steady_clock::now());
 }
@@ -578,6 +589,22 @@ void CSndBuffer::clear()
 int CSndBuffer::getCurrBufSize() const
 {
     return m_iCount;
+}
+
+int CSndBuffer::getMaxPacketLen() const
+{
+    return m_iBlockLen - m_iAuthTagSize;
+}
+
+int CSndBuffer::countNumPacketsRequired(int iPldLen) const
+{
+    const int iPktLen = getMaxPacketLen();
+    return countNumPacketsRequired(iPldLen, iPktLen);
+}
+
+int CSndBuffer::countNumPacketsRequired(int iPldLen, int iPktLen) const
+{
+    return (iPldLen + iPktLen - 1) / iPktLen;
 }
 
 namespace {
@@ -614,7 +641,7 @@ void CSndBuffer::updAvgBufSize(const steady_clock::time_point& now)
     m_mavg.update(now, pkts, bytes, timespan_ms);
 }
 
-int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan)
+int CSndBuffer::getCurrBufSize(int& w_bytes, int& w_timespan) const
 {
     w_bytes = m_iBytesCount;
     /*
@@ -660,7 +687,7 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     {
         m_pCurrBlock = m_pFirstBlock;
     }
-    m_iCount -= dpkts;
+    m_iCount = m_iCount - dpkts;
 
     m_iBytesCount -= dbytes;
     w_bytes = dbytes;

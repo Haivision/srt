@@ -4,6 +4,7 @@
 #include <thread>
 #include <condition_variable>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "api.h"
 #include "epoll.h"
 
@@ -14,8 +15,7 @@ using namespace srt;
 
 TEST(CEPoll, InfiniteWait)
 {
-    ASSERT_EQ(srt_startup(), 0);
-
+    srt::TestInit srtinit;
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
 
@@ -25,13 +25,11 @@ TEST(CEPoll, InfiniteWait)
         0, 0, 0, 0), SRT_ERROR);
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
-
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitNoSocketsInEpoll)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -47,12 +45,11 @@ TEST(CEPoll, WaitNoSocketsInEpoll)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitNoSocketsInEpoll2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -63,14 +60,13 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitEmptyCall)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -87,14 +83,13 @@ TEST(CEPoll, WaitEmptyCall)
                 -1, 0, 0, 0, 0), SRT_ERROR);
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, UWaitEmptyCall)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -111,14 +106,13 @@ TEST(CEPoll, UWaitEmptyCall)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -146,14 +140,13 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -175,15 +168,13 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
     ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
-
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -199,15 +190,14 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 
     EXPECT_EQ(srt_epoll_release(epoll_id), 0);
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollEvent)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -256,7 +246,6 @@ TEST(CEPoll, HandleEpollEvent)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
@@ -266,10 +255,10 @@ TEST(CEPoll, HandleEpollEvent)
 // be notified about connection break via polling the accepted socket.
 TEST(CEPoll, NotifyConnectionBreak)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
     // 1. Prepare client
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes SRT_ATR_UNUSED = 1;
@@ -291,7 +280,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa_client.sin_addr), 1);
 
     // 2. Prepare server
-    SRTSOCKET server_sock = srt_create_socket();
+    srt::UniqueSocket server_sock = srt_create_socket();
     ASSERT_NE(server_sock, SRT_ERROR);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -376,15 +365,14 @@ TEST(CEPoll, NotifyConnectionBreak)
     if (!state_valid)
         cerr << "socket state: " << state << endl;
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollEvent2)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -438,15 +426,14 @@ TEST(CEPoll, HandleEpollEvent2)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
 TEST(CEPoll, HandleEpollNoEvent)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -490,14 +477,13 @@ TEST(CEPoll, HandleEpollNoEvent)
         throw;
     }
 
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 TEST(CEPoll, ThreadedUpdate)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
-    SRTSOCKET client_sock = srt_create_socket();
+    srt::UniqueSocket client_sock = srt_create_socket();
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -556,13 +542,10 @@ TEST(CEPoll, ThreadedUpdate)
         cerr << ex.getErrorMessage() << endl;
         throw;
     }
-
-
-    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 
-class TestEPoll: public testing::Test
+class TestEPoll: public srt::Test
 {
 protected:
 
@@ -692,7 +675,7 @@ protected:
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-            ASSERT_EQ(read[0], servsock); // read event is for bind socket    	
+            ASSERT_EQ(read[0], servsock); // read event is for bind socket
         }
 
         sockaddr_in scl;
@@ -750,10 +733,8 @@ protected:
         srt_close(servsock);
     }
 
-    void SetUp() override
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_client_pollid = srt_epoll_create();
         ASSERT_NE(SRT_ERROR, m_client_pollid);
 
@@ -762,19 +743,18 @@ protected:
 
     }
 
-    void TearDown() override
+    void teardown() override
     {
         (void)srt_epoll_release(m_client_pollid);
         (void)srt_epoll_release(m_server_pollid);
-        srt_cleanup();
     }
 };
 
 
 TEST_F(TestEPoll, SimpleAsync)
 {
-    SRTSOCKET ss = SRT_INVALID_SOCK;
-    createServerSocket( (ss) );
+    srt::UniqueSocket ss;
+    createServerSocket( (ss.ref()) );
 
     std::thread client([this] { clientSocket(); });
 

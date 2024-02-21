@@ -77,6 +77,10 @@ modified by
 
 #include <haicrypt.h>
 
+#ifndef SRT_ENABLE_FREQUENT_LOG_TRACE
+#define SRT_ENABLE_FREQUENT_LOG_TRACE 0
+#endif
+
 
 // TODO: Utility function - to be moved to utilities.h?
 template <class T>
@@ -318,6 +322,7 @@ public: // internal API
 #endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
     int32_t     deliveryRate()      const { return m_iDeliveryRate; }
     int         bandwidth()         const { return m_iBandwidth; }
@@ -328,6 +333,20 @@ public: // internal API
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
+    size_t          payloadSize()           const
+    {
+        // If payloadsize is set, it should already be checked that
+        // it is less than the possible maximum payload size. So return it
+        // if it is set to nonzero value. In case when the connection isn't
+        // yet established, return also 0, if the value wasn't set.
+        if (m_config.zExpPayloadSize || !m_bConnected)
+            return m_config.zExpPayloadSize;
+
+        // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
+        // then return the maximum payload size per packet.
+        return m_iMaxSRTPayloadSize;
+    }
+
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
@@ -365,6 +384,7 @@ public: // internal API
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @returns The number of packets in flight belonging to the interval [0; ...)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t getFlightSpan() const
     {
         return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
@@ -490,15 +510,20 @@ private:
     /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
+    void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
-    /// Create the CryptoControl object based on the HS packet. Allocates sender and receiver buffers and loss lists.
+    /// Create the CryptoControl object based on the HS packet.
+//    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+// XXX ?    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
+
+    /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
-    bool prepareBuffers(CUDTException *eout);
+    bool prepareBuffers(CUDTException* eout);
 
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
 
-    SRT_ATR_NODISCARD bool applyResponseSettings() ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
@@ -573,7 +598,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal();
+    bool closeInternal() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -673,6 +698,7 @@ private:
 #if ENABLE_BONDING
     void skipMemberLoss(int32_t seqno);
 #endif
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
@@ -725,10 +751,16 @@ private:
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool isRcvBufferReady() const;
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    bool isRcvBufferReadyNoLock() const;
+
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    bool isRcvBufferFull() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
-    /// Drop too late packets (receiver side). Updaet loss lists and ACK positions.
+    /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @return The number of packets dropped.
@@ -736,13 +768,6 @@ private:
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
-
-    CRateEstimator getRateEstimator() const
-    {
-        if (!m_pSndBuffer)
-            return CRateEstimator();
-        return m_pSndBuffer->getRateEstimator();
-    }
 
     void setRateEstimator(const CRateEstimator& rate)
     {
@@ -824,6 +849,9 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
+#ifdef ENABLE_MAXREXMITBW
+    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
+#endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
 
@@ -831,7 +859,7 @@ private: // Sending related data
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
-    double m_dCongestionWindow;                  // Congestion window size
+    sync::atomic<int> m_iCongestionWindow;       // Congestion window size
 
 private: // Timers
     atomic_time_point m_tsNextACKTime;           // Next ACK time, in CPU clock cycles, same below
@@ -839,6 +867,7 @@ private: // Timers
 
     duration   m_tdACKInterval;                  // ACK interval
     duration   m_tdNAKInterval;                  // NAK interval
+
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer
@@ -864,11 +893,12 @@ private: // Timers
     // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
     // this value is shifted to the acknowledged position, and the blocks are removed from the
     // m_pSndBuffer buffer up to excluding this sequence number.
-    // XXX CONSIDER removing this field and give up the maintenance of this sequence number
+    // XXX CONSIDER removing this field and giving up the maintenance of this sequence number
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
     sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
@@ -909,6 +939,21 @@ private: // Timers
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
+    static const size_t
+                MAX_FREQLOGFA = 2,
+                FREQLOGFA_ENCRYPTION_FAILURE = 0,
+                FREQLOGFA_RCV_DROPPED = 1;
+    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
+                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+    sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
+
+    /// @brief Check if a frequent log can be shown.
+    /// @param tnow current time
+    /// @return true if it is ok to print a frequent log message.
+    bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
+
 private: // Receiving related data
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
@@ -931,7 +976,7 @@ private: // Receiving related data
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     sync::atomic<int32_t> m_iRcvCurrSeqNo;       // (RCV) Largest received sequence number. RcvQTh, TSBPDTh.
     int32_t m_iRcvCurrPhySeqNo;                  // Same as m_iRcvCurrSeqNo, but physical only (disregarding a filter)
-
+    bool m_bBufferWasFull;                        // Indicate that RX buffer was full last time a ack was sent
     int32_t m_iPeerISN;                          // Initial Sequence Number of the peer side
 
     uint32_t m_uPeerSrtVersion;
@@ -947,7 +992,6 @@ private: // Receiving related data
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
-
     // FORWARDER
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
@@ -955,11 +999,17 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbAcceptHook.set(opaq, hook);
     }
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
+        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
         m_cbConnectHook.set(opaq, hook);
     }
 
@@ -972,7 +1022,7 @@ private: // synchronization: mutexes and conditions
 
     mutable sync::Mutex m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
     // Protects access to m_iSndCurrSeqNo, m_iSndLastAck
-    sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
+    mutable sync::Mutex m_RecvAckLock;                   // Protects the state changes while processing incoming ACK (SRT_EPOLL_OUT)
 
     sync::Condition m_RecvDataCond;              // used to block "srt_recv*" when there is no data. Use together with m_RecvLock
     sync::Mutex m_RecvLock;                      // used to synchronize "srt_recv*" call, protects TSBPD drift updates (CRcvBuffer::isRcvDataReady())
@@ -1068,13 +1118,13 @@ private: // Generation and processing of packets
 
     /// Pack in CPacket the next data to be send.
     ///
-    /// @param packet [in, out] a CPacket structure to fill
+    /// @param packet [out] a CPacket structure to fill
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
+    /// @param src_addr [out] Source address to pass to channel's sendto
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime);
-
+    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
     void removeSndLossUpTo(int32_t seq);
 
     int processData(CUnit* unit);
@@ -1099,9 +1149,11 @@ private: // Generation and processing of packets
     bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 #endif
 
-    /// Get the packet's TSBPD time.
-    /// The @a grp passed by void* is not used yet
-    /// and shall not be used when ENABLE_BONDING=0.
+    // This function is to return the packet's play time (time when
+    // it is submitted to the reading application) of the given packet.
+    // The version with `void*` is provided because the function body
+    // is mostly common for bonding and non-bonding, while it needs
+    // access to groups anyway, if present, and gets NULL in worst case.
 #if ENABLE_BONDING
     time_point getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet);
 #else
@@ -1149,9 +1201,10 @@ private: // Trace
         time_point tsLastSampleTime;        // last performance sample time
         int traceReorderDistance;
         double traceBelatedTime;
-        
+
         int64_t sndDuration;                // real time for sending
         time_point sndDurationCounter;      // timers to record the sending Duration
+
     } m_stats;
 
 public:
@@ -1184,6 +1237,7 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
+    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue

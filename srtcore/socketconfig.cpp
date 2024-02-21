@@ -90,7 +90,7 @@ struct CSrtConfigSetter<SRTO_MSS>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        int ival = cast_optval<int>(optval, optlen);
+        const int ival = cast_optval<int>(optval, optlen);
         if (ival < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -247,6 +247,21 @@ struct CSrtConfigSetter<SRTO_MAXBW>
     }
 };
 
+#ifdef ENABLE_MAXREXMITBW
+template<>
+struct CSrtConfigSetter<SRTO_MAXREXMITBW>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        const int64_t val = cast_optval<int64_t>(optval, optlen);
+        if (val < -1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.llMaxRexmitBW = val;
+    }
+};
+#endif
+
 template<>
 struct CSrtConfigSetter<SRTO_IPTTL>
 {
@@ -277,10 +292,8 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
         using namespace std;
 
         string val;
-        if (optlen == -1)
-            val = (const char *)optval;
-        else
-            val.assign((const char *)optval, optlen);
+
+        val.assign((const char *)optval, optlen);
         if (val.size() >= IFNAMSIZ)
         {
             LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE: device name too long (max: IFNAMSIZ=" << IFNAMSIZ << ")");
@@ -582,10 +595,7 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         std::string val;
-        if (optlen == -1)
-            val = (const char*)optval;
-        else
-            val.assign((const char*)optval, optlen);
+        val.assign((const char*)optval, optlen);
 
         // Translate alias
         if (val == "vod")
@@ -622,31 +632,15 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
 
         if (val > SRT_LIVE_MAX_PLSIZE)
         {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
+            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << ", maximum payload per MTU.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (!co.sPacketFilterConfig.empty())
+        std::string errorlog;
+        if (!co.payloadSizeFits(size_t(val), AF_INET, (errorlog)))
         {
-            // This means that the filter might have been installed before,
-            // and the fix to the maximum payload size was already applied.
-            // This needs to be checked now.
-            SrtFilterConfig fc;
-            if (!ParseFilterConfig(co.sPacketFilterConfig.str(), fc))
-            {
-                // Break silently. This should not happen
-                LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (size_t(val) > efc_max_payload_size)
-            {
-                LOGC(aclog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
-                         << " required for packet filter header");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
+            LOGP(aclog.Error, errorlog);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
         co.zExpPayloadSize = val;
@@ -904,6 +898,7 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
+#ifdef ENABLE_AEAD_API_PREVIEW
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
@@ -935,6 +930,7 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 
     }
 };
+#endif
 
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
@@ -993,7 +989,12 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
+#ifdef ENABLE_AEAD_API_PREVIEW
         DISPATCH(SRTO_CRYPTOMODE);
+#endif
+#ifdef ENABLE_MAXREXMITBW
+        DISPATCH(SRTO_MAXREXMITBW);
+#endif
 
 #undef DISPATCH
     default:
@@ -1006,6 +1007,47 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     return dispatchSet(optName, *this, optval, optlen);
+}
+
+bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_errmsg) ATR_NOTHROW
+{
+    if (!this->sPacketFilterConfig.empty())
+    {
+        // This means that the filter might have been installed before,
+        // and the fix to the maximum payload size was already applied.
+        // This needs to be checked now.
+        SrtFilterConfig fc;
+        if (!ParseFilterConfig(this->sPacketFilterConfig.str(), fc))
+        {
+            // Break silently. This should not happen
+            w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
+            return false;
+        }
+
+        const size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
+        if (size_t(val) > efc_max_payload_size)
+        {
+            std::ostringstream log;
+            log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << fc.extra_size
+                << " required for packet filter header";
+            w_errmsg = log.str();
+            return false;
+        }
+    }
+
+    // Not checking AUTO to allow defaul 1456 bytes.
+    if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
+            && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
+    {
+        std::ostringstream log;
+        log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE
+            << " bytes decreased by " << HAICRYPT_AUTHTAG_MAX
+            << " required for AES-GCM.";
+        w_errmsg = log.str();
+        return false;
+    }
+
+    return true;
 }
 
 #if ENABLE_BONDING
