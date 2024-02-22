@@ -455,6 +455,8 @@ bool srt::CSndLossList::popLostSeq(int32_t seq)
     int* prev_next = &m_iHead;
     int prev_loc = -1;
 
+    // XXX Likely this isn't necessary and the loop can be
+    // interrupted when this is set to false.
     bool do_repeat = true;
     for (;;)
     {
@@ -900,6 +902,8 @@ bool srt::CRcvLossList::remove(int32_t seqno)
         }
 
         m_iLength--;
+        if (m_iLength == 0)
+            m_iLargestSeq = SRT_SEQNO_NONE;
 
         return true;
     }
@@ -955,6 +959,8 @@ bool srt::CRcvLossList::remove(int32_t seqno)
     }
 
     m_iLength--;
+    if (m_iLength == 0)
+        m_iLargestSeq = SRT_SEQNO_NONE;
 
     return true;
 }

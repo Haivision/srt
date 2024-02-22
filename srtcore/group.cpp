@@ -16,6 +16,7 @@ extern const int32_t SRT_DEF_VERSION;
 
 namespace srt {
 
+// A factor for picking up measurements for flight window
 const int RANDOM_CREDIT_FACTOR = 16;
 
 int32_t CUDTGroup::s_tokenGen = 0;
@@ -1008,7 +1009,7 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(groups::SocketData* member, CUnit*
     {
         LOGC(qrlog.Error, log << CONID() << "grp/addDataUnit: "
                 << "SEQUENCE DISCREPANCY. DISCARDING."
-                << " seq=" << rpkt.m_iSeqNo
+                << " seq=" << rpkt.seqno()
                 << " buffer=(" << m_pRcvBuffer->getStartSeqNo()
                 << ":" << m_RcvLastSeqNo                   // -1 = size to last index
                 << "+" << CSeqNo::incseq(m_pRcvBuffer->getStartSeqNo(), int(m_pRcvBuffer->capacity()) - 1)
@@ -1108,10 +1109,10 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
     {
         have = checkBalancingLoss(rpkt, (w_losses));
     }
-    else if (CSeqNo::seqcmp(rpkt.m_iSeqNo, expected_seqno) > 0)
+    else if (CSeqNo::seqcmp(rpkt.seqno(), expected_seqno) > 0)
     {
         int32_t seqlo = expected_seqno;
-        int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
+        int32_t seqhi = CSeqNo::decseq(rpkt.seqno());
 
         w_losses.push_back(make_pair(seqlo, seqhi));
         have = true;
@@ -1119,10 +1120,10 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
                 << seqlo << " - " << seqhi << ")");
     }
 
-    if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_RcvLastSeqNo) > 0)
+    if (CSeqNo::seqcmp(rpkt.seqno(), m_RcvLastSeqNo) > 0)
     {
-        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest updated: %" << m_RcvLastSeqNo << " -> %" << rpkt.m_iSeqNo);
-        m_RcvLastSeqNo = rpkt.m_iSeqNo;
+        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest updated: %" << m_RcvLastSeqNo << " -> %" << rpkt.seqno());
+        m_RcvLastSeqNo = rpkt.seqno();
 
         // This should theoretically set it up with the very first packet received over whichever link
         // but this time is initialized upon creation of the group, just in case.
@@ -1144,7 +1145,7 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
             updated = true;
         }
 
-        int dist = CSeqNo::seqoff(rpkt.m_iSeqNo, m_RcvLastSeqNo);
+        int dist = CSeqNo::seqoff(rpkt.seqno(), m_RcvLastSeqNo);
         dist = max<int>(m_zLongestDistance, dist);
         m_zLongestDistance = dist;
 
@@ -1152,7 +1153,7 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
         td = max(m_tdLongestDistance.load(), td);
         m_tdLongestDistance = td;
 
-        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest = %" << m_RcvLastSeqNo << ": pkt %" << rpkt.m_iSeqNo
+        HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: latest = %" << m_RcvLastSeqNo << ": pkt %" << rpkt.seqno()
                 << " dist={" << dist << "pkt " << FormatDuration(m_tdLongestDistance) << (updated ? "} (reflected)" : "} (continued)"));
     }
 
@@ -1190,7 +1191,7 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
     }
 
     // We state that this is the oldest possible loss sequence; just formally check
-    int cmp = CSeqNo::seqcmp(pkt.m_iSeqNo, m_RcvLastSeqNo);
+    int cmp = CSeqNo::seqcmp(pkt.seqno(), m_RcvLastSeqNo);
     if (cmp < 0)
     {
         HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: %" << pkt.getSeqNo() << " IN THE PAST");
@@ -1325,7 +1326,7 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
     // This condition may change it or leave as is.
 
     int32_t next_seqno = CSeqNo::incseq(m_RcvLastSeqNo);
-    if (!more_losses && CSeqNo::seqcmp(pkt.m_iSeqNo, next_seqno) > 0)
+    if (!more_losses && CSeqNo::seqcmp(pkt.seqno(), next_seqno) > 0)
     {
         // NOTE: in case when you have (at least temporarily) only one link,
         // then you have to do the same as with a general case. The above loop
@@ -1334,14 +1335,14 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         // but report it directly instead.
         if (m_Group.size() == 1)
         {
-            typename CUDT::loss_seqs_t::value_type loss = make_pair(next_seqno, CSeqNo::decseq(pkt.m_iSeqNo));
+            typename CUDT::loss_seqs_t::value_type loss = make_pair(next_seqno, CSeqNo::decseq(pkt.seqno()));
             w_losses.push_back(loss);
-            HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.m_iSeqNo << " jumps over expected %" << next_seqno
+            HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.seqno() << " jumps over expected %" << next_seqno
                     << " - with 1 link only, just reporting");
             return true;
         }
 
-        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.m_iSeqNo << " jumps over expected %" << next_seqno
+        HLOGC(gmlog.Debug, log << "grp:checkBalancingLoss: incom %" << pkt.seqno() << " jumps over expected %" << next_seqno
                 << " - setting up as loss candidate");
         m_iRcvPossibleLossSeq = next_seqno;
     }
@@ -5731,35 +5732,35 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq)
 
     if (have_extracted)
     {
-        w_packet.m_iSeqNo = exp_seq;
+        w_packet.set_seqno(exp_seq);
 
         // XXX See the note above the m_iSndLastDataAck declaration in core.h
         // This is the place where the important sequence numbers for
         // sender buffer are actually managed by this field here.
-        const int offset = CSeqNo::seqoff(core->m_iSndLastDataAck, w_packet.m_iSeqNo);
+        const int offset = CSeqNo::seqoff(core->m_iSndLastDataAck, w_packet.seqno());
         if (offset < 0)
         {
             // XXX Likely that this will never be executed because if the upper
             // sequence is not in the sender buffer, then most likely the loss 
             // was completely ignored.
             LOGC(gslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
-                << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << core->m_iSndLastDataAck
+                << w_packet.seqno() << ", m_iSndLastDataAck " << core->m_iSndLastDataAck
                 << ")=" << offset << ". Continue");
 
             // No matter whether this is right or not (maybe the attack case should be
             // considered, and some LOSSREPORT flood prevention), send the drop request
             // to the peer.
             int32_t seqpair[2] = {
-                w_packet.m_iSeqNo,
+                w_packet.seqno(),
                 CSeqNo::decseq(core->m_iSndLastDataAck)
             };
-            w_packet.m_iMsgNo = 0; // Message number is not known, setting all 32 bits to 0.
+            const int32_t no_msgno = 0; // Message number is not known
 
             HLOGC(gslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
+                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.msgflags()) << " SEQ:"
                     << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
 
-            core->sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+            core->sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
             return 0;
         }
 
@@ -5802,7 +5803,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq)
         // So, set here the rexmit flag if the peer understands it.
         if (core->m_bPeerRexmitFlag)
         {
-            w_packet.m_iMsgNo |= PACKET_SND_REXMIT;
+            w_packet.set_msgflags(w_packet.msgflags() | PACKET_SND_REXMIT);
         }
 
         // XXX we don't predict any other use of groups than live,

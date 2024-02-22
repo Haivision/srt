@@ -179,10 +179,6 @@ CPacket::CPacket()
     : m_nHeader() // Silences GCC 12 warning "used uninitialized".
     , m_extra_pad()
     , m_data_owned(false)
-    , m_iSeqNo((int32_t&)(m_nHeader[SRT_PH_SEQNO]))
-    , m_iMsgNo((int32_t&)(m_nHeader[SRT_PH_MSGNO]))
-    , m_iTimeStamp((int32_t&)(m_nHeader[SRT_PH_TIMESTAMP]))
-    , m_iID((int32_t&)(m_nHeader[SRT_PH_ID]))
     , m_pcData((char*&)(m_PacketVector[PV_DATA].dataRef()))
 {
     m_nHeader.clear();
@@ -601,7 +597,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
 std::string CPacket::Info()
 {
     std::ostringstream os;
-    os << "TARGET=@" << m_iID << " ";
+    os << "TARGET=@" << id() << " ";
 
     if (isControl())
     {
