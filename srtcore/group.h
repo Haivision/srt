@@ -143,7 +143,9 @@ public:
     }
 
     // NEED LOCKING
+    SRT_ATTR_REQUIRES(m_GroupLock)
     gli_t begin() { return m_Group.begin(); }
+    SRT_ATTR_REQUIRES(m_GroupLock)
     gli_t end() { return m_Group.end(); }
 
     /// Remove the socket from the group container.
@@ -464,10 +466,13 @@ private:
             m_List.clear();
             m_SizeCache = 0;
         }
-        size_t size() { return m_SizeCache; }
 
         void erase(gli_t it);
 
+        // NOTE: These methods below don't need locking in RO version.
+        SRTU_PROPERTY_RO(size_t, size, m_SizeCache);
+
+        // UPDATED BY: updateRcvRunningState() (which needs locking).
         SRTU_PROPERTY_RW(size_t, number_running, m_zNumberRunning);
     };
 
@@ -483,7 +488,7 @@ public:
     void updateInterlinkDistance();
 private:
 
-    SRT_ATTR_PT_GUARDED_BY(m_GroupLock)
+    SRT_ATTR_GUARDED_BY(m_GroupLock)
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
     srt::sync::atomic<int> m_iBusy;
@@ -735,7 +740,7 @@ private:
 
     sync::Mutex m_SndLastSeqLock;
 
-    SRT_ATTR_GUARDED_BY(m_iSndLastSeqLock)
+    SRT_ATTR_GUARDED_BY(m_SndLastSeqLock)
     sync::atomic<int32_t> m_SndLastSeqNo;
 
 public:
@@ -750,6 +755,7 @@ public:
         return m_SndLastSeqNo;
     }
 
+    SRT_ATTR_REQUIRES(m_SndLastSeqLock)
     int32_t getSentSeq() const
     {
         return m_SndLastSeqNo;
@@ -903,7 +909,11 @@ public:
     int checkLazySpawnTsbPdThread();
     CRcvBuffer::InsertInfo addDataUnit(SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     int rcvDropTooLateUpTo(int32_t seqno);
     void synchronizeLoss(int32_t seqno);
     void addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt);
@@ -937,6 +947,7 @@ public:
         return false;
     }
 
+    SRT_ATTR_REQUIRES(m_GroupLock)
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
     void updateLatestRcv(srt::CUDTSocket*);
@@ -949,6 +960,7 @@ public:
     void updateOnACK(int32_t ackdata_seqno);
     int packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq);
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const
     {
         return m_pRcvBuffer->getPktTsbPdTime(usPktTimestamp);
@@ -969,6 +981,8 @@ public:
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency_us, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock) // RO provides only one getter method
     SRTU_PROPERTY_RO(int32_t, getOldestRcvSeqNo, m_pRcvBuffer->getStartSeqNo());
 };
 

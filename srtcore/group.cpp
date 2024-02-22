@@ -306,6 +306,10 @@ void CUDTGroup::updateErasedLink()
 
 // XXX THIS IS WEIRD. Locking at the and and looks like unfinished.
 // This also isn't currently called anywhere.
+//
+// Likely the plan was about having the fixed loss distance for balancing
+// groups and this function should update this value on a change.
+// See checkPacketArrivalLoss().
 void CUDTGroup::updateInterlinkDistance()
 {
     // Before locking anything, check if you have good enough conditions
@@ -627,6 +631,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 
     importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
 
+    // XXX reaching out to m_pCryptoControl here can be racy.
     importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
@@ -1007,6 +1012,7 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(groups::SocketData* member, CUnit*
     }
     else if (info.result == CRcvBuffer::InsertInfo::DISCREPANCY)
     {
+        ScopedLock lk (m_RcvBufferLock);
         LOGC(qrlog.Error, log << CONID() << "grp/addDataUnit: "
                 << "SEQUENCE DISCREPANCY. DISCARDING."
                 << " seq=" << rpkt.seqno()
@@ -1207,6 +1213,9 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
     {
         // We do have a recorded loss before. Get unit information.
         vector<SRTSOCKET> followers;
+
+        // NOTE: calling m_Group.size() doesn't need locking of m_GroupLock.
+        // Getting elements or modifying a container does.
         m_pRcvBuffer->getUnitSeriesInfo(m_iRcvPossibleLossSeq, m_Group.size(), (followers));
 
         // The "eclipse" condition is one of two:
@@ -1223,7 +1232,9 @@ bool CUDTGroup::checkBalancingLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         map<SRTSOCKET, size_t> nums;
         FringeValues(followers, (nums));
 
-        IF_HEAVY_LOGGING(const char* which_condition[3] = {"fullcover", "longtail", "both???"});
+#if ENABLE_HEAVY_LOGGING
+        const char* which_condition[3] = {"fullcover", "longtail", "both???"};
+#endif
 
         bool longtail = false;
         bool fullcover = nums.size() >= m_Group.number_running();

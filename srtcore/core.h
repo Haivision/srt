@@ -317,11 +317,13 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         SRTT()                          const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
 #if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
 #endif
