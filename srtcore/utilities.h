@@ -682,7 +682,7 @@ public:
     bool operator==(const element_type* two) const { return get() == two; }
     bool operator!=(const element_type* two) const { return get() != two; }
 
-    operator bool () { return 0!= get(); }
+    operator bool () const { return 0!= get(); }
 };
 
 // A primitive one-argument versions of Sprint and Printable
@@ -1280,6 +1280,7 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
 #define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_ARG(type, name, expr) void set_##name(type arg) { expr; }
 #define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& set_##name(type arg) { field = arg; return *this; }
 #define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
