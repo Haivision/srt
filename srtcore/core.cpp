@@ -119,6 +119,7 @@ const int       UDT::ERROR        = srt::CUDT::ERROR;
         2[15..0]:   TsbPD delay     [0..60000] msec
 */
 
+// IMPORTANT!!! This array must be ordered by value, because std::binary_search is performed on it!
 extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_SNDSYN,
     SRTO_RCVSYN,
@@ -127,11 +128,14 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_RCVTIMEO,
     SRTO_MAXBW,
     SRTO_INPUTBW,
-    SRTO_MININPUTBW,
     SRTO_OHEADBW,
     SRTO_SNDDROPDELAY,
     SRTO_DRIFTTRACER,
+    SRTO_MININPUTBW,
     SRTO_LOSSMAXTTL
+#ifdef ENABLE_MAXREXMITBW
+    ,SRTO_MAXREXMITBW
+#endif
 };
 
 const int32_t
