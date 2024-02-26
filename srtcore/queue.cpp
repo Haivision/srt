@@ -65,7 +65,7 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
-srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss, UDPSOCKET owner)
+srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)

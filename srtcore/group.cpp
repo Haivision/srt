@@ -991,7 +991,7 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(groups::SocketData* member, CUnit*
 
         if (info.result == CRcvBuffer::InsertInfo::INSERTED)
         {
-            w_have_loss = checkPacketArrivalLoss(member, u->m_Packet, (w_losses));
+            w_have_loss = checkPacketArrivalLoss(member, rpkt, (w_losses));
         }
     }
 
@@ -5726,7 +5726,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq)
 
     // XXX This is temporarily used for broadcast with common loss list.
     bool have_extracted = false;
-    const char* as = "FIRST FOUND";
+    IF_HEAVY_LOGGING(const char* as = "FIRST FOUND");
     if (exp_seq == SRT_SEQNO_NONE)
     {
         exp_seq = m_pSndLossList->popLostSeq();
@@ -5734,7 +5734,7 @@ int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq)
     }
     else
     {
-        as = "EXPECTED";
+        IF_HEAVY_LOGGING(as = "EXPECTED");
         have_extracted = m_pSndLossList->popLostSeq(exp_seq);
     }
 
@@ -5966,8 +5966,9 @@ void* CUDTGroup::tsbpd(void* param)
                 // follow the drop, but this must be done outside the lock on the buffer.
                 synch_loss_after_drop = iDropCnt;
 
+#if ENABLE_LOGGING
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
-
+#endif
 #if ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug,
                       log << self->CONID() << "grp/tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("

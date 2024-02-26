@@ -9762,7 +9762,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     }
 }
 
-int srt::CUDT::packLostData(CPacket& w_packet, int32_t exp_seq)
+int srt::CUDT::packLostData(CPacket& w_packet, int32_t exp_seq SRT_ATR_UNUSED)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
