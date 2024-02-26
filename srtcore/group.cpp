@@ -3276,7 +3276,8 @@ private:
 
         std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
         str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
-        while (str_tnow.find(':') != std::string::npos) {
+        while (str_tnow.find(':') != std::string::npos)
+        {
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
         }
         const std::string fname = "stability_trace_" + str_tnow + ".csv";
@@ -5606,11 +5607,12 @@ ReportLink:
 // [[using locked(m_GroupLock)]]
 bool CUDTGroup::updateSendPacketUnique_LOCKED(int32_t single_seq)
 {
+    SchedSeq this_seq_as_fresh = {single_seq, groups::SQT_FRESH};
     // Check first if the packet wasn't already scheduled
     // If so, do nothing and return success.
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
     {
-        if (find(d->send_schedule.begin(), d->send_schedule.end(), (SchedSeq){single_seq, groups::SQT_FRESH}) != d->send_schedule.end())
+        if (find(d->send_schedule.begin(), d->send_schedule.end(), this_seq_as_fresh) != d->send_schedule.end())
         {
             HLOGC(gmlog.Debug, log << "grp/schedule(fresh): already scheduled to %" << d->id << " - skipping");
             return true; // because this should be considered successful, even though didn't schedule.
@@ -5629,7 +5631,7 @@ bool CUDTGroup::updateSendPacketUnique_LOCKED(int32_t single_seq)
 
     HLOGC(gmlog.Debug, log << "grp/schedule(fresh): scheduling %" << single_seq << " to @" << selink->id);
 
-    selink->send_schedule.push_back((groups::SchedSeq){single_seq, groups::SQT_FRESH});
+    selink->send_schedule.push_back(this_seq_as_fresh);
     m_Group.set_active(selink);
 
     // XXX
@@ -5692,7 +5694,8 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
                 }
 
                 HLOGC(gmlog.Debug, log << "grp/schedule(loss): schedule REXMIT %" << seq << " to @" << selink->id);
-                selink->send_schedule.push_back((SchedSeq){seq, groups::SQT_LOSS});
+                SchedSeq scheduled_loss = {seq, groups::SQT_LOSS};
+                selink->send_schedule.push_back(scheduled_loss);
                 lstate.ilink = selink;
             }
         }
