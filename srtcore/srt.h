@@ -20,6 +20,8 @@ written by
 
 #include "platform_sys.h"
 
+#include "srt_compat.h"
+
 #include <string.h>
 #include <stdlib.h>
 
@@ -32,35 +34,6 @@ written by
 
 //if compiling with MinGW, it only works on XP or above
 //use -D_WIN32_WINNT=0x0501
-
-#ifndef SRT_API
-#ifdef _WIN32
-   #ifndef __MINGW32__
-      // Explicitly define 32-bit and 64-bit numbers
-      typedef __int32 int32_t;
-      typedef __int64 int64_t;
-      typedef unsigned __int32 uint32_t;
-      #ifndef LEGACY_WIN32
-         typedef unsigned __int64 uint64_t;
-      #else
-         // VC 6.0 does not support unsigned __int64: may cause potential problems.
-         typedef __int64 uint64_t;
-      #endif
-   #endif
-   #ifdef SRT_DYNAMIC
-      #ifdef SRT_EXPORTS
-         #define SRT_API __declspec(dllexport)
-      #else
-         #define SRT_API __declspec(dllimport)
-      #endif
-   #else // !SRT_DYNAMIC
-      #define SRT_API
-   #endif
-#else
-   #define SRT_API __attribute__ ((visibility("default")))
-#endif
-#endif
-
 
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
