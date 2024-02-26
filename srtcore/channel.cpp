@@ -796,8 +796,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     {
         if (NET_ERROR == WSA_IO_PENDING)
         {
-            DWORD res_wait = 0;
-            res_wait = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
+            DWORD res_wait = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
             if (res_wait == WAIT_FAILED)
             {
                 LOGC(kslog.Warn, log << "CChannel::WSAWaitForMultipleEvents: failed with " << NET_ERROR);
