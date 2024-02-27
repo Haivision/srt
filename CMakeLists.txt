@@ -73,7 +73,12 @@ if (NOT MICROSOFT)
 	# that ENABLE_DEBUG is set as it should.
 	if (ENABLE_DEBUG EQUAL 2)
 		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-		add_definitions(-DNDEBUG)
+        if (ENABLE_ASSERT)
+			# Add _DEBUG macro if explicitly requested, to enable SRT_ASSERT().
+			add_definitions(-D_DEBUG)
+		else()
+			add_definitions(-DNDEBUG)
+		endif()
 	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
 		set (CMAKE_BUILD_TYPE "Debug")
 
