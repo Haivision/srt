@@ -1527,15 +1527,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
-		gtest_add_tests(
-			TEST_LIST tests_srt
-			TARGET test-srt
-		)
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
-
 endif()
 
 

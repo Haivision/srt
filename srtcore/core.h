@@ -120,7 +120,12 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
+#ifdef ENABLE_MAXREXMITBW
+static const size_t SRT_SOCKOPT_NPOST = 13;
+#else
 static const size_t SRT_SOCKOPT_NPOST = 12;
+#endif
+
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
@@ -409,7 +414,7 @@ public: // internal API
 
     static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
     {
-        p.m_iTimeStamp = makeTS(ts, start_time);
+        p.set_timestamp(makeTS(ts, start_time));
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)
@@ -517,6 +522,7 @@ private:
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool prepareBuffers(CUDTException* eout);
+    int getAuthTagSize() const;
 
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;

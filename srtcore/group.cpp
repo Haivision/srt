@@ -717,6 +717,16 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     return true;
 }
 
+struct FOptionValue
+{
+    SRT_SOCKOPT expected;
+    FOptionValue(SRT_SOCKOPT v): expected(v) {}
+    bool operator()(const CUDTGroup::ConfigItem& i) const
+    {
+        return i.so == expected;
+    }
+};
+
 void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 {
     // Options handled in group
@@ -732,46 +742,60 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         w_optlen          = sizeof(bool);
         return;
 
+    case SRTO_SNDTIMEO:
+        *(int*)pw_optval = m_iSndTimeOut;
+        w_optlen = sizeof(int);
+        return;
+
+    case SRTO_RCVTIMEO:
+        *(int*)pw_optval = m_iRcvTimeOut;
+        w_optlen = sizeof(int);
+        return;
+
+    case SRTO_GROUPMINSTABLETIMEO:
+        *(uint32_t*)pw_optval = m_uOPT_MinStabilityTimeout_us / 1000;
+        w_optlen = sizeof(uint32_t);
+        return;
+
+        // Write-only options for security reasons or
+        // options that refer to a socket state, that
+        // makes no sense for a group.
+    case SRTO_PASSPHRASE:
+    case SRTO_KMSTATE:
+    case SRTO_PBKEYLEN:
+    case SRTO_KMPREANNOUNCE:
+    case SRTO_KMREFRESHRATE:
+    case SRTO_BINDTODEVICE:
+    case SRTO_GROUPCONNECT:
+    case SRTO_STATE:
+    case SRTO_EVENT:
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     default:; // pass on
     }
 
-    // XXX Suspicous: may require locking of GlobControlLock
-    // to prevent from deleting a socket in the meantime.
-    // Deleting a socket requires removing from the group first,
-    // so after GroupLock this will be either already NULL or
-    // a valid socket that will only be closed after time in
-    // the GC, so this is likely safe like all other API functions.
-    CUDTSocket* ps = 0;
+    // Check if the option is in the storage, which means that
+    // it was modified on the group.
 
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
+            FOptionValue(optname));
+
+    if (i == m_config.end())
     {
-        // In sockets. All sockets should have all options
-        // set the same and should represent the group state
-        // well enough. If there are no sockets, just use default.
+        // Not found, see the defaults
+        if (!getOptDefault(optname, (pw_optval), (w_optlen)))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        // Group lock to protect the container itself.
-        // Once a socket is extracted, we state it cannot be
-        // closed without the group send/recv function or closing
-        // being involved.
-        ScopedLock lg(m_GroupLock);
-        if (m_Group.empty())
-        {
-            if (!getOptDefault(optname, (pw_optval), (w_optlen)))
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-            return;
-        }
-
-        ps = m_Group.begin()->ps;
-
-        // Release the lock on the group, as it's not necessary,
-        // as well as it might cause a deadlock when combined
-        // with the others.
+        return;
     }
 
-    if (!ps)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    // Found, return the value from the storage.
+    // Check the size first.
+    if (w_optlen < int(i->value.size()))
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-    return ps->core().getOpt(optname, (pw_optval), (w_optlen));
+    w_optlen = i->value.size();
+    memcpy((pw_optval), &i->value[0], i->value.size());
 }
 
 SRT_SOCKSTATUS CUDTGroup::getStatus()

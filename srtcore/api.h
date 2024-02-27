@@ -143,7 +143,8 @@ public:
     /// of sockets in order to prevent other methods from accessing invalid address.
     /// A timer is started and the socket will be removed after approximately
     /// 1 second (see CUDTUnited::checkBrokenSockets()).
-    sync::steady_clock::time_point m_tsClosureTimeStamp;
+    //sync::steady_clock::time_point m_tsClosureTimeStamp;
+    sync::AtomicClock<sync::steady_clock> m_tsClosureTimeStamp;
 
     sockaddr_any m_SelfAddr; //< local address of the socket
     sockaddr_any m_PeerAddr; //< peer address of the socket

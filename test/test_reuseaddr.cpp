@@ -1,5 +1,6 @@
 #include <thread>
 #include <future>
+#include <sstream>
 #ifndef _WIN32
 #include <ifaddrs.h>
 #endif
@@ -103,19 +104,54 @@ static std::string GetLocalIP(int af = AF_UNSPEC)
 
 class ReuseAddr : public srt::Test
 {
-    int m_client_pollid = SRT_ERROR;
-    //SRTSOCKET m_client_sock = SRT_INVALID_SOCK;
     int m_server_pollid = SRT_ERROR;
 
-
 protected:
-    void clientSocket(std::string ip, int port, bool expect_success)
+
+    std::string showEpollContents(const char* label, int* array, int length)
     {
+        std::ostringstream out;
+        out << label << ":[";
+        if (length)
+        {
+            // Now is at least 1
+            out << "@" << array[0];
+
+            for (int i = 1; i < length; ++i)
+                out << " @" << array[i];
+        }
+        out << "]";
+        return out.str();
+    }
+
+    struct UniquePollid
+    {
+        int pollid = SRT_ERROR;
+        UniquePollid()
+        {
+            pollid = srt_epoll_create();
+        }
+
+        ~UniquePollid()
+        {
+            srt_epoll_release(pollid);
+        }
+
+        operator int() const
+        {
+            return pollid;
+        }
+    };
+
+    void clientSocket(SRTSOCKET client_sock, std::string ip, int port, bool expect_success)
+    {
+        using namespace std;
+
         int yes = 1;
         int no = 0;
 
         int family = AF_INET;
-        std::string famname = "IPv4";
+        string famname = "IPv4";
         if (ip.substr(0, 2) == "6.")
         {
             family = AF_INET6;
@@ -123,28 +159,29 @@ protected:
             famname = "IPv6";
         }
 
-        std::cout << "[T/C] Creating client socket\n";
+        cout << "[T/C] Setting up client socket\n";
+        ASSERT_NE(client_sock, SRT_INVALID_SOCK);
+        ASSERT_EQ(srt_getsockstate(client_sock), SRTS_INIT);
 
-        srt::UniqueSocket client_sock = srt_create_socket();
-        ASSERT_NE(client_sock, SRT_ERROR);
+        EXPECT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+        EXPECT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
+        EXPECT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
-        ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
-        ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
-
-        ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+        UniquePollid client_pollid;
+        ASSERT_NE(int(client_pollid), SRT_ERROR);
 
         int epoll_out = SRT_EPOLL_OUT;
-        srt_epoll_add_usock(m_client_pollid, client_sock, &epoll_out);
+        srt_epoll_add_usock(client_pollid, client_sock, &epoll_out);
 
         sockaddr_any sa = srt::CreateAddr(ip, port, family);
 
-        std::cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << std::endl;
+        cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << endl;
 
         int connect_res = srt_connect(client_sock, sa.get(), sa.size());
 
         if (connect_res == -1)
         {
-            std::cout << "srt_connect: " << srt_getlasterror_str() << std::endl;
+            cout << "srt_connect: " << srt_getlasterror_str() << endl;
         }
 
         if (expect_success)
@@ -163,17 +200,16 @@ protected:
                 int wlen = 2;
                 SRTSOCKET write[2];
 
-                std::cout << "[T/C] Waiting for connection readiness...\n";
+                cout << "[T/C] Waiting for connection readiness...\n";
 
-                EXPECT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
+                EXPECT_NE(srt_epoll_wait(client_pollid, read, &rlen,
                             write, &wlen,
                             -1, // -1 is set for debuging purpose.
                             // in case of production we need to set appropriate value
-                            0, 0, 0, 0), SRT_ERROR);
+                            0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
-
-                EXPECT_EQ(rlen, 0); // get exactly one write event without reads
-                EXPECT_EQ(wlen, 1); // get exactly one write event without reads
+                EXPECT_EQ(rlen, 0) << showEpollContents("[T/C] R", read, rlen); // get exactly one write event without reads
+                EXPECT_EQ(wlen, 1) << showEpollContents("[T/C] W", write, wlen); // get exactly one write event without reads
                 EXPECT_EQ(write[0], client_sock); // for our client socket
 
                 char buffer[1316] = {1, 2, 3, 4};
@@ -185,7 +221,7 @@ protected:
             }
             else
             {
-                std::cout << "[T/C] (NOT TESTING TRANSMISSION - CONNECTION FAILED ALREADY)\n";
+                cout << "[T/C] (NOT TESTING TRANSMISSION - CONNECTION FAILED ALREADY)\n";
             }
         }
         else
@@ -193,7 +229,7 @@ protected:
             EXPECT_EQ(connect_res, -1);
         }
 
-        std::cout << "[T/C] Client exit - should close @" << client_sock << "\n";
+        cout << "[T/C] Client exit\n";
     }
 
     SRTSOCKET prepareSocket()
@@ -278,8 +314,9 @@ protected:
 
     void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
     {
+        srt::UniqueSocket client_sock = srt_create_socket();
 
-        auto run = [this, ip, port, expect_success]() { clientSocket(ip, port, expect_success); };
+        auto run = [this, &client_sock, ip, port, expect_success]() { clientSocket(client_sock, ip, port, expect_success); };
 
         auto launched = std::async(std::launch::async, run);
 
@@ -292,18 +329,18 @@ protected:
             int wlen = 2;
             SRTSOCKET write[2];
 
-            std::cout << "[T/S] Wait 10s for acceptance on @" << bindsock << " ...\n";
+            std::cout << "[T/S] Wait 10s on E" << m_server_pollid << " for acceptance on @" << bindsock << " ...\n";
 
-            ASSERT_NE(srt_epoll_wait(m_server_pollid,
+            EXPECT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
                         10000, // -1 is set for debuging purpose.
                         // in case of production we need to set appropriate value
-                        0, 0, 0, 0), SRT_ERROR );
+                        0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
 
-            ASSERT_EQ(rlen, 1); // get exactly one read event without writes
-            ASSERT_EQ(wlen, 0); // get exactly one read event without writes
+            EXPECT_EQ(rlen, 1) << showEpollContents("[T/S] R", read, rlen);  // get exactly one read event without writes
+            EXPECT_EQ(wlen, 0) << showEpollContents("[T/S] W", write, wlen);  // get exactly one read event without writes
             ASSERT_EQ(read[0], bindsock); // read event is for bind socket
         }
 
@@ -314,7 +351,7 @@ protected:
             {
                 std::cout << "srt_accept: " << srt_getlasterror_str() << std::endl;
             }
-            ASSERT_NE(accepted_sock.ref(), SRT_INVALID_SOCK);
+            EXPECT_NE(accepted_sock.ref(), SRT_INVALID_SOCK);
 
             sockaddr_any showacp = (sockaddr*)&scl;
             std::cout << "[T/S] Accepted from: " << showacp.str() << std::endl;
@@ -332,22 +369,22 @@ protected:
 
                 std::cout << "[T/S] Wait for data reception...\n";
 
-                ASSERT_NE(srt_epoll_wait(m_server_pollid,
+                EXPECT_NE(srt_epoll_wait(m_server_pollid,
                             read,  &rlen,
                             write, &wlen,
                             -1, // -1 is set for debuging purpose.
                             // in case of production we need to set appropriate value
-                            0, 0, 0, 0), SRT_ERROR );
+                            0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
 
-                ASSERT_EQ(rlen, 1); // get exactly one read event without writes
-                ASSERT_EQ(wlen, 0); // get exactly one read event without writes
-                ASSERT_EQ(read[0], accepted_sock.ref()); // read event is for bind socket        
+                EXPECT_EQ(rlen, 1) << showEpollContents("[T/S] R", read, rlen);   // get exactly one read event without writes
+                EXPECT_EQ(wlen, 0) << showEpollContents("[T/S] W", write, wlen);  // get exactly one read event without writes
+                EXPECT_EQ(read[0], accepted_sock.ref()); // read event is for bind socket        
             }
 
             char pattern[4] = {1, 2, 3, 4};
 
-            ASSERT_EQ(srt_recvmsg(accepted_sock, buffer, sizeof buffer),
+            EXPECT_EQ(srt_recvmsg(accepted_sock, buffer, sizeof buffer),
                     1316);
 
             EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
@@ -400,17 +437,14 @@ private:
 
     void setup()
     {
-        m_client_pollid = srt_epoll_create();
-        ASSERT_NE(SRT_ERROR, m_client_pollid);
-
         m_server_pollid = srt_epoll_create();
-        ASSERT_NE(SRT_ERROR, m_server_pollid);
+        ASSERT_NE(m_server_pollid, SRT_ERROR);
     }
 
     void teardown()
     {
-        (void)srt_epoll_release(m_client_pollid);
         (void)srt_epoll_release(m_server_pollid);
+        m_server_pollid = SRT_ERROR;
     }
 };
 
