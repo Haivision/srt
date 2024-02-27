@@ -232,7 +232,7 @@ protected:
         cout << "[T/C] Client exit\n";
     }
 
-    SRTSOCKET prepareSocket()
+    SRTSOCKET prepareServerSocket()
     {
         SRTSOCKET bindsock = srt_create_socket();
         EXPECT_NE(bindsock, SRT_ERROR);
@@ -289,7 +289,7 @@ protected:
     {
         std::cout << "[T/S] serverSocket: creating listener socket\n";
 
-        SRTSOCKET bindsock = prepareSocket();
+        SRTSOCKET bindsock = prepareServerSocket();
 
         if (!bindListener(bindsock, ip, port, expect_success))
             return SRT_INVALID_SOCK;
@@ -301,7 +301,7 @@ protected:
     {
         std::cout << "[T/S] serverSocket: creating binder socket\n";
 
-        SRTSOCKET bindsock = prepareSocket();
+        SRTSOCKET bindsock = prepareServerSocket();
 
         if (!bindSocket(bindsock, ip, port, expect_success))
         {
@@ -394,8 +394,9 @@ protected:
         // client_sock closed through UniqueSocket.
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
-        std::cout << "[T/S] joining client async (should close client socket)...\n";
+        std::cout << "[T/S] joining client async \n";
         launched.get();
+        std::cout << "[T/S] closing client socket\n";
     }
 
     static void shutdownListener(SRTSOCKET bindsock)
@@ -572,7 +573,7 @@ TEST_F(ReuseAddr, Wildcard6)
     // This must be obligatory set before binding a socket to "::"
     int strict_ipv6 = 1;
 
-    SRTSOCKET bindsock_1 = prepareSocket();
+    SRTSOCKET bindsock_1 = prepareServerSocket();
     srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
     bindListener(bindsock_1, "::", 5000, true);
 
@@ -596,7 +597,7 @@ TEST_F(ReuseAddr, Wildcard6)
 
     strict_ipv6 = 0;
 
-    bindsock_1 = prepareSocket();
+    bindsock_1 = prepareServerSocket();
     srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
     bindListener(bindsock_1, "::", 5000, true);
 
@@ -630,8 +631,8 @@ TEST_F(ReuseAddr, ProtocolVersion6)
     SRTSOCKET bindsock_1 = createListener("0.0.0.0", 5000, true);
 
     // We need a small interception in this one.
-    // createListener = prepareSocket | bindListener
-    SRTSOCKET bindsock_2 = prepareSocket();
+    // createListener = prepareServerSocket | bindListener
+    SRTSOCKET bindsock_2 = prepareServerSocket();
     {
         int yes = 1;
 
@@ -659,8 +660,8 @@ TEST_F(ReuseAddr, ProtocolVersionFaux6)
     SRTSOCKET bindsock_1 = createListener("0.0.0.0", 5000, true);
 
     // We need a small interception in this one.
-    // createListener = prepareSocket | bindListener
-    SRTSOCKET bindsock_2 = prepareSocket();
+    // createListener = prepareServerSocket | bindListener
+    SRTSOCKET bindsock_2 = prepareServerSocket();
     {
         int no = 0;
 
