@@ -31,6 +31,7 @@
 TEST(Transmission, FileUpload)
 {
     srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
 
     // Generate the source file
     // We need a file that will contain more data
