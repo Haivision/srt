@@ -1,5 +1,6 @@
 #include <thread>
 #include <future>
+#include <sstream>
 #ifndef _WIN32
 #include <ifaddrs.h>
 #endif
@@ -103,11 +104,45 @@ static std::string GetLocalIP(int af = AF_UNSPEC)
 
 class ReuseAddr : public srt::Test
 {
-    int m_client_pollid = SRT_ERROR;
     int m_server_pollid = SRT_ERROR;
 
-
 protected:
+
+    std::string showEpollContents(const char* label, int* array, int length)
+    {
+        std::ostringstream out;
+        out << label << ":[";
+        if (length)
+        {
+            // Now is at least 1
+            out << "@" << array[0];
+
+            for (int i = 1; i < length; ++i)
+                out << " @" << array[i];
+        }
+        out << "]";
+        return out.str();
+    }
+
+    struct UniquePollid
+    {
+        int pollid = SRT_ERROR;
+        UniquePollid()
+        {
+            pollid = srt_epoll_create();
+        }
+
+        ~UniquePollid()
+        {
+            srt_epoll_release(pollid);
+        }
+
+        operator int() const
+        {
+            return pollid;
+        }
+    };
+
     void clientSocket(SRTSOCKET client_sock, std::string ip, int port, bool expect_success)
     {
         using namespace std;
@@ -132,8 +167,11 @@ protected:
         EXPECT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
         EXPECT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
+        UniquePollid client_pollid;
+        ASSERT_NE(int(client_pollid), SRT_ERROR);
+
         int epoll_out = SRT_EPOLL_OUT;
-        srt_epoll_add_usock(m_client_pollid, client_sock, &epoll_out);
+        srt_epoll_add_usock(client_pollid, client_sock, &epoll_out);
 
         sockaddr_any sa = srt::CreateAddr(ip, port, family);
 
@@ -164,14 +202,14 @@ protected:
 
                 cout << "[T/C] Waiting for connection readiness...\n";
 
-                EXPECT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
+                EXPECT_NE(srt_epoll_wait(client_pollid, read, &rlen,
                             write, &wlen,
                             -1, // -1 is set for debuging purpose.
                             // in case of production we need to set appropriate value
-                            0, 0, 0, 0), SRT_ERROR);
+                            0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
-                EXPECT_EQ(rlen, 0) << "[T/C] read-ready"; // get exactly one write event without reads
-                EXPECT_EQ(wlen, 1) << "[T/C] write-ready"; // get exactly one write event without reads
+                EXPECT_EQ(rlen, 0) << showEpollContents("[T/C] R", read, rlen); // get exactly one write event without reads
+                EXPECT_EQ(wlen, 1) << showEpollContents("[T/C] W", write, wlen); // get exactly one write event without reads
                 EXPECT_EQ(write[0], client_sock); // for our client socket
 
                 char buffer[1316] = {1, 2, 3, 4};
@@ -194,7 +232,7 @@ protected:
         cout << "[T/C] Client exit\n";
     }
 
-    SRTSOCKET prepareSocket()
+    SRTSOCKET prepareServerSocket()
     {
         SRTSOCKET bindsock = srt_create_socket();
         EXPECT_NE(bindsock, SRT_ERROR);
@@ -251,7 +289,7 @@ protected:
     {
         std::cout << "[T/S] serverSocket: creating listener socket\n";
 
-        SRTSOCKET bindsock = prepareSocket();
+        SRTSOCKET bindsock = prepareServerSocket();
 
         if (!bindListener(bindsock, ip, port, expect_success))
             return SRT_INVALID_SOCK;
@@ -263,7 +301,7 @@ protected:
     {
         std::cout << "[T/S] serverSocket: creating binder socket\n";
 
-        SRTSOCKET bindsock = prepareSocket();
+        SRTSOCKET bindsock = prepareServerSocket();
 
         if (!bindSocket(bindsock, ip, port, expect_success))
         {
@@ -291,18 +329,18 @@ protected:
             int wlen = 2;
             SRTSOCKET write[2];
 
-            std::cout << "[T/S] Wait 10s for acceptance on @" << bindsock << " ...\n";
+            std::cout << "[T/S] Wait 10s on E" << m_server_pollid << " for acceptance on @" << bindsock << " ...\n";
 
             EXPECT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
                         10000, // -1 is set for debuging purpose.
                         // in case of production we need to set appropriate value
-                        0, 0, 0, 0), SRT_ERROR );
+                        0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
 
-            EXPECT_EQ(rlen, 1); // get exactly one read event without writes
-            EXPECT_EQ(wlen, 0); // get exactly one read event without writes
+            EXPECT_EQ(rlen, 1) << showEpollContents("[T/S] R", read, rlen);  // get exactly one read event without writes
+            EXPECT_EQ(wlen, 0) << showEpollContents("[T/S] W", write, wlen);  // get exactly one read event without writes
             ASSERT_EQ(read[0], bindsock); // read event is for bind socket
         }
 
@@ -336,11 +374,11 @@ protected:
                             write, &wlen,
                             -1, // -1 is set for debuging purpose.
                             // in case of production we need to set appropriate value
-                            0, 0, 0, 0), SRT_ERROR );
+                            0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
 
-                EXPECT_EQ(rlen, 1) << "[T/S] read-ready"; // get exactly one read event without writes
-                EXPECT_EQ(wlen, 0) << "[T/S] write-ready"; // get exactly one read event without writes
+                EXPECT_EQ(rlen, 1) << showEpollContents("[T/S] R", read, rlen);   // get exactly one read event without writes
+                EXPECT_EQ(wlen, 0) << showEpollContents("[T/S] W", write, wlen);  // get exactly one read event without writes
                 EXPECT_EQ(read[0], accepted_sock.ref()); // read event is for bind socket        
             }
 
@@ -356,8 +394,9 @@ protected:
         // client_sock closed through UniqueSocket.
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
-        std::cout << "[T/S] joining client async (should close client socket)...\n";
+        std::cout << "[T/S] joining client async \n";
         launched.get();
+        std::cout << "[T/S] closing client socket\n";
     }
 
     static void shutdownListener(SRTSOCKET bindsock)
@@ -399,17 +438,14 @@ private:
 
     void setup()
     {
-        m_client_pollid = srt_epoll_create();
-        ASSERT_NE(m_client_pollid, SRT_ERROR);
-
         m_server_pollid = srt_epoll_create();
         ASSERT_NE(m_server_pollid, SRT_ERROR);
     }
 
     void teardown()
     {
-        (void)srt_epoll_release(m_client_pollid);
         (void)srt_epoll_release(m_server_pollid);
+        m_server_pollid = SRT_ERROR;
     }
 };
 
@@ -537,7 +573,7 @@ TEST_F(ReuseAddr, Wildcard6)
     // This must be obligatory set before binding a socket to "::"
     int strict_ipv6 = 1;
 
-    SRTSOCKET bindsock_1 = prepareSocket();
+    SRTSOCKET bindsock_1 = prepareServerSocket();
     srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
     bindListener(bindsock_1, "::", 5000, true);
 
@@ -561,7 +597,7 @@ TEST_F(ReuseAddr, Wildcard6)
 
     strict_ipv6 = 0;
 
-    bindsock_1 = prepareSocket();
+    bindsock_1 = prepareServerSocket();
     srt_setsockflag(bindsock_1, SRTO_IPV6ONLY, &strict_ipv6, sizeof strict_ipv6);
     bindListener(bindsock_1, "::", 5000, true);
 
@@ -595,8 +631,8 @@ TEST_F(ReuseAddr, ProtocolVersion6)
     SRTSOCKET bindsock_1 = createListener("0.0.0.0", 5000, true);
 
     // We need a small interception in this one.
-    // createListener = prepareSocket | bindListener
-    SRTSOCKET bindsock_2 = prepareSocket();
+    // createListener = prepareServerSocket | bindListener
+    SRTSOCKET bindsock_2 = prepareServerSocket();
     {
         int yes = 1;
 
@@ -624,8 +660,8 @@ TEST_F(ReuseAddr, ProtocolVersionFaux6)
     SRTSOCKET bindsock_1 = createListener("0.0.0.0", 5000, true);
 
     // We need a small interception in this one.
-    // createListener = prepareSocket | bindListener
-    SRTSOCKET bindsock_2 = prepareSocket();
+    // createListener = prepareServerSocket | bindListener
+    SRTSOCKET bindsock_2 = prepareServerSocket();
     {
         int no = 0;
 
