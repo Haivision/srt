@@ -40,10 +40,10 @@ namespace srt
 //   m_pUnit[i]->status_: 0: free, 1: good, 2: read, 3: dropped (can be combined with read?)
 //
 //   thread safety:
-//    start_pos_:      CUDT::m_RecvLock
+//    m_iStartPos:      CUDT::m_RecvLock
 //    first_unack_pos_:    CUDT::m_AckLock
-//    max_pos_inc_:        none? (modified on add and ack
-//    first_nonread_pos_:
+//    m_iMaxPosOff:        none? (modified on add and ack
+//    m_iFirstNonreadPos:
 //
 //
 //    m_iStartPos: the first packet that should be read (might be empty)
@@ -455,7 +455,7 @@ public:
         return m_iMaxPosOff;
     }
 
-    // Unfortunately it still needs locking.
+    // Returns true if the buffer is full. Requires locking.
     bool full() const
     {
         return size() == capacity();

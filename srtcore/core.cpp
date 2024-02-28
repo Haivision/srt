@@ -5544,7 +5544,7 @@ void * srt::CUDT::tsbpd(void* param)
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
-        SRT_ATR_UNUSED bool wakeup_on_signal = true;
+        SRT_ATR_UNUSED bool bWakeupOnSignal = true;
 
         // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
         if (self->m_bClosing)
@@ -8183,7 +8183,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             }
         }
 #endif
-        // Signalling m_RecvDataCond is not dane when TSBPD is on.
+        // Signalling m_RecvDataCond is not done when TSBPD is on.
         // This signalling is done in file mode in order to keep the
         // API reader thread sleeping until there is a "bigger portion"
         // of data to read. In TSBPD mode this isn't done because every

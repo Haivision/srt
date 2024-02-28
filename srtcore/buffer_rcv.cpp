@@ -656,7 +656,6 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         return 0;
     }
 
-    //const bool canReadInOrder = m_iFirstNonreadPos != m_iStartPos;
     const int readPos = canReadInOrder ? m_iStartPos : m_iFirstNonOrderMsgPos;
     const bool isReadingFromStart = (readPos == m_iStartPos); // Indicates if the m_iStartPos can be changed
 

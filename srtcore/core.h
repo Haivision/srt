@@ -987,7 +987,7 @@ private: // Receiving related data
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    sync::atomic<bool> m_bWakeOnRecv;            // Expected to be woken up when received a packet
+    sync::atomic<bool> m_bWakeOnRecv;            // Expected to wake up TSBPD when a read-ready data packet is received.
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
