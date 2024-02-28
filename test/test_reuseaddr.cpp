@@ -314,7 +314,7 @@ protected:
 
     void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
     {
-        srt::UniqueSocket client_sock = srt_create_socket();
+        MAKE_UNIQUE_SOCK(client_sock, "[T/C]connect", srt_create_socket());
 
         auto run = [this, &client_sock, ip, port, expect_success]() { clientSocket(client_sock, ip, port, expect_success); };
 
@@ -346,7 +346,8 @@ protected:
 
         {
             sockaddr_any scl;
-            srt::UniqueSocket accepted_sock = srt_accept(bindsock, scl.get(), &scl.len);
+            MAKE_UNIQUE_SOCK(accepted_sock, "[T/S]accept", srt_accept(bindsock, scl.get(), &scl.len));
+
             if (accepted_sock == -1)
             {
                 std::cout << "srt_accept: " << srt_getlasterror_str() << std::endl;

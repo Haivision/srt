@@ -183,7 +183,7 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
 
 UniqueSocket::~UniqueSocket()
 {
-    EXPECT_NE(srt_close(sock), SRT_ERROR);
+    EXPECT_NE(srt_close(sock), SRT_ERROR) << lab << " CREATED:"<< f << ":" << l;
 }
 
 }
