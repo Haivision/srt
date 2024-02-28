@@ -338,9 +338,10 @@ public:
 
     /// Read the whole message from one or several packets.
     ///
-    /// @param [in,out] data buffer to write the message into.
+    /// @param [out] data buffer to write the message into.
     /// @param [in] len size of the buffer.
-    /// @param [in,out] message control data
+    /// @param [out,opt] message control data to be filled
+    /// @param [out,opt] pw_seqrange range of sequence numbers for packets belonging to the message
     ///
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.

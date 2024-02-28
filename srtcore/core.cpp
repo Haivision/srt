@@ -5562,7 +5562,7 @@ void * srt::CUDT::tsbpd(void* param)
                 log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
                 << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            wakeup_on_signal = tsbpd_cc.wait_until(tsNextDelivery);
+            bWakeupOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
         }
         else
@@ -5585,7 +5585,7 @@ void * srt::CUDT::tsbpd(void* param)
             THREAD_RESUMED();
         }
 
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (wakeup_on_signal ? "signal" : "timeout") << "]!!! - "
+        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (bWakeupOnSignal? "signal" : "timeout") << "]!!! - "
                 << "NOW=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
@@ -8048,14 +8048,13 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
         LOGP(cnlog.Error, "IPE: ack can't be sent, buffer doesn't exist and no group membership");
         return false;
     }
-    {
-        ScopedLock buflock (m_RcvBufferLock);
-        bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
-        if (has_followers)
-            w_log_reason = "first lost";
-        else
-            w_log_reason = "expected next";
-    }
+
+    ScopedLock buflock (m_RcvBufferLock);
+    bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
+    if (has_followers)
+        w_log_reason = "first lost";
+    else
+        w_log_reason = "expected next";
 
     return true;
 }
@@ -9090,34 +9089,27 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                 m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
             }
         }
-        // When the drop request was received, it means that there are
-        // packets for which there will never be ACK sent; if the TSBPD thread
-        // is currently in the ACK-waiting state, it may never exit.
-        if (m_bTsbPd)
-        {
-            // XXX Likely this is not necessary because:
-            // 1. In the recv-waiting state, that is, when TSBPD thread
-            //    sleeps forever, it will be woken up anyway on packet
-            //    reception.
-            // 2. If there are any packets in the buffer and the initial
-            //    packet cell is empty (in which situation any drop could
-            //    occur), TSBPD thread is sleeping timely, until the playtime
-            //    of the first "drop up to" packet. Dropping changes nothing here.
-            // 3. If the buffer is empty, there's nothing "to drop up to", so
-            //    this function will not change anything in the buffer and so
-            //    in the reception state as well.
-            // 4. If the TSBPD thread is waiting until a play-ready packet is
-            //    retrieved by the API call (in which case it is also sleeping
-            //    forever until it's woken up by the API call), it may remain
-            //    stalled forever, if the application isn't reading the play-ready
-            //    packet. But this means that the application got stalled anyway.
-            //    TSBPD when woken up could at best state that there's still a
-            //    play-ready packet that is still not retrieved and fall back
-            //    to sleep (forever).
 
-            //HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-            //rcvtscc.notify_one();
-        }
+        // NOTE:
+        // PREVIOUSLY done: notify on rcvtscc if m_bTsbPd
+        // OLD COMMENT:
+        // // When the drop request was received, it means that there are
+        // // packets for which there will never be ACK sent; if the TSBPD thread
+        // // is currently in the ACK-waiting state, it may never exit.
+        // 
+        // Likely this is no longer necessary because:
+        //
+        // 1. If there's a play-ready packet, either in cell 0 or
+        //    after a drop, TSBPD is sleeping timely, up to the play-time
+        //    of the next ready packet (and the drop region concerned here
+        //    is still a gap to be skipped for this).
+        // 2. TSBPD sleeps forever when the buffer is empty, in which case
+        //    it will be always woken up on packet reception (see m_bWakeOnRecv).
+        //    And dropping won't happen in that case anyway. Note that the drop
+        //    request will not drop packets that are already received.
+        // 3. TSBPD sleeps forever when the API call didn't extract the
+        //    data that are ready to play. This isn't a problem if nothing
+        //    except the API call would wake it up.
     }
 
     dropFromLossLists(dropdata[0], dropdata[1]);
@@ -10679,21 +10671,6 @@ int srt::CUDT::processData(CUnit* in_unit)
             HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
             sendLossReport(srt_loss_seqs);
         }
-
-        // This should not be required with the new receiver buffer because
-        // signalling happens on every packet reception, if it has changed the
-        // earliest packet position.
-        /*
-        if (m_bTsbPd)
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
-            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
-        }
-        else
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: socket is not TSBPD, not signaling");
-        }
-         */
     }
 
     // Separately report loss records of those reported by a filter.
