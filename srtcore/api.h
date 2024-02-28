@@ -491,7 +491,7 @@ public:
         {
             if (socket)
             {
-                SRT_ASSERT(socket.m_iBusy > 0);
+                SRT_ASSERT(socket->isStillBusy() > 0);
                 socket->apiRelease();
                 // Only now that the group lock is lifted, can the
                 // group be now deleted and this pointer potentially dangling

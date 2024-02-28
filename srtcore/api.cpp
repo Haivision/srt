@@ -2661,7 +2661,7 @@ void srt::CUDTUnited::checkBrokenSockets()
 
         if (s->m_Status == SRTS_LISTENING)
         {
-            const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp;
+            const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp.load();
             // A listening socket should wait an extra 3 seconds
             // in case a client is connecting.
             if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
@@ -2746,7 +2746,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         // timeout 1 second to destroy a socket AND it has been removed from
         // RcvUList
         const steady_clock::time_point now        = steady_clock::now();
-        const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp;
+        const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
         if (closed_ago > seconds_from(1))
         {
             CRNode* rnode = u.m_pRNode;
