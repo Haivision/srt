@@ -1905,7 +1905,7 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
         return 0;
     }
 #endif
-
+#if ENABLE_HEAVY_LOGGING
     // Wrapping the log into a destructor so that it
     // is printed AFTER the destructor of SocketKeeper.
     struct ForceDestructor
@@ -1916,14 +1916,15 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
         {
             if (ps) // Could be not acquired by SocketKeeper, occasionally
             {
-                LOGC(smlog.Note, log << "CUDTUnited::close/end: @" << ps->m_SocketID << " busy=" << ps->isStillBusy());
+                HLOGC(smlog.Debug, log << "CUDTUnited::close/end: @" << ps->m_SocketID << " busy=" << ps->isStillBusy());
             }
         }
     } fod;
+#endif
 
     SocketKeeper k(*this, u, ERH_THROW);
-    fod.ps = k.socket;
-    LOGC(smlog.Note, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
+    IF_HEAVY_LOGGING(fod.ps = k.socket);
+    HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
     int ret = close(k.socket);
 
     return ret;
@@ -2573,37 +2574,25 @@ srt::CUDTSocket* srt::CUDTUnited::locateAcquireSocket(SRTSOCKET u, ErrorHandling
 
 bool srt::CUDTUnited::acquireSocket(CUDTSocket* s)
 {
-    /*
+    // Note that before using this function you must be certain
+    // that the socket isn't broken already and it still has at least
+    // one more GC cycle to live. In other words, you must be certain
+    // that this pointer passed here isn't dangling and was obtained
+    // directly from m_Sockets, or even better, has been acquired
+    // by some other functionality already, which is only about to
+    // be released earlier than you need.
     ScopedLock cg(m_GlobControlLock);
-
-    // JUST IN CASE, try to find the socket in m_Sockets (NOT in m_ClosedSockets).
-    // If it's not there, just pretend it's already deleted. The m_ClosedSockets
-    // is a container that keeps sockets that are being still in use of other threads,
-    // but were dispatched or acquired before another activity has requested them
-    // to be deleted.
-
-    // This uses simply a pointer value, so it should be safe even if the pointer
-    // was dangling. We state it's virtually impossible for a non-paused thread
-    // to get in a situation of having the reclaimed memory after a socket removed
-    // from m_Sockets to be reassigned to another new socket. Note that the socket
-    // being normally passed here as argument is a socket that was previously
-    // dispatched from somewhere else.
-
-    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
-    {
-        CUDTSocket* is = i->second;
-
-        if (s == is)
-        {
-    */
-            s->apiAcquire();
-            return true;
-            /*
-        }
-    }
     s->apiAcquire();
-    return false;
-    */
+    // Keep the lock so that no one changes anything in the meantime.
+    // If the socket m_Status == SRTS_CLOSED (set by setClosed()), then
+    // this socket is no longer present in the m_Sockets container
+    if (s->m_Status >= SRTS_BROKEN)
+    {
+        s->apiRelease();
+        return false;
+    }
+
+    return true;
 }
 
 srt::CUDTSocket* srt::CUDTUnited::locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn)

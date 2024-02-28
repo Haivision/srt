@@ -936,7 +936,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
-        /*
+
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
@@ -945,7 +945,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
             toRemove.push_back(*i);
             continue;
         }
-        // */
+
 
         if (cst != CONN_RENDEZVOUS && dest_id != 0)
         {
@@ -993,7 +993,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
         remove(i->id);
-        /*
+
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
@@ -1001,7 +1001,6 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
             LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
             continue;
         }
-        // */
 
         // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
