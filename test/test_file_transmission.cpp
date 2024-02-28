@@ -180,7 +180,7 @@ TEST(Transmission, FileUpload)
     std::cout << "Sockets closed, joining receiver thread\n";
     client.join();
 
-    std::ifstream tarfile("file.target");
+    std::ifstream tarfile("file.target", std::ios::in | std::ios::binary);
     EXPECT_EQ(!!tarfile, true);
 
     tarfile.seekg(0, std::ios::end);
@@ -189,7 +189,11 @@ TEST(Transmission, FileUpload)
 
     std::cout << "Comparing files\n";
     // Compare files
-    tarfile.seekg(0, std::ios::beg);
+
+    // Theoretically it should work if you just rewind to 0, but
+    // on Windows this somehow doesn't work. 
+    tarfile.close();
+    tarfile.open("file.target", std::ios::in | std::ios::binary);
 
     ifile.close();
     ifile.open("file.source", std::ios::in | std::ios::binary);
