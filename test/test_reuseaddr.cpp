@@ -396,7 +396,9 @@ protected:
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
         std::cout << "[T/S] joining client async \n";
+        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_CONNECTED);
         launched.get();
+        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_CONNECTED);
         std::cout << "[T/S] closing client socket\n";
     }
 
