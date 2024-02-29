@@ -1394,7 +1394,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
-                error_reason = "setting group-derived option: #" + Sprint(g.m_config[i].so);
+                error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -2662,31 +2662,34 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
     {
+        CUDTSocket* ps = j->second;
+        CUDT& u = ps->core();
+
         // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
-        if (!is_zero(j->second->core().m_tsLingerExpiration))
+        if (!is_zero(u.m_tsLingerExpiration))
         {
             // asynchronous close:
-            if ((!j->second->core().m_pSndBuffer) || (0 == j->second->core().m_pSndBuffer->getCurrBufSize()) ||
-                (j->second->core().m_tsLingerExpiration <= steady_clock::now()))
+            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
+                (u.m_tsLingerExpiration <= steady_clock::now()))
             {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << j->second->m_SocketID);
-                j->second->core().m_tsLingerExpiration = steady_clock::time_point();
-                j->second->core().m_bClosing           = true;
-                j->second->m_tsClosureTimeStamp        = steady_clock::now();
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
+                u.m_tsLingerExpiration = steady_clock::time_point();
+                u.m_bClosing           = true;
+                ps->m_tsClosureTimeStamp        = steady_clock::now();
             }
         }
 
         // timeout 1 second to destroy a socket AND it has been removed from
         // RcvUList
         const steady_clock::time_point now        = steady_clock::now();
-        const steady_clock::duration   closed_ago = now - j->second->m_tsClosureTimeStamp;
+        const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp;
         if (closed_ago > seconds_from(1))
         {
-            CRNode* rnode = j->second->core().m_pRNode;
+            CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
             {
                 HLOGC(smlog.Debug,
-                      log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                      log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
                 // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);

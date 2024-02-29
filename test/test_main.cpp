@@ -113,6 +113,11 @@ void TestInit::HandlePerTestOptions()
     {
         srt_setloglevel(LOG_DEBUG);
     }
+
+    if (TestEnv::me->OptionPresent("lognote"))
+    {
+        srt_setloglevel(LOG_NOTICE);
+    }
 }
 
 // Copied from ../apps/apputil.cpp, can't really link this file here.
@@ -178,7 +183,14 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
 
 UniqueSocket::~UniqueSocket()
 {
-    srt_close(sock);
+    // Could be closed explicitly
+    if (sock != -1)
+        close();
+}
+
+void UniqueSocket::close()
+{
+    EXPECT_NE(srt_close(sock), SRT_ERROR) << lab << " CREATED: "<< f << ":" << l;
 }
 
 }
