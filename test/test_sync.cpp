@@ -587,7 +587,8 @@ TEST(SyncEvent, WaitForNotifyAll)
  /*****************************************************************************/
 void* dummythread(void* param)
 {
-    *(bool*)(param) = true;
+    auto& thread_finished = *(srt::sync::atomic<bool>*)param;
+    thread_finished = true;
     return nullptr;
 }
 
