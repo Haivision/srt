@@ -82,6 +82,7 @@ public:
     {
     }
 
+    void close();
     ~UniqueSocket();
 
     operator int32_t() const

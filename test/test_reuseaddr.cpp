@@ -390,16 +390,22 @@ protected:
 
             EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
 
-            std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << " LSN:@" << bindsock << "...\n";
+            // XXX There is a possibility that a broken socket can be closed automatically,
+            // just the srt_close() call would simply return error in case of nonexistent
+            // socket. Therefore close them both at once; this problem needs to be fixed
+            // separately.
+            //
+            // The test only intends to send one portion of data from the client, so once
+            // received, the client has nothing more to do and should exit.
+            std::cout << "[T/S] closing client socket\n";
+            client_sock.close();
+            std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << "...\n";
         }
         // client_sock closed through UniqueSocket.
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
         std::cout << "[T/S] joining client async \n";
-        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_CONNECTED);
         launched.get();
-        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_CONNECTED);
-        std::cout << "[T/S] closing client socket\n";
     }
 
     static void shutdownListener(SRTSOCKET bindsock)
