@@ -314,7 +314,7 @@ protected:
 
     void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
     {
-        srt::UniqueSocket client_sock = srt_create_socket();
+        MAKE_UNIQUE_SOCK(client_sock, "[T/C]connect", srt_create_socket());
 
         auto run = [this, &client_sock, ip, port, expect_success]() { clientSocket(client_sock, ip, port, expect_success); };
 
@@ -346,7 +346,8 @@ protected:
 
         {
             sockaddr_any scl;
-            srt::UniqueSocket accepted_sock = srt_accept(bindsock, scl.get(), &scl.len);
+            MAKE_UNIQUE_SOCK(accepted_sock, "[T/S]accept", srt_accept(bindsock, scl.get(), &scl.len));
+
             if (accepted_sock == -1)
             {
                 std::cout << "srt_accept: " << srt_getlasterror_str() << std::endl;
@@ -389,14 +390,22 @@ protected:
 
             EXPECT_EQ(memcmp(pattern, buffer, sizeof pattern), 0);
 
-            std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << " LSN:@" << bindsock << "...\n";
+            // XXX There is a possibility that a broken socket can be closed automatically,
+            // just the srt_close() call would simply return error in case of nonexistent
+            // socket. Therefore close them both at once; this problem needs to be fixed
+            // separately.
+            //
+            // The test only intends to send one portion of data from the client, so once
+            // received, the client has nothing more to do and should exit.
+            std::cout << "[T/S] closing client socket\n";
+            client_sock.close();
+            std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << "...\n";
         }
         // client_sock closed through UniqueSocket.
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
         std::cout << "[T/S] joining client async \n";
         launched.get();
-        std::cout << "[T/S] closing client socket\n";
     }
 
     static void shutdownListener(SRTSOCKET bindsock)
