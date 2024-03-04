@@ -2,7 +2,9 @@ name: QEMU to run s390x-focal
 
 on:
   push:
-  workflow_dispatch:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   Tests:
