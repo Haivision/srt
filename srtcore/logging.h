@@ -20,7 +20,6 @@ written by
 #include <iostream>
 #include <iomanip>
 #include <set>
-//#include <vector>
 #include <sstream>
 #include <cstdarg>
 #ifdef _WIN32
