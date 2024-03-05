@@ -4656,21 +4656,21 @@ void setloglevel(LogLevel::type ll)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
-//    srt_logger_config.updateLoggersState();
+    srt_logger_config.updateLoggersState();
 }
 
 void addlogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
-//    srt_logger_config.updateLoggersState();
+    srt_logger_config.updateLoggersState();
 }
 
 void dellogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
-//    srt_logger_config.updateLoggersState();
+    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(set<LogFA> fas)
@@ -4678,7 +4678,7 @@ void resetlogfa(set<LogFA> fas)
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
-//    srt_logger_config.updateLoggersState();
+    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
@@ -4687,7 +4687,7 @@ void resetlogfa(const int* fara, size_t fara_size)
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
-//    srt_logger_config.updateLoggersState();
+    srt_logger_config.updateLoggersState();
 }
 
 void setlogstream(std::ostream& stream)
