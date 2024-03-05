@@ -116,7 +116,6 @@ struct LogConfig
     void* loghandler_opaque;
     srt::sync::Mutex mutex;
     int flags;
- //   std::vector<struct LogDispatcher*> loggers;
 
     LogConfig(const fa_bitset_t& efa,
             LogLevel::type l = LogLevel::warning,
@@ -139,11 +138,6 @@ struct LogConfig
 
     SRT_ATTR_RELEASE(mutex)
     void unlock() { mutex.unlock(); }
-/*
-    void subscribe(LogDispatcher*);
-    void unsubscribe(LogDispatcher*);
-    void updateLoggersState();
-    */
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -155,7 +149,6 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
-//    srt::sync::atomic<bool> enabled;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -166,7 +159,6 @@ public:
             const char* logger_pfx /*[[nullable]]*/, LogConfig& config):
         fa(functional_area),
         level(log_level),
-//        enabled(false),
         src_config(&config)
     {
         // XXX stpcpy desired, but not enough portable
@@ -194,17 +186,13 @@ public:
             prefix[MAX_PREFIX_SIZE] = '\0';
 #endif
         }
-//      config.subscribe(this);
-//      Update();
     }
 
     ~LogDispatcher()
     {
-//        src_config->unsubscribe(this);
     }
 
- //   void Update();
-    bool CheckEnabled(); // { return enabled; }
+    bool CheckEnabled();
 
     void CreateLogLinePrefix(std::ostringstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
