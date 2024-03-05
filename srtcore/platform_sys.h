@@ -21,7 +21,6 @@
 //
 // SRT_IMPORT_TIME   (mach time on Mac, portability gettimeofday on WIN32)
 // SRT_IMPORT_EVENT  (includes kevent on Mac)
-#ifndef SRT_API
 #ifdef _WIN32
    #ifndef __MINGW32__
       // Explicitly define 32-bit and 64-bit numbers
@@ -35,18 +34,6 @@
          typedef __int64 uint64_t;
       #endif
    #endif
-   #ifdef SRT_DYNAMIC
-      #ifdef SRT_EXPORTS
-         #define SRT_API __declspec(dllexport)
-      #else
-         #define SRT_API __declspec(dllimport)
-      #endif
-   #else // !SRT_DYNAMIC
-      #define SRT_API
-   #endif
-#else
-   #define SRT_API __attribute__ ((visibility("default")))
-#endif
 #endif
 
 

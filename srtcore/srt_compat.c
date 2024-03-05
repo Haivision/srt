@@ -17,6 +17,7 @@ written by
 // Prevents from misconfiguration through preprocessor.
 
 #include "platform_sys.h"
+#include <srt.h>
 #include <srt_compat.h>
 
 #include <string.h>

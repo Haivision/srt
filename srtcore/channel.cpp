@@ -51,6 +51,7 @@ modified by
 *****************************************************************************/
 
 #include "platform_sys.h"
+#include <srt.h>
 #include <iostream>
 #include <iomanip> // Logging
 #include <srt_compat.h>
