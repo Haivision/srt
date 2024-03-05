@@ -23,6 +23,8 @@ using namespace std;
 namespace srt_logging
 {
 
+/* Blocked temporarily until 1.6.0. This causes ABI incompat with 1.5.0 line.
+
 // Note: subscribe() and unsubscribe() functions are being called
 // in the global constructor and destructor only, as the
 // Logger objects (and inside them also their LogDispatcher)
@@ -85,7 +87,7 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
     }
     src_config->unlock();
 }
-
+*/
 
 #if ENABLE_LOGGING
 
