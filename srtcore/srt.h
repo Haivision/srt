@@ -17,7 +17,7 @@ written by
 #define INC_SRTC_H
 
 #ifndef SRT_API
-
+#ifdef _WIN32
    #ifdef SRT_DYNAMIC
       #ifdef SRT_EXPORTS
          #define SRT_API __declspec(dllexport)
@@ -29,6 +29,7 @@ written by
    #endif
 #else
    #define SRT_API __attribute__ ((visibility("default")))
+#endif
 #endif
 
 #include "version.h"
