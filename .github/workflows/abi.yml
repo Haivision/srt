@@ -2,7 +2,9 @@ name: ABI checks
 
 on:
   push:
-  workflow_dispatch:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 env:
   SRT_BASE: v1.5.0
