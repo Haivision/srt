@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 /* Ensures that we store the error in the buffer and return the bufer. */
-SRT_API const char * SysStrError(int errnum, char * buf, size_t buflen);
+const char * SysStrError(int errnum, char * buf, size_t buflen);
 
 #ifdef __cplusplus
 } // extern C
