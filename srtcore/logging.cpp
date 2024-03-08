@@ -14,7 +14,7 @@ written by
  *****************************************************************************/
 
 
-
+#include "srt_compat.h"
 #include "logging.h"
 
 using namespace std;
