@@ -33,7 +33,6 @@ written by
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
-#include "srt_compat.h"
 #include "sync.h"
 
 #ifdef __GNUC__
