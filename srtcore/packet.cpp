@@ -159,7 +159,7 @@ modified by
 //      the original sequence numbers in the field.
 
 #include "platform_sys.h"
-
+#include <cstddef>
 #include <cstring>
 #include "packet.h"
 #include "handshake.h"
