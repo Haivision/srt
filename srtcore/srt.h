@@ -36,8 +36,6 @@ written by
 
 #include "platform_sys.h"
 
-#include "srt_compat.h"
-
 #include <string.h>
 #include <stdlib.h>
 
