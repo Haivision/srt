@@ -203,16 +203,16 @@ public:
     template <class... Args>
     void PrintLogLine(const char* file, int line, const std::string& area, Args&&... args);
 
-    template<class Arg1, class... Args>
-    void operator()(Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void operator()(Args&&... args)
     {
-        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg1, args...);
+        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", args...);
     }
 
-    template<class Arg1, class... Args>
-    void printloc(const char* file, int line, const std::string& area, Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void printloc(const char* file, int line, const std::string& area, Args&&... args)
     {
-        PrintLogLine(file, line, area, arg1, args...);
+        PrintLogLine(file, line, area, args...);
     }
 #else
     template <class Arg>
@@ -440,7 +440,7 @@ inline void PrintArgs(std::ostream&) {}
 template <class Arg1, class... Args>
 inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
 {
-    serr << arg1;
+    serr << std::forward<Arg1>(arg1);
     PrintArgs(serr, args...);
 }
 
