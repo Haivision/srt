@@ -53,8 +53,9 @@ jobs:
          git clone https://github.com/lvc/abi-compliance-checker.git
          cd abi-compliance-checker && sudo make install && cd ../
          abi-compliance-checker -l libsrt -old tag/_build/libsrt-tag.dump -new pull_request/_build/libsrt-pr.dump
-         if (( $? != 0 ))
+         RES=$?
+         if (( $RES != 0 ))
           then
             echo "ABI/API Compatibility check failed with value $?"
-            exit $?
+            exit $RES
           fi
