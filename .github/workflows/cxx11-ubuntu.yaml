@@ -36,4 +36,4 @@ jobs:
       # Consult https://docs.sonarcloud.io/advanced-setup/ci-based-analysis/sonarscanner-cli/ for more information and options.
       run: |
         ls -l .
-        sonar-scanner --define sonar.cfamily.build-wrapper-output=_build/"${{ env.BUILD_WRAPPER_OUT_DIR }}" --sonar.cfamily.gcov.reportsPath=_build/
+        sonar-scanner --define sonar.cfamily.build-wrapper-output=_build/"${{ env.BUILD_WRAPPER_OUT_DIR }}" --define sonar.cfamily.gcov.reportsPath=_build/
