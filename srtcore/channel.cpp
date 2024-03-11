@@ -51,7 +51,6 @@ modified by
 *****************************************************************************/
 
 #include "platform_sys.h"
-
 #include <iostream>
 #include <iomanip> // Logging
 #include <srt_compat.h>
@@ -189,6 +188,7 @@ void srt::CChannel::createSocket(int family)
     m_iSocket    = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
     cloexec_flag = true;
 #endif
+
 #else  // ENABLE_SOCK_CLOEXEC
     m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
 #endif // ENABLE_SOCK_CLOEXEC
@@ -197,17 +197,18 @@ void srt::CChannel::createSocket(int family)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
 
 #if ENABLE_SOCK_CLOEXEC
-#ifdef _WIN32
-        // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
-#else
+
     if (cloexec_flag)
     {
+#ifdef _WIN32
+       // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
+#else
         if (0 != set_cloexec(m_iSocket, 1))
         {
             throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
         }
+#endif //_WIN32
     }
-#endif
 #endif // ENABLE_SOCK_CLOEXEC
 
     if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
@@ -795,8 +796,8 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     {
         if (NET_ERROR == WSA_IO_PENDING)
         {
-            res = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
-            if (res == WAIT_FAILED)
+            DWORD res_wait = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
+            if (res_wait == WAIT_FAILED)
             {
                 LOGC(kslog.Warn, log << "CChannel::WSAWaitForMultipleEvents: failed with " << NET_ERROR);
                 res = -1;
