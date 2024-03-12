@@ -30,6 +30,7 @@ jobs:
         source ./scripts/collect-gcov.sh
         bash <(curl -s https://codecov.io/bash)
     - name: Run SonarCloud Scan for C and C++
+      if: ${{ !github.event.pull_request.head.repo.fork }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
