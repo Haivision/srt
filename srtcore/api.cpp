@@ -2926,7 +2926,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         bool reuse_attempt = false;
         for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
         {
-            CMultiplexer& m = i->second;
+            CMultiplexer const& m = i->second;
 
             // First, we need to find a multiplexer with the same port.
             if (m.m_iPort != port)
