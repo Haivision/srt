@@ -35,6 +35,7 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -575,7 +576,7 @@ inline Stream& Print(Stream& in) { return in;}
 template <class Stream, class Arg1, class... Args>
 inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 {
-    sout << arg1;
+    sout << std::forward<Arg1>(arg1);
     return Print(sout, args...);
 }
 

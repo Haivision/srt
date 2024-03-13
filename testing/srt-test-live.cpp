@@ -64,6 +64,7 @@
 #include <chrono>
 #include <thread>
 
+#include "srt_compat.h"
 #include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"

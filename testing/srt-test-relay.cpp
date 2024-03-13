@@ -45,6 +45,7 @@ written by
 #include "threadname.h"
 
 
+using namespace std;
 
 
 bool Upload(UriParser& srt, UriParser& file);
