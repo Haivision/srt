@@ -48,6 +48,7 @@ set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
 set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
+set_if(PKG_CONFIG_CAPABLE LINUX OR GNU OR SUNOS OR BSD)
 
 include(GNUInstallDirs)
 
@@ -92,6 +93,28 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
+set (SRT_FIXED_DEFINES
+	ENABLE_BONDING
+	ENABLE_AEAD_API_PREVIEW
+	ENABLE_MAXREXMITBW)
+
+set (SRT_CONFIG_ADD_DEFINES SRT_CONFIG_PROVIDED)
+set (SRT_CONFIG_DEFINES "")
+
+macro (CheckFixedDefines defname)
+	# We only support boolean enabler flags
+	# Pity no IN_LIST operator available in 2.18
+	# The same can be achieved here by using the searched
+	# macro name as a regex expression
+	string(REGEX MATCH ${defname} CheckFixedDefines_DEFNAME ${SRT_FIXED_DEFINES})
+	if (${defname} STREQUAL ${CheckFixedDefines_DEFNAME})
+		list(APPEND SRT_CONFIG_ADD_DEFINES ${defname})
+	endif()
+endmacro ()
+
+# Since now, every flag that is normally added as "compile definitions" and
+# is found in this pool, must be pasted into PKGCONFIG_ADD_DEFINES
+
 getVarsWith(ENFORCE_ enforcers)
 foreach(ef ${enforcers})
 	set (val ${${ef}})
@@ -104,6 +127,7 @@ foreach(ef ${enforcers})
 	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
 	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
 	add_definitions(-D${ef}${val})
+	CheckFixedDefines(${ef})
 endforeach()
 
 # NOTE: Known options you can change using ENFORCE_ variables:
@@ -140,14 +164,16 @@ elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
 
+set (ENABLE_CXX11_DEFAULT ON)
+if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+	set (ENABLE_CXX11_DEFAULT OFF)
+endif()
+
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
-if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
-else()
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
-endif()
+option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ${ENABLE_CXX11_DEFAULT})
+option(ENABLE_CONFIG_HEADER "Should the build configuration macros be placed in the version.h file" OFF)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
@@ -186,7 +212,21 @@ if (ATOMIC_USE_SRT_SYNC_MUTEX)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
 endif()
 
+# Postfix: ENABLE_CONFIG_HEADER must be forcefully turned on on build systems
+# that do not utilize pkg-config.
+
+if (NOT PKG_CONFIG_CAPABLE)
+	if (NOT ENABLE_CONFIG_HEADER)
+		message(INFO "Configuration forcefully placed in version.h file as this platform doesn't feature pkg-config.")
+	endif()
+	set (ENABLE_CONFIG_HEADER ON)
+endif()
+
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
+
+# Declare that the config is known when compiling SRT itself and
+# also all libraries.
+add_definitions(-DSRT_CONFIG_PROVIDED)
 
 # Use application-defined group reader
 # (currently the only one implemented)
@@ -500,6 +540,7 @@ if (ENABLE_ENCRYPTION)
 	if (ENABLE_AEAD_API_PREVIEW)
 		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
+			CheckFixedDefines("ENABLE_AEAD_API_PREVIEW")
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
 			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
@@ -522,6 +563,7 @@ endif()
 
 if (ENABLE_MAXREXMITBW)
 	add_definitions(-DENABLE_MAXREXMITBW)
+	CheckFixedDefines("ENABLE_MAXREXMITBW")
 	message(STATUS "MAXREXMITBW API: ENABLED")
 else()
 	message(STATUS "MAXREXMITBW API: DISABLED")
@@ -835,6 +877,7 @@ endif()
 
 if (ENABLE_BONDING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
+	CheckFixedDefines("ENABLE_BONDING")
 	message(STATUS "ENABLE_BONDING: ON")
 else()
 	message(STATUS "ENABLE_BONDING: OFF")
@@ -1016,6 +1059,14 @@ if(DEFINED ENV{TEAMCITY_VERSION})
 	set(SRT_VERSION_BUILD ON)
 	set(CI_BUILD_NUMBER_STRING $ENV{CI_BUILD_COUNTER})
 	message(STATUS "TeamCity build environment detected: Adding build counter to version header")
+endif()
+
+if (ENABLE_CONFIG_HEADER)
+	set (SRT_CONFIG_DEFINES "")
+	foreach (def ${SRT_CONFIG_ADD_DEFINES})
+		string(APPEND SRT_CONFIG_DEFINES "#define ${def} 1
+")
+	endforeach()
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
@@ -1253,6 +1304,9 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
+	foreach(def ${SRT_CONFIG_ADD_DEFINES})
+		string(APPEND PKGCONFIG_ADD_DEFINES " -D${def}=1")
+	endforeach()
 	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
 	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
