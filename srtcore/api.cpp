@@ -173,7 +173,6 @@ srt::CUDTUnited::CUDTUnited()
     : m_Sockets()
     , m_GlobControlLock()
     , m_IDLock()
-    , m_mMultiplexer()
     , m_MultiplexerLock()
     , m_pCache(NULL)
     , m_bClosing(false)
@@ -2819,25 +2818,32 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
         return;
     }
 
-    CMultiplexer& mx = m->second;
+    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << (m->second.m_iRefCount-1));
+    if (unrefMuxer(&m->second) == 0)
+    {
+        m_mMultiplexer.erase(m);
+    }
+}
 
-    mx.m_iRefCount--;
-    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
-    if (0 == mx.m_iRefCount)
+int srt::CUDTUnited::unrefMuxer(CMultiplexer* pmx)
+{
+    pmx->m_iRefCount--;
+    if (0 == pmx->m_iRefCount)
     {
         HLOGC(smlog.Debug,
-              log << "MUXER id=" << mid << " lost last socket @" << u << " - deleting muxer bound to port "
-                  << mx.m_pChannel->bindAddressAny().hport());
+              log << "MUXER id=" << pmx->m_iID << " lost last socket - deleting muxer bound to port "
+                  << pmx->m_pChannel->bindAddressAny().hport());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
         // The queues must be silenced before closing the channel
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
-        mx.m_pSndQueue->setClosing();
-        mx.m_pRcvQueue->setClosing();
-        mx.destroy();
-        m_mMultiplexer.erase(m);
+        pmx->m_pSndQueue->setClosing();
+        pmx->m_pRcvQueue->setClosing();
+        pmx->destroy();
     }
+
+    return pmx->m_iRefCount;
 }
 
 void srt::CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af)
@@ -2848,14 +2854,18 @@ void srt::CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int
     w_m.m_iID        = s->m_SocketID;
 }
 
-uint16_t srt::CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
+void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* pw_s, CMultiplexer& fw_sm)
 {
-    w_s->core().m_pSndQueue = fw_sm.m_pSndQueue;
-    w_s->core().m_pRcvQueue = fw_sm.m_pRcvQueue;
-    w_s->m_iMuxID           = fw_sm.m_iID;
+    pw_s->core().m_pSndQueue = fw_sm.m_pSndQueue;
+    pw_s->core().m_pRcvQueue = fw_sm.m_pRcvQueue;
+    pw_s->m_iMuxID           = fw_sm.m_iID;
+}
+
+uint16_t srt::CUDTUnited::getRealEndpoint(CUDTSocket* pw_s, CMultiplexer& fw_sm)
+{
     sockaddr_any sa;
     fw_sm.m_pChannel->getSockAddr((sa));
-    w_s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
+    pw_s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
     return sa.hport();
 }
 
@@ -3102,7 +3112,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
                     HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
                     // reuse the existing multiplexer
                     ++i->second.m_iRefCount;
-                    installMuxer((s), (i->second));
+                    bindSocketToMuxer((s), (i->second));
                     return;
                 }
                 else
@@ -3178,7 +3188,8 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
-        m.m_iPort               = installMuxer((s), m);
+        bindSocketToMuxer((s), m);
+        m.m_iPort               = getRealEndpoint((s), m);
         m_mMultiplexer[m.m_iID] = m;
     }
     catch (const CUDTException&)
@@ -3278,9 +3289,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
     {
         // reuse the existing multiplexer
         ++mux->m_iRefCount;
-        s->core().m_pSndQueue = mux->m_pSndQueue;
-        s->core().m_pRcvQueue = mux->m_pRcvQueue;
-        s->m_iMuxID           = mux->m_iID;
+        bindSocketToMuxer((s), *mux);
         return true;
     }
 

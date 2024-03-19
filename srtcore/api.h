@@ -449,7 +449,8 @@ private:
 
     // Utility functions for updateMux
     void     configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
-    uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
+    void     bindSocketToMuxer(CUDTSocket* w_s, CMultiplexer& sm);
+    uint16_t getRealEndpoint(CUDTSocket* w_s, CMultiplexer& sm);
 
     /// @brief Checks if channel configuration matches the socket configuration.
     /// @param cfgMuxer multiplexer configuration.
@@ -485,6 +486,7 @@ private:
 
     void checkBrokenSockets();
     void removeSocket(const SRTSOCKET u);
+    int unrefMuxer(CMultiplexer* mux);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 

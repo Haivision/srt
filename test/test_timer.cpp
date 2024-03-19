@@ -20,13 +20,14 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
     const uint64_t sleep_intervals_us[] = { 1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000 };
 
     CTimer timer;
+    bool dummy_forced = false;
 
     for (uint64_t interval_us : sleep_intervals_us)
     {
         for (int i = 0; i < num_samples; i++)
         {
             steady_clock::time_point currtime = steady_clock::now();
-            timer.sleep_until(currtime + microseconds_from(interval_us));
+            timer.sleep_until(currtime + microseconds_from(interval_us), dummy_forced);
 
             steady_clock::time_point new_time = steady_clock::now();
             sleeps_us[i] = count_microseconds(new_time - currtime);

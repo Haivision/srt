@@ -191,15 +191,34 @@ srt::sync::CTimer::~CTimer()
 }
 
 
-bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
+bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp, const bool& forced)
 {
     // The class member m_sched_time can be used to interrupt the sleep.
     // Refer to Timer::interrupt().
-    enterCS(m_event.mutex());
+    UniqueLock lk (m_event.mutex());
     m_tsSchedTime = tp;
-    leaveCS(m_event.mutex());
+    return sleep_internal(lk, forced);
+}
 
-#if USE_BUSY_WAITING
+#if !USE_BUSY_WAITING // Non-busy-waiting (build-default) version.
+bool srt::sync::CTimer::sleep_internal(UniqueLock& lk, const bool& forced)
+{
+    TimePoint<steady_clock> cur_tp = steady_clock::now();
+
+    while (cur_tp < m_tsSchedTime)
+    {
+        m_event.cond().wait_until(lk, m_tsSchedTime);
+        cur_tp = steady_clock::now();
+        if (forced)
+            return false;
+    }
+    return cur_tp >= m_tsSchedTime;
+}
+
+#else
+
+bool srt::sync::CTimer::sleep_internal(UniqueLock& lk, const bool& forced)
+{
 #if defined(_WIN32)
     // 10 ms on Windows: bad accuracy of timers
     const steady_clock::duration
@@ -209,27 +228,23 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
     const steady_clock::duration
         td_threshold = milliseconds_from(1);
 #endif
-#endif // USE_BUSY_WAITING
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
     
     while (cur_tp < m_tsSchedTime)
     {
-#if USE_BUSY_WAITING
         steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
         if (td_wait <= 2 * td_threshold)
             break;
 
         td_wait -= td_threshold;
-        m_event.lock_wait_for(td_wait);
-#else
-        m_event.lock_wait_until(m_tsSchedTime);
-#endif // USE_BUSY_WAITING
+        m_event.cond().wait_for(lk, td_wait);
 
         cur_tp = steady_clock::now();
+        if (forced)
+            return false;
     }
 
-#if USE_BUSY_WAITING
     while (cur_tp < m_tsSchedTime)
     {
 #ifdef IA32
@@ -248,11 +263,10 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 
         cur_tp = steady_clock::now();
     }
-#endif // USE_BUSY_WAITING
 
     return cur_tp >= m_tsSchedTime;
 }
-
+#endif
 
 void srt::sync::CTimer::interrupt()
 {

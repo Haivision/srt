@@ -296,6 +296,7 @@ void srt::CSndUList::signalInterrupt() const
     m_ListCond.notify_one();
 }
 
+// [[using locked(this->m_ListLock)]]
 void srt::CSndUList::realloc_()
 {
     CSNode** temp = NULL;
@@ -315,6 +316,7 @@ void srt::CSndUList::realloc_()
     m_pHeap = temp;
 }
 
+// [[using locked(this->m_ListLock)]]
 void srt::CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 {
     // increase the heap array size if necessary
@@ -324,6 +326,7 @@ void srt::CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
     insert_norealloc_(ts, u);
 }
 
+// [[using locked(this->m_ListLock)]]
 void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
 {
     CSNode* n = u->m_pSNode;
@@ -365,6 +368,7 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
     }
 }
 
+// [[using locked(this->m_ListLock)]]
 void srt::CSndUList::remove_(const CUDT* u)
 {
     CSNode* n = u->m_pSNode;
@@ -550,7 +554,7 @@ void* srt::CSndQueue::worker(void* param)
         if (currtime < next_time)
         {
             THREAD_PAUSED();
-            self->m_pTimer->sleep_until(next_time);
+            self->m_pTimer->sleep_until(next_time, self->m_bClosing);
             THREAD_RESUMED();
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSleepTo++);
         }
@@ -570,7 +574,7 @@ void* srt::CSndQueue::worker(void* param)
                 << UST(Opened));
 #undef UST
 
-        if (!u->m_bConnected || u->m_bBroken)
+        if (!u->m_bConnected || u->m_bBroken || self->m_bClosing)
         {
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
