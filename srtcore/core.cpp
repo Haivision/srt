@@ -10998,6 +10998,11 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: received a connection request");
 
+    // NOTE (IMPORTANT!!!)
+    //
+    // The current CUDT object represents a LISTENER SOCKET to which
+    // the request was redirected from the receiver queue.
+
     if (m_bClosing)
     {
         m_RejectReason = SRT_REJ_CLOSE;
@@ -11282,21 +11287,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
 
-        if (result == 1)
-        {
-            // BUG! There is no need to update write-readiness on the listener socket once new connection is accepted.
-            // Only read-readiness has to be updated, but it is done so in the newConnection(..) function.
-            // See PR #1831 and issue #1667.
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectRequest: accepted connection, updating epoll to write-ready");
-
-            // New connection has been accepted or an existing one has been found. Update epoll write-readiness.
-            // a new connection has been created, enable epoll for write
-            // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
-            // executed for the accepted socket.
-            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
-        }
-        else if (result == -1)
+        if (result == -1)
         {
             // The new connection failed
             // or the connection already existed, but manually sending the HS response above has failed.
