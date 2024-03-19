@@ -208,7 +208,7 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 #endif
 
@@ -843,7 +843,7 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
     case SRTO_CRYPTOMODE:
         if (m_pCryptoControl)
             *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
@@ -2659,7 +2659,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
                     if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
@@ -2698,7 +2698,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 {
                     if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)
                         m_RejectReason = SRT_REJ_BADSECRET;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
                     else if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADCRYPTOMODE)
                         m_RejectReason = SRT_REJ_CRYPTO;
 #endif
