@@ -785,7 +785,32 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     }
     mh.msg_flags      = 0;
 
-    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
+    int res = -1;
+
+    // Make sure that the socket is writable. Wait up to 200ms. Exit with error if still not.
+    fd_set wset;
+    timeval tv;
+    FD_ZERO(&wset);
+    FD_SET(m_iSocket, &wset);
+    tv.tv_sec = 0;
+    tv.tv_usec = 200000;
+    const int select_ret = ::select((int)m_iSocket + 1, NULL, &wset, &wset, &tv);
+    if (select_ret <= 0)
+    {
+        char msg[1024];
+        LOGC(kslog.Error, log << "CChannel::sendto: select error: "
+                << (select_ret ? SysStrError(NET_ERROR, msg, 1024) : "socket not write-ready in 200ms"));
+        res = -1;
+    }
+    else
+    {
+        res = (int)::sendmsg(m_iSocket, &mh, 0);
+        if (res == -1)
+        {
+            char msg[1024];
+            LOGC(kslog.Error, log << "CChannel::sendto: sendmsg error: " << SysStrError(NET_ERROR, msg, 1024));
+        }
+    }
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
