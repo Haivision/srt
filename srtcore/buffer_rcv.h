@@ -19,28 +19,195 @@
 namespace srt
 {
 
-/*
- *   Circular receiver buffer.
- *
- *   |<------------------- m_szSize ---------------------------->|
- *   |       |<------------ m_iMaxPosOff ----------->|           |
- *   |       |                                       |           |
- *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
- *   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
- *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
- *             |                                   |
- *             |                                   \__last pkt received
- *             |
- *             \___ m_iStartPos: first message to read
- *
- *   m_pUnit[i]->status_: 0: free, 1: good, 2: read, 3: dropped (can be combined with read?)
- *
- *   thread safety:
- *    start_pos_:      CUDT::m_RecvLock
- *    first_unack_pos_:    CUDT::m_AckLock
- *    max_pos_inc_:        none? (modified on add and ack
- *    first_nonread_pos_:
- */
+//
+//   Circular receiver buffer.
+//
+//   |<------------------- m_szSize ---------------------------->|
+//   |       |<------------ m_iMaxPosOff ----------->|           |
+//   |       |                                       |           |
+//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
+//   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
+//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
+//             |           |   |                   |
+//             |           |   |                   \__last pkt received
+//             |           |   |
+//             |           |   \___ m_iDropPos
+//             |           |
+//             |           \___ m_iEndPos
+//             |
+//             \___ m_iStartPos: first packet position in the buffer
+//
+//   m_pUnit[i]->status_: 0: free, 1: good, 2: read, 3: dropped (can be combined with read?)
+//
+//   thread safety:
+//    start_pos_:      CUDT::m_RecvLock
+//    first_unack_pos_:    CUDT::m_AckLock
+//    max_pos_inc_:        none? (modified on add and ack
+//    first_nonread_pos_:
+//
+//
+//    m_iStartPos: the first packet that should be read (might be empty)
+//    m_iEndPos: the end of contiguous range. Empty if m_iEndPos == m_iStartPos
+//    m_iDropPos: a packet available for retrieval after a drop. If == m_iEndPos, no such packet.
+//
+// Operational rules:
+//
+//    Initially:
+//       m_iStartPos = 0
+//       m_iEndPos = 0
+//       m_iDropPos = 0
+//
+// When a packet has arrived, then depending on where it landed:
+//
+// 1. Position: next to the last read one and newest
+//
+//     m_iStartPos unchanged.
+//     m_iEndPos shifted by 1
+//     m_iDropPos = m_iEndPos
+// 
+// 2. Position: after a loss, newest.
+//
+//     m_iStartPos unchanged.
+//     m_iEndPos unchanged.
+//     m_iDropPos:
+//       - if it was == m_iEndPos, set to this
+//       - otherwise unchanged
+//
+// 3. Position: after a loss, but belated (retransmitted) -- not equal to m_iEndPos
+//
+//    m_iStartPos unchanged.
+//    m_iEndPos unchanged.
+//    m_iDropPos:
+//       - if m_iDropPos == m_iEndPos, set to this
+//       - if m_iDropPos %> this sequence, set to this
+//       - otherwise unchanged
+//
+// 4. Position: after a loss, sealing -- seq equal to position of m_iEndPos
+//   
+//    m_iStartPos unchanged.
+//    m_iEndPos:
+//      - since this position, search the first free cell
+//      - if reached the end of filled region (m_iMaxPosOff), stay there.
+//    m_iDropPos:
+//      - start from the value equal to m_iEndPos
+//      - walk at maximum to m_iMaxPosOff
+//      - find the first existing packet
+//    NOTE:
+//    If there are no "after gap" packets, then m_iMaxPosOff == m_iEndPos.
+//    If there is one existing packet, then one loss, then one packet, it
+//    should be that m_iEndPos = m_iStartPos %+ 1, m_iDropPos can reach
+//    to m_iStartPos %+ 2 position, and m_iMaxPosOff == m_iStartPos %+ 3.
+//
+// To wrap up:
+//
+// Let's say we have the following possibilities in a general scheme:
+//
+//
+//                 [D]   [C]             [B]                   [A] (insertion cases)
+//  | (start) --- (end) ===[gap]=== (after-loss) ... (max-pos) |
+//
+// See the CRcvBuffer::updatePosInfo method for detailed implementation.
+//
+// WHEN INSERTING A NEW PACKET:
+//
+// If the incoming sequence maps to newpktpos that is:
+//
+// * newpktpos <% (start) : discard the packet and exit
+// * newpktpos %> (size)  : report discrepancy, discard and exit
+// * newpktpos %> (start) and:
+//    * EXISTS: discard and exit (NOTE: could be also < (end))
+// [A]* seq == m_iMaxPosOff
+//       --> INC m_iMaxPosOff
+//       * m_iEndPos == previous m_iMaxPosOff
+//            * previous m_iMaxPosOff + 1 == m_iMaxPosOff
+//                --> m_iEndPos = m_iMaxPosOff
+//                --> m_iDropPos = m_iEndPos
+//            * otherwise (means the new packet caused a gap)
+//                --> m_iEndPos REMAINS UNCHANGED
+//                --> m_iDropPos = POSITION(m_iMaxPosOff)
+//       COMMENT:
+//       If this above condition isn't satisfied, then there are
+//       gaps, first at m_iEndPos, and m_iDropPos is at furthest
+//       equal to m_iMaxPosOff %- 1. The inserted packet is outside
+//       both the contiguous region and the following scratched region,
+//       so no updates on m_iEndPos and m_iDropPos are necessary.
+//
+// NOTE
+// SINCE THIS PLACE seq cannot be a sequence of an existing packet,
+// which means that earliest newpktpos == m_iEndPos, up to == m_iMaxPosOff -% 2.
+//
+//    * otherwise (newpktpos <% max-pos):
+//    [D]* newpktpos == m_iEndPos:
+//             --> (search FIRST GAP and FIRST AFTER-GAP)
+//             --> m_iEndPos: increase until reaching m_iMaxPosOff
+//             * m_iEndPos <% m_iMaxPosOff:
+//                 --> m_iDropPos = first VALID packet since m_iEndPos +% 1
+//             * otherwise:
+//                 --> m_iDropPos = m_iEndPos
+//    [B]* newpktpos %> m_iDropPos
+//             --> store, but do not update anything
+//    [C]* otherwise (newpktpos %> m_iEndPos && newpktpos <% m_iDropPos)          
+//             --> store
+//             --> set m_iDropPos = newpktpos
+//       COMMENT: 
+//       It is guaratneed that between m_iEndPos and m_iDropPos
+//       there is only a gap (series of empty cells). So wherever
+//       this packet lands, if it's next to m_iEndPos and before m_iDropPos
+//       it will be the only packet that violates the gap, hence this
+//       can be the only drop pos preceding the previous m_iDropPos.
+//
+// -- information returned to the caller should contain:
+// 1. Whether adding to the buffer was successful.
+// 2. Whether the "freshest" retrievable packet has been changed, that is:
+//    * in live mode, a newly added packet has earlier delivery time than one before
+//    * in stream mode, the newly added packet was at cell[0]
+//    * in message mode, if the newly added packet has:
+//      * completed the very first message
+//      * completed any message further than first that has out-of-order flag
+//
+// The information about a changed packet is important for the caller in
+// live mode in order to notify the TSBPD thread.
+//
+//
+//
+// WHEN CHECKING A PACKET
+//
+// 1. Check the position at m_iStartPos. If there is a packet,
+// return info at its position.
+//
+// 2. If position on m_iStartPos is empty, get the value of m_iDropPos.
+//
+// NOTE THAT:
+//   * if the buffer is empty, m_iDropPos == m_iStartPos and == m_iEndPos;
+//     note that m_iDropPos == m_iStartPos suffices to check that
+//   * if there is a packet in the buffer, but the first cell is empty,
+//     then m_iDropPos points to this packet, while m_iEndPos == m_iStartPos.
+//     Check then m_iStartPos == m_iEndPos to recognize it, and if then
+//     m_iDropPos isn't equal to them, you can read with dropping.
+//   * If cell[0] is valid, there could be only at worst cell[1] empty
+//     and cell[2] pointed by m_iDropPos.
+//
+// 3. In case of time-based checking for live mode, return empty packet info,
+// if this packet's time is later than given time.
+//
+// WHEN EXTRACTING A PACKET
+//
+// 1. Extraction is only possible if there is a packet at cell[0].
+// 2. If there's no packet at cell[0], the application may request to
+//    drop up to the given packet, or drop the whole message up to
+//    the beginning of the next message.
+// 3. In message mode, extraction can only extract a full message, so
+//    if there's no full message ready, nothing is extracted.
+// 4. When the extraction region is defined, the m_iStartPos is shifted
+//    by the number of extracted packets.
+// 5. If m_iEndPos <% m_iStartPos (after update), m_iEndPos should be
+//    set by searching from m_iStartPos up to m_iMaxPosOff for an empty cell.
+// 6. m_iDropPos must be always updated. If m_iEndPos == m_iMaxPosOff,
+//    m_iDropPos is set to their value. Otherwise start from m_iEndPos
+//    and search a valid packet up to m_iMaxPosOff.
+// 7. NOTE: m_iMaxPosOff is a delta, hence it must be set anew after update
+//    for m_iStartPos.
+//
 
 class CRcvBuffer
 {
@@ -48,21 +215,81 @@ class CRcvBuffer
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+    CRcvBuffer(int initSeqNo, size_t size, /*CUnitQueue* unitqueue, */ bool bMessageAPI);
 
     ~CRcvBuffer();
 
 public:
-    /// Insert a unit into the buffer.
-    /// Similar to CRcvBuffer::addData(CUnit* unit, int offset)
+
+    void debugShowState(const char* source);
+
+    struct InsertInfo
+    {
+        enum Result { INSERTED = 0, REDUNDANT = -1, BELATED = -2, DISCREPANCY = -3 } result;
+
+        // Below fields are valid only if result == INSERTED. Otherwise they have trap repro.
+
+        int first_seq; // sequence of the first available readable packet
+        time_point first_time; // Time of the new, earlier packet that appeared ready, or null-time if this didn't change.
+        int avail_range;
+
+        InsertInfo(Result r, int fp_seq = SRT_SEQNO_NONE, int range = 0,
+                time_point fp_time = time_point())
+            : result(r), first_seq(fp_seq), first_time(fp_time), avail_range(range)
+        {
+        }
+
+        InsertInfo()
+            : result(REDUNDANT), first_seq(SRT_SEQNO_NONE), avail_range(0)
+        {
+        }
+
+    };
+
+    /// Inserts the unit with the data packet into the receiver buffer.
+    /// The result inform about the situation with the packet attempted
+    /// to be inserted and the readability of the buffer.
     ///
-    /// @param [in] unit pointer to a data unit containing new packet
-    /// @param [in] offset offset from last ACK point.
+    /// @param [PASS] unit The unit that should be placed in the buffer
     ///
-    /// @return  0 on success, -1 if packet is already in buffer, -2 if packet is before m_iStartSeqNo.
-    /// -3 if a packet is offset is ahead the buffer capacity.
-    // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
-    int insert(CUnit* unit);
+    /// @return The InsertInfo structure where:
+    ///   * result: the result of insertion, which is:
+    ///      * INSERTED: successfully placed in the buffer
+    ///      * REDUNDANT: not placed, the packet is already there
+    ///      * BELATED: not placed, its sequence is in the past
+    ///      * DISCREPANCY: not placed, the sequence is far future or OOTB
+    ///   * first_seq: the earliest sequence number now avail for reading
+    ///   * avail_range: how many packets are available for reading (1 if unknown)
+    ///   * first_time: the play time of the earliest read-available packet
+    /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
+    ///
+    InsertInfo insert(CUnit* unit);
+
+    time_point updatePosInfo(const CUnit* unit, const int prev_max_off, const int newpktpos, const bool extended_end);
+    const CPacket* tryAvailPacketAt(int pos, int& w_span);
+    void getAvailInfo(InsertInfo& w_if);
+
+    /// Update the values of `m_iEndPos` and `m_iDropPos` in
+    /// case when `m_iEndPos` was updated to a position of a
+    /// nonempty cell.
+    ///
+    /// This function should be called after having m_iEndPos
+    /// has somehow be set to position of a non-empty cell.
+    /// This can happen by two reasons:
+    ///
+    ///  - the cell has been filled by incoming packet
+    ///  - the value has been reset due to shifted m_iStartPos
+    ///
+    /// This means that you have to search for a new gap and
+    /// update the m_iEndPos and m_iDropPos fields, or set them
+    /// both to the end of range if there are no loss gaps.
+    ///
+    /// The @a prev_max_pos parameter is passed here because it is already
+    /// calculated in insert(), otherwise it would have to be calculated here again.
+    ///
+    /// @param prev_max_pos buffer position represented by `m_iMaxPosOff`
+    ///
+    void updateGapInfo(int prev_max_pos);
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
@@ -98,6 +325,17 @@ public:
     /// @return the number of packets actually dropped.
     int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
+    /// Extract the "expected next" packet sequence.
+    /// Extract the past-the-end sequence for the first packet
+    /// that is expected to arrive next with preserving the packet order.
+    /// If the buffer is empty or the very first cell is lacking a packet,
+    /// it returns the sequence assigned to the first cell. Otherwise it
+    /// returns the sequence representing the first empty cell (the next
+    /// cell to the last received packet, if there are no loss-holes).
+    /// @param [out] w_seq: returns the sequence (always valid)
+    /// @return true if this sequence is followed by any valid packets
+    bool getContiguousEnd(int32_t& w_seq) const;
+
     /// Read the whole message from one or several packets.
     ///
     /// @param [in,out] data buffer to write the message into.
@@ -107,7 +345,7 @@ public:
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.
     ///         -1 on failure.
-    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL);
+    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
 
     /// Read acknowledged data into a user buffer.
     /// @param [in, out] dst pointer to the target user buffer.
@@ -193,7 +431,8 @@ public:
     /// @note CSeqNo::seqoff(first, second) is 0 if nothing to read.
     std::pair<int, int> getAvailablePacketsRange() const;
 
-    size_t countReadable() const;
+    int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<SRTSOCKET>& w_sources);
 
     bool empty() const
     {
@@ -207,6 +446,20 @@ public:
     size_t capacity() const
     {
         return m_szSize - 1;
+    }
+
+    /// Returns the currently used number of cells, including
+    /// gaps with empty cells, or in other words, the distance
+    /// between the initial position and the youngest received packet.
+    size_t size() const
+    {
+        return m_iMaxPosOff;
+    }
+
+    // Unfortunately it still needs locking.
+    bool full() const
+    {
+        return size() == capacity();
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -278,12 +531,12 @@ private:
     int findLastMessagePkt();
 
     /// Scan for availability of out of order packets.
-    void onInsertNotInOrderPacket(int insertpos);
-    // Check if m_iFirstReadableOutOfOrder is still readable.
-    bool checkFirstReadableOutOfOrder();
-    void updateFirstReadableOutOfOrder();
-    int  scanNotInOrderMessageRight(int startPos, int msgNo) const;
-    int  scanNotInOrderMessageLeft(int startPos, int msgNo) const;
+    void onInsertNonOrderPacket(int insertpos);
+    // Check if m_iFirstNonOrderMsgPos is still readable.
+    bool checkFirstReadableNonOrder();
+    void updateFirstReadableNonOrder();
+    int  scanNonOrderMessageRight(int startPos, int msgNo) const;
+    int  scanNonOrderMessageLeft(int startPos, int msgNo) const;
 
     typedef bool copy_to_dst_f(char* data, int len, int dst_offset, void* arg);
 
@@ -335,20 +588,30 @@ private:
 
     //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
 
-    FixedArray<Entry> m_entries;
+    typedef FixedArray<Entry> entries_t;
+    entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)
-    CUnitQueue*  m_pUnitQueue; // the shared unit queue
+
+    //XXX removed. In this buffer the units may come from various different
+    // queues, and the unit has a pointer pointing to the queue from which
+    // it comes, and it should be returned to the same queue.
+    //CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
     int m_iStartSeqNo;
     int m_iStartPos;        // the head position for I/O (inclusive)
+    int m_iEndPos;          // past-the-end of the contiguous region since m_iStartPos
+    int m_iDropPos;         // points past m_iEndPos to the first deliverable after a gap, or == m_iEndPos if no such packet
     int m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
     int m_iMaxPosOff;       // the furthest data position
-    int m_iNotch;           // the starting read point of the first unit
+    int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)
 
-    size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
-    int m_iFirstReadableOutOfOrder; // In case of out ouf order packet, points to a position of the first such packet to
-                                    // read
+    size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
+
+    /// Points to the first packet of a message that has out-of-order flag
+    /// and is complete (all packets from first to last are in the buffer).
+    /// If there is no such message in the buffer, it contains -1.
+    int m_iFirstNonOrderMsgPos;
     bool m_bPeerRexmitFlag;         // Needed to read message number correctly
     const bool m_bMessageAPI;       // Operation mode flag: message or stream.
 

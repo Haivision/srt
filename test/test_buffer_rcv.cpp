@@ -26,12 +26,12 @@ protected:
     void SetUp() override
     {
         // make_unique is unfortunatelly C++14
-        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
+        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500, 1 /*stub socket ID*/));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
@@ -76,7 +76,10 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        return m_rcv_buffer->insert(unit);
+        auto info = m_rcv_buffer->insert(unit);
+        // XXX extra checks?
+
+        return int(info.result);
     }
 
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed

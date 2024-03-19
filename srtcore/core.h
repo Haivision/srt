@@ -317,16 +317,19 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         SRTT()                          const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
 #if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
 #endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
     int32_t     deliveryRate()      const { return m_iDeliveryRate; }
     int         bandwidth()         const { return m_iBandwidth; }
@@ -388,6 +391,7 @@ public: // internal API
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @returns The number of packets in flight belonging to the interval [0; ...)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t getFlightSpan() const
     {
         return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
@@ -516,8 +520,8 @@ private:
     void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
     /// Create the CryptoControl object based on the HS packet.
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
+//    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
+// XXX ?    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
 
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
@@ -573,7 +577,7 @@ private:
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
 
-    void updateIdleLinkFrom(CUDT* source);
+    void updateIdleLinkFrom(int32_t seq, SRTSOCKET id);
 
     /// @brief Drop packets too late to be delivered if any.
     /// @returns the number of packets actually dropped.
@@ -639,6 +643,8 @@ private:
 
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
+    SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
+
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
@@ -697,6 +703,10 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+#if ENABLE_BONDING
+    void skipMemberLoss(int32_t seqno);
+#endif
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
@@ -751,6 +761,9 @@ private:
 
     SRT_ATTR_REQUIRES(m_RcvBufferLock)
     bool isRcvBufferReadyNoLock() const;
+
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    bool isRcvBufferFull() const;
 
     // TSBPD thread main function.
     static void* tsbpd(void* param);
@@ -923,6 +936,8 @@ private: // Timers
 
     void setInitialRcvSeq(int32_t isn);
 
+    sync::atomic<int> m_iSndMinFlightSpan;      // updated with every ACK, number of packets in flight at ACK
+
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
@@ -980,7 +995,7 @@ private: // Receiving related data
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
+    sync::atomic<bool> m_bWakeOnRecv;            // Expected to be woken up when received a packet
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1087,14 +1102,21 @@ private: // Generation and processing of packets
     /// @param ctrlpkt incoming user defined packet
     void processCtrlUserDefined(const CPacket& ctrlpkt);
 
-    /// @brief Update sender's loss list on an incoming acknowledgement.
+    /// @brief Update sender side socket data according to incoming ACK message.
+    ///
+    /// Incoming ACK message marks a point behind which everything is considered
+    /// received correctly, or at least there's no need to worry about it. This
+    /// requires to forget anything that refers to packets prior to this number.
+    /// In case of a group member, this number reflects this state also for the
+    /// whole group.
+    ///
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    bool updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet);
+    int packLostData(CPacket &packet, int32_t exp_seq = SRT_SEQNO_NONE);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
@@ -1111,6 +1133,7 @@ private: // Generation and processing of packets
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
+    void removeSndLossUpTo(int32_t seq);
 
     int processData(CUnit* unit);
 
@@ -1121,18 +1144,29 @@ private: // Generation and processing of packets
     ///
     /// @param incoming [in] The packet coming from the network medium
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
+    /// @param w_next_tsbpd [out] Set to the time of the earliest TSBPD-ready packet
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Get the packet's TSBPD time.
-    /// The @a grp passed by void* is not used yet
-    /// and shall not be used when ENABLE_BONDING=0.
+#if ENABLE_BONDING
+    bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+#endif
+
+    // This function is to return the packet's play time (time when
+    // it is submitted to the reading application) of the given packet.
+    // The version with `void*` is provided because the function body
+    // is mostly common for bonding and non-bonding, while it needs
+    // access to groups anyway, if present, and gets NULL in worst case.
+#if ENABLE_BONDING
+    time_point getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet);
+#else
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
+#endif
 
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnTsbPdThread();

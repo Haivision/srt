@@ -804,7 +804,10 @@ template<class Container>
 std::pair<typename Container::const_iterator, typename Container::const_iterator>
 inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
 
-
+/// This function takes the values from the container and counts how many
+/// times every unique value is present in the container. The result is a
+/// map where keys are the unique values from the container and value is
+/// the number of these values in the source container.
 template <class Container, class Value>
 inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
 {
