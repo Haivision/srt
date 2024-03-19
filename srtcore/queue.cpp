@@ -576,6 +576,13 @@ void* srt::CSndQueue::worker(void* param)
             continue;
         }
 
+        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->id());
+        if (!sk.socket)
+        {
+            HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
+            continue;
+        }
+
         // pack a packet from the socket
         CPacket pkt;
         steady_clock::time_point next_send_time;
@@ -588,7 +595,6 @@ void* srt::CSndQueue::worker(void* param)
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
         }
-
         const sockaddr_any addr = u->m_PeerAddr;
         if (!is_zero(next_send_time))
             self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
@@ -931,6 +937,16 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
+        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
+        if (!sk.socket)
+        {
+            // Socket deleted already, so stop this and proceed to the next loop.
+            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
+            toRemove.push_back(*i);
+            continue;
+        }
+
+
         if (cst != CONN_RENDEZVOUS && dest_id != 0)
         {
             if (i->id != dest_id)
@@ -976,14 +992,22 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        //
+        remove(i->id);
+
+        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
+        if (!sk.socket)
+        {
+            // This actually shall never happen, so it's a kind of paranoid check.
+            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
+            continue;
+        }
+
         // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
         // and may crash on next pass.
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
         i->u->m_bConnecting = false;
-        remove(i->u->m_SocketID);
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member
@@ -993,6 +1017,11 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         // app can call any UDT API to learn the connection_broken error
         CUDT::uglobal().m_EPoll.update_events(
             i->u->m_SocketID, i->u->m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+
+        // Make sure that the socket wasn't deleted in the meantime.
+        // Skip this part if it was. Note also that if the socket was
+        // decided to be deleted, it's already moved to m_ClosedSockets
+        // and should have been therefore already processed for deletion.
 
         i->u->completeBrokenConnectionDependencies(i->errorcode);
     }
