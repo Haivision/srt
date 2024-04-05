@@ -237,12 +237,12 @@ if (NOT USE_ENCLIB)
 		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
 		set (USE_ENCLIB gnutls)
 	else()
-		set (USE_ENCLIB openssl)
+		set (USE_ENCLIB openssl-evp)
 	endif()
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls" "botan")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
