@@ -245,6 +245,8 @@ Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTD
 #### pktRcvUndecryptTotal
 
 The total number of packets that failed to be decrypted at the receiver side. Available for receiver.
+The statistic also counts unencrypted packets that were expected to be uncrypted on a secured connection (see [SRTO_KM_S_SECURED](API-socket-options.md#srt_km_state))
+and hence dropped as not encrypted (undecrypted).
 
 #### pktSndFilterExtraTotal
 
