@@ -748,7 +748,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #endif
 
     // convert control information into network order
-    packet.toNL();
+    packet.toNetworkByteOrder();
 
 #ifndef _WIN32
     msghdr mh;
@@ -818,7 +818,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     res = (0 == res) ? size : -1;
 #endif
 
-    packet.toHL();
+    packet.toHostByteOrder();
 
     return res;
 }
@@ -1067,25 +1067,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     }
 
     w_packet.setLength(recv_size - CPacket::HDR_SIZE);
-
-    // convert back into local host order
-    // XXX use NtoHLA().
-    // for (int i = 0; i < 4; ++ i)
-    //   w_packet.m_nHeader[i] = ntohl(w_packet.m_nHeader[i]);
-    {
-        uint32_t* p = w_packet.m_nHeader;
-        for (size_t i = 0; i < SRT_PH_E_SIZE; ++i)
-        {
-            *p = ntohl(*p);
-            ++p;
-        }
-    }
-
-    if (w_packet.isControl())
-    {
-        for (size_t j = 0, n = w_packet.getLength() / sizeof(uint32_t); j < n; ++j)
-            *((uint32_t*)w_packet.m_pcData + j) = ntohl(*((uint32_t*)w_packet.m_pcData + j));
-    }
+    w_packet.toHostByteOrder();
 
     return RST_OK;
 
