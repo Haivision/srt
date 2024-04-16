@@ -799,7 +799,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     private:
         WSAEVENT e;
     };
-#if ENABLE_CXX11
+#ifndef __MINGW32__
     thread_local WSAEventRef lEvent;
 #else
     WSAEventRef lEvent;
