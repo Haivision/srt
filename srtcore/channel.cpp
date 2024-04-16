@@ -142,14 +142,6 @@ srt::CChannel::CChannel()
     , m_bBindMasked(true)
 #endif
 {
-#ifdef _WIN32
-    SecureZeroMemory((PVOID)&m_SendOverlapped, sizeof(WSAOVERLAPPED));
-    m_SendOverlapped.hEvent = WSACreateEvent();
-    if (m_SendOverlapped.hEvent == NULL) {
-        LOGC(kmlog.Error, log << CONID() << "IPE: WSACreateEvent failed with error: " << NET_ERROR);
-        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
-    }
-#endif
 #ifdef SRT_ENABLE_PKTINFO
    // Do the check for ancillary data buffer size, kinda assertion
    static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6);
@@ -165,12 +157,7 @@ srt::CChannel::CChannel()
 #endif
 }
 
-srt::CChannel::~CChannel()
-{
-#ifdef _WIN32
-    WSACloseEvent(m_SendOverlapped.hEvent);
-#endif
-}
+srt::CChannel::~CChannel() {}
 
 void srt::CChannel::createSocket(int family)
 {
@@ -789,32 +776,18 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 #else
     DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
     int   addrsize = addr.size();
+    WSAOVERLAPPED overlapped;
+    SecureZeroMemory((PVOID)&overlapped, sizeof(WSAOVERLAPPED));
+    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
-    int res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &m_SendOverlapped, NULL);
-
-    if (res == SOCKET_ERROR)
+    if (res == SOCKET_ERROR && NET_ERROR == WSA_IO_PENDING)
     {
-        if (NET_ERROR == WSA_IO_PENDING)
-        {
-            DWORD res_wait = WSAWaitForMultipleEvents(1, &m_SendOverlapped.hEvent, TRUE, 100 /*ms*/, FALSE);
-            if (res_wait == WAIT_FAILED)
-            {
-                LOGC(kslog.Warn, log << "CChannel::WSAWaitForMultipleEvents: failed with " << NET_ERROR);
-                res = -1;
-            }
-            else
-            {
-                DWORD dwFlags = 0;
-                const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &m_SendOverlapped, &size, false, &dwFlags);
-                res = bCompleted ? 0 : -1;
-            }
-        }
-        else
-        {
-            LOGC(kmlog.Error, log << CONID() << "WSASendTo failed with error: " << NET_ERROR);
-        }
+        DWORD dwFlags = 0;
+        const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, true, &dwFlags);
+        WSACloseEvent(overlapped.hEvent);
+        res = bCompleted ? 0 : -1;
     }
-    WSAResetEvent(m_SendOverlapped.hEvent);
+
     res = (0 == res) ? size : -1;
 #endif
 
