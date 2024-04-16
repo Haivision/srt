@@ -53,6 +53,7 @@ typedef struct tag_hcrypt_Ctx {
 #define HCRYPT_CTX_F_ENCRYPT    0x0100  /* 0:decrypt 1:encrypt */
 #define HCRYPT_CTX_F_ANNOUNCE   0x0200  /* Announce KM */
 #define HCRYPT_CTX_F_TTSEND     0x0400  /* time to send */
+#define HCRYPT_CTX_F_GCM_153    0x0800  /* AES-GCM compatibility mode (SRT v1.5.3 and earlier) */
         unsigned         flags;
 #define hcryptCtx_GetKeyFlags(ctx)      ((ctx)->flags & HCRYPT_CTX_F_xSEK)
 #define hcryptCtx_GetKeyIndex(ctx)      (((ctx)->flags & HCRYPT_CTX_F_xSEK)>>1)
@@ -70,6 +71,7 @@ typedef struct tag_hcrypt_Ctx {
 #define HCRYPT_CTX_MODE_AESCBC  3   /* Cipher-block chaining mode */
 #define HCRYPT_CTX_MODE_AESGCM  4   /* AES GCM authenticated encryption */
         unsigned         mode;
+        bool             use_gcm_153; /* AES-GCM compatibility mode (SRT v1.5.3 and earlier) */
 
         struct {
             size_t       key_len;

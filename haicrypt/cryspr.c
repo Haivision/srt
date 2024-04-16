@@ -456,7 +456,7 @@ static int crysprFallback_MsEncrypt(
 
 			if (ctx->mode == HCRYPT_CTX_MODE_AESGCM)
 			{
-				const bool old_aead = false; // SRT v1.5.2 to v1.5.3.
+				const bool old_aead = ctx->use_gcm_153; // SRT v1.5.2 to v1.5.3.
 				if (old_aead)
 				{
 					hcrypt_SetCtrIV((unsigned char*)&pki, ctx->salt, iv);
@@ -594,15 +594,15 @@ static int crysprFallback_MsDecrypt(CRYSPR_cb *cryspr_cb, hcrypt_Ctx *ctx,
 				/* Get current key (odd|even) from context */
 				CRYSPR_AESCTX *aes_key = CRYSPR_GETSEK(cryspr_cb, hcryptCtx_GetKeyIndex(ctx));
 				unsigned char iv[CRYSPR_AESBLKSZ];
-				/* Additional authenticated data used by AES-GCM. */
-				unsigned char aad[HAICRYPT_AAD_MAX];
 
 				/* Get input packet index (in network order) */
 				hcrypt_Pki pki = hcryptMsg_GetPki(ctx->msg_info, in_data[0].pfx, 1);
 
 				if (ctx->mode == HCRYPT_CTX_MODE_AESGCM)
 				{
-					const bool old_aead = false; // SRT v1.5.2 to v1.5.3.
+					/* Additional authenticated data used by AES-GCM. */
+					unsigned char aad[HAICRYPT_AAD_MAX];
+					const bool old_aead = ctx->use_gcm_153; // SRT v1.5.2 to v1.5.3.
 					if (old_aead)
 					{
 						hcrypt_SetCtrIV((unsigned char*)&pki, ctx->salt, iv);

@@ -62,6 +62,7 @@ typedef struct {
 #define HAICRYPT_CFG_F_CRYPTO   0x02        /* Perform crypto Tx:Encrypt Rx:Decrypt */
 #define HAICRYPT_CFG_F_FEC      0x04        /* Do Forward Error Correction */
 #define HAICRYPT_CFG_F_GCM      0x08        /* Use AES-GCM */
+#define HAICRYPT_CFG_F_GCM_153  0x10        /* Use AES-GCM compatibility mode with SRT v1.5.3 or earlier */
         unsigned        flags;
 
         HaiCrypt_Secret secret;             /* Security Association */
@@ -97,6 +98,7 @@ typedef struct hcrypt_Session_str* HaiCrypt_Handle;
 int  HaiCrypt_SetLogLevel(int level, int logfa);
 
 int  HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
+int  HaiCrypt_UpdateGcm153(HaiCrypt_Handle hhc, unsigned use_gcm_153);
 int  HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handle *phhc);
 int  HaiCrypt_Close(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_p);
