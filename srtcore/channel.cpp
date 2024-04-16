@@ -774,18 +774,59 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 
     const int res = (int)::sendmsg(m_iSocket, &mh, 0);
 #else
-    DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
-    int   addrsize = addr.size();
+    class WSAEventRef
+    {
+    public:
+        WSAEventRef()
+            : e(::WSACreateEvent())
+        {
+        }
+        ~WSAEventRef()
+        {
+            ::WSACloseEvent(e);
+            e = NULL;
+        }
+        void reset()
+        {
+            ::WSAResetEvent(e);
+        }
+        WSAEVENT Handle()
+        {
+            return e;
+        }
+
+    private:
+        WSAEVENT e;
+    };
+#if !defined(__MINGW32__) && defined(ENABLE_CXX11)
+    thread_local WSAEventRef lEvent;
+#else
+    WSAEventRef lEvent;
+#endif
     WSAOVERLAPPED overlapped;
-    SecureZeroMemory((PVOID)&overlapped, sizeof(WSAOVERLAPPED));
+    ::SecureZeroMemory(&overlapped, sizeof(overlapped));
+    overlapped.hEvent = lEvent.Handle();
+
+    DWORD size = (DWORD)(packet.m_PacketVector[0].size() + packet.m_PacketVector[1].size());
+    int   addrsize = addr.size();
     int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
-    if (res == SOCKET_ERROR && NET_ERROR == WSA_IO_PENDING)
+    if (res == SOCKET_ERROR)
     {
-        DWORD dwFlags = 0;
-        const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, true, &dwFlags);
-        WSACloseEvent(overlapped.hEvent);
-        res = bCompleted ? 0 : -1;
+        if (NET_ERROR == WSA_IO_PENDING)
+        {
+            DWORD dwFlags = 0;
+            const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, TRUE, &dwFlags);
+            if (bCompleted)
+                res = 0;
+            else
+                LOGC(kslog.Warn, log << "CChannel::sendto call on ::WSAGetOverlappedResult failed with error: " << NET_ERROR);
+            lEvent.reset();
+        }
+        else
+        {
+            LOGC(kmlog.Error, log << CONID() << "WSASendTo failed with error: " << NET_ERROR);
+        }
     }
 
     res = (0 == res) ? size : -1;
