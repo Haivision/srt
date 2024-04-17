@@ -656,6 +656,9 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
                     << " to that socket (" << ns->m_SocketID << ")");
             m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
+
+            LOGC(cnlog.Note, log << "New connection @" << ns->m_SocketID << " on listener @" << listen
+                << " (" << ns->m_SelfAddr.str() << ") from @" << ns->m_PeerID << " (" << peer.str() << ")");
         }
         catch (...)
         {
