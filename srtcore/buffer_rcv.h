@@ -187,6 +187,11 @@ public:
 
     PacketInfo getFirstReadablePacketInfo(time_point time_now) const;
 
+    /// @brief Get the sequence number of the first packet that can't be read
+	/// (either because it is missing, or because it is a part of a bigger message
+	/// that is not fully available yet).
+    int32_t getFirstNonreadSeqNo() const;
+
     /// Get information on packets available to be read.
     /// @returns a pair of sequence numbers (first available; first unavailable).
     /// 
