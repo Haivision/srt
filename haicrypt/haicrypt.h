@@ -62,7 +62,6 @@ typedef struct {
 #define HAICRYPT_CFG_F_CRYPTO   0x02        /* Perform crypto Tx:Encrypt Rx:Decrypt */
 #define HAICRYPT_CFG_F_FEC      0x04        /* Do Forward Error Correction */
 #define HAICRYPT_CFG_F_GCM      0x08        /* Use AES-GCM */
-#define HAICRYPT_CFG_F_GCM_153  0x10        /* Use AES-GCM compatibility mode with SRT v1.5.3 or earlier */
         unsigned        flags;
 
         HaiCrypt_Secret secret;             /* Security Association */

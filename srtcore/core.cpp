@@ -6022,7 +6022,7 @@ bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // they have outdated values.
     m_pCryptoControl->setCryptoSecret(m_config.CryptoSecret);
 
-	const bool useGcm153 = m_uPeerSrtVersion <= SrtVersion(1, 5, 3);
+    const bool useGcm153 = m_uPeerSrtVersion <= SrtVersion(1, 5, 3);
 
     if (bidirectional || m_config.bDataSender)
     {

@@ -172,7 +172,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO && kmdata[HCRYPT_MSG_KM_OFS_CIPHER] == HCRYPT_CIPHER_AES_GCM) ||
         (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM);
 
-	m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
+    m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
 
     // What we have to do:
     // If encryption is on (we know that by having m_KmSecret nonempty), create
@@ -459,11 +459,11 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
 
-		m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
-		if (m_hRcvCrypto != NULL)
-			HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
-		if (m_hSndCrypto != NULL)
-			HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
+        m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
+        if (m_hRcvCrypto != NULL)
+            HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
+        if (m_hSndCrypto != NULL)
+            HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
     }
 
     LOGP(cnlog.Note, FormatKmMessage("processSrtMsg_KMRSP", SRT_CMD_KMRSP, len));
@@ -598,7 +598,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_KmRefreshRatePkt(0)
     , m_KmPreAnnouncePkt(0)
     , m_iCryptoMode(CSrtConfig::CIPHER_MODE_AUTO)
-	, m_bUseGcm153(false)
+    , m_bUseGcm153(false)
     , m_bErrorReported(false)
 {
     m_KmSecret.len = 0;
@@ -626,7 +626,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
     // Set UNSECURED state as default
     m_RcvKmState = SRT_KM_S_UNSECURED;
     m_iCryptoMode = cfg.iCryptoMode;
-	m_bUseGcm153 = bUseGcm153;
+    m_bUseGcm153 = bUseGcm153;
 
 #ifdef SRT_ENABLE_ENCRYPTION
     if (!cfg.bTSBPD && m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
@@ -769,9 +769,7 @@ bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t key
     m_KmRefreshRatePkt = 2000;
     m_KmPreAnnouncePkt = 500;
 #endif
-    crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0) | (bAESGCM ? HAICRYPT_CFG_F_GCM : 0)
-                       | (m_bUseGcm153 ? HAICRYPT_CFG_F_GCM_153 : 0);
-
+    crypto_cfg.flags = HAICRYPT_CFG_F_CRYPTO | (cdir == HAICRYPT_CRYPTO_DIR_TX ? HAICRYPT_CFG_F_TX : 0) | (bAESGCM ? HAICRYPT_CFG_F_GCM : 0);
     crypto_cfg.xport = HAICRYPT_XPT_SRT;
     crypto_cfg.cryspr = HaiCryptCryspr_Get_Instance();
     crypto_cfg.key_len = (size_t)keylen;
@@ -794,7 +792,6 @@ bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t key
 
     return true;
 }
-
 #else
 bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
 {

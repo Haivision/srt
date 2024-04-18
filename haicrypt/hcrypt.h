@@ -81,7 +81,6 @@ typedef struct hcrypt_Session_str {
 
         struct {
             size_t          data_max_len;
-			bool            aes_gcm_153;    /* AES-GCM compatibility mode (SRT v1.5.3 and earlier) */
         }cfg;
 
         struct {
