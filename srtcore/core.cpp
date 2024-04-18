@@ -11291,8 +11291,6 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             HLOGC(cnlog.Debug,
                   log << CONID() << "processConnectRequest: accepted connection, updating epoll to write-ready");
 
-            LOGC(cnlog.Note, log << CONID() << "Listener accepted connection @" << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
-
             // New connection has been accepted or an existing one has been found. Update epoll write-readiness.
             // a new connection has been created, enable epoll for write
             // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
@@ -11331,7 +11329,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
     }
-    LOGC(cnlog.Note, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
+    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
 
     return RejectReasonForURQ(hs.m_iReqType);
 }
