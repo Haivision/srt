@@ -4968,8 +4968,9 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     }
 
     */
-
-    LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
+    
+    LOGC(cnlog.Note, log << CONID() << "Connection established from ("
+        << m_SourceAddr.str() << ") to peer @" << m_PeerID << " (" << m_PeerAddr.str() << ")");
 
     return CONN_ACCEPT;
 }
