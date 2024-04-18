@@ -278,7 +278,6 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         cryptoClone->ctx = &cryptoClone->ctx_pair[0];
         cryptoClone->ctx->flags |= (HCRYPT_CTX_F_ANNOUNCE | HCRYPT_CTX_F_TTSEND);
         cryptoClone->ctx->status = HCRYPT_CTX_S_ACTIVE;
-        cryptoClone->ctx->use_gcm_153 = cryptoSrc->ctx->use_gcm_153;
 
     } else { /* Receiver */
 
@@ -334,7 +333,6 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
         cryptoClone->ctx_pair[0].salt_len = 0;
         cryptoClone->ctx = &cryptoClone->ctx_pair[0];
-        cryptoClone->ctx->use_gcm_153 = cryptoSrc->ctx->use_gcm_153;
     }
 
     *phhc = (void *)cryptoClone;
