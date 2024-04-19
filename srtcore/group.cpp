@@ -2310,13 +2310,17 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         fillGroupData((w_mc), w_mc);
 
-        const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
-        if (iNumDropped > 0)
+        // TODO: What if a drop happens before the very first packet was read? Maybe set to ISN?
+        if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
         {
-            m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
-            LOGC(grlog.Warn,
-                log << "@" << m_GroupID << " GROUP RCV-DROPPED " << iNumDropped << " packet(s): seqno %"
-                << m_RcvBaseSeqNo << " to %" << w_mc.pktseq);
+            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            if (iNumDropped > 0)
+            {
+                m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
+                LOGC(grlog.Warn,
+                    log << "@" << m_GroupID << " GROUP RCV-DROPPED " << iNumDropped << " packet(s): seqno %"
+                    << m_RcvBaseSeqNo << " to %" << w_mc.pktseq);
+            }
         }
 
         HLOGC(grlog.Debug,
