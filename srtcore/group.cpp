@@ -259,6 +259,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
+    , m_iAvgPayloadSize(-1)
     , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
