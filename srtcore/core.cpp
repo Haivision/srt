@@ -5584,7 +5584,10 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 
     dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
 
-    const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
+    const std::pair<int, int> iDropDiscardedPkts = m_pRcvBuffer->dropUpTo(seqno);
+    const int iDropCnt = iDropDiscardedPkts.first;
+    const int iDiscardedCnt = iDropDiscardedPkts.second;
+    const int iDropCntTotal = iDropCnt + iDiscardedCnt;
     if (iDropCnt > 0)
     {
         enterCS(m_StatsLock);
@@ -5593,7 +5596,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
         m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
         leaveCS(m_StatsLock);
     }
-    return iDropCnt;
+    return iDropCntTotal;
 }
 
 void srt::CUDT::setInitialRcvSeq(int32_t isn)
