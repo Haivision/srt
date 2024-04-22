@@ -2314,7 +2314,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo), CUDT::DROP_DISCARD);
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
