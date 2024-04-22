@@ -2040,10 +2040,14 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
         else
         {
-            // No read-readiness reported by epoll, but probably missed or not yet handled
-            // as the receiver buffer is read-ready.
+            // No read-readiness reported by epoll, but can be missed or not yet handled
+            // while the receiver buffer is in fact read-ready.
             ScopedLock lg(sock->core().m_RcvBufferLock);
-            if (sock->core().m_pRcvBuffer && sock->core().m_pRcvBuffer->isRcvDataReady())
+            if (!sock->core().m_pRcvBuffer)
+                continue;
+            // Checking for the next packet in the RCV buffer is safer that isReadReady(tnow).
+            const CRcvBuffer::PacketInfo info = sock->core().m_pRcvBuffer->getFirstValidPacketInfo();
+            if (info.seqno != SRT_SEQNO_NONE && !info.seq_gap)
                 readReady.push_back(sock);
         }
     }
@@ -2213,6 +2217,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         // Find the first readable packet among all member sockets.
+        steady_clock::time_point tnow = steady_clock::now();
         CUDTSocket*               socketToRead = NULL;
         CRcvBuffer::PacketInfo infoToRead   = {-1, false, time_point()};
         for (vector<CUDTSocket*>::const_iterator si = readySockets.begin(); si != readySockets.end(); ++si)
@@ -2233,7 +2238,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             }
 
             const CRcvBuffer::PacketInfo info =
-                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now());
+                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(tnow);
             if (info.seqno == SRT_SEQNO_NONE)
             {
                 HLOGC(grlog.Debug, log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": Nothing to read.");
@@ -2253,6 +2258,12 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 socketToRead = ps;
                 infoToRead   = info;
+
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                {
+                    // We have the next packet. No need to check other read-ready sockets.
+                    break;
+                }
             }
         }
 
