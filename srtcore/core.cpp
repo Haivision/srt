@@ -7818,40 +7818,6 @@ void srt::CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
-
-#if ENABLE_BONDING
-void srt::CUDT::dropToGroupRecvBase()
-{
-    int32_t group_recv_base = SRT_SEQNO_NONE;
-    if (m_parent->m_GroupOf)
-    {
-        // Check is first done before locking to avoid unnecessary
-        // mutex locking. The condition for this field is that it
-        // can be either never set, already reset, or ever set
-        // and possibly dangling. The re-check after lock eliminates
-        // the dangling case.
-        ScopedLock glock (uglobal().m_GlobControlLock);
-
-        // Note that getRcvBaseSeqNo() will lock m_GroupOf->m_GroupLock,
-        // but this is an intended order.
-        if (m_parent->m_GroupOf)
-            group_recv_base = m_parent->m_GroupOf->getRcvBaseSeqNo();
-    }
-    if (group_recv_base == SRT_SEQNO_NONE)
-        return;
-
-    ScopedLock lck(m_RcvBufferLock);
-    const int cnt = rcvDropTooLateUpTo(CSeqNo::incseq(group_recv_base), DROP_DISCARD);
-    if (cnt > 0)
-    {
-        HLOGC(grlog.Debug,
-              log << CONID() << "dropToGroupRecvBase: dropped " << cnt << " packets before ACK: group_recv_base="
-                  << group_recv_base << " m_iRcvLastAck=" << m_iRcvLastAck
-                  << " m_iRcvCurrSeqNo=" << m_iRcvCurrSeqNo << " m_bTsbPd=" << m_bTsbPd);
-    }
-}
-#endif
-
 namespace srt {
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
@@ -8067,11 +8033,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
 #endif
     string reason; // just for "a reason" of giving particular % for ACK
-
-#if ENABLE_BONDING
-    // TODO: The group drops other members upon reading, maybe no longer needed here?
-    dropToGroupRecvBase();
-#endif
 
     // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
     // To avoid it the m_RcvBufferLock has to be acquired.
