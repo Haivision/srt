@@ -298,7 +298,7 @@ void srt::CUDT::construct()
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
     m_bTsbPd              = false;
-    m_bTsbPdAckWakeup     = false;
+    m_bTsbPdNeedsWakeup   = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
     m_bBufferWasFull      = false;
@@ -5375,7 +5375,7 @@ void * srt::CUDT::tsbpd(void* param)
     CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
     CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
-    self->m_bTsbPdAckWakeup = true;
+    self->m_bTsbPdNeedsWakeup = true;
     while (!self->m_bClosing)
     {
         steady_clock::time_point tsNextDelivery; // Next packet delivery time
@@ -5394,6 +5394,21 @@ void * srt::CUDT::tsbpd(void* param)
 
         const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
         tsNextDelivery = info.tsbpd_time;
+
+#if ENABLE_HEAVY_LOGGING
+        if (info.seqno == SRT_SEQNO_NONE)
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: NO PACKETS");
+        }
+        else
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: %"
+                << info.seqno << " T=" << FormatTime(tsNextDelivery)
+                << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
+                << " ready=" << is_time_to_deliver
+                << " ondrop=" << info.seq_gap);
+        }
+#endif
 
         if (!self->m_bTLPktDrop)
         {
@@ -5430,8 +5445,8 @@ void * srt::CUDT::tsbpd(void* param)
         if (rxready)
         {
             HLOGC(tslog.Debug,
-                log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
-                << (count_milliseconds(steady_clock::now() - info.tsbpd_time)) << "ms)");
+                  log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
+                      << FormatDuration<DUNIT_MS>(steady_clock::now() - info.tsbpd_time) << ")");
             /*
              * There are packets ready to be delivered
              * signal a waiting "recv" call if there is any data available
@@ -5494,6 +5509,8 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
+        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -5501,12 +5518,12 @@ void * srt::CUDT::tsbpd(void* param)
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bTsbPdAckWakeup = false;
+            self->m_bTsbPdNeedsWakeup = false;
             HLOGC(tslog.Debug,
-                log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
-                << " T=" << FormatTime(tsNextDelivery) << " - waiting " << count_milliseconds(timediff) << "ms");
+                  log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
+                      << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            tsbpd_cc.wait_until(tsNextDelivery);
+            bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
         }
         else
@@ -5523,13 +5540,15 @@ void * srt::CUDT::tsbpd(void* param)
              * - Closing the connection
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bTsbPdAckWakeup = true;
+            self->m_bTsbPdNeedsWakeup = true;
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
         }
 
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP!!!");
+        HLOGC(tslog.Debug,
+              log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+                  << "NOW=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
@@ -6868,6 +6887,12 @@ bool srt::CUDT::isRcvBufferReadyNoLock() const
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
+bool srt::CUDT::isRcvBufferFull() const
+{
+    ScopedLock lck(m_RcvBufferLock);
+    return m_pRcvBuffer->full();
+}
+
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
@@ -7649,12 +7674,13 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // - m_dPktSndPeriod
         // - m_dCWndSize
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
-        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+        const double cgwindow = m_CongCtl->cgWindowSize();
+        m_dCongestionWindow = cgwindow;
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << std::setprecision(3) << m_dCongestionWindow);
+              log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
+                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
+                  << std::setprecision(3) << cgwindow);
 #endif
     }
 
@@ -8055,7 +8081,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             /* Newly acknowledged data, signal TsbPD thread */
             CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
             // m_bTsbPdAckWakeup is protected by m_RecvLock in the tsbpd() thread
-            if (m_bTsbPdAckWakeup)
+            if (m_bTsbPdNeedsWakeup)
                 tslcc.notify_one();
         }
         else
@@ -8118,7 +8144,8 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     else if (!bNeedFullAck)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
-        LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr %" << ack << " <% last %" << m_iRcvLastAck);
+        LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr(" << reason << ") %"
+             << ack << " <% last %" << m_iRcvLastAck);
         return nbsent;
     }
 

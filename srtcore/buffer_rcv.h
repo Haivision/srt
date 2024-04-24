@@ -200,6 +200,20 @@ public:
         return (m_iMaxPosOff == 0);
     }
 
+    /// Returns the currently used number of cells, including
+    /// gaps with empty cells, or in other words, the distance
+    /// between the initial position and the youngest received packet.
+    size_t size() const
+    {
+        return m_iMaxPosOff;
+    }
+
+    // Returns true if the buffer is full. Requires locking.
+    bool full() const
+    {
+        return size() == capacity();
+    }
+
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
     /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
@@ -333,9 +347,8 @@ private:
         EntryStatus status;
     };
 
-    //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
-
-    FixedArray<Entry> m_entries;
+    typedef FixedArray<Entry> entries_t;
+    entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
