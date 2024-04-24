@@ -1092,8 +1092,8 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         if ((rst == RST_AGAIN || i->m_iID != iDstSockID) && tsNow <= tsRepeat)
         {
             HLOGC(cnlog.Debug,
-                  log << "RID:@" << i->m_iID << std::fixed << count_microseconds(tsNow - tsLastReq) / 1000.0
-                      << " ms passed since last connection request.");
+                  log << "RID:@" << i->m_iID << " " << FormatDuration<DUNIT_MS>(tsNow - tsLastReq)
+                      << " passed since last connection request.");
 
             continue;
         }
