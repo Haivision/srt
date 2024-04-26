@@ -5736,14 +5736,6 @@ void srt::CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setting up data according to handshake");
-#if ENABLE_BONDING
-    // Keep the group alive for the lifetime of this function,
-    // and do it BEFORE acquiring m_ConnectionLock to avoid
-    // lock inversion.
-    // This will check if a socket belongs to a group and if so
-    // it will remember this group and keep it alive here.
-    CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
-#endif
 
     ScopedLock cg(m_ConnectionLock);
 
@@ -5830,6 +5822,16 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
+
+#if ENABLE_BONDING
+    // The socket and the group are only linked to each other after interpretSrtHandshake(..) has been called.
+    // Keep the group alive for the lifetime of this function,
+    // and do it BEFORE acquiring m_ConnectionLock to avoid
+    // lock inversion.
+    // This will check if a socket belongs to a group and if so
+    // it will remember this group and keep it alive here.
+    CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
+#endif
 
     if (!prepareBuffers(NULL))
     {
