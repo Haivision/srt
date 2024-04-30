@@ -8730,7 +8730,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
 
 #if ENABLE_BONDING
-        if (drift_updated)
+        if (drift_updated && m_parent->m_GroupOf)
             m_parent->m_GroupOf->synchronizeDrift(this);
 #endif
     }
