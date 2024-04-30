@@ -2574,7 +2574,7 @@ private:
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
         }
         const std::string fname = "stability_trace_" + str_tnow + ".csv";
-        m_fout.open(fname, std::ofstream::out);
+        m_fout.open(fname.c_str(), std::ofstream::out);
         if (!m_fout)
             std::cerr << "IPE: Failed to open " << fname << "!!!\n";
 
