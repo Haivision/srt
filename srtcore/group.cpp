@@ -259,6 +259,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
+    , m_iAvgPayloadSize(-1)
     , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
@@ -869,18 +870,9 @@ void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
         set_currentSchedSequence(core.ISN());
     }
 
-    // XXX
-    // Might need further investigation as to whether this isn't
-    // wrong for some cases. By having this -1 here the value will be
-    // laziliy set from the first reading one. It is believed that
-    // it covers all possible scenarios, that is:
-    //
-    // - no readers - no problem!
-    // - have some readers and a new is attached - this is set already
-    // - connect multiple links, but none has read yet - you'll be the first.
-    //
-    // Previous implementation used setting to: core.m_iPeerISN
-    resetInitialRxSequence();
+    // Only set if was not initialized to avoid problems on a running connection.
+    if (m_RcvBaseSeqNo == SRT_SEQNO_NONE) 
+        m_RcvBaseSeqNo = CSeqNo::decseq(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
@@ -2048,10 +2040,14 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
         else
         {
-            // No read-readiness reported by epoll, but probably missed or not yet handled
-            // as the receiver buffer is read-ready.
+            // No read-readiness reported by epoll, but can be missed or not yet handled
+            // while the receiver buffer is in fact read-ready.
             ScopedLock lg(sock->core().m_RcvBufferLock);
-            if (sock->core().m_pRcvBuffer && sock->core().m_pRcvBuffer->isRcvDataReady())
+            if (!sock->core().m_pRcvBuffer)
+                continue;
+            // Checking for the next packet in the RCV buffer is safer that isReadReady(tnow).
+            const CRcvBuffer::PacketInfo info = sock->core().m_pRcvBuffer->getFirstValidPacketInfo();
+            if (info.seqno != SRT_SEQNO_NONE && !info.seq_gap)
                 readReady.push_back(sock);
         }
     }
@@ -2221,6 +2217,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         // Find the first readable packet among all member sockets.
+        steady_clock::time_point tnow = steady_clock::now();
         CUDTSocket*               socketToRead = NULL;
         CRcvBuffer::PacketInfo infoToRead   = {-1, false, time_point()};
         for (vector<CUDTSocket*>::const_iterator si = readySockets.begin(); si != readySockets.end(); ++si)
@@ -2241,7 +2238,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             }
 
             const CRcvBuffer::PacketInfo info =
-                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now());
+                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(tnow);
             if (info.seqno == SRT_SEQNO_NONE)
             {
                 HLOGC(grlog.Debug, log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": Nothing to read.");
@@ -2261,6 +2258,12 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 socketToRead = ps;
                 infoToRead   = info;
+
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                {
+                    // We have the next packet. No need to check other read-ready sockets.
+                    break;
+                }
             }
         }
 
@@ -2309,6 +2312,20 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         fillGroupData((w_mc), w_mc);
 
+        // m_RcvBaseSeqNo is expected to be set to the PeerISN with the first connected member,
+        // so a packet drop at the start should also be detected by this condition.
+        if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
+        {
+            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            if (iNumDropped > 0)
+            {
+                m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
+                LOGC(grlog.Warn,
+                    log << "@" << m_GroupID << " GROUP RCV-DROPPED " << iNumDropped << " packet(s): seqno %"
+                        << CSeqNo::incseq(m_RcvBaseSeqNo) << " to %" << CSeqNo::decseq(w_mc.pktseq));
+            }
+        }
+
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": Update m_RcvBaseSeqNo: %" << m_RcvBaseSeqNo << " -> %" << w_mc.pktseq);
         m_RcvBaseSeqNo = w_mc.pktseq;
@@ -2324,7 +2341,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo), CUDT::DROP_DISCARD);
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,

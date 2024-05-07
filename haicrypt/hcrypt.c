@@ -320,6 +320,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
         memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
         cryptoClone->ctx_pair[0].salt_len = 0;
+        cryptoClone->ctx = &cryptoClone->ctx_pair[0];
     }
 
     *phhc = (void *)cryptoClone;

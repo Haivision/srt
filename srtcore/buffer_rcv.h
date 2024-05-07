@@ -66,8 +66,8 @@ public:
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
-    /// @return  number of dropped packets.
-    int dropUpTo(int32_t seqno);
+    /// @return number of dropped (missing) and discarded (available) packets as a pair(dropped, discarded).
+    std::pair<int, int> dropUpTo(int32_t seqno);
 
     /// @brief Drop all the packets in the receiver buffer.
     /// The starting position and seqno are shifted right after the last packet in the buffer.
@@ -198,6 +198,20 @@ public:
     bool empty() const
     {
         return (m_iMaxPosOff == 0);
+    }
+
+    /// Returns the currently used number of cells, including
+    /// gaps with empty cells, or in other words, the distance
+    /// between the initial position and the youngest received packet.
+    size_t size() const
+    {
+        return m_iMaxPosOff;
+    }
+
+    // Returns true if the buffer is full. Requires locking.
+    bool full() const
+    {
+        return size() == capacity();
     }
 
     /// Return buffer capacity.
@@ -333,9 +347,8 @@ private:
         EntryStatus status;
     };
 
-    //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
-
-    FixedArray<Entry> m_entries;
+    typedef FixedArray<Entry> entries_t;
+    entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue

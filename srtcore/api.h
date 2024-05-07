@@ -467,11 +467,11 @@ public:
 
         SocketKeeper(): socket(NULL) {}
 
-        // This is intended for API functions to lock the group's existence
+        // This is intended for API functions to lock the socket's existence
         // for the lifetime of their call.
         SocketKeeper(CUDTUnited& glob, SRTSOCKET id, ErrorHandling erh = ERH_RETURN) { socket = glob.locateAcquireSocket(id, erh); }
 
-        // This is intended for TSBPD thread that should lock the group's
+        // This is intended for TSBPD thread that should lock the socket's
         // existence until it exits.
         SocketKeeper(CUDTUnited& glob, CUDTSocket* s)
         {
@@ -493,8 +493,6 @@ public:
             {
                 SRT_ASSERT(socket->isStillBusy() > 0);
                 socket->apiRelease();
-                // Only now that the group lock is lifted, can the
-                // group be now deleted and this pointer potentially dangling
             }
         }
     };
