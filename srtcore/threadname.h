@@ -32,7 +32,7 @@ written by
 //       MINGW-W64(4.0.6)
 
 #if (defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
-   || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)) && defined(__linux__)
+   || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)) && (defined(__linux__) || (!defined(__linux__)&& !defined(ENABLE_STDCXX_SYNC)))
    #include <pthread_np.h>
    #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
       && !defined(HAVE_PTHREAD_GETNAME_NP)
