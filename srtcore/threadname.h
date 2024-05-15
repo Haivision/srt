@@ -31,8 +31,8 @@ written by
 //       Linux-MUSL(MUSL-1.1.20 Partial Implementation. See below).
 //       MINGW-W64(4.0.6)
 
-#if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
-   || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
+#if (defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
+   || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)) && defined(__linux__)
    #include <pthread_np.h>
    #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
       && !defined(HAVE_PTHREAD_GETNAME_NP)
