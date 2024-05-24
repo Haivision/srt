@@ -393,7 +393,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     {
         // Prevent accessing the last "marker" block
         LOGC(bslog.Error,
-             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount);
+             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount.load());
         return SRT_MSGNO_CONTROL;
     }
 
