@@ -141,7 +141,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
+          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount.load() << "/" << m_iSize);
     // Retrieve current time before locking the mutex to be closer to packet submission event.
     const steady_clock::time_point tnow = steady_clock::now();
 

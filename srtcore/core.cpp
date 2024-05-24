@@ -3125,7 +3125,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     {
         m_RejectReason = SRT_REJ_GROUP;
         LOGC(cnlog.Error,
-             log << CONID() << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
+             log << CONID() << "HS/GROUP: incorrect group type value " << int(gtp) << " (max is " << int(SRT_GTYPE_E_END) << ")");
         return false;
     }
 
@@ -3299,8 +3299,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         if (gp->type() != gtp)
         {
             LOGC(gmlog.Error,
-                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
-                     << " agent group=$" << gp->id() << " type" << gp->type());
+                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << int(gtp)
+                     << " agent group=$" << gp->id() << " type" << int(gp->type()));
             return -1;
         }
 

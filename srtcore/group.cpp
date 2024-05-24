@@ -1023,7 +1023,7 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
     switch (m_type)
     {
     default:
-        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
+        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << int(m_type));
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
     case SRT_GTYPE_BROADCAST:
@@ -2189,9 +2189,10 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         if (!m_bOpened || !m_bConnected)
         {
+            const char onoff[2] = {'-', '+'};
             LOGC(grlog.Error,
-                 log << boolalpha << "grp/recv: $" << id() << ": ABANDONING: opened=" << m_bOpened
-                     << " connected=" << m_bConnected);
+                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << onoff[m_bOpened]
+                     << " connected" << onoff[m_bConnected]);
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 
@@ -2249,7 +2250,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 LOGC(grlog.Error,
                      log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": SEQUENCE DISCREPANCY: base=%"
-                         << m_RcvBaseSeqNo << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
+                         << m_RcvBaseSeqNo.load() << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
                 ps->core().m_bBroken = true;
                 broken.insert(ps);
                 continue;
