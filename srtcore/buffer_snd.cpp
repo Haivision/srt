@@ -242,7 +242,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << iPktLen
+          log << "addBufferFromFile: size=" << m_iCount.load() << " reserved=" << m_iSize << " needs=" << iPktLen
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer

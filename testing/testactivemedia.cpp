@@ -82,9 +82,10 @@ void TargetMedium::Runner()
                     return;
                 }
 
+                const char* yesno[2] = {"no", "yes"};
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
                 LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): [", val.payload.size(), "] BUFFER update (timeout:",
-                        boolalpha, gotsomething, " running: ", running, ")");
+                        yesno[!gotsomething], " running: ", running.load(), ")");
                 if (::transmit_int_state || !running || !med || med->Broken())
                 {
                     LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): buffer empty, medium ",

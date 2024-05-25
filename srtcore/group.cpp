@@ -1023,7 +1023,7 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
     switch (m_type)
     {
     default:
-        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << int(m_type));
+        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
     case SRT_GTYPE_BROADCAST:

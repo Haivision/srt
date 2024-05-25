@@ -300,14 +300,14 @@ form_memory_buffer<> fix_format(const char* fmt,
 
 
 #define SFMT_FORMAT_FIXER(TYPE, ALLOWED, TYPED, DEFTYPE, WARN) \
-form_memory_buffer<> apply_format_fix(TYPE, const char* fmt) \
+inline form_memory_buffer<> apply_format_fix(TYPE, const char* fmt) \
 { \
     return fix_format(fmt, ALLOWED, TYPED, DEFTYPE, WARN); \
 } 
 
 #define SFMT_FORMAT_FIXER_TPL(TPAR, TYPE, ALLOWED, TYPED, DEFTYPE, WARN) \
 template<TPAR>\
-form_memory_buffer<> apply_format_fix(TYPE, const char* fmt)\
+inline form_memory_buffer<> apply_format_fix(TYPE, const char* fmt)\
 {\
     return fix_format(fmt, ALLOWED, TYPED, DEFTYPE, WARN); \
 }
@@ -592,7 +592,7 @@ internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
     // doesn't do it an doesn't use the NUL-termination.
     fstr.append('\0');
 
-    size_t valsize = SNPrintfOne( buf, bufsize, fstr.get_first(), val);
+    size_t valsize = SNPrintfOne(buf, bufsize, fstr.get_first(), val);
 
     // Deemed impossible to happen, but still
     if (valsize == bufsize)
@@ -601,7 +601,7 @@ internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
         // Just try again with one extra size, if this won't
         // suffice, just add <...> at the end.
         buf = out.expose(bufsize);
-        valsize = snprintf(buf, bufsize, fstr.get_first(), val);
+        valsize = SNPrintfOne(buf, bufsize, fstr.get_first(), val);
         if (valsize == bufsize)
         {
             char* end = buf + bufsize - 6;

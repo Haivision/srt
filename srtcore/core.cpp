@@ -425,7 +425,7 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     const int status = m_config.set(optName, optval, optlen);
     if (status == -1)
     {
-        LOGC(aclog.Error, log << CONID() << "OPTION: #" << int(optName) << " UNKNOWN");
+        LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -1036,7 +1036,7 @@ size_t srt::CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgt
     if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(cnlog.Fatal,
-             log << CONID() << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << int(SRT_HS_E_SIZE) << ")");
+             log << CONID() << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
         return 0;
     }
 
@@ -2343,8 +2343,8 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
     m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
     HLOGC(cnlog.Debug, log << "HSRSP/rcv: Version: " << SrtVersionString(m_uPeerSrtVersion)
-                           << " Flags: SND:" << setw(8) << setfill('0') << hex << m_uPeerSrtFlags
-                           << setw(0) << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
+                           << " Flags: SND:" << sfmt(m_uPeerSrtFlags, "08x")
+                           << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
     // Basic version check
     if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
     {
@@ -2528,7 +2528,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
                          log << CONID() << "HS-ext HSREQ found but invalid size: " << bytelen
-                             << " (expected: " << int(SRT_HS_E_SIZE) << ")");
+                             << " (expected: " << SRT_HS_E_SIZE << ")");
                     return false; // don't interpret
                 }
 
@@ -2554,7 +2554,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
                          log << CONID() << "HS-ext HSRSP found but invalid size: " << bytelen
-                             << " (expected: " << int(SRT_HS_E_SIZE) << ")");
+                             << " (expected: " << SRT_HS_E_SIZE << ")");
 
                     return false; // don't interpret
                 }
@@ -3125,7 +3125,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     {
         m_RejectReason = SRT_REJ_GROUP;
         LOGC(cnlog.Error,
-             log << CONID() << "HS/GROUP: incorrect group type value " << int(gtp) << " (max is " << int(SRT_GTYPE_E_END) << ")");
+             log << CONID() << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
         return false;
     }
 
@@ -3299,8 +3299,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         if (gp->type() != gtp)
         {
             LOGC(gmlog.Error,
-                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << int(gtp)
-                     << " agent group=$" << gp->id() << " type" << int(gp->type()));
+                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
+                     << " agent group=$" << gp->id() << " type" << gp->type());
             return -1;
         }
 
@@ -3883,7 +3883,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     HLOGC(cnlog.Debug,
           log << CONID() << "startConnect: END. Parameters: mss=" << m_config.iMSS
               << " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize() << " cwnd-size=" << m_CongCtl->cgWindowSize()
-              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
+              << " rtt=" << m_iSRTT.load() << " bw=" << m_iBandwidth.load());
 }
 
 // Asynchronous connection
@@ -4022,7 +4022,7 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
     r_rsppkt.setLength(size);
 
     HLOGC(cnlog.Debug, log << CONID() << "sendRendezvousRejection: using code=" << m_ConnReq.m_iReqType
-            << " for reject reason code " << m_RejectReason << " (" << srt_rejectreason_str(m_RejectReason) << ")");
+            << " for reject reason code " << m_RejectReason.load() << " (" << srt_rejectreason_str(m_RejectReason) << ")");
 
     setPacketTS(r_rsppkt, steady_clock::now());
     m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
@@ -5471,7 +5471,7 @@ void * srt::CUDT::tsbpd(void* param)
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
-                    << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
+                    << (timediff_us / 1000) << "." << sfmt(timediff_us % 1000, "03") << " ms");
 #endif
                 string why;
                 if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
@@ -6114,8 +6114,9 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
 
     HLOGC(rslog.Debug,
           log << CONID() << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize="
-              << m_iFlowWindowSize << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
-              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
+              << m_iFlowWindowSize.load() << " rcvrate=" << m_iDeliveryRate.load()
+              << "p/s (" << m_iByteDeliveryRate.load() << "B/S)"
+              << " rtt=" << m_iSRTT.load() << " bw=" << m_iBandwidth.load());
 
     if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
     {
@@ -7115,7 +7116,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             // After signaling the tsbpd for ready data, report the bandwidth.
 #if ENABLE_HEAVY_LOGGING
             double bw = Bps2Mbps(int64_t(m_iBandwidth) * m_iMaxSRTPayloadSize );
-            HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
+            HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth.load() << " buffers per second)");
 #endif
         }
         return res;
@@ -7777,8 +7778,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
-                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << std::setprecision(3) << cgwindow);
+                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow=" << sfmt(cgwindow, ".3"));
 #endif
     }
 
@@ -8425,8 +8425,9 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
     const bool isLiteAck = ctrlpkt.getLength() == (size_t)SEND_LITE_ACK;
     HLOGC(inlog.Debug,
-          log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
-              << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
+          log << CONID() << "ACK covers: " << m_iSndLastDataAck.load() << " - "
+              << ackdata_seqno << " [ACK=" << m_iSndLastAck.load() << "]"
+              << (isLiteAck ? "[LITE]" : "[FULL]"));
 
     updateSndLossListOnACK(ackdata_seqno);
 
@@ -8497,8 +8498,9 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         {
             m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
             HLOGC(gglog.Debug,
-                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
-                    << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize "
+                    << m_iFlowWindowSize.load() << " SPAN " << getFlightSpan()
+                    << " ackdataseqno %" << ackdata_seqno);
         }
     }
 
@@ -8823,7 +8825,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
                     {
                         HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
-                                << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
+                                << m_iSndLastAck.load() << "[ACK] - " << losslist_hi << " to loss list");
                         num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
                         dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
                         IF_HEAVY_LOGGING(drop_type = "partially");
@@ -8839,8 +8841,9 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
                     //   TSBPD wake up should it still wait for new packets to get ACK-ed)
                     HLOGC(inlog.Debug,
-                          log << CONID() << "LOSSREPORT: " << drop_type << " IGNORED with SndLastAck=%" << m_iSndLastAck
-                              << ": %" << losslist_lo << "-" << dropreq_hi << " - sending DROPREQ");
+                          log << CONID() << "LOSSREPORT: " << drop_type << " IGNORED with SndLastAck=%"
+                              << m_iSndLastAck.load() << ": %" << losslist_lo << "-" << dropreq_hi
+                              << " - sending DROPREQ");
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
 
@@ -8880,7 +8883,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     int32_t seqpair[2] = { losslist[i], losslist[i] };
                     const int32_t no_msgno = 0; // We don't know.
                     HLOGC(inlog.Debug,
-                            log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %" << losslist[i]
+                            log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck.load() << ": %" << losslist[i]
                             << " - sending DROPREQ");
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
@@ -9364,7 +9367,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             {
                 HLOGC(qrlog.Debug, log << CONID() << "REXMIT: ignoring seqno "
                     << w_packet.seqno() << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
-                    << " RTT=" << m_iSRTT << " RTTVar=" << m_iRTTVar
+                    << " RTT=" << m_iSRTT.load() << " RTTVar=" << m_iRTTVar.load()
                     << " now=" << FormatTime(time_now));
                 continue;
             }
@@ -9676,8 +9679,8 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(qslog.Debug,
-          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.seqno() << " (ACK=" << m_iSndLastAck
-              << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
+          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.seqno() << " (ACK=" << m_iSndLastAck.load()
+              << " ACKDATA=" << m_iSndLastDataAck.load() << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
 #endif
 
     // Fix keepalive
@@ -9757,8 +9760,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
         if (cwnd <= flightspan)
         {
             HLOGC(qslog.Debug,
-                    log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_iCongestionWindow
-                    << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo.load() << ")=" << flightspan);
+                    log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize.load() << "," << m_iCongestionWindow.load()
+                    << ")=" << cwnd << " seqlen=(" << m_iSndLastAck.load() << "-" << m_iSndCurrSeqNo.load() << ")=" << flightspan);
             return false;
         }
 
@@ -10013,9 +10016,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        std::ostringstream tns1, tns2;
+        fmt::obufstream tns1, tns2;
         // Take the last 2 ciphers from the socket ID.
-        tns1 << setfill('0') << setw(2) << m_SocketID;
+        tns1 << sfmt(m_SocketID, "02");
         std::string s = tns1.str();
         tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = tns2.str();
@@ -11199,7 +11202,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     if (!accepted_hs)
     {
         HLOGC(cnlog.Debug,
-              log << CONID() << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason
+              log << CONID() << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason.load()
                   << " MSG: " << srt_rejectreason_str(m_RejectReason));
         // mismatch, reject the request
         hs.m_iReqType = URQFailure(m_RejectReason);
@@ -11231,7 +11234,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (result == -1)
         {
             hs.m_iReqType = URQFailure(error);
-            LOGC(cnlog.Warn, log << "processConnectRequest: rsp(REJECT): " << int(hs.m_iReqType) << " - " << srt_rejectreason_str(error));
+            LOGC(cnlog.Warn, log << "processConnectRequest: rsp(REJECT): " << hs.m_iReqType << " - " << srt_rejectreason_str(error));
         }
 
         // The `acpu` not NULL means connection exists, the `result` should be 0. It is not checked here though.
@@ -11335,7 +11338,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
     }
-    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << int(hs.m_iReqType) << " - " << RequestTypeStr(hs.m_iReqType));
+    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
 
     return RejectReasonForURQ(hs.m_iReqType);
 }
