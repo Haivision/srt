@@ -190,6 +190,14 @@ public:
             initial = reserved;
         }
     }
+
+    void clear()
+    {
+        slices.clear();
+        total = 0;
+        reserved = 0;
+        initial = 0;
+    }
 };
 
 template<size_t N, size_t I>
@@ -291,22 +299,19 @@ form_memory_buffer<> fix_format(const char* fmt,
 }
 
 
-template <class Val>
-struct Formatter
-{
-};
-
-#define SFMT_FORMAT_FIXER_TPL(tplarg, type, allowed, typed, deftype, warn)\
-template<tplarg> \
-struct Formatter<type> \
+#define SFMT_FORMAT_FIXER(TYPE, ALLOWED, TYPED, DEFTYPE, WARN) \
+form_memory_buffer<> apply_format_fix(TYPE, const char* fmt) \
 { \
-    static form_memory_buffer<> fix(const char* fmt) \
-    { \
-        return internal::fix_format(fmt, allowed, typed, deftype, warn); \
-    } \
+    return fix_format(fmt, ALLOWED, TYPED, DEFTYPE, WARN); \
+} 
+
+#define SFMT_FORMAT_FIXER_TPL(TPAR, TYPE, ALLOWED, TYPED, DEFTYPE, WARN) \
+template<TPAR>\
+form_memory_buffer<> apply_format_fix(TYPE, const char* fmt)\
+{\
+    return fix_format(fmt, ALLOWED, TYPED, DEFTYPE, WARN); \
 }
-#define SFMT_FORMAT_FIXER(type, allowed, typed, deftype, warn) \
-    SFMT_FORMAT_FIXER_TPL(, type, allowed, typed, deftype, warn)
+
 
 
 // So, format in the format spec is:
@@ -342,8 +347,8 @@ SFMT_FORMAT_FIXER(char, "", "c", "c", "<!!!>");
 SFMT_FORMAT_FIXER(std::string, "", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER(const char*, "", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER(char*, "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(size_t N, const char[N], "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(size_t N, char[N], "", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER_TPL(size_t N, const char (&)[N], "", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER_TPL(size_t N, char (&)[N], "", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER_TPL(class Type, Type*, "", "p", "p", "<!!!>");
 
 #undef SFMT_FORMAT_FIXER_TPL
@@ -467,6 +472,11 @@ public:
 
     obufstream() {}
 
+    void clear()
+    {
+        buffer.clear();
+    }
+
     obufstream& operator<<(const char* t)
     {
         size_t len = strlen(t);
@@ -550,12 +560,27 @@ public:
     }
 };
 
+namespace internal
+{
+template<class ValueType>
+static inline size_t SNPrintfOne(char* buf, size_t bufsize, const char* fmt, const ValueType& val)
+{
+    return std::snprintf(buf, bufsize, fmt, val);
+}
+
+
+static inline size_t SNPrintfOne(char* buf, size_t bufsize, const char* fmt, const std::string& val)
+{
+    return std::snprintf(buf, bufsize, fmt, val.c_str());
+}
+}
+
 template <class Value> inline
 internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
 {
     using namespace internal;
 
-    form_memory_buffer<> fstr = Formatter<Value>::fix(fmtspec);
+    form_memory_buffer<> fstr = apply_format_fix(val, fmtspec);
     form_memory_buffer<> out;
     size_t bufsize = form_memory_buffer<>::INITIAL_SIZE;
 
@@ -567,7 +592,7 @@ internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
     // doesn't do it an doesn't use the NUL-termination.
     fstr.append('\0');
 
-    size_t valsize = snprintf(buf, bufsize, fstr.get_first(), val);
+    size_t valsize = SNPrintfOne( buf, bufsize, fstr.get_first(), val);
 
     // Deemed impossible to happen, but still
     if (valsize == bufsize)
@@ -590,7 +615,17 @@ internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
     return out;
 }
 
-template <class Value> inline
+namespace internal
+{
+template<class Value, class Stream> inline
+void write_default(Stream& s, const Value& v)
+{
+    s << sfmt(v, "");
+}
+}
+
+
+template <class Value>
 std::string sfmts(const Value& val, const char* fmtspec = 0)
 {
     using namespace internal;
@@ -611,15 +646,6 @@ std::string sfmts(const Value& val, const char* fmtspec = 0)
     }
 
     return out;
-}
-
-namespace internal
-{
-template<class Value, class Stream> inline
-void write_default(Stream& s, const Value& v)
-{
-    s << sfmt(v, "");
-}
 }
 
 // Semi-manipulator to add the end-of-line.
