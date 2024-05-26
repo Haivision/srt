@@ -34,7 +34,6 @@ written by
 #include <functional>
 #include <memory>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 
 #if HAVE_CXX11
@@ -45,6 +44,8 @@ written by
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+
+#include "sfmt.h"
 
 // -------------- UTILITIES ------------------------
 
@@ -981,6 +982,19 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
+    using namespace fmt;
+
+    obufstream os;
+
+    os << sfmt<int>(bytes[0], "02X");
+    for (size_t i = 1; i < size; ++i)
+    {
+        os << sfmt<int>(bytes[i], "02X");
+    }
+    return os.str();
+
+    /* OLD VERSION
+
     //char buf[256];
     using namespace std;
 
@@ -1008,6 +1022,7 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
         os << int(bytes[i]);
     }
     return os.str();
+    */
 }
 
 
@@ -1171,10 +1186,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    ostringstream os;
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
+    return fmt::sfmts(sum, "08X");
 }
 
 template <class OutputIterator>
