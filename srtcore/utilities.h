@@ -485,7 +485,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::stringstream ss;
+        fmt::obufstream ss;
         ss << "Index " << i << "out of range";
         throw std::runtime_error(ss.str());
     }
@@ -587,7 +587,7 @@ inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 template <class... Args>
 inline std::string Sprint(Args&&... args)
 {
-    std::ostringstream sout;
+    fmt::obufstream sout;
     Print(sout, args...);
     return sout.str();
 }
@@ -598,18 +598,31 @@ inline std::string Sprint(Args&&... args)
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
 
-template <class Container, class Value = typename Container::value_type, typename... Args> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
+template <class Container, class Value = typename Container::value_type> inline
+std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
 {
     using namespace srt_pair_op;
-    std::ostringstream os;
-    Print(os, args...);
+    fmt::obufstream os;
     os << "[ ";
     for (auto i: in)
-        os << Value(i) << " ";
+        os << fmt::sfmt<Value>(i, fmt) << " ";
     os << "]";
     return os.str();
 }
+
+// Separate version for pairs, used for std::map
+template <class Container, class Key, class Value> inline
+std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
+{
+    using namespace srt_pair_op;
+    fmt::obufstream os;
+    os << "[ ";
+    for (auto i: in)
+        os << fmt::sfmt<Key>(i.first, fmtk) << ":" << fmt::sfmt<Value>(i.second, fmtv) << " ";
+    os << "]";
+    return os.str();
+}
+
 
 template <class Container> inline
 std::string Printable(const Container& in)
@@ -694,16 +707,14 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    std::ostringstream sout;
-    sout << arg;
-    return sout.str();
+    return fmt::sfmts(arg);
 }
 
 // Ok, let it be 2-arg, in case when a manipulator is needed
 template <class Arg1, class Arg2>
 inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
 {
-    std::ostringstream sout;
+    fmt::obufstream sout;
     sout << arg1 << arg2;
     return sout.str();
 }
@@ -713,7 +724,7 @@ std::string Printable(const Container& in)
 {
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
-    std::ostringstream os;
+    fmt::obufstream os;
     os << "[ ";
     for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
         os << Value(*i) << " ";
@@ -759,7 +770,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 {
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
-    std::ostringstream os;
+    fmt::obufstream os;
     os << "[ ";
     for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
         os << prefix << Value(*y) << " ";
