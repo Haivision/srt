@@ -2250,7 +2250,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 LOGC(grlog.Error,
                      log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": SEQUENCE DISCREPANCY: base=%"
-                         << m_RcvBaseSeqNo.load() << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
+                         << m_RcvBaseSeqNo << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
                 ps->core().m_bBroken = true;
                 broken.insert(ps);
                 continue;

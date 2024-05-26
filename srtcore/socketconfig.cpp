@@ -52,6 +52,8 @@ written by
 #include "srt.h"
 #include "socketconfig.h"
 
+using fmt::sfmt;
+
 namespace srt
 {
 int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
@@ -744,8 +746,8 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
         {
             co.uKmPreAnnouncePkt = (km_refresh - 1) / 2;
             LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << fmt::sfmt(km_refresh, "x") << ": setting SRTO_KMPREANNOUNCE=0x"
-                     << fmt::sfmt(co.uKmPreAnnouncePkt, "x"));
+                 log << "SRTO_KMREFRESHRATE=0x" << sfmt(km_refresh, "x") << ": setting SRTO_KMPREANNOUNCE=0x"
+                     << sfmt(co.uKmPreAnnouncePkt, "x"));
         }
     }
 };
@@ -770,8 +772,8 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
         if (km_preanno > (kmref - 1) / 2)
         {
             LOGC(aclog.Error,
-                 log << "SRTO_KMPREANNOUNCE=0x" << fmt::sfmt(km_preanno, "x")
-                 << " exceeds KmRefresh/2, 0x" << fmt::sfmt((kmref - 1) / 2)
+                 log << "SRTO_KMPREANNOUNCE=0x" << sfmt(km_preanno, "x")
+                 << " exceeds KmRefresh/2, 0x" << sfmt((kmref - 1) / 2, "x")
                      << " - OPTION REJECTED.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }

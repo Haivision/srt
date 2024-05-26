@@ -151,7 +151,7 @@ struct TargetMedium: Medium<Target>
     {
         LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
         std::lock_guard<std::mutex> lg(buffer_lock);
-        LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running.load(), " interrupt=", ::transmit_int_state.load());
+        LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
         if (!running || ::transmit_int_state)
         {
             LOGP(applog.Debug, "TargetMedium::Schedule: not running, discarding packet");

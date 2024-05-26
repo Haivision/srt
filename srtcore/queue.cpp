@@ -139,7 +139,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
 int srt::CUnitQueue::increase_()
 {
     const int numUnits = m_iBlockSize;
-    HLOGC(qrlog.Debug, log << "CUnitQueue::increase: Capacity" << capacity() << " + " << numUnits << " new units, " << m_iNumTaken.load() << " in use.");
+    HLOGC(qrlog.Debug, log << "CUnitQueue::increase: Capacity" << capacity() << " + " << numUnits << " new units, " << m_iNumTaken << " in use.");
 
     CQEntry* tempq = allocateEntry(numUnits, m_iMSS);
     if (tempq == NULL)

@@ -337,6 +337,43 @@ struct LogDispatcher::Proxy
         return *this;
     }
 
+    // Special case for atomics, as passing them to snprintf() call
+    // requires unpacking the real underlying value.
+    template <class T>
+    Proxy& operator<<(const srt::sync::atomic<T>& arg)
+    {
+        if ( that_enabled )
+        {
+            os << arg.load();
+        }
+        return *this;
+    }
+
+
+#if HAVE_CXX11
+
+    void dispatch() {}
+
+    template<typename Arg1, typename... Args>
+    void dispatch(const Arg1& a1, const Args&... others)
+    {
+        *this << a1;
+        dispatch(others...);
+    }
+
+    // Special dispatching for atomics must be provided here.
+    // By some reason, "*this << a1" expression gets dispatched
+    // to the general version of operator<<, not the overload for
+    // atomic. Even though the compiler shows Arg1 type as atomic.
+    template<typename Arg1, typename... Args>
+    void dispatch(const std::atomic<Arg1>& a1, const Args&... others)
+    {
+        *this << a1.load();
+        dispatch(others...);
+    }
+
+#endif
+
     ~Proxy()
     {
         if ( that_enabled )
@@ -445,19 +482,19 @@ inline void PrintArgs(fmt::obufstream& serr, Arg1&& arg1, Args&&... args)
     PrintArgs(serr, args...);
 }
 
+// Add exceptional handling for sync::atomic
+template <class Arg1, class... Args>
+inline void PrintArgs(fmt::obufstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
+{
+    serr << arg1.load();
+    PrintArgs(serr, args...);
+}
+
 template <class... Args>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, Args&&... args SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    fmt::obufstream serr;
-    CreateLogLinePrefix(serr);
-    PrintArgs(serr, args...);
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << fmt::seol;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this).dispatch(args...);
 #endif
 }
 
@@ -467,15 +504,7 @@ template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    fmt::obufstream serr;
-    CreateLogLinePrefix(serr);
-    serr << arg;
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << fmt::seol;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this) << arg;
 #endif
 }
 

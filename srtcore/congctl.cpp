@@ -87,7 +87,7 @@ public:
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator (send periodic NAK every RTT/2)
 
-        HLOGC(cclog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_zSndAvgPayloadSize.load());
+        HLOGC(cclog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_zSndAvgPayloadSize);
 
         updatePktSndPeriod();
 
@@ -154,7 +154,7 @@ private:
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
         m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
-        HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize.load());
+        HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
     }
 
     /// @brief On RTO event update an inter-packet send interval.
@@ -179,7 +179,7 @@ private:
         const double pktsize = (double) m_zSndAvgPayloadSize.load() + m_zHeaderSize;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
-                << " by avg pktsize=" << m_zSndAvgPayloadSize.load()
+                << " by avg pktsize=" << m_zSndAvgPayloadSize
                 << ", bw=" << m_llSndMaxBW);
     }
 
@@ -595,7 +595,7 @@ private:
             {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
-                    << fmt::sfmt(m_dCWndSize, "06") << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
+                    << fmt::sfmt(m_dCWndSize, ".6") << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
         else
