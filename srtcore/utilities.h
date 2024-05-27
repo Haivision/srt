@@ -598,40 +598,6 @@ inline std::string Sprint(Args&&... args)
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
 
-template <class Container, class Value = typename Container::value_type> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
-{
-    using namespace srt_pair_op;
-    fmt::obufstream os;
-    os << "[ ";
-    for (auto i: in)
-        os << fmt::sfmt<Value>(i, fmt) << " ";
-    os << "]";
-    return os.str();
-}
-
-// Separate version for pairs, used for std::map
-template <class Container, class Key, class Value> inline
-std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
-{
-    using namespace srt_pair_op;
-    fmt::obufstream os;
-    os << "[ ";
-    for (auto i: in)
-        os << fmt::sfmt<Key>(i.first, fmtk) << ":" << fmt::sfmt<Value>(i.second, fmtv) << " ";
-    os << "]";
-    return os.str();
-}
-
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    using Value = typename Container::value_type;
-    return Printable(in, Value());
-}
-
 template<typename Map, typename Key>
 auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
 {
@@ -719,20 +685,6 @@ inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
     return sout.str();
 }
 
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    fmt::obufstream os;
-    os << "[ ";
-    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-
-    return os.str();
-}
-
 template<typename Map, typename Key>
 typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
 {
@@ -762,6 +714,41 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 }
 
 #endif
+
+template <class Container, class Value> inline
+std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
+{
+    fmt::obufstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << fmt::sfmt<Value>(*i, fmt) << " ";
+    os << "]";
+    return os.str();
+}
+
+// Separate version for pairs, used for std::map
+template <class Container, class Key, class Value> inline
+std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
+{
+    using namespace srt_pair_op;
+    fmt::obufstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << fmt::sfmt<Key>(i->first, fmtk) << ":" << fmt::sfmt<Value>(i->second, fmtv) << " ";
+    os << "]";
+    return os.str();
+}
+
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    return Printable(in, Value());
+}
 
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
