@@ -15,6 +15,8 @@ extern const int32_t SRT_DEF_VERSION;
 
 namespace srt {
 
+static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+
 int32_t CUDTGroup::s_tokenGen = 0;
 
 // [[using locked(this->m_GroupLock)]];
@@ -2189,10 +2191,9 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         if (!m_bOpened || !m_bConnected)
         {
-            const char onoff[2] = {'-', '+'};
             LOGC(grlog.Error,
-                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << onoff[m_bOpened]
-                     << " connected" << onoff[m_bConnected]);
+                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << fmt_onoff(m_bOpened)
+                     << " connected" << fmt_onoff(m_bConnected));
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 
