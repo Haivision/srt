@@ -242,7 +242,11 @@ struct Ensure
 template<class AnyType>
 struct Ensure<AnyType, false>
 {
-    typename AnyType::wrong_condition v = AnyType::wrong_condition;
+    static void CheckIfCharsetNonEmpty()
+    {
+        typename AnyType::wrong_condition v = AnyType::wrong_condition;
+        (void)v;
+    }
 };
 
 template<size_t N1, size_t N2, size_t N3> inline

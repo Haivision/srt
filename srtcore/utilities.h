@@ -531,8 +531,8 @@ private:
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op
 {
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    template <class Stream, class Value1, class Value2>
+    Stream& operator<<(Stream& s, const std::pair<Value1, Value2>& v)
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;

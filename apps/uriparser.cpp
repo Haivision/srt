@@ -64,7 +64,7 @@ string UriParser::makeUri()
         prefix = m_proto + "://";
     }
 
-    std::ostringstream out;
+    fmt::obufstream out;
 
     out << prefix << m_host;
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
