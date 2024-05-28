@@ -366,7 +366,7 @@ struct LogDispatcher::Proxy
     // to the general version of operator<<, not the overload for
     // atomic. Even though the compiler shows Arg1 type as atomic.
     template<typename Arg1, typename... Args>
-    void dispatch(const std::atomic<Arg1>& a1, const Args&... others)
+    void dispatch(const srt::sync::atomic<Arg1>& a1, const Args&... others)
     {
         *this << a1.load();
         dispatch(others...);
