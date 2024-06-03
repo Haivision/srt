@@ -8192,24 +8192,12 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
               log << CONID() << "ACK: clip %" << m_iRcvLastAck << "-%" << ack << ", REVOKED "
                   << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
 
-        if (m_bTsbPd)
-        {
-            /*
-               There's no need to update TSBPD in the wake-on-recv state
-               from ACK because it is being done already in the receiver thread
-               when a newly inserted packet caused provision of a new candidate
-               that could be delivered soon. Also, this flag is only used in TSBPD
-               mode and can be only set to true in the TSBPD thread.
-
-            // Newly acknowledged data, signal TsbPD thread //
-            CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
-            // m_bWakeOnRecv is protected by m_RecvLock in the tsbpd() thread
-            if (m_bWakeOnRecv)
-                tslcc.notify_one();
-
-                */
-        }
-        else
+        // There's no need to update TSBPD in the wake-on-recv state
+        // from ACK because it is being done already in the receiver thread
+        // when a newly inserted packet caused provision of a new candidate
+        // that could be delivered soon. Also, this flag is only used in TSBPD
+        // mode and can be only set to true in the TSBPD thread.
+        if (!m_bTsbPd)
         {
             {
                 CUniqueSync rdcc (m_RecvLock, m_RecvDataCond);
@@ -10682,14 +10670,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     {
         HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
         sendLossReport(filter_loss_seqs);
-
-        // XXX unsure as to whether this should change anything in the TSBPD conditions.
-        // Might be that this trigger is not necessary.
-        if (m_bTsbPd)
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
-            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
-        }
     }
 
     // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.

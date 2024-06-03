@@ -580,6 +580,8 @@ public:
 
    explicit CSeqNo(int32_t v): value(v) {}
 
+   int32_t val() const { return value; }
+
    // Comparison
    bool operator == (const CSeqNo& other) const { return other.value == value; }
    bool operator < (const CSeqNo& other) const
