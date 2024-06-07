@@ -943,8 +943,61 @@ CUDTException& GetThreadLocalError();
 /// @param[in] maxVal maximum allowed value of the resulting random number.
 int genRandomInt(int minVal, int maxVal);
 
+class SharedMutex
+{
+    private:
+    std::condition_variable lockWriteCond;
+    std::condition_variable lockReadCond;
+    Mutex m_mutex;
+
+    int countRead;
+    bool writerLocked;
+
+    SharedMutex() 
+    {
+
+    }
+
+    void lockWrite()
+    {
+        UniqueLock l1(m_mutex);
+        lockWriteCond.wait(l1);
+        writerLocked = true;
+        if(countRead)
+            lockReadCond.wait(l1);
+    }
+
+    void unlockWrite()
+    {
+        UniqueLock l2(m_mutex);
+        writerLocked = false;
+        lockWriteCond.notify_all();
+    }
+
+    void lockRead()
+    {
+        UniqueLock l3(m_mutex);
+        if(writerLocked)
+            lockWriteCond.wait(l3);
+        countRead++;
+    }
+
+    void unlockRead()
+    {
+        UniqueLock l4(m_mutex);
+        countRead--;
+        if(writerLocked)
+            lockReadCond.notify_one();
+        else if (countRead > 0)
+            lockWriteCond.notify_one();
+
+    }
+
+};
+
 } // namespace sync
 } // namespace srt
+
 
 #include "atomic_clock.h"
 
