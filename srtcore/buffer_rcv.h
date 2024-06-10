@@ -18,7 +18,7 @@
 #include "utilities.h"
 
 #define USE_WRAPPERS 1
-#define USE_OPERATORS 1
+#define USE_OPERATORS 0
 
 namespace srt
 {
@@ -33,7 +33,7 @@ struct CPos
 
     int isize() const {return *psize;}
 
-    explicit CPos(explicit_t<const size_t*> ps, explicit_t<int> val): value(val), psize(ps) {}
+    explicit CPos(const size_t* ps, int val): value(val), psize(ps) {}
     int val() const { return value; }
     explicit operator int() const {return value;}
 
@@ -642,25 +642,64 @@ public: // Used for testing
     const CUnit* peek(int32_t seqno);
 
 private:
-    /*
-    inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
-    inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }
-    inline int offPos(int pos1, int pos2) const { return (pos2 >= pos1) ? (pos2 - pos1) : int(m_szSize + pos2 - pos1); }
+    //*
+    inline CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos(&m_szSize, (pos VALUE + inc VALUE) % m_szSize); }
+    inline CPos decPos(CPos pos) const { return (pos VALUE - 1) >= 0 ? CPos(&m_szSize, pos VALUE - 1) : CPos(&m_szSize, m_szSize - 1); }
+    inline COff offPos(CPos pos1, CPos pos2) const
+    {
+        int diff = pos2 VALUE - pos1 VALUE;
+        if (diff >= 0)
+        {
+            return COff(diff);
+        }
+        return COff(m_szSize + diff);
+    }
+
+    inline COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
 
     /// @brief Compares the two positions in the receiver buffer relative to the starting position.
     /// @param pos2 a position in the receiver buffer.
     /// @param pos1 a position in the receiver buffer.
     /// @return a positive value if pos2 is ahead of pos1; a negative value, if pos2 is behind pos1; otherwise returns 0.
-    inline int cmpPos(int pos2, int pos1) const
+    inline COff cmpPos(CPos pos2, CPos pos1) const
     {
         // XXX maybe not the best implementation, but this keeps up to the rule.
         // Maybe use m_iMaxPosOff to ensure a position is not behind the m_iStartPos.
-        const int off1 = pos1 >= m_iStartPos ? pos1 - m_iStartPos : pos1 + (int)m_szSize - m_iStartPos;
-        const int off2 = pos2 >= m_iStartPos ? pos2 - m_iStartPos : pos2 + (int)m_szSize - m_iStartPos;
 
-        return off2 - off1;
+        return posToOff(pos2) - posToOff(pos1);
     }
-    */
+    // */
+
+    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosOff) % iSize].
+    // The right edge is included because we expect iFirstNonreadPos to be
+    // right after the last valid packet position if all packets are available.
+    static bool isInRange(CPos iStartPos, COff iMaxPosOff, size_t iSize, CPos iFirstNonreadPos)
+    {
+        if (iFirstNonreadPos == iStartPos)
+            return true;
+
+        const CPos iLastPos = CPos(iStartPos.psize, (iStartPos VALUE + iMaxPosOff VALUE) % int(iSize));
+        //const CPos iLastPos = iStartPos + iMaxPosOff;
+        const bool isOverrun = iLastPos VALUE < iStartPos VALUE;
+
+        if (isOverrun)
+            return iFirstNonreadPos VALUE > iStartPos VALUE || iFirstNonreadPos VALUE <= iLastPos VALUE;
+
+        return iFirstNonreadPos VALUE > iStartPos VALUE && iFirstNonreadPos VALUE <= iLastPos VALUE;
+    }
+
+    bool isInUsedRange(CPos iFirstNonreadPos)
+    {
+        if (iFirstNonreadPos == m_iStartPos)
+            return true;
+
+        // DECODE the iFirstNonreadPos
+        int diff = iFirstNonreadPos VALUE - m_iStartPos VALUE;
+        if (diff < 0)
+            diff += m_szSize;
+
+        return diff <= m_iMaxPosOff VALUE;
+    }
 
     // NOTE: Assumes that pUnit != NULL
     CPacket& packetAt(CPos pos) { return m_entries[pos].pUnit->m_Packet; }

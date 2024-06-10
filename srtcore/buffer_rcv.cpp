@@ -75,23 +75,6 @@ namespace {
 
 #define IF_RCVBUF_DEBUG(instr) (void)0
 
-    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosOff) % iSize].
-    // The right edge is included because we expect iFirstNonreadPos to be
-    // right after the last valid packet position if all packets are available.
-    bool isInRange(CPos iStartPos, COff iMaxPosOff, size_t iSize, CPos iFirstNonreadPos)
-    {
-        if (iFirstNonreadPos == iStartPos)
-            return true;
-
-        //const int iLastPos = (iStartPos VALUE + iMaxPosOff VALUE) % iSize;
-        const CPos iLastPos = iStartPos + iMaxPosOff;
-        const bool isOverrun = iLastPos VALUE < iStartPos VALUE;
-
-        if (isOverrun)
-            return iFirstNonreadPos VALUE > iStartPos VALUE || iFirstNonreadPos VALUE <= iLastPos VALUE;
-
-        return iFirstNonreadPos VALUE > iStartPos VALUE && iFirstNonreadPos VALUE <= iLastPos VALUE;
-    }
 }
 
 
@@ -194,9 +177,10 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
 
     // TODO: Don't do assert here. Process this situation somehow.
     // If >= 2, then probably there is a long gap, and buffer needs to be reset.
-    SRT_ASSERT((m_iStartPos + offset) VALUE / m_szSize < 2);
+    SRT_ASSERT((m_iStartPos VALUE + offset VALUE) / m_szSize < 2);
 
-    const CPos newpktpos = m_iStartPos + offset;
+    //const CPos newpktpos = m_iStartPos + offset;
+    const CPos newpktpos = incPos(m_iStartPos, offset);
     const COff prev_max_off = m_iMaxPosOff;
     bool extended_end = false;
     if (offset >= m_iMaxPosOff)
@@ -287,8 +271,8 @@ const CPacket* CRcvBuffer::tryAvailPacketAt(CPos pos, COff& w_span)
    if (m_entries[m_iStartPos].status == EntryState_Avail)
    {
        pos = m_iStartPos;
-       //w_span = offPos(m_iStartPos, m_iEndPos);
-       w_span = m_iEndPos - m_iStartPos;
+       w_span = offPos(m_iStartPos, m_iEndPos);
+       //w_span = m_iEndPos - m_iStartPos;
    }
 
    if (pos == CPos_TRAP)
@@ -312,8 +296,8 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff p
 {
    time_point earlier_time;
 
-   //int prev_max_pos = incPos(m_iStartPos, prev_max_off);
-   CPos prev_max_pos = m_iStartPos + prev_max_off;
+   CPos prev_max_pos = incPos(m_iStartPos, prev_max_off);
+   //CPos prev_max_pos = m_iStartPos + prev_max_off;
 
    // Update flags
    // Case [A]
@@ -328,8 +312,8 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff p
                // This means that m_iEndPos now shifts by 1,
                // and m_iDropPos must be shifted together with it,
                // as there's no drop to point.
-               //m_iEndPos = incPos(m_iStartPos, m_iMaxPosOff);
-               m_iEndPos = m_iStartPos + m_iMaxPosOff;
+               m_iEndPos = incPos(m_iStartPos, m_iMaxPosOff);
+               //m_iEndPos = m_iStartPos + m_iMaxPosOff;
                m_iDropPos = m_iEndPos;
            }
            else
@@ -337,8 +321,8 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff p
                // Otherwise we have a drop-after-gap candidate
                // which is the currently inserted packet.
                // Therefore m_iEndPos STAYS WHERE IT IS.
-               //m_iDropPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
-               m_iDropPos = m_iStartPos + (m_iMaxPosOff - 1);
+               m_iDropPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
+               //m_iDropPos = m_iStartPos + (m_iMaxPosOff - 1);
            }
        }
    }
@@ -483,12 +467,12 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
 
     // Start from here and search fort the next gap
     m_iEndPos = m_iDropPos = m_iStartPos;
-    //updateGapInfo(incPos(m_iStartPos, m_iMaxPosOff));
-    updateGapInfo(m_iStartPos + m_iMaxPosOff);
+    updateGapInfo(incPos(m_iStartPos, m_iMaxPosOff));
+    //updateGapInfo(m_iStartPos + m_iMaxPosOff);
 
     // If the nonread position is now behind the starting position, set it to the starting position and update.
     // Preceding packets were likely missing, and the non read position can probably be moved further now.
-    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
+    if (!isInUsedRange( m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         updateNonreadPos();
@@ -533,13 +517,13 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     COff minDroppedOffset = COff(-1);
     int iDropCnt = 0;
     const COff start_off = COff(max(0, offset_a));
-    //const int start_pos = incPos(m_iStartPos, start_off);
-    const CPos start_pos = m_iStartPos + start_off;
+    const CPos start_pos = incPos(m_iStartPos, start_off);
+    //const CPos start_pos = m_iStartPos + start_off;
     const COff end_off = COff(min((int) m_szSize - 1, offset_b + 1));
-    //const int end_pos = incPos(m_iStartPos, end_off);
-    const CPos end_pos = m_iStartPos + end_off;
+    const CPos end_pos = incPos(m_iStartPos, end_off);
+    //const CPos end_pos = m_iStartPos + end_off;
     bool bDropByMsgNo = msgno > SRT_MSGNO_CONTROL; // Excluding both SRT_MSGNO_NONE (-1) and SRT_MSGNO_CONTROL (0).
-    for (CPos i = start_pos; i != end_pos; ++i)
+    for (CPos i = start_pos; i != end_pos; i = incPos(i)) //  ++i)
     {
         // Check if the unit was already dropped earlier.
         if (m_entries[i].status == EntryState_Drop)
@@ -577,8 +561,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
         ++iDropCnt;
         m_entries[i].status = EntryState_Drop;
         if (minDroppedOffset == -1)
-            //minDroppedOffset = offPos(m_iStartPos, i);
-            minDroppedOffset = i - m_iStartPos;
+            minDroppedOffset = offPos(m_iStartPos, i);
+            //minDroppedOffset = i - m_iStartPos;
     }
 
     if (bDropByMsgNo)
@@ -588,8 +572,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
         // The sender should have the last packet of the message it is requesting to be dropped.
         // Therefore we don't search forward, but need to check earlier packets in the RCV buffer.
         // Try to drop by the message number in case the message starts earlier than @a seqnolo.
-        //const int stop_pos = decPos(m_iStartPos);
-        const CPos stop_pos = m_iStartPos - COff(1);
+        const CPos stop_pos = decPos(m_iStartPos);
+        //const CPos stop_pos = m_iStartPos - COff(1);
         for (CPos i = start_pos; i != stop_pos; --i)
         {
             // Can't drop if message number is not known.
@@ -613,8 +597,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             dropUnitInPos(i);
             m_entries[i].status = EntryState_Drop;
             // As the search goes backward, i is always earlier than minDroppedOffset.
-            //minDroppedOffset = offPos(m_iStartPos, i);
-            minDroppedOffset = i - m_iStartPos;
+            minDroppedOffset = offPos(m_iStartPos, i);
+            //minDroppedOffset = i - m_iStartPos;
 
             // Break the loop if the start of the message has been found. No need to search further.
             if (bnd == PB_FIRST)
@@ -660,8 +644,8 @@ bool CRcvBuffer::getContiguousEnd(int32_t& w_seq) const
         return m_iMaxPosOff > 0;
     }
 
-    //int end_off = offPos(m_iStartPos, m_iEndPos);
-    COff end_off = m_iEndPos - m_iStartPos;
+    COff end_off = offPos(m_iStartPos, m_iEndPos);
+    //COff end_off = m_iEndPos - m_iStartPos;
 
     //w_seq = CSeqNo::incseq(m_iStartSeqNo, end_off);
     w_seq = (m_iStartSeqNo + end_off VALUE) VALUE;
@@ -745,7 +729,8 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         releaseUnitInPos(i);
         if (isReadingFromStart)
         {
-            m_iStartPos = i + COff(1); //incPos(i);
+            //m_iStartPos = i + COff(1); //incPos(i);
+            m_iStartPos = incPos(i);
             --m_iMaxPosOff;
 
             // m_iEndPos and m_iDropPos should be
@@ -783,7 +768,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
 
     releaseNextFillerEntries();
 
-    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
+    if (!isInUsedRange( m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         //updateNonreadPos();
@@ -792,8 +777,8 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
     // Now that we have m_iStartPos potentially shifted, reinitialize
     // m_iEndPos and m_iDropPos.
 
-    //int pend_pos = incPos(m_iStartPos, m_iMaxPosOff);
-    CPos pend_pos = m_iStartPos + m_iMaxPosOff;
+    CPos pend_pos = incPos(m_iStartPos, m_iMaxPosOff);
+    //CPos pend_pos = m_iStartPos + m_iMaxPosOff;
 
     // First check: is anything in the beginning
     if (m_entries[m_iStartPos].status == EntryState_Avail)
@@ -801,12 +786,12 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         // If so, shift m_iEndPos up to the first nonexistent unit
         // XXX Try to optimize search by splitting into two loops if necessary.
 
-        //m_iEndPos = incPos(m_iStartPos);
-        m_iEndPos = m_iStartPos + COff(1);
+        m_iEndPos = incPos(m_iStartPos);
+        //m_iEndPos = m_iStartPos + COff(1);
         while (m_entries[m_iEndPos].status == EntryState_Avail)
         {
-            //m_iEndPos = incPos(m_iEndPos);
-            m_iEndPos = m_iEndPos + COff(1);
+            m_iEndPos = incPos(m_iEndPos);
+            //m_iEndPos = m_iEndPos + COff(1);
             if (m_iEndPos == pend_pos)
                 break;
         }
@@ -826,8 +811,8 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         {
             while (m_entries[m_iDropPos].status != EntryState_Avail)
             {
-                //m_iDropPos = incPos(m_iDropPos);
-                m_iDropPos = m_iDropPos + COff(1);
+                m_iDropPos = incPos(m_iDropPos);
+                //m_iDropPos = m_iDropPos + COff(1);
                 if (m_iDropPos == pend_pos)
                 {
                     // Nothing found - set drop pos equal to end pos,
@@ -902,7 +887,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
         if (!m_entries[p].pUnit)
         {
             //p = incPos(p); // WTF? Return abandons the loop anyway.
-            ++p;
+            //++p;
             LOGC(rbuflog.Error, log << "readBufferTo: IPE: NULL unit found in file transmission");
             return -1;
         }
@@ -931,8 +916,8 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
         if (rs >= remain_pktlen)
         {
             releaseUnitInPos(p);
-            //p = incPos(p);
-            ++p;
+            p = incPos(p);
+            //++p;
             m_iNotch = 0;
 
             m_iStartPos = p;
@@ -954,7 +939,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
     // Update positions
     // Set nonread position to the starting position before updating,
     // because start position was increased, and preceding packets are invalid.
-    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
+    if (!isInUsedRange( m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
     }
@@ -986,8 +971,8 @@ bool CRcvBuffer::hasAvailablePackets() const
 
 int CRcvBuffer::getRcvDataSize() const
 {
-    //return offPos(m_iStartPos, m_iFirstNonreadPos);
-    return (m_iFirstNonreadPos - m_iStartPos) VALUE;
+    return offPos(m_iStartPos, m_iFirstNonreadPos) VALUE;
+    //return (m_iFirstNonreadPos - m_iStartPos) VALUE;
 }
 
 int CRcvBuffer::getTimespan_ms() const
@@ -998,8 +983,9 @@ int CRcvBuffer::getTimespan_ms() const
     if (m_iMaxPosOff == 0)
         return 0;
 
-    //int lastpos = incPos(m_iStartPos, m_iMaxPosOff - 1);
-    CPos lastpos = m_iStartPos + (m_iMaxPosOff - COff(1));
+    CPos lastpos = incPos(m_iStartPos, m_iMaxPosOff - 1);
+    //CPos lastpos = m_iStartPos + (m_iMaxPosOff - COff(1));
+
     // Normally the last position should always be non empty
     // if TSBPD is enabled (reading out of order is not allowed).
     // However if decryption of the last packet fails, it may be dropped
@@ -1007,8 +993,8 @@ int CRcvBuffer::getTimespan_ms() const
     SRT_ASSERT(m_entries[lastpos].pUnit != NULL || m_entries[lastpos].status == EntryState_Drop);
     while (m_entries[lastpos].pUnit == NULL && lastpos != m_iStartPos)
     {
-        //lastpos = decPos(lastpos);
-        --lastpos;
+        lastpos = decPos(lastpos);
+        //--lastpos;
     }
 
     if (m_entries[lastpos].pUnit == NULL)
@@ -1017,8 +1003,8 @@ int CRcvBuffer::getTimespan_ms() const
     CPos startpos = m_iStartPos;
     while (m_entries[startpos].pUnit == NULL && startpos != lastpos)
     {
-        //startpos = incPos(startpos);
-        ++startpos;
+        startpos = incPos(startpos);
+        //++startpos;
     }
 
     if (m_entries[startpos].pUnit == NULL)
@@ -1077,9 +1063,10 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstValidPacketInfo() const
 
 std::pair<int, int> CRcvBuffer::getAvailablePacketsRange() const
 {
-    //const int seqno_last = CSeqNo::incseq(m_iStartSeqNo, offPos(m_iStartPos, m_iFirstNonreadPos));
-    const int nonread_off = (m_iFirstNonreadPos - m_iStartPos) VALUE;
-    const int seqno_last = (m_iStartSeqNo + nonread_off) VALUE;
+    const COff nonread_off = offPos(m_iStartPos, m_iFirstNonreadPos);
+    const int seqno_last = CSeqNo::incseq(m_iStartSeqNo VALUE, nonread_off VALUE);
+    //const int nonread_off = (m_iFirstNonreadPos - m_iStartPos) VALUE;
+    //const int seqno_last = (m_iStartSeqNo + nonread_off) VALUE;
     return std::pair<int, int>(m_iStartSeqNo VALUE, seqno_last);
 }
 
@@ -1201,8 +1188,8 @@ void CRcvBuffer::updateNonreadPos()
     if (m_iMaxPosOff == 0)
         return;
 
-    //const int end_pos = incPos(m_iStartPos, m_iMaxPosOff); // The empty position right after the last valid entry.
-    const CPos end_pos =  m_iStartPos + m_iMaxPosOff; // The empty position right after the last valid entry.
+    const CPos end_pos = incPos(m_iStartPos, m_iMaxPosOff); // The empty position right after the last valid entry.
+    //const CPos end_pos =  m_iStartPos + m_iMaxPosOff; // The empty position right after the last valid entry.
 
     CPos pos = m_iFirstNonreadPos;
     while (m_entries[pos].pUnit && m_entries[pos].status == EntryState_Avail)
@@ -1224,8 +1211,8 @@ void CRcvBuffer::updateNonreadPos()
             // Check PB_LAST only in message mode.
             if (!m_bMessageAPI || packetAt(i).getMsgBoundary() & PB_LAST)
             {
-                //m_iFirstNonreadPos = incPos(i);
-                m_iFirstNonreadPos = i + COff(1);
+                m_iFirstNonreadPos = incPos(i);
+                //m_iFirstNonreadPos = i + COff(1);
                 break;
             }
         }
@@ -1301,10 +1288,10 @@ bool CRcvBuffer::checkFirstReadableNonOrder()
     if (m_numNonOrderPackets <= 0 || m_iFirstNonOrderMsgPos == CPos_TRAP || m_iMaxPosOff == COff(0))
         return false;
 
-    //const int endPos = incPos(m_iStartPos, m_iMaxPosOff);
-    const CPos endPos = m_iStartPos + m_iMaxPosOff;
+    const CPos endPos = incPos(m_iStartPos, m_iMaxPosOff);
+    //const CPos endPos = m_iStartPos + m_iMaxPosOff;
     int msgno = -1;
-    for (CPos pos = m_iFirstNonOrderMsgPos; pos != endPos; ++pos) // pos = incPos(pos))
+    for (CPos pos = m_iFirstNonOrderMsgPos; pos != endPos; pos = incPos(pos)) //   ++pos)
     {
         if (!m_entries[pos].pUnit)
             return false;
@@ -1339,7 +1326,8 @@ void CRcvBuffer::updateFirstReadableNonOrder()
     // Search further packets to the right.
     // First check if there are packets to the right.
     //const int lastPos = (m_iStartPos + m_iMaxPosOff - 1) % m_szSize;
-    const CPos lastPos = m_iStartPos + m_iMaxPosOff - COff(1);
+    //const CPos lastPos = m_iStartPos + m_iMaxPosOff - COff(1);
+    const CPos lastPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
 
     CPos posFirst = CPos_TRAP;
     CPos posLast = CPos_TRAP;
@@ -1397,7 +1385,8 @@ CPos CRcvBuffer::scanNonOrderMessageRight(const CPos startPos, int msgNo) const
     // Search further packets to the right.
     // First check if there are packets to the right.
     //const int lastPos = (m_iStartPos + m_iMaxPosOff - 1) % m_szSize;
-    const CPos lastPos = m_iStartPos + m_iMaxPosOff - COff(1);
+    //const CPos lastPos = m_iStartPos + m_iMaxPosOff - COff(1);
+    const CPos lastPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
     if (startPos == lastPos)
         return CPos_TRAP;
 
@@ -1508,7 +1497,8 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
         if (!is_zero(nextValidPkt.tsbpd_time))
         {
             ss << count_milliseconds(nextValidPkt.tsbpd_time - tsNow) << "ms";
-            const CPos iLastPos = m_iStartPos + m_iMaxPosOff - COff(1); //incPos(m_iStartPos, m_iMaxPosOff - 1);
+            const CPos iLastPos = incPos(m_iStartPos, m_iMaxPosOff - 1);
+            //const CPos iLastPos = m_iStartPos + m_iMaxPosOff - COff(1);
             if (m_entries[iLastPos].pUnit)
             {
                 ss << ", timespan ";
@@ -1572,8 +1562,8 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     }
 
     // Start position
-    //int frompos = incPos(m_iStartPos, offset);
-    CPos frompos = m_iStartPos + offset;
+    CPos frompos = incPos(m_iStartPos, offset);
+    //CPos frompos = m_iStartPos + offset;
 
     // Ok; likely we should stand at the m_iEndPos position.
     // If this given position is earlier than this, then
@@ -1582,15 +1572,15 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
 
     CSeqNo ret_seq = CSeqNo(SRT_SEQNO_NONE);
     COff ret_off = m_iMaxPosOff;
-
-    COff end_off = m_iEndPos - m_iStartPos; //offPos(m_iStartPos, m_iEndPos);
+    COff end_off = offPos(m_iStartPos, m_iEndPos);
+    //COff end_off = m_iEndPos - m_iStartPos;
     if (offset < end_off)
     {
         // If m_iEndPos has such a value, then there are
         // no loss packets at all.
         if (end_off != m_iMaxPosOff)
         {
-            //ret_seq = CSeqNo::incseq(m_iStartSeqNo, end_off);
+            //ret_seq = CSeqNo::incseq(m_iStartSeqNo VALUE, end_off VALUE);
             ret_seq = m_iStartSeqNo + end_off VALUE;
             ret_off = end_off;
         }
@@ -1605,8 +1595,8 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
         // REUSE offset as a control variable
         for (; offset < m_iMaxPosOff; ++offset)
         {
-            //int pos = incPos(m_iStartPos, offset);
-            const CPos pos = m_iStartPos + offset;
+            const CPos pos = incPos(m_iStartPos, offset);
+            //const CPos pos = m_iStartPos + offset;
             if (m_entries[pos].status == EntryState_Empty)
             {
                 ret_off = offset;
@@ -1632,11 +1622,11 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     // points to an empty cell.
     for (COff off = ret_off + COff(1); off < m_iMaxPosOff; ++off)
     {
-        //int pos = incPos(m_iStartPos, off);
-        const CPos pos = m_iStartPos + off;
+        const CPos pos = incPos(m_iStartPos, off);
+        //const CPos pos = m_iStartPos + off;
         if (m_entries[pos].status != EntryState_Empty)
         {
-            //*pw_end = CSeqNo::incseq(m_iStartSeqNo, off - 1);
+            //*pw_end = CSeqNo::incseq(m_iStartSeqNo, (off - 1) VALUE);
             *pw_end = (m_iStartSeqNo + (off - COff(1)) VALUE) VALUE;
             return ret_seq VALUE;
         }
@@ -1645,7 +1635,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     // Fallback - this should be impossible, so issue a log.
     LOGC(rbuflog.Error, log << "IPE: empty cell pos=" << frompos VALUE << " %"
             //<< CSeqNo::incseq(m_iStartSeqNo, ret_off)
-            << (m_iStartSeqNo + ret_off) VALUE
+            << (m_iStartSeqNo + ret_off VALUE) VALUE
             << " not followed by any valid cell");
 
     // Return this in the last resort - this could only be a situation when
