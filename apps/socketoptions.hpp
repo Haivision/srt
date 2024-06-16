@@ -255,7 +255,7 @@ const SocketOption srt_options [] {
     { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
 #endif
     { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(SRT_ENABLE_AEAD_API_PREVIEW) && (SRT_ENABLE_AEAD_API_PREVIEW == 1)
     ,{ "cryptomode", 0, SRTO_CRYPTOMODE, SocketOption::PRE, SocketOption::INT, nullptr }
 #endif
 #ifdef ENABLE_MAXREXMITBW

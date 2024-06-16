@@ -1020,9 +1020,12 @@ if(DEFINED ENV{TEAMCITY_VERSION})
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
-
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+
+set(SRT_ENABLE_AEAD_API_PREVIEW ${ENABLE_AEAD_API_PREVIEW})
+configure_file("srtcore/srt_config.h.in" "srt_config.h" @ONLY)
+list(APPEND HEADERS_srt "${CMAKE_CURRENT_BINARY_DIR}/srt_config.h")
 
 add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt} ${SOURCES_haicrypt} ${SOURCES_common})
 
