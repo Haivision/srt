@@ -7121,7 +7121,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
     do
     {
-        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+        if (stillConnected() && !timeout && !isRcvBufferReady())
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -8723,11 +8723,14 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
+        //enterCS(m_RcvBufferLock);
+
 #if ENABLE_BONDING
-        ScopedLock glock(uglobal().m_GlobControlLock);
+        ScopedLock glock(uglobal().m_GlobControlLock); // XXX not too excessive?
         const bool drift_updated =
 #endif
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
+        //leaveCS(m_RcvBufferLock);
 
 #if ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)
@@ -9993,10 +9996,12 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 {
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
-    if (need_tsbpd && !m_RcvTsbPdThread.joinable())
-    {
-        ScopedLock lock(m_RcvTsbPdStartupLock);
+    if (!need_tsbpd)
+        return 0;
 
+    ScopedLock lock(m_RcvTsbPdStartupLock);
+    if (!m_RcvTsbPdThread.joinable())
+    {
         if (m_bClosing) // Check again to protect join() in CUDT::releaseSync()
             return -1;
 
@@ -11701,17 +11706,20 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
             // Bound to one call because this requires locking
             pg->updateFailedLink();
         }
+        // Sockets that never succeeded to connect must be deleted
+        // explicitly, otherwise they will never be deleted. OTOH
+        // the socket can be on the path of deletion already, so
+        // this only makes sure that the socket will be deleted,
+        // one way or another.
+        if (pending_broken)
+        {
+            // XXX This somehow can cause a deadlock
+            // uglobal()->close(m_parent);
+            LOGC(smlog.Debug, log << "updateBrokenConnection...: BROKEN SOCKET @" << m_SocketID << " - CLOSING, to be removed from group.");
+            m_parent->setBrokenClosed();
+        }
     }
 
-    // Sockets that never succeeded to connect must be deleted
-    // explicitly, otherwise they will never be deleted.
-    if (pending_broken)
-    {
-        // XXX This somehow can cause a deadlock
-        // uglobal()->close(m_parent);
-        LOGC(smlog.Debug, log << "updateBrokenConnection...: BROKEN SOCKET @" << m_SocketID << " - CLOSING, to be removed from group.");
-        m_parent->setBrokenClosed();
-    }
 #endif
 }
 
