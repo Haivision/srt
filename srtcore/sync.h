@@ -946,8 +946,9 @@ int genRandomInt(int minVal, int maxVal);
 class SharedMutex
 {
     private:
-    std::condition_variable m_pLockWriteCond;
-    std::condition_variable m_pLockReadCond;
+    Condition  m_pLockWriteCond;
+    Condition  m_pLockReadCond;
+
     Mutex m_pMutex;
 
     int m_pCountRead;
