@@ -29,22 +29,39 @@ namespace srt
 struct CPos
 {
     int value;
+#if USE_OPERATORS
     const size_t* psize;
-
     int isize() const {return *psize;}
+#endif
 
-    explicit CPos(const size_t* ps, int val): value(val), psize(ps) {}
+#if USE_OPERATORS
+    explicit CPos(const size_t* ps SRT_ATR_UNUSED, int val)
+        : value(val)
+        , psize(ps)
+    {}
+
+#else
+    explicit CPos(int val): value(val) {}
+#endif
+
     int val() const { return value; }
     explicit operator int() const {return value;}
 
-    CPos(const CPos& src): value(src.value), psize(src.psize) {}
+    CPos(const CPos& src): value(src.value)
+#if USE_OPERATORS
+                           , psize(src.psize) 
+#endif
+    {}
     CPos& operator=(const CPos& src)
     {
+#if USE_OPERATORS
         psize = src.psize;
+#endif
         value = src.value;
         return *this;
     }
 
+#if USE_OPERATORS
     int cmp(CPos other, CPos start) const
     {
         int pos2 = value;
@@ -72,6 +89,7 @@ struct CPos
             value = 0;
         return *this;
     }
+#endif
 
     bool operator == (CPos other) const { return value == other.value; }
     bool operator != (CPos other) const { return value != other.value; }
@@ -116,6 +134,15 @@ struct COff
     bool operator > (int other) const { return value > other; }
     bool operator <= (int other) const { return value <= other; }
     bool operator >= (int other) const { return value >= other; }
+
+    friend bool operator == (int value, COff that) { return value == that.value; }
+    friend bool operator != (int value, COff that) { return value != that.value; }
+    friend bool operator < (int value, COff that) { return value < that.value; }
+    friend bool operator > (int value, COff that) { return value > that.value; }
+    friend bool operator <= (int value, COff that) { return value <= that.value; }
+    friend bool operator >= (int value, COff that) { return value >= that.value; }
+
+    operator bool() const { return value != 0; }
 };
 
 #define VALUE .val()
@@ -161,8 +188,7 @@ inline CSeqNo operator-(CSeqNo seq, COff off)
 
 
 #endif
-const size_t fix_rollover = 16;
-const CPos CPos_TRAP (&fix_rollover, -1);
+const CPos CPos_TRAP (-1);
 
 #else
 #define VALUE
@@ -174,22 +200,33 @@ const int CPos_TRAP = -1;
 //
 //   Circular receiver buffer.
 //
+//   ICR = Initial Contiguous Region: all cells here contain valid packets
+//   SCRAP REGION: Region with possibly filled or empty cells
+//      NOTE: in scrap region, the first cell is empty and the last one filled.
+//   SPARE REGION: Region without packets
+//           |           |                       |             |
+//           |    ICR    |  SCRAP REGION         | SPARE REGION...->
+//   ......->|           |                       |             |
+//           |       FIRST-GAP                   |             |
 //   |<------------------- m_szSize ---------------------------->|
 //   |       |<------------ m_iMaxPosOff ----------->|           |
-//   |       |                                       |           |
+//   |       |           |                       |   |           |
 //   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
 //   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
 //   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
-//             |           |   |                   |
-//             |           |   |                   \__last pkt received
-//             |           |   |
-//             |           |   \___ m_iDropPos
-//             |           |
-//             |           \___ m_iEndPos
-//             |
-//             \___ m_iStartPos: first packet position in the buffer
+//           |           |   |                   |
+//           |           |   |                   \__last pkt received
+//           |<------------->| m_iDropOff        |
+//           |           |                       |
+//           |<--------->| m_iEndOff             |
+//           |
+//           \___ m_iStartPos: first packet position in the buffer
 //
-//   m_pUnit[i]->status_: 0: free, 1: good, 2: read, 3: dropped (can be combined with read?)
+//   m_pUnit[i]->status:
+//             EntryState_Empty: No packet was ever received here
+//             EntryState_Avail: The packet is ready for reading
+//             EntryState_Read: The packet is non-order-read
+//             EntryState_Drop: The packet was requested to drop
 //
 //   thread safety:
 //    m_iStartPos:      CUDT::m_RecvLock
@@ -199,30 +236,30 @@ const int CPos_TRAP = -1;
 //
 //
 //    m_iStartPos: the first packet that should be read (might be empty)
-//    m_iEndPos: the end of contiguous range. Empty if m_iEndPos == m_iStartPos
-//    m_iDropPos: a packet available for retrieval after a drop. If == m_iEndPos, no such packet.
+//    m_iEndOff: shift to the end of contiguous range. This points always to an empty cell.
+//    m_iDropPos: shift a packet available for retrieval after a drop. If 0, no such packet.
 //
 // Operational rules:
 //
 //    Initially:
 //       m_iStartPos = 0
-//       m_iEndPos = 0
-//       m_iDropPos = 0
+//       m_iEndOff = 0
+//       m_iDropOff = 0
 //
 // When a packet has arrived, then depending on where it landed:
 //
 // 1. Position: next to the last read one and newest
 //
 //     m_iStartPos unchanged.
-//     m_iEndPos shifted by 1
-//     m_iDropPos = m_iEndPos
+//     m_iEndOff shifted by 1
+//     m_iDropOff = 0
 // 
 // 2. Position: after a loss, newest.
 //
 //     m_iStartPos unchanged.
-//     m_iEndPos unchanged.
-//     m_iDropPos:
-//       - if it was == m_iEndPos, set to this
+//     m_iEndOff unchanged.
+//     m_iDropOff:
+//       - set to this packet, if m_iDropOff == 0 or m_iDropOff is past this packet
 //       - otherwise unchanged
 //
 // 3. Position: after a loss, but belated (retransmitted) -- not equal to m_iEndPos
@@ -417,8 +454,7 @@ public:
     ///
     InsertInfo insert(CUnit* unit);
 
-    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const CPos newpktpos, const bool extended_end);
-    const CPacket* tryAvailPacketAt(CPos pos, COff& w_span);
+    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset, const bool extended_end);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -436,12 +472,7 @@ public:
     /// update the m_iEndPos and m_iDropPos fields, or set them
     /// both to the end of range if there are no loss gaps.
     ///
-    /// The @a prev_max_pos parameter is passed here because it is already
-    /// calculated in insert(), otherwise it would have to be calculated here again.
-    ///
-    /// @param prev_max_pos buffer position represented by `m_iMaxPosOff`
-    ///
-    void updateGapInfo(CPos prev_max_pos);
+    void updateGapInfo();
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
@@ -643,9 +674,9 @@ public: // Used for testing
 
 private:
     //*
-    inline CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos(&m_szSize, (pos VALUE + inc VALUE) % m_szSize); }
-    inline CPos decPos(CPos pos) const { return (pos VALUE - 1) >= 0 ? CPos(&m_szSize, pos VALUE - 1) : CPos(&m_szSize, m_szSize - 1); }
-    inline COff offPos(CPos pos1, CPos pos2) const
+    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos VALUE + inc VALUE) % m_szSize); }
+    CPos decPos(CPos pos) const { return (pos VALUE - 1) >= 0 ? CPos(pos VALUE - 1) : CPos(m_szSize - 1); }
+    COff offPos(CPos pos1, CPos pos2) const
     {
         int diff = pos2 VALUE - pos1 VALUE;
         if (diff >= 0)
@@ -655,7 +686,15 @@ private:
         return COff(m_szSize + diff);
     }
 
-    inline COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
+    COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
+
+    static COff decOff(COff val, int shift)
+    {
+        int ival = val VALUE - shift;
+        if (ival < 0)
+            return COff(0);
+        return COff(ival);
+    }
 
     /// @brief Compares the two positions in the receiver buffer relative to the starting position.
     /// @param pos2 a position in the receiver buffer.
@@ -678,7 +717,7 @@ private:
         if (iFirstNonreadPos == iStartPos)
             return true;
 
-        const CPos iLastPos = CPos(iStartPos.psize, (iStartPos VALUE + iMaxPosOff VALUE) % int(iSize));
+        const CPos iLastPos = CPos((iStartPos VALUE + iMaxPosOff VALUE) % int(iSize));
         //const CPos iLastPos = iStartPos + iMaxPosOff;
         const bool isOverrun = iLastPos VALUE < iStartPos VALUE;
 
@@ -717,7 +756,9 @@ private:
 
     /// Release entries following the current buffer position if they were already
     /// read out of order (EntryState_Read) or dropped (EntryState_Drop).
-    void releaseNextFillerEntries();
+    ///
+    /// @return the range for which the start pos has been shifted
+    int releaseNextFillerEntries();
 
     bool hasReadableInorderPkts() const { return (m_iFirstNonreadPos != m_iStartPos); }
 
@@ -790,8 +831,8 @@ private:
 
     CSeqNo m_iStartSeqNo;
     CPos m_iStartPos;        // the head position for I/O (inclusive)
-    CPos m_iEndPos;          // past-the-end of the contiguous region since m_iStartPos
-    CPos m_iDropPos;         // points past m_iEndPos to the first deliverable after a gap, or == m_iEndPos if no such packet
+    COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
+    COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
     COff m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)

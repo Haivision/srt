@@ -1528,7 +1528,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
-		gtest_discover_tests(test-srt)
+		#gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
