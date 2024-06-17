@@ -946,50 +946,61 @@ int genRandomInt(int minVal, int maxVal);
 class SharedMutex
 {
     private:
-    std::condition_variable lockWriteCond;
-    std::condition_variable lockReadCond;
-    Mutex m_mutex;
+    std::condition_variable m_pLockWriteCond;
+    std::condition_variable m_pLockReadCond;
+    Mutex m_pMutex;
 
-    int countRead;
-    bool writerLocked;
+    int m_pCountRead;
+    bool m_pWriterLocked;
 
-    SharedMutex() 
+
+    public:
+    SharedMutex()
+    :m_pLockWriteCond()
+    ,m_pLockReadCond()
+    ,m_pMutex()
+    ,m_pCountRead(0)
+    ,m_pWriterLocked(false)
     {
+        m_pCountRead = 0;
+        m_pWriterLocked = false;
 
     }
 
     void lockWrite()
     {
-        UniqueLock l1(m_mutex);
-        lockWriteCond.wait(l1);
-        writerLocked = true;
-        if(countRead)
-            lockReadCond.wait(l1);
+        UniqueLock l1(m_pMutex);
+        if(m_pWriterLocked)
+            m_pLockWriteCond.wait(l1);
+        m_pWriterLocked = true;
+        if(m_pCountRead)
+            m_pLockReadCond.wait(l1);
     }
 
     void unlockWrite()
     {
-        UniqueLock l2(m_mutex);
-        writerLocked = false;
-        lockWriteCond.notify_all();
+        UniqueLock l2(m_pMutex);
+        m_pWriterLocked = false;
+        m_pLockWriteCond.notify_all();
     }
 
     void lockRead()
     {
-        UniqueLock l3(m_mutex);
-        if(writerLocked)
-            lockWriteCond.wait(l3);
-        countRead++;
+        UniqueLock l3(m_pMutex);
+        if(m_pWriterLocked)
+            m_pLockWriteCond.wait(l3);
+
+        m_pCountRead++;
     }
 
     void unlockRead()
     {
-        UniqueLock l4(m_mutex);
-        countRead--;
-        if(writerLocked)
-            lockReadCond.notify_one();
-        else if (countRead > 0)
-            lockWriteCond.notify_one();
+        UniqueLock l4(m_pMutex);
+        m_pCountRead--;
+        if(m_pWriterLocked)
+            m_pLockReadCond.notify_one();
+        else if (m_pCountRead > 0)
+            m_pLockWriteCond.notify_one();
 
     }
 
