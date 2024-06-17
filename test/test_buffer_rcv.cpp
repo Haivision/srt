@@ -702,7 +702,7 @@ TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
     array<char, m_payload_sz*5> buff;
     SRT_MSGCTRL mc;
     pair<int32_t, int32_t> seqrange;
-    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz);
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz*5);
     EXPECT_EQ(mc.msgno, 2);
     EXPECT_EQ(seqrange, make_pair(m_init_seqno+1, m_init_seqno+5));
 
@@ -711,7 +711,7 @@ TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
     EXPECT_EQ(ii.first_seq.val(), m_init_seqno+11);
 
     // 7
-    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz);
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz*3);
     EXPECT_EQ(mc.msgno, 4);
     EXPECT_EQ(seqrange, make_pair(m_init_seqno+11, m_init_seqno+13));
 

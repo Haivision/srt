@@ -17,7 +17,7 @@
 #include "tsbpd_time.h"
 #include "utilities.h"
 
-#define USE_WRAPPERS 1
+#define USE_WRAPPERS 0
 #define USE_OPERATORS 0
 
 namespace srt
@@ -25,6 +25,9 @@ namespace srt
 
 // DEVELOPMENT TOOL - TO BE MOVED ELSEWHERE (like common.h)
 
+// NOTE: This below series of definitions for CPos and COff
+// are here for development support only, but they are not in
+// use in the release code - there CPos and COff are aliases to int.
 #if USE_WRAPPERS
 struct CPos
 {
@@ -545,11 +548,11 @@ public:
 
 public:
     /// Get the starting position of the buffer as a packet sequence number.
-    int getStartSeqNo() const { return m_iStartSeqNo VALUE; }
+    int32_t getStartSeqNo() const { return m_iStartSeqNo.val(); }
 
     /// Sets the start seqno of the buffer.
     /// Must be used with caution and only when the buffer is empty.
-    void setStartSeqNo(int seqno) { m_iStartSeqNo = CSeqNo(seqno); }
+    void setStartSeqNo(int32_t seqno) { m_iStartSeqNo = CSeqNo(seqno); }
 
     /// Given the sequence number of the first unacknowledged packet
     /// tells the size of the buffer available for packets.
@@ -561,16 +564,16 @@ public:
         // Therefore if the first packet in the buffer is ahead of the iFirstUnackSeqNo
         // then it does not have acknowledged packets and its full capacity is available.
         // Otherwise subtract the number of acknowledged but not yet read packets from its capacity.
-        const CSeqNo iRBufSeqNo  = m_iStartSeqNo;
-        //if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
-        if (iRBufSeqNo >= CSeqNo(iFirstUnackSeqNo))
+        const int32_t iRBufSeqNo  = m_iStartSeqNo.val();
+        if (CSeqNo::seqcmp(iRBufSeqNo, iFirstUnackSeqNo) >= 0) // iRBufSeqNo >= iFirstUnackSeqNo
+        //if (iRBufSeqNo >= CSeqNo(iFirstUnackSeqNo))
         {
             // Full capacity is available.
             return capacity();
         }
 
         // Note: CSeqNo::seqlen(n, n) returns 1.
-        return capacity() - CSeqNo::seqlen(iRBufSeqNo VALUE, iFirstUnackSeqNo) + 1;
+        return capacity() - CSeqNo::seqlen(iRBufSeqNo, iFirstUnackSeqNo) + 1;
     }
 
     /// @brief Checks if the buffer has packets available for reading regardless of the TSBPD.
