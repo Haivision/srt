@@ -50,21 +50,17 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-
-    // Temporary solution. Need to find some better handling
-    // of dynamic width and precision.
-    fmt::obufstream dfmts;
-    dfmts << "0" << decimals;
-    dfmts.append('\0'); // form_memory_buffer doesn't use NUL-termination.
-    const char* decimal_fmt = dfmts.bufptr();
-
+    steady_clock::time_point frac = timestamp - seconds_from(total_sec);
     fmt::obufstream out;
     if (days)
         out << days << "D ";
+
     out << fmt::sfmt(hours, "02") << ":"
         << fmt::sfmt(minutes, "02") << ":"
         << fmt::sfmt(seconds, "02") << "."
-        << fmt::sfmt((timestamp - seconds_from(total_sec)).time_since_epoch().count(), decimal_fmt) << " [STDY]";
+        << fmt::sfmt(frac.time_since_epoch().count(),
+                     fmt::sfmc().fillzero().width(decimals))
+        << " [STDY]";
     return out.str();
 }
 

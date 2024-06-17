@@ -15,6 +15,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <list>
@@ -331,35 +332,324 @@ inline form_memory_buffer<> apply_format_fix(TYPE, const char* fmt)\
 // be used. They will be inserted if needed.
 
 SFMT_FORMAT_FIXER(int, "+- '#", "dioxX", "i", "<!!!>");
-// Short is simple because it's aligned to int anyway
 SFMT_FORMAT_FIXER(short int, "+- '#", "dioxX", "hi", "<!!!>");
-
 SFMT_FORMAT_FIXER(long int, "+- '#", "dioxX", "li", "<!!!>");
-
 SFMT_FORMAT_FIXER(long long int, "+- '#", "dioxX", "lli", "<!!!>");
 
 SFMT_FORMAT_FIXER(unsigned int, "+- '#", "uoxX", "u", "<!!!>");
-
 SFMT_FORMAT_FIXER(unsigned short int, "+- '#", "uoxX", "hu", "<!!!>");
-
 SFMT_FORMAT_FIXER(unsigned long int, "+- '#", "uoxX", "lu", "<!!!>");
-
 SFMT_FORMAT_FIXER(unsigned long long int, "+- '#", "uoxX", "llu", "<!!!>");
 
 SFMT_FORMAT_FIXER(double, "+- '#.", "EeFfgGaA", "g", "<!!!>");
 SFMT_FORMAT_FIXER(float, "+- '#.", "EeFfgGaA", "g", "<!!!>");
 SFMT_FORMAT_FIXER(long double, "+- '#.", "EeFfgGaA", "Lg", "<!!!>");
 
-SFMT_FORMAT_FIXER(char, "", "c", "c", "<!!!>");
-SFMT_FORMAT_FIXER(std::string, "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER(const char*, "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER(char*, "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(size_t N, const char (&)[N], "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(size_t N, char (&)[N], "", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(class Type, Type*, "", "p", "p", "<!!!>");
+SFMT_FORMAT_FIXER(char, "-", "c", "c", "<!!!>");
+
+SFMT_FORMAT_FIXER(std::string, "-.", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER(const char*, "-.", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER(char*, "-.", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER_TPL(size_t N, const char (&)[N], "-.", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER_TPL(size_t N, char (&)[N], "-.", "s", "s", "<!!!>");
+SFMT_FORMAT_FIXER_TPL(class Type, Type*, "-", "p", "p", "<!!!>");
 
 #undef SFMT_FORMAT_FIXER_TPL
 #undef SFMT_FORMAT_FIXER
+
+template<size_t N>
+struct const_copy
+{
+    static void copy(char* target, const char *source)
+    {
+        *target = *source;
+        return const_copy<N-1>::copy(target + 1, source + 1);
+    }
+};
+
+template<>
+struct const_copy<1> // 1 because the last item is the terminal '\0'.
+{
+    static void copy(char*, const char *) { } // do nothing, terminal value
+};
+
+// These maps must cover all allowed values, for safety.
+static const char present_int_map[8] = { 'i', 'o', 'x', 'X', 'd', 'd', 'd', 'd'};
+static const char present_float_map[8] = { 'g', 'G', 'a', 'A', 'e', 'E', 'f', 'g' };
+
+}
+
+struct sfmc
+{
+    enum postype { pos_no, pos_plus, pos_space, pos_invalid };
+    enum flavor {
+       flavor_dec = 0,
+       flavor_oct = 1,
+       flavor_hex = 2,
+       flavor_uhex = 3,
+
+       flavor_general = 0,
+       flavor_ugeneral = 1,
+       flavor_fhex = 2,
+       flavor_ufhex = 3,
+       flavor_scientific = 4,
+       flavor_uscientific = 5,
+       flavor_fixed = 6
+    };
+
+protected:
+    short widthval;
+    short precisionval;
+    bool widthbit:1;
+    bool precisionbit:1;
+    bool altbit:1;
+    bool leftbit:1;
+    bool leadzerobit:1;
+    postype postype:2;
+    flavor presentation:3;
+    bool localized:1;
+
+public:
+    sfmc():
+        widthval(0),
+        precisionval(6),
+        widthbit(false),
+        precisionbit(false),
+        altbit(false),
+        leftbit(false),
+        leadzerobit(false),
+        postype(pos_no),
+        presentation(flavor_dec),
+        localized(false)
+    {
+    }
+
+#define SFMTC_TAG(name, body) sfmc& name () { body; return *this; }
+#define SFMTC_TAG_VAL(name, body) sfmc& name (int val) { body; return *this; }
+
+    SFMTC_TAG(alt, altbit = true);
+    SFMTC_TAG(left, leftbit = true);
+    SFMTC_TAG(right, (void)0);
+    SFMTC_TAG_VAL(width, widthbit = true; widthval = abs(val));
+    SFMTC_TAG_VAL(precision, precisionbit = true; precisionval = abs(val));
+    SFMTC_TAG(dec, (void)0);
+    SFMTC_TAG(hex, presentation = flavor_hex);
+    SFMTC_TAG(oct, presentation = flavor_oct);
+    SFMTC_TAG(uhex, presentation = flavor_uhex);
+    SFMTC_TAG(general, (void)0);
+    SFMTC_TAG(ugeneral, presentation = flavor_ugeneral);
+    SFMTC_TAG(fhex, presentation = flavor_fhex);
+    SFMTC_TAG(ufhex, presentation = flavor_ufhex);
+    SFMTC_TAG(exp, presentation = flavor_scientific);
+    SFMTC_TAG(uexp, presentation = flavor_uscientific);
+    SFMTC_TAG(scientific, presentation = flavor_scientific);
+    SFMTC_TAG(uscientific, presentation = flavor_uscientific);
+    SFMTC_TAG(fixed, presentation = flavor_fixed);
+    SFMTC_TAG(nopos, (void)0);
+    SFMTC_TAG(posspace, postype = pos_space);
+    SFMTC_TAG(posplus, postype = pos_plus);
+    SFMTC_TAG(fillzero, leadzerobit = true);
+
+#undef SFMTC_TAG
+#undef SFMTC_TAG_VAL
+
+    // Utility function to store the number for width/precision
+    // For C++11 it could be constexpr, but this is C++03-compat code.
+    // It's bound to this structure because it's unsafe.
+    static size_t store_number(char* position, int number)
+    {
+        size_t shiftpos = 0;
+        div_t dm = div(number, 10);
+        if (dm.quot)
+            shiftpos = store_number(position, dm.quot);
+        position[shiftpos] = '0' + dm.rem;
+        return shiftpos + 1;
+    }
+
+    template<size_t N>
+    internal::form_memory_buffer<> create_format_int(const char (&lnspec)[N]) const
+    {
+        using namespace internal;
+
+        Ensure<int, N >= 2> c3; (void)c3;
+
+        form_memory_buffer<> form;
+
+        // Use reservation as this will be faster and also
+        // we don't know how many ciphers will be taken by width/precision
+        // We need to reserve 12 + 12 + 4 + 4 = 32.
+        char* buf = form.expose(32);
+        size_t used = 0;
+        buf[used++] = '%';
+
+        if (altbit)
+            buf[used++] = '#';
+
+        if (leftbit)
+            buf[used++] = '-';
+
+        if (localized)
+            buf[used++] = '\'';
+
+        if (leadzerobit)
+            buf[used++] = '0';
+
+        if (widthbit)
+        {
+            size_t w = store_number(buf + used, widthval);
+            used += w;
+        }
+
+        // That's it, now we copy the type length modifier
+        const_copy<N-1>::copy(buf + used, lnspec);
+        used += (N - 2);
+
+        // And finally the flavor modifier
+        if (int(presentation) == 0)
+            buf[used++] = lnspec[N-2];
+        else
+            buf[used++] = present_int_map[presentation];
+        buf[used] = '\0';
+
+        size_t unused = 32 - used;
+        if (unused > 0)
+            form.unreserve(unused);
+        form.commit();
+
+        return form;
+    }
+
+    template<size_t N>
+    internal::form_memory_buffer<> create_format_float(const char (&lnspec)[N]) const
+    {
+        using namespace internal;
+        Ensure<int, N >= 2> c3; (void)c3;
+
+        form_memory_buffer<> form;
+
+        // Use reservation as this will be faster and also
+        // we don't know how many ciphers will be taken by width/precision
+        // We need to reserve 12 + 12 + 4 + 4 = 32.
+        char* buf = form.expose(32);
+        size_t used = 0;
+        buf[used++] = '%';
+
+        if (altbit)
+            buf[used++] = '#';
+
+        if (leftbit)
+            buf[used++] = '-';
+
+        if (localized)
+            buf[used++] = '\'';
+
+        if (leadzerobit)
+            buf[used++] = '0';
+
+        if (widthbit)
+        {
+            size_t w = store_number(buf + used, widthval);
+            used += w;
+        }
+
+        if (precisionbit)
+        {
+            buf[used++] = '.';
+            size_t w = store_number(buf + used, precisionval);
+            used += w;
+        }
+
+        // That's it, now we copy the type length modifier
+        const_copy<N-1>::copy(buf + used, lnspec);
+        used += (N - 2);
+
+        // And finally the flavor modifier
+        if (int(presentation) == 0)
+            buf[used++] = lnspec[N-2];
+        else
+            buf[used++] = present_float_map[presentation];
+        buf[used] = '\0';
+
+        size_t unused = 32 - used;
+        if (unused > 0)
+            form.unreserve(unused);
+        form.commit();
+
+        return form;
+    }
+
+    internal::form_memory_buffer<> create_format(int) const { return create_format_int("i"); }
+    internal::form_memory_buffer<> create_format(short int) const { return create_format_int("hi"); };
+    internal::form_memory_buffer<> create_format(long int) const { return create_format_int("li"); };
+    internal::form_memory_buffer<> create_format(long long int) const { return create_format_int("lli"); };
+
+    internal::form_memory_buffer<> create_format(unsigned int) const { return create_format_int("u"); };
+    internal::form_memory_buffer<> create_format(unsigned short int) const { return create_format_int("hu"); };
+    internal::form_memory_buffer<> create_format(unsigned long int) const { return create_format_int("lu"); };
+    internal::form_memory_buffer<> create_format(unsigned long long int) const { return create_format_int("llu"); };
+
+    internal::form_memory_buffer<> create_format(double) const { return create_format_float("g"); };
+    internal::form_memory_buffer<> create_format(float) const { return create_format_float("g"); };
+    internal::form_memory_buffer<> create_format(long double) const { return create_format_float("Lg"); };
+
+    internal::form_memory_buffer<> create_format(char) const
+    {
+        internal::form_memory_buffer<> form;
+        form.append("%c", 3);
+        return form;
+    }
+
+    internal::form_memory_buffer<> create_format_string() const
+    {
+        using namespace internal;
+
+        form_memory_buffer<> form;
+
+        // Use reservation as this will be faster and also
+        // we don't know how many ciphers will be taken by width/precision
+        // We need to reserve 12 + 12 + 4 + 4 = 32.
+        char* buf = form.expose(32);
+        size_t used = 0;
+        buf[used++] = '%';
+
+        if (leftbit)
+            buf[used++] = '-';
+
+        if (widthbit)
+        {
+            size_t w = store_number(buf + used, widthval);
+            used += w;
+        }
+
+        if (precisionbit)
+        {
+            buf[used++] = '.';
+            size_t w = store_number(buf + used, precisionval);
+            used += w;
+        }
+
+        // No modifier supported
+        // XXX NOTE: wchar_t therefore not supported!
+        buf[used++] = 's';
+        buf[used] = '\0';
+
+        size_t unused = 32 - used;
+        if (unused > 0)
+            form.unreserve(unused);
+        form.commit();
+
+        return form;
+    }
+
+    internal::form_memory_buffer<> create_format(char*) const { return create_format_string(); };
+    internal::form_memory_buffer<> create_format(const char*) const { return create_format_string(); };
+    internal::form_memory_buffer<> create_format(std::string) const { return create_format_string(); };
+};
+
+// fmt(val, sfmc().alt().hex().width(10))
+
+namespace internal
+{
 
 template<class Value, class Stream> inline
 void write_default(Stream& str, const Value& val);
@@ -628,24 +918,13 @@ static inline size_t SNPrintfOne(char* buf, size_t bufsize, const char* fmt, con
 {
     return std::snprintf(buf, bufsize, fmt, val.c_str());
 }
-}
 
 template <class Value> inline
-internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
+form_memory_buffer<> sfmt_imp(const Value& val, const form_memory_buffer<>& fstr, size_t bufsize)
 {
-    using namespace internal;
-
-    form_memory_buffer<> fstr = apply_format_fix(val, fmtspec);
     form_memory_buffer<> out;
-    size_t bufsize = form_memory_buffer<>::INITIAL_SIZE;
-
     // Reserve the maximum initial first, then shrink.
     char* buf = out.expose(bufsize);
-
-    // We want to use this buffer as a NUL-terminated string.
-    // So we need to add NUL character oursevles, form_memory_buffer<>
-    // doesn't do it an doesn't use the NUL-termination.
-    fstr.append('\0');
 
     size_t valsize = SNPrintfOne(buf, bufsize, fstr.get_first(), val);
 
@@ -669,6 +948,35 @@ internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
     out.commit();
     return out;
 }
+}
+
+template <class Value> inline
+internal::form_memory_buffer<> sfmt(const Value& val, const char* fmtspec = 0)
+{
+    using namespace internal;
+
+    form_memory_buffer<> fstr = apply_format_fix(val, fmtspec);
+    size_t bufsize = form_memory_buffer<>::INITIAL_SIZE;
+
+    // We want to use this buffer as a NUL-terminated string.
+    // So we need to add NUL character oursevles, form_memory_buffer<>
+    // doesn't do it an doesn't use the NUL-termination.
+    fstr.append('\0');
+
+    return sfmt_imp(val, fstr, bufsize);
+}
+
+template <class Value> inline
+internal::form_memory_buffer<> sfmt(const Value& val, const sfmc& config)
+{
+    using namespace internal;
+
+    form_memory_buffer<> fstr = config.create_format(val);
+    size_t bufsize = form_memory_buffer<>::INITIAL_SIZE;
+    return sfmt_imp(val, fstr, bufsize);
+}
+
+
 
 namespace internal
 {
@@ -677,21 +985,16 @@ void write_default(Stream& s, const Value& v)
 {
     s << sfmt(v, "");
 }
-}
 
 
-template <class Value>
-std::string sfmts(const Value& val, const char* fmtspec = 0)
+inline void sfmts_imp(const internal::form_memory_buffer<>& b, std::string& out)
 {
     using namespace internal;
 
-    std::string out;
-    form_memory_buffer<> b = sfmt(val, fmtspec);
     if (b.size() == 0)
-        return out;
+        return;
 
     out.reserve(b.size());
-
     out.append(b.get_first(), b.first_size());
     for (form_memory_buffer<>::slices_t::const_iterator i = b.get_slices().begin();
             i != b.get_slices().end(); ++i)
@@ -699,9 +1002,25 @@ std::string sfmts(const Value& val, const char* fmtspec = 0)
         const char* data = &(*i)[0];
         out.append(data, i->size());
     }
+}
+}
 
+template <class Value>
+inline std::string sfmts(const Value& val, const char* fmtspec = 0)
+{
+    std::string out;
+    internal::sfmts_imp(sfmt(val, fmtspec), (out));
     return out;
 }
+
+template <class Value>
+inline std::string sfmts(const Value& val, const sfmc& fmtspec)
+{
+    std::string out;
+    internal::sfmts_imp(sfmt(val, fmtspec), (out));
+    return out;
+}
+
 
 // Semi-manipulator to add the end-of-line.
 const internal::form_memory_buffer<2> seol ("\n");
