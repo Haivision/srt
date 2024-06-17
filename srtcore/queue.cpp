@@ -1130,7 +1130,7 @@ srt::CRcvQueue::CRcvQueue()
     , m_szPayloadSize()
     , m_bClosing(false)
     , m_LSLock()
-    , m_pListener() /*YOM TODO : Constructor */
+    , m_pListener() 
     , m_pRendezvousQueue(NULL)
     , m_vNewEntry()
     , m_IDLock()
@@ -1692,7 +1692,6 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
 int srt::CRcvQueue::setListener(CUDT* u)
 {
-    //ScopedLock lslock(m_LSLock);
     m_pListener.lockWrite();
     if (NULL != m_pListener.udt)
     {
