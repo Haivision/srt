@@ -907,17 +907,23 @@ public:
 
 namespace internal
 {
+#if defined(_MSC_VER) && _MSC_VER < 1900
+#define FMT_SYM_SNPRINTF _snprintf
+#define FMT_SIZE_SNPRINTF(bufsize) (bufsize-1)
+#else
+#define FMT_SYM_SNPRINTF std::snprintf
+#define FMT_SIZE_SNPRINTF(bufsize) bufsize
+#endif
+
 template<class ValueType>
 static inline size_t SNPrintfOne(char* buf, size_t bufsize, const char* fmt, const ValueType& val)
-{
-    return std::snprintf(buf, bufsize, fmt, val);
-}
-
+{ return FMT_SYM_SNPRINTF (buf, FMT_SIZE_SNPRINTF(bufsize), fmt, val); }
 
 static inline size_t SNPrintfOne(char* buf, size_t bufsize, const char* fmt, const std::string& val)
-{
-    return std::snprintf(buf, bufsize, fmt, val.c_str());
-}
+{ return FMT_SYM_SNPRINTF(buf, FMT_SIZE_SNPRINTF(bufsize), fmt, val.c_str()); }
+
+#undef FMT_SYM_SNPRINTF
+#undef FMT_SIZE_SNPRINTF
 
 template <class Value> inline
 form_memory_buffer<> sfmt_imp(const Value& val, const form_memory_buffer<>& fstr, size_t bufsize)

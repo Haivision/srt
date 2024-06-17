@@ -11,17 +11,17 @@
 #ifndef INC_SRT_COMMON_TRANMITBASE_HPP
 #define INC_SRT_COMMON_TRANMITBASE_HPP
 
-#include <atomic>
 #include <string>
 #include <memory>
 #include <vector>
 #include <iostream>
 #include <stdexcept>
 
+#include "sync.h"
 #include "uriparser.hpp"
 
 typedef std::vector<char> bytevector;
-extern std::atomic<bool> transmit_throw_on_interrupt;
+extern srt::sync::atomic<bool> transmit_throw_on_interrupt;
 extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern size_t transmit_chunk_size;
