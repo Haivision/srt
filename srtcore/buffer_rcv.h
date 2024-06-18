@@ -208,14 +208,14 @@ const int CPos_TRAP = -1;
 //      NOTE: in scrap region, the first cell is empty and the last one filled.
 //   SPARE REGION: Region without packets
 //
-//           |      BUSY REGION                  | 
-//           |           |                       |             |
-//           |    ICR    |  SCRAP REGION         | SPARE REGION...->
-//   ......->|           |                       |             |
-//           |       FIRST-GAP                   |             |
+//           |      BUSY REGION                      | 
+//           |           |                           |           |
+//           |    ICR    |  SCRAP REGION             | SPARE REGION...->
+//   ......->|           |                           |           |
+//           |             /FIRST-GAP                |           |
 //   |<------------------- m_szSize ---------------------------->|
 //   |       |<------------ m_iMaxPosOff ----------->|           |
-//   |       |           |                       |   |           |
+//   |       |           |                           |   |       |
 //   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
 //   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
 //   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+

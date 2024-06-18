@@ -435,6 +435,20 @@ void CRcvBuffer::updateGapInfo()
         m_iDropOff = 0;
         if (m_iEndOff < m_iMaxPosOff)
         {
+            CPos start = incPos(m_iStartPos, m_iEndOff + 1),
+                 end = incPos(m_iStartPos, m_iEndOff);
+
+            for (CPos i = start; i != end; i = incPos(i))
+            {
+                if (m_entries[i].status == EntryState_Avail)
+                {
+                    m_iDropOff = offPos(m_iStartPos, i);
+                    break;
+                }
+            }
+
+            /* OPTIMIZED, but buggy.
+
             int maxend = m_szSize - m_iStartPos VALUE;
             int ifrom = m_iEndOff + 1;
             int ito = m_iMaxPosOff VALUE;
@@ -463,6 +477,7 @@ void CRcvBuffer::updateGapInfo()
                     }
                 }
             }
+            */
 
             // Must be found somewhere, worst case at the position
             // of m_iMaxPosOff-1. If no finding loop caught it somehow,
