@@ -342,7 +342,7 @@ struct LogDispatcher::Proxy
     template <class T>
     Proxy& operator<<(const srt::sync::atomic<T>& arg)
     {
-        if ( that_enabled )
+        if (that_enabled)
         {
             os << arg.load();
         }
@@ -376,9 +376,9 @@ struct LogDispatcher::Proxy
 
     ~Proxy()
     {
-        if ( that_enabled )
+        if (that_enabled)
         {
-            if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
+            if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
                 os << fmt::seol;
             that.SendLogLine(i_file, i_line, area, os.str());
         }

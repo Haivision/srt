@@ -430,8 +430,8 @@ public:
     SFMTC_TAG(alt, altbit = true);
     SFMTC_TAG(left, leftbit = true);
     SFMTC_TAG(right, (void)0);
-    SFMTC_TAG_VAL(width, widthbit = true; widthval = abs(val));
-    SFMTC_TAG_VAL(precision, precisionbit = true; precisionval = abs(val));
+    SFMTC_TAG_VAL(width, widthbit = true; widthval = std::abs(val));
+    SFMTC_TAG_VAL(precision, precisionbit = true; precisionval = std::abs(val));
     SFMTC_TAG(dec, (void)0);
     SFMTC_TAG(hex, presentation = flavor_hex);
     SFMTC_TAG(oct, presentation = flavor_oct);

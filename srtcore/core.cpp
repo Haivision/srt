@@ -89,11 +89,12 @@ using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 using fmt::sfmt;
+using fmt::sfmc;
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
-static const char onoff[2] = {'-', '+'};
+static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -1777,10 +1778,10 @@ bool srt::CUDT::createSrtHandshake(
             LOGC(cnlog.Error,
                  log << CONID() << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
                      << " Socket state: "
-                     << onoff[m_bConnected] << "connected, "
-                     << onoff[m_bConnecting] << "connecting, "
-                     << onoff[m_bBroken] << "broken, "
-                     << onoff[m_bClosing] << "closing.");
+                     << fmt_onoff(m_bConnected) << "connected, "
+                     << fmt_onoff(m_bConnecting) << "connecting, "
+                     << fmt_onoff(m_bBroken) << "broken, "
+                     << fmt_onoff(m_bClosing) << "closing.");
             return false;
         }
 
@@ -4109,11 +4110,11 @@ EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatas
             LOGC(cnlog.Error,
                  log << CONID() << "IPE: craftKmResponse needs to send KM, but CryptoControl does not exist."
                      << " Socket state: "
-                     << onoff[m_bConnected] << "connected, "
-                     << onoff[m_bConnecting] << "connecting, "
-                     << onoff[m_bBroken] << "broken, "
-                     << onoff[m_bOpened] << "opened, "
-                     << onoff[m_bClosing] << "closing.");
+                     << fmt_onoff(m_bConnected) << "connected, "
+                     << fmt_onoff(m_bConnecting) << "connecting, "
+                     << fmt_onoff(m_bBroken) << "broken, "
+                     << fmt_onoff(m_bOpened) << "opened, "
+                     << fmt_onoff(m_bClosing) << "closing.");
             return CONN_REJECT;
         }
         // This is a periodic handshake update, so you need to extract the KM data from the
@@ -7777,7 +7778,8 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
-                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow=" << sfmt(cgwindow, ".3"));
+                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
+                  << sfmt(cgwindow, sfmc().precision(3)));
 #endif
     }
 
