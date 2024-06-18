@@ -148,8 +148,6 @@ struct COff
     operator bool() const { return value != 0; }
 };
 
-#define VALUE .val()
-
 #if USE_OPERATORS
 
 inline CPos operator+(const CPos& pos, COff off)
@@ -194,7 +192,6 @@ inline CSeqNo operator-(CSeqNo seq, COff off)
 const CPos CPos_TRAP (-1);
 
 #else
-#define VALUE
 typedef int CPos;
 typedef int COff;
 const int CPos_TRAP = -1;
@@ -679,11 +676,11 @@ public: // Used for testing
 
 private:
     //*
-    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos VALUE + inc VALUE) % m_szSize); }
-    CPos decPos(CPos pos) const { return (pos VALUE - 1) >= 0 ? CPos(pos VALUE - 1) : CPos(m_szSize - 1); }
+    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_szSize); }
+    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_szSize - 1); }
     COff offPos(CPos pos1, CPos pos2) const
     {
-        int diff = pos2 VALUE - pos1 VALUE;
+        int diff = pos2 - pos1;
         if (diff >= 0)
         {
             return COff(diff);
@@ -695,7 +692,7 @@ private:
 
     static COff decOff(COff val, int shift)
     {
-        int ival = val VALUE - shift;
+        int ival = val - shift;
         if (ival < 0)
             return COff(0);
         return COff(ival);
@@ -722,14 +719,13 @@ private:
         if (iFirstNonreadPos == iStartPos)
             return true;
 
-        const CPos iLastPos = CPos((iStartPos VALUE + iMaxPosOff VALUE) % int(iSize));
-        //const CPos iLastPos = iStartPos + iMaxPosOff;
-        const bool isOverrun = iLastPos VALUE < iStartPos VALUE;
+        const CPos iLastPos = CPos((iStartPos + iMaxPosOff) % int(iSize));
+        const bool isOverrun = iLastPos < iStartPos;
 
         if (isOverrun)
-            return iFirstNonreadPos VALUE > iStartPos VALUE || iFirstNonreadPos VALUE <= iLastPos VALUE;
+            return iFirstNonreadPos > iStartPos || iFirstNonreadPos <= iLastPos;
 
-        return iFirstNonreadPos VALUE > iStartPos VALUE && iFirstNonreadPos VALUE <= iLastPos VALUE;
+        return iFirstNonreadPos > iStartPos && iFirstNonreadPos <= iLastPos;
     }
 
     bool isInUsedRange(CPos iFirstNonreadPos)
@@ -738,11 +734,11 @@ private:
             return true;
 
         // DECODE the iFirstNonreadPos
-        int diff = iFirstNonreadPos VALUE - m_iStartPos VALUE;
+        int diff = iFirstNonreadPos - m_iStartPos;
         if (diff < 0)
             diff += m_szSize;
 
-        return diff <= m_iMaxPosOff VALUE;
+        return diff <= m_iMaxPosOff;
     }
 
     // NOTE: Assumes that pUnit != NULL
