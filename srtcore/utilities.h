@@ -237,17 +237,20 @@ written by
 
 #endif
 
-// Hardware <--> Network (big endian) convention
+/// Hardware --> Network (big-endian) byte order conversion
+/// @param size source length in four octets
 inline void HtoNLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = htonl(src[i]);
+        dst[i] = htobe32(src[i]);
 }
 
+/// Network (big-endian) --> Hardware byte order conversion
+/// @param size source length in four octets
 inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = ntohl(src[i]);
+        dst[i] = be32toh(src[i]);
 }
 
 // Hardware <--> Intel (little endian) convention

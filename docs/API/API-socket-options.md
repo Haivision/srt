@@ -58,7 +58,7 @@ Exchange for the initial key is done in the handshake.
 
 - `SRT_KM_S_SECURED` (`2`): KM exchange was successful and the data will be sent
 encrypted and will be decrypted by the receiver. This state is only possible on
-both sides in both directions simultaneously.
+both sides in both directions simultaneously. Any unencrypted packet will be dropped by the receiver.
 
 - `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`),
 then it means that the sending party has set a passphrase, but the peer did not.

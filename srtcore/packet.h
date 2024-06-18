@@ -331,8 +331,10 @@ public:
     };
 
 public:
-    void toNL();
-    void toHL();
+    /// @brief Convert the packet inline to a network byte order (Little-endian).
+    void toNetworkByteOrder();
+	/// @brief Convert the packet inline to a host byte order.
+    void toHostByteOrder();
 
 protected:
     // DynamicStruct is the same as array of given type and size, just it

@@ -656,6 +656,9 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
                     << " to that socket (" << ns->m_SocketID << ")");
             m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
+
+            LOGC(cnlog.Note, log << "@" << ns->m_SocketID << " connection on listener @" << listen
+                << " (" << ns->m_SelfAddr.str() << ") from peer @" << ns->m_PeerID << " (" << peer.str() << ")");
         }
         catch (...)
         {
@@ -763,7 +766,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         enterCS(ls->m_AcceptLock);
         try
         {
-            ls->m_QueuedSockets.insert(ns->m_SocketID);
+            ls->m_QueuedSockets[ns->m_SocketID] = ns->m_PeerAddr;
         }
         catch (...)
         {
@@ -1107,8 +1110,22 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         }
         else if (ls->m_QueuedSockets.size() > 0)
         {
-            set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
-            u                          = *b;
+            map<SRTSOCKET, sockaddr_any>::iterator b = ls->m_QueuedSockets.begin();
+
+            if (pw_addr != NULL && pw_addrlen != NULL)
+            {
+                // Check if the length of the buffer to fill the name in
+                // was large enough.
+                const int len = b->second.size();
+                if (*pw_addrlen < len)
+                {
+                    // In case when the address cannot be rewritten,
+                    // DO NOT accept, but leave the socket in the queue.
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                }
+            }
+
+            u = b->first;
             ls->m_QueuedSockets.erase(b);
             accepted = true;
         }
@@ -1179,14 +1196,8 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 
     if (pw_addr != NULL && pw_addrlen != NULL)
     {
-        // Check if the length of the buffer to fill the name in
-        // was large enough.
-        const int len = s->m_PeerAddr.size();
-        if (*pw_addrlen < len)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        memcpy((pw_addr), &s->m_PeerAddr, len);
-        *pw_addrlen = len;
+        memcpy((pw_addr), s->m_PeerAddr.get(), s->m_PeerAddr.size());
+        *pw_addrlen = s->m_PeerAddr.size();
     }
 
     return u;
@@ -2748,23 +2759,24 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 
         // if it is a listener, close all un-accepted sockets in its queue
         // and remove them later
-        for (set<SRTSOCKET>::iterator q = s->m_QueuedSockets.begin(); q != s->m_QueuedSockets.end(); ++q)
+        for (map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.begin();
+                q != s->m_QueuedSockets.end(); ++ q)
         {
-            sockets_t::iterator si = m_Sockets.find(*q);
+            sockets_t::iterator si = m_Sockets.find(q->first);
             if (si == m_Sockets.end())
             {
                 // gone in the meantime
                 LOGC(smlog.Error,
-                     log << "removeSocket: IPE? socket @" << (*q) << " being queued for listener socket @"
-                         << s->m_SocketID << " is GONE in the meantime ???");
+                     log << "removeSocket: IPE? socket @" << (q->first) << " being queued for listener socket @"
+                        << s->m_SocketID << " is GONE in the meantime ???");
                 continue;
             }
 
             CUDTSocket* as = si->second;
 
             as->breakSocket_LOCKED();
-            m_ClosedSockets[*q] = as;
-            m_Sockets.erase(*q);
+            m_ClosedSockets[q->first] = as;
+            m_Sockets.erase(q->first);
         }
     }
 
@@ -2926,7 +2938,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         bool reuse_attempt = false;
         for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
         {
-            CMultiplexer& m = i->second;
+            CMultiplexer const& m = i->second;
 
             // First, we need to find a multiplexer with the same port.
             if (m.m_iPort != port)

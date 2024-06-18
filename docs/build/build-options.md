@@ -597,8 +597,8 @@ remember that:
 
 Encryption library to be used. Possible options for `<name>`:
 
-* openssl (default)
-* openssl-evp (OpenSSL EVP API, since 1.5.1)
+* openssl-evp (default)
+* openssl 
 * gnutls (with nettle)
 * mbedtls
 * botan

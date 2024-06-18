@@ -207,6 +207,8 @@ const int CPos_TRAP = -1;
 //   SCRAP REGION: Region with possibly filled or empty cells
 //      NOTE: in scrap region, the first cell is empty and the last one filled.
 //   SPARE REGION: Region without packets
+//
+//           |      BUSY REGION                  | 
 //           |           |                       |             |
 //           |    ICR    |  SCRAP REGION         | SPARE REGION...->
 //   ......->|           |                       |             |
@@ -479,8 +481,8 @@ public:
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
-    /// @return  number of dropped packets.
-    int dropUpTo(int32_t seqno);
+    /// @return number of dropped (missing) and discarded (available) packets as a pair(dropped, discarded).
+    std::pair<int, int> dropUpTo(int32_t seqno);
 
     /// @brief Drop all the packets in the receiver buffer.
     /// The starting position and seqno are shifted right after the last packet in the buffer.
@@ -626,6 +628,20 @@ public:
         return (m_iMaxPosOff == COff(0));
     }
 
+    /// Returns the currently used number of cells, including
+    /// gaps with empty cells, or in other words, the distance
+    /// between the initial position and the youngest received packet.
+    size_t size() const
+    {
+        return m_iMaxPosOff;
+    }
+
+    // Returns true if the buffer is full. Requires locking.
+    bool full() const
+    {
+        return size() == capacity();
+    }
+
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
     /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
@@ -633,20 +649,6 @@ public:
     size_t capacity() const
     {
         return m_szSize - 1;
-    }
-
-    /// Returns the currently used number of cells, including
-    /// gaps with empty cells, or in other words, the distance
-    /// between the initial position and the youngest received packet.
-    size_t size() const
-    {
-        return size_t(m_iMaxPosOff VALUE);
-    }
-
-    // Returns true if the buffer is full. Requires locking.
-    bool full() const
-    {
-        return size() == capacity();
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -824,9 +826,7 @@ private:
         EntryStatus status;
     };
 
-    //static Entry emptyEntry() { return Entry { NULL, EntryState_Empty }; }
-
-    typedef FixedArray<Entry, CPos> entries_t;
+    typedef FixedArray<Entry> entries_t;
     entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)

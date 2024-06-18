@@ -153,7 +153,7 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
-    std::set<SRTSOCKET> m_QueuedSockets; //< set of connections waiting for accept()
+    std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
 
     sync::Condition m_AcceptCond; //< used to block "accept" call
     sync::Mutex     m_AcceptLock; //< mutex associated to m_AcceptCond
