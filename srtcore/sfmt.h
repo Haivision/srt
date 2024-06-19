@@ -15,7 +15,8 @@
 
 #include <cstdio>
 #include <cstring>
-#include <cmath>
+#include <cmath> // std::abs
+#include <cstdlib> // std::div
 #include <string>
 #include <vector>
 #include <list>
