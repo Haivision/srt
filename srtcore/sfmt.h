@@ -260,8 +260,8 @@ form_memory_buffer<> fix_format(const char* fmt,
     // All these arrays must contain at least 2 elements,
     // that is one character and terminating zero.
     //Ensure<int, N1 >= 2> c1;
-    Ensure<int, N2 >= 2> c2; (void)c2;
-    Ensure<int, N3 >= 2> c3; (void)c3;
+    Ensure<int, (N2 >= 2)> c2; (void)c2;
+    Ensure<int, (N3 >= 2)> c3; (void)c3;
 
     form_memory_buffer<> buf;
     buf.append('%');
@@ -311,7 +311,7 @@ form_memory_buffer<> fix_format(const char* fmt,
 inline form_memory_buffer<> apply_format_fix(TYPE, const char* fmt) \
 { \
     return fix_format(fmt, ALLOWED, TYPED, DEFTYPE, WARN); \
-} 
+}
 
 #define SFMT_FORMAT_FIXER_TPL(TPAR, TYPE, ALLOWED, TYPED, DEFTYPE, WARN) \
 template<TPAR>\
@@ -456,10 +456,10 @@ public:
     // Utility function to store the number for width/precision
     // For C++11 it could be constexpr, but this is C++03-compat code.
     // It's bound to this structure because it's unsafe.
-    static size_t store_number(char* position, int number)
+    static std::size_t store_number(char* position, int number)
     {
-        size_t shiftpos = 0;
-        div_t dm = div(number, 10);
+        std::size_t shiftpos = 0;
+        std::div_t dm = std::div(number, 10);
         if (dm.quot)
             shiftpos = store_number(position, dm.quot);
         position[shiftpos] = '0' + dm.rem;
@@ -471,7 +471,7 @@ public:
     {
         using namespace internal;
 
-        Ensure<int, N >= 2> c3; (void)c3;
+        Ensure<int, (N >= 2)> c3; (void)c3;
 
         form_memory_buffer<> form;
 
