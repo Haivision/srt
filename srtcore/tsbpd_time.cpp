@@ -38,6 +38,7 @@ public:
                int64_t                                    drift_sample,
                int64_t                                    drift,
                int64_t                                    overdrift,
+               int64_t                                    cumulativeoverdrift,
                const srt::sync::steady_clock::time_point& pkt_base,
                const srt::sync::steady_clock::time_point& tsbpd_base)
     {
@@ -61,6 +62,7 @@ public:
         m_fout << drift_sample << ",";
         m_fout << drift << ",";
         m_fout << overdrift << ",";
+        m_fout << cumulativeoverdrift << ",";
         m_fout << str_pkt_base << ",";
         m_fout << str_tbase << "\n";
         m_fout.flush();
@@ -70,7 +72,7 @@ private:
     void print_header()
     {
         m_fout << "usElapsedStd,usAckAckTimestampStd,";
-        m_fout << "usRTTStd,usDriftSampleStd,usDriftStd,usOverdriftStd,tsPktBase,TSBPDBase\n";
+        m_fout << "usRTTStd,usDriftSampleStd,usDriftStd,usOverdriftStd,usCumulativeOverdriftStd,tsPktBase,TSBPDBase\n";
     }
 
     void create_file()
@@ -150,6 +152,7 @@ bool CTsbpdTime::addDriftSample(uint32_t usPktTimestamp, const time_point& tsPkt
                          count_microseconds(tdDrift),
                          m_DriftTracer.drift(),
                          m_DriftTracer.overdrift(),
+                         m_DriftTracer.cumulativeoverdrift(),
                          tsPktBaseTime,
                          m_tsTsbPdTimeBase);
 #endif
