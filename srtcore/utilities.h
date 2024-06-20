@@ -35,6 +35,7 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -236,17 +237,20 @@ written by
 
 #endif
 
-// Hardware <--> Network (big endian) convention
+/// Hardware --> Network (big-endian) byte order conversion
+/// @param size source length in four octets
 inline void HtoNLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = htonl(src[i]);
+        dst[i] = htobe32(src[i]);
 }
 
+/// Network (big-endian) --> Hardware byte order conversion
+/// @param size source length in four octets
 inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = ntohl(src[i]);
+        dst[i] = be32toh(src[i]);
 }
 
 // Hardware <--> Intel (little endian) convention
@@ -413,7 +417,7 @@ struct DynamicStruct
 /// Fixed-size array template class.
 namespace srt {
 
-template <class T>
+template <class T, class Indexer = size_t>
 class FixedArray
 {
 public:
@@ -429,22 +433,23 @@ public:
     }
 
 public:
-    const T& operator[](size_t index) const
+    const T& operator[](Indexer index) const
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    T& operator[](size_t index)
+    T& operator[](Indexer index)
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
+    /*
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
@@ -460,6 +465,7 @@ public:
 
         return m_entries[index];
     }
+    */
 
     size_t size() const { return m_size; }
 
@@ -575,7 +581,7 @@ inline Stream& Print(Stream& in) { return in;}
 template <class Stream, class Arg1, class... Args>
 inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 {
-    sout << arg1;
+    sout << std::forward<Arg1>(arg1);
     return Print(sout, args...);
 }
 

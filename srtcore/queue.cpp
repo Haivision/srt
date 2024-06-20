@@ -1410,7 +1410,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
         ScopedLock cg(m_LSLock);
         if (m_pListener)
         {
-            LOGC(cnlog.Note, log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
+            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
@@ -1429,8 +1429,8 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
 
     if (have_listener) // That is, the above block with m_pListener->processConnectRequest was executed
     {
-        LOGC(cnlog.Note,
-             log << CONID() << "Listener managed the connection request from: " << addr.str()
+        LOGC(cnlog.Debug,
+             log << CONID() << "Listener got the connection request from: " << addr.str()
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }

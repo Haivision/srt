@@ -707,6 +707,7 @@ private:
     void skipMemberLoss(int32_t seqno);
 #endif
     SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
@@ -768,11 +769,18 @@ private:
     // TSBPD thread main function.
     static void* tsbpd(void* param);
 
+    enum DropReason
+    {
+        DROP_TOO_LATE, //< Drop to keep up to the live pace (TLPKTDROP).
+        DROP_DISCARD   //< Drop because another group member already provided these packets.
+    };
+
     /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
+    /// @param reason A reason for dropping (see @a DropReason).
     /// @return The number of packets dropped.
-    int rcvDropTooLateUpTo(int seqno);
+    int rcvDropTooLateUpTo(int seqno, DropReason reason = DROP_TOO_LATE);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
@@ -995,7 +1003,7 @@ private: // Receiving related data
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    sync::atomic<bool> m_bWakeOnRecv;            // Expected to be woken up when received a packet
+    sync::atomic<bool> m_bTsbPdNeedsWakeup;      // Expected to wake up TSBPD when a read-ready data packet is received.
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1182,12 +1190,6 @@ private: // Generation and processing of packets
     int processConnectRequest(const sockaddr_any& addr, CPacket& packet);
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
-
-#if ENABLE_BONDING
-    /// @brief Drop packets in the recv buffer behind group_recv_base.
-    /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
-    void dropToGroupRecvBase();
-#endif
 
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 

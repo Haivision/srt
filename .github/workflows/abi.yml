@@ -1,0 +1,61 @@
+name: ABI checks
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  SRT_BASE: v1.5.0
+
+jobs:
+  build:
+    name: ABI checks
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        path: pull_request
+    - name: configure
+      run: |
+        cd pull_request
+        mkdir _build && cd _build
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+    - name: build
+      run: |
+        sudo apt install -y abi-dumper
+        cd pull_request/_build && cmake --build ./
+        make install DESTDIR=./installdir
+        SRT_TAG_VERSION=$(cat version.h |grep SRT_VERSION_MINOR |head -n1 |awk {'print $3'})
+        abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver 0
+        SRT_BASE="v1.$SRT_TAG_VERSION.0"
+        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
+    - uses: actions/checkout@v3
+      with:
+        path: tag
+        ref: ${{ env.SRT_BASE }}
+    - name: configure_tag
+      run: |
+        echo $SRT_TAG_VERSION
+        cd tag
+        mkdir _build && cd _build
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+    - name: build_tag
+      run: |
+        cd tag      
+        cd _build && cmake --build ./
+        make install DESTDIR=./installdir
+        abi-dumper libsrt.so -o libsrt-tag.dump -public-headers installdir/usr/local/include/srt/ -lver 1
+    - name: abi-check
+      run: |
+         git clone https://github.com/lvc/abi-compliance-checker.git
+         cd abi-compliance-checker && sudo make install && cd ../
+         abi-compliance-checker -l libsrt -old tag/_build/libsrt-tag.dump -new pull_request/_build/libsrt-pr.dump
+         RES=$?
+         if (( $RES != 0 ))
+          then
+            echo "ABI/API Compatibility check failed with value $?"
+            exit $RES
+          fi

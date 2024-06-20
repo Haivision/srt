@@ -302,7 +302,7 @@ void srt::CUDT::construct()
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
     m_bTsbPd              = false;
-    m_bWakeOnRecv         = false;
+    m_bTsbPdNeedsWakeup   = false;
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
     m_bBufferWasFull      = false;
@@ -2108,9 +2108,9 @@ int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint
         return SRT_CMD_NONE;
     }
 
-    LOGC(cnlog.Note, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
-                         << hex << " vers=0x" << srtdata[SRT_HS_VERSION] << " opts=0x" << srtdata[SRT_HS_FLAGS]
-                         << dec << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
+    LOGC(cnlog.Debug, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
+                          << hex << " vers=0x" << srtdata[SRT_HS_VERSION] << " opts=0x" << srtdata[SRT_HS_FLAGS]
+                          << dec << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
     m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
     m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
@@ -4969,8 +4969,9 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     }
 
     */
-
-    LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
+    
+    LOGC(cnlog.Note, log << CONID() << "Connection established from ("
+        << m_SourceAddr.str() << ") to peer @" << m_PeerID << " (" << m_PeerAddr.str() << ")");
 
     return CONN_ACCEPT;
 }
@@ -5411,7 +5412,7 @@ void * srt::CUDT::tsbpd(void* param)
     CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
     CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
-    self->m_bWakeOnRecv = true;
+    self->m_bTsbPdNeedsWakeup = true;
     while (!self->m_bClosing)
     {
         steady_clock::time_point tsNextDelivery; // Next packet delivery time
@@ -5436,10 +5437,10 @@ void * srt::CUDT::tsbpd(void* param)
         else
         {
             HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: %"
-                    << info.seqno << " T=" << FormatTime(tsNextDelivery)
-                    << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
-                    << " ready=" << is_time_to_deliver
-                    << " ondrop=" << info.seq_gap);
+                << info.seqno << " T=" << FormatTime(tsNextDelivery)
+                << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
+                << " ready=" << is_time_to_deliver
+                << " ondrop=" << info.seq_gap);
         }
 #endif
 
@@ -5485,8 +5486,8 @@ void * srt::CUDT::tsbpd(void* param)
         if (rxready)
         {
             HLOGC(tslog.Debug,
-                log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
-                << FormatDuration<DUNIT_MS>(steady_clock::now() - info.tsbpd_time) << ")");
+                  log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
+                      << FormatDuration<DUNIT_MS>(steady_clock::now() - info.tsbpd_time) << ")");
             /*
              * There are packets ready to be delivered
              * signal a waiting "recv" call if there is any data available
@@ -5545,11 +5546,11 @@ void * srt::CUDT::tsbpd(void* param)
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
-        SRT_ATR_UNUSED bool wakeup_on_signal = true;
-
         // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
         if (self->m_bClosing)
             break;
+
+        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
 
         if (!is_zero(tsNextDelivery))
         {
@@ -5558,12 +5559,12 @@ void * srt::CUDT::tsbpd(void* param)
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bWakeOnRecv = false;
+            self->m_bTsbPdNeedsWakeup = false;
             HLOGC(tslog.Debug,
-                log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
-                << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
+                  log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
+                      << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            wakeup_on_signal = tsbpd_cc.wait_until(tsNextDelivery);
+            bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
         }
         else
@@ -5580,14 +5581,15 @@ void * srt::CUDT::tsbpd(void* param)
              * - Closing the connection
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bWakeOnRecv = true;
+            self->m_bTsbPdNeedsWakeup = true;
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
         }
 
-        HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (wakeup_on_signal ? "signal" : "timeout") << "]!!! - "
-                << "NOW=" << FormatTime(steady_clock::now()));
+        HLOGC(tslog.Debug,
+              log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+                  << "NOW=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
@@ -5595,7 +5597,7 @@ void * srt::CUDT::tsbpd(void* param)
 }
 
 // This is to be called from tsbpd().
-int srt::CUDT::rcvDropTooLateUpTo(int seqno)
+int srt::CUDT::rcvDropTooLateUpTo(int seqno, DropReason reason)
 {
     // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
     if (CSeqNo::seqcmp(seqno, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
@@ -5603,16 +5605,22 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno)
 
     dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
 
-    const int iDropCnt = m_pRcvBuffer->dropUpTo(seqno);
-    if (iDropCnt > 0)
+    const std::pair<int, int> iDropDiscardedPkts = m_pRcvBuffer->dropUpTo(seqno);
+    const int iDropCnt = iDropDiscardedPkts.first;
+    const int iDiscardedCnt = iDropDiscardedPkts.second;
+    const int iDropCntTotal = iDropCnt + iDiscardedCnt;
+
+    // In case of DROP_TOO_LATE discarded packets should also be counted because they are not read from another member socket.
+    const int iDropStatCnt = (reason == DROP_DISCARD) ? iDropCnt : iDropCntTotal;
+    if (iDropStatCnt > 0)
     {
         enterCS(m_StatsLock);
         // Estimate dropped bytes from average payload size.
         const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropStatCnt * avgpayloadsz, (uint32_t)iDropStatCnt));
         leaveCS(m_StatsLock);
     }
-    return iDropCnt;
+    return iDropCntTotal;
 }
 
 void srt::CUDT::setInitialRcvSeq(int32_t isn)
@@ -5723,14 +5731,6 @@ void srt::CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
 void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setting up data according to handshake");
-#if ENABLE_BONDING
-    // Keep the group alive for the lifetime of this function,
-    // and do it BEFORE acquiring m_ConnectionLock to avoid
-    // lock inversion.
-    // This will check if a socket belongs to a group and if so
-    // it will remember this group and keep it alive here.
-    CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
-#endif
 
     ScopedLock cg(m_ConnectionLock);
 
@@ -5817,6 +5817,16 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         w_hs.m_iReqType = URQFailure(m_RejectReason);
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
+
+#if ENABLE_BONDING
+    // The socket and the group are only linked to each other after interpretSrtHandshake(..) has been called.
+    // Keep the group alive for the lifetime of this function,
+    // and do it BEFORE acquiring m_ConnectionLock to avoid
+    // lock inversion.
+    // This will check if a socket belongs to a group and if so
+    // it will remember this group and keep it alive here.
+    CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
+#endif
 
     if (!prepareBuffers(NULL))
     {
@@ -6975,15 +6985,15 @@ bool srt::CUDT::isRcvBufferReady() const
     return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
+bool srt::CUDT::isRcvBufferReadyNoLock() const
+{
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
 bool srt::CUDT::isRcvBufferFull() const
 {
     ScopedLock lck(m_RcvBufferLock);
     return m_pRcvBuffer->full();
-}
-
-bool srt::CUDT::isRcvBufferReadyNoLock() const
-{
-    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
 }
 
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
@@ -7860,7 +7870,6 @@ void srt::CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
-
 namespace srt {
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
@@ -8052,14 +8061,13 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
         LOGP(cnlog.Error, "IPE: ack can't be sent, buffer doesn't exist and no group membership");
         return false;
     }
-    {
-        ScopedLock buflock (m_RcvBufferLock);
-        bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
-        if (has_followers)
-            w_log_reason = "first lost";
-        else
-            w_log_reason = "expected next";
-    }
+
+    ScopedLock buflock (m_RcvBufferLock);
+    bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
+    if (has_followers)
+        w_log_reason = "first lost";
+    else
+        w_log_reason = "expected next";
     HLOGC(xtlog.Debug, log << CONID() << "NONCONT-SEQUENCE: " << w_log_reason << " %" << w_seq);
     return true;
 }
@@ -8085,7 +8093,6 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     // NOTE: the below calls do locking on m_RcvBufferLock.
     // Hence up to the handling of lite ACK, the scoped lock is not applied.
-
     // The full ACK should be sent to indicate there is now available space in the RCV buffer
     // since the last full ACK. It should unblock the sender to proceed further.
     const bool bNeedFullAck = (m_bBufferWasFull && !isRcvBufferFull());
@@ -8280,7 +8287,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             }
         }
 #endif
-        // Signalling m_RecvDataCond is not dane when TSBPD is on.
+        // Signalling m_RecvDataCond is not done when TSBPD is on.
         // This signalling is done in file mode in order to keep the
         // API reader thread sleeping until there is a "bigger portion"
         // of data to read. In TSBPD mode this isn't done because every
@@ -8290,24 +8297,12 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
               log << CONID() << "ACK: clip %" << m_iRcvLastAck << "-%" << ack << ", REVOKED "
                   << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
 
-        if (m_bTsbPd)
-        {
-            /*
-               There's no need to update TSBPD in the wake-on-recv state
-               from ACK because it is being done already in the receiver thread
-               when a newly inserted packet caused provision of a new candidate
-               that could be delivered soon. Also, this flag is only used in TSBPD
-               mode and can be only set to true in the TSBPD thread.
-
-            // Newly acknowledged data, signal TsbPD thread //
-            CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
-            // m_bWakeOnRecv is protected by m_RecvLock in the tsbpd() thread
-            if (m_bWakeOnRecv)
-                tslcc.notify_one();
-
-                */
-        }
-        else
+        // There's no need to update TSBPD in the wake-on-recv state
+        // from ACK because it is being done already in the receiver thread
+        // when a newly inserted packet caused provision of a new candidate
+        // that could be delivered soon. Also, this flag is only used in TSBPD
+        // mode and can be only set to true in the TSBPD thread.
+        if (!m_bTsbPd)
         {
             {
                 CUniqueSync rdcc (m_RecvLock, m_RecvDataCond);
@@ -8395,7 +8390,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
         LOGC(xtlog.Error, log << CONID()<< "sendCtrlAck: IPE: curr(" << reason << ") %" << ack
-            << " <% last %" << m_iRcvLastAck);
+             << " <% last %" << m_iRcvLastAck);
         return nbsent;
     }
 
@@ -9085,6 +9080,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
         // XXX Note: drift synchronization code removed here because
         // with the new rules of the common receiver buffer the drift
         // is handled exclusively in the group and not in the socket at all.
+// XXX ???        ScopedLock glock(uglobal().m_GlobControlLock);
     }
 
     // Update last ACK that has been received by the sender
@@ -9482,34 +9478,27 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                 m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
             }
         }
-        // When the drop request was received, it means that there are
-        // packets for which there will never be ACK sent; if the TSBPD thread
-        // is currently in the recv-waiting state, it may never exit.
-        if (m_bTsbPd)
-        {
-            // XXX Likely this is not necessary because:
-            // 1. In the recv-waiting state, that is, when TSBPD thread
-            //    sleeps forever, it will be woken up anyway on packet
-            //    reception.
-            // 2. If there are any packets in the buffer and the initial
-            //    packet cell is empty (in which situation any drop could
-            //    occur), TSBPD thread is sleeping timely, until the playtime
-            //    of the first "drop up to" packet. Dropping changes nothing here.
-            // 3. If the buffer is empty, there's nothing "to drop up to", so
-            //    this function will not change anything in the buffer and so
-            //    in the reception state as well.
-            // 4. If the TSBPD thread is waiting until a play-ready packet is
-            //    retrieved by the API call (in which case it is also sleeping
-            //    forever until it's woken up by the API call), it may remain
-            //    stalled forever, if the application isn't reading the play-ready
-            //    packet. But this means that the application got stalled anyway.
-            //    TSBPD when woken up could at best state that there's still a
-            //    play-ready packet that is still not retrieved and fall back
-            //    to sleep (forever).
 
-            //HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-            //rcvtscc.notify_one();
-        }
+        // NOTE:
+        // PREVIOUSLY done: notify on rcvtscc if m_bTsbPd
+        // OLD COMMENT:
+        // // When the drop request was received, it means that there are
+        // // packets for which there will never be ACK sent; if the TSBPD thread
+        // // is currently in the ACK-waiting state, it may never exit.
+        // 
+        // Likely this is no longer necessary because:
+        //
+        // 1. If there's a play-ready packet, either in cell 0 or
+        //    after a drop, TSBPD is sleeping timely, up to the play-time
+        //    of the next ready packet (and the drop region concerned here
+        //    is still a gap to be skipped for this).
+        // 2. TSBPD sleeps forever when the buffer is empty, in which case
+        //    it will be always woken up on packet reception (see m_bTsbPdNeedsWakeup).
+        //    And dropping won't happen in that case anyway. Note that the drop
+        //    request will not drop packets that are already received.
+        // 3. TSBPD sleeps forever when the API call didn't extract the
+        //    data that are ready to play. This isn't a problem if nothing
+        //    except the API call would wake it up.
     }
 
     dropFromLossLists(dropdata[0], dropdata[1]);
@@ -10988,7 +10977,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 #endif
                 }
             }
-            else if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+            else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED)
             {
                 // Unencrypted packets are not allowed.
                 const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
@@ -11590,8 +11579,8 @@ int srt::CUDT::processData(CUnit* in_unit)
     // earlier than that, so we need to notify TSBPD immediately so that it
     // updates this itself, not sleep until the previously set time.
 
-    // The meaning of m_bWakeOnRecv:
-    // - m_bWakeOnRecv is set by TSBPD thread and means that it wishes to be woken up
+    // The meaning of m_bTsbPdNeedsWakeup:
+    // - m_bTsbPdNeedsWakeup is set by TSBPD thread and means that it wishes to be woken up
     //   on every received packet. Hence we signal always if a new packet was inserted.
     // - even if TSBPD doesn't wish to be woken up on every reception (because it sleeps
     //   until the play time of the next deliverable packet), it will be woken up when
@@ -11602,14 +11591,14 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     //   XXX Consider: as CUniqueSync locks m_RecvLock, it means that the next instruction
     //   gets run only when TSBPD falls asleep again. Might be a good idea to record the
-    //   TSBPD end sleeping time - as an alternative to m_bWakeOnRecv - and after locking
+    //   TSBPD end sleeping time - as an alternative to m_bTsbPdNeedsWakeup - and after locking
     //   a mutex check this time again and compare it against next_tsbpd_avail; might be
     //   that if this difference is smaller than "dirac" (could be hard to reliably compare
     //   this time, unless it's set from this very value), there's no need to wake the TSBPD
     //   thread because it will wake up on time requirement at the right time anyway.
-    if (m_bTsbPd && ((m_bWakeOnRecv && new_inserted) || next_tsbpd_avail != time_point()))
+    if (m_bTsbPd && ((m_bTsbPdNeedsWakeup && new_inserted) || next_tsbpd_avail != time_point()))
     {
-        HLOGC(qrlog.Debug, log << "processData: will SIGNAL TSBPD for socket. WakeOnRecv=" << m_bWakeOnRecv
+        HLOGC(qrlog.Debug, log << "processData: will SIGNAL TSBPD for socket. WakeOnRecv=" << m_bTsbPdNeedsWakeup
                 << " new_inserted=" << new_inserted << " next_tsbpd_avail=" << FormatTime(next_tsbpd_avail));
         CUniqueSync tsbpd_cc(m_RecvLock, m_RcvTsbPdCond);
         tsbpd_cc.notify_all();
@@ -11630,21 +11619,6 @@ int srt::CUDT::processData(CUnit* in_unit)
             HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
             sendLossReport(srt_loss_seqs);
         }
-
-        // This should not be required with the new receiver buffer because
-        // signalling happens on every packet reception, if it has changed the
-        // earliest packet position.
-        /*
-        if (m_bTsbPd)
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
-            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
-        }
-        else
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: socket is not TSBPD, not signaling");
-        }
-         */
     }
 
     // Separately report loss records of those reported by a filter.
@@ -11656,14 +11630,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     {
         HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
         sendLossReport(filter_loss_seqs);
-
-        // XXX unsure as to whether this should change anything in the TSBPD conditions.
-        // Might be that this trigger is not necessary.
-        if (m_bTsbPd)
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
-            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
-        }
     }
 
     // Now review the list of FreshLoss to see if there's any "old enough" to send UMSG_LOSSREPORT to it.
@@ -12406,7 +12372,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
     }
-    LOGC(cnlog.Note, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
+    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
 
     return RejectReasonForURQ(hs.m_iReqType);
 }
