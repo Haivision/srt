@@ -52,8 +52,6 @@ written by
 #include "srt.h"
 #include "socketconfig.h"
 
-using fmt::sfmt;
-
 namespace srt
 {
 int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)

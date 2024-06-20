@@ -1,3 +1,12 @@
+// SOURCE NOTE:
+//
+// This is copied directly from a public-domain library:
+// 
+// URI: https://github.com/ethouris/fmt
+// PATH: include/fmt/sfmt.h
+//
+// with slight modifications.
+//
 // Formatting library for C++ - C++03 compat version of on-demand tagged format API.
 //
 // Copyright (c) 2024 - present, Mikołaj Małecki
@@ -21,7 +30,7 @@
 #include <vector>
 #include <list>
 
-namespace fmt
+namespace srt
 {
 
 namespace internal

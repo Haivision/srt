@@ -45,7 +45,7 @@ written by
 #include <cstring>
 #include <stdexcept>
 
-#include "sfmt.h"
+#include "srt_sfmt.h"
 
 // -------------- UTILITIES ------------------------
 
@@ -485,7 +485,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        fmt::obufstream ss;
+        srt::obufstream ss;
         ss << "Index " << i << "out of range";
         throw std::runtime_error(ss.str());
     }
@@ -587,7 +587,7 @@ inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 template <class... Args>
 inline std::string Sprint(Args&&... args)
 {
-    fmt::obufstream sout;
+    srt::obufstream sout;
     Print(sout, args...);
     return sout.str();
 }
@@ -673,14 +673,14 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    return fmt::sfmts(arg);
+    return srt::sfmts(arg);
 }
 
 // Ok, let it be 2-arg, in case when a manipulator is needed
 template <class Arg1, class Arg2>
 inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
 {
-    fmt::obufstream sout;
+    srt::obufstream sout;
     sout << arg1 << arg2;
     return sout.str();
 }
@@ -718,11 +718,11 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 template <class Container, class Value> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
 {
-    fmt::obufstream os;
+    srt::obufstream os;
     os << "[ ";
     typedef typename Container::const_iterator it_t;
     for (it_t i = in.begin(); i != in.end(); ++i)
-        os << fmt::sfmt<Value>(*i, fmt) << " ";
+        os << srt::sfmt<Value>(*i, fmt) << " ";
     os << "]";
     return os.str();
 }
@@ -732,11 +732,11 @@ template <class Container, class Key, class Value> inline
 std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
 {
     using namespace srt_pair_op;
-    fmt::obufstream os;
+    srt::obufstream os;
     os << "[ ";
     typedef typename Container::const_iterator it_t;
     for (it_t i = in.begin(); i != in.end(); ++i)
-        os << fmt::sfmt<Key>(i->first, fmtk) << ":" << fmt::sfmt<Value>(i->second, fmtv) << " ";
+        os << srt::sfmt<Key>(i->first, fmtk) << ":" << srt::sfmt<Value>(i->second, fmtv) << " ";
     os << "]";
     return os.str();
 }
@@ -757,7 +757,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 {
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
-    fmt::obufstream os;
+    srt::obufstream os;
     os << "[ ";
     for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
         os << prefix << Value(*y) << " ";
@@ -980,47 +980,13 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
-    using namespace fmt;
+    srt::obufstream os;
 
-    obufstream os;
-
-    os << sfmt<int>(bytes[0], "02X");
-    for (size_t i = 1; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        os << sfmt<int>(bytes[i], "02X");
+        os << srt::sfmt<int>(bytes[i], "02X");
     }
     return os.str();
-
-    /* OLD VERSION
-
-    //char buf[256];
-    using namespace std;
-
-    ostringstream os;
-
-    // I know, it's funny to use sprintf and ostringstream simultaneously,
-    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
-    // Too noisy. OTOH ostringstream solves the problem of memory allocation
-    // for a string of unpredictable size.
-    //sprintf(buf, "%02X", int(bytes[0]));
-
-    os.fill('0');
-    os.width(2);
-    os.setf(ios::basefield, ios::hex);
-    os.setf(ios::uppercase);
-
-    //os << buf;
-    os << int(bytes[0]);
-
-
-    for (size_t i = 1; i < size; ++i)
-    {
-        //sprintf(buf, " %02X", int(bytes[i]));
-        //os << buf;
-        os << int(bytes[i]);
-    }
-    return os.str();
-    */
 }
 
 
@@ -1184,7 +1150,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    return fmt::sfmts(sum, "08X");
+    return srt::sfmts(sum, "08X");
 }
 
 template <class OutputIterator>

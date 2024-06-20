@@ -1079,7 +1079,7 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         {
             HLOGC(cnlog.Debug,
                   log << "RID: socket @" << i->m_iID << " still active (remaining "
-                      << fmt::sfmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, "f") << "s of TTL)...");
+                      << sfmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, "f") << "s of TTL)...");
         }
 
         const steady_clock::time_point tsLastReq = i->m_pUDT->m_tsLastReqTime;

@@ -173,7 +173,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
 {
-    fmt::obufstream son, soff;
+    srt::obufstream son, soff;
 
     for (auto& s: speclist)
     {

@@ -28,7 +28,7 @@ written by
 #include <sys/time.h>
 #endif
 
-#include "sfmt.h"
+#include "srt_sfmt.h"
 
 #include "srt.h"
 #include "utilities.h"
@@ -193,7 +193,7 @@ public:
 
     bool CheckEnabled();
 
-    void CreateLogLinePrefix(fmt::obufstream&);
+    void CreateLogLinePrefix(srt::obufstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -286,7 +286,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    fmt::obufstream os;
+    srt::obufstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't
@@ -379,7 +379,7 @@ struct LogDispatcher::Proxy
         if (that_enabled)
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
-                os << fmt::seol;
+                os << srt::seol;
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?
@@ -473,10 +473,10 @@ inline bool LogDispatcher::CheckEnabled()
 
 //extern std::mutex Debug_mutex;
 
-inline void PrintArgs(fmt::obufstream&) {}
+inline void PrintArgs(srt::obufstream&) {}
 
 template <class Arg1, class... Args>
-inline void PrintArgs(fmt::obufstream& serr, Arg1&& arg1, Args&&... args)
+inline void PrintArgs(srt::obufstream& serr, Arg1&& arg1, Args&&... args)
 {
     serr << std::forward<Arg1>(arg1);
     PrintArgs(serr, args...);
@@ -484,7 +484,7 @@ inline void PrintArgs(fmt::obufstream& serr, Arg1&& arg1, Args&&... args)
 
 // Add exceptional handling for sync::atomic
 template <class Arg1, class... Args>
-inline void PrintArgs(fmt::obufstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
+inline void PrintArgs(srt::obufstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
 {
     serr << arg1.load();
     PrintArgs(serr, args...);

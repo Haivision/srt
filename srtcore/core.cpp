@@ -88,8 +88,6 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
-using fmt::sfmt;
-using fmt::sfmc;
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
@@ -10014,9 +10012,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        fmt::obufstream buf;
+        obufstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = fmt::sfmts(m_SocketID, "02");
+        string s = sfmts(m_SocketID, "02");
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = buf.str();
 #else
