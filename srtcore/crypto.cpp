@@ -460,10 +460,12 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
 
         m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
+#ifdef SRT_ENABLE_ENCRYPTION
         if (m_hRcvCrypto != NULL)
             HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
         if (m_hSndCrypto != NULL)
             HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
+#endif
     }
 
     LOGP(cnlog.Note, FormatKmMessage("processSrtMsg_KMRSP", SRT_CMD_KMRSP, len));
@@ -796,11 +798,6 @@ bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t key
 bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
 {
     return false;
-}
-
-bool srt::CCryptoControl::updateCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, HaiCrypt_CryptoDir cdir, bool bAESGCM)
-{
-	return false;
 }
 #endif // SRT_ENABLE_ENCRYPTION
 

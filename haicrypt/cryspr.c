@@ -17,6 +17,10 @@ written by
 		CRYSPR/4SRT Initial implementation.
 *****************************************************************************/
 
+#ifndef _WIN32
+#include <arpa/inet.h>  /* htonl */
+#endif
+
 #include "hcrypt.h"
 #include "cryspr.h"
 
