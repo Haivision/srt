@@ -17,8 +17,9 @@ written by
 #include "srt_compat.h"
 #include "logging.h"
 
-using namespace std;
 
+using namespace std;
+using namespace fmt;
 
 namespace srt_logging
 {
@@ -43,7 +44,7 @@ LogDispatcher::Proxy LogDispatcher::operator()()
     return Proxy(*this);
 }
 
-void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
+void LogDispatcher::CreateLogLinePrefix(fmt::memory_buffer& serr)
 {
     using namespace std;
     using namespace srt;
@@ -60,7 +61,7 @@ void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
-            serr << tmp_buf << srt::sfmt(tv.tv_usec, "06");
+            ffwrite(serr, tmp_buf, ffmt(tv.tv_usec, fillzero, width(6)));
         }
     }
 
@@ -73,11 +74,11 @@ void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
     // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
     {
-        serr << "/" << tmp_buf << out_prefix << ": ";
+        ffwrite(serr, "/", tmp_buf, out_prefix, ": ");
     }
     else
     {
-        serr << out_prefix << ": ";
+        ffwrite(serr, out_prefix, ": ");
     }
 }
 

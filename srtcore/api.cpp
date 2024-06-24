@@ -1209,7 +1209,7 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
     if (!srcname || !tarname || namelen < int(sizeof(sockaddr_in)))
     {
         LOGC(aclog.Error,
-             log << "connect(with source): invalid call: srcname=" << srcname << " tarname=" << tarname
+             log << "connect(with source): invalid call: srcname=" << (void*)srcname << " tarname=" << (void*)tarname
                  << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
@@ -1253,7 +1253,7 @@ int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namele
 {
     if (!name || namelen < int(sizeof(sockaddr_in)))
     {
-        LOGC(aclog.Error, log << "connect(): invalid call: name=" << name << " namelen=" << namelen);
+        LOGC(aclog.Error, log << "connect(): invalid call: name=" << (void*)name << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
 
@@ -1404,7 +1404,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         {
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
-                HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
+                HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << int(g.m_config[i].so));
                 error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }

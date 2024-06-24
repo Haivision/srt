@@ -89,10 +89,14 @@ using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
+using fmt::ffmt;
+using fmt::ffmts;
+
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+static inline const char* fmt_yesno(bool a) { return a ? "yes" : "no"; }
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -414,7 +418,7 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     ScopedLock recvguard (m_RecvLock);
 
     HLOGC(aclog.Debug,
-          log << CONID() << "OPTION: #" << optName << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
+          log << CONID() << "OPTION: #" << int(optName) << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
 
     if (IsSet(oflags, SRTO_R_PREBIND) && m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
@@ -426,7 +430,7 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     const int status = m_config.set(optName, optval, optlen);
     if (status == -1)
     {
-        LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
+        LOGC(aclog.Error, log << CONID() << "OPTION: #" << int(optName) << " UNKNOWN");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -1037,7 +1041,7 @@ size_t srt::CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgt
     if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(cnlog.Fatal,
-             log << CONID() << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
+             log << CONID() << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << int(SRT_HS_E_SIZE) << ")");
         return 0;
     }
 
@@ -2107,8 +2111,8 @@ int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint
     }
 
     LOGC(cnlog.Debug, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
-                          << " vers=0x" << sfmt(srtdata[SRT_HS_VERSION], "x")
-                          << " opts=0x" << sfmt(srtdata[SRT_HS_FLAGS], "x")
+                          << " vers=0x" << ffmt(srtdata[SRT_HS_VERSION], fmt::hex)
+                          << " opts=0x" << ffmt(srtdata[SRT_HS_FLAGS], fmt::hex)
                           << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
     m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
@@ -2343,7 +2347,7 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
     m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
     HLOGC(cnlog.Debug, log << "HSRSP/rcv: Version: " << SrtVersionString(m_uPeerSrtVersion)
-                           << " Flags: SND:" << sfmt(m_uPeerSrtFlags, "08x")
+                           << " Flags: SND:" << ffmt(m_uPeerSrtFlags, "08x")
                            << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
     // Basic version check
     if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
@@ -2528,7 +2532,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
                          log << CONID() << "HS-ext HSREQ found but invalid size: " << bytelen
-                             << " (expected: " << SRT_HS_E_SIZE << ")");
+                             << " (expected: " << int(SRT_HS_E_SIZE) << ")");
                     return false; // don't interpret
                 }
 
@@ -2554,7 +2558,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
                          log << CONID() << "HS-ext HSRSP found but invalid size: " << bytelen
-                             << " (expected: " << SRT_HS_E_SIZE << ")");
+                             << " (expected: " << int(SRT_HS_E_SIZE) << ")");
 
                     return false; // don't interpret
                 }
@@ -3125,7 +3129,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     {
         m_RejectReason = SRT_REJ_GROUP;
         LOGC(cnlog.Error,
-             log << CONID() << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
+             log << CONID() << "HS/GROUP: incorrect group type value " << int(gtp) << " (max is " << int(SRT_GTYPE_E_END) << ")");
         return false;
     }
 
@@ -3145,8 +3149,8 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     static const char* hs_side_name[] = {"draw", "initiator", "responder"};
     HLOGC(cnlog.Debug,
           log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
-              << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << gtp
-              << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
+              << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << GroupTypeStr(gtp)
+              << " weight=" << link_weight << " flags=0x" << ffmt(link_flags, fmt::hex));
 #endif
 
     // XXX Here are two separate possibilities:
@@ -3299,8 +3303,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         if (gp->type() != gtp)
         {
             LOGC(gmlog.Error,
-                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
-                     << " agent group=$" << gp->id() << " type" << gp->type());
+                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type:" << GroupTypeStr(gtp)
+                     << " agent group=$" << gp->id() << " type:" << GroupTypeStr(gp->type()));
             return -1;
         }
 
@@ -4021,8 +4025,9 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
     m_ConnReq.store_to((r_rsppkt.m_pcData), (size));
     r_rsppkt.setLength(size);
 
-    HLOGC(cnlog.Debug, log << CONID() << "sendRendezvousRejection: using code=" << m_ConnReq.m_iReqType
-            << " for reject reason code " << m_RejectReason << " (" << srt_rejectreason_str(m_RejectReason) << ")");
+    HLOGC(cnlog.Debug, log << CONID() << "sendRendezvousRejection: using code=#" << int(m_ConnReq.m_iReqType)
+            << " (" << RequestTypeStr(m_ConnReq.m_iReqType)
+            << ") for reject reason code " << m_RejectReason << " (" << srt_rejectreason_str(m_RejectReason) << ")");
 
     setPacketTS(r_rsppkt, steady_clock::now());
     m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
@@ -4659,8 +4664,8 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
         if (m_ConnRes.m_iReqType == URQ_INDUCTION)
         {
             HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:" << hex
-                      << m_ConnRes.m_iCookie << " version:" << dec << m_ConnRes.m_iVersion
+                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
+                      << ffmt(m_ConnRes.m_iCookie, fmt::hex) << " version:" << m_ConnRes.m_iVersion
                       << "), sending CONCLUSION HS with this cookie");
 
             m_ConnReq.m_iCookie  = m_ConnRes.m_iCookie;
@@ -4767,7 +4772,8 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
-        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
+        HLOGC(cnlog.Debug, log << CONID() << "postConnect: packet:"
+                               << fmt_yesno(pResponse) << " rendezvous:" << fmt_yesno(rendezvous));
         // The "local storage depleted" case shouldn't happen here, but
         // this is a theoretical path that needs prevention.
         bool ok = pResponse;
@@ -5470,14 +5476,14 @@ void * srt::CUDT::tsbpd(void* param)
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
-                    << (timediff_us / 1000) << "." << sfmt(timediff_us % 1000, "03") << " ms");
+                    << (timediff_us / 1000) << "." << ffmt(timediff_us % 1000, "03") << " ms");
 #endif
                 string why;
                 if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                             << " delayed for " << (timediff_us / 1000) << "."
-                            << sfmt(timediff_us % 1000, "03") << " ms " << why);
+                            << ffmt(timediff_us % 1000, "03") << " ms " << why);
                 }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
                 else
@@ -7159,7 +7165,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
                 HLOGC(tslog.Debug,
                       log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime)
-                          << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
+                          << " lock=" << ((void*)&m_RecvLock) << " cond=" << ((void*)&m_RecvDataCond));
 
                 if (!recv_cond.wait_until(exptime))
                 {
@@ -7777,7 +7783,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
                   << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << sfmt(cgwindow, sfmc().precision(3)));
+                  << ffmt(cgwindow, fmt::precision(3)));
 #endif
     }
 
@@ -8418,7 +8424,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // included, but it also triggers for any other kind of invalid value.
         // This check MUST BE DONE before making any operation on this number.
         LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: received invalid ACK value: " << ackdata_seqno
-                << " " << sfmt(ackdata_seqno, "x") << " (IGNORED)");
+                << " " << ffmt(ackdata_seqno, "x") << " (IGNORED)");
         return;
     }
 
@@ -9139,7 +9145,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
     m_tsLastRspTime = currtime;
 
     HLOGC(inlog.Debug,
-          log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
+          log << CONID() << "incoming UMSG:" << int(ctrlpkt.getType()) << " ("
               << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.id());
 
     switch (ctrlpkt.getType())
@@ -10014,7 +10020,7 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 #if ENABLE_HEAVY_LOGGING
         obufstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = sfmts(m_SocketID, "02");
+        string s = ffmts(m_SocketID, "02");
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = buf.str();
 #else
@@ -11064,7 +11070,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     int32_t cookie_val = bake(addr);
 
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << hex << cookie_val);
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << ffmt(cookie_val, fmt::hex));
 
     // Remember the incoming destination address here and use it as a source
     // address when responding. It's not possible to record this address yet
@@ -11144,7 +11150,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (hs.m_iCookie != cookie_val)
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
+            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << ffmt(cookie_val, fmt::hex) << ". Ignoring.");
             return m_RejectReason;
         }
 
@@ -11229,7 +11235,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (result == -1)
         {
             hs.m_iReqType = URQFailure(error);
-            LOGC(cnlog.Warn, log << "processConnectRequest: rsp(REJECT): " << hs.m_iReqType << " - " << srt_rejectreason_str(error));
+            LOGC(cnlog.Warn, log << "processConnectRequest: rsp(REJECT): " << int(hs.m_iReqType) << " - " << srt_rejectreason_str(error));
         }
 
         // The `acpu` not NULL means connection exists, the `result` should be 0. It is not checked here though.
@@ -11333,7 +11339,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             }
         }
     }
-    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
+    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << int(hs.m_iReqType) << " - " << RequestTypeStr(hs.m_iReqType));
 
     return RejectReasonForURQ(hs.m_iReqType);
 }

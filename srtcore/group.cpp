@@ -344,7 +344,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     HLOGC(gmlog.Debug,
-          log << "GROUP $" << id() << " OPTION: #" << optName
+          log << "GROUP $" << id() << " OPTION: #" << int(optName)
               << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
 
     switch (optName)
@@ -1025,7 +1025,7 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
     switch (m_type)
     {
     default:
-        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
+        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << (int)m_type);
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
     case SRT_GTYPE_BROADCAST:

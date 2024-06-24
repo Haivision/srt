@@ -28,13 +28,12 @@ written by
 #include <sys/time.h>
 #endif
 
-#include "srt_sfmt.h"
-
 #include "srt.h"
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
 #include "sync.h"
+#include "fmt/format.h"
 
 #ifdef __GNUC__
 #define PRINTF_LIKE __attribute__((format(printf,2,3)))
@@ -193,7 +192,7 @@ public:
 
     bool CheckEnabled();
 
-    void CreateLogLinePrefix(srt::obufstream&);
+    void CreateLogLinePrefix(fmt::memory_buffer&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -285,8 +284,7 @@ public:
 struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
-
-    srt::obufstream os;
+    fmt::memory_buffer os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't
@@ -332,7 +330,7 @@ struct LogDispatcher::Proxy
     {
         if ( that_enabled )
         {
-            os << arg;
+            fmt::ffwrite(os, arg);
         }
         return *this;
     }
@@ -344,7 +342,7 @@ struct LogDispatcher::Proxy
     {
         if (that_enabled)
         {
-            os << arg.load();
+            fmt::ffwrite(os, arg.load());
         }
         return *this;
     }
@@ -379,8 +377,8 @@ struct LogDispatcher::Proxy
         if (that_enabled)
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
-                os << srt::seol;
-            that.SendLogLine(i_file, i_line, area, os.str());
+                fmt::ffwrite(os, "\n");
+            that.SendLogLine(i_file, i_line, area, fmt::ffcat(os));
         }
         // Needed in destructor?
         //os.clear();
@@ -419,7 +417,7 @@ struct LogDispatcher::Proxy
             buf[len-1] = '\0';
         }
 
-        os << buf;
+        fmt::ffwrite(os, buf);
         return *this;
     }
 };
@@ -473,20 +471,20 @@ inline bool LogDispatcher::CheckEnabled()
 
 //extern std::mutex Debug_mutex;
 
-inline void PrintArgs(srt::obufstream&) {}
+inline void PrintArgs(fmt::memory_buffer&) {}
 
 template <class Arg1, class... Args>
-inline void PrintArgs(srt::obufstream& serr, Arg1&& arg1, Args&&... args)
+inline void PrintArgs(fmt::memory_buffer& serr, Arg1&& arg1, Args&&... args)
 {
-    serr << std::forward<Arg1>(arg1);
+    fmt::ffwrite(serr, std::forward<Arg1>(arg1));
     PrintArgs(serr, args...);
 }
 
 // Add exceptional handling for sync::atomic
 template <class Arg1, class... Args>
-inline void PrintArgs(srt::obufstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
+inline void PrintArgs(fmt::memory_buffer& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
 {
-    serr << arg1.load();
+    fmt::ffwrite(serr, arg1.load());
     PrintArgs(serr, args...);
 }
 
