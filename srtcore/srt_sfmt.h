@@ -362,7 +362,8 @@ SFMT_FORMAT_FIXER(const char*, "-.", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER(char*, "-.", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER_TPL(size_t N, const char (&)[N], "-.", "s", "s", "<!!!>");
 SFMT_FORMAT_FIXER_TPL(size_t N, char (&)[N], "-.", "s", "s", "<!!!>");
-SFMT_FORMAT_FIXER_TPL(class Type, Type*, "-", "p", "p", "<!!!>");
+SFMT_FORMAT_FIXER(void*, "-", "p", "p", "<!!!>");
+SFMT_FORMAT_FIXER(const void*, "-", "p", "p", "<!!!>");
 
 #undef SFMT_FORMAT_FIXER_TPL
 #undef SFMT_FORMAT_FIXER

@@ -22,7 +22,8 @@ void SourceMedium::Runner()
             Verb() << VerbLock << "Exiting SourceMedium: " << this;
             return;
         }
-        LOGP(applog.Debug, "SourceMedium(", typeid(*med).name(), "): [", input.payload.size(), "] MEDIUM -> BUFFER. signal(", &ready, ")");
+        LOGP(applog.Debug, "SourceMedium(", typeid(*med).name(), "): [", input.payload.size(),
+                "] MEDIUM -> BUFFER. signal(", (void*)&ready, ")");
 
         lock_guard<std::mutex> g(buffer_lock);
         buffer.push_back(input);

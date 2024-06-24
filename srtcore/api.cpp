@@ -1209,7 +1209,7 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
     if (!srcname || !tarname || namelen < int(sizeof(sockaddr_in)))
     {
         LOGC(aclog.Error,
-             log << "connect(with source): invalid call: srcname=" << srcname << " tarname=" << tarname
+             log << "connect(with source): invalid call: srcname=" << (void*)srcname << " tarname=" << (void*)tarname
                  << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
@@ -1253,7 +1253,7 @@ int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namele
 {
     if (!name || namelen < int(sizeof(sockaddr_in)))
     {
-        LOGC(aclog.Error, log << "connect(): invalid call: name=" << name << " namelen=" << namelen);
+        LOGC(aclog.Error, log << "connect(): invalid call: name=" << (void*)name << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
 

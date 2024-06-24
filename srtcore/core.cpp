@@ -93,6 +93,7 @@ const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+static inline const char* fmt_yesno(bool a) { return a ? "yes" : "no"; }
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -3146,7 +3147,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     HLOGC(cnlog.Debug,
           log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
               << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << gtp
-              << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
+              << " weight=" << link_weight << " flags=0x" << sfmt(link_flags, sfmc().hex()));
 #endif
 
     // XXX Here are two separate possibilities:
@@ -4659,8 +4660,8 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
         if (m_ConnRes.m_iReqType == URQ_INDUCTION)
         {
             HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:" << hex
-                      << m_ConnRes.m_iCookie << " version:" << dec << m_ConnRes.m_iVersion
+                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
+                      << sfmt(m_ConnRes.m_iCookie, sfmc().hex()) << " version:" << m_ConnRes.m_iVersion
                       << "), sending CONCLUSION HS with this cookie");
 
             m_ConnReq.m_iCookie  = m_ConnRes.m_iCookie;
@@ -4767,7 +4768,8 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
-        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
+        HLOGC(cnlog.Debug, log << CONID() << "postConnect: packet:"
+                               << fmt_yesno(pResponse) << " rendezvous:" << fmt_yesno(rendezvous));
         // The "local storage depleted" case shouldn't happen here, but
         // this is a theoretical path that needs prevention.
         bool ok = pResponse;
@@ -7159,7 +7161,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
                 HLOGC(tslog.Debug,
                       log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime)
-                          << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
+                          << " lock=" << ((void*)&m_RecvLock) << " cond=" << ((void*)&m_RecvDataCond));
 
                 if (!recv_cond.wait_until(exptime))
                 {
@@ -11064,7 +11066,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     int32_t cookie_val = bake(addr);
 
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << hex << cookie_val);
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << sfmt(cookie_val, sfmc().hex()));
 
     // Remember the incoming destination address here and use it as a source
     // address when responding. It's not possible to record this address yet
@@ -11144,7 +11146,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (hs.m_iCookie != cookie_val)
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
+            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << sfmt(cookie_val, sfmc().hex()) << ". Ignoring.");
             return m_RejectReason;
         }
 
