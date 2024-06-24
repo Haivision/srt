@@ -96,7 +96,9 @@ const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+#if ENABLE_HEAVY_LOGGING
 static inline const char* fmt_yesno(bool a) { return a ? "yes" : "no"; }
+#endif
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
