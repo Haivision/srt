@@ -23,6 +23,8 @@ jobs:
           "
     - name: Checkout
       uses: actions/checkout@v3
+      with:
+         submodules: true
     - name: configure
       uses: docker://multiarch/ubuntu-core:s390x-focal
       with:
