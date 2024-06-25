@@ -148,8 +148,7 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
-    // TODO: Use m_RcvBufferLock here (CUDT::isRcvReadReady())?
-    if (m_UDT.m_bConnected && m_UDT.m_pRcvBuffer->isRcvDataReady())
+    if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
         return true;
 
     if (m_UDT.m_bListening)
@@ -657,6 +656,9 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
                     << " to that socket (" << ns->m_SocketID << ")");
             m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
+
+            LOGC(cnlog.Note, log << "@" << ns->m_SocketID << " connection on listener @" << listen
+                << " (" << ns->m_SelfAddr.str() << ") from peer @" << ns->m_PeerID << " (" << peer.str() << ")");
         }
         catch (...)
         {
@@ -764,7 +766,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         enterCS(ls->m_AcceptLock);
         try
         {
-            ls->m_QueuedSockets.insert(ns->m_SocketID);
+            ls->m_QueuedSockets[ns->m_SocketID] = ns->m_PeerAddr;
         }
         catch (...)
         {
@@ -1108,8 +1110,22 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         }
         else if (ls->m_QueuedSockets.size() > 0)
         {
-            set<SRTSOCKET>::iterator b = ls->m_QueuedSockets.begin();
-            u                          = *b;
+            map<SRTSOCKET, sockaddr_any>::iterator b = ls->m_QueuedSockets.begin();
+
+            if (pw_addr != NULL && pw_addrlen != NULL)
+            {
+                // Check if the length of the buffer to fill the name in
+                // was large enough.
+                const int len = b->second.size();
+                if (*pw_addrlen < len)
+                {
+                    // In case when the address cannot be rewritten,
+                    // DO NOT accept, but leave the socket in the queue.
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                }
+            }
+
+            u = b->first;
             ls->m_QueuedSockets.erase(b);
             accepted = true;
         }
@@ -1180,14 +1196,8 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 
     if (pw_addr != NULL && pw_addrlen != NULL)
     {
-        // Check if the length of the buffer to fill the name in
-        // was large enough.
-        const int len = s->m_PeerAddr.size();
-        if (*pw_addrlen < len)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        memcpy((pw_addr), &s->m_PeerAddr, len);
-        *pw_addrlen = len;
+        memcpy((pw_addr), s->m_PeerAddr.get(), s->m_PeerAddr.size());
+        *pw_addrlen = s->m_PeerAddr.size();
     }
 
     return u;
@@ -1395,7 +1405,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
-                error_reason = "setting group-derived option: #" + Sprint(g.m_config[i].so);
+                error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -2647,20 +2657,23 @@ void srt::CUDTUnited::checkBrokenSockets()
             if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
                 continue;
         }
-        else if ((s->core().m_pRcvBuffer != NULL)
-        // FIXED: calling isRcvDataAvailable() just to get the information
-        // whether there are any data waiting in the buffer,
-        // NOT WHETHER THEY ARE ALSO READY TO PLAY at the time when
-        // this function is called (isRcvDataReady also checks if the
-        // available data is "ready to play").
-                 && s->core().m_pRcvBuffer->hasAvailablePackets())
+        else
         {
-            const int bc = s->core().m_iBrokenCounter.load();
-            if (bc > 0)
+            CUDT& u = s->core();
+
+            enterCS(u.m_RcvBufferLock);
+            bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
+            leaveCS(u.m_RcvBufferLock);
+
+            if (has_avail_packets)
             {
-                // if there is still data in the receiver buffer, wait longer
-                s->core().m_iBrokenCounter.store(bc - 1);
-                continue;
+                const int bc = u.m_iBrokenCounter.load();
+                if (bc > 0)
+                {
+                    // if there is still data in the receiver buffer, wait longer
+                    s->core().m_iBrokenCounter.store(bc - 1);
+                    continue;
+                }
             }
         }
 
@@ -2696,31 +2709,34 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
     {
+        CUDTSocket* ps = j->second;
+        CUDT& u = ps->core();
+
         // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
-        if (!is_zero(j->second->core().m_tsLingerExpiration))
+        if (!is_zero(u.m_tsLingerExpiration))
         {
             // asynchronous close:
-            if ((!j->second->core().m_pSndBuffer) || (0 == j->second->core().m_pSndBuffer->getCurrBufSize()) ||
-                (j->second->core().m_tsLingerExpiration <= steady_clock::now()))
+            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
+                (u.m_tsLingerExpiration <= steady_clock::now()))
             {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << j->second->m_SocketID);
-                j->second->core().m_tsLingerExpiration = steady_clock::time_point();
-                j->second->core().m_bClosing           = true;
-                j->second->m_tsClosureTimeStamp        = steady_clock::now();
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
+                u.m_tsLingerExpiration = steady_clock::time_point();
+                u.m_bClosing           = true;
+                ps->m_tsClosureTimeStamp        = steady_clock::now();
             }
         }
 
         // timeout 1 second to destroy a socket AND it has been removed from
         // RcvUList
         const steady_clock::time_point now        = steady_clock::now();
-        const steady_clock::duration   closed_ago = now - j->second->m_tsClosureTimeStamp;
+        const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp;
         if (closed_ago > seconds_from(1))
         {
-            CRNode* rnode = j->second->core().m_pRNode;
+            CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
             {
                 HLOGC(smlog.Debug,
-                      log << "checkBrokenSockets: @" << j->second->m_SocketID << " closed "
+                      log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
                 // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
@@ -2779,23 +2795,24 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 
         // if it is a listener, close all un-accepted sockets in its queue
         // and remove them later
-        for (set<SRTSOCKET>::iterator q = s->m_QueuedSockets.begin(); q != s->m_QueuedSockets.end(); ++q)
+        for (map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.begin();
+                q != s->m_QueuedSockets.end(); ++ q)
         {
-            sockets_t::iterator si = m_Sockets.find(*q);
+            sockets_t::iterator si = m_Sockets.find(q->first);
             if (si == m_Sockets.end())
             {
                 // gone in the meantime
                 LOGC(smlog.Error,
-                     log << "removeSocket: IPE? socket @" << (*q) << " being queued for listener socket @"
-                         << s->m_SocketID << " is GONE in the meantime ???");
+                     log << "removeSocket: IPE? socket @" << (q->first) << " being queued for listener socket @"
+                        << s->m_SocketID << " is GONE in the meantime ???");
                 continue;
             }
 
             CUDTSocket* as = si->second;
 
             as->breakSocket_LOCKED();
-            m_ClosedSockets[*q] = as;
-            m_Sockets.erase(*q);
+            m_ClosedSockets[q->first] = as;
+            m_Sockets.erase(q->first);
         }
     }
 
@@ -2818,8 +2835,20 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     // delete this one
     m_ClosedSockets.erase(i);
 
+   // XXX This below section can unlock m_GlobControlLock
+   // just for calling CUDT::closeInternal(), which is needed
+   // to avoid locking m_ConnectionLock after m_GlobControlLock,
+   // while m_ConnectionLock orders BEFORE m_GlobControlLock.
+   // This should be perfectly safe thing to do after the socket
+   // ID has been erased from m_ClosedSockets. No container access
+   // is done in this case.
+   //
+   // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
+
     HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+    leaveCS(m_GlobControlLock);
     s->core().closeInternal();
+    enterCS(m_GlobControlLock);
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
     HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
@@ -2945,7 +2974,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         bool reuse_attempt = false;
         for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
         {
-            CMultiplexer& m = i->second;
+            CMultiplexer const& m = i->second;
 
             // First, we need to find a multiplexer with the same port.
             if (m.m_iPort != port)
@@ -3829,7 +3858,7 @@ int srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optval
 
 int srt::CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* optval, int optlen)
 {
-    if (!optval)
+    if (!optval || optlen < 0)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
 
     try
@@ -4675,21 +4704,18 @@ void setloglevel(LogLevel::type ll)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.max_level = ll;
-    srt_logger_config.updateLoggersState();
 }
 
 void addlogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, true);
-    srt_logger_config.updateLoggersState();
 }
 
 void dellogfa(LogFA fa)
 {
     ScopedLock gg(srt_logger_config.mutex);
     srt_logger_config.enabled_fa.set(fa, false);
-    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(set<LogFA> fas)
@@ -4697,7 +4723,6 @@ void resetlogfa(set<LogFA> fas)
     ScopedLock gg(srt_logger_config.mutex);
     for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
         srt_logger_config.enabled_fa.set(i, fas.count(i));
-    srt_logger_config.updateLoggersState();
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
@@ -4706,7 +4731,6 @@ void resetlogfa(const int* fara, size_t fara_size)
     srt_logger_config.enabled_fa.reset();
     for (const int* i = fara; i != fara + fara_size; ++i)
         srt_logger_config.enabled_fa.set(*i, true);
-    srt_logger_config.updateLoggersState();
 }
 
 void setlogstream(std::ostream& stream)

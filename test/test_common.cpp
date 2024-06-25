@@ -4,6 +4,7 @@
 #include <srt.h>
 
 #include <thread>
+#include <condition_variable>
 #include <chrono>
 
 #include "gtest/gtest.h"
@@ -80,8 +81,7 @@ TEST(CIPAddress, IPv4_in_IPv6_pton)
 
 TEST(SRTAPI, SyncRendezvousHangs)
 {
-    ASSERT_EQ(srt_startup(), 0);
-
+    srt::TestInit srtinit;
     int yes = 1;
 
     SRTSOCKET m_bindsock = srt_create_socket();
@@ -115,11 +115,41 @@ TEST(SRTAPI, SyncRendezvousHangs)
         duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
     });
 
-    ASSERT_EQ(srt_rendezvous(m_bindsock, (sockaddr*)&local_sa, sizeof local_sa,
+    EXPECT_EQ(srt_rendezvous(m_bindsock, (sockaddr*)&local_sa, sizeof local_sa,
               (sockaddr*)&peer_sa, sizeof peer_sa), SRT_ERROR);
 
     close_thread.join();
     ASSERT_LE(duration, 1);
-    srt_close(m_bindsock);
-    srt_cleanup();
+}
+
+TEST(SRTAPI, RapidClose)
+{
+    ASSERT_EQ(srt_startup(), 0);
+
+    SRTSOCKET sock = srt_create_socket();
+    std::condition_variable cv_start;
+    std::mutex cvm;
+    bool started = false, ended = false;
+
+    std::thread connect_thread([&sock, &cv_start, &started, &ended] {
+        started = true;
+        cv_start.notify_one();
+
+        // Nonexistent address
+        sockaddr_any sa = CreateAddr("localhost", 5555, AF_INET);
+        srt_connect(sock, sa.get(), sa.size());
+        // It doesn't matter if it succeeds. Important is that it exits.
+        ended = true;
+    });
+
+    std::unique_lock<std::mutex> lk(cvm);
+
+    // Wait until the thread surely starts
+    while (!started)
+        cv_start.wait(lk);
+
+    srt_close(sock);
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    EXPECT_TRUE(ended);
+    connect_thread.join();
 }

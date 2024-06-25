@@ -38,7 +38,8 @@ string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
@@ -73,7 +74,12 @@ if (NOT MICROSOFT)
 	# that ENABLE_DEBUG is set as it should.
 	if (ENABLE_DEBUG EQUAL 2)
 		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-		add_definitions(-DNDEBUG)
+		if (ENABLE_ASSERT)
+			# Add _DEBUG macro if explicitly requested, to enable SRT_ASSERT().
+			add_definitions(-D_DEBUG)
+		else()
+			add_definitions(-DNDEBUG)
+		endif()
 	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
 		set (CMAKE_BUILD_TYPE "Debug")
 
@@ -232,12 +238,12 @@ if (NOT USE_ENCLIB)
 		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
 		set (USE_ENCLIB gnutls)
 	else()
-		set (USE_ENCLIB openssl)
+		set (USE_ENCLIB openssl-evp)
 	endif()
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls" "botan")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -360,11 +366,11 @@ if (ENABLE_ENCRYPTION)
 			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
 			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 		endif()
+		if (WIN32)
+			set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
+		endif()
 		if ("${SSL_LIBRARIES}" STREQUAL "")
 			set (SSL_LIBRARIES  mbedtls mbedcrypto)
-			if (WIN32)
-				set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
-			endif()
 		endif()
 		message(STATUS "SSL enforced mbedtls: -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 
@@ -1522,15 +1528,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
-		gtest_add_tests(
-			TEST_LIST tests_srt
-			TARGET test-srt
-		)
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
-
 endif()
 
 

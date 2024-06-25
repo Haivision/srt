@@ -900,7 +900,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
     // Need a stub value for a case when there's no unit provided ("storage depleted" case).
     // It should be normally NOT IN USE because in case of "storage depleted", rst != RST_OK.
-    const SRTSOCKET dest_id = pkt ? pkt->m_iID : 0;
+    const SRTSOCKET dest_id = pkt ? pkt->id() : 0;
 
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
@@ -1092,8 +1092,8 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         if ((rst == RST_AGAIN || i->m_iID != iDstSockID) && tsNow <= tsRepeat)
         {
             HLOGC(cnlog.Debug,
-                  log << "RID:@" << i->m_iID << std::fixed << count_microseconds(tsNow - tsLastReq) / 1000.0
-                      << " ms passed since last connection request.");
+                  log << "RID:@" << i->m_iID << " " << FormatDuration<DUNIT_MS>(tsNow - tsLastReq)
+                      << " passed since last connection request.");
 
             continue;
         }
@@ -1385,7 +1385,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
 
     if (rst == RST_OK)
     {
-        w_id = w_unit->m_Packet.m_iID;
+        w_id = w_unit->m_Packet.id();
         HLOGC(qrlog.Debug,
               log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
                   << w_unit->m_Packet.Info());
@@ -1407,7 +1407,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
         ScopedLock cg(m_LSLock);
         if (m_pListener)
         {
-            LOGC(cnlog.Note, log << "PASSING request from: " << addr.str() << " to agent:" << m_pListener->socketID());
+            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << m_pListener->socketID());
             listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
@@ -1426,8 +1426,8 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
 
     if (have_listener) // That is, the above block with m_pListener->processConnectRequest was executed
     {
-        LOGC(cnlog.Note,
-             log << CONID() << "Listener managed the connection request from: " << addr.str()
+        LOGC(cnlog.Debug,
+             log << CONID() << "Listener got the connection request from: " << addr.str()
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
@@ -1747,6 +1747,7 @@ void srt::CRcvQueue::setNewEntry(CUDT* u)
 
 bool srt::CRcvQueue::ifNewEntry()
 {
+    ScopedLock listguard(m_IDLock);
     return !(m_vNewEntry.empty());
 }
 

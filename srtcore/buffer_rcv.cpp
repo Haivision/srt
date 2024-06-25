@@ -206,7 +206,7 @@ int CRcvBuffer::insert(CUnit* unit)
     return 0;
 }
 
-int CRcvBuffer::dropUpTo(int32_t seqno)
+std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
@@ -215,16 +215,23 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
-        return 0;
+        return std::make_pair(0, 0);
     }
 
     m_iMaxPosOff -= len;
     if (m_iMaxPosOff < 0)
         m_iMaxPosOff = 0;
 
-    const int iDropCnt = len;
+    int iNumDropped = 0; // Number of dropped packets that were missing.
+    int iNumDiscarded = 0; // The number of dropped packets that existed in the buffer.
     while (len > 0)
     {
+        // Note! Dropping a EntryState_Read must not be counted as a drop because it was read.
+        // Note! Dropping a EntryState_Drop must not be counted as a drop because it was already dropped and counted earlier.
+        if (m_entries[m_iStartPos].status == EntryState_Avail)
+			++iNumDiscarded;
+        else if (m_entries[m_iStartPos].status == EntryState_Empty)
+			++iNumDropped;
         dropUnitInPos(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
@@ -239,14 +246,14 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
 
     // If the nonread position is now behind the starting position, set it to the starting position and update.
     // Preceding packets were likely missing, and the non read position can probably be moved further now.
-    if (CSeqNo::seqcmp(m_iFirstNonreadPos, m_iStartPos) < 0)
+    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         updateNonreadPos();
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableOutOfOrder();
-    return iDropCnt;
+    return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
 int CRcvBuffer::dropAll()
@@ -255,7 +262,8 @@ int CRcvBuffer::dropAll()
         return 0;
 
     const int end_seqno = CSeqNo::incseq(m_iStartSeqNo, m_iMaxPosOff);
-    return dropUpTo(end_seqno);
+    const std::pair<int, int> numDropped = dropUpTo(end_seqno);
+    return numDropped.first + numDropped.second;
 }
 
 int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting)

@@ -42,15 +42,16 @@
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
 
+using namespace srt;
+using namespace std;
+
+
 volatile bool mpbond_int_state = false;
 void OnINT_SetIntState(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     mpbond_int_state = true;
 }
-
-using namespace srt;
-
 
 int main( int argc, char** argv )
 {
