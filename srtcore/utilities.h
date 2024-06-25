@@ -35,6 +35,7 @@ written by
 #include <memory>
 #include <iomanip>
 #include <utility>
+#include <sstream>
 
 #if HAVE_CXX11
 #include <type_traits>
