@@ -55,11 +55,11 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     if (days)
         out << days << "D ";
 
-    out << srt::sfmt(hours, "02") << ":"
-        << srt::sfmt(minutes, "02") << ":"
-        << srt::sfmt(seconds, "02") << "."
-        << srt::sfmt(frac.time_since_epoch().count(),
-                     srt::sfmc().fillzero().width(decimals))
+    out << srt::fmt(hours, setfill('0'), setw(2)) << ":"
+        << srt::fmt(minutes, setfill('0'), setw(2)) << ":"
+        << srt::fmt(seconds, setfill('0'), setw(2)) << "."
+        << srt::fmt(frac.time_since_epoch().count(),
+                     setfill('0'), setw(decimals))
         << " [STDY]";
     return out.str();
 }
@@ -77,7 +77,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     strftime(tmp_buf, 512, "%X.", &tm);
 
     srt::obufstream out;
-    out << tmp_buf << srt::sfmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, "06") << " [SYST]";
+    out << tmp_buf
+        << srt::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, setfill('0'), setw(6))
+        << " [SYST]";
     return out.str();
 }
 

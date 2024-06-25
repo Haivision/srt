@@ -744,8 +744,8 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
         {
             co.uKmPreAnnouncePkt = (km_refresh - 1) / 2;
             LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << sfmt(km_refresh, "x") << ": setting SRTO_KMPREANNOUNCE=0x"
-                     << sfmt(co.uKmPreAnnouncePkt, "x"));
+                 log << "SRTO_KMREFRESHRATE=0x" << fmt(km_refresh, std::hex) << ": setting SRTO_KMPREANNOUNCE=0x"
+                     << fmt(co.uKmPreAnnouncePkt, std::hex));
         }
     }
 };
@@ -770,8 +770,8 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
         if (km_preanno > (kmref - 1) / 2)
         {
             LOGC(aclog.Error,
-                 log << "SRTO_KMPREANNOUNCE=0x" << sfmt(km_preanno, "x")
-                 << " exceeds KmRefresh/2, 0x" << sfmt((kmref - 1) / 2, "x")
+                 log << "SRTO_KMPREANNOUNCE=0x" << fmt(km_preanno, std::hex)
+                     << " exceeds KmRefresh/2, 0x" << fmt((kmref - 1) / 2, std::hex)
                      << " - OPTION REJECTED.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }

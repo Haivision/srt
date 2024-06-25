@@ -797,6 +797,12 @@ public:
         return *this;
     }
 
+    obufstream& write(const char* t, size_t size)
+    {
+        buffer.append(t, size);
+        return *this;
+    }
+
     // For unusual manipulation, usually to add NUL termination.
     // NOTE: you must make sure that you won't use the extended
     // buffers if the intention was to get a string.

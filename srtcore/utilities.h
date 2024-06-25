@@ -567,6 +567,61 @@ namespace any_op
     }
 }
 
+// XXX Consider this whole file to be namespace srt!
+namespace srt
+{
+class fmt_sender_proxy
+{
+    std::stringstream os;
+
+public:
+
+    template <class TYPE, typename... Args>
+    explicit fmt_sender_proxy(const TYPE& v, const Args&... manips)
+    {
+        manipulate(manips...);
+        os << v;
+    }
+
+    void manipulate() {}
+
+    template <typename Arg1, typename... Args>
+    void manipulate(const Arg1& manip, const Args&... manips)
+    {
+        os << manip;
+        manipulate(manips...);
+    }
+
+    template <class OUTER>
+    fmt_sender_proxy& operator *(const OUTER& p)
+    {
+        os << p;
+        return *this;
+    }
+
+    template <class OUTSTR>
+    void sendto(OUTSTR& stream) const
+    {
+        stream << os.rdbuf();
+    }
+
+    operator std::string() const { return os.str(); }
+};
+
+template<class TYPE, typename... Args>
+inline fmt_sender_proxy fmt(const TYPE& val, const Args&... manips)
+{
+    return fmt_sender_proxy(val, manips...);
+}
+
+template<class TR>
+inline TR& operator<<(TR& ot, const fmt_sender_proxy& formatter)
+{
+    formatter.sendto(ot);
+    return ot;
+}
+}
+
 #if HAVE_CXX11
 
 template <class In>
@@ -673,16 +728,7 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    return srt::sfmts(arg);
-}
-
-// Ok, let it be 2-arg, in case when a manipulator is needed
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
-{
-    srt::obufstream sout;
-    sout << arg1 << arg2;
-    return sout.str();
+    return fmt_sender_proxy(arg).str();
 }
 
 template<typename Map, typename Key>
@@ -715,7 +761,8 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 
 #endif
 
-template <class Container, class Value> inline
+#if 0
+template <class Container, class Value, class Manip> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
 {
     srt::obufstream os;
@@ -740,14 +787,21 @@ std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument
     os << "]";
     return os.str();
 }
-
+#endif
 
 template <class Container> inline
 std::string Printable(const Container& in)
 {
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
-    return Printable(in, Value());
+
+    srt::obufstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+    return os.str();
 }
 
 // Printable with prefix added for every element.

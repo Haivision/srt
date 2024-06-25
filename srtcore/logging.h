@@ -28,7 +28,7 @@ written by
 #include <sys/time.h>
 #endif
 
-#include "srt_sfmt.h"
+//#include "srt_sfmt.h"
 
 #include "srt.h"
 #include "utilities.h"
@@ -148,6 +148,7 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
+    size_t prefix_len;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -160,30 +161,30 @@ public:
         level(log_level),
         src_config(&config)
     {
-        // XXX stpcpy desired, but not enough portable
-        // Composing the exact prefix is not critical, so simply
-        // cut the prefix, if the length is exceeded
+        size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
+        size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
 
-        // See Logger::Logger; we know this has normally 2 characters,
-        // except !!FATAL!!, which has 9. Still less than 32.
-        // If the size of the FA name together with severity exceeds the size,
-        // just skip the former.
-        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
+        if (logger_pfx && your_pfx_len + logger_pfx_len + 1 < MAX_PREFIX_SIZE)
         {
-#if defined(_MSC_VER) && _MSC_VER < 1900
-            _snprintf(prefix, MAX_PREFIX_SIZE, "%s:%s", your_pfx, logger_pfx);
-#else
-            snprintf(prefix, MAX_PREFIX_SIZE + 1, "%s:%s", your_pfx, logger_pfx);
-#endif
+            memcpy(prefix, your_pfx, your_pfx_len);
+            prefix[your_pfx_len] = ':';
+            memcpy(prefix + your_pfx_len + 1, logger_pfx, logger_pfx_len);
+            prefix[your_pfx_len + logger_pfx_len + 1] = '\0';
+            prefix_len = your_pfx_len + logger_pfx_len + 1;
+        }
+        else if (your_pfx)
+        {
+            // Prefix too long, so copy only your_pfx and only
+            // as much as it fits
+            size_t copylen = std::min(+MAX_PREFIX_SIZE, your_pfx_len);
+            memcpy(prefix, your_pfx, copylen);
+            prefix[copylen] = '\0';
+            prefix_len = copylen;
         }
         else
         {
-#ifdef _MSC_VER
-            strncpy_s(prefix, MAX_PREFIX_SIZE + 1, your_pfx, _TRUNCATE);
-#else
-            strncpy(prefix, your_pfx, MAX_PREFIX_SIZE);
-            prefix[MAX_PREFIX_SIZE] = '\0';
-#endif
+            prefix[0] = '\0';
+            prefix_len = 0;
         }
     }
 
@@ -522,7 +523,8 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
     }
     else if ( src_config->log_stream )
     {
-        (*src_config->log_stream) << msg;
+        //(*src_config->log_stream) << msg;
+        src_config->log_stream->write(msg.data(), msg.size());
         (*src_config->log_stream).flush();
     }
     src_config->unlock();
