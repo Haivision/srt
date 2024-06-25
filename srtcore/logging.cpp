@@ -43,7 +43,7 @@ LogDispatcher::Proxy LogDispatcher::operator()()
     return Proxy(*this);
 }
 
-void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
+void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 {
     using namespace std;
     using namespace srt;
@@ -67,7 +67,7 @@ void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
     // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     if (!isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf))
     {
-        serr << "/" << tmp_buf;
+        serr << rawstr("/") << tmp_buf;
     }
 
     if (!isset(SRT_LOGF_DISABLE_SEVERITY))
@@ -76,7 +76,7 @@ void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
         serr.write(prefix, prefix_len); // include terminal 0
     }
 
-    serr << ": ";
+    serr << rawstr(": ");
 }
 
 std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)

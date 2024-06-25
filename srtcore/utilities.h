@@ -45,8 +45,6 @@ written by
 #include <cstring>
 #include <stdexcept>
 
-#include "srt_sfmt.h"
-
 // -------------- UTILITIES ------------------------
 
 // --- ENDIAN ---
@@ -485,7 +483,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        srt::obufstream ss;
+        std::ostringstream ss;
         ss << "Index " << i << "out of range";
         throw std::runtime_error(ss.str());
     }
@@ -620,6 +618,38 @@ inline TR& operator<<(TR& ot, const fmt_sender_proxy& formatter)
     formatter.sendto(ot);
     return ot;
 }
+
+template <size_t N>
+struct check_minus_1
+{
+    static const size_t value = N - 1;
+};
+
+template<>
+struct check_minus_1<0>
+{
+};
+
+struct rawstr
+{
+    const char* d;
+    size_t s;
+
+    rawstr(const char* dd, size_t ss): d(dd), s(ss) {}
+    const char* data() const { return d; }
+    size_t size() const { return s; }
+
+    template<size_t N>
+    explicit rawstr(const char (&ref)[N]): d(ref), s(check_minus_1<N>::value) {}
+};
+
+template <class Stream>
+Stream& operator<<(Stream& out, rawstr v)
+{
+    out.write(v.data(), v.size());
+    return out;
+}
+
 }
 
 #if HAVE_CXX11
@@ -642,7 +672,7 @@ inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 template <class... Args>
 inline std::string Sprint(Args&&... args)
 {
-    srt::obufstream sout;
+    std::ostringstream sout;
     Print(sout, args...);
     return sout.str();
 }
@@ -765,7 +795,7 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 template <class Container, class Value, class Manip> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
 {
-    srt::obufstream os;
+    std::ostringstream os;
     os << "[ ";
     typedef typename Container::const_iterator it_t;
     for (it_t i = in.begin(); i != in.end(); ++i)
@@ -779,7 +809,7 @@ template <class Container, class Key, class Value> inline
 std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
 {
     using namespace srt_pair_op;
-    srt::obufstream os;
+    std::ostringstream os;
     os << "[ ";
     typedef typename Container::const_iterator it_t;
     for (it_t i = in.begin(); i != in.end(); ++i)
@@ -795,7 +825,7 @@ std::string Printable(const Container& in)
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
 
-    srt::obufstream os;
+    std::ostringstream os;
     os << "[ ";
     typedef typename Container::const_iterator it_t;
     for (it_t i = in.begin(); i != in.end(); ++i)
@@ -811,7 +841,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 {
     using namespace srt_pair_op;
     typedef typename Container::value_type Value;
-    srt::obufstream os;
+    std::ostringstream os;
     os << "[ ";
     for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
         os << prefix << Value(*y) << " ";
@@ -1034,11 +1064,14 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
-    srt::obufstream os;
+    using namespace std;
+
+    ostringstream os;
+    os << setfill('0') << setw(2) << hex << uppercase;
 
     for (size_t i = 0; i < size; ++i)
     {
-        os << srt::sfmt<int>(bytes[i], "02X");
+        os << int(bytes[i]);
     }
     return os.str();
 }
@@ -1204,7 +1237,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    return srt::sfmts(sum, "08X");
+    return srt::fmt(sum, setfill('0'), setw(8), hex, uppercase);
 }
 
 template <class OutputIterator>
