@@ -53,7 +53,7 @@ written by
 { \
     srt_logging::LogDispatcher::Proxy log(logdes); \
     log.setloc(__FILE__, __LINE__, __FUNCTION__); \
-    const srt_logging::LogDispatcher::Proxy& log_prox SRT_ATR_UNUSED = args; \
+    { (void)(const srt_logging::LogDispatcher::Proxy&)(args); } \
 }
 
 // LOGF uses printf-like style formatting.
