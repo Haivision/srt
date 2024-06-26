@@ -10012,9 +10012,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        obufstream buf;
+        std::stringstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = sfmts(m_SocketID, "02");
+        string s = fmt(m_SocketID, setfill('0'), setw(2)).str();
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = buf.str();
 #else

@@ -51,16 +51,16 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    srt::obufstream out;
+    std::stringstream out;
     if (days)
-        out << days << "D ";
+        out << days << rawstr("D ");
 
     out << srt::fmt(hours, setfill('0'), setw(2)) << ":"
         << srt::fmt(minutes, setfill('0'), setw(2)) << ":"
         << srt::fmt(seconds, setfill('0'), setw(2)) << "."
         << srt::fmt(frac.time_since_epoch().count(),
                      setfill('0'), setw(decimals))
-        << " [STDY]";
+        << rawstr(" [STDY]");
     return out.str();
 }
 
@@ -76,10 +76,10 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
-    srt::obufstream out;
-    out << tmp_buf
+    std::stringstream out;
+    out << rawstr(tmp_buf)
         << srt::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, setfill('0'), setw(6))
-        << " [SYST]";
+        << rawstr(" [SYST]");
     return out.str();
 }
 

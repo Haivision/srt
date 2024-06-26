@@ -605,6 +605,7 @@ public:
     }
 
     operator std::string() const { return os.str(); }
+    std::string str() const { return os.str(); }
 };
 
 template<class TYPE, typename... Args>

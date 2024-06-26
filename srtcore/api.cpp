@@ -231,7 +231,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     if (sock == 0)
         return "";
 
-    srt::obufstream os;
+    std::stringstream os;
     os << "@" << sock << ":";
     return os.str();
 }
@@ -3249,7 +3249,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            srt::obufstream that_muxer;
+            std::stringstream that_muxer;
             that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
                        << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
 #endif
