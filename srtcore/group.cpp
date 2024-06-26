@@ -1501,7 +1501,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     int ercode = 0;
 
-    if (was_blocked)
+    // This block causes waiting for any socket to accept the payload.
+    // This should be done only in blocking mode and only if no other socket
+    // accepted the payload.
+    if (was_blocked && none_succeeded && m_bSynSending)
     {
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
         if (!m_bSynSending)
@@ -1646,6 +1649,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         CodeMinor minor = CodeMinor(ercode ? ercode % 1000 : MN_CONNLOST);
 
         throw CUDTException(major, minor, 0);
+    }
+
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        // Here we have a situation that at least 1 link successfully sent a packet.
+        // All links for which sending has failed must be closed.
+        if (is->stat == -1)
+        {
+            // This only sets the state to the socket; the GC process should
+            // pick it up at the next time.
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: per PARTIAL SUCCESS, closing failed @" << is->id);
+            is->mb->ps->setBrokenClosed();
+        }
     }
 
     // Now that at least one link has succeeded, update sending stats.
