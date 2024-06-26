@@ -230,10 +230,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 {
     if (sock == 0)
         return "";
-
-    srt::obufstream os;
-    os << "@" << sock << ":";
-    return os.str();
+    return fmt::ffcat("@", sock, ":");
 }
 
 int srt::CUDTUnited::startup()
@@ -1405,7 +1402,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << int(g.m_config[i].so));
-                error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
+                error_reason = fmt::ffcat("group-derived option: #", int(g.m_config[i].so));
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -3249,14 +3246,14 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            srt::obufstream that_muxer;
-            that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
-                       << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
+            fmt::memory_buffer that_muxer;
+            ffwrite(that_muxer, "id=", m.m_iID, " port=", m.m_iPort
+                      , " ip=", (m.m_iIPversion == AF_INET ? "v4" : "v6"));
 #endif
 
             if (m.m_iPort == port)
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer);
                 if (m.m_iIPversion == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
@@ -3270,7 +3267,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             }
             else
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer);
             }
         }
 

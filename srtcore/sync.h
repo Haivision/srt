@@ -55,7 +55,6 @@
 #include "srt.h"
 #include "utilities.h"
 #include "srt_attr_defs.h"
-#include "srt_sfmt.h"
 
 namespace srt
 {
@@ -775,9 +774,11 @@ struct DurationUnitName<DUNIT_S>
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
-    obufstream out;
-    out << sfmt(DurationUnitName<UNIT>::count(dur), "f") << DurationUnitName<UNIT>::name();
-    return out.str();
+    using namespace fmt;
+
+    // Required fmt::fixed because it conflicts with std::fixed by unknown reason
+    // (namespace std isn't explicitly imported anywhere???)
+    return ffcat(ffmt(DurationUnitName<UNIT>::count(dur), fmt::fixed), DurationUnitName<UNIT>::name());
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)

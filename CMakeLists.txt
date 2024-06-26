@@ -1288,6 +1288,7 @@ macro(srt_add_program_dont_install name)
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
     target_include_directories(${name} PRIVATE submodules/fmt/include)
+	#message(STATUS "PROGRAM: ${name} with apps, common, fmt; SOURCES: ${ARGN}")
 endmacro()
 
 macro(srt_add_program name)
@@ -1371,6 +1372,8 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
+	add_dependencies(srtsupport_virtual fmt)
+	target_include_directories(srtsupport_virtual PRIVATE submodules/fmt/include)
 	srt_set_stdcxx(srtsupport_virtual "${USE_CXX_STD_APP}")
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
@@ -1412,6 +1415,7 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(utility-test)
 		srt_set_stdcxx(utility-test "${USE_CXX_STD_APP}")
+	    target_link_libraries(utility-test PRIVATE fmt)
 		if (NOT WIN32)
 			# This program is symlinked under git-cygwin.
 			# Avoid misleading syntax error.

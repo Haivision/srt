@@ -90,7 +90,6 @@ using namespace srt::sync;
 using namespace srt_logging;
 
 using fmt::ffmt;
-using fmt::ffmts;
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
@@ -6001,12 +6000,12 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
         int supr = m_aSuppressedMsg[logid];
 
         if (supr > 0)
-            w_why = Sprint("++SUPPRESSED: ", supr);
+            w_why = fmt::ffcat("++SUPPRESSED: ", supr);
         m_aSuppressedMsg[logid] = 0;
     }
     else
     {
-        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown.load()));
+        w_why = fmt::ffcat("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown.load()));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
         ++m_aSuppressedMsg[logid];
@@ -9287,7 +9286,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     {
         ScopedLock glock (uglobal().m_GlobControlLock);
         grpspec = m_parent->m_GroupOf
-            ? " group=$" + Sprint(m_parent->m_GroupOf->id())
+            ? fmt::ffcat(" group=$", m_parent->m_GroupOf->id())
             : string();
     }
 #else
@@ -9684,7 +9683,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(qslog.Debug,
           log << CONID() << "packData: " << reason << " packet seq=" << w_packet.seqno() << " (ACK=" << m_iSndLastAck
-              << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
+              << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.FmtMessageFlag() << ")");
 #endif
 
     // Fix keepalive
@@ -10020,11 +10019,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        obufstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = ffmts(m_SocketID, "02");
-        buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
-        const string thname = buf.str();
+        string s = fmt::ffmts(m_SocketID, "02");
+        const string thname = fmt::ffcat("SRT:TsbPd:@", s.substr(s.size()-2, 2));
 #else
         const string thname = "SRT:TsbPd";
 #endif
@@ -10102,7 +10099,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             HLOGC(qrlog.Debug,
                     log << CONID() << "RECEIVED: %" << rpkt.seqno() << " bufidx=" << bufidx << " (BELATED/"
                     << s_rexmitstat_str[pktrexmitflag] << ") with ACK %" << m_iRcvLastAck
-                    << " FLAGS: " << rpkt.MessageFlagStr());
+                    << " FLAGS: " << rpkt.FmtMessageFlag());
             continue;
         }
 
@@ -10257,7 +10254,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " RSL=" << expectspec.str()
                 << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
-                << rpkt.MessageFlagStr());
+                << rpkt.FmtMessageFlag());
 #endif
 
         // Decryption should have made the crypto flags EK_NOENC.

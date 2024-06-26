@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <map>
 #include <string>
+#include "fmt/format.h"
 
 #include "uriparser.hpp"
 
@@ -57,6 +58,7 @@ UriParser::~UriParser(void)
 
 string UriParser::makeUri()
 {
+    using namespace fmt;
     // Reassemble parts into the URI
     string prefix = "";
     if (m_proto != "")
@@ -64,41 +66,41 @@ string UriParser::makeUri()
         prefix = m_proto + "://";
     }
 
-    srt::obufstream out;
+    memory_buffer out;
 
-    out << prefix << m_host;
+    ffwrite(out, prefix, m_host);
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
     {
         // Do not add port
     }
     else
     {
-        out << ":" << m_port;
+        ffwrite(out, ":", m_port);
     }
 
     if (m_path != "")
     {
         if (m_path[0] != '/')
-            out << "/";
-        out << m_path;
+            ffwrite(out, "/");
+        ffwrite(out, m_path);
     }
 
     if (!m_mapQuery.empty())
     {
-        out << "?";
+        ffwrite(out, "?");
 
         query_it i = m_mapQuery.begin();
         for (;;)
         {
-            out << i->first << "=" << i->second;
+            ffwrite(out, i->first, "=", i->second);
             ++i;
             if (i == m_mapQuery.end())
                 break;
-            out << "&";
+            ffwrite(out, "&");
         }
     }
 
-    m_origUri = out.str();
+    m_origUri = ffcat(out);
     return m_origUri;
 }
 

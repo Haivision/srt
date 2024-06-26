@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <stdexcept>
 #include <cmath>
+#include "fmt/format.h"
 #include "sync.h"
 #include "srt.h"
 #include "srt_compat.h"
@@ -31,6 +32,8 @@ namespace srt_logging
 using namespace srt_logging;
 using namespace std;
 
+using fmt::ffmt;
+
 namespace srt
 {
 namespace sync
@@ -38,6 +41,7 @@ namespace sync
 
 std::string FormatTime(const steady_clock::time_point& timestamp)
 {
+    using namespace fmt;
     if (is_zero(timestamp))
     {
         // Use special string for 0
@@ -51,21 +55,22 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    srt::obufstream out;
+    memory_buffer out;
     if (days)
-        out << days << "D ";
+        ffwrite(out, days, "D ");
 
-    out << srt::sfmt(hours, "02") << ":"
-        << srt::sfmt(minutes, "02") << ":"
-        << srt::sfmt(seconds, "02") << "."
-        << srt::sfmt(frac.time_since_epoch().count(),
-                     srt::sfmc().fillzero().width(decimals))
-        << " [STDY]";
-    return out.str();
+    ffwrite(out, ffmt(hours, fillzero, width(2)), ":",
+                 ffmt(minutes, fillzero, width(2)), ":",
+                 ffmt(seconds, fillzero, width(2)), ".",
+                 ffmt(frac.time_since_epoch().count(),
+                     fmt::fillzero, fmt::width(decimals)),
+                 " [STDY]");
+    return fmt::ffcat(out);
 }
 
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
+    using namespace fmt;
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
@@ -76,9 +81,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
-    srt::obufstream out;
-    out << tmp_buf << srt::sfmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, "06") << " [SYST]";
-    return out.str();
+    return ffcat(tmp_buf,
+            ffmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fillzero, width(6)),
+            " [SYST]");
 }
 
 

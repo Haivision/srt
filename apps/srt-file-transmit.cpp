@@ -390,7 +390,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             {
                 int st = tar->Write(buf.data() + shift, n, 0, out_stats);
                 Verb() << "Upload: " << n << " --> " << st
-                    << (!shift ? string() : "+" + Sprint(shift));
+                    << (!shift ? string() : fmt::ffcat("+", shift));
                 if (st == SRT_ERROR)
                 {
                     cerr << "Upload: SRT error: " << srt_getlasterror_str()

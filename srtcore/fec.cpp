@@ -1466,7 +1466,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     HLOGC(pflog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])
-            << " flags=" << PacketMessageFlagStr(p.hdr[SRT_PH_MSGNO])
+            << " flags=" << FmtPacketMessageFlag(p.hdr[SRT_PH_MSGNO])
             << " TS=" << p.hdr[SRT_PH_TIMESTAMP] << " ID=" << p.hdr[SRT_PH_ID]
             << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));

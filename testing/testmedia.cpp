@@ -24,6 +24,7 @@
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
 #endif
+#include "fmt/format.h"
 
 // SRT protected includes
 #include "netinet_any.h"
@@ -452,7 +453,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
                 throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
+            par["payloadsize"] = fmt::ffcat(transmit_chunk_size);
         }
     }
 
@@ -473,10 +474,10 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
-                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+                throw std::runtime_error(fmt::ffcat("Value for 'minversion' doesn't specify a valid version: ", v));
             }
-            par["minversion"] = Sprint(version);
-            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+            par["minversion"] = fmt::ffmts(version);
+            Verb() << "\tFIXED: minversion = 0x" << fmt::ffmt(version, fmt::hex, fmt::fillzero, fmt::width(8));
         }
     }
 
@@ -1050,7 +1051,7 @@ void SrtCommon::OpenGroupClient()
         Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
         vector<string> extras;
         if (c.weight)
-            extras.push_back(Sprint("weight=", c.weight));
+            extras.push_back(fmt::ffcat("weight=", c.weight));
 
         if (!c.source.empty())
             extras.push_back("source=" + c.source.str());
