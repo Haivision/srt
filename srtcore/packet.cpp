@@ -557,59 +557,59 @@ CPacket* CPacket::clone() const
 }
 
 // Useful for debugging
-std::string PacketMessageFlagStr(uint32_t msgno_field)
+fmt::memory_buffer FmtPacketMessageFlag(uint32_t msgno_field)
 {
-    using namespace std;
+    using namespace fmt;
 
-    stringstream out;
+    memory_buffer out;
 
     static const char* const boundary[] = {"PB_SUBSEQUENT", "PB_LAST", "PB_FIRST", "PB_SOLO"};
     static const char* const order[]    = {"ORD_RELAXED", "ORD_REQUIRED"};
     static const char* const crypto[]   = {"EK_NOENC", "EK_EVEN", "EK_ODD", "EK*ERROR"};
     static const char* const rexmit[]   = {"SN_ORIGINAL", "SN_REXMIT"};
 
-    out << boundary[MSGNO_PACKET_BOUNDARY::unwrap(msgno_field)] << " ";
-    out << order[MSGNO_PACKET_INORDER::unwrap(msgno_field)] << " ";
-    out << crypto[MSGNO_ENCKEYSPEC::unwrap(msgno_field)] << " ";
-    out << rexmit[MSGNO_REXMIT::unwrap(msgno_field)];
+    ffwrite(out, boundary[MSGNO_PACKET_BOUNDARY::unwrap(msgno_field)], " ",
+                 order[MSGNO_PACKET_INORDER::unwrap(msgno_field)], " ",
+                 crypto[MSGNO_ENCKEYSPEC::unwrap(msgno_field)], " ",
+                 rexmit[MSGNO_REXMIT::unwrap(msgno_field)]);
 
-    return out.str();
+    return out;
 }
 
-inline void SprintSpecialWord(std::ostream& os, int32_t val)
+inline void SprintSpecialWord(fmt::memory_buffer& os, int32_t val)
 {
     if (val & LOSSDATA_SEQNO_RANGE_FIRST)
-        os << "<" << (val & (~LOSSDATA_SEQNO_RANGE_FIRST)) << ">";
+        ffwrite(os, "<", (val & (~LOSSDATA_SEQNO_RANGE_FIRST)), ">");
     else
-        os << val;
+        ffwrite(os, val);
 }
 
 #if ENABLE_LOGGING
-std::string CPacket::Info()
+fmt::memory_buffer CPacket::Info()
 {
-    std::ostringstream os;
-    os << "TARGET=@" << id() << " ";
+    using namespace fmt;
+
+    memory_buffer os;
+    ffwrite(os, "TARGET=@", id(), " ");
 
     if (isControl())
     {
-        os << "CONTROL: size=" << getLength() << " type=" << MessageTypeStr(getType(), getExtendedType());
+        ffwrite(os, "CONTROL: size=", getLength(), " type=", MessageTypeStr(getType(), getExtendedType()));
 
         if (getType() == UMSG_HANDSHAKE)
         {
-            os << " HS: ";
+            ffwrite(os, " HS: ");
             // For handshake we already have a parsing method
             CHandShake hs;
             hs.load_from(m_pcData, getLength());
-            os << hs.show();
+            ffwrite(os, hs.show());
         }
         else
         {
             // This is a value that some messages use for some purposes.
             // The "ack seq no" is one of the purposes, used by UMSG_ACK and UMSG_ACKACK.
             // This is simply the SRT_PH_MSGNO field used as a message number in data packets.
-            os << " ARG: 0x";
-            os << std::hex << getAckSeqNo() << " ";
-            os << std::dec << getAckSeqNo();
+            ffwrite(os, " ARG: 0x", ffmt(getAckSeqNo(), hex), " ", getAckSeqNo());
 
             // It would be nice to see the extended packet data, but this
             // requires strictly a message-dependent interpreter. So let's simply
@@ -618,13 +618,13 @@ std::string CPacket::Info()
             // - sign flag will be cleared before displaying, with additional mark
             size_t   wordlen = getLength() / 4; // drop any remainder if present
             int32_t* array   = (int32_t*)m_pcData;
-            os << " [ ";
+            ffwrite(os, " [ ");
             for (size_t i = 0; i < wordlen; ++i)
             {
                 SprintSpecialWord(os, array[i]);
-                os << " ";
+                ffwrite(os, " ");
             }
-            os << "]";
+            ffwrite(os, "]");
         }
     }
     else
@@ -633,11 +633,11 @@ std::string CPacket::Info()
         // This is only a log, nothing crucial, so we can risk displaying incorrect message number.
         // Declaring that the peer supports rexmit flag cuts off the highest bit from
         // the displayed number.
-        os << "DATA: size=" << getLength() << " " << BufferStamp(m_pcData, getLength()) << " #" << getMsgSeq(true)
-           << " %" << getSeqNo() << " " << MessageFlagStr();
+        ffwrite(os, "DATA: size=", getLength(), " ", BufferStamp(m_pcData, getLength()), " #", getMsgSeq(true),
+                " %", getSeqNo(), " ", FmtMessageFlag());
     }
 
-    return os.str();
+    return os;
 }
 #endif
 
