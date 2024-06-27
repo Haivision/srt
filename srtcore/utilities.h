@@ -34,8 +34,8 @@ written by
 #include <functional>
 #include <memory>
 #include <iomanip>
-#include <sstream>
 #include <utility>
+#include <sstream>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -484,7 +484,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "Index " << i << "out of range";
         throw std::runtime_error(ss.str());
     }
@@ -530,8 +530,8 @@ private:
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op
 {
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    template <class Stream, class Value1, class Value2>
+    Stream& operator<<(Stream& s, const std::pair<Value1, Value2>& v)
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
@@ -566,6 +566,167 @@ namespace any_op
     }
 }
 
+// XXX Consider this whole file to be namespace srt!
+namespace srt
+{
+#if HAVE_CXX11
+class fmt_sender_proxy
+{
+    std::stringstream os;
+public:
+    template <class TYPE, typename... Args>
+    explicit fmt_sender_proxy(const TYPE& v, const Args&... manips)
+    {
+        manipulate(manips...);
+        os << v;
+    }
+
+    void manipulate() {}
+
+    template <typename Arg1, typename... Args>
+    void manipulate(const Arg1& manip, const Args&... manips)
+    {
+        os << manip;
+        manipulate(manips...);
+    }
+
+    template <class OUTER>
+    fmt_sender_proxy& operator *(const OUTER& p)
+    {
+        os << p;
+        return *this;
+    }
+
+    template <class OUTSTR>
+    void sendto(OUTSTR& stream) const
+    {
+        stream << os.rdbuf();
+    }
+
+    operator std::string() const { return os.str(); }
+    std::string str() const { return os.str(); }
+};
+
+template<class TYPE, typename Arg1, typename... Args>
+inline fmt_sender_proxy fmt(const TYPE& val, const Arg1& man1,  const Args&... manips)
+{
+    return fmt_sender_proxy(val, man1, manips...);
+}
+
+template<class TR>
+inline TR& operator<<(TR& ot, const fmt_sender_proxy& formatter)
+{
+    formatter.sendto(ot);
+    return ot;
+}
+#endif
+
+template <class TYPE>
+class fmt_delayed_sender_proxy
+{
+    std::stringstream os;
+    TYPE value_cache;
+public:
+    explicit fmt_delayed_sender_proxy(const TYPE& v): value_cache(v)
+    {
+    }
+
+    template <class OUTSTR>
+    void sendto(OUTSTR& stream)
+    {
+        os << value_cache;
+        stream << os.rdbuf();
+    }
+
+    template<class ValueType>
+    fmt_delayed_sender_proxy& operator<<(const ValueType& v)
+    {
+        os << v;
+        return *this;
+    }
+
+    template<class TR>
+    friend TR& operator<<(TR& ot, fmt_delayed_sender_proxy& formatter)
+    {
+        formatter.sendto(ot);
+        return ot;
+    }
+
+    std::string str()
+    {
+        os << value_cache;
+        return os.str();
+    }
+};
+
+
+// Version for C++03 using the array
+template<class Type>
+inline fmt_delayed_sender_proxy<Type> fmt(const Type& val)
+{
+    return fmt_delayed_sender_proxy<Type>(val);
+}
+
+template <size_t N>
+struct check_minus_1
+{
+    static const size_t value = N - 1;
+};
+
+template<>
+struct check_minus_1<0>
+{
+};
+
+// !!! IMPORTANT !!!
+// THIS CLASS IS FOR THE PURPOSE OF DIRECT WRITING TO THE STREAM ONLY.
+// DO NOT use this class for any other purpose and use it also with
+// EXTREME CARE.
+// The only role of this class is to pass the string with KNOWN SIZE
+// written in either a string literal or an array of characters to
+// the output stream using its `write` method, that is, with bypassing
+// any formatting facilities.
+struct RawStringForStreams
+{
+private:
+    // This trick is to prevent a possibility to use this class any
+    // other way than for creating a temporary object.
+    friend RawStringForStreams rawstr(const char* dd, size_t ss);
+
+    template <class Stream>
+    friend Stream& operator<<(Stream& out, RawStringForStreams v)
+    {
+        out.write(v.data(), v.size());
+        return out;
+    }
+
+    const char* d;
+    size_t s;
+
+    RawStringForStreams(const char* dd, size_t ss): d(dd), s(ss) {}
+    const char* data() const { return d; }
+    size_t size() const { return s; }
+};
+
+inline RawStringForStreams rawstr(const char* dd, size_t ss)
+{
+    return RawStringForStreams(dd, ss);
+}
+
+// NOTE: DO NOT USE THIS FUNCTION DIRECTLY.
+template<size_t N>
+inline RawStringForStreams CreateRawString_FWD(const char (&ref)[N])
+{
+    const char* ptr = ref;
+    return rawstr(ptr, check_minus_1<N>::value);
+}
+
+// This prevents the macro from being used with anything else
+// than a string literal
+#define SRTRSTR(arg) CreateRawString_FWD("" arg)
+
+}
+
 #if HAVE_CXX11
 
 template <class In>
@@ -596,27 +757,6 @@ inline std::string Sprint(Args&&... args)
 // switch to C++11.
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
-
-template <class Container, class Value = typename Container::value_type, typename... Args> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
-{
-    using namespace srt_pair_op;
-    std::ostringstream os;
-    Print(os, args...);
-    os << "[ ";
-    for (auto i: in)
-        os << Value(i) << " ";
-    os << "]";
-    return os.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    using Value = typename Container::value_type;
-    return Printable(in, Value());
-}
 
 template<typename Map, typename Key>
 auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
@@ -693,32 +833,7 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    std::ostringstream sout;
-    sout << arg;
-    return sout.str();
-}
-
-// Ok, let it be 2-arg, in case when a manipulator is needed
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
-{
-    std::ostringstream sout;
-    sout << arg1 << arg2;
-    return sout.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
-    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-
-    return os.str();
+    return fmt_sender_proxy(arg).str();
 }
 
 template<typename Map, typename Key>
@@ -750,6 +865,49 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 }
 
 #endif
+
+#if 0
+template <class Container, class Value, class Manip> inline
+std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
+{
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << srt::sfmt<Value>(*i, fmt) << " ";
+    os << "]";
+    return os.str();
+}
+
+// Separate version for pairs, used for std::map
+template <class Container, class Key, class Value> inline
+std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
+{
+    using namespace srt_pair_op;
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << srt::sfmt<Key>(i->first, fmtk) << ":" << srt::sfmt<Value>(i->second, fmtv) << " ";
+    os << "]";
+    return os.str();
+}
+#endif
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+    return os.str();
+}
 
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
@@ -981,30 +1139,13 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
-    //char buf[256];
     using namespace std;
 
     ostringstream os;
+    os << setfill('0') << setw(2) << hex << uppercase;
 
-    // I know, it's funny to use sprintf and ostringstream simultaneously,
-    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
-    // Too noisy. OTOH ostringstream solves the problem of memory allocation
-    // for a string of unpredictable size.
-    //sprintf(buf, "%02X", int(bytes[0]));
-
-    os.fill('0');
-    os.width(2);
-    os.setf(ios::basefield, ios::hex);
-    os.setf(ios::uppercase);
-
-    //os << buf;
-    os << int(bytes[0]);
-
-
-    for (size_t i = 1; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        //sprintf(buf, " %02X", int(bytes[i]));
-        //os << buf;
         os << int(bytes[i]);
     }
     return os.str();
@@ -1171,10 +1312,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    ostringstream os;
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
+    return (srt::fmt(sum) << setfill('0') << setw(8) << hex << uppercase).str();
 }
 
 template <class OutputIterator>

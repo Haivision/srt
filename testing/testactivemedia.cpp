@@ -3,6 +3,11 @@
 
 using namespace std;
 
+#if ENABLE_LOGGING
+namespace {
+const char* fmt_yesno(bool b) { return b ? "yes" : "no"; }
+}
+#endif
 
 void SourceMedium::Runner()
 {
@@ -84,7 +89,7 @@ void TargetMedium::Runner()
 
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
                 LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): [", val.payload.size(), "] BUFFER update (timeout:",
-                        boolalpha, gotsomething, " running: ", running, ")");
+                        fmt_yesno(!gotsomething), " running: ", running, ")");
                 if (::transmit_int_state || !running || !med || med->Broken())
                 {
                     LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): buffer empty, medium ",
@@ -120,4 +125,20 @@ void TargetMedium::Runner()
     }
 }
 
+bool TargetMedium::Schedule(const MediaPacket& data)
+{
+    LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
+    std::lock_guard<std::mutex> lg(buffer_lock);
+    LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
+    if (!running || ::transmit_int_state)
+    {
+        LOGP(applog.Debug, "TargetMedium::Schedule: not running, discarding packet");
+        return false;
+    }
+
+    LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): Schedule: [", data.payload.size(), "] CLIENT -> BUFFER");
+    buffer.push_back(data);
+    ready.notify_one();
+    return true;
+}
 

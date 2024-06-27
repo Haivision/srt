@@ -20,7 +20,6 @@
 #include <map>
 #include <chrono>
 #include <thread>
-#include <atomic>
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
@@ -50,8 +49,8 @@ using srt_logging::SockStatusStr;
 using srt_logging::MemberStatusStr;
 #endif
 
-std::atomic<bool> transmit_throw_on_interrupt {false};
-std::atomic<bool> transmit_int_state {false};
+srt::sync::atomic<bool> transmit_throw_on_interrupt {false};
+srt::sync::atomic<bool> transmit_int_state {false};
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -1059,8 +1058,8 @@ void SrtCommon::OpenGroupClient()
         if (!extras.empty())
         {
             Verb() << "?" << extras[0] << VerbNoEOL;
-            for (size_t i = 1; i < extras.size(); ++i)
-                Verb() << "&" << extras[i] << VerbNoEOL;
+            for (size_t ei = 1; ei < extras.size(); ++ei)
+                Verb() << "&" << extras[ei] << VerbNoEOL;
         }
 
         Verb();
@@ -1130,15 +1129,15 @@ Connect_Again:
     // spread the setting on all sockets.
     ConfigurePost(m_sock);
 
-    for (size_t i = 0; i < targets.size(); ++i)
+    for (size_t ti = 0; ti < targets.size(); ++ti)
     {
         // As m_group_nodes is simply transformed into 'targets',
         // one index can be used to index them all. You don't
         // have to check if they have equal addresses because they
         // are equal by definition.
-        if (targets[i].id != -1 && targets[i].errorcode == SRT_SUCCESS)
+        if (targets[ti].id != -1 && targets[ti].errorcode == SRT_SUCCESS)
         {
-            m_group_nodes[i].socket = targets[i].id;
+            m_group_nodes[ti].socket = targets[ti].id;
         }
     }
 
@@ -1159,12 +1158,12 @@ Connect_Again:
     }
     m_group_data.resize(size);
 
-    for (size_t i = 0; i < m_group_nodes.size(); ++i)
+    for (size_t ni = 0; ni < m_group_nodes.size(); ++ni)
     {
-        SRTSOCKET insock = m_group_nodes[i].socket;
+        SRTSOCKET insock = m_group_nodes[ni].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[ni].peeraddr).str() << "' connection failed.";
             continue;
         }
 
@@ -1194,11 +1193,11 @@ Connect_Again:
                     NULL, NULL) != -1)
         {
             Verb() << "[C]" << VerbNoEOL;
-            for (int i = 0; i < len1; ++i)
-                Verb() << " " << ready_conn[i] << VerbNoEOL;
+            for (int ri = 0; ri < len1; ++ri)
+                Verb() << " " << ready_conn[ri] << VerbNoEOL;
             Verb() << "[E]" << VerbNoEOL;
-            for (int i = 0; i < len2; ++i)
-                Verb() << " " << ready_err[i] << VerbNoEOL;
+            for (int ri = 0; ri < len2; ++ri)
+                Verb() << " " << ready_err[ri] << VerbNoEOL;
 
             Verb() << "";
 
