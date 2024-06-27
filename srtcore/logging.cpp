@@ -60,14 +60,14 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
-            serr << tmp_buf << fmt(tv.tv_usec, setfill('0'), setw(6));
+            serr << tmp_buf << (fmt(tv.tv_usec) << setfill('0') << setw(6));
         }
     }
 
     // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     if (!isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf))
     {
-        serr << rawstr("/") << tmp_buf;
+        serr << SRTRSTR("/") << tmp_buf;
     }
 
     if (!isset(SRT_LOGF_DISABLE_SEVERITY))
@@ -76,7 +76,7 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
         serr.write(prefix, prefix_len); // include terminal 0
     }
 
-    serr << rawstr(": ");
+    serr << SRTRSTR(": ");
 }
 
 std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)

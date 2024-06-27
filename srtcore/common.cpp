@@ -278,9 +278,9 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     else
     {
         std::stringstream peeraddr_form;
-        peeraddr_form << fmt(peeraddr16[0], hex, setfill('0'), setw(4));
+        peeraddr_form << (fmt(peeraddr16[0]) << hex << setfill('0') << setw(4));
         for (int i = 1; i < 8; ++i)
-            peeraddr_form << ":" << fmt(peeraddr16[i], hex, setfill('0'), setw(4));
+            peeraddr_form << ":" << (fmt(peeraddr16[i]) << hex << setfill('0'), setw(4));
 
         LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form.rdbuf());
         *target_ipv4_addr = 0;

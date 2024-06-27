@@ -336,6 +336,9 @@ struct LogDispatcher::Proxy
         return *this;
     }
 
+    // Provide explicit overloads for const char* and string
+    // so that printing them bypasses the formatting facility
+
     // Special case for atomics, as passing them to snprintf() call
     // requires unpacking the real underlying value.
     template <class T>

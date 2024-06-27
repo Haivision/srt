@@ -2107,8 +2107,8 @@ int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint
     }
 
     LOGC(cnlog.Debug, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
-                          << " vers=0x" << fmt(srtdata[SRT_HS_VERSION], hex)
-                          << " opts=0x" << fmt(srtdata[SRT_HS_FLAGS], hex)
+                          << " vers=0x" << (fmt(srtdata[SRT_HS_VERSION]) << hex)
+                          << " opts=0x" << (fmt(srtdata[SRT_HS_FLAGS]) << hex)
                           << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
     m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
@@ -2343,7 +2343,7 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
     m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
     HLOGC(cnlog.Debug, log << "HSRSP/rcv: Version: " << SrtVersionString(m_uPeerSrtVersion)
-                           << " Flags: SND:" << fmt(m_uPeerSrtFlags, hex, setfill('0'), setw(8))
+                           << " Flags: SND:" << (fmt(m_uPeerSrtFlags) << hex << setfill('0') << setw(8))
                            << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
     // Basic version check
     if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
@@ -5470,14 +5470,14 @@ void * srt::CUDT::tsbpd(void* param)
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
-                    << (timediff_us / 1000) << "." << fmt(timediff_us % 1000, fixed, setfill('0'), setw(3)) << " ms");
+                    << (timediff_us / 1000) << "." << (fmt(timediff_us % 1000) << fixed << setfill('0') << setw(3)) << " ms");
 #endif
                 string why;
                 if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                             << " delayed for " << (timediff_us / 1000) << "."
-                            << fmt(timediff_us % 1000, fixed, setfill('0'), setw(3)) << " ms " << why);
+                            << (fmt(timediff_us % 1000) << fixed << setfill('0') << setw(3)) << " ms " << why);
                 }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
                 else
@@ -7777,7 +7777,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
                   << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << fmt(cgwindow, setprecision(3)));
+                  << (fmt(cgwindow) << setprecision(3)));
 #endif
     }
 
@@ -8418,7 +8418,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // included, but it also triggers for any other kind of invalid value.
         // This check MUST BE DONE before making any operation on this number.
         LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: received invalid ACK value: " << ackdata_seqno
-                << " " << fmt(ackdata_seqno, hex) << " (IGNORED)");
+                << " " << (fmt(ackdata_seqno) << hex) << " (IGNORED)");
         return;
     }
 
@@ -10014,7 +10014,7 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 #if ENABLE_HEAVY_LOGGING
         std::stringstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = fmt(m_SocketID, setfill('0'), setw(2)).str();
+        string s = (fmt(m_SocketID) << setfill('0') << setw(2)).str();
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = buf.str();
 #else
