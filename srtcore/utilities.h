@@ -417,7 +417,7 @@ struct DynamicStruct
 /// Fixed-size array template class.
 namespace srt {
 
-template <class T>
+template <class T, class Indexer = size_t>
 class FixedArray
 {
 public:
@@ -433,22 +433,23 @@ public:
     }
 
 public:
-    const T& operator[](size_t index) const
+    const T& operator[](Indexer index) const
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    T& operator[](size_t index)
+    T& operator[](Indexer index)
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
+    /*
     const T& operator[](int index) const
     {
         if (index < 0 || static_cast<size_t>(index) >= m_size)
@@ -464,6 +465,7 @@ public:
 
         return m_entries[index];
     }
+    */
 
     size_t size() const { return m_size; }
 
