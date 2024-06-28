@@ -123,7 +123,10 @@ public:
 
     void construct();
 
-    SRT_ATTR_GUARDED_BY(m_ControlLock)
+    // XXX Controversial as to whether it should be guarded by this lock.
+    // It is used in many places without the lock, and it is also atomic.
+    // (blocked because it makes more ado than actual help)
+    //SRT_ATTR_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
     /// Time when the socket is closed.
@@ -484,6 +487,8 @@ private:
 #endif
 
     void checkBrokenSockets();
+
+    SRT_ATTR_REQUIRES(m_GlobControlLock)
     void removeSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
