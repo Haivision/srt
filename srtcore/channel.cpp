@@ -1044,8 +1044,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     if (msg_flags != 0)
     {
 #if ENABLE_HEAVY_LOGGING
-
-        std::ostringstream flg;
+        obufstream flg;
 
 #if !defined(_WIN32)
 
@@ -1073,7 +1072,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #endif
 
         HLOGC(krlog.Debug,
-              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << hex << msg_flags
+              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << sfmt(msg_flags, sfmc().hex())
                   << ", detected flags:" << flg.str());
 #endif
         status = RST_AGAIN;
