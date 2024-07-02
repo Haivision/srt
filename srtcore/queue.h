@@ -67,6 +67,36 @@ namespace srt
 {
 class CChannel;
 class CUDT;
+class CUDTWrapper;
+
+class CUDTWrapper {
+public:
+    CUDT *udt;
+    sync::SharedMutex mut;
+
+public:
+    CUDTWrapper()
+    :udt(NULL)
+    ,mut()
+    {
+}
+void lockRead()
+{
+    return mut.lockRead();
+}
+void lockWrite()
+{
+    return mut.lockWrite();
+}
+void unlockRead()
+{
+    return mut.unlockRead();
+
+}
+void unlockWrite(){
+    return mut.unlockWrite();
+}
+};
 
 struct CUnit
 {
@@ -555,7 +585,7 @@ private:
 
 private:
     sync::Mutex       m_LSLock;
-    CUDT*             m_pListener;        // pointer to the (unique, if any) listening UDT entity
+    CUDTWrapper       m_pListener;        // pointer to the (unique, if any) listening UDT entity
     CRendezvousQueue* m_pRendezvousQueue; // The list of sockets in rendezvous mode
 
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
