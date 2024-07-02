@@ -1707,12 +1707,11 @@ int srt::CRcvQueue::setListener(CUDT* u)
 
 void srt::CRcvQueue::removeListener(const CUDT* u)
 {
-    ScopedLock lslock(m_LSLock);
+    //ScopedLock lslock(m_LSLock);
     m_pListener.lockWrite();
     if (u == m_pListener.udt)
     {
         m_pListener.udt = NULL;
-        m_pListener.unlockWrite();
     }
     m_pListener.unlockWrite();
 }

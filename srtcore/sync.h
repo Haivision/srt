@@ -12,6 +12,7 @@
 #define INC_SRT_SYNC_H
 
 #include "platform_sys.h"
+#include <limits.h>
 
 #include <cstdlib>
 #include <limits>
@@ -950,6 +951,7 @@ class SharedMutex
     Condition  m_pLockReadCond;
 
     Mutex m_pMutex;
+    Mutex m_pMutex2;
 
     int m_pCountRead;
     bool m_pWriterLocked;
@@ -960,6 +962,7 @@ class SharedMutex
     :m_pLockWriteCond()
     ,m_pLockReadCond()
     ,m_pMutex()
+    ,m_pMutex2()
     ,m_pCountRead(0)
     ,m_pWriterLocked(false)
     {
@@ -976,36 +979,124 @@ class SharedMutex
         m_pWriterLocked = true;
         if(m_pCountRead)
             m_pLockReadCond.wait(l1);
+
+
     }
 
     void unlockWrite()
     {
         UniqueLock l2(m_pMutex);
         m_pWriterLocked = false;
+        l2.unlock();
+        std::cout << "NOTIFY ALL" << std::endl;
         m_pLockWriteCond.notify_all();
+        std::cout << "WRITER NOTIFIED" << std::endl;
+
     }
 
     void lockRead()
     {
+        std::cout << "TRY LOCK READ " << this->m_pCountRead << this->m_pWriterLocked << std::endl;
         UniqueLock l3(m_pMutex);
         if(m_pWriterLocked)
             m_pLockWriteCond.wait(l3);
-
         m_pCountRead++;
+        std::cout << "LOCKED READ" << std::endl;
     }
 
     void unlockRead()
     {
-        UniqueLock l4(m_pMutex);
+        std::cout << "UNLOCK READ" << std::endl;
+        ScopedLock l4(m_pMutex);
         m_pCountRead--;
-        if(m_pWriterLocked)
+        if(m_pWriterLocked && m_pCountRead == 0)
             m_pLockReadCond.notify_one();
         else if (m_pCountRead > 0)
             m_pLockWriteCond.notify_one();
+        std::cout << "READ UNLOCKED" << std::endl;
+
 
     }
 
 };
+
+/* REFERENCE IMPLEMENTATION 
+class shared_mutex
+{
+    Mutex    mut_;
+    Condition gate1_;
+    Condition gate2_;
+    unsigned state_;
+
+    static const unsigned write_entered_ = 1U << (sizeof(unsigned)*CHAR_BIT - 1);
+    static const unsigned n_readers_ = ~write_entered_;
+
+public:
+
+    shared_mutex() : state_(0) {}
+
+
+// Exclusive ownership
+
+void
+lock()
+{
+    UniqueLock lk(mut_);
+    std::cout << "LOCK WRITE " << std::endl;
+    while (state_ & write_entered_)
+        gate1_.wait(lk);
+    state_ |= write_entered_;
+    while (state_ & n_readers_)
+        gate2_.wait(lk);
+    std::cout << "LOCK WRITE DONE" << std::endl;
+
+}
+
+void
+unlock()
+{
+    {
+    ScopedLock _(mut_);
+    state_ = 0;
+    }
+    std::cout << "UNLOCK WRITE " << std::endl;
+    gate1_.notify_all();
+    std::cout << "UNLOCK WRITE DONE" << std::endl;
+
+}
+
+// Shared ownership
+
+void
+lock_shared()
+{
+    UniqueLock lk(mut_);
+    while ((state_ & write_entered_) || (state_ & n_readers_) == n_readers_)
+        gate1_.wait(lk);
+    unsigned num_readers = (state_ & n_readers_) + 1;
+    state_ &= ~n_readers_;
+    state_ |= num_readers;
+}
+
+void
+unlock_shared()
+{
+    ScopedLock _(mut_);
+    unsigned num_readers = (state_ & n_readers_) - 1;
+    state_ &= ~n_readers_;
+    state_ |= num_readers;
+    if (state_ & write_entered_)
+    {
+        if (num_readers == 0)
+            gate2_.notify_one();
+    }
+    else
+    {
+        if (num_readers == n_readers_ - 1)
+            gate1_.notify_one();
+    }
+}
+};*/
 
 } // namespace sync
 } // namespace srt
