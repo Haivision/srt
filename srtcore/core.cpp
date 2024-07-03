@@ -8044,7 +8044,6 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 
 int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 {
-    SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
     int nbsent = 0;
     int local_prevack = 0;
 #if ENABLE_HEAVY_LOGGING
