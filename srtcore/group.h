@@ -36,6 +36,7 @@ class CUDTGroup
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
+    typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
     typedef sync::steady_clock             steady_clock;
     typedef groups::SocketData SocketData;
     typedef groups::SendBackupCtx SendBackupCtx;
@@ -114,6 +115,8 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
+    void createBuffers(int32_t isn, const time_point& tsbpd_start_time, int flow_winsize);
+
     SocketData* add(SocketData data);
 
     struct HaveID
@@ -140,7 +143,9 @@ public:
     }
 
     // NEED LOCKING
+    SRT_ATTR_REQUIRES(m_GroupLock)
     gli_t begin() { return m_Group.begin(); }
+    SRT_ATTR_REQUIRES(m_GroupLock)
     gli_t end() { return m_Group.end(); }
 
     /// Remove the socket from the group container.
@@ -161,6 +166,7 @@ public:
         if (f != m_Group.end())
         {
             m_Group.erase(f);
+            updateErasedLink();
 
             // Reset sequence numbers on a dead group so that they are
             // initialized anew with the new alive connection within
@@ -178,7 +184,9 @@ public:
                 // number will collide with any ISN provided by a socket.
                 // Also since now every socket will derive this ISN.
                 m_iLastSchedSeqNo = generateISN();
-                resetInitialRxSequence();
+                // XXX resetInitialRxSequence() was here, but
+                // this uses a field that is removed, and replaced by
+                // m_RcvLastSeqNo
                 empty = true;
             }
         }
@@ -205,9 +213,16 @@ public:
 
     void setGroupConnected();
 
-    int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);
-    int            sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
-    int            sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
+    int sendBalancing(const char* buf, int len, SRT_MSGCTRL& w_mc);
+
+    // XXX deprecated code
+    int sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc);
+
+    int sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select);
+
     static int32_t generateISN();
 
 private:
@@ -315,6 +330,20 @@ private:
 
 public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
+    int recv_old(char* buf, int len, SRT_MSGCTRL& w_mc);
+
+    // XXX not sure if taking time here is right
+    bool isRcvBufferReady() const
+    {
+        srt::sync::ScopedLock lck(m_RcvBufferLock);
+        return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+    }
+
+    size_t getAvailBufSize(int32_t last_ack) const
+    {
+        srt::sync::ScopedLock lck(m_RcvBufferLock);
+        return m_pRcvBuffer->getAvailSize(last_ack);
+    }
 
     void close();
 
@@ -369,7 +398,7 @@ public:
     /// @param ack The past-the-last-received ACK sequence number
     void readyPackets(srt::CUDT* core, int32_t ack);
 
-    void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
+    void syncWithFirstSocket(const srt::CUDT& core, const HandshakeSide side);
     int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
     int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
 
@@ -388,7 +417,7 @@ public:
 #endif
 
     void ackMessage(int32_t msgno);
-    void processKeepalive(SocketData*);
+    void processKeepalive(SocketData*, const CPacket&, const time_point& tsArrival);
     void internalKeepalive(SocketData*);
 
 private:
@@ -401,11 +430,13 @@ private:
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
+
     struct GroupContainer
     {
     private:
-        std::list<SocketData>  m_List;
-        sync::atomic<size_t>   m_SizeCache;
+        std::list<SocketData> m_List;
+        sync::atomic<size_t>  m_SizeCache;
+        sync::atomic<size_t>  m_zNumberRunning;
 
         /// This field is used only by some types of groups that need
         /// to keep track as to which link was lately used. Note that
@@ -417,6 +448,7 @@ private:
 
         GroupContainer()
             : m_SizeCache(0)
+            , m_zNumberRunning(0)
             , m_LastActiveLink(m_List.end())
         {
         }
@@ -434,13 +466,31 @@ private:
             m_List.clear();
             m_SizeCache = 0;
         }
-        size_t size() { return m_SizeCache; }
 
         void erase(gli_t it);
+
+        // NOTE: These methods below don't need locking in RO version.
+        SRTU_PROPERTY_RO(size_t, size, m_SizeCache);
+
+        // UPDATED BY: updateRcvRunningState() (which needs locking).
+        SRTU_PROPERTY_RW(size_t, number_running, m_zNumberRunning);
     };
+
+    sync::atomic<size_t> m_zLongestDistance;
+    atomic_duration m_tdLongestDistance;
+public:
+    SRT_ATTR_REQUIRES(m_GroupLock)
+    void updateRcvRunningState();
+
+    SRT_ATTR_REQUIRES(m_GroupLock)
+    void updateErasedLink();
+
+    void updateInterlinkDistance();
+private:
+
+    SRT_ATTR_GUARDED_BY(m_GroupLock)
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
-    CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -610,6 +660,39 @@ public:
     // typedef StaticBuffer<BufferedMessage, 1000> senderBuffer_t;
 
 private:
+
+    UniquePtr<CSndBuffer>    m_pSndBuffer; // XXX for future.
+
+    SRT_ATTR_PT_GUARDED_BY(m_RcvBufferLock)
+    UniquePtr<CRcvBuffer> m_pRcvBuffer;
+
+    SRT_ATTR_PT_GUARDED_BY(m_LossAckLock)
+    UniquePtr<CSndLossList> m_pSndLossList;
+
+    sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
+
+    static void* tsbpd(void* param);
+
+    struct ScopedGroupKeeper
+    {
+        CUDTGroup* me;
+
+        ScopedGroupKeeper(CUDTGroup* meme): me(meme)
+        {
+            srt::sync::ScopedLock lk(me->m_GroupLock);
+            me->apiAcquire();
+        }
+
+        ~ScopedGroupKeeper()
+        {
+            srt::sync::ScopedLock lk(me->m_GroupLock);
+            me->apiRelease();
+        }
+    };
+    friend ScopedGroupKeeper;
+
+    sync::atomic<int32_t> m_iRcvPossibleLossSeq;
+
     // Fields required for SRT_GTYPE_BACKUP groups.
     senderBuffer_t        m_SenderBuffer; // This mechanism is to be removed on group-common sndbuf
     int32_t               m_iSndOldestMsgNo; // oldest position in the sender buffer
@@ -628,13 +711,15 @@ private:
     bool               m_bTsbPd;
     bool               m_bTLPktDrop;
     int64_t            m_iTsbPdDelay_us;
-    int                m_RcvEID;
-    class CEPollDesc*  m_RcvEpolld;
     int                m_SndEID;
     class CEPollDesc*  m_SndEpolld;
 
     int m_iSndTimeOut; // sending timeout in milliseconds
     int m_iRcvTimeOut; // receiving timeout in milliseconds
+
+    bool m_bOPT_MessageAPI; // XXX false not supported
+    int m_iOPT_RcvBufSize;
+    bool m_bOPT_DriftTracer;
 
     // Start times for TsbPd. These times shall be synchronized
     // between all sockets in the group. The first connected one
@@ -643,25 +728,51 @@ private:
     time_point m_tsStartTime;
     time_point m_tsRcvPeerStartTime;
 
-    void recv_CollectAliveAndBroken(std::vector<srt::CUDTSocket*>& w_alive, std::set<srt::CUDTSocket*>& w_broken);
+    sync::atomic<int32_t> m_RcvLastSeqNo;
+    sync::AtomicClock<sync::steady_clock> m_RcvFurthestPacketTime;
+    sync::atomic<int32_t> m_SndLastDataAck;
 
-    /// The function polls alive member sockets and retrieves a list of read-ready.
-    /// [acquires lock for CUDT::uglobal()->m_GlobControlLock]
-    /// [[using locked(m_GroupLock)]] temporally unlocks-locks internally
-    ///
-    /// @returns list of read-ready sockets
-    /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
-    /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
-    std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
+    // This is required as a value with its own lock.
+    // There's no point in locking the whole group for this,
+    // but for a Sequence type data atomic is not enough
+    // because the update uses a roll-number comparison.
+    // It is however enough for reading the current value.
 
-    // This is the sequence number of a packet that has been previously
-    // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
-    // from the first delivering socket will be taken as a good deal.
-    sync::atomic<int32_t> m_RcvBaseSeqNo;
+    sync::Mutex m_SndLastSeqLock;
+
+    SRT_ATTR_GUARDED_BY(m_SndLastSeqLock)
+    sync::atomic<int32_t> m_SndLastSeqNo;
+
+public:
+    int32_t updateSentSeq(int32_t seqno)
+    {
+        sync::ScopedLock lk(m_SndLastSeqLock);
+
+        if (CSeqNo::seqcmp(seqno, m_SndLastSeqNo) > 0)
+        {
+            m_SndLastSeqNo = seqno;
+        }
+        return m_SndLastSeqNo;
+    }
+
+    SRT_ATTR_REQUIRES(m_SndLastSeqLock)
+    int32_t getSentSeq() const
+    {
+        return m_SndLastSeqNo;
+    }
+
+private:
 
     bool m_bOpened;    // Set to true when at least one link is at least pending
     bool m_bConnected; // Set to true on first link confirmed connected
     bool m_bClosing;
+
+    bool stillConnected()
+    {
+        return m_bOpened
+            && m_bConnected
+            && !m_bClosing;
+    }
 
     // There's no simple way of transforming config
     // items that are predicted to be used on socket.
@@ -673,10 +784,58 @@ private:
     // is ready to deliver.
     sync::Condition       m_RcvDataCond;
     sync::Mutex           m_RcvDataLock;
+    sync::Condition       m_RcvTsbPdCond;
+    sync::atomic<bool>    m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
+    sync::atomic<bool>    m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
+    mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
+    mutable sync::Mutex   m_LossAckLock;
+
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;
-    // Statistics
 
+    // Fields required for balancing groups
+    unsigned int m_uBalancingRoll;
+
+    /// This is initialized with some number that should be
+    /// decreased with every packet sent. Any decision and
+    /// analysis for a decision concerning bonding group behavior
+    /// should be taken only when this value is 0. During some
+    /// of the analysis steps this value may be reset to some
+    /// higer value so that for particular number of packets
+    /// no analysis is being done (this prevents taking measurement
+    /// data too early when the number of collected data was
+    /// too little and therefore any average is little reliable).
+    unsigned int m_RandomCredit;
+
+    struct BalancingLinkState
+    {
+        gli_t ilink; // previously used link
+        int status;  // 0 = normal first entry; -1 = repeated selection
+        int errorcode;
+    };
+
+    int configure(const char* str);
+    typedef gli_t selectLink_cb(void*, const BalancingLinkState&);
+    CallbackHolder<selectLink_cb> m_cbSelectLink;
+
+    // Plain algorithm: simply distribute the load
+    // on all links equally.
+    gli_t linkSelect_plain(const BalancingLinkState&);
+    static gli_t linkSelect_plain_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_plain(st);
+    }
+
+    // Window algorihm: keep balance, but 
+    gli_t linkSelect_window(const BalancingLinkState&);
+    static gli_t linkSelect_window_fw(void* opaq, const BalancingLinkState& st)
+    {
+        CUDTGroup* g = (CUDTGroup*)opaq;
+        return g->linkSelect_window(st);
+    }
+
+    // Statistics
     struct Stats
     {
         // Stats state
@@ -740,21 +899,25 @@ public:
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_GroupID << ":";
+        os << "$" << m_GroupID << ":";
         return os.str();
 #else
         return "";
 #endif
     }
 
-    void resetInitialRxSequence()
-    {
-        // The app-reader doesn't care about the real sequence number.
-        // The first provided one will be taken as a good deal; even if
-        // this is going to be past the ISN, at worst it will be caused
-        // by TLPKTDROP.
-        m_RcvBaseSeqNo = SRT_SEQNO_NONE;
-    }
+    int checkLazySpawnTsbPdThread();
+    CRcvBuffer::InsertInfo addDataUnit(SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
+    bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    bool checkBalancingLoss(const CPacket& rpkt, CUDT::loss_seqs_t&);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    int rcvDropTooLateUpTo(int32_t seqno);
+    void synchronizeLoss(int32_t seqno);
+    void addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt);
+    bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
@@ -784,15 +947,31 @@ public:
         return false;
     }
 
-    // Live state synchronization
-    bool getBufferTimeBase(srt::CUDT* forthesakeof, time_point& w_tb, bool& w_wp, duration& w_dr);
+    SRT_ATTR_REQUIRES(m_GroupLock)
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
-    /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
-    /// @param srcMember a reference for synchronization.
-    void synchronizeDrift(const srt::CUDT* srcMember);
-
     void updateLatestRcv(srt::CUDTSocket*);
+
+    SRT_ATR_NODISCARD bool updateSendPacketUnique_LOCKED(int32_t single_seq);
+    SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);
+
+    SRT_ATR_NODISCARD bool getSendSchedule(SocketData* d, std::vector<groups::SchedSeq>& w_sched);
+    void discardSendSchedule(SocketData* d, int ndiscard);
+    void updateOnACK(int32_t ackdata_seqno);
+    int packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
+    time_point getPktTsbPdTime(uint32_t usPktTimestamp) const
+    {
+        return m_pRcvBuffer->getPktTsbPdTime(usPktTimestamp);
+    }
+
+    /*
+    int32_t getOldestRcvSeqNo() const
+    {
+        return m_pRcvBuffer->getStartSeqNo();
+    }
+    */
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
@@ -802,6 +981,9 @@ public:
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int64_t, latency_us, m_iTsbPdDelay_us);
     SRTU_PROPERTY_RO(bool, closing, m_bClosing);
+
+    SRT_ATTR_REQUIRES(m_RcvBufferLock) // RO provides only one getter method
+    SRTU_PROPERTY_RO(int32_t, getOldestRcvSeqNo, m_pRcvBuffer->getStartSeqNo());
 };
 
 } // namespace srt

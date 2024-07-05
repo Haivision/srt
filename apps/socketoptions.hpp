@@ -250,6 +250,7 @@ const SocketOption srt_options [] {
 #if ENABLE_BONDING
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
     { "groupminstabletimeo", 0, SRTO_GROUPMINSTABLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
+    { "groupconfig", 0, SRTO_GROUPCONFIG, SocketOption::PRE, SocketOption::STRING, nullptr},
 #endif
 #ifdef SRT_ENABLE_BINDTODEVICE
     { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
