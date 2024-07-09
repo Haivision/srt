@@ -3199,7 +3199,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         InvertedLock ug(m_GroupLock);
 
         // With unlocked GroupLock, we can now lock GlobControlLock.
-        // This is needed prevent any of them be deleted from the container
+        // This is needed to prevent any of them deleted from the container
         // at the same time.
         ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
 

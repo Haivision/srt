@@ -174,8 +174,7 @@ srt::CUDTUnited::CUDTUnited()
     , m_GlobControlLock()
     , m_IDLock()
     , m_mMultiplexer()
-    , m_MultiplexerLock()
-    , m_pCache(NULL)
+    , m_pCache(new CCache<CInfoBlock>)
     , m_bClosing(false)
     , m_GCStopCond()
     , m_InitLock()
@@ -195,8 +194,6 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
-
-    m_pCache = new CCache<CInfoBlock>;
 }
 
 srt::CUDTUnited::~CUDTUnited()
