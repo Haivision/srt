@@ -192,9 +192,11 @@ public:
       return 0;
    }
 
-      /// Specify the cache size (i.e., max number of items).
-      /// @param [in] size max cache size.
+private:
 
+   /// Specify the cache size (i.e., max number of items).
+   /// Private or else must be protected by a lock.
+   /// @param [in] size max cache size.
    void setSizeLimit(int size)
    {
       m_iMaxSize = size;
@@ -202,8 +204,8 @@ public:
       m_vHashPtr.resize(m_iHashSize);
    }
 
-      /// Clear all entries in the cache, restore to initialization state.
-
+   /// Clear all entries in the cache, restore to initialization state.
+   /// Private or else must be protected by a lock.
    void clear()
    {
       for (typename std::list<T*>::iterator i = m_StorageList.begin(); i != m_StorageList.end(); ++ i)

@@ -11946,7 +11946,7 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     if (m_parent->m_GroupOf)
     {
         // Lock GlobControlLock in order to make sure that
-        // the state if the socket having the group and the
+        // the state of the socket having the group and the
         // existence of the group will not be changed during
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
