@@ -9992,12 +9992,13 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
 int srt::CUDT::checkLazySpawnTsbPdThread()
 {
     const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
+    if (!need_tsbpd)
+        return 0;
 
-    if (need_tsbpd && !m_RcvTsbPdThread.joinable())
+    ScopedLock lock(m_RcvTsbPdStartupLock);
+    if (!m_RcvTsbPdThread.joinable())
     {
-        ScopedLock lock(m_RcvTsbPdStartupLock);
-
-        if (m_bClosing) // Check again to protect join() in CUDT::releaseSync()
+        if (m_bClosing) // Check m_bClosing to protect join() in CUDT::releaseSync().
             return -1;
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");

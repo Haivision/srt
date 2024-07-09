@@ -995,7 +995,7 @@ private: // Receiving related data
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
     bool m_bTsbPdNeedsWakeup;                    // Signal TsbPd thread to wake up on RCV buffer state change.
-    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
+    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creation and joining.
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
