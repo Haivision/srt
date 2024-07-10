@@ -1129,7 +1129,7 @@ private: // Generation and processing of packets
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
 
-    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, CUDTUnited::m_GlobControlLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, srt::CUDTUnited::m_GlobControlLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit);
 
     /// This function passes the incoming packet to the initial processing
