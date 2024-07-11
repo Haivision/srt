@@ -943,6 +943,81 @@ CUDTException& GetThreadLocalError();
 /// @param[in] maxVal maximum allowed value of the resulting random number.
 int genRandomInt(int minVal, int maxVal);
 
+class SharedMutex
+{
+    private:
+    Condition  m_LockWriteCond;
+    Condition  m_LockReadCond;
+
+    Mutex m_Mutex;
+    int m_iCountRead;
+    bool m_bWriterLocked;
+
+
+    public:
+    SharedMutex()
+    :m_LockWriteCond()
+    ,m_LockReadCond()
+    ,m_Mutex()
+    ,m_iCountRead(0)
+    ,m_bWriterLocked(false)
+    {
+        m_iCountRead = 0;
+        m_bWriterLocked = false;
+
+        setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
+        setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
+        setupMutex(m_Mutex, "SharedMutex::m_pMutex");
+
+    }
+    ~SharedMutex()
+    {
+    releaseMutex(m_Mutex);
+    releaseCond(m_LockWriteCond);
+    releaseCond(m_LockReadCond);
+    }
+
+    void lockWrite()
+    {
+        UniqueLock l1(m_Mutex);
+        if(m_bWriterLocked)
+            m_LockWriteCond.wait(l1);
+        m_bWriterLocked = true;
+        if(m_iCountRead)
+            m_LockReadCond.wait(l1);
+
+
+    }
+
+    void unlockWrite()
+    {
+        UniqueLock l2(m_Mutex);
+        m_bWriterLocked = false;
+        l2.unlock();
+        m_LockWriteCond.notify_all();
+
+    }
+
+    void lockRead()
+    {
+        UniqueLock l3(m_Mutex);
+        if(m_bWriterLocked)
+            m_LockWriteCond.wait(l3);
+        m_iCountRead++;
+    }
+
+    void unlockRead()
+    {
+        ScopedLock l4(m_Mutex);
+        m_iCountRead--;
+        if(m_bWriterLocked && m_iCountRead == 0)
+            m_LockReadCond.notify_one();
+        else if (m_iCountRead > 0)
+            m_LockWriteCond.notify_one();
+    }
+
+};
+
 } // namespace sync
 } // namespace srt
 
