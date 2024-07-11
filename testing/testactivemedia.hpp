@@ -6,7 +6,6 @@
 #include <exception>
 #include <thread>
 #include <mutex>
-#include <atomic>
 #include <condition_variable>
 
 #include "testmedia.hpp"
@@ -29,7 +28,7 @@ struct Medium
     std::mutex buffer_lock;
     std::thread thr;
     std::condition_variable ready;
-    std::atomic<bool> running = {false};
+    srt::sync::atomic<bool> running {false};
     std::exception_ptr xp; // To catch exception thrown by a thread
 
     virtual void Runner() = 0;
@@ -147,22 +146,7 @@ struct TargetMedium: Medium<Target>
 {
     void Runner() override;
 
-    bool Schedule(const MediaPacket& data)
-    {
-        LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
-        std::lock_guard<std::mutex> lg(buffer_lock);
-        LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
-        if (!running || ::transmit_int_state)
-        {
-            LOGP(applog.Debug, "TargetMedium::Schedule: not running, discarding packet");
-            return false;
-        }
-
-        LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): Schedule: [", data.payload.size(), "] CLIENT -> BUFFER");
-        buffer.push_back(data);
-        ready.notify_one();
-        return true;
-    }
+    bool Schedule(const MediaPacket& data);
 
     void Clear()
     {
