@@ -624,7 +624,7 @@ inline TR& operator<<(TR& ot, const fmt_sender_proxy& formatter)
 template <class TYPE>
 class fmt_delayed_sender_proxy
 {
-    std::stringstream os;
+    mutable std::ostringstream os;
     TYPE value_cache;
 public:
     explicit fmt_delayed_sender_proxy(const TYPE& v): value_cache(v)
@@ -632,10 +632,10 @@ public:
     }
 
     template <class OUTSTR>
-    void sendto(OUTSTR& stream)
+    void sendto(OUTSTR& stream) const
     {
         os << value_cache;
-        stream << os.rdbuf();
+        stream << os.str();
     }
 
     template<class ValueType>
@@ -646,7 +646,7 @@ public:
     }
 
     template<class TR>
-    friend TR& operator<<(TR& ot, fmt_delayed_sender_proxy& formatter)
+    friend TR& operator<<(TR& ot, const fmt_delayed_sender_proxy& formatter)
     {
         formatter.sendto(ot);
         return ot;
@@ -833,7 +833,15 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    return fmt_sender_proxy(arg).str();
+    return fmt(arg).str();
+}
+
+template <class Arg1, class Arg2>
+inline std::string Sprint(const Arg1& arg, const Arg2& arg2)
+{
+    std::stringstream out;
+    out << arg << arg2;
+    return out.str();
 }
 
 template<typename Map, typename Key>
@@ -1312,7 +1320,11 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
+    //return (std::ostringstream() << setfill('0') << setw(8) << hex << uppercase << sum).str();
     return (srt::fmt(sum) << setfill('0') << setw(8) << hex << uppercase).str();
+    // std::ostringstream os;
+    // os << setfill('0') << setw(8) << hex << uppercase << sum;
+    // return os.str();
 }
 
 template <class OutputIterator>
