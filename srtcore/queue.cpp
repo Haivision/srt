@@ -579,7 +579,7 @@ void* srt::CSndQueue::worker(void* param)
         // pack a packet from the socket
         CPacket pkt;
         steady_clock::time_point next_send_time;
-        sockaddr_any source_addr;
+        CNetworkInterface source_addr;
         const bool res = u->packData((pkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
@@ -603,7 +603,7 @@ void* srt::CSndQueue::worker(void* param)
     return NULL;
 }
 
-int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const sockaddr_any& src)
+int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const CNetworkInterface& src)
 {
     // send out the packet immediately (high priority), this is a control packet
     // NOTE: w_packet is passed by mutable reference because this function will do

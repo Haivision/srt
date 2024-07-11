@@ -662,12 +662,12 @@ void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
     w_addr.len = namelen;
 }
 
-int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
+int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
 #if ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
-    dsrc << " sourceIP=" << (m_bBindMasked && !source_addr.isany() ? source_addr.str() : "default");
+    dsrc << " sourceIP=" << (m_bBindMasked && !source_ni.address.isany() ? source_ni.address.str() : "default");
 #endif
 
     LOGC(kslog.Debug,
@@ -750,15 +750,15 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     // Note that even if PKTINFO is desired, the first caller's packet will be sent
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
     char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
-    if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
+    if (m_bBindMasked && source_ni.address.family() != AF_UNSPEC && !source_ni.address.isany())
     {
-        if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
+        if (!setSourceAddress(mh, mh_crtl_buf, source_ni))
         {
-            LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
+            LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_ni.address.family() << ", NOT setting.");
         }
         else
         {
-            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_addr.str());
+            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_ni.address.str());
             have_set_src = true;
         }
     }
