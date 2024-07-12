@@ -765,7 +765,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetw
         }
         else
         {
-            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_ni.address.str());
+            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_ni.str());
             have_set_src = true;
         }
     }
