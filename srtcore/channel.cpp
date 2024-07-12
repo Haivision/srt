@@ -667,7 +667,14 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetw
 #if ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
-    dsrc << " sourceIP=" << (m_bBindMasked && !source_ni.address.isany() ? source_ni.address.str() : "default");
+    if (m_bBindMasked && !source_ni.address.isany())
+    {
+        dsrc << " sourceNI=" << source_ni.str();
+    }
+    else
+    {
+        dsrc << " sourceNI=default";
+    }
 #endif
 
     LOGC(kslog.Debug,

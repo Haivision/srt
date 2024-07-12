@@ -592,6 +592,10 @@ struct CMultiplexer
         , m_pRcvQueue(NULL)
         , m_pChannel(NULL)
         , m_pTimer(NULL)
+        , m_iPort(0)
+        , m_iIPversion(AF_UNSPEC)
+        , m_iRefCount(1)
+        , m_iID(-1)
     {
     }
 
