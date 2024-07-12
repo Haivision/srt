@@ -1319,6 +1319,18 @@ static void TransmitConnectCallback(void*, SRTSOCKET socket, int errorcode, cons
 void SrtCommon::ConnectClient(string host, int port)
 {
     auto sa = CreateAddr(host, port);
+    {
+        // Check if trying to connect to self.
+        sockaddr_any lsa;
+        srt_getsockname(m_sock, lsa.get(), &lsa.len);
+
+        if (lsa.hport() == port && IsTargetAddrSelf(lsa.get(), sa.get()))
+        {
+            Verb() << "ERROR: Trying to connect to SELF address " << sa.str()
+                << " with socket bound to " << lsa.str();
+            Error("srt_connect", 0, SRT_EINVPARAM);
+        }
+    }
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
 
     if (!m_blocking_mode)
