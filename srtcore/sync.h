@@ -964,15 +964,15 @@ class SharedMutex
     // Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
     // Once it is locked, no reader can acquire it 
     public:
-    void lock() SRT_ATTR_ACQUIRE();
-    bool try_lock() SRT_ATTR_TRY_ACQUIRE();
-    void unlock() SRT_ATTR_RELEASE();
+    void lock();
+    bool try_lock();
+    void unlock();
 
     // Acquire the lock if no writter already has it. For read purpose only
     // Several readers can lock this at the same time. 
-    void lock_shared() SRT_ATTR_ACQUIRE_SHARED();
-    bool try_lock_shared() SRT_ATTR_TRY_ACQUIRE_SHARED();
-    void unlock_shared() SRT_ATTR_RELEASE_SHARED();
+    void lock_shared();
+    bool try_lock_shared();
+    void unlock_shared();
 
     int getReaderCount();
 
