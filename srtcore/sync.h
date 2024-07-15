@@ -943,78 +943,39 @@ CUDTException& GetThreadLocalError();
 /// @param[in] maxVal maximum allowed value of the resulting random number.
 int genRandomInt(int minVal, int maxVal);
 
+
+// Implementation of a read-write mutex. 
+// This allows multiple readers at a time, or a single writer
 class SharedMutex
 {
+    public:
+    SharedMutex();    
+    ~SharedMutex();
+
     private:
     Condition  m_LockWriteCond;
     Condition  m_LockReadCond;
 
     Mutex m_Mutex;
+
     int m_iCountRead;
     bool m_bWriterLocked;
 
-
+    // Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
+    // Once it is locked, no reader can acquire it 
     public:
-    SharedMutex()
-    :m_LockWriteCond()
-    ,m_LockReadCond()
-    ,m_Mutex()
-    ,m_iCountRead(0)
-    ,m_bWriterLocked(false)
-    {
-        m_iCountRead = 0;
-        m_bWriterLocked = false;
+    void lock() SRT_ATTR_ACQUIRE();
+    bool try_lock() SRT_ATTR_TRY_ACQUIRE();
+    void unlock() SRT_ATTR_RELEASE();
 
-        setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
-        setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
-        setupMutex(m_Mutex, "SharedMutex::m_pMutex");
+    // Acquire the lock if no writter already has it. For read purpose only
+    // Several readers can lock this at the same time. 
+    void lock_shared() SRT_ATTR_ACQUIRE_SHARED();
+    bool try_lock_shared() SRT_ATTR_TRY_ACQUIRE_SHARED();
+    void unlock_shared() SRT_ATTR_RELEASE_SHARED();
 
-    }
-    ~SharedMutex()
-    {
-    releaseMutex(m_Mutex);
-    releaseCond(m_LockWriteCond);
-    releaseCond(m_LockReadCond);
-    }
+    int getReaderCount();
 
-    void lockWrite()
-    {
-        UniqueLock l1(m_Mutex);
-        if(m_bWriterLocked)
-            m_LockWriteCond.wait(l1);
-        m_bWriterLocked = true;
-        if(m_iCountRead)
-            m_LockReadCond.wait(l1);
-
-
-    }
-
-    void unlockWrite()
-    {
-        UniqueLock l2(m_Mutex);
-        m_bWriterLocked = false;
-        l2.unlock();
-        m_LockWriteCond.notify_all();
-
-    }
-
-    void lockRead()
-    {
-        UniqueLock l3(m_Mutex);
-        if(m_bWriterLocked)
-            m_LockWriteCond.wait(l3);
-        m_iCountRead++;
-    }
-
-    void unlockRead()
-    {
-        ScopedLock l4(m_Mutex);
-        m_iCountRead--;
-        if(m_bWriterLocked && m_iCountRead == 0)
-            m_LockReadCond.notify_one();
-        else if (m_iCountRead > 0)
-            m_LockWriteCond.notify_one();
-    }
 
 };
 

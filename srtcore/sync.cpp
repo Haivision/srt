@@ -172,6 +172,8 @@ namespace sync {
 
 srt::sync::CEvent g_Sync;
 
+
+
 } // namespace sync
 } // namespace srt
 
@@ -357,3 +359,105 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Shared Mutex 
+//
+////////////////////////////////////////////////////////////////////////////////
+
+srt::sync::SharedMutex::SharedMutex()
+    :m_LockWriteCond()
+    ,m_LockReadCond()
+    ,m_Mutex()
+    ,m_iCountRead(0)
+    ,m_bWriterLocked(false)
+{
+    m_iCountRead = 0;
+    m_bWriterLocked = false;
+
+    setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
+    setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
+    setupMutex(m_Mutex, "SharedMutex::m_pMutex");
+}
+
+srt::sync::SharedMutex::~SharedMutex()
+{
+    releaseMutex(m_Mutex);
+    releaseCond(m_LockWriteCond);
+    releaseCond(m_LockReadCond);
+}
+
+void srt::sync::SharedMutex::lock()
+{
+    UniqueLock l1(m_Mutex);
+    if (m_bWriterLocked)
+        m_LockWriteCond.wait(l1);
+
+    m_bWriterLocked = true;
+    
+    if (m_iCountRead)
+        m_LockReadCond.wait(l1);
+}
+
+bool srt::sync::SharedMutex::try_lock()
+{
+    UniqueLock l1(m_Mutex);
+    if (m_bWriterLocked || m_iCountRead > 0)
+        return false;
+    else
+        {
+            m_bWriterLocked = true;
+            return true;
+        }
+}
+
+void srt::sync::SharedMutex::unlock()
+{
+    UniqueLock lk(m_Mutex);
+    m_bWriterLocked = false;
+
+    lk.unlock();
+    m_LockWriteCond.notify_all();
+}
+
+void srt::sync::SharedMutex::lock_shared()
+{
+    UniqueLock lk(m_Mutex);
+    if (m_bWriterLocked)
+        m_LockWriteCond.wait(lk);
+
+    m_iCountRead++;
+}
+
+bool srt::sync::SharedMutex::try_lock_shared()
+{
+    UniqueLock lk(m_Mutex);
+    if (m_bWriterLocked)
+        return false;
+    else
+    {
+        m_iCountRead++;
+        return true;
+    }
+}
+
+void srt::sync::SharedMutex::unlock_shared()
+{
+    ScopedLock lk(m_Mutex);
+    
+    m_iCountRead--;
+    if (m_iCountRead < 0)
+        m_iCountRead = 0;
+    
+    if (m_bWriterLocked && m_iCountRead == 0)
+        m_LockReadCond.notify_one();
+    else if (m_iCountRead > 0)
+        m_LockWriteCond.notify_one();
+    
+}
+
+int srt::sync::SharedMutex::getReaderCount()
+{
+    return m_iCountRead;
+}
