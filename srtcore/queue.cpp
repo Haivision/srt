@@ -1130,7 +1130,7 @@ srt::CRcvQueue::CRcvQueue()
     , m_szPayloadSize()
     , m_bClosing(false)
     , m_LSLock()
-    , m_pListener(NULL)
+    , m_pListener()
     , m_pRendezvousQueue(NULL)
     , m_vNewEntry()
     , m_IDLock()
@@ -1405,10 +1405,11 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     bool have_listener = false;
     {
         ScopedLock cg(m_LSLock);
-        if (m_pListener)
+        m_pListener.lockRead();
+        if (m_pListener.m_pObj)
         {
-            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << m_pListener->socketID());
-            listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
+            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << m_pListener.m_pObj->socketID());
+            listener_ret = m_pListener.m_pObj->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
             // anything can be done about it. In case when it's stated possible, the
@@ -1418,6 +1419,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
 
             have_listener = true;
         }
+        m_pListener.unlockRead();
     }
 
     // NOTE: Rendezvous sockets do bind(), but not listen(). It means that the socket is
@@ -1690,21 +1692,30 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
 int srt::CRcvQueue::setListener(CUDT* u)
 {
-    ScopedLock lslock(m_LSLock);
+    m_pListener.lockWrite();
 
-    if (NULL != m_pListener)
+    if (NULL != m_pListener.m_pObj)
+    {
+        m_pListener.unlockWrite();
         return -1;
+    }
 
-    m_pListener = u;
+    m_pListener.m_pObj = u;
+    m_pListener.unlockWrite();
+
     return 0;
 }
 
 void srt::CRcvQueue::removeListener(const CUDT* u)
 {
-    ScopedLock lslock(m_LSLock);
+    m_pListener.lockWrite();
 
-    if (u == m_pListener)
-        m_pListener = NULL;
+    if (u == m_pListener.m_pObj)
+    {
+    m_pListener.m_pObj = NULL;
+    }
+
+    m_pListener.unlockWrite();
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,

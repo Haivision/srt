@@ -375,10 +375,9 @@ srt::sync::SharedMutex::SharedMutex()
 {
     m_iCountRead = 0;
     m_bWriterLocked = false;
-
     setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
     setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
-    setupMutex(m_Mutex, "SharedMutex::m_pMutex");
+    setupMutex(m_Mutex, "SharedMutex::m_Mutex");
 }
 
 srt::sync::SharedMutex::~SharedMutex()
@@ -461,3 +460,5 @@ int srt::sync::SharedMutex::getReaderCount()
 {
     return m_iCountRead;
 }
+
+

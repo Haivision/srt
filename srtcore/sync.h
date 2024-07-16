@@ -979,6 +979,42 @@ class SharedMutex
 
 };
 
+template <class T>
+class CSharedObject
+{
+    public:
+    T* m_pObj;
+    sync::SharedMutex m_Mtx;
+
+    public:
+    CSharedObject<T>()
+    :m_pObj()
+    ,m_Mtx()
+    {
+    }
+    
+    void lockWrite()
+    {
+        m_Mtx.lock();
+    }
+
+    void unlockWrite()
+    {
+        m_Mtx.unlock();
+    }
+
+    void lockRead()
+    {
+        m_Mtx.lock_shared();
+    }
+
+    void unlockRead()
+    {
+        m_Mtx.unlock_shared();
+    }
+    
+};
+
 } // namespace sync
 } // namespace srt
 
