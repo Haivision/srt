@@ -1711,10 +1711,8 @@ void srt::CRcvQueue::removeListener(const CUDT* u)
     m_pListener.lockWrite();
 
     if (u == m_pListener.m_pObj)
-    {
-    m_pListener.m_pObj = NULL;
-    }
-
+        m_pListener.m_pObj = NULL;
+    
     m_pListener.unlockWrite();
 }
 
