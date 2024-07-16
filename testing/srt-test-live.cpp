@@ -72,11 +72,11 @@
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
-// NOTE: This is without "haisrt/" because it uses an internal path
+// NOTE: This is without "srt/" because it uses an internal path
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
+#include <access_control.h>
 #include <logging.h>
 
 using namespace std;
@@ -355,6 +355,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
     // This hook sets the password to the just accepted socket
     // depending on the user
 
+    srt_setrejectreason(acpsock, SRT_REJX_UNAUTHORIZED);
     string exp_pw = passwd.at(username);
 
     srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));
