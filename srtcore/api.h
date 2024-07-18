@@ -164,7 +164,7 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
-    std::set<SRTSOCKET> m_QueuedSockets; //< set of connections waiting for accept()
+    std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
 
     sync::Condition m_AcceptCond; //< used to block "accept" call
     sync::Mutex     m_AcceptLock; //< mutex associated to m_AcceptCond
@@ -398,11 +398,13 @@ private:
 
 private:
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
-    sockets_t                                m_Sockets;
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    sockets_t m_Sockets;
 
 #if ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
-    groups_t                                m_Groups;
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    groups_t m_Groups;
 #endif
 
     sync::Mutex m_GlobControlLock; // used to synchronize UDT API
@@ -412,6 +414,7 @@ private:
     SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
     SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one
 
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     std::map<int64_t, std::set<SRTSOCKET> >
         m_PeerRec; // record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
@@ -515,11 +518,13 @@ private:
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);
 
 private:
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     std::map<int, CMultiplexer> m_mMultiplexer; // UDP multiplexer
-    sync::Mutex                 m_MultiplexerLock;
 
-private:
-    CCache<CInfoBlock>* m_pCache; // UDT network information cache
+    /// UDT network information cache.
+    /// Existence is guarded by m_GlobControlLock, but the cache itself is thread-safe.
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    CCache<CInfoBlock>* const m_pCache;
 
 private:
     srt::sync::atomic<bool> m_bClosing;
@@ -527,14 +532,19 @@ private:
     sync::Condition         m_GCStopCond;
 
     sync::Mutex m_InitLock;
+    SRT_ATTR_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
+    SRT_ATTR_GUARDED_BY(m_InitLock)
     bool        m_bGCStatus;      // if the GC thread is working (true)
 
+    SRT_ATTR_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
 
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets
 #if ENABLE_BONDING
+    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     groups_t m_ClosedGroups;
 #endif
 
