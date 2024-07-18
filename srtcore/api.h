@@ -129,7 +129,7 @@ public:
     void apiAcquire() { ++m_iBusy; }
     void apiRelease() { --m_iBusy; }
 
-    int isStillBusy()
+    int isStillBusy() const
     {
         return m_iBusy;
     }
