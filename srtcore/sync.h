@@ -774,8 +774,8 @@ struct DurationUnitName<DUNIT_S>
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
-    std::stringstream out;
-    out << (fmt(DurationUnitName<UNIT>::count(dur)) << std::fixed) << DurationUnitName<UNIT>::name();
+    srt::ofmtstream out;
+    out << fmt(DurationUnitName<UNIT>::count(dur), fmtc().fixed()) << DurationUnitName<UNIT>::name();
     return out.str();
 }
 

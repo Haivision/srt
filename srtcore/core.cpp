@@ -93,6 +93,7 @@ const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+static inline const char* fmt_yesno(bool val) { return val ? "yes" : "no"; }
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -2107,8 +2108,8 @@ int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint
     }
 
     LOGC(cnlog.Debug, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
-                          << " vers=0x" << (fmt(srtdata[SRT_HS_VERSION]) << hex)
-                          << " opts=0x" << (fmt(srtdata[SRT_HS_FLAGS]) << hex)
+                          << " vers=0x" << fmt(srtdata[SRT_HS_VERSION], fmtc().hex())
+                          << " opts=0x" << fmt(srtdata[SRT_HS_FLAGS], fmtc().hex())
                           << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
     m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
@@ -2343,7 +2344,7 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
     m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
     HLOGC(cnlog.Debug, log << "HSRSP/rcv: Version: " << SrtVersionString(m_uPeerSrtVersion)
-                           << " Flags: SND:" << (fmt(m_uPeerSrtFlags) << hex << setfill('0') << setw(8))
+                           << " Flags: SND:" << fmt(m_uPeerSrtFlags, fmtc().hex().fillzero().width(8))
                            << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
     // Basic version check
     if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
@@ -3146,7 +3147,8 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     HLOGC(cnlog.Debug,
           log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
               << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << gtp
-              << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
+              << " weight=" << link_weight
+              << " flags=0x" << fmt(link_flags, fmtc().hex()));
 #endif
 
     // XXX Here are two separate possibilities:
@@ -4659,8 +4661,9 @@ EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTEx
         if (m_ConnRes.m_iReqType == URQ_INDUCTION)
         {
             HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:" << hex
-                      << m_ConnRes.m_iCookie << " version:" << dec << m_ConnRes.m_iVersion
+                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
+                      << fmt(m_ConnRes.m_iCookie, fmtc().hex())
+                      << " version:" << m_ConnRes.m_iVersion
                       << "), sending CONCLUSION HS with this cookie");
 
             m_ConnReq.m_iCookie  = m_ConnRes.m_iCookie;
@@ -4767,7 +4770,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
-        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
+        HLOGC(cnlog.Debug, log << CONID() << "postConnect: packet:" << fmt_yesno(pResponse) << " rendezvous:" << fmt_yesno(rendezvous));
         // The "local storage depleted" case shouldn't happen here, but
         // this is a theoretical path that needs prevention.
         bool ok = pResponse;
@@ -5470,14 +5473,14 @@ void * srt::CUDT::tsbpd(void* param)
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
-                    << (timediff_us / 1000) << "." << (fmt(timediff_us % 1000) << fixed << setfill('0') << setw(3)) << " ms");
+                    << (timediff_us / 1000) << "." << fmt(timediff_us % 1000, fmtc().fixed().fillzero().width(3)) << " ms");
 #endif
                 string why;
                 if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
                             << " delayed for " << (timediff_us / 1000) << "."
-                            << (fmt(timediff_us % 1000) << fixed << setfill('0') << setw(3)) << " ms " << why);
+                            << fmt(timediff_us % 1000, fmtc().fixed().fillzero().width(3)) << " ms " << why);
                 }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
                 else
@@ -7777,7 +7780,7 @@ bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
                   << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << (fmt(cgwindow) << setprecision(3)));
+                  << fmt(cgwindow, fmtc().precision(7)));
 #endif
     }
 
@@ -8418,7 +8421,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // included, but it also triggers for any other kind of invalid value.
         // This check MUST BE DONE before making any operation on this number.
         LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: received invalid ACK value: " << ackdata_seqno
-                << " " << (fmt(ackdata_seqno) << hex) << " (IGNORED)");
+                << " " << fmt(ackdata_seqno, fmtc().hex()) << " (IGNORED)");
         return;
     }
 
@@ -10012,9 +10015,9 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        std::stringstream buf;
+        ofmtstream buf;
         // Take the last 2 ciphers from the socket ID.
-        string s = (fmt(m_SocketID) << setfill('0') << setw(2)).str();
+        string s = fmts(m_SocketID, fmtc().fillzero().width(2));
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
         const string thname = buf.str();
 #else
@@ -11064,7 +11067,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     int32_t cookie_val = bake(addr);
 
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << hex << cookie_val);
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << fmt(cookie_val, fmtc().hex()));
 
     // Remember the incoming destination address here and use it as a source
     // address when responding. It's not possible to record this address yet
@@ -11144,7 +11147,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (hs.m_iCookie != cookie_val)
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
+            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << fmt(cookie_val, fmtc().hex()) << ". Ignoring.");
             return m_RejectReason;
         }
 

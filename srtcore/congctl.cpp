@@ -595,7 +595,7 @@ private:
             {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
-                    << (fmt(m_dCWndSize) << setprecision(6)) << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
+                    << m_dCWndSize << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
         else

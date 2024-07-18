@@ -17,6 +17,7 @@
 #include "logsupport.hpp"
 #include "../srtcore/srt.h"
 #include "../srtcore/utilities.h"
+#include "../srtcore/ofmt.h"
 
 using namespace std;
 
@@ -173,7 +174,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
 {
-    ostringstream son, soff;
+    srt::ofmtstream son, soff;
 
     for (auto& s: speclist)
     {

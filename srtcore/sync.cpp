@@ -51,15 +51,19 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    std::stringstream out;
+    ofmtstream out;
     if (days)
-        out << days << SRTRSTR("D ");
+        out << days << OFMT_RAWSTR("D ");
 
-    out << (srt::fmt(hours) << setfill('0') << setw(2)) << SRTRSTR(":")
-        << (srt::fmt(minutes) << setfill('0'), setw(2)) << SRTRSTR(":")
-        << (srt::fmt(seconds) << setfill('0'), setw(2)) << SRTRSTR(".")
-        << (srt::fmt(frac.time_since_epoch().count()) << setfill('0') << setw(decimals))
-        << SRTRSTR(" [STDY]");
+    fmtc d02, dec0;
+    d02.dec().fillzero().width(2);
+    dec0.dec().fillzero().width(decimals);
+
+    out << srt::fmt(hours, d02) << OFMT_RAWSTR(":")
+        << srt::fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << srt::fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << srt::fmt(frac.time_since_epoch().count(), dec0)
+        << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
 
@@ -74,14 +78,14 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
     size_t tmp_size = strftime(tmp_buf, 512, "%X.", &tm);
-    // Mind the theoretically possible erro case
+    // Mind the theoretically possible error case
     if (!tmp_size)
         return "<TIME FORMAT ERROR>";
 
-    std::stringstream out;
-    out << rawstr(tmp_buf, tmp_size)
-        << (srt::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000) << setfill('0') << setw(6))
-        << SRTRSTR(" [SYST]");
+    ofmtstream out;
+    out << fmt_rawstr(tmp_buf, tmp_size)
+        << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
+        << OFMT_RAWSTR(" [SYST]");
     return out.str();
 }
 

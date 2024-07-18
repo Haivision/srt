@@ -320,7 +320,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         Verb() << "Setting up output: " << spec;
         unique_ptr<TargetMedium> m { new TargetMedium };
         m->Setup(Target::Create(spec));
-        m_output_media.push_back(move(m));
+        m_output_media.push_back(std::move(m));
     }
 
 
@@ -369,7 +369,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         // Add SRT medium to output targets, and keep input medium empty.
         unique_ptr<TargetMedium> tm { new TargetMedium };
         tm->Setup(m_srt_relay.get());
-        m_output_media.push_back(move(tm));
+        m_output_media.push_back(std::move(tm));
     }
     else
     {

@@ -30,6 +30,7 @@
 #endif
 
 #include "netinet_any.h"
+#include "ofmt.h"
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -519,10 +520,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = srt::ocat(host, OFMT_RAWSTR(":"), port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)

@@ -192,7 +192,7 @@ public:
 
     bool CheckEnabled();
 
-    void CreateLogLinePrefix(std::ostringstream&);
+    void CreateLogLinePrefix(srt::ofmtstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -285,7 +285,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    std::ostringstream os;
+    srt::ofmtstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't
@@ -381,7 +381,8 @@ struct LogDispatcher::Proxy
         if (that_enabled)
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
-                os << std::endl;
+                //os << std::endl;
+                os << OFMT_RAWSTR("\n");
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?

@@ -347,7 +347,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 cc.token = token++;
-                m_group_nodes.push_back(move(cc));
+                m_group_nodes.push_back(std::move(cc));
             }
 
             par.erase("type");
@@ -666,10 +666,9 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         backlog = 10;
     }
 
-    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
-        << " backlog=" << backlog << ") on "
-        << host << ":" << port;
+    Verb("Opening SRT ", DirectionName(dir), " ",
+            m_mode, "(", m_blocking_mode ? "" : "non-", "blocking,",
+            " backlog=", backlog, ") on ", host, ":", port);
 
     try
     {
@@ -1047,7 +1046,7 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
+        Verb("\t#", i, " [", c.token, "] ", c.host, ":", c.port, VerbNoEOL);
         vector<string> extras;
         if (c.weight)
             extras.push_back(Sprint("weight=", c.weight));
@@ -3041,7 +3040,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     }
 
     if (ptr)
-        ptr->uri = move(u);
+        ptr->uri = std::move(u);
     return ptr;
 }
 

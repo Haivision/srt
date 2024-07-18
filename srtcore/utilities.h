@@ -46,6 +46,8 @@ written by
 #include <cstring>
 #include <stdexcept>
 
+#include "ofmt.h"
+
 // -------------- UTILITIES ------------------------
 
 // --- ENDIAN ---
@@ -566,167 +568,6 @@ namespace any_op
     }
 }
 
-// XXX Consider this whole file to be namespace srt!
-namespace srt
-{
-#if HAVE_CXX11
-class fmt_sender_proxy
-{
-    std::stringstream os;
-public:
-    template <class TYPE, typename... Args>
-    explicit fmt_sender_proxy(const TYPE& v, const Args&... manips)
-    {
-        manipulate(manips...);
-        os << v;
-    }
-
-    void manipulate() {}
-
-    template <typename Arg1, typename... Args>
-    void manipulate(const Arg1& manip, const Args&... manips)
-    {
-        os << manip;
-        manipulate(manips...);
-    }
-
-    template <class OUTER>
-    fmt_sender_proxy& operator *(const OUTER& p)
-    {
-        os << p;
-        return *this;
-    }
-
-    template <class OUTSTR>
-    void sendto(OUTSTR& stream) const
-    {
-        stream << os.rdbuf();
-    }
-
-    operator std::string() const { return os.str(); }
-    std::string str() const { return os.str(); }
-};
-
-template<class TYPE, typename Arg1, typename... Args>
-inline fmt_sender_proxy fmt(const TYPE& val, const Arg1& man1,  const Args&... manips)
-{
-    return fmt_sender_proxy(val, man1, manips...);
-}
-
-template<class TR>
-inline TR& operator<<(TR& ot, const fmt_sender_proxy& formatter)
-{
-    formatter.sendto(ot);
-    return ot;
-}
-#endif
-
-template <class TYPE>
-class fmt_delayed_sender_proxy
-{
-    mutable std::ostringstream os;
-    TYPE value_cache;
-public:
-    explicit fmt_delayed_sender_proxy(const TYPE& v): value_cache(v)
-    {
-    }
-
-    template <class OUTSTR>
-    void sendto(OUTSTR& stream) const
-    {
-        os << value_cache;
-        stream << os.str();
-    }
-
-    template<class ValueType>
-    fmt_delayed_sender_proxy& operator<<(const ValueType& v)
-    {
-        os << v;
-        return *this;
-    }
-
-    template<class TR>
-    friend TR& operator<<(TR& ot, const fmt_delayed_sender_proxy& formatter)
-    {
-        formatter.sendto(ot);
-        return ot;
-    }
-
-    std::string str()
-    {
-        os << value_cache;
-        return os.str();
-    }
-};
-
-
-// Version for C++03 using the array
-template<class Type>
-inline fmt_delayed_sender_proxy<Type> fmt(const Type& val)
-{
-    return fmt_delayed_sender_proxy<Type>(val);
-}
-
-template <size_t N>
-struct check_minus_1
-{
-    static const size_t value = N - 1;
-};
-
-template<>
-struct check_minus_1<0>
-{
-};
-
-// !!! IMPORTANT !!!
-// THIS CLASS IS FOR THE PURPOSE OF DIRECT WRITING TO THE STREAM ONLY.
-// DO NOT use this class for any other purpose and use it also with
-// EXTREME CARE.
-// The only role of this class is to pass the string with KNOWN SIZE
-// written in either a string literal or an array of characters to
-// the output stream using its `write` method, that is, with bypassing
-// any formatting facilities.
-struct RawStringForStreams
-{
-private:
-    // This trick is to prevent a possibility to use this class any
-    // other way than for creating a temporary object.
-    friend RawStringForStreams rawstr(const char* dd, size_t ss);
-
-    template <class Stream>
-    friend Stream& operator<<(Stream& out, RawStringForStreams v)
-    {
-        out.write(v.data(), v.size());
-        return out;
-    }
-
-    const char* d;
-    size_t s;
-
-    RawStringForStreams(const char* dd, size_t ss): d(dd), s(ss) {}
-    const char* data() const { return d; }
-    size_t size() const { return s; }
-};
-
-inline RawStringForStreams rawstr(const char* dd, size_t ss)
-{
-    return RawStringForStreams(dd, ss);
-}
-
-// NOTE: DO NOT USE THIS FUNCTION DIRECTLY.
-template<size_t N>
-inline RawStringForStreams CreateRawString_FWD(const char (&ref)[N])
-{
-    const char* ptr = ref;
-    return rawstr(ptr, check_minus_1<N>::value);
-}
-
-// This prevents the macro from being used with anything else
-// than a string literal
-#define SRTRSTR(arg) CreateRawString_FWD("" arg)
-
-}
-
 #if HAVE_CXX11
 
 template <class In>
@@ -833,7 +674,7 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    return fmt(arg).str();
+    return srt::fmts(arg);
 }
 
 template <class Arg1, class Arg2>
@@ -1320,11 +1161,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    //return (std::ostringstream() << setfill('0') << setw(8) << hex << uppercase << sum).str();
-    return (srt::fmt(sum) << setfill('0') << setw(8) << hex << uppercase).str();
-    // std::ostringstream os;
-    // os << setfill('0') << setw(8) << hex << uppercase << sum;
-    // return os.str();
+    return srt::fmts(sum, srt::fmtc().fillzero().width(8).uhex());
 }
 
 template <class OutputIterator>
