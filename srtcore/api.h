@@ -337,7 +337,7 @@ public:
     int     epoll_release(const int eid);
 
 #if ENABLE_BONDING
-    // [[using locked(m_GlobControlLock)]]
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
         // This only ensures that the element exists.
@@ -359,7 +359,7 @@ public:
     void deleteGroup(CUDTGroup* g);
     void deleteGroup_LOCKED(CUDTGroup* g);
 
-    // [[using locked(m_GlobControlLock)]]
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
     CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
     {
         for (groups_t::iterator i = m_Groups.begin(); i != m_Groups.end(); ++i)
@@ -485,7 +485,7 @@ public:
         // This is only for a use together with an empty constructor.
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
         {
-            bool caught = glob.acquireSocket(s);
+            const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;
         }

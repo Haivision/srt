@@ -1916,26 +1916,25 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
 #if ENABLE_HEAVY_LOGGING
     // Wrapping the log into a destructor so that it
     // is printed AFTER the destructor of SocketKeeper.
-    struct ForceDestructor
+    struct ScopedExitLog
     {
-        CUDTSocket* ps;
-        ForceDestructor(): ps(NULL){}
-        ~ForceDestructor()
+        const CUDTSocket* const ps;
+        ScopedExitLog(const CUDTSocket* p): ps(p){}
+        ~ScopedExitLog()
         {
             if (ps) // Could be not acquired by SocketKeeper, occasionally
             {
                 HLOGC(smlog.Debug, log << "CUDTUnited::close/end: @" << ps->m_SocketID << " busy=" << ps->isStillBusy());
             }
         }
-    } fod;
+    };
 #endif
 
     SocketKeeper k(*this, u, ERH_THROW);
-    IF_HEAVY_LOGGING(fod.ps = k.socket);
+    IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
     HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
-    int ret = close(k.socket);
 
-    return ret;
+    return close(k.socket);
 }
 
 #if ENABLE_BONDING
