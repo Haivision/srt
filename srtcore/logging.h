@@ -381,8 +381,7 @@ struct LogDispatcher::Proxy
         if (that_enabled)
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
-                //os << std::endl;
-                os << OFMT_RAWSTR("\n");
+                os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?
