@@ -204,6 +204,18 @@ inline internal::fmt_stringview fmt_rawstr(const char* dd, size_t ss)
     return internal::fmt_stringview(dd, ss);
 }
 
+template <class Value> inline
+internal::fmt_simple_proxy<Value> fmt(const Value& val)
+{
+    return internal::fmt_simple_proxy<Value>(val);
+}
+
+template <class Value> inline
+internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
+{
+    return internal::fmt_proxy<Value, char>(val, config);
+}
+
 
 // XXX Make basic_ofmtstream etc.
 class ofmtstream
@@ -283,6 +295,13 @@ public:
         return *this;
     }
 
+    template<class Value> inline
+    ofmtstream& operator<<(const Value& val)
+    {
+        return *this << fmt(val);
+    }
+
+
     ofmtstream& operator<<(const ofmtstream& source)
     {
         buffer << source.buffer.rdbuf();
@@ -322,18 +341,6 @@ std::string ocat(const Args&... args)
 #endif
 
 template <class Value> inline
-internal::fmt_simple_proxy<Value> fmt(const Value& val)
-{
-    return internal::fmt_simple_proxy<Value>(val);
-}
-
-template <class Value> inline
-internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
-{
-    return internal::fmt_proxy<Value, char>(val, config);
-}
-
-template <class Value> inline
 std::string fmts(const Value& val)
 {
     ofmtstream out;
@@ -348,13 +355,6 @@ std::string fmts(const Value& val, const fmtc& fmtspec)
     out << fmt(val, fmtspec);
     return out.str();
 }
-
-template<class Value> inline
-ofmtstream& operator<<(ofmtstream& fs, const Value& val)
-{
-    return fs << fmt(val);
-}
-
 
 
 }
