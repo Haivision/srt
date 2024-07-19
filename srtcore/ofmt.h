@@ -315,7 +315,8 @@ public:
 };
 
 // Additionally for C++11
-#if defined(__cplusplus) && __cplusplus > 199711L
+#if (defined(__cplusplus) && __cplusplus > 199711L) \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
 
 template<typename Stream> inline
 Stream& oprint(Stream& out)

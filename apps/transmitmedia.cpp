@@ -38,6 +38,11 @@
 #include "srt_compat.h"
 #include "verbose.hpp"
 
+#if !defined(__cplusplus) || __cplusplus <= 199711L
+#error "Requires C++11"
+#endif
+
+
 using namespace std;
 using namespace srt;
 
