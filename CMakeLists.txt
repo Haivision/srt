@@ -1047,6 +1047,7 @@ macro(srt_set_stdcxx targetname spec)
 endmacro()
 
 
+message(STATUS ¨Setting C++ standard for the library: ${USE_CXX_STD_LIB}¨)
 srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
