@@ -259,6 +259,7 @@ CUDTUnited& srt::CUDT::uglobal()
 
 #endif
 
+SRT_TSA_DISABLED
 void srt::CUDT::construct()
 {
     m_pSndBuffer           = NULL;
@@ -987,6 +988,7 @@ void srt::CUDT::open()
     m_tdNAKInterval = m_tdMinNakInterval;
 
     const steady_clock::time_point currtime = steady_clock::now();
+
     m_tsLastRspTime.store(currtime);
     m_tsNextACKTime.store(currtime + m_tdACKInterval);
     m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
@@ -1400,6 +1402,8 @@ size_t srt::CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, siz
         keydata = failure_kmrsp;
 
         // Update the KM state as well
+        // NOTE: these fields are made atomic so that they can be safely written,
+        // but formally this should require lock on m_ConnectionLock. 
         m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET;  // Agent has PW, but Peer won't decrypt
         m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Peer won't encrypt as well.
     }
@@ -1993,6 +1997,8 @@ RttTracer s_rtt_trace;
 
 bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
+    // XXX ScopedLock clok (m_ConnectionLock); ???
+
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
     int       etype   = ctrlpkt->getExtendedType();
@@ -2604,6 +2610,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
         HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
 
 #ifdef SRT_ENABLE_ENCRYPTION
+        // XXX ScopedLock clok (m_ConnectionLock); ???
         if (!m_pCryptoControl->hasPassphrase())
         {
             if (m_config.bEnforcedEnc)
@@ -3275,6 +3282,10 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
+// XXX
+//     SRT_TSA_NEEDS_LOCKED(CUDTUnited::m_GlobControlLock)
+// Can't be set because clang-tsa doesn't honor friend declarations
+// Alternatively you can move it to CUDTSocket class.
 SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
 {
     // Note: This function will lock pg->m_GroupLock!
@@ -3308,7 +3319,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
     {
         try
         {
-            gp = &newGroup(gtp);
+            gp = &uglobal().newGroup(gtp);
         }
         catch (...)
         {
@@ -5523,6 +5534,8 @@ void * srt::CUDT::tsbpd(void* param)
                 // Functions called below will lock m_GroupLock, which in hierarchy
                 // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
                 // m_GroupLock inside the calls.
+                // XXX TSA will report this because it doesn't understand the
+                // annotation applied to a constructor or destructor.
                 InvertedLock unrecv(self->m_RecvLock);
                 // The current "APP reader" needs to simply decide as to whether
                 // the next CUDTGroup::recv() call should return with no blocking or not.
@@ -7489,7 +7502,9 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
     {
+        enterCS(m_RecvAckLock);
         int32_t flight_span = getFlightSpan();
+        leaveCS(m_RecvAckLock);
 
         ScopedLock statsguard(m_StatsLock);
 
@@ -7919,28 +7934,31 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
             leaveCS(m_StatsLock);
         }
         // Call with no arguments - get loss list from internal data.
-        else if (m_pRcvLossList->getLossLength() > 0)
+        else
         {
             ScopedLock lock(m_RcvLossLock);
-            // this is periodically NAK report; make sure NAK cannot be sent back too often
-
-            // read loss list from the local receiver loss list
-            int32_t *data = new int32_t[m_iMaxSRTPayloadSize / 4];
-            int      losslen;
-            m_pRcvLossList->getLossArray(data, losslen, m_iMaxSRTPayloadSize / 4);
-
-            if (0 < losslen)
+            if (m_pRcvLossList->getLossLength() > 0)
             {
-                ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
-                ctrlpkt.set_id(m_PeerID);
-                nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+                // this is periodically NAK report; make sure NAK cannot be sent back too often
 
-                enterCS(m_StatsLock);
-                m_stats.rcvr.sentNak.count(1);
-                leaveCS(m_StatsLock);
+                // read loss list from the local receiver loss list
+                int32_t *data = new int32_t[m_iMaxSRTPayloadSize / 4];
+                int      losslen;
+                m_pRcvLossList->getLossArray(data, losslen, m_iMaxSRTPayloadSize / 4);
+
+                if (0 < losslen)
+                {
+                    ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
+                    ctrlpkt.set_id(m_PeerID);
+                    nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+
+                    enterCS(m_StatsLock);
+                    m_stats.rcvr.sentNak.count(1);
+                    leaveCS(m_StatsLock);
+                }
+
+                delete[] data;
             }
-
-            delete[] data;
         }
 
         // update next NAK time, which should wait enough time for the retansmission, but not too long
@@ -11567,27 +11585,34 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     //   (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track).
     // - in case of FASTREXMIT (Live Mode): the RTO (rtt_syn) was triggered, therefore
     //   schedule unacknowledged packets for retransmission regardless of the loss list emptiness.
-    if (getFlightSpan() > 0 && (!is_laterexmit || m_pSndLossList->getLossLength() == 0))
-    {
-        // Sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
-        ScopedLock acklock(m_RecvAckLock); // Protect packet retransmission
-        // Resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
-        const int32_t csn = m_iSndCurrSeqNo;
-        const int     num = m_pSndLossList->insert(m_iSndLastAck, csn);
-        if (num > 0)
-        {
-            enterCS(m_StatsLock);
-            m_stats.sndr.lost.count(num);
-            leaveCS(m_StatsLock);
 
-            HLOGC(xtlog.Debug,
-                  log << CONID() << "ENFORCED " << (is_laterexmit ? "LATEREXMIT" : "FASTREXMIT")
-                      << " by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn << " ("
-                      << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
+    if ((!is_laterexmit || m_pSndLossList->getLossLength() == 0))
+    {
+        ScopedLock acklock(m_RecvAckLock); // Protect packet retransmission
+        if (getFlightSpan() > 0)
+        {
+            // Sender: Insert all the packets sent after last received acknowledgement into the sender loss list.
+            // Resend all unacknowledged packets on timeout, but only if there is no packet in the loss list
+            const int32_t csn = m_iSndCurrSeqNo;
+            const int     num = m_pSndLossList->insert(m_iSndLastAck, csn);
+            if (num > 0)
+            {
+                enterCS(m_StatsLock);
+                m_stats.sndr.lost.count(num);
+                leaveCS(m_StatsLock);
+
+                HLOGC(xtlog.Debug,
+                        log << CONID() << "ENFORCED " << (is_laterexmit ? "LATEREXMIT" : "FASTREXMIT")
+                        << " by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn << " ("
+                        << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
+            }
         }
     }
 
-    ++m_iReXmitCount;
+    {
+        ScopedLock ack_lock(m_RecvAckLock);
+        ++m_iReXmitCount;
+    }
 
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
     updateCC(TEV_CHECKTIMER, EventVariant(stage));

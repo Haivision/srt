@@ -99,6 +99,7 @@ srt::CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
 {
     // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
@@ -128,6 +129,7 @@ void srt::CUDTSocket::breakSocket_LOCKED()
     setClosed();
 }
 
+SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 void srt::CUDTSocket::setClosed()
 {
     m_Status = SRTS_CLOSED;
@@ -3430,12 +3432,12 @@ srt::CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-srt::CUDTGroup& srt::CUDT::newGroup(const int type)
+srt::CUDTGroup& srt::CUDTUnited::newGroup(const int type)
 {
-    const SRTSOCKET id = uglobal().generateSocketID(true);
+    const SRTSOCKET id = generateSocketID(true);
 
     // Now map the group
-    return uglobal().addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
+    return addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
@@ -3447,7 +3449,7 @@ SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
     try
     {
         srt::sync::ScopedLock globlock(uglobal().m_GlobControlLock);
-        return newGroup(gt).id();
+        return uglobal().newGroup(gt).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
         // unlikely because the other thread would need some handle to
@@ -4314,6 +4316,7 @@ srt::CUDT* srt::CUDT::getUDTHandle(SRTSOCKET u)
     }
 }
 
+/* UNUSED. Restore if needed. NOTE: SRT_TSA_NEEDS_LOCKED(CUDTUnited::m_GlobControlLock)
 vector<SRTSOCKET> srt::CUDT::existingSockets()
 {
     vector<SRTSOCKET> out;
@@ -4323,6 +4326,7 @@ vector<SRTSOCKET> srt::CUDT::existingSockets()
     }
     return out;
 }
+*/
 
 SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 {
