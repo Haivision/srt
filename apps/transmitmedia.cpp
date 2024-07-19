@@ -29,6 +29,9 @@
 #include <sys/filio.h>
 #endif
 
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
 #include "ofmt.h"
 #include "apputil.hpp"
@@ -37,10 +40,6 @@
 #include "transmitmedia.hpp"
 #include "srt_compat.h"
 #include "verbose.hpp"
-
-#if !defined(__cplusplus) || __cplusplus <= 199711L
-#error "Requires C++11"
-#endif
 
 
 using namespace std;
