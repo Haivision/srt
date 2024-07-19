@@ -93,7 +93,8 @@ const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
-static inline const char* fmt_yesno(bool val) { return val ? "yes" : "no"; }
+// Mark unused because it's only used in HLOGC
+SRT_ATR_UNUSED static inline const char* fmt_yesno(bool val) { return val ? "yes" : "no"; }
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
