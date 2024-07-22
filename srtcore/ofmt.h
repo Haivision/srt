@@ -318,6 +318,11 @@ public:
 #if (defined(__cplusplus) && __cplusplus > 199711L) \
  || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
 
+inline internal::fmt_stringview operator""_V(const char* ptr, size_t s)
+{
+    return internal::fmt_stringview(ptr, s);
+}
+
 template<typename Stream> inline
 Stream& oprint(Stream& out)
 {
