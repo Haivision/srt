@@ -72,7 +72,6 @@ void LogDispatcher::CreateLogLinePrefix(srt::ofmtstream& serr)
 
     if (!isset(SRT_LOGF_DISABLE_SEVERITY))
     {
-        //serr << prefix;
         serr.write(prefix, prefix_len); // include terminal 0
     }
 

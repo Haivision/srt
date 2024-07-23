@@ -3246,14 +3246,14 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            std::stringstream that_muxer;
+            ofmtstream that_muxer;
             that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
                        << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
 #endif
 
             if (m.m_iPort == port)
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer);
                 if (m.m_iIPversion == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
@@ -3267,7 +3267,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             }
             else
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer);
             }
         }
 

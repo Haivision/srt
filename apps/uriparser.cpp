@@ -57,6 +57,8 @@ UriParser::~UriParser(void)
 
 string UriParser::makeUri()
 {
+    using namespace srt;
+
     // Reassemble parts into the URI
     string prefix = "";
     if (m_proto != "")
@@ -64,37 +66,37 @@ string UriParser::makeUri()
         prefix = m_proto + "://";
     }
 
-    srt::ofmtstream out;
+    ofmtstream out;
 
-    out << prefix << m_host;
+    oprint(out, prefix, m_host);
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
     {
         // Do not add port
     }
     else
     {
-        out << ":" << m_port;
+        oprint(out, ":"_V, m_port);
     }
 
     if (m_path != "")
     {
         if (m_path[0] != '/')
-            out << "/";
-        out << m_path;
+            oprint(out, "/"_V);
+        oprint(out, m_path);
     }
 
     if (!m_mapQuery.empty())
     {
-        out << "?";
+        oprint(out, "?"_V);
 
         query_it i = m_mapQuery.begin();
         for (;;)
         {
-            out << i->first << "=" << i->second;
+            oprint(out, i->first, "="_V, i->second);
             ++i;
             if (i == m_mapQuery.end())
                 break;
-            out << "&";
+            oprint(out, "&"_V);
         }
     }
 
