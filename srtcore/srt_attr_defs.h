@@ -98,6 +98,68 @@ used by SRT library internally.
 // - MSVC SAL (partially).
 // - Other compilers: none.
 ///////////////////////////////////////////////////////////////////////////////
+
+// TSA SYMBOLS available:
+//
+// * SRT_TSA_CAPABILITY(x)
+// The defined C++ class type has a lockable object capability.
+//
+// * SRT_TSA_SCOPED_CAPABILITY
+// The defined C++ class type has a scoped locking capability.
+//
+// * SRT_TSA_GUARDED_BY(x)
+// Accessing THIS object requires locking x for access.
+//
+// * SRT_TSA_PT_GUARDED_BY(x)
+// The pointer-type field points to an object that should be guarded access by x
+//
+// * SRT_TSA_LOCK_ORDERS_BEFORE(...)
+// THIS mutex must be locked prior to locking given mutex objects
+//
+// * SRT_TSA_LOCK_ORDERS_AFTER(...)
+// THIS mutex must be locked next to locking given mutex objects
+// 
+// * SRT_TSA_NEEDS_LOCKED(...)
+// This function requires that given mutexes be locked prior to calling it
+//
+// * SRT_TSA_NEEDS_LOCKED2(...)
+// Same as SRT_TSA_NEEDS_LOCKED, provided for portability with MSVC
+//
+// * SRT_TSA_NEEDS_LOCKED_SHARED(...)
+// Same as SRT_TSA_NEEDS_LOCKED, but requires a shared lock.
+//
+// * SRT_TSA_WILL_LOCK(...)
+// Declares that after this function has been called, it will leave given mutexes locked.
+//
+// * SRT_TSA_WILL_LOCK_SHARED(...)
+// Like SRT_TSA_WILL_LOCK, but applies to a shared lock
+//
+// * SRT_TSA_WILL_UNLOCK(...)
+// Declares that this function's call will leave given mutexes unlocked.
+//
+// * SRT_TSA_WILL_UNLOCK_SHARED(...)
+// Like SRT_TSA_WILL_UNLOCK, but a shared lock.
+//
+// * SRT_TSA_WILL_UNLOCK_GENERIC(...)
+// Like SRT_TSA_WILL_UNLOCK, but any kind of lock.
+//
+// * SRT_TSA_WILL_TRY_LOCK(...)
+// * SRT_TSA_WILL_TRY_LOCK_SHARED(...)
+// This function will try to lock and leave with locked if succeeded
+//
+// * SRT_TSA_NEEDS_NONLOCKED(...)
+// Requires that to call this function the given mutexes must not be locked.
+//
+// * SRT_TSA_ASSERT_CAPABILITY(x)
+// * SRT_TSA_ASSERT_SHARED_CAPABILITY(x)
+// Will assert that the mutex is locked
+
+// * SRT_TSA_RETURN_CAPABILITY(x)
+// This function will return an access to an object that is a mutex.
+
+// * SRT_TSA_DISABLED
+// For this function the TSA will not be done.
+
 #if _MSC_VER >= 1920
 // In case of MSVC these attributes have to precede the attributed objects (variable, function).
 // E.g. SRT_TSA_GUARDED_BY(mtx) int object;

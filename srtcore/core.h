@@ -547,13 +547,16 @@ private:
     bool createSrtHandshake(int srths_cmd, int srtkm_cmd, const uint32_t* data, size_t datalen,
             CPacket& w_reqpkt, CHandShake& w_hs);
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     SRT_ATR_NODISCARD size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
 #if ENABLE_BONDING
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     SRT_ATR_NODISCARD size_t fillHsExtGroup(uint32_t *pcmdspec);
 #endif
     SRT_ATR_NODISCARD SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     size_t fillHsExtKMREQ(uint32_t *pcmdspec, size_t ki);
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     SRT_ATR_NODISCARD size_t fillHsExtKMRSP(uint32_t *pcmdspec, const uint32_t *kmdata, size_t kmdata_wordsize);
 
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
@@ -704,7 +707,8 @@ private:
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
 
-    SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
@@ -810,6 +814,11 @@ private:
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
+
+    // XXX Controversial because it is being stated
+    // that it should be guarded during creation in the
+    // initial time, but it's not guarded during dispatching
+    // of the handshake.
     SRT_TSA_PT_GUARDED_BY(m_ConnectionLock)
     UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
@@ -881,6 +890,8 @@ private: // Timers
     duration   m_tdACKInterval;                  // ACK interval
     duration   m_tdNAKInterval;                  // NAK interval
 
+    // XXX Controversial because it is often updated without locking,
+    // but then it holds the time when the response has come.
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer

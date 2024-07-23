@@ -955,6 +955,11 @@ void srt::CUDT::clearData()
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
+//This function is being called at the moment when no
+// thread-related facilities for this socket are running.
+// Hence thread checking is disabled.
+
+SRT_TSA_DISABLED
 void srt::CUDT::open()
 {
     ScopedLock cg(m_ConnectionLock);
@@ -7502,9 +7507,9 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
     {
-        enterCS(m_RecvAckLock);
+        m_RecvAckLock.lock();
         int32_t flight_span = getFlightSpan();
-        leaveCS(m_RecvAckLock);
+        m_RecvAckLock.unlock();
 
         ScopedLock statsguard(m_StatsLock);
 
@@ -7918,6 +7923,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
+        ScopedLock lock(m_RcvLossLock);
         // Explicitly defined lost sequences
         if (rparam)
         {
@@ -7936,7 +7942,6 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         // Call with no arguments - get loss list from internal data.
         else
         {
-            ScopedLock lock(m_RcvLossLock);
             if (m_pRcvLossList->getLossLength() > 0)
             {
                 // this is periodically NAK report; make sure NAK cannot be sent back too often
@@ -9644,7 +9649,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     {
         IF_HEAVY_LOGGING(reason = "reXmit");
     }
-    else if (m_PacketFilter &&
+    else if (m_PacketFilter && // XXX m_iSndCurrSeqNo requires locking m_RcvAckLock
              m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
