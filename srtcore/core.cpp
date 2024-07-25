@@ -5844,6 +5844,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     }
 
 #if ENABLE_BONDING
+    m_ConnectionLock.unlock();
     // The socket and the group are only linked to each other after interpretSrtHandshake(..) has been called.
     // Keep the group alive for the lifetime of this function,
     // and do it BEFORE acquiring m_ConnectionLock to avoid
@@ -5851,6 +5852,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // This will check if a socket belongs to a group and if so
     // it will remember this group and keep it alive here.
     CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
+    m_ConnectionLock.lock();
 #endif
 
     if (!prepareBuffers(NULL))
