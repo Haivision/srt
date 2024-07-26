@@ -20,7 +20,6 @@ written by
 #include <iostream>
 #include <iomanip>
 #include <set>
-#include <sstream>
 #include <cstdarg>
 #ifdef _WIN32
 #include "win/wintime.h"
@@ -54,7 +53,7 @@ written by
 { \
     srt_logging::LogDispatcher::Proxy log(logdes); \
     log.setloc(__FILE__, __LINE__, __FUNCTION__); \
-    const srt_logging::LogDispatcher::Proxy& log_prox SRT_ATR_UNUSED = args; \
+    { (void)(const srt_logging::LogDispatcher::Proxy&)(args); } \
 }
 
 // LOGF uses printf-like style formatting.
@@ -147,6 +146,7 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
+    size_t prefix_len;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -159,30 +159,30 @@ public:
         level(log_level),
         src_config(&config)
     {
-        // XXX stpcpy desired, but not enough portable
-        // Composing the exact prefix is not critical, so simply
-        // cut the prefix, if the length is exceeded
+        size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
+        size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
 
-        // See Logger::Logger; we know this has normally 2 characters,
-        // except !!FATAL!!, which has 9. Still less than 32.
-        // If the size of the FA name together with severity exceeds the size,
-        // just skip the former.
-        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
+        if (logger_pfx && your_pfx_len + logger_pfx_len + 1 < MAX_PREFIX_SIZE)
         {
-#if defined(_MSC_VER) && _MSC_VER < 1900
-            _snprintf(prefix, MAX_PREFIX_SIZE, "%s:%s", your_pfx, logger_pfx);
-#else
-            snprintf(prefix, MAX_PREFIX_SIZE + 1, "%s:%s", your_pfx, logger_pfx);
-#endif
+            memcpy(prefix, your_pfx, your_pfx_len);
+            prefix[your_pfx_len] = ':';
+            memcpy(prefix + your_pfx_len + 1, logger_pfx, logger_pfx_len);
+            prefix[your_pfx_len + logger_pfx_len + 1] = '\0';
+            prefix_len = your_pfx_len + logger_pfx_len + 1;
+        }
+        else if (your_pfx)
+        {
+            // Prefix too long, so copy only your_pfx and only
+            // as much as it fits
+            size_t copylen = std::min(+MAX_PREFIX_SIZE, your_pfx_len);
+            memcpy(prefix, your_pfx, copylen);
+            prefix[copylen] = '\0';
+            prefix_len = copylen;
         }
         else
         {
-#ifdef _MSC_VER
-            strncpy_s(prefix, MAX_PREFIX_SIZE + 1, your_pfx, _TRUNCATE);
-#else
-            strncpy(prefix, your_pfx, MAX_PREFIX_SIZE);
-            prefix[MAX_PREFIX_SIZE] = '\0';
-#endif
+            prefix[0] = '\0';
+            prefix_len = 0;
         }
     }
 
@@ -192,7 +192,7 @@ public:
 
     bool CheckEnabled();
 
-    void CreateLogLinePrefix(std::ostringstream&);
+    void CreateLogLinePrefix(srt::ofmtstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -285,7 +285,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    std::ostringstream os;
+    srt::ofmtstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't
@@ -336,12 +336,52 @@ struct LogDispatcher::Proxy
         return *this;
     }
 
+    // Provide explicit overloads for const char* and string
+    // so that printing them bypasses the formatting facility
+
+    // Special case for atomics, as passing them to snprintf() call
+    // requires unpacking the real underlying value.
+    template <class T>
+    Proxy& operator<<(const srt::sync::atomic<T>& arg)
+    {
+        if (that_enabled)
+        {
+            os << arg.load();
+        }
+        return *this;
+    }
+
+
+#if HAVE_CXX11
+
+    void dispatch() {}
+
+    template<typename Arg1, typename... Args>
+    void dispatch(const Arg1& a1, const Args&... others)
+    {
+        *this << a1;
+        dispatch(others...);
+    }
+
+    // Special dispatching for atomics must be provided here.
+    // By some reason, "*this << a1" expression gets dispatched
+    // to the general version of operator<<, not the overload for
+    // atomic. Even though the compiler shows Arg1 type as atomic.
+    template<typename Arg1, typename... Args>
+    void dispatch(const srt::sync::atomic<Arg1>& a1, const Args&... others)
+    {
+        *this << a1.load();
+        dispatch(others...);
+    }
+
+#endif
+
     ~Proxy()
     {
-        if ( that_enabled )
+        if (that_enabled)
         {
-            if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
-                os << std::endl;
+            if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
+                os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?
@@ -381,7 +421,7 @@ struct LogDispatcher::Proxy
             buf[len-1] = '\0';
         }
 
-        os << buf;
+        os.write(buf, len);
         return *this;
     }
 };
@@ -435,12 +475,20 @@ inline bool LogDispatcher::CheckEnabled()
 
 //extern std::mutex Debug_mutex;
 
-inline void PrintArgs(std::ostream&) {}
+inline void PrintArgs(std::ostringstream&) {}
 
 template <class Arg1, class... Args>
-inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
+inline void PrintArgs(std::ostringstream& serr, Arg1&& arg1, Args&&... args)
 {
     serr << std::forward<Arg1>(arg1);
+    PrintArgs(serr, args...);
+}
+
+// Add exceptional handling for sync::atomic
+template <class Arg1, class... Args>
+inline void PrintArgs(std::ostringstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
+{
+    serr << arg1.load();
     PrintArgs(serr, args...);
 }
 
@@ -448,15 +496,7 @@ template <class... Args>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, Args&&... args SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    std::ostringstream serr;
-    CreateLogLinePrefix(serr);
-    PrintArgs(serr, args...);
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << std::endl;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this).dispatch(args...);
 #endif
 }
 
@@ -466,15 +506,7 @@ template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    std::ostringstream serr;
-    CreateLogLinePrefix(serr);
-    serr << arg;
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << std::endl;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this) << arg;
 #endif
 }
 
@@ -492,7 +524,7 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
     }
     else if ( src_config->log_stream )
     {
-        (*src_config->log_stream) << msg;
+        src_config->log_stream->write(msg.data(), msg.size());
         (*src_config->log_stream).flush();
     }
     src_config->unlock();

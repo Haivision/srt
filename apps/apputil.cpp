@@ -12,7 +12,6 @@
 #include <chrono>
 #include <iostream>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 #include <memory>
 
@@ -20,6 +19,7 @@
 #include "apputil.hpp"
 #include "netinet_any.h"
 #include "srt_compat.h"
+#include "ofmt.h"
 
 using namespace std;
 using namespace srt;
@@ -147,7 +147,7 @@ string Join(const vector<string>& in, string sep)
     if ( in.empty() )
         return "";
 
-    ostringstream os;
+    srt::ofmtstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)

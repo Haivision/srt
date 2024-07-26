@@ -80,7 +80,7 @@ inline void Print(Log& ) {}
 template <typename Arg1, typename... Args>
 inline void Print(Log& out, Arg1&& arg1, Args&&... args)
 {
-    out << std::forward(arg1);
+    out << arg1;
     Print(out, args...);
 }
 
