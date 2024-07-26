@@ -1419,6 +1419,18 @@ void SrtCommon::ConnectClient(string host, int port)
     }
 
     Verb() << " connected.";
+
+    sockaddr_any agent;
+    string dev;
+    if (Verbose::on)
+    {
+        srt_getsockname(m_sock, agent.get(), &agent.len);
+        char name[256];
+        size_t len = 255;
+        if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
+            dev.assign(name, len);
+    }
+    Verb("Connected AGENT:", agent.str(), "[", dev, "] PEER:", sa.str());
     stat = ConfigurePost(m_sock);
     if (stat == SRT_ERROR)
         Error("ConfigurePost");

@@ -16,8 +16,8 @@
 #include <utility>
 #include <memory>
 
-#include <ifaddrs.h>
 #include "srt.h" // Required for SRT_SYNC_CLOCK_* definitions.
+#include "common.h"
 #include "apputil.hpp"
 #include "netinet_any.h"
 #include "srt_compat.h"
@@ -391,79 +391,6 @@ void PrintLibVersion()
     cerr << "SRT Library version: " << major << "." << minor << "." << patch << ", clock type: " << SRTClockTypeStr() << endl;
 }
 
-#ifdef _WIN32
-    #if SRT_ENABLE_CONSELF_CHECK_WIN32
-        #define ENABLE_CONSELF_CHECK 1
-    #endif
-#else
-
-// For non-Windows platofm, enable always.
-#define ENABLE_CONSELF_CHECK 1
-#endif
-
-#if ENABLE_CONSELF_CHECK
-
-static vector<sockaddr_any> GetLocalInterfaces()
-{
-    vector<sockaddr_any> locals;
-#ifdef _WIN32
-	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
-	ULONG outBufLen4 = 0, outBufLen6 = 0, outBufLen = 0;
-
-    // This function doesn't allocate memory by itself, you have to do it
-    // yourself, worst case when it's too small, the size will be corrected
-    // and the function will do nothing. So, simply, call the function with
-    // always too little 0 size and make it show the correct one.
-    GetAdaptersAddresses(AF_INET, flags, NULL, NULL, &outBufLen4);
-	GetAdaptersAddresses(AF_INET, flags, NULL, NULL, &outBufLen6);
-    // Ignore errors. Check errors on the real call.
-	// (Have doubts about this "max" here, as VC reports errors when
-	// using std::max, so it will likely resolve to a macro - hope this
-	// won't cause portability problems, this code is Windows only.
-	outBufLen = max(outBufLen4, outBufLen6);
-
-    // Good, now we can allocate memory
-    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
-    ULONG st = GetAdaptersAddresses(AF_INET, flags, NULL, pAddresses, &outBufLen);
-    if (st == ERROR_SUCCESS)
-    {
-        PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
-        while (pUnicast)
-        {
-            locals.push_back(pUnicast->Address.lpSockaddr);
-            pUnicast = pUnicast->Next;
-        }
-    }
-	st = GetAdaptersAddresses(AF_INET6, flags, NULL, pAddresses, &outBufLen);
-	if (st == ERROR_SUCCESS)
-	{
-		PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
-		while (pUnicast)
-		{
-			locals.push_back(pUnicast->Address.lpSockaddr);
-			pUnicast = pUnicast->Next;
-		}
-	}
-
-    ::operator delete(pAddresses);
-
-#else
-    // Use POSIX method: getifaddrs
-    struct ifaddrs* pif, * pifa;
-    int st = getifaddrs(&pifa);
-    if (st == 0)
-    {
-        for (pif = pifa; pif; pif = pif->ifa_next)
-        {
-            locals.push_back(pif->ifa_addr);
-        }
-    }
-
-    freeifaddrs(pifa);
-#endif
-    return locals;
-}
-
 bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
 {
     sockaddr_any bound = boundaddr;
@@ -481,7 +408,7 @@ bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
     else
     {
         // Bound to INADDR_ANY, so check matching with any local IP address
-        vector<sockaddr_any> locals = GetLocalInterfaces();
+        vector<srt::LocalInterface> locals = srt::GetLocalInterfaces();
 
         // If any of the above function fails, it will collect
         // no local interfaces, so it's impossible to check anything.
@@ -490,7 +417,7 @@ bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
         // local address anyway.
         for (size_t i = 0; i < locals.size(); ++i)
         {
-            if (locals[i].equal_address(target))
+            if (locals[i].addr.equal_address(target))
             {
                 return true;
             }
@@ -500,11 +427,3 @@ bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
     return false;
 }
 
-#else
-bool IsTargetAddrSelf(const sockaddr* , const sockaddr* )
-{
-    // State that the given address is never "self", so
-    // prevention from connecting to self will not be in force.
-    return false;
-}
-#endif

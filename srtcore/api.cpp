@@ -2180,6 +2180,39 @@ void srt::CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_
     *pw_namelen = len;
 }
 
+void srt::CUDTUnited::getsockdevname(const SRTSOCKET u, char* pw_name, size_t* pw_namelen)
+{
+    if (!pw_name || !pw_namelen)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    CUDTSocket* s = locateSocket(u);
+
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    if (s->core().m_bBroken)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    if (s->m_Status == SRTS_INIT)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+
+    vector<LocalInterface> locals = GetLocalInterfaces();
+
+    for (vector<LocalInterface>::iterator i = locals.begin(); i != locals.end(); ++i)
+    {
+        if (i->addr.equal_address(s->m_SelfAddr))
+        {
+            if (*pw_namelen < i->name.size() + 1)
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            memcpy((pw_name), i->name.c_str(), i->name.size()+1);
+            *pw_namelen = i->name.size();
+            return;
+        }
+    }
+
+    *pw_namelen = 0; // report empty one
+}
+
 int srt::CUDTUnited::select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
     const steady_clock::time_point entertime = steady_clock::now();
@@ -3771,6 +3804,24 @@ int srt::CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
     try
     {
         uglobal().getsockname(u, name, namelen);
+        return 0;
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal, log << "getsockname: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+    }
+}
+
+int srt::CUDT::getsockdevname(SRTSOCKET u, char* name, size_t* namelen)
+{
+    try
+    {
+        uglobal().getsockdevname(u, name, namelen);
         return 0;
     }
     catch (const CUDTException& e)
