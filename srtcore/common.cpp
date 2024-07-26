@@ -495,7 +495,7 @@ vector<LocalInterface> GetLocalInterfaces()
     ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
     if (st == ERROR_SUCCESS)
     {
-        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
+        for (PIP_ADAPTER_ADDRESSES* i = pAddresses; i; i = pAddresses->Next)
         {
             std::string name = i->AdapterName;
             PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;

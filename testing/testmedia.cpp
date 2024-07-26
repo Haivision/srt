@@ -612,17 +612,13 @@ void SrtCommon::AcceptNewClient()
         }
 
         sockaddr_any agentaddr(AF_INET6);
-        string agent = "<?AGENT?>", dev;
+        string agent = "<?AGENT?>";
         if (-1 != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
         {
             agent = agentaddr.str();
-            char name[256];
-            size_t len = 255;
-            if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
-                dev.assign(name, len);
         }
 
-        Verb() << " connected [" << agent << "] <-- " << peer << " [" << dev << "]";
+        Verb() << " connected [" << agent << "] <-- " << peer;
     }
     ::transmit_throw_on_interrupt = false;
 
