@@ -407,7 +407,11 @@ private:
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock); // used to synchronize UDT API
+    // XXX Desired, but blocked because the older clang compilers
+    // do not handle this declaration correctly. Unblock in devel builds
+    // for checking.
+    // SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock)
+    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
