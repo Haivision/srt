@@ -335,5 +335,6 @@ std::string OptionHelpItem(const OptionName& o);
 
 const char* SRTClockTypeStr();
 void PrintLibVersion();
+bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr);
 
 #endif // INC_SRT_APPCOMMON_H
