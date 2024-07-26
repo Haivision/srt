@@ -10,7 +10,7 @@
 ################################################################################
 
 param (
-    [Parameter()][String]$VS_VERSION = "2019",
+    [Parameter()][String]$VS_VERSION = "2022",
     [Parameter()][String]$CONFIGURATION = "Release",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
