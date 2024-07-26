@@ -68,35 +68,35 @@ string UriParser::makeUri()
 
     ofmtstream out;
 
-    oprint(out, prefix, m_host);
+    out.print(prefix, m_host);
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
     {
         // Do not add port
     }
     else
     {
-        oprint(out, ":"_V, m_port);
+        out.print(":"_V, m_port);
     }
 
     if (m_path != "")
     {
         if (m_path[0] != '/')
-            oprint(out, "/"_V);
-        oprint(out, m_path);
+            out.print("/"_V);
+        out.print(m_path);
     }
 
     if (!m_mapQuery.empty())
     {
-        oprint(out, "?"_V);
+        out.print("?"_V);
 
         query_it i = m_mapQuery.begin();
         for (;;)
         {
-            oprint(out, i->first, "="_V, i->second);
+            out.print(i->first, "="_V, i->second);
             ++i;
             if (i == m_mapQuery.end())
                 break;
-            oprint(out, "&"_V);
+            out.print("&"_V);
         }
     }
 

@@ -312,6 +312,36 @@ public:
     {
         return buffer.str();
     }
+
+// Additionally for C++11
+#if (defined(__cplusplus) && __cplusplus > 199711L) \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+    void print_chain()
+    {
+    }
+
+    template<typename Arg1, typename... Args>
+    void print_chain(const Arg1& arg1, const Args&... args)
+    {
+        *this << arg1;
+        print_chain(args...);
+    }
+
+    template<typename... Args>
+    ofmtstream& print(const Args&... args)
+    {
+        print_chain(args...);
+        return *this;
+    }
+
+    template<typename... Args>
+    ofmtstream& puts(const Args&... args)
+    {
+        print_chain(args...);
+        buffer << std::endl;
+        return *this;
+    }
+#endif
 };
 
 // Additionally for C++11
@@ -323,24 +353,11 @@ inline internal::fmt_stringview operator""_V(const char* ptr, size_t s)
     return internal::fmt_stringview(ptr, s);
 }
 
-template<typename Stream> inline
-Stream& oprint(Stream& out)
-{
-    return out;
-}
-
-template<typename Stream, typename Arg1, typename... Args> inline
-Stream& oprint(Stream& out, const Arg1& arg1, const Args&... args)
-{
-    out << arg1;
-    return oprint(out, args...);
-}
-
 template <typename... Args> inline
-std::string ocat(const Args&... args)
+std::string fmtcat(const Args&... args)
 {
     ofmtstream out;
-    oprint(out, args...);
+    out.print(args...);
     return out.str();
 }
 
@@ -366,7 +383,7 @@ std::string fmts(const Value& val, const fmtc& fmtspec)
 }
 
 // This prevents the macro from being used with anything else
-// than a string literal
+// than a string literal. Version of ""_V UDL available for C++03.
 #define OFMT_RAWSTR(arg) srt::internal::CreateRawString_FWD("" arg)
 
 
