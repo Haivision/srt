@@ -502,7 +502,8 @@ vector<LocalInterface> GetLocalInterfaces()
             while (pUnicast)
             {
                 LocalInterface a;
-                a.addr = pUnicast->Address.lpSockaddr;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
                 if (a.addr.len > 0)
                 {
                     // DO NOT collect addresses that are not of
@@ -527,7 +528,8 @@ vector<LocalInterface> GetLocalInterfaces()
         for (pif = pifa; pif; pif = pif->ifa_next)
         {
             LocalInterface i;
-            i.addr = pif->ifa_addr;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
             if (i.addr.len > 0)
             {
                 // DO NOT collect addresses that are not of
