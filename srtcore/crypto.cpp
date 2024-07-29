@@ -333,6 +333,13 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: NOT REPLAYING the key update to TX CRYPTO CTX.");
     }
 
+#ifdef SRT_ENABLE_ENCRYPTION
+    if (m_hRcvCrypto != NULL)
+        HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
+    if (m_hSndCrypto != NULL)
+        HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
+#endif
+
     return SRT_CMD_KMRSP;
 
 HSv4_ErrorReport:
