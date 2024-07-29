@@ -172,8 +172,6 @@ namespace sync {
 
 srt::sync::CEvent g_Sync;
 
-
-
 } // namespace sync
 } // namespace srt
 
@@ -367,15 +365,12 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 ////////////////////////////////////////////////////////////////////////////////
 
 srt::sync::SharedMutex::SharedMutex()
-    :m_LockWriteCond()
-    ,m_LockReadCond()
-    ,m_Mutex()
-    ,m_iCountRead(0)
-    ,m_bWriterLocked(false)
+    : m_LockWriteCond()
+    , m_LockReadCond()
+    , m_Mutex()
+    , m_iCountRead(0)
+    , m_bWriterLocked(false)
 {
-    m_iCountRead = 0;
-    m_bWriterLocked = false;
-
     setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
     setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
     setupMutex(m_Mutex, "SharedMutex::m_pMutex");
@@ -405,11 +400,10 @@ bool srt::sync::SharedMutex::try_lock()
     UniqueLock l1(m_Mutex);
     if (m_bWriterLocked || m_iCountRead > 0)
         return false;
-    else
-        {
-            m_bWriterLocked = true;
-            return true;
-        }
+    
+    m_bWriterLocked = true;
+    return true;
+
 }
 
 void srt::sync::SharedMutex::unlock()
@@ -417,8 +411,8 @@ void srt::sync::SharedMutex::unlock()
     UniqueLock lk(m_Mutex);
     m_bWriterLocked = false;
 
-    lk.unlock();
     m_LockWriteCond.notify_all();
+    lk.unlock();
 }
 
 void srt::sync::SharedMutex::lock_shared()
@@ -435,11 +429,9 @@ bool srt::sync::SharedMutex::try_lock_shared()
     UniqueLock lk(m_Mutex);
     if (m_bWriterLocked)
         return false;
-    else
-    {
-        m_iCountRead++;
-        return true;
-    }
+
+    m_iCountRead++;
+    return true;
 }
 
 void srt::sync::SharedMutex::unlock_shared()
@@ -447,6 +439,8 @@ void srt::sync::SharedMutex::unlock_shared()
     ScopedLock lk(m_Mutex);
     
     m_iCountRead--;
+
+    SRT_ASSERT(m_iCountRead >= 0);
     if (m_iCountRead < 0)
         m_iCountRead = 0;
     
@@ -459,5 +453,6 @@ void srt::sync::SharedMutex::unlock_shared()
 
 int srt::sync::SharedMutex::getReaderCount()
 {
+    ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }

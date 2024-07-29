@@ -944,11 +944,11 @@ CUDTException& GetThreadLocalError();
 int genRandomInt(int minVal, int maxVal);
 
 
-// Implementation of a read-write mutex. 
-// This allows multiple readers at a time, or a single writer
+/// Implementation of a read-write mutex. 
+/// This allows multiple readers at a time, or a single writer
 class SharedMutex
 {
-    public:
+public:
     SharedMutex();    
     ~SharedMutex();
 
@@ -963,7 +963,7 @@ class SharedMutex
 
     // Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
     // Once it is locked, no reader can acquire it 
-    public:
+public:
     void lock();
     bool try_lock();
     void unlock();
