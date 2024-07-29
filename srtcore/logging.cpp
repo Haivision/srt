@@ -43,7 +43,7 @@ LogDispatcher::Proxy LogDispatcher::operator()()
     return Proxy(*this);
 }
 
-void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+void LogDispatcher::CreateLogLinePrefix(srt::obufstream& serr)
 {
     using namespace std;
     using namespace srt;
@@ -60,7 +60,7 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
-            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+            serr << tmp_buf << srt::sfmt(tv.tv_usec, "06");
         }
     }
 

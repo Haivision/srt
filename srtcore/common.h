@@ -1437,7 +1437,7 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 
 inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
 {
-    std::ostringstream os;
+    obufstream os;
 
     os << "[ ";
     for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)

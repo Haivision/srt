@@ -277,15 +277,12 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+        obufstream peeraddr_form;
+        peeraddr_form << sfmt(peeraddr16[0], "04x");
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << sfmt(peeraddr16[i], "04x");
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {

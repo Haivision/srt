@@ -228,7 +228,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     if (sock == 0)
         return "";
 
-    std::ostringstream os;
+    srt::obufstream os;
     os << "@" << sock << ":";
     return os.str();
 }
@@ -1205,7 +1205,7 @@ int srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockadd
     if (!srcname || !tarname || namelen < int(sizeof(sockaddr_in)))
     {
         LOGC(aclog.Error,
-             log << "connect(with source): invalid call: srcname=" << srcname << " tarname=" << tarname
+             log << "connect(with source): invalid call: srcname=" << (void*)srcname << " tarname=" << (void*)tarname
                  << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
@@ -1249,7 +1249,7 @@ int srt::CUDTUnited::connect(const SRTSOCKET u, const sockaddr* name, int namele
 {
     if (!name || namelen < int(sizeof(sockaddr_in)))
     {
-        LOGC(aclog.Error, log << "connect(): invalid call: name=" << name << " namelen=" << namelen);
+        LOGC(aclog.Error, log << "connect(): invalid call: name=" << (void*)name << " namelen=" << namelen);
         throw CUDTException(MJ_NOTSUP, MN_INVAL);
     }
 
@@ -3245,7 +3245,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            ostringstream that_muxer;
+            srt::obufstream that_muxer;
             that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
                        << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
 #endif
