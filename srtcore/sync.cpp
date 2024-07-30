@@ -386,12 +386,12 @@ srt::sync::SharedMutex::~SharedMutex()
 void srt::sync::SharedMutex::lock()
 {
     UniqueLock l1(m_Mutex);
-    if (m_bWriterLocked)
+    while (m_bWriterLocked)
         m_LockWriteCond.wait(l1);
 
     m_bWriterLocked = true;
     
-    if (m_iCountRead)
+    while (m_iCountRead)
         m_LockReadCond.wait(l1);
 }
 
@@ -418,7 +418,7 @@ void srt::sync::SharedMutex::unlock()
 void srt::sync::SharedMutex::lock_shared()
 {
     UniqueLock lk(m_Mutex);
-    if (m_bWriterLocked)
+    while (m_bWriterLocked)
         m_LockWriteCond.wait(lk);
 
     m_iCountRead++;
