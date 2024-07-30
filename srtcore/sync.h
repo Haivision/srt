@@ -952,7 +952,7 @@ public:
     SharedMutex();    
     ~SharedMutex();
 
-    private:
+private:
     Condition  m_LockWriteCond;
     Condition  m_LockReadCond;
 
@@ -961,20 +961,20 @@ public:
     int m_iCountRead;
     bool m_bWriterLocked;
 
-    // Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
-    // Once it is locked, no reader can acquire it 
+    /// Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
+    /// Once it is locked, no reader can acquire it 
 public:
     void lock();
     bool try_lock();
     void unlock();
 
-    // Acquire the lock if no writter already has it. For read purpose only
-    // Several readers can lock this at the same time. 
+    /// Acquire the lock if no writter already has it. For read purpose only
+    /// Several readers can lock this at the same time. 
     void lock_shared();
     bool try_lock_shared();
     void unlock_shared();
 
-    int getReaderCount();
+    int getReaderCount() const;
 
 
 };
