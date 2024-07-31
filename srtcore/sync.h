@@ -956,7 +956,7 @@ private:
     Condition  m_LockWriteCond;
     Condition  m_LockReadCond;
 
-    Mutex m_Mutex;
+    mutable Mutex m_Mutex;
 
     int m_iCountRead;
     bool m_bWriterLocked;
