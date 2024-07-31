@@ -451,8 +451,7 @@ void srt::sync::SharedMutex::unlock_shared()
     
 }
 
-int srt::sync::SharedMutex::getReaderCount()
+int srt::sync::SharedMutex::getReaderCount() const
 {
-    ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }
