@@ -943,6 +943,43 @@ CUDTException& GetThreadLocalError();
 /// @param[in] maxVal maximum allowed value of the resulting random number.
 int genRandomInt(int minVal, int maxVal);
 
+
+/// Implementation of a read-write mutex. 
+/// This allows multiple readers at a time, or a single writer.
+/// TODO: The class can be improved if needed to give writer a preference
+/// by adding additional m_iWritersWaiting member variable (counter).
+/// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
+class SharedMutex
+{
+public:
+    SharedMutex();    
+    ~SharedMutex();
+
+private:
+    Condition  m_LockWriteCond;
+    Condition  m_LockReadCond;
+
+    mutable Mutex m_Mutex;
+
+    int m_iCountRead;
+    bool m_bWriterLocked;
+
+    /// Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
+    /// Once it is locked, no reader can acquire it 
+public:
+    void lock();
+    bool try_lock();
+    void unlock();
+
+    /// Acquire the lock if no writter already has it. For read purpose only
+    /// Several readers can lock this at the same time. 
+    void lock_shared();
+    bool try_lock_shared();
+    void unlock_shared();
+
+    int getReaderCount() const;
+};
+
 } // namespace sync
 } // namespace srt
 
