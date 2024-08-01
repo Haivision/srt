@@ -444,8 +444,6 @@ void srt::sync::SharedMutex::unlock_shared()
     
     if (m_bWriterLocked && m_iCountRead == 0)
         m_LockReadCond.notify_one();
-    else if (m_iCountRead > 0)
-        m_LockWriteCond.notify_one();
     
 }
 

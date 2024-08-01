@@ -945,7 +945,10 @@ int genRandomInt(int minVal, int maxVal);
 
 
 /// Implementation of a read-write mutex. 
-/// This allows multiple readers at a time, or a single writer
+/// This allows multiple readers at a time, or a single writer.
+/// TODO: The class can be improved if needed to give writer a preference
+/// by adding additional m_bWriterWaiting member variable.
+/// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
 class SharedMutex
 {
 public:
