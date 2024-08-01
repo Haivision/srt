@@ -975,8 +975,6 @@ public:
     void unlock_shared();
 
     int getReaderCount() const;
-
-
 };
 
 } // namespace sync

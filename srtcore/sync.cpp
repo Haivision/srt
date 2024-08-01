@@ -403,16 +403,14 @@ bool srt::sync::SharedMutex::try_lock()
     
     m_bWriterLocked = true;
     return true;
-
 }
 
 void srt::sync::SharedMutex::unlock()
 {
-    UniqueLock lk(m_Mutex);
+    ScopedLock lk(m_Mutex);
     m_bWriterLocked = false;
 
     m_LockWriteCond.notify_all();
-    lk.unlock();
 }
 
 void srt::sync::SharedMutex::lock_shared()
