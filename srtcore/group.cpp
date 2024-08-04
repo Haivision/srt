@@ -775,6 +775,17 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     default:; // pass on
     }
 
+    {
+        ScopedLock cg(m_GroupLock);
+        gli_t gi = m_Group.begin();
+        if (gi != m_Group.end())
+        {
+            // Return the value from the first member socket, if any is present
+            gi->ps->core().getOpt(optname, (pw_optval), (w_optlen));
+            return;
+        }
+    }
+
     // Check if the option is in the storage, which means that
     // it was modified on the group.
 
