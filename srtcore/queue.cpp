@@ -1129,8 +1129,6 @@ srt::CRcvQueue::CRcvQueue()
     , m_iIPversion()
     , m_szPayloadSize()
     , m_bClosing(false)
-    , m_LSLock()
-    , m_pListener(NULL)
     , m_pRendezvousQueue(NULL)
     , m_vNewEntry()
     , m_IDLock()
@@ -1404,11 +1402,13 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     int  listener_ret  = SRT_REJ_UNKNOWN;
     bool have_listener = false;
     {
-        ScopedLock cg(m_LSLock);
-        if (m_pListener)
+        SharedLock shl(m_pListener);
+        CUDT*      pListener = m_pListener.getPtrNoLock();
+
+        if (pListener)
         {
-            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << m_pListener->socketID());
-            listener_ret = m_pListener->processConnectRequest(addr, unit->m_Packet);
+            LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << pListener->socketID());
+            listener_ret = pListener->processConnectRequest(addr, unit->m_Packet);
 
             // This function does return a code, but it's hard to say as to whether
             // anything can be done about it. In case when it's stated possible, the
@@ -1690,21 +1690,15 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
 
 int srt::CRcvQueue::setListener(CUDT* u)
 {
-    ScopedLock lslock(m_LSLock);
-
-    if (NULL != m_pListener)
+    if (!m_pListener.set(u))
         return -1;
 
-    m_pListener = u;
     return 0;
 }
 
 void srt::CRcvQueue::removeListener(const CUDT* u)
 {
-    ScopedLock lslock(m_LSLock);
-
-    if (u == m_pListener)
-        m_pListener = NULL;
+    m_pListener.clearIf(u);
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,
