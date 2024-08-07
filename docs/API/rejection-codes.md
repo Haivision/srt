@@ -1,13 +1,13 @@
 # SRT Rejection Codes
 
-This document provides an overview of the rejection (error) codes used by and supported within SRT and SRT-based applications. 
+This document provides an overview of the rejection (error) codes used by and supported within SRT and SRT-based applications. For information on other types of error codes refer to the [API Socket Options](./docs/API/API-socket-options.md) document.
 
 [:arrow_down: &nbsp; Jump to list of rejection codes](#api-function-rejection-codes)
 
 
 ## Summary of Rejection Codes
 
-Rejection codes are used in the SRT API, and are transferred on the wire as a part of a Handshake packet (refer to the `Handshake Type` field of the Handshake packet).
+Rejection codes are used in the SRT API, and are transferred on the wire as a part of a Handshake packet (refer to the `Handshake Type` field of the [Handshake](./docs/features/handshake.md) packet).
 The rejection codes are divided into several ranges:
 
   - SRT internal
@@ -25,7 +25,7 @@ When transferred on the wire, the API value is incremented by 1000 to become the
 
 ### SRT Internal Rejection Codes
 
-Defined in [**srt.h**](srtcore/srt.h), these codes provide the reason why a connection is rejected by SRT. They cover the reserved range 0 - 999 (below `SRT_REJC_PREDEFINED`).
+Defined in [**srt.h**](srtcore/srt.h), these codes provide the reason why a connection is rejected by SRT. They cover the reserved range 0 - 999 (below `SRT_REJC_PREDEFINED`). These codes cannot be used by applications to report a rejection reason.
 
 Naming: `SRT_REJ_*`
 
@@ -33,7 +33,7 @@ Naming: `SRT_REJ_*`
   - `SRT_REJ_SYSTEM` = 1
   - ...
   - `SRT_REJ_CRYPTO` = 17
-
+See [the list below](#api-function-rejection-codes) for details.
 
 ### Extended Rejection Codes
 
@@ -106,7 +106,7 @@ The table below lists the rejection codes as defined in [**access_control.h**](s
 | 1403   | [SRT_REJX_FORBIDDEN](#SRT_REJX_FORBIDDEN)         | 1.4.2   | Access denied to the resource for any reason.                                                                  |
 | 1404   | [SRT_REJX_NOTFOUND](#SRT_REJX_NOTFOUND)           | 1.4.2   | Resource specified by `r` and `h` keys cannot be found.                                                        |
 | 1405   | [SRT_REJX_BAD_MODE](#SRT_REJX_BAD_MODE)           | 1.4.2   | Mode specified in the `m` key in StreamID is not supported for this request.                                   |
-| 1406   | [SRT_REJX_UNACCEPTABLE](#SRT_REJX_UNACCEPTABLE)   | 1.4.2   | Unavailable parameters in `SocketID`, or `m=publish` data format not supported.                                |
+| 1406   | [SRT_REJX_UNACCEPTABLE](#SRT_REJX_UNACCEPTABLE)   | 1.4.2   | Unavailable parameters in `StreamID`, or `m=publish` data format not supported.                                |
 | 1409   | [SRT_REJX_CONFLICT](#SRT_REJX_CONFLICT)           | 1.4.2   | Resource specified by `r` and `h` keys is locked for modification.                                             | 
 | 1415   | [SRT_REJX_NOTSUP_MEDIA](#SRT_REJX_NOTSUP_MEDIA)   | 1.4.2   | Media type  not supported by the application.                                                                  |
 | 1423   | [SRT_REJX_LOCKED](#SRT_REJX_LOCKED)               | 1.4.2   | Resource is locked against any access.                                                                         |
@@ -124,7 +124,7 @@ The table below lists the rejection codes as defined in [**access_control.h**](s
 
   - `SRT_REJ`: standard rejection codes from SRT API functions (0 - 99)
   - `SRT_REJC`: mark the border values between ranges.
-  - `SRT_REJX`: extended rejection codes (400 – 599)  :warning: *@max is this the correct range (see comments above)?*
+  - `SRT_REJX`: extended rejection codes (code values above 1000).above)?*
 
 
 ## API Function Rejection Reasons
@@ -176,7 +176,7 @@ local and foreign hosts).
 #### SRT_REJ_CLOSE
 
 The listener socket was able to receive the request, but is currently
- being closed. It's likely that the next request will result in a timeout.
+being closed. It's likely that the next request will result in a timeout.
 
   
 #### SRT_REJ_VERSION
@@ -271,7 +271,7 @@ knows the code definitions of the other. These codes should be used only after
 making sure that the applications at either end of a connection understand them.
 
 The intention here is for the predefined codes to be consistent with the HTTP
-standard codes. Such code can be set by using the `srt_setrejectreason` function.
+standard codes. Such code can be set by using the [`srt_setrejectreason`](docs/api/api-functions.md#srt-setrejectreason) function.
 
 The SRT-specific codes are:
 
