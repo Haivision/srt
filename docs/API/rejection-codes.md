@@ -248,6 +248,9 @@ and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
 adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
 the application.
 
+#### SRT_REJ_CRYPTO
+
+The connection was rejected due to a mismatch in crypto modes. See `SRTO_CRYPTOMODE`.
 
 [:arrow_up: &nbsp; Back to top](#srt-rejection-codes)
 
@@ -338,7 +341,7 @@ of that authentication.
 
 #### SRT_REJX_OVERLOAD
 
-The server is too heavily loaded to process the request, or the credit limit 
+The server is too heavily loaded to process the request, or the credit limit
 for accessing the service and the resource has been exceeded.
 In HTTP the description mentions payment for a service, but
 it is also used by some services for general "credit" management
@@ -377,11 +380,11 @@ This may apply to read-only or write-only resources, as well when interactive
 
 #### SRT_REJX_UNACCEPTABLE
 
-Applies when the parameters specified in SocketID cannot be satisfied for the
+Applies when the parameters specified in StreamID cannot be satisfied for the
 requested resource, or when `m=publish` but the data format is not acceptable.
-This is a general error reporting an unsupported format for data that appears to 
-be wrong when sending, or a restriction on the data format (as specified in the 
-details of the resource specification) such that it cannot be provided 
+This is a general error reporting an unsupported format for data that appears to
+be wrong when sending, or a restriction on the data format (as specified in the
+details of the resource specification) such that it cannot be provided
 when receiving.
 
 #### SRT_REJX_CONFLICT
@@ -391,8 +394,8 @@ modification. This error should only be reported for `m=publish` when the
 resource being accessed is read-only because another client (not necessarily
 connected through SRT):
 
-  - is currently publishing into this resource
-  - has reserved this resource ID for publishing
+- is currently publishing into this resource
+- has reserved this resource ID for publishing
 
 Note that this error should be reported when there is no other reason for
 having a problem accessing the resource.
@@ -407,8 +410,8 @@ is not obliged to support all of the standard types.
 #### SRT_REJX_LOCKED
 
 The resource being accessed is locked against any access. This is similar to
-`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading 
-and writing. This is for when the resource should be shown as existing and 
+`SRT_REJX_CONFLICT`, but in this case the resource is locked for reading
+and writing. This is for when the resource should be shown as existing and
 available to the client, but access is temporarily blocked.
 
 #### SRT_REJX_FAILED_DEPEND
