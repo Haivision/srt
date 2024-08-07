@@ -130,7 +130,7 @@ CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool b
     , m_bMessageAPI(bMessageAPI)
     , m_iBytesCount(0)
     , m_iPktsCount(0)
-    , m_uAvgPayloadSz(SRT_LIVE_DEF_PLSIZE)
+    , m_uAvgPayloadSz(0)
 {
     SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
 }
@@ -206,7 +206,7 @@ int CRcvBuffer::insert(CUnit* unit)
     return 0;
 }
 
-int CRcvBuffer::dropUpTo(int32_t seqno)
+std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
@@ -215,16 +215,23 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
-        return 0;
+        return std::make_pair(0, 0);
     }
 
     m_iMaxPosOff -= len;
     if (m_iMaxPosOff < 0)
         m_iMaxPosOff = 0;
 
-    const int iDropCnt = len;
+    int iNumDropped = 0; // Number of dropped packets that were missing.
+    int iNumDiscarded = 0; // The number of dropped packets that existed in the buffer.
     while (len > 0)
     {
+        // Note! Dropping a EntryState_Read must not be counted as a drop because it was read.
+        // Note! Dropping a EntryState_Drop must not be counted as a drop because it was already dropped and counted earlier.
+        if (m_entries[m_iStartPos].status == EntryState_Avail)
+			++iNumDiscarded;
+        else if (m_entries[m_iStartPos].status == EntryState_Empty)
+			++iNumDropped;
         dropUnitInPos(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
@@ -236,13 +243,17 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     m_iStartSeqNo = seqno;
     // Move forward if there are "read/drop" entries.
     releaseNextFillerEntries();
-    // Set nonread position to the starting position before updating,
-    // because start position was increased, and preceding packets are invalid.
-    m_iFirstNonreadPos = m_iStartPos;
-    updateNonreadPos();
+
+    // If the nonread position is now behind the starting position, set it to the starting position and update.
+    // Preceding packets were likely missing, and the non read position can probably be moved further now.
+    if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
+    {
+        m_iFirstNonreadPos = m_iStartPos;
+        updateNonreadPos();
+    }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableOutOfOrder();
-    return iDropCnt;
+    return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
 int CRcvBuffer::dropAll()
@@ -251,14 +262,16 @@ int CRcvBuffer::dropAll()
         return 0;
 
     const int end_seqno = CSeqNo::incseq(m_iStartSeqNo, m_iMaxPosOff);
-    return dropUpTo(end_seqno);
+    const std::pair<int, int> numDropped = dropUpTo(end_seqno);
+    return numDropped.first + numDropped.second;
 }
 
 int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
-    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage: seqnolo " << seqnolo << " seqnohi " << seqnohi
-        << ", msgno " << msgno << " m_iStartSeqNo " << m_iStartSeqNo);
+    IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage(): %(" << seqnolo << " - " << seqnohi << ")"
+                                  << " #" << msgno << " actionOnExisting=" << actionOnExisting << " m_iStartSeqNo=%"
+                                  << m_iStartSeqNo);
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
@@ -293,7 +306,9 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
             if (bKeepExisting && bnd == PB_SOLO)
             {
                 bDropByMsgNo = false; // Solo packet, don't search for the rest of the message.
-                LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): Skipped dropping an exising SOLO packet %" << packetAt(i).getSeqNo() << ".");
+                LOGC(rbuflog.Debug,
+                     log << "CRcvBuffer::dropMessage(): Skipped dropping an existing SOLO packet %"
+                         << packetAt(i).getSeqNo() << ".");
                 continue;
             }
 
@@ -319,13 +334,15 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
     if (bDropByMsgNo)
     {
-        // First try to drop by message number in case the message starts earlier thtan @a seqnolo.
-        // The sender should have the last packet of the message it is requesting to be dropped,
-        // therefore we don't search forward.
+        // If msgno is specified, potentially not the whole message was dropped using seqno range.
+        // The sender might have removed the first packets of the message, and thus @a seqnolo may point to a packet in the middle.
+        // The sender should have the last packet of the message it is requesting to be dropped.
+        // Therefore we don't search forward, but need to check earlier packets in the RCV buffer.
+        // Try to drop by the message number in case the message starts earlier than @a seqnolo.
         const int stop_pos = decPos(m_iStartPos);
         for (int i = start_pos; i != stop_pos; i = decPos(i))
         {
-            // Can't drop is message number is not known.
+            // Can't drop if message number is not known.
             if (!m_entries[i].pUnit) // also dropped earlier.
                 continue;
 
@@ -336,21 +353,19 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
 
             if (bKeepExisting && bnd == PB_SOLO)
             {
-                LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): Skipped dropping an exising SOLO message packet %"
-                    << packetAt(i).getSeqNo() << ".");
+                LOGC(rbuflog.Debug,
+                     log << "CRcvBuffer::dropMessage(): Skipped dropping an existing SOLO message packet %"
+                         << packetAt(i).getSeqNo() << ".");
                 break;
             }
 
             ++iDropCnt;
             dropUnitInPos(i);
             m_entries[i].status = EntryState_Drop;
+            // As the search goes backward, i is always earlier than minDroppedOffset.
+            minDroppedOffset = offPos(m_iStartPos, i);
 
-            if (minDroppedOffset == -1)
-                minDroppedOffset = offPos(m_iStartPos, i);
-            else
-                minDroppedOffset = min(offPos(m_iStartPos, i), minDroppedOffset);
-
-            // Break the loop if the start of message has been found. No need to search further.
+            // Break the loop if the start of the message has been found. No need to search further.
             if (bnd == PB_FIRST)
                 break;
         }
@@ -745,13 +760,24 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_no
         return unreadableInfo;
 }
 
+int32_t CRcvBuffer::getFirstNonreadSeqNo() const
+{
+    const int offset = offPos(m_iStartPos, m_iFirstNonreadPos);
+    return CSeqNo::incseq(m_iStartSeqNo, offset);
+}
+
 void CRcvBuffer::countBytes(int pkts, int bytes)
 {
     ScopedLock lock(m_BytesCountLock);
     m_iBytesCount += bytes; // added or removed bytes from rcv buffer
     m_iPktsCount  += pkts;
     if (bytes > 0)          // Assuming one pkt when adding bytes
-        m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+    {
+        if (!m_uAvgPayloadSz)
+            m_uAvgPayloadSz = bytes;
+        else
+            m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+    }
 }
 
 void CRcvBuffer::releaseUnitInPos(int pos)

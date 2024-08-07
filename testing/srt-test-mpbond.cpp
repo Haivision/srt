@@ -42,15 +42,16 @@
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
 
+using namespace srt;
+using namespace std;
+
+
 volatile bool mpbond_int_state = false;
 void OnINT_SetIntState(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     mpbond_int_state = true;
 }
-
-using namespace srt;
-
 
 int main( int argc, char** argv )
 {
@@ -201,7 +202,7 @@ int main( int argc, char** argv )
 
     Verb() << "] accept...";
 
-    SRTSOCKET conngrp = srt_accept_bond(listeners.data(), listeners.size(), -1);
+    SRTSOCKET conngrp = srt_accept_bond(listeners.data(), int(listeners.size()), -1);
     if (conngrp == SRT_INVALID_SOCK)
     {
         cerr << "ERROR: srt_accept_bond: " << srt_getlasterror_str() << endl;

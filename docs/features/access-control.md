@@ -36,7 +36,7 @@ For example, the listener (server) can check if it knows the user and set the co
 3. Even if `srt_listen_callback(...)` accepts the connection, SRT will still have one more step to check the PASSPHRASE, and reject on mismatch.
 If a correct passphrase is not provided by the client (caller), the request from caller will be rejected by SRT library (not application or programmer).
 
-**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons. 
+**Note!** `srt_listen_callback(...)` can't check the passphrase directly for security reasons.
 The only way to make the app check the passphrase is to set the passphrase on the socket by using the `SRTO_PASSPHRASE` option. This lets SRT to reject connection on mismatch.
 
 ## Character Encoding

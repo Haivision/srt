@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.2)
+set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -24,6 +24,10 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
+	cmake_policy(SET CMP0054 NEW)
+endif ()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -34,7 +38,8 @@ string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
@@ -69,7 +74,12 @@ if (NOT MICROSOFT)
 	# that ENABLE_DEBUG is set as it should.
 	if (ENABLE_DEBUG EQUAL 2)
 		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-		add_definitions(-DNDEBUG)
+		if (ENABLE_ASSERT)
+			# Add _DEBUG macro if explicitly requested, to enable SRT_ASSERT().
+			add_definitions(-D_DEBUG)
+		else()
+			add_definitions(-DNDEBUG)
+		endif()
 	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
 		set (CMAKE_BUILD_TYPE "Debug")
 
@@ -108,6 +118,7 @@ endforeach()
 # SRT_DEBUG_BONDING_STATES 1
 # SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+# SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
@@ -153,6 +164,7 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
@@ -226,12 +238,12 @@ if (NOT USE_ENCLIB)
 		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
 		set (USE_ENCLIB gnutls)
 	else()
-		set (USE_ENCLIB openssl)
+		set (USE_ENCLIB openssl-evp)
 	endif()
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -299,7 +311,13 @@ if(WIN32)
 	if(ENABLE_INET_PTON)
 		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
 		check_function_exists(inet_pton HAVE_INET_PTON)
-		add_definitions(-D_WIN32_WINNT=0x0600)
+		try_compile(AT_LEAST_VISTA
+			${CMAKE_BINARY_DIR}
+			"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
+		if(NOT AT_LEAST_VISTA)
+			# force targeting Vista
+			add_definitions(-D_WIN32_WINNT=0x0600)
+		endif()
 	else()
 		add_definitions(-D_WIN32_WINNT=0x0501)
 	endif()
@@ -347,6 +365,9 @@ if (ENABLE_ENCRYPTION)
 			find_package(MbedTLS REQUIRED)
 			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
 			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
+		endif()
+		if (WIN32)
+			set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
 		endif()
 		if ("${SSL_LIBRARIES}" STREQUAL "")
 			set (SSL_LIBRARIES  mbedtls mbedcrypto)
@@ -397,6 +418,46 @@ if (ENABLE_ENCRYPTION)
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+	elseif ("${USE_ENCLIB}" STREQUAL "botan")
+		add_definitions(-DUSE_BOTAN=1 -DCRYSPR2)
+		set (SSL_REQUIRED_MODULES "botan")
+		find_package(Botan 3.0.0 REQUIRED)
+		botan_generate(
+			botan
+			ffi
+			nist_keywrap
+			aes_armv8
+			aes_ni
+			aes_power8
+			aes_vperm
+			idea_sse2
+			serpent_avx2
+			shacal2_armv8
+			shacal2_avx2
+			shacal2_x86
+			sm4_armv8
+			rdseed
+			sha1_armv8
+			sha1_sse2
+			sha1_x86
+			sha2_32_armv8
+			sha2_32_bmi2
+			sha2_32_x86
+			sha2_64_bmi2
+			sha3_bmi2
+			zfec_sse2
+			zfec_vperm
+			argon2_avx2
+			argon2_ssse3
+			processor_rng
+			chacha_avx2
+			ghash_cpu
+			ghash_vperm
+			simd
+			simd_avx2)
+		target_compile_features("botan" PRIVATE "cxx_std_20")
+		set (SSL_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR})
+		set (SSL_LIBRARIES "botan")
 	else() # openssl
 		# Openssl (Direct-AES API) can use CRYSPR2
 		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
@@ -438,11 +499,11 @@ if (ENABLE_ENCRYPTION)
 	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
 
 	if (ENABLE_AEAD_API_PREVIEW)
-		if ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
-			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
 		endif()
 	else()
 		message(STATUS "ENCRYPTION AEAD API: DISABLED")
@@ -458,6 +519,13 @@ if (USE_GNUSTL)
 	link_directories(${GNUSTL_LIBRARY_DIRS})
 	include_directories(${GNUSTL_INCLUDE_DIRS})
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
+if (ENABLE_MAXREXMITBW)
+	add_definitions(-DENABLE_MAXREXMITBW)
+	message(STATUS "MAXREXMITBW API: ENABLED")
+else()
+	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
@@ -995,10 +1063,12 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)
-			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
-		else()
-			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
+			if (OPENSSL_USE_STATIC_LIBS)
+				target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
+			else()
+				set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+			endif()
 		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32 ws2_32)
@@ -1081,6 +1151,10 @@ if (ENABLE_SHARED)
 endif()
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
+if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
+	add_dependencies(srt_virtual botan)
+endif()
 
 if (srt_libspec_shared)
 	if (MICROSOFT)
@@ -1454,15 +1528,11 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
-		gtest_add_tests(
-			TEST_LIST tests_srt
-			TARGET test-srt
-		)
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
-
 endif()
 
 

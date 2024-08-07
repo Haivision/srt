@@ -587,7 +587,8 @@ TEST(SyncEvent, WaitForNotifyAll)
  /*****************************************************************************/
 void* dummythread(void* param)
 {
-    *(bool*)(param) = true;
+    auto& thread_finished = *(srt::sync::atomic<bool>*)param;
+    thread_finished = true;
     return nullptr;
 }
 
@@ -607,6 +608,91 @@ TEST(SyncThread, Joinable)
     foo.join();
     EXPECT_FALSE(foo.joinable());
 }
+
+/*****************************************************************************/
+/*
+ * SharedMutex
+ */
+ /*****************************************************************************/
+TEST(SharedMutex, LockWriteRead)
+{
+    SharedMutex mut;
+        
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock_shared());
+
+}
+
+TEST(SharedMutex, LockReadWrite)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+}
+
+TEST(SharedMutex, LockReadTwice)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    mut.lock_shared();
+    EXPECT_TRUE(mut.try_lock_shared());
+}
+
+TEST(SharedMutex, LockWriteTwice)
+{
+    SharedMutex mut;
+
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockWrite)
+{
+    SharedMutex mut;
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+    mut.unlock();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockRead)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+    mut.unlock_shared();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockedReadCount)
+{
+    SharedMutex mut;
+    int count = 0;
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    EXPECT_TRUE(mut.try_lock());
+}
+
 
 /*****************************************************************************/
 /*

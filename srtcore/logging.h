@@ -33,7 +33,6 @@ written by
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
-#include "srt_compat.h"
 #include "sync.h"
 
 #ifdef __GNUC__
@@ -75,7 +74,7 @@ written by
 #define HLOGP LOGP
 #define HLOGF LOGF
 
-#define IF_HEAVY_LOGGING(instr) instr
+#define IF_HEAVY_LOGGING(instr,...) instr,##__VA_ARGS__
 
 #else
 
@@ -204,16 +203,16 @@ public:
     template <class... Args>
     void PrintLogLine(const char* file, int line, const std::string& area, Args&&... args);
 
-    template<class Arg1, class... Args>
-    void operator()(Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void operator()(Args&&... args)
     {
-        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg1, args...);
+        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", args...);
     }
 
-    template<class Arg1, class... Args>
-    void printloc(const char* file, int line, const std::string& area, Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void printloc(const char* file, int line, const std::string& area, Args&&... args)
     {
-        PrintLogLine(file, line, area, arg1, args...);
+        PrintLogLine(file, line, area, args...);
     }
 #else
     template <class Arg>
@@ -413,7 +412,6 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!", logger_pfx, m_config )
     {
     }
-
 };
 
 inline bool LogDispatcher::CheckEnabled()
@@ -442,7 +440,7 @@ inline void PrintArgs(std::ostream&) {}
 template <class Arg1, class... Args>
 inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
 {
-    serr << arg1;
+    serr << std::forward<Arg1>(arg1);
     PrintArgs(serr, args...);
 }
 
@@ -462,7 +460,7 @@ inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int lin
 #endif
 }
 
-#else
+#else // !HAVE_CXX11
 
 template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
@@ -480,7 +478,7 @@ inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int lin
 #endif
 }
 
-#endif
+#endif // HAVE_CXX11
 
 // SendLogLine can be compiled normally. It's intermediately used by:
 // - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
@@ -502,4 +500,4 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
 
 }
 
-#endif
+#endif // INC_SRT_LOGGING_H

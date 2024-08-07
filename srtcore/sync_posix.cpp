@@ -52,7 +52,7 @@ static void rdtsc(uint64_t& x)
     asm("mov %0=ar.itc" : "=r"(x)::"memory");
 #elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_AMD64_RDTSC
     uint32_t lval, hval;
-    asm("rdtsc" : "=a"(lval), "=d"(hval));
+    asm volatile("rdtsc" : "=a"(lval), "=d"(hval));
     x = hval;
     x = (x << 32) | lval;
 #elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
@@ -229,18 +229,6 @@ bool srt::sync::Mutex::try_lock()
 {
     return (pthread_mutex_trylock(&m_mutex) == 0);
 }
-
-srt::sync::ScopedLock::ScopedLock(Mutex& m)
-    : m_mutex(m)
-{
-    m_mutex.lock();
-}
-
-srt::sync::ScopedLock::~ScopedLock()
-{
-    m_mutex.unlock();
-}
-
 
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
