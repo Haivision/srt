@@ -174,6 +174,8 @@ Since SRT v1.5.0.
 | [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.6.0-dev | The connection was rejected due to an unsupported or mismatching encryption mode                               |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
+See the full list in [Rejection Reason Codes](./rejection-codes.md).
+
 <h4 id="error-codes">Error Codes</h4>
   
 | *Error Code*                                      | *Description*                                                                                                  |
