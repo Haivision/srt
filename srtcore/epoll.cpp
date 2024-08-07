@@ -71,12 +71,6 @@ modified by
 using namespace std;
 using namespace srt::sync;
 
-#if ENABLE_HEAVY_LOGGING
-namespace srt {
-static ostream& PrintEpollEvent(ostream& os, int events, int et_events = 0);
-}
-#endif
-
 namespace srt_logging
 {
     extern Logger eilog, ealog;
@@ -506,18 +500,23 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
             ScopedLock pg(m_EPollLock);
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
+            {
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " doesn't exist");
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+            }
             CEPollDesc& ed = p->second;
 
             if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
             {
                 // Empty EID is not allowed, report error.
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " is empty (use SRT_EPOLL_ENABLE_EMPTY to allow)");
                 throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
             }
 
             if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
             {
-                // Empty EID is not allowed, report error.
+                // Empty container is not allowed, report error.
+                LOGC(ealog.Error, log << "epoll_uwait: empty output container with E" << eid << " (use SRT_EPOLL_ENABLE_OUTPUTCHECK to allow)");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
@@ -525,6 +524,7 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
             {
                 // XXX Add error log
                 // uwait should not be used with EIDs subscribed to system sockets
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " is subscribed to system sckets (not allowed for uwait)");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
@@ -536,11 +536,20 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 ++total;
 
                 if (total > fdsSize)
+                {
+                    HLOGC(ealog.Debug, log << "epoll_uwait: output container size=" << fdsSize << " insufficient to report all sockets");
                     break;
+                }
 
                 fdsSet[pos] = *i;
+                IF_HEAVY_LOGGING(std::ostringstream out);
+                IF_HEAVY_LOGGING(out << "epoll_uwait: Notice: fd=" << i->fd << " events=");
+                IF_HEAVY_LOGGING(PrintEpollEvent(out, i->events, 0));
 
-                ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                IF_HEAVY_LOGGING(out << (was_edge ? "(^)" : ""));
+                HLOGP(ealog.Debug, out.str());
+
             }
             if (total)
                 return total;
@@ -875,6 +884,12 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         return -1; // still, ignored.
     }
 
+    if (uid == SRT_INVALID_SOCK || uid == 0)
+    {
+        LOGC(eilog.Fatal, log << "epoll/update: IPE: invalid 'uid' submitted for update!");
+        return -1;
+    }
+
     int nupdated = 0;
     vector<int> lost;
 
@@ -955,31 +970,6 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
 #if ENABLE_HEAVY_LOGGING
 namespace srt
 {
-
-static ostream& PrintEpollEvent(ostream& os, int events, int et_events)
-{
-    static pair<int, const char*> const namemap [] = {
-        make_pair(SRT_EPOLL_IN, "R"),
-        make_pair(SRT_EPOLL_OUT, "W"),
-        make_pair(SRT_EPOLL_ERR, "E"),
-        make_pair(SRT_EPOLL_UPDATE, "U")
-    };
-
-    const int N = (int)Size(namemap);
-
-    for (int i = 0; i < N; ++i)
-    {
-        if (events & namemap[i].first)
-        {
-            os << "[";
-            if (et_events & namemap[i].first)
-                os << "^";
-            os << namemap[i].second << "]";
-        }
-    }
-
-    return os;
-}
 
 string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset)
 {
