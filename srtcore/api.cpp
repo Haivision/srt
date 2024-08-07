@@ -537,6 +537,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
     try
     {
+        // Protect the config of the listener socket from a data race.
+        ScopedLock lck(ls->core().m_ConnectionLock);
         ns = new CUDTSocket(*ls);
         // No need to check the peer, this is the address from which the request has come.
         ns->m_PeerAddr = peer;
