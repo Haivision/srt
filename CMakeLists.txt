@@ -1383,7 +1383,6 @@ if (ENABLE_APPS)
 		# srt-multiplex temporarily blocked
 		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
-		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -1421,7 +1420,6 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
-		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)

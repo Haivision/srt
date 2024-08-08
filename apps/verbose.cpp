@@ -9,14 +9,13 @@
  */
 
 #include "verbose.hpp"
+#include <mutex>
 
 namespace Verbose
 {
     bool on = false;
     std::ostream* cverb = &std::cerr;
-#if SRT_ENABLE_VERBOSE_LOCK
     std::mutex vlock;
-#endif
 
     Log& Log::operator<<(LogNoEol)
     {
@@ -28,19 +27,16 @@ namespace Verbose
         return *this;
     }
 
-#if SRT_ENABLE_VERBOSE_LOCK
     Log& Log::operator<<(LogLock)
     {
         lockline = true;
         return *this;
     }
-#endif
 
     Log::~Log()
     {
         if (on && !noeol)
         {
-#if SRT_ENABLE_VERBOSE_LOCK
             if (lockline)
             {
                 // Lock explicitly, as requested, and wait for the opportunity.
@@ -48,7 +44,7 @@ namespace Verbose
             }
             else if (vlock.try_lock())
             {
-                // Successfully locked, so unlock immediately, locking wasn't requeted.
+                // Successfully locked, so unlock immediately, locking wasn't required.
                 vlock.unlock();
             }
             else
@@ -62,15 +58,12 @@ namespace Verbose
                 vlock.lock();
                 vlock.unlock();
             }
-#endif
             (*cverb) << std::endl;
-#if SRT_ENABLE_VERBOSE_LOCK
 
             // If lockline is set, the lock was requested and WAS DONE, so unlock.
             // Otherwise locking WAS NOT DONE.
             if (lockline)
                 vlock.unlock();
-#endif
         }
     }
 }
