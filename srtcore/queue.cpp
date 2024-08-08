@@ -504,11 +504,9 @@ void* srt::CSndQueue::worker(void* param)
 {
     CSndQueue* self = (CSndQueue*)param;
 
-#if ENABLE_LOGGING
-    THREAD_STATE_INIT(("SRT:SndQ:w" + Sprint(m_counter)).c_str());
-#else
-    THREAD_STATE_INIT("SRT:SndQ:worker");
-#endif
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
 #define IF_DEBUG_HIGHRATE(statement) statement
@@ -1206,11 +1204,9 @@ void* srt::CRcvQueue::worker(void* param)
     sockaddr_any sa(self->getIPversion());
     int32_t      id = 0;
 
-#if ENABLE_LOGGING
-    THREAD_STATE_INIT(("SRT:RcvQ:w" + Sprint(m_counter)).c_str());
-#else
-    THREAD_STATE_INIT("SRT:RcvQ:worker");
-#endif
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
 
     CUnit*         unit = 0;
     EConnectStatus cst  = CONN_AGAIN;
