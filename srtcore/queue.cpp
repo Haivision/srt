@@ -1207,7 +1207,9 @@ void* srt::CRcvQueue::worker(void* param)
     int32_t      id = 0;
 
 #if ENABLE_LOGGING
-    THREAD_STATE_INIT(("SRT:RcvQ:w" + Sprint(m_counter)).c_str());
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
 #else
     THREAD_STATE_INIT("SRT:RcvQ:worker");
 #endif
