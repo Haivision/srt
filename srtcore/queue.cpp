@@ -444,7 +444,7 @@ int srt::CSndQueue::sockoptQuery(int level, int type) const
 }
 
 #if ENABLE_LOGGING
-int srt::CSndQueue::m_counter = 0;
+srt::sync::atomic<int> srt::CSndQueue::m_counter(0);
 #endif
 
 void srt::CSndQueue::init(CChannel* c, CTimer* t)

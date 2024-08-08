@@ -469,7 +469,7 @@ public:
 private:
 
 #if ENABLE_LOGGING
-    static int m_counter;
+    static srt::sync::atomic<int> m_counter;
 #endif
 
     CSndQueue(const CSndQueue&);
