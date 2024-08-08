@@ -540,7 +540,7 @@ public:
         m_mutex.lock();
     }
 
-    SRT_ATTR_RELEASE()
+    SRT_ATTR_RELEASE(m_mutex)
     ~ExclusiveLock() { m_mutex.unlock(); }
 
 private:
