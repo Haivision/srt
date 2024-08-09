@@ -110,6 +110,10 @@ public:
     /// @return current overdrift value.
     int64_t    overdrift() const { return m_DriftTracer.overdrift(); }
 
+    /// @brief Get current cumulative overdrift value.
+    /// @return current cumulative overdrift value.
+    int64_t    cumulativeoverdrift() const { return m_DriftTracer.cumulativeoverdrift(); }
+
     /// @brief Get internal state to apply to another member of a socket group.
     /// @param w_tb TsbPd base time.
     /// @param w_udrift drift value.
