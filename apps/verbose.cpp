@@ -9,13 +9,13 @@
  */
 
 #include "verbose.hpp"
-#include <mutex>
+#include "sync.h" // srt::sync
 
 namespace Verbose
 {
     bool on = false;
     std::ostream* cverb = &std::cerr;
-    std::mutex vlock;
+    srt::sync::Mutex vlock;
 
     Log& Log::operator<<(LogNoEol)
     {
@@ -44,7 +44,7 @@ namespace Verbose
             }
             else if (vlock.try_lock())
             {
-                // Successfully locked, so unlock immediately, locking wasn't required.
+                // Successfully locked, so unlock immediately, locking wasn't requested.
                 vlock.unlock();
             }
             else
