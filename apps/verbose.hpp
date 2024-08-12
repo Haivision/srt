@@ -14,6 +14,7 @@
 #include <iostream>
 #if SRT_ENABLE_VERBOSE_LOCK
 #include <mutex>
+#include "atomic.h"
 #endif
 
 namespace Verbose
@@ -31,13 +32,17 @@ class Log
 {
     bool noeol = false;
 #if SRT_ENABLE_VERBOSE_LOCK
-    bool lockline = false;
+    srt::sync::atomic<bool> lockline;
 #endif
 
     // Disallow creating dynamic objects
     void* operator new(size_t);
 
 public:
+
+    Log() {}
+    Log(const Log& ) {}
+
 
     template <class V>
     Log& operator<<(const V& arg)
@@ -80,7 +85,7 @@ inline void Print(Log& ) {}
 template <typename Arg1, typename... Args>
 inline void Print(Log& out, Arg1&& arg1, Args&&... args)
 {
-    out << std::forward(arg1);
+    out << arg1;
     Print(out, args...);
 }
 
@@ -93,6 +98,13 @@ template <typename... Args>
 inline void Verb(Args&&... args)
 {
     Verbose::Log log;
+    Verbose::Print(log, args...);
+}
+
+template <typename... Args>
+inline void Verror(Args&&... args)
+{
+    Verbose::ErrLog log;
     Verbose::Print(log, args...);
 }
 
