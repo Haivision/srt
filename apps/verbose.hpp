@@ -12,10 +12,7 @@
 #define INC_SRT_VERBOSE_HPP
 
 #include <iostream>
-#if SRT_ENABLE_VERBOSE_LOCK
-#include <mutex>
 #include "atomic.h"
-#endif
 
 namespace Verbose
 {
@@ -24,19 +21,15 @@ extern bool on;
 extern std::ostream* cverb;
 
 struct LogNoEol { LogNoEol() {} };
-#if SRT_ENABLE_VERBOSE_LOCK
 struct LogLock { LogLock() {} };
-#endif
 
 class Log
 {
     bool noeol = false;
-#if SRT_ENABLE_VERBOSE_LOCK
     srt::sync::atomic<bool> lockline;
-#endif
 
     // Disallow creating dynamic objects
-    void* operator new(size_t);
+    void* operator new(size_t) = delete;
 
 public:
 
@@ -55,9 +48,7 @@ public:
     }
 
     Log& operator<<(LogNoEol);
-#if SRT_ENABLE_VERBOSE_LOCK
     Log& operator<<(LogLock);
-#endif
     ~Log();
 };
 
@@ -111,8 +102,6 @@ inline void Verror(Args&&... args)
 
 // Manipulator tags
 static const Verbose::LogNoEol VerbNoEOL;
-#if SRT_ENABLE_VERBOSE_LOCK
 static const Verbose::LogLock VerbLock;
-#endif
 
 #endif
