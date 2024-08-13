@@ -767,7 +767,6 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // options that refer to a socket state, that
         // makes no sense for a group.
     case SRTO_PASSPHRASE:
-    case SRTO_PBKEYLEN:
     case SRTO_KMPREANNOUNCE:
     case SRTO_KMREFRESHRATE:
     case SRTO_BINDTODEVICE:
