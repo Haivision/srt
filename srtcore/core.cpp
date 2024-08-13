@@ -7124,7 +7124,7 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
 
     do
     {
-        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+        if (stillConnected() && !timeout && !isRcvBufferReady())
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
