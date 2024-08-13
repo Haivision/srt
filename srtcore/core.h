@@ -327,6 +327,7 @@ public: // internal API
 #endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
     int32_t     deliveryRate()      const { return m_iDeliveryRate; }
     int         bandwidth()         const { return m_iBandwidth; }
@@ -388,6 +389,7 @@ public: // internal API
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @returns The number of packets in flight belonging to the interval [0; ...)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t getFlightSpan() const
     {
         return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
@@ -697,6 +699,8 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
@@ -752,14 +756,25 @@ private:
     SRT_ATTR_REQUIRES(m_RcvBufferLock)
     bool isRcvBufferReadyNoLock() const;
 
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    bool isRcvBufferFull() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
+
+    enum DropReason
+    {
+        DROP_TOO_LATE, //< Drop to keep up to the live pace (TLPKTDROP).
+        DROP_DISCARD   //< Drop because another group member already provided these packets.
+    };
 
     /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
+    /// @param reason A reason for dropping (see @a DropReason).
     /// @return The number of packets dropped.
-    int rcvDropTooLateUpTo(int seqno);
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock, m_RcvLossLock)
+    int rcvDropTooLateUpTo(int seqno, DropReason reason = DROP_TOO_LATE);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
@@ -948,6 +963,7 @@ private: // Timers
     bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
 
 private: // Receiving related data
+    SRT_ATTR_GUARDED_BY(m_RcvBufferLock)
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
@@ -978,10 +994,11 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
+    SRT_ATTR_GUARDED_BY(m_RcvTsbPdStartupLock)
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
-    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
+    bool m_bTsbPdNeedsWakeup;                    // Signal TsbPd thread to wake up on RCV buffer state change.
+    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creation and joining.
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
@@ -1112,6 +1129,8 @@ private: // Generation and processing of packets
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
 
+    /// Also excludes srt::CUDTUnited::m_GlobControlLock.
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit);
 
     /// This function passes the incoming packet to the initial processing
@@ -1129,13 +1148,16 @@ private: // Generation and processing of packets
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Get the packet's TSBPD time.
+    /// Get the packet's TSBPD time -
+    /// the time when it is passed to the reading application.
     /// The @a grp passed by void* is not used yet
     /// and shall not be used when ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock)
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnTsbPdThread();
+
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
@@ -1149,18 +1171,12 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-#if ENABLE_BONDING
-    /// @brief Drop packets in the recv buffer behind group_recv_base.
-    /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
-    void dropToGroupRecvBase();
-#endif
-
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
-    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     size_t getAvailRcvBufferSizeNoLock() const;
 
 private: // Trace

@@ -403,7 +403,7 @@ void Stall()
             ++i_next;
             if (i->has_quit)
             {
-                Verb() << "Found QUIT mediumpair: " << i->name << " - removing from base";
+                Verb("Found QUIT mediumpair: ", i->name, " - removing from base");
                 i->Stop();
                 g_media_base.media.erase(i);
             }
@@ -411,7 +411,7 @@ void Stall()
 
         if (g_media_base.media.empty())
         {
-            Verb() << "All media have quit. Marking exit.";
+            Verb("All media have quit. Marking exit.");
             break;
         }
     }

@@ -104,8 +104,6 @@ static std::string GetLocalIP(int af = AF_UNSPEC)
 
 class ReuseAddr : public srt::Test
 {
-    int m_server_pollid = SRT_ERROR;
-
 protected:
 
     std::string showEpollContents(const char* label, int* array, int length)
@@ -243,11 +241,6 @@ protected:
         EXPECT_NE(srt_setsockopt(bindsock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
         EXPECT_NE(srt_setsockopt(bindsock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
-        int epoll_in = SRT_EPOLL_IN;
-
-        std::cout << "[T/S] Listener/binder sock @" << bindsock << " added to m_server_pollid\n";
-        srt_epoll_add_usock(m_server_pollid, bindsock, &epoll_in);
-
         return bindsock;
     }
 
@@ -314,13 +307,18 @@ protected:
 
     void testAccept(SRTSOCKET bindsock, std::string ip, int port, bool expect_success)
     {
-        MAKE_UNIQUE_SOCK(client_sock, "[T/C]connect", srt_create_socket());
+        MAKE_UNIQUE_SOCK(client_sock, "[T/S]connect", srt_create_socket());
 
         auto run = [this, &client_sock, ip, port, expect_success]() { clientSocket(client_sock, ip, port, expect_success); };
 
         auto launched = std::async(std::launch::async, run);
 
         AtReturnJoin<decltype(launched)> atreturn_join {launched};
+
+        int server_pollid = srt_epoll_create();
+        int epoll_in = SRT_EPOLL_IN;
+        std::cout << "[T/S] Listener/binder sock @" << bindsock << " added to server_pollid\n";
+        srt_epoll_add_usock(server_pollid, bindsock, &epoll_in);
 
         { // wait for connection from client
             int rlen = 2;
@@ -329,9 +327,9 @@ protected:
             int wlen = 2;
             SRTSOCKET write[2];
 
-            std::cout << "[T/S] Wait 10s on E" << m_server_pollid << " for acceptance on @" << bindsock << " ...\n";
+            std::cout << "[T/S] Wait 10s on E" << server_pollid << " for acceptance on @" << bindsock << " ...\n";
 
-            EXPECT_NE(srt_epoll_wait(m_server_pollid,
+            EXPECT_NE(srt_epoll_wait(server_pollid,
                         read,  &rlen,
                         write, &wlen,
                         10000, // -1 is set for debuging purpose.
@@ -357,8 +355,8 @@ protected:
             sockaddr_any showacp = (sockaddr*)&scl;
             std::cout << "[T/S] Accepted from: " << showacp.str() << std::endl;
 
-            int epoll_in = SRT_EPOLL_IN;
-            srt_epoll_add_usock(m_server_pollid, accepted_sock, &epoll_in); // wait for input
+            epoll_in = SRT_EPOLL_IN;
+            srt_epoll_add_usock(server_pollid, accepted_sock, &epoll_in); // wait for input
 
             char buffer[1316];
             { // wait for 1316 packet from client
@@ -370,7 +368,7 @@ protected:
 
                 std::cout << "[T/S] Wait for data reception...\n";
 
-                EXPECT_NE(srt_epoll_wait(m_server_pollid,
+                EXPECT_NE(srt_epoll_wait(server_pollid,
                             read,  &rlen,
                             write, &wlen,
                             -1, // -1 is set for debuging purpose.
@@ -401,6 +399,8 @@ protected:
             client_sock.close();
             std::cout << "[T/S] closing sockets: ACP:@" << accepted_sock << "...\n";
         }
+        srt_epoll_release(server_pollid);
+
         // client_sock closed through UniqueSocket.
         // cannot close client_sock after srt_sendmsg because of issue in api.c:2346 
 
@@ -447,14 +447,10 @@ private:
 
     void setup()
     {
-        m_server_pollid = srt_epoll_create();
-        ASSERT_NE(m_server_pollid, SRT_ERROR);
     }
 
     void teardown()
     {
-        (void)srt_epoll_release(m_server_pollid);
-        m_server_pollid = SRT_ERROR;
     }
 };
 
