@@ -12,6 +12,7 @@
 #define INC_SRT_VERBOSE_HPP
 
 #include <iostream>
+#include "atomic.h"
 
 namespace Verbose
 {
@@ -25,12 +26,16 @@ struct LogLock { LogLock() {} };
 class Log
 {
     bool noeol = false;
-    bool lockline = false;
+    srt::sync::atomic<bool> lockline;
 
     // Disallow creating dynamic objects
     void* operator new(size_t) = delete;
 
 public:
+
+    Log() {}
+    Log(const Log& ) {}
+
 
     template <class V>
     Log& operator<<(const V& arg)
@@ -71,7 +76,7 @@ inline void Print(Log& ) {}
 template <typename Arg1, typename... Args>
 inline void Print(Log& out, Arg1&& arg1, Args&&... args)
 {
-    out << std::forward(arg1);
+    out << arg1;
     Print(out, args...);
 }
 
@@ -84,6 +89,13 @@ template <typename... Args>
 inline void Verb(Args&&... args)
 {
     Verbose::Log log;
+    Verbose::Print(log, args...);
+}
+
+template <typename... Args>
+inline void Verror(Args&&... args)
+{
+    Verbose::ErrLog log;
     Verbose::Print(log, args...);
 }
 
