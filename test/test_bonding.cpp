@@ -446,6 +446,12 @@ TEST(Bonding, Options)
     EXPECT_EQ(optsize, sizeof ohead);
     EXPECT_EQ(ohead, 12);
 
+    uint32_t kms = -1;
+
+    EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, sizeof kms);
+    EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
+
     // We're done, the thread can close connection and exit
     {
         // Make sure that the thread reached the wait() call.
