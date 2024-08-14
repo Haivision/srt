@@ -74,10 +74,7 @@ class IOVector
 #endif
 {
 public:
-    IOVector()
-    {
-        set(0, 0);
-    }
+    IOVector() { set(NULL, 0); }
 
     inline void set(void* buffer, size_t length)
     {

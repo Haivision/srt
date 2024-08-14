@@ -367,9 +367,9 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
         Verb() << "SRT set up as input source and the first output target";
 
         // Add SRT medium to output targets, and keep input medium empty.
-        unique_ptr<TargetMedium> m { new TargetMedium };
-        m->Setup(m_srt_relay.get());
-        m_output_media.push_back(move(m));
+        unique_ptr<TargetMedium> med { new TargetMedium };
+        med->Setup(m_srt_relay.get());
+        m_output_media.push_back(move(med));
     }
     else
     {
