@@ -948,13 +948,15 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
     static const size_t
-                MAX_FREQLOGFA = 2,
+                MAX_FREQLOGFA = 3,
                 FREQLOGFA_ENCRYPTION_FAILURE = 0,
-                FREQLOGFA_RCV_DROPPED = 1;
-    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
-                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
-                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
-    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+                FREQLOGFA_RCV_DROPPED = 1,
+                FREQLOGFA_ACKACK_OUTOFORDER = 2;
+
+    atomic_time_point m_tsLogSlowDown[MAX_FREQLOGFA]; // The last time a log message from the "slow down" group was shown.
+                                                      // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                      // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired;       // Can't use bitset because atomic
     sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
 
     /// @brief Check if a frequent log can be shown.
