@@ -1114,6 +1114,12 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_no
         return unreadableInfo;
 }
 
+int32_t CRcvBuffer::getFirstNonreadSeqNo() const
+{
+    const int offset = offPos(m_iStartPos, m_iFirstNonreadPos);
+    return m_iStartSeqNo.inc(offset).val();
+}
+
 void CRcvBuffer::countBytes(int pkts, int bytes)
 {
     ScopedLock lock(m_BytesCountLock);

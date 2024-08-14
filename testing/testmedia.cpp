@@ -1130,15 +1130,15 @@ Connect_Again:
     // spread the setting on all sockets.
     ConfigurePost(m_sock);
 
-    for (size_t x = 0; x < targets.size(); ++x)
+    for (size_t j = 0; j < targets.size(); ++j)
     {
         // As m_group_nodes is simply transformed into 'targets',
         // one index can be used to index them all. You don't
         // have to check if they have equal addresses because they
         // are equal by definition.
-        if (targets[x].id != -1 && targets[x].errorcode == SRT_SUCCESS)
+        if (targets[j].id != -1 && targets[j].errorcode == SRT_SUCCESS)
         {
-            m_group_nodes[x].socket = targets[x].id;
+            m_group_nodes[j].socket = targets[j].id;
         }
     }
 
@@ -1159,12 +1159,12 @@ Connect_Again:
     }
     m_group_data.resize(size);
 
-    for (size_t x = 0; x < m_group_nodes.size(); ++x)
+    for (size_t j = 0; j < m_group_nodes.size(); ++j)
     {
-        SRTSOCKET insock = m_group_nodes[x].socket;
+        SRTSOCKET insock = m_group_nodes[j].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << sockaddr_any(targets[x].peeraddr).str() << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[j].peeraddr).str() << "' connection failed.";
             continue;
         }
 
