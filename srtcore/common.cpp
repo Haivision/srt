@@ -495,14 +495,15 @@ vector<LocalInterface> GetLocalInterfaces()
     ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
     if (st == ERROR_SUCCESS)
     {
-        for (PIP_ADAPTER_ADDRESSES* i = pAddresses; i; i = pAddresses->Next)
+        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
         {
             std::string name = i->AdapterName;
             PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
             while (pUnicast)
             {
                 LocalInterface a;
-                a.addr = pUnicast->Address.lpSockaddr;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
                 if (a.addr.len > 0)
                 {
                     // DO NOT collect addresses that are not of
@@ -527,7 +528,8 @@ vector<LocalInterface> GetLocalInterfaces()
         for (pif = pifa; pif; pif = pif->ifa_next)
         {
             LocalInterface i;
-            i.addr = pif->ifa_addr;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
             if (i.addr.len > 0)
             {
                 // DO NOT collect addresses that are not of
