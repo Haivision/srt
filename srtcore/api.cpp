@@ -236,6 +236,8 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 int srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
+    if (m_bGCStatus)
+        return 1;
 
     if (m_iInstanceCount++ > 0)
         return 1;
@@ -253,9 +255,6 @@ int srt::CUDTUnited::startup()
     CCryptoControl::globalInit();
 
     PacketFilter::globalInit();
-
-    if (m_bGCStatus)
-        return 1;
 
     m_bClosing = false;
 
@@ -538,6 +537,8 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
     try
     {
+        // Protect the config of the listener socket from a data race.
+        ScopedLock lck(ls->core().m_ConnectionLock);
         ns = new CUDTSocket(*ls);
         // No need to check the peer, this is the address from which the request has come.
         ns->m_PeerAddr = peer;
@@ -3423,8 +3424,7 @@ int srt::CUDT::cleanup()
 
 SRTSOCKET srt::CUDT::socket()
 {
-    if (!uglobal().m_bGCStatus)
-        uglobal().startup();
+    uglobal().startup();
 
     try
     {
@@ -3474,8 +3474,7 @@ srt::CUDTGroup& srt::CUDT::newGroup(const int type)
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
 {
     // Doing the same lazy-startup as with srt_create_socket()
-    if (!uglobal().m_bGCStatus)
-        uglobal().startup();
+    uglobal().startup();
 
     try
     {
