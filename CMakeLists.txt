@@ -1063,6 +1063,10 @@ if (srt_libspec_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	endif()
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
@@ -1084,6 +1088,10 @@ endif()
 
 if (srt_libspec_static)
 	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_static PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
