@@ -1472,6 +1472,12 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CU
         HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
         return worker_TryAsyncRend_OrStore(id, unit, addr);
     }
+    // Although we don´t have an exclusive passing here,
+    // we can count on that when the socket was once present in the hash,
+    // it will not be deleted for at least one GC cycle. But we still need
+    // to maintain the object existence until it's in use.
+    // Note that here we are out of any locks, so m_GlobControlLock can be locked.
+    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->m_parent);
 
     // Found associated CUDT - process this as control or data packet
     // addressed to an associated socket.
