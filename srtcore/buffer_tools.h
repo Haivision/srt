@@ -197,6 +197,8 @@ private:
     int        m_iFirstSampleIdx;   //< Index of the first sample.
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
     int        m_iRateBps;          //< Rate in Bytes/sec.
+
+    int incSampleIdx(int val, int inc = 1) const;
 };
 
 class CMobileRateEstimator:CSndRateEstimator
