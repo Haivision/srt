@@ -312,9 +312,9 @@ void CMobileRateEstimator::computeAverageValueFromTable(){
     m_iRateKbps = 0;
 
     for(int i = 0; i < NUM_PERIODS; i++)
-            m_iRateKbps += m_Samples[i].m_iBytesCount;
+            m_iRateKbps += (m_Samples[i].m_iBytesCount + (CPacket::HDR_SIZE * m_Samples[i].m_iPktsCount)) * 8;
 
-    m_iRateKbps = m_iRateKbps  * 8 / (NUM_PERIODS * SAMPLE_DURATION_MS);
+    m_iRateKbps = m_iRateKbps / (NUM_PERIODS * SAMPLE_DURATION_MS);
 }
 }
 
