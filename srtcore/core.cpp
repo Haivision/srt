@@ -8749,14 +8749,11 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
-        //enterCS(m_RcvBufferLock);
-
 #if ENABLE_BONDING
         ScopedLock glock(uglobal().m_GlobControlLock); // XXX not too excessive?
         const bool drift_updated =
 #endif
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
-        //leaveCS(m_RcvBufferLock);
 
 #if ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)

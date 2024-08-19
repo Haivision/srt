@@ -2729,6 +2729,13 @@ void srt::CUDTUnited::checkBrokenSockets()
     {
         CUDTSocket* ps = j->second;
 
+        // NOTE: There is still a hypothetical risk here that ps
+        // was made busy while the socket was already moved to m_ClosedSocket,
+        // if the socket was acquired through CUDTUnited::acquireSocket (that is,
+        // busy flag acquisition was done through the CUDTSocket* pointer rather
+        // than through the numeric ID). Therefore this way of busy acquisition
+        // should be done only if at the moment of acquisition there are certainly
+        // other conditions applying on the socket that prevent it from being deleted.
         if (ps->isStillBusy())
         {
             HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->m_SocketID << " is still busy, SKIPPING THIS CYCLE.");
