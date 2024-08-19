@@ -5965,7 +5965,7 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
 #endif
 
     bool is_suppressed = IsSet(m_LogSlowDownExpired, BIT(logid));
-    bool isnow = (m_tsLogSlowDown.load() + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS)) <= tnow;
+    const bool isnow = (m_tsLogSlowDown[logid].load() + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS)) <= tnow;
     if (isnow)
     {
         // Theoretically this should prevent other calls of this function to take
@@ -5977,11 +5977,11 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
         // Note: it may happen that two threads could intermix one another between
         // the check and setting up, but this will at worst case set the slightly
         // later time again.
-        m_tsLogSlowDown.store(tnow);
+        m_tsLogSlowDown[logid].store(tnow);
 
         is_suppressed = false;
 
-        int supr = m_aSuppressedMsg[logid];
+        const int supr = m_aSuppressedMsg[logid];
 
         if (supr > 0)
             w_why = Sprint("++SUPPRESSED: ", supr);
@@ -5989,7 +5989,7 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
     }
     else
     {
-        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown.load()));
+        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
         ++m_aSuppressedMsg[logid];
@@ -8695,10 +8695,21 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     {
         if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
         {
-            LOGC(inlog.Note,
-                log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                << ", RTT (EWMA): " << m_iSRTT << ")");
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+            {
+                LOGC(inlog.Note,
+                    log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                    << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                    << ", RTT (EWMA): " << m_iSRTT << ")." << why);
+            }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+            else
+            {
+                LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
+            }
+#endif
+
             return;
         }
 

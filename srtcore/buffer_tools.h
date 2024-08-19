@@ -142,10 +142,11 @@ public:
     /// @param [in] bytes  number of payload bytes in the sample.
     void addSample(const time_point& time, int pkts = 0, size_t bytes = 0);
 
-    /// Retrieve estimated bitrate in bytes per second
+    /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
     int getRate() const { return m_iRateBps; }
 
-    /// Retrieve estimated bitrate in bytes per second inluding the current sampling interval.
+    /// Retrieve estimated bitrate in bytes per second (with 16-byte packet header)
+    /// including the current sampling interval.
     int getCurrentRate() const;
 
 protected:
@@ -190,16 +191,12 @@ private:
     static const int NUM_PERIODS        = 10;
     static const int SAMPLE_DURATION_MS = 100; // 100 ms
 
-    time_point m_tsFirstSampleTime; //< Start time of the first sameple.
-    int        m_iFirstSampleIdx;   //< Index of the first sample.
-    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          // Input Rate in Bytes/sec
     Sample m_Samples[NUM_PERIODS];
 
-    int incSampleIdx(int val, int inc = 1) const;
-
-
-
+    time_point m_tsFirstSampleTime; //< Start time of the first sample.
+    int        m_iFirstSampleIdx;   //< Index of the first sample.
+    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
+    int        m_iRateBps;          //< Rate in Bytes/sec.
 };
 
 class CMobileRateEstimator:CSndRateEstimator
