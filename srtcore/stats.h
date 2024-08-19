@@ -13,6 +13,7 @@
 
 #include "platform_sys.h"
 #include "packet.h"
+#include "buffer_tools.h"
 
 namespace srt
 {
@@ -144,6 +145,8 @@ struct Sender
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
 
+    CMobileRateEstimator mobileRateEstimator; // The average Mbps over last second
+
     void reset()
     {
         sent.reset();
@@ -167,6 +170,18 @@ struct Sender
         recvdNak.resetTrace();
         sentFilterExtra.resetTrace();
     }
+
+    void fulfillMeasuresTable(int pkts, double bytes) {
+        mobileRateEstimator.addSample(pkts, bytes);
+    }
+
+    void resetMeasuresTable() {
+        mobileRateEstimator.resetMeasuresTable();
+    }
+
+    int getAverageValueFromTable(){
+       return mobileRateEstimator.getRateKbps();
+    }
 };
 
 /// Receiver-side statistics.
@@ -186,6 +201,8 @@ struct Receiver
 
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
+
+    CMobileRateEstimator mobileRateEstimator; // The average Mbps over last second
 
     void reset()
     {
@@ -217,6 +234,18 @@ struct Receiver
         lossFilter.resetTrace();
         sentAck.resetTrace();
         sentNak.resetTrace();
+    }
+
+    void fulfillMeasuresTable(int pkts, double bytes) {
+        mobileRateEstimator.addSample(pkts, bytes);
+    }
+
+    void resetMeasuresTable() {
+        mobileRateEstimator.resetMeasuresTable();
+    }
+
+    int getAverageValueFromTable(){
+       return mobileRateEstimator.getRateKbps();
     }
 };
 

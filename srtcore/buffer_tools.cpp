@@ -272,5 +272,48 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
     return val;
 }
 
+CMobileRateEstimator::CMobileRateEstimator()
+    : m_iCurSampleIdx(0)
+    , m_iRateKbps(0)
+{
+    resetMeasuresTable();
+}
+
+void CMobileRateEstimator::addSample(int pkts, double bytes)
+{
+    const time_point now = steady_clock::now();
+    const int iSampleDeltaIdx = (int) count_milliseconds(now - lastTimestamp) / SAMPLE_DURATION_MS;
+
+    if((m_iCurSampleIdx + iSampleDeltaIdx) < NUM_PERIODS)
+        resetMeasuresTable(m_iCurSampleIdx+1,m_iCurSampleIdx + iSampleDeltaIdx);
+    else {
+        int loopbackDiff = m_iCurSampleIdx + iSampleDeltaIdx - NUM_PERIODS;
+        resetMeasuresTable(m_iCurSampleIdx+1,NUM_PERIODS);
+        resetMeasuresTable(0,loopbackDiff);
+    }
+
+    m_iCurSampleIdx = ((m_iCurSampleIdx + iSampleDeltaIdx) % NUM_PERIODS);
+    m_Samples[m_iCurSampleIdx].m_iBytesCount = bytes;
+    m_Samples[m_iCurSampleIdx].m_iPktsCount = pkts;
+
+    lastTimestamp = now;
+
+    computeAverageValueFromTable();
+}
+
+void CMobileRateEstimator::resetMeasuresTable(int from, int to) 
+{
+    for(int i = max(0, from); i < min(int(NUM_PERIODS), to); i++)
+        m_Samples[i].reset();
+}
+
+void CMobileRateEstimator::computeAverageValueFromTable(){
+    m_iRateKbps = 0;
+
+    for(int i = 0; i < NUM_PERIODS; i++)
+            m_iRateKbps += m_Samples[i].m_iBytesCount;
+
+    m_iRateKbps = m_iRateKbps  * 8 / (NUM_PERIODS * SAMPLE_DURATION_MS);
+}
 }
 
