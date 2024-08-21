@@ -485,6 +485,8 @@ public:
         // This is only for a use together with an empty constructor.
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
         {
+            if (s == NULL)
+                return false;
             const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;
