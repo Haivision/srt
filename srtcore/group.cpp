@@ -780,8 +780,11 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     bool is_set_on_socket = false;
     {
-        ScopedLock cg(m_GroupLock);
+        // Can't have m_GroupLock locked while calling getOpt on a member socket
+        // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
+        leaveCS(m_GroupLock);
         if (gi != m_Group.end())
         {
             // Return the value from the first member socket, if any is present
