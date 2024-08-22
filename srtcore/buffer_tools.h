@@ -149,9 +149,9 @@ public:
     int getCurrentRate() const;
 
 protected:
+    time_point m_tsFirstSampleTime; //< Start time of the first sample.
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
     int        m_iRateBps;          //< Rate in Bytes/sec.
-    time_point m_tsFirstSampleTime; //< Start time of the first sample.
 
     struct Sample
     {
@@ -190,11 +190,12 @@ protected:
         bool empty() const { return m_iPktsCount == 0; }
     };
 
+    srt::FixedArray<Sample> m_Samples; // Table of stored data
+
 private:
     static const int NUM_PERIODS        = 10;
     static const int SAMPLE_DURATION_MS = 100; // 100 ms
-    Sample           m_Samples[NUM_PERIODS];
-    int              m_iFirstSampleIdx; //< Index of the first sample.
+    int              m_iFirstSampleIdx;        //< Index of the first sample.
 
     int incSampleIdx(int val, int inc = 1) const;
 };
@@ -218,10 +219,9 @@ public:
     int getRate() const { return m_iRateBps; }
 
 private:
-    const int               NUM_PERIODS        = 100; // To get 1s of values
-    const int               SAMPLE_DURATION_MS = 10;  // 10 ms
-    time_point              lastSlotTimestamp;        // Used to compute the delta between 2 calls
-    srt::FixedArray<Sample> m_Samples;                // Table of stored data
+    const int  NUM_PERIODS        = 100; // To get 1s of values
+    const int  SAMPLE_DURATION_MS = 10;  // 10 ms
+    time_point lastSlotTimestamp;        // Used to compute the delta between 2 calls
 
     /// This method will compute the average value based on all table's measures and the period
     /// (NUM_PERIODS*SAMPLE_DURATION_MS)
