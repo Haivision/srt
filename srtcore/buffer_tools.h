@@ -200,7 +200,7 @@ private:
     int incSampleIdx(int val, int inc = 1) const;
 };
 
-class CMovingRateEstimator : CSndRateEstimator
+class CMovingRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;
 
@@ -219,9 +219,54 @@ public:
     int getRate() const { return m_iRateBps; }
 
 private:
+    // We would like responsiveness (accuracy) of rate estimation higher than 100 ms
+    // (ideally around 50 ms) for network adaptive algorithms.
     const int  NUM_PERIODS        = 100; // To get 1s of values
     const int  SAMPLE_DURATION_MS = 10;  // 10 ms
+    time_point m_tsFirstSampleTime;      //< Start time of the first sample.
     time_point lastSlotTimestamp;        // Used to compute the delta between 2 calls
+    int        m_iFirstSampleIdx;        //< Index of the first sample.
+    int        m_iCurSampleIdx;          //< Index of the current sample being collected.
+    int        m_iRateBps;               //< Rate in Bytes/sec.
+
+    struct Sample
+    {
+        int m_iPktsCount;  // number of payload packets
+        int m_iBytesCount; // number of payload bytes
+
+        void reset()
+        {
+            m_iPktsCount  = 0;
+            m_iBytesCount = 0;
+        }
+
+        Sample()
+            : m_iPktsCount(0)
+            , m_iBytesCount(0)
+        {
+        }
+
+        Sample(int iPkts, int iBytes)
+            : m_iPktsCount(iPkts)
+            , m_iBytesCount(iBytes)
+        {
+        }
+
+        Sample operator+(const Sample& other)
+        {
+            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount);
+        }
+
+        Sample& operator+=(const Sample& other)
+        {
+            *this = *this + other;
+            return *this;
+        }
+
+        bool empty() const { return m_iPktsCount == 0; }
+    };
+
+    srt::FixedArray<Sample> m_Samples; // Table of stored data
 
     /// This method will compute the average value based on all table's measures and the period
     /// (NUM_PERIODS*SAMPLE_DURATION_MS)

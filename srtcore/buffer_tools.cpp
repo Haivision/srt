@@ -275,7 +275,11 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
 }
 
 CMovingRateEstimator::CMovingRateEstimator()
-    : CSndRateEstimator(sync::steady_clock::now())
+    : m_tsFirstSampleTime(sync::steady_clock::now())
+    , m_iFirstSampleIdx(0)
+    , m_iCurSampleIdx(0)
+    , m_iRateBps(0)
+    , m_Samples(NUM_PERIODS)
 {
     resetRate(0, NUM_PERIODS);
 }
