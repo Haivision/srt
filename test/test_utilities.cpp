@@ -160,11 +160,11 @@ TEST(CircularBuffer, Overall)
     ASSERT_EQ(output.d, 22.1);
 
     IF_HEAVY_LOGGING(cerr << "Pushing 1 aslong there is capacity:\n");
-    int i = 0;
+    IF_HEAVY_LOGGING(int i = 0);
     while (buf.push(1) != -1)
     {
         IF_HEAVY_LOGGING(cerr << "Pushed, begin=" << buf.m_xBegin << " end=" << buf.m_xEnd << endl);
-        ++i;
+        IF_HEAVY_LOGGING(++i);
     }
     IF_HEAVY_LOGGING(cerr << "Done " << i << " operations, buffer:\n");
     IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
