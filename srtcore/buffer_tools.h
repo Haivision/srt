@@ -148,11 +148,9 @@ public:
     /// including the current sampling interval.
     int getCurrentRate() const;
 
-protected:
-    time_point m_tsFirstSampleTime; //< Start time of the first sample.
-    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          //< Rate in Bytes/sec.
-
+private:
+    static const int NUM_PERIODS        = 10;
+    static const int SAMPLE_DURATION_MS = 100; // 100 ms
     struct Sample
     {
         int m_iPktsCount;  // number of payload packets
@@ -190,14 +188,14 @@ protected:
         bool empty() const { return m_iPktsCount == 0; }
     };
 
-    srt::FixedArray<Sample> m_Samples; // Table of stored data
-
-private:
-    static const int NUM_PERIODS        = 10;
-    static const int SAMPLE_DURATION_MS = 100; // 100 ms
-    int              m_iFirstSampleIdx;        //< Index of the first sample.
-
     int incSampleIdx(int val, int inc = 1) const;
+
+    Sample m_Samples[NUM_PERIODS];
+
+    time_point m_tsFirstSampleTime; //< Start time of the first sameple.
+    int        m_iFirstSampleIdx;   //< Index of the first sample.
+    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
+    int        m_iRateBps;          // Input Rate in Bytes/sec
 };
 
 class CMovingRateEstimator

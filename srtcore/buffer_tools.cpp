@@ -157,10 +157,9 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
 
 CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
     : m_tsFirstSampleTime(tsNow)
+    , m_iFirstSampleIdx(0)
     , m_iCurSampleIdx(0)
     , m_iRateBps(0)
-    , m_Samples(NUM_PERIODS)
-    , m_iFirstSampleIdx(0)
 {
     
 }
