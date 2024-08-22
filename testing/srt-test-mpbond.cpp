@@ -209,7 +209,6 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    auto s = new SrtSource;
     unique_ptr<Source> src;
     unique_ptr<Target> tar;
 
@@ -222,6 +221,7 @@ int main( int argc, char** argv )
             Verb() << "SRT -> " << outspec;
             tar = Target::Create(outspec);
 
+            auto s = new SrtSource;
             s->Acquire(conngrp);
             src.reset(s);
         }
