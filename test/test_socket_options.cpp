@@ -245,7 +245,7 @@ void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueTy
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
     EXPECT_EQ(opt_val, value) << desc << ": Wrong " << entry.optname << " value " << opt_val;
-    EXPECT_EQ(opt_len, entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
+    EXPECT_EQ(opt_len, (int) entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
 }
 
 typedef char const* strptr;
@@ -258,7 +258,7 @@ void CheckGetSockOpt<strptr>(const OptionTestEntry& entry, SRTSOCKET sock, const
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
     EXPECT_EQ(strncmp(opt_val, value, min(opt_len, (int)entry.opt_len)), 0) << desc << ": Wrong " << entry.optname << " value " << opt_val;
-    EXPECT_EQ(opt_len, entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
+    EXPECT_EQ(opt_len, (int) entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
 }
 
 template<class ValueType>

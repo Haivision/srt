@@ -429,14 +429,14 @@ TEST(Bonding, Options)
     int revlat = -1;
     int optsize = sizeof revlat;
     EXPECT_NE(srt_getsockflag(grp, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof revlat);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
     EXPECT_EQ(revlat, 500);
 
     revlat = -1;
     optsize = sizeof revlat;
     // Expect the same value set on the member socket
     EXPECT_NE(srt_getsockflag(member, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof revlat);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
     EXPECT_EQ(revlat, 500);
 
     // Individual socket option modified on group
@@ -451,7 +451,7 @@ TEST(Bonding, Options)
 
     // But getting the option value should be equal to the group setting
     EXPECT_NE(srt_getsockflag(grp, SRTO_OHEADBW, &ohead, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof ohead);
+    EXPECT_EQ(optsize, (int) sizeof ohead);
     EXPECT_EQ(ohead, 12);
 
 #if SRT_ENABLE_ENCRYPTION
@@ -459,11 +459,11 @@ TEST(Bonding, Options)
     uint32_t kms = -1;
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof kms);
+    EXPECT_EQ(optsize, (int) sizeof kms);
     EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_PBKEYLEN, &kms, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof kms);
+    EXPECT_EQ(optsize, (int) sizeof kms);
     EXPECT_EQ(kms, 16);
 
 #ifdef ENABLE_AEAD_API_PREVIEW
