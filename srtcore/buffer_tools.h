@@ -134,7 +134,6 @@ class CSndRateEstimator
 
 public:
     CSndRateEstimator(const time_point& tsNow);
-    CSndRateEstimator() {};
 
     /// Add sample.
     /// @param [in] time   sample (sending) time.
@@ -150,6 +149,10 @@ public:
     int getCurrentRate() const;
 
 protected:
+    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
+    int        m_iRateBps;          //< Rate in Bytes/sec.
+    time_point m_tsFirstSampleTime; //< Start time of the first sample.
+
     struct Sample
     {
         int m_iPktsCount;  // number of payload packets
@@ -190,23 +193,18 @@ protected:
 private:
     static const int NUM_PERIODS        = 10;
     static const int SAMPLE_DURATION_MS = 100; // 100 ms
-
-    Sample m_Samples[NUM_PERIODS];
-
-    time_point m_tsFirstSampleTime; //< Start time of the first sample.
-    int        m_iFirstSampleIdx;   //< Index of the first sample.
-    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          //< Rate in Bytes/sec.
+    Sample           m_Samples[NUM_PERIODS];
+    int              m_iFirstSampleIdx; //< Index of the first sample.
 
     int incSampleIdx(int val, int inc = 1) const;
 };
 
-class CMobileRateEstimator:CSndRateEstimator
+class CMovingRateEstimator : CSndRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;
 
 public:
-    CMobileRateEstimator();
+    CMovingRateEstimator();
 
     /// Add sample.
     /// @param [in] pkts   number of packets in the sample.
@@ -214,26 +212,25 @@ public:
     void addSample(int pkts = 0, double bytes = 0);
 
     /// Clean the mobile measures table to reset average value.
-    void resetMeasuresTable() {resetMeasuresTable(0,NUM_PERIODS);};
+    void resetRate() { resetRate(0, NUM_PERIODS); };
 
-    /// Retrieve estimated bitrate in kilobits per second
-    int getRateKbps() const { return m_iRateKbps; }
+    /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
+    int getRate() const { return m_iRateBps; }
 
 private:
-    static const int NUM_PERIODS        = 100;  // To get 1s of values
-    static const int SAMPLE_DURATION_MS = 10;   // 10 ms
-    time_point lastTimestamp;                   // Used to compute the delta between 2 calls
-    int        m_iCurSampleIdx;                 // Index of the current sample being collected.
-    int        m_iRateKbps;                     // The average value over the period (1s) in Kb
-    Sample m_Samples[NUM_PERIODS];              // Table of stored data
+    const int               NUM_PERIODS        = 100; // To get 1s of values
+    const int               SAMPLE_DURATION_MS = 10;  // 10 ms
+    time_point              lastSlotTimestamp;        // Used to compute the delta between 2 calls
+    srt::FixedArray<Sample> m_Samples;                // Table of stored data
 
-    /// This method will compute the average value based on all table's measures and the period (NUM_PERIODS*SAMPLE_DURATION_MS)
-    void computeAverageValueFromTable();
+    /// This method will compute the average value based on all table's measures and the period
+    /// (NUM_PERIODS*SAMPLE_DURATION_MS)
+    void computeAverageValue();
 
     /// Reset a part of the stored measures
     /// @param from The beginning where the reset have to be applied
     /// @param to   The last data that have to be reset
-    void resetMeasuresTable(int from, int to);
+    void resetRate(int from, int to);
 };
 
 } // namespace srt

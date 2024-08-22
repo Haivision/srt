@@ -7571,11 +7571,9 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         
         // Average values management
-        m_stats.sndr.fulfillMeasuresTable(perf->pktSent, double(perf->byteSent));
-        m_stats.rcvr.fulfillMeasuresTable(perf->pktRecv, double(perf->byteRecv));
-        perf->mbpsSendRate        = m_stats.sndr.getAverageValueFromTable();
-        perf->mbpsRecvRate        = m_stats.rcvr.getAverageValueFromTable();
-        
+        perf->mbpsSendRate = Bps2Mbps(m_stats.sndr.getAverageValue());
+        perf->mbpsRecvRate = Bps2Mbps(m_stats.rcvr.getAverageValue());
+
         // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
         const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
         perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
