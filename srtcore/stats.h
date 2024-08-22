@@ -145,7 +145,7 @@ struct Sender
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
 
-    CMovingRateEstimator mobileRateEstimator; // The average Mbps over last second
+    CMovingRateEstimator mavgRateEstimator; // The average Mbps over last second
 
     void reset()
     {
@@ -171,11 +171,11 @@ struct Sender
         sentFilterExtra.resetTrace();
     }
 
-    void updateRate(int pkts, double bytes) { mobileRateEstimator.addSample(pkts, bytes); }
+    void updateRate(int pkts, double bytes) { mavgRateEstimator.addSample(pkts, bytes); }
 
-    void resetRate() { mobileRateEstimator.resetRate(); }
+    void resetRate() { mavgRateEstimator.resetRate(); }
 
-    int getAverageValue() { return mobileRateEstimator.getRate(); }
+    int getAverageValue() { return mavgRateEstimator.getRate(); }
 };
 
 /// Receiver-side statistics.
@@ -196,7 +196,7 @@ struct Receiver
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
 
-    CMovingRateEstimator mobileRateEstimator; // The average Mbps over last second
+    CMovingRateEstimator mavgRateEstimator; // The average Mbps over last second
 
     void reset()
     {
@@ -230,11 +230,11 @@ struct Receiver
         sentNak.resetTrace();
     }
 
-    void updateRate(int pkts, double bytes) { mobileRateEstimator.addSample(pkts, bytes); }
+    void updateRate(int pkts, double bytes) { mavgRateEstimator.addSample(pkts, bytes); }
 
-    void resetRate() { mobileRateEstimator.resetRate(); }
+    void resetRate() { mavgRateEstimator.resetRate(); }
 
-    int getAverageValue() { return mobileRateEstimator.getRate(); }
+    int getAverageValue() { return mavgRateEstimator.getRate(); }
 };
 
 } // namespace stats
