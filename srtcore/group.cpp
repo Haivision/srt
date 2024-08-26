@@ -758,12 +758,15 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         w_optlen = sizeof(uint32_t);
         return;
 
+    case SRTO_KMSTATE:
+        *(uint32_t*)pw_optval = getGroupEncryptionState();
+        w_optlen = sizeof(uint32_t);
+        return;
+
         // Write-only options for security reasons or
         // options that refer to a socket state, that
         // makes no sense for a group.
     case SRTO_PASSPHRASE:
-    case SRTO_KMSTATE:
-    case SRTO_PBKEYLEN:
     case SRTO_KMPREANNOUNCE:
     case SRTO_KMREFRESHRATE:
     case SRTO_BINDTODEVICE:
@@ -775,6 +778,24 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     default:; // pass on
     }
 
+    bool is_set_on_socket = false;
+    {
+        // Can't have m_GroupLock locked while calling getOpt on a member socket
+        // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        enterCS(m_GroupLock);
+        gli_t gi = m_Group.begin();
+        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
+        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        leaveCS(m_GroupLock);
+        if (sk.socket)
+        {
+            // Return the value from the first member socket, if any is present
+            // Note: Will throw exception if the request is wrong.
+            sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
+            is_set_on_socket = true;
+        }
+    }
+
     // Check if the option is in the storage, which means that
     // it was modified on the group.
 
@@ -783,12 +804,18 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     if (i == m_config.end())
     {
+        // Already written to the target variable.
+        if (is_set_on_socket)
+            return;
+
         // Not found, see the defaults
         if (!getOptDefault(optname, (pw_optval), (w_optlen)))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
         return;
     }
+    // NOTE: even if is_set_on_socket, if it was also found in the group
+    // settings, overwrite with the value from the group.
 
     // Found, return the value from the storage.
     // Check the size first.
@@ -797,6 +824,52 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     w_optlen = i->value.size();
     memcpy((pw_optval), &i->value[0], i->value.size());
+}
+
+SRT_KM_STATE CUDTGroup::getGroupEncryptionState()
+{
+    multiset<SRT_KM_STATE> kmstates;
+    {
+        ScopedLock lk (m_GroupLock);
+
+        // First check the container. If empty, return UNSECURED
+        if (m_Group.empty())
+            return SRT_KM_S_UNSECURED;
+
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            CCryptoControl* cc = gi->ps->core().m_pCryptoControl.get();
+            if (!cc)
+                continue;
+            SRT_KM_STATE gst = cc->m_RcvKmState;
+            // A fix to NOSECRET is because this is the state when agent has set
+            // no password, but peer did, and ENFORCEDENCRYPTION=false allowed
+            // this connection to be established. UNSECURED can't be taken in this
+            // case because this would suggest that BOTH are unsecured, that is,
+            // we have established an unsecured connection (which ain't true).
+            if (gst == SRT_KM_S_UNSECURED && cc->m_SndKmState == SRT_KM_S_NOSECRET)
+                gst = SRT_KM_S_NOSECRET;
+            kmstates.insert(gst);
+        }
+    }
+
+    // Criteria are:
+    // 1. UNSECURED, if no member sockets, or at least one UNSECURED found.
+    // 2. SECURED, if at least one SECURED found (cut off the previous criteria).
+    // 3. BADSECRET otherwise, although return NOSECRET if no BADSECRET is found.
+
+    if (kmstates.count(SRT_KM_S_UNSECURED))
+        return SRT_KM_S_UNSECURED;
+
+    // Now we have UNSECURED ruled out. Remaining may be NOSECRET, BADSECRET or SECURED.
+    // NOTE: SECURING is an intermediate state for HSv4 and can't occur in groups.
+    if (kmstates.count(SRT_KM_S_SECURED))
+        return SRT_KM_S_SECURED;
+
+    if (kmstates.count(SRT_KM_S_BADSECRET))
+        return SRT_KM_S_BADSECRET;
+
+    return SRT_KM_S_NOSECRET;
 }
 
 SRT_SOCKSTATUS CUDTGroup::getStatus()
@@ -1501,7 +1574,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     int ercode = 0;
 
-    if (was_blocked)
+    // This block causes waiting for any socket to accept the payload.
+    // This should be done only in blocking mode and only if no other socket
+    // accepted the payload.
+    if (was_blocked && none_succeeded && m_bSynSending)
     {
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
         if (!m_bSynSending)
@@ -1646,6 +1722,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         CodeMinor minor = CodeMinor(ercode ? ercode % 1000 : MN_CONNLOST);
 
         throw CUDTException(major, minor, 0);
+    }
+
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        // Here we have a situation that at least 1 link successfully sent a packet.
+        // All links for which sending has failed must be closed.
+        if (is->stat == -1)
+        {
+            // This only sets the state to the socket; the GC process should
+            // pick it up at the next time.
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: per PARTIAL SUCCESS, closing failed @" << is->id);
+            is->mb->ps->setBrokenClosed();
+        }
     }
 
     // Now that at least one link has succeeded, update sending stats.
@@ -3183,7 +3272,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         InvertedLock ug(m_GroupLock);
 
         // With unlocked GroupLock, we can now lock GlobControlLock.
-        // This is needed prevent any of them be deleted from the container
+        // This is needed to prevent any of them deleted from the container
         // at the same time.
         ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
 

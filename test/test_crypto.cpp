@@ -44,7 +44,7 @@ namespace srt
             m_crypt.setCryptoKeylen(cfg.iSndCryptoKeyLen);
 
             cfg.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_GCM;
-            EXPECT_EQ(m_crypt.init(HSD_INITIATOR, cfg, true), HaiCrypt_IsAESGCM_Supported() != 0);
+            EXPECT_TRUE(m_crypt.init(HSD_INITIATOR, cfg, true, HaiCrypt_IsAESGCM_Supported()));
 
             const unsigned char* kmmsg = m_crypt.getKmMsg_data(0);
             const size_t km_len = m_crypt.getKmMsg_size(0);
@@ -53,7 +53,7 @@ namespace srt
 
             std::array<uint32_t, 72> km_nworder;
             NtoHLA(km_nworder.data(), reinterpret_cast<const uint32_t*>(kmmsg), km_len);
-            m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, kmout, kmout_len);
+            m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3), kmout, kmout_len);
         }
 
         void TearDown() override
