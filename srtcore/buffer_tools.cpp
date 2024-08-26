@@ -286,7 +286,7 @@ CMovingRateEstimator::CMovingRateEstimator()
 void CMovingRateEstimator::addSample(int pkts, double bytes)
 {
     const time_point now             = steady_clock::now();
-    const int        iSampleDeltaIdx = (int)count_milliseconds(now - lastSlotTimestamp) / SAMPLE_DURATION_MS;
+    const int        iSampleDeltaIdx = int(count_milliseconds(now - m_tsLastSlotTimestamp) / SAMPLE_DURATION_MS);
 
     if (iSampleDeltaIdx == 0)
     {
@@ -308,10 +308,10 @@ void CMovingRateEstimator::addSample(int pkts, double bytes)
         m_Samples[m_iCurSampleIdx].m_iBytesCount = bytes;
         m_Samples[m_iCurSampleIdx].m_iPktsCount  = pkts;
 
-        lastSlotTimestamp = now;
-    }
+        m_tsLastSlotTimestamp += milliseconds_from(SAMPLE_DURATION_MS * iSampleDeltaIdx);
 
-    computeAverageValue();
+        computeAverageValue();
+    }
 }
 
 void CMovingRateEstimator::resetRate(int from, int to)
@@ -324,13 +324,15 @@ void CMovingRateEstimator::computeAverageValue()
 {
     const time_point now           = steady_clock::now();
     const int        startDelta    = count_milliseconds(now - m_tsFirstSampleTime);
-    const bool       isFirstPeriod = startDelta < 1000;
-    m_iRateBps                     = 0;
+    const bool       isFirstPeriod = startDelta < (SAMPLE_DURATION_MS * NUM_PERIODS);
+    int              newRateBps    = 0;
 
     for (int i = 0; i < NUM_PERIODS; i++)
-        m_iRateBps += (m_Samples[i].m_iBytesCount + (CPacket::HDR_SIZE * m_Samples[i].m_iPktsCount));
+        newRateBps += (m_Samples[i].m_iBytesCount + (CPacket::HDR_SIZE * m_Samples[i].m_iPktsCount));
 
     if (isFirstPeriod)
-        m_iRateBps = m_iRateBps * 1000 / startDelta;
+        newRateBps = newRateBps * 1000 / startDelta;
+
+    m_iRateBps = newRateBps;
 }
 } // namespace srt

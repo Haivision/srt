@@ -219,13 +219,13 @@ public:
 private:
     // We would like responsiveness (accuracy) of rate estimation higher than 100 ms
     // (ideally around 50 ms) for network adaptive algorithms.
-    const int  NUM_PERIODS        = 100; // To get 1s of values
-    const int  SAMPLE_DURATION_MS = 10;  // 10 ms
-    time_point m_tsFirstSampleTime;      //< Start time of the first sample.
-    time_point lastSlotTimestamp;        // Used to compute the delta between 2 calls
-    int        m_iFirstSampleIdx;        //< Index of the first sample.
-    int        m_iCurSampleIdx;          //< Index of the current sample being collected.
-    int        m_iRateBps;               //< Rate in Bytes/sec.
+    static const int NUM_PERIODS        = 100; // To get 1s of values
+    static const int SAMPLE_DURATION_MS = 10;  // 10 ms
+    time_point       m_tsFirstSampleTime;      //< Start time of the first sample.
+    time_point       m_tsLastSlotTimestamp;    // Used to compute the delta between 2 calls
+    int              m_iFirstSampleIdx;        //< Index of the first sample.
+    int              m_iCurSampleIdx;          //< Index of the current sample being collected.
+    int              m_iRateBps;               //< Rate in Bytes/sec.
 
     struct Sample
     {
