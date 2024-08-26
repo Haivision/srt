@@ -223,7 +223,6 @@ private:
     static const int SAMPLE_DURATION_MS = 10;  // 10 ms
     time_point       m_tsFirstSampleTime;      //< Start time of the first sample.
     time_point       m_tsLastSlotTimestamp;    // Used to compute the delta between 2 calls
-    int              m_iFirstSampleIdx;        //< Index of the first sample.
     int              m_iCurSampleIdx;          //< Index of the current sample being collected.
     int              m_iRateBps;               //< Rate in Bytes/sec.
 
