@@ -3653,7 +3653,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
     sockaddr_any use_source_adr(serv_addr.family());
 
-    while (!m_bClosing)
+    while (!m_bClosing && !m_bBroken)
     {
         const steady_clock::time_point local_tnow = steady_clock::now();
         const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
@@ -3814,12 +3814,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // The trick is that the HS challenge is with version HS_VERSION_UDT4, but the
             // listener should respond with HS_VERSION_SRT1, if it is HSv5 capable.
         }
-
-        // The queue could have been kicked by the close() API call,
-        // if so, interrupt immediately.
-        if (m_bClosing || m_bBroken)
-            break;
-
 
         HLOGC(cnlog.Debug,
               log << CONID() << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
@@ -6868,7 +6862,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
 
-        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
+        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.load().time_since_epoch()))
         {
             LOGC(aslog.Error,
                 log << CONID() << "Wrong source time was provided. Sending is rejected.");
@@ -11875,7 +11869,7 @@ int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
     if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    return count_microseconds(s->core().m_stats.tsStartTime.time_since_epoch());
+    return count_microseconds(s->core().m_stats.tsStartTime.load().time_since_epoch());
 }
 
 bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)

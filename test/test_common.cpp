@@ -129,7 +129,7 @@ TEST(SRTAPI, RapidClose)
     SRTSOCKET sock = srt_create_socket();
     std::condition_variable cv_start;
     std::mutex cvm;
-    bool started = false, ended = false;
+    sync::atomic<bool> started(false), ended(false);
 
     std::thread connect_thread([&sock, &cv_start, &started, &ended] {
         started = true;

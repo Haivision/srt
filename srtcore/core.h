@@ -1184,7 +1184,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;             // timestamp when the UDT entity is started
+        atomic_time_point tsStartTime;      // timestamp when the UDT entity is started
         stats::Sender sndr;                 // sender statistics
         stats::Receiver rcvr;               // receiver statistics
 
