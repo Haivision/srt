@@ -331,7 +331,7 @@ void CMovingRateEstimator::computeAverageValue()
         newRateBps += (m_Samples[i].m_iBytesCount + (CPacket::HDR_SIZE * m_Samples[i].m_iPktsCount));
 
     if (isFirstPeriod)
-        newRateBps = newRateBps * 1000 / startDelta;
+        newRateBps = newRateBps * SAMPLE_DURATION_MS * NUM_PERIODS / max(1, startDelta);
 
     m_iRateBps = newRateBps;
 }
