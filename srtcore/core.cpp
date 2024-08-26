@@ -7499,7 +7499,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         const steady_clock::time_point currtime = steady_clock::now();
 
-        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
+        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime.load());
         perf->pktSent              = m_stats.sndr.sent.trace.count();
         perf->pktSentUnique        = m_stats.sndr.sentUnique.trace.count();
         perf->pktRecv              = m_stats.rcvr.recvd.trace.count();
@@ -9594,7 +9594,7 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     const int msNextUniqueToSend = count_milliseconds(tnow - tsNextPacket) + m_iPeerTsbPdDelay_ms;
 
     g_snd_logger.state.tsNow = tnow;
-    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime);
+    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime.load());
     g_snd_logger.state.usSRTT = m_iSRTT;
     g_snd_logger.state.usRTTVar = m_iRTTVar;
     g_snd_logger.state.msSndBuffSpan = buffdelay_ms;
@@ -10983,7 +10983,7 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
+        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime.load()) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
