@@ -123,6 +123,17 @@ public:
 
     void construct();
 
+private:
+    srt::sync::atomic<int> m_iBusy;
+public:
+    void apiAcquire() { ++m_iBusy; }
+    void apiRelease() { --m_iBusy; }
+
+    int isStillBusy() const
+    {
+        return m_iBusy;
+    }
+
     // XXX Controversial as to whether it should be guarded by this lock.
     // It is used in many places without the lock, and it is also atomic.
     SRT_ATTR_GUARDED_BY(m_ControlLock)
@@ -133,7 +144,8 @@ public:
     /// of sockets in order to prevent other methods from accessing invalid address.
     /// A timer is started and the socket will be removed after approximately
     /// 1 second (see CUDTUnited::checkBrokenSockets()).
-    sync::steady_clock::time_point m_tsClosureTimeStamp;
+    //sync::steady_clock::time_point m_tsClosureTimeStamp;
+    sync::AtomicClock<sync::steady_clock> m_tsClosureTimeStamp;
 
     sockaddr_any m_SelfAddr; //< local address of the socket
     sockaddr_any m_PeerAddr; //< peer address of the socket
@@ -326,7 +338,7 @@ public:
     int     epoll_release(const int eid);
 
 #if ENABLE_BONDING
-    // [[using locked(m_GlobControlLock)]]
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
         // This only ensures that the element exists.
@@ -348,7 +360,7 @@ public:
     void deleteGroup(CUDTGroup* g);
     void deleteGroup_LOCKED(CUDTGroup* g);
 
-    // [[using locked(m_GlobControlLock)]]
+    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
     CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
     {
         for (groups_t::iterator i = m_Groups.begin(); i != m_Groups.end(); ++i)
@@ -447,8 +459,52 @@ private:
             }
         }
     };
-
 #endif
+
+    CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+    bool acquireSocket(CUDTSocket* s);
+
+public:
+    struct SocketKeeper
+    {
+        CUDTSocket* socket;
+
+        SocketKeeper(): socket(NULL) {}
+
+        // This is intended for API functions to lock the socket's existence
+        // for the lifetime of their call.
+        SocketKeeper(CUDTUnited& glob, SRTSOCKET id, ErrorHandling erh = ERH_RETURN) { socket = glob.locateAcquireSocket(id, erh); }
+
+        // This is intended for TSBPD thread that should lock the socket's
+        // existence until it exits.
+        SocketKeeper(CUDTUnited& glob, CUDTSocket* s)
+        {
+            acquire(glob, s);
+        }
+
+        // Note: acquire doesn't check if the keeper already keeps anything.
+        // This is only for a use together with an empty constructor.
+        bool acquire(CUDTUnited& glob, CUDTSocket* s)
+        {
+            if (s == NULL)
+                return false;
+            const bool caught = glob.acquireSocket(s);
+            socket = caught ? s : NULL;
+            return caught;
+        }
+
+        ~SocketKeeper()
+        {
+            if (socket)
+            {
+                SRT_ASSERT(socket->isStillBusy() > 0);
+                socket->apiRelease();
+            }
+        }
+    };
+
+private:
+
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 

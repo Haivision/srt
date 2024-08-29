@@ -159,7 +159,7 @@ TEST(SyncRandom, GenRandomInt)
     {
         const int rand_val = genRandomInt(0, int(mn.size()) - 1);
         ASSERT_GE(rand_val, 0);
-        ASSERT_LT(rand_val, mn.size());
+        ASSERT_LT(rand_val, (int) mn.size());
         ++mn[rand_val];
     }
 
@@ -445,7 +445,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
-    future_t future_result[2] = {
+    std::array<future_t, 2> future_result = {
         async(launch::async, wait_async, &cond, &mutex, timeout, 0),
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
@@ -462,9 +462,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(500))),
-        move(future_result[1].wait_for(chrono::microseconds(500)))
+    std::array<wait_t, 2> wait_state = {
+        future_result[0].wait_for(chrono::microseconds(500)),
+        future_result[1].wait_for(chrono::microseconds(500))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()

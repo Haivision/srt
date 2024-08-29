@@ -1059,8 +1059,8 @@ void SrtCommon::OpenGroupClient()
         if (!extras.empty())
         {
             Verb() << "?" << extras[0] << VerbNoEOL;
-            for (size_t x = 1; x < extras.size(); ++x)
-                Verb() << "&" << extras[x] << VerbNoEOL;
+            for (size_t ii = 1; ii < extras.size(); ++ii)
+                Verb() << "&" << extras[ii] << VerbNoEOL;
         }
 
         Verb();
@@ -1164,7 +1164,7 @@ Connect_Again:
         SRTSOCKET insock = m_group_nodes[j].socket;
         if (insock == -1)
         {
-            Verb() << "TARGET '" << sockaddr_any(targets[j].peeraddr).str() << "' connection failed.";
+            Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
             continue;
         }
 
@@ -1194,11 +1194,11 @@ Connect_Again:
                     NULL, NULL) != -1)
         {
             Verb() << "[C]" << VerbNoEOL;
-            for (int x = 0; x < len1; ++x)
-                Verb() << " " << ready_conn[x] << VerbNoEOL;
+            for (int ii = 0; ii < len1; ++ii)
+                Verb() << " " << ready_conn[ii] << VerbNoEOL;
             Verb() << "[E]" << VerbNoEOL;
-            for (int x = 0; x < len2; ++x)
-                Verb() << " " << ready_err[x] << VerbNoEOL;
+            for (int ii = 0; ii < len2; ++ii)
+                Verb() << " " << ready_err[ii] << VerbNoEOL;
 
             Verb() << "";
 
