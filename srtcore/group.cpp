@@ -1067,8 +1067,9 @@ void CUDTGroup::close()
 
 // [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
-SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
-SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
+// XXX TSA blocked because it causes errors on some versions of clang
+//SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+//SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
     vector<gli_t> toremove;
