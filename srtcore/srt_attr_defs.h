@@ -217,6 +217,7 @@ used by SRT library internally.
 #define SRT_TSA_ASSERT_SHARED_CAPABILITY(x)   SRT_TSA_EXPR(assert_shared_capability(x))
 #define SRT_TSA_RETURN_CAPABILITY(x)   SRT_TSA_EXPR(lock_returned(x))
 #define SRT_TSA_DISABLED   SRT_TSA_EXPR(no_thread_safety_analysis)
+// The caller must not hold the given capabilities.
 #endif // not _MSC_VER
 
 #endif // INC_SRT_ATTR_DEFS_H

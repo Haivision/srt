@@ -187,6 +187,11 @@ public:
 
     PacketInfo getFirstReadablePacketInfo(time_point time_now) const;
 
+    /// @brief Get the sequence number of the first packet that can't be read
+    /// (either because it is missing, or because it is a part of a bigger message
+    /// that is not fully available yet).
+    int32_t getFirstNonreadSeqNo() const;
+
     /// Get information on packets available to be read.
     /// @returns a pair of sequence numbers (first available; first unavailable).
     /// 
@@ -353,10 +358,15 @@ private:
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
-    int m_iStartSeqNo;
+    // ATOMIC because getStartSeqNo() may be called from other thread
+    // than CUDT's receiver worker thread. Even if it's not a problem
+    // if this value is a bit outdated, it must be read solid.
+    sync::atomic<int> m_iStartSeqNo;
     int m_iStartPos;        // the head position for I/O (inclusive)
     int m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    int m_iMaxPosOff;       // the furthest data position
+
+    // ATOMIC: sometimes this value is checked for buffer emptiness
+    sync::atomic<int> m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numOutOfOrderPackets;  // The number of stored packets with "inorder" flag set to false
@@ -403,7 +413,7 @@ private: // Statistics
     mutable sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
     int         m_iPktsCount;       // Number of payload bytes in the buffer
-    unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
+    sync::atomic<unsigned> m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 };
 
 } // namespace srt

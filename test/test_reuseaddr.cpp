@@ -355,7 +355,7 @@ protected:
             sockaddr_any showacp = (sockaddr*)&scl;
             std::cout << "[T/S] Accepted from: " << showacp.str() << std::endl;
 
-            int epoll_in = SRT_EPOLL_IN;
+            epoll_in = SRT_EPOLL_IN;
             srt_epoll_add_usock(server_pollid, accepted_sock, &epoll_in); // wait for input
 
             char buffer[1316];

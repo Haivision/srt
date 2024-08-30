@@ -571,7 +571,11 @@ private:
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
+    SRT_ATR_NODISCARD
+    // XXX These below can't be set because the header file has no access to these field definitions
+    //SRT_TSA_NEEDS_LOCKED(CUDTUnited::m_GlobControlLock)
+    //SRT_TSA_NEEDS_NONLOCKED(CUDTGroup::m_GroupLock)
+    SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
     void synchronizeWithGroup(CUDTGroup* grp);
 #endif
 
@@ -705,6 +709,8 @@ private:
     /// removes the loss record from both current receiver loss list and
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock) // will scope-lock it inside
     void dropFromLossLists(int32_t from, int32_t to);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
@@ -781,6 +787,8 @@ private:
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @param reason A reason for dropping (see @a DropReason).
     /// @return The number of packets dropped.
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock)
     int rcvDropTooLateUpTo(int seqno, DropReason reason = DROP_TOO_LATE);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
@@ -964,13 +972,15 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
     static const size_t
-                MAX_FREQLOGFA = 2,
                 FREQLOGFA_ENCRYPTION_FAILURE = 0,
-                FREQLOGFA_RCV_DROPPED = 1;
-    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
-                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
-                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
-    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+                FREQLOGFA_RCV_DROPPED = 1,
+                FREQLOGFA_ACKACK_OUTOFORDER = 2,
+                MAX_FREQLOGFA = 3;
+
+    atomic_time_point m_tsLogSlowDown[MAX_FREQLOGFA]; // The last time a log message from the "slow down" group was shown.
+                                                      // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                      // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired;       // Can't use bitset because atomic
     sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
 
     /// @brief Check if a frequent log can be shown.
@@ -979,6 +989,7 @@ private: // Timers
     bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
 
 private: // Receiving related data
+    SRT_TSA_PT_GUARDED_BY(m_RcvBufferLock)
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_TSA_PT_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
@@ -1009,6 +1020,7 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
+    SRT_TSA_GUARDED_BY(m_RcvTsbPdStartupLock)
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
     bool m_bTsbPdNeedsWakeup;                    // Signal TsbPd thread to wake up on RCV buffer state change.
@@ -1143,6 +1155,8 @@ private: // Generation and processing of packets
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
 
+    /// Also excludes srt::CUDTUnited::m_GlobControlLock.
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit);
 
     /// This function passes the incoming packet to the initial processing
@@ -1158,6 +1172,7 @@ private: // Generation and processing of packets
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     /// Get the packet's TSBPD time -
@@ -1166,8 +1181,10 @@ private: // Generation and processing of packets
     /// and shall not be used when ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock)
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnTsbPdThread();
+
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
