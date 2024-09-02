@@ -259,6 +259,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_uOPT_MinStabilityTimeout_us(1000 * CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
     // -1 = "undefined"; will become defined with first added socket
     , m_iMaxPayloadSize(-1)
+    , m_iAvgPayloadSize(-1)
     , m_bSynRecving(true)
     , m_bSynSending(true)
     , m_bTsbPd(true)
@@ -278,8 +279,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
 {
     setupMutex(m_GroupLock, "Group");
-    setupMutex(m_RcvDataLock, "RcvData");
-    setupCond(m_RcvDataCond, "RcvData");
+    setupMutex(m_RcvDataLock, "G/RcvData");
+    setupCond(m_RcvDataCond, "G/RcvData");
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
 
@@ -717,6 +718,16 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     return true;
 }
 
+struct FOptionValue
+{
+    SRT_SOCKOPT expected;
+    FOptionValue(SRT_SOCKOPT v): expected(v) {}
+    bool operator()(const CUDTGroup::ConfigItem& i) const
+    {
+        return i.so == expected;
+    }
+};
+
 void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 {
     // Options handled in group
@@ -732,46 +743,133 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         w_optlen          = sizeof(bool);
         return;
 
+    case SRTO_SNDTIMEO:
+        *(int*)pw_optval = m_iSndTimeOut;
+        w_optlen = sizeof(int);
+        return;
+
+    case SRTO_RCVTIMEO:
+        *(int*)pw_optval = m_iRcvTimeOut;
+        w_optlen = sizeof(int);
+        return;
+
+    case SRTO_GROUPMINSTABLETIMEO:
+        *(uint32_t*)pw_optval = m_uOPT_MinStabilityTimeout_us / 1000;
+        w_optlen = sizeof(uint32_t);
+        return;
+
+    case SRTO_KMSTATE:
+        *(uint32_t*)pw_optval = getGroupEncryptionState();
+        w_optlen = sizeof(uint32_t);
+        return;
+
+        // Write-only options for security reasons or
+        // options that refer to a socket state, that
+        // makes no sense for a group.
+    case SRTO_PASSPHRASE:
+    case SRTO_KMPREANNOUNCE:
+    case SRTO_KMREFRESHRATE:
+    case SRTO_BINDTODEVICE:
+    case SRTO_GROUPCONNECT:
+    case SRTO_STATE:
+    case SRTO_EVENT:
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     default:; // pass on
     }
 
-    // XXX Suspicous: may require locking of GlobControlLock
-    // to prevent from deleting a socket in the meantime.
-    // Deleting a socket requires removing from the group first,
-    // so after GroupLock this will be either already NULL or
-    // a valid socket that will only be closed after time in
-    // the GC, so this is likely safe like all other API functions.
-    CUDTSocket* ps = 0;
-
+    bool is_set_on_socket = false;
     {
-        // In sockets. All sockets should have all options
-        // set the same and should represent the group state
-        // well enough. If there are no sockets, just use default.
-
-        // Group lock to protect the container itself.
-        // Once a socket is extracted, we state it cannot be
-        // closed without the group send/recv function or closing
-        // being involved.
-        ScopedLock lg(m_GroupLock);
-        if (m_Group.empty())
+        // Can't have m_GroupLock locked while calling getOpt on a member socket
+        // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        enterCS(m_GroupLock);
+        gli_t gi = m_Group.begin();
+        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
+        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        leaveCS(m_GroupLock);
+        if (sk.socket)
         {
-            if (!getOptDefault(optname, (pw_optval), (w_optlen)))
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-            return;
+            // Return the value from the first member socket, if any is present
+            // Note: Will throw exception if the request is wrong.
+            sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
+            is_set_on_socket = true;
         }
-
-        ps = m_Group.begin()->ps;
-
-        // Release the lock on the group, as it's not necessary,
-        // as well as it might cause a deadlock when combined
-        // with the others.
     }
 
-    if (!ps)
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    // Check if the option is in the storage, which means that
+    // it was modified on the group.
 
-    return ps->core().getOpt(optname, (pw_optval), (w_optlen));
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
+            FOptionValue(optname));
+
+    if (i == m_config.end())
+    {
+        // Already written to the target variable.
+        if (is_set_on_socket)
+            return;
+
+        // Not found, see the defaults
+        if (!getOptDefault(optname, (pw_optval), (w_optlen)))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        return;
+    }
+    // NOTE: even if is_set_on_socket, if it was also found in the group
+    // settings, overwrite with the value from the group.
+
+    // Found, return the value from the storage.
+    // Check the size first.
+    if (w_optlen < int(i->value.size()))
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
+
+    w_optlen = i->value.size();
+    memcpy((pw_optval), &i->value[0], i->value.size());
+}
+
+SRT_KM_STATE CUDTGroup::getGroupEncryptionState()
+{
+    multiset<SRT_KM_STATE> kmstates;
+    {
+        ScopedLock lk (m_GroupLock);
+
+        // First check the container. If empty, return UNSECURED
+        if (m_Group.empty())
+            return SRT_KM_S_UNSECURED;
+
+        for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+        {
+            CCryptoControl* cc = gi->ps->core().m_pCryptoControl.get();
+            if (!cc)
+                continue;
+            SRT_KM_STATE gst = cc->m_RcvKmState;
+            // A fix to NOSECRET is because this is the state when agent has set
+            // no password, but peer did, and ENFORCEDENCRYPTION=false allowed
+            // this connection to be established. UNSECURED can't be taken in this
+            // case because this would suggest that BOTH are unsecured, that is,
+            // we have established an unsecured connection (which ain't true).
+            if (gst == SRT_KM_S_UNSECURED && cc->m_SndKmState == SRT_KM_S_NOSECRET)
+                gst = SRT_KM_S_NOSECRET;
+            kmstates.insert(gst);
+        }
+    }
+
+    // Criteria are:
+    // 1. UNSECURED, if no member sockets, or at least one UNSECURED found.
+    // 2. SECURED, if at least one SECURED found (cut off the previous criteria).
+    // 3. BADSECRET otherwise, although return NOSECRET if no BADSECRET is found.
+
+    if (kmstates.count(SRT_KM_S_UNSECURED))
+        return SRT_KM_S_UNSECURED;
+
+    // Now we have UNSECURED ruled out. Remaining may be NOSECRET, BADSECRET or SECURED.
+    // NOTE: SECURING is an intermediate state for HSv4 and can't occur in groups.
+    if (kmstates.count(SRT_KM_S_SECURED))
+        return SRT_KM_S_SECURED;
+
+    if (kmstates.count(SRT_KM_S_BADSECRET))
+        return SRT_KM_S_BADSECRET;
+
+    return SRT_KM_S_NOSECRET;
 }
 
 SRT_SOCKSTATUS CUDTGroup::getStatus()
@@ -845,23 +943,14 @@ void CUDTGroup::syncWithSocket(const CUDT& core, const HandshakeSide side)
         set_currentSchedSequence(core.ISN());
     }
 
-    // XXX
-    // Might need further investigation as to whether this isn't
-    // wrong for some cases. By having this -1 here the value will be
-    // laziliy set from the first reading one. It is believed that
-    // it covers all possible scenarios, that is:
-    //
-    // - no readers - no problem!
-    // - have some readers and a new is attached - this is set already
-    // - connect multiple links, but none has read yet - you'll be the first.
-    //
-    // Previous implementation used setting to: core.m_iPeerISN
-    resetInitialRxSequence();
+    // Only set if was not initialized to avoid problems on a running connection.
+    if (m_RcvBaseSeqNo == SRT_SEQNO_NONE) 
+        m_RcvBaseSeqNo = CSeqNo::decseq(core.m_iPeerISN);
 
     // Get the latency (possibly fixed against the opposite side)
     // from the first socket (core.m_iTsbPdDelay_ms),
     // and set it on the current socket.
-    set_latency(core.m_iTsbPdDelay_ms * int64_t(1000));
+    set_latency_us(core.m_iTsbPdDelay_ms * int64_t(1000));
 }
 
 void CUDTGroup::close()
@@ -1223,12 +1312,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // and therefore take over the leading role in setting the ISN. If the
     // second one fails, too, then the only remaining idle link will simply
     // go with its own original sequence.
-    //
-    // On the opposite side the reader should know that the link is inactive
-    // so the first received payload activates it. Activation of an idle link
-    // means that the very first packet arriving is TAKEN AS A GOOD DEAL, that is,
-    // no LOSSREPORT is sent even if the sequence looks like a "jumped over".
-    // Only for activated links is the LOSSREPORT sent upon seqhole detection.
+
+    // On the opposite side, if the first packet arriving looks like a jump over,
+    // the corresponding LOSSREPORT is sent. For packets that are truly lost,
+    // the sender retransmits them, for packets that before ISN, DROPREQ is sent.
 
     // Now we can go to the idle links and attempt to send the payload
     // also over them.
@@ -1487,7 +1574,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     int ercode = 0;
 
-    if (was_blocked)
+    // This block causes waiting for any socket to accept the payload.
+    // This should be done only in blocking mode and only if no other socket
+    // accepted the payload.
+    if (was_blocked && none_succeeded && m_bSynSending)
     {
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
         if (!m_bSynSending)
@@ -1632,6 +1722,19 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         CodeMinor minor = CodeMinor(ercode ? ercode % 1000 : MN_CONNLOST);
 
         throw CUDTException(major, minor, 0);
+    }
+
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
+    {
+        // Here we have a situation that at least 1 link successfully sent a packet.
+        // All links for which sending has failed must be closed.
+        if (is->stat == -1)
+        {
+            // This only sets the state to the socket; the GC process should
+            // pick it up at the next time.
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: per PARTIAL SUCCESS, closing failed @" << is->id);
+            is->mb->ps->setBrokenClosed();
+        }
     }
 
     // Now that at least one link has succeeded, update sending stats.
@@ -2026,10 +2129,14 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
         else
         {
-            // No read-readiness reported by epoll, but probably missed or not yet handled
-            // as the receiver buffer is read-ready.
+            // No read-readiness reported by epoll, but can be missed or not yet handled
+            // while the receiver buffer is in fact read-ready.
             ScopedLock lg(sock->core().m_RcvBufferLock);
-            if (sock->core().m_pRcvBuffer && sock->core().m_pRcvBuffer->isRcvDataReady())
+            if (!sock->core().m_pRcvBuffer)
+                continue;
+            // Checking for the next packet in the RCV buffer is safer that isReadReady(tnow).
+            const CRcvBuffer::PacketInfo info = sock->core().m_pRcvBuffer->getFirstValidPacketInfo();
+            if (info.seqno != SRT_SEQNO_NONE && !info.seq_gap)
                 readReady.push_back(sock);
         }
     }
@@ -2199,6 +2306,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         // Find the first readable packet among all member sockets.
+        steady_clock::time_point tnow = steady_clock::now();
         CUDTSocket*               socketToRead = NULL;
         CRcvBuffer::PacketInfo infoToRead   = {-1, false, time_point()};
         for (vector<CUDTSocket*>::const_iterator si = readySockets.begin(); si != readySockets.end(); ++si)
@@ -2219,7 +2327,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             }
 
             const CRcvBuffer::PacketInfo info =
-                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now());
+                ps->core().m_pRcvBuffer->getFirstReadablePacketInfo(tnow);
             if (info.seqno == SRT_SEQNO_NONE)
             {
                 HLOGC(grlog.Debug, log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": Nothing to read.");
@@ -2240,6 +2348,12 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             {
                 socketToRead = ps;
                 infoToRead   = info;
+
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                {
+                    // We have the next packet. No need to check other read-ready sockets.
+                    break;
+                }
             }
         }
 
@@ -2288,6 +2402,20 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         fillGroupData((w_mc), w_mc);
 
+        // m_RcvBaseSeqNo is expected to be set to the PeerISN with the first connected member,
+        // so a packet drop at the start should also be detected by this condition.
+        if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
+        {
+            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            if (iNumDropped > 0)
+            {
+                m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
+                LOGC(grlog.Warn,
+                    log << "@" << m_GroupID << " GROUP RCV-DROPPED " << iNumDropped << " packet(s): seqno %"
+                        << CSeqNo::incseq(m_RcvBaseSeqNo) << " to %" << CSeqNo::decseq(w_mc.pktseq));
+            }
+        }
+
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": Update m_RcvBaseSeqNo: %" << m_RcvBaseSeqNo << " -> %" << w_mc.pktseq);
         m_RcvBaseSeqNo = w_mc.pktseq;
@@ -2296,13 +2424,14 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         m_stats.recv.count(res);
         updateAvgPayloadSize(res);
 
+        bool canReadFurther = false;
         for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
         {
             CUDTSocket* ps = *si;
             ScopedLock  lg(ps->core().m_RcvBufferLock);
             if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
             {
-                int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo));
+                const int cnt = ps->core().rcvDropTooLateUpTo(CSeqNo::incseq(m_RcvBaseSeqNo), CUDT::DROP_DISCARD);
                 if (cnt > 0)
                 {
                     HLOGC(grlog.Debug,
@@ -2310,57 +2439,21 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                               << " packets after reading: m_RcvBaseSeqNo=" << m_RcvBaseSeqNo);
                 }
             }
-        }
-        for (vector<CUDTSocket*>::const_iterator si = aliveMembers.begin(); si != aliveMembers.end(); ++si)
-        {
-            CUDTSocket* ps = *si;
-            if (!ps->core().isRcvBufferReady())
+
+            if (!ps->core().isRcvBufferReadyNoLock())
                 m_Global.m_EPoll.update_events(ps->m_SocketID, ps->core().m_sPollID, SRT_EPOLL_IN, false);
+            else
+                canReadFurther = true;
         }
+
+        if (!canReadFurther)
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
 
         return res;
     }
     LOGC(grlog.Error, log << "grp/recv: UNEXPECTED RUN PATH, ABANDONING.");
     m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, false);
     throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
-}
-
-// [[using locked(m_GroupLock)]]
-CUDTGroup::ReadPos* CUDTGroup::checkPacketAhead()
-{
-    typedef map<SRTSOCKET, ReadPos>::iterator pit_t;
-    ReadPos*                                  out = 0;
-
-    // This map no longer maps only ahead links.
-    // Here are all links, and whether ahead, it's defined by the sequence.
-    for (pit_t i = m_Positions.begin(); i != m_Positions.end(); ++i)
-    {
-        // i->first: socket ID
-        // i->second: ReadPos { sequence, packet }
-        // We are not interested with the socket ID because we
-        // aren't going to read from it - we have the packet already.
-        ReadPos& a = i->second;
-
-        const int seqdiff = CSeqNo::seqcmp(a.mctrl.pktseq, m_RcvBaseSeqNo);
-        if (seqdiff == 1)
-        {
-            // The very next packet. Return it.
-            HLOGC(grlog.Debug,
-                  log << "group/recv: Base %" << m_RcvBaseSeqNo << " ahead delivery POSSIBLE %" << a.mctrl.pktseq
-                      << " #" << a.mctrl.msgno << " from @" << i->first << ")");
-            out = &a;
-        }
-        else if (seqdiff < 1 && !a.packet.empty())
-        {
-            HLOGC(grlog.Debug,
-                  log << "group/recv: @" << i->first << " dropping collected ahead %" << a.mctrl.pktseq << "#"
-                      << a.mctrl.msgno << " with base %" << m_RcvBaseSeqNo);
-            a.packet.clear();
-        }
-        // In case when it's >1, keep it in ahead
-    }
-
-    return out;
 }
 
 const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
@@ -2417,6 +2510,12 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 
     const steady_clock::time_point currtime = steady_clock::now();
 
+    // NOTE: Potentially in the group we might be using both IPv4 and IPv6
+    // links and sending a single packet over these two links could be different.
+    // These stats then don't make much sense in this form, this has to be
+    // redesigned. We use the header size as per IPv4, as it was everywhere.
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+
     memset(perf, 0, sizeof *perf);
 
     ScopedLock gg(m_GroupLock);
@@ -2427,17 +2526,17 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     perf->pktRecvUnique = m_stats.recv.trace.count();
     perf->pktRcvDrop    = m_stats.recvDrop.trace.count();
 
-    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr();
-    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr();
-    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr();
+    perf->byteSentUnique = m_stats.sent.trace.bytesWithHdr(pktHdrSize);
+    perf->byteRecvUnique = m_stats.recv.trace.bytesWithHdr(pktHdrSize);
+    perf->byteRcvDrop    = m_stats.recvDrop.trace.bytesWithHdr(pktHdrSize);
 
     perf->pktSentUniqueTotal = m_stats.sent.total.count();
     perf->pktRecvUniqueTotal = m_stats.recv.total.count();
     perf->pktRcvDropTotal    = m_stats.recvDrop.total.count();
 
-    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr();
-    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr();
-    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr();
+    perf->byteSentUniqueTotal = m_stats.sent.total.bytesWithHdr(pktHdrSize);
+    perf->byteRecvUniqueTotal = m_stats.recv.total.bytesWithHdr(pktHdrSize);
+    perf->byteRcvDropTotal    = m_stats.recvDrop.total.bytesWithHdr(pktHdrSize);
 
     const double interval = static_cast<double>(count_microseconds(currtime - m_stats.tsLastSampleTime));
     perf->mbpsSendRate    = double(perf->byteSent) * 8.0 / interval;
@@ -2565,7 +2664,7 @@ private:
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
         }
         const std::string fname = "stability_trace_" + str_tnow + ".csv";
-        m_fout.open(fname, std::ofstream::out);
+        m_fout.open(fname.c_str(), std::ofstream::out);
         if (!m_fout)
             std::cerr << "IPE: Failed to open " << fname << "!!!\n";
 
@@ -3174,7 +3273,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         InvertedLock ug(m_GroupLock);
 
         // With unlocked GroupLock, we can now lock GlobControlLock.
-        // This is needed prevent any of them be deleted from the container
+        // This is needed to prevent any of them deleted from the container
         // at the same time.
         ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
 

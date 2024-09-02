@@ -1,9 +1,11 @@
 #include "gtest/gtest.h"
+#include "test_env.h"
+
 #include <thread>
 #include "srt.h"
 
 class TestMuxer
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     TestMuxer()
@@ -18,10 +20,8 @@ protected:
 
 protected:
     // SetUp() is run immediately before a test starts.
-    void SetUp()
+    void setup() override
     {
-        ASSERT_GE(srt_startup(), 0);
-        
         m_caller_sock = srt_create_socket();
         ASSERT_NE(m_caller_sock, SRT_ERROR);
 
@@ -41,7 +41,7 @@ protected:
         srt_epoll_add_usock(m_client_pollid, m_caller_sock, &epoll_out);
     }
 
-    void TearDown()
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
@@ -49,7 +49,6 @@ protected:
         srt_epoll_release(m_server_pollid);
         srt_close(m_listener_sock_ipv4);
         srt_close(m_listener_sock_ipv6);
-        srt_cleanup();
     }
 
 public:
@@ -100,6 +99,8 @@ protected:
 
 TEST_F(TestMuxer, IPv4_and_IPv6)
 {
+    SRTST_REQUIRES(IPv6);
+
     int yes = 1;
     int no = 0;
 

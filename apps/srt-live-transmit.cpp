@@ -65,7 +65,7 @@
 #include <thread>
 #include <list>
 
-
+#include "srt_compat.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
@@ -526,11 +526,13 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::UDP:
+                case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add UDP source to poll, "
-                            << src->GetSysSocket() << endl;
+                        cerr << "Failed to add " << src->uri.proto()
+                            << " source to poll, " << src->GetSysSocket()
+                            << endl;
                         return 1;
                     }
                     break;
