@@ -1,6 +1,9 @@
 
 #include "testactivemedia.hpp"
 
+using namespace std;
+
+
 void SourceMedium::Runner()
 {
     srt::ThreadName::set("SourceRN");

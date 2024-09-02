@@ -1059,8 +1059,8 @@ void SrtCommon::OpenGroupClient()
         if (!extras.empty())
         {
             Verb() << "?" << extras[0] << VerbNoEOL;
-            for (size_t i = 1; i < extras.size(); ++i)
-                Verb() << "&" << extras[i] << VerbNoEOL;
+            for (size_t ii = 1; ii < extras.size(); ++ii)
+                Verb() << "&" << extras[ii] << VerbNoEOL;
         }
 
         Verb();
@@ -1130,15 +1130,15 @@ Connect_Again:
     // spread the setting on all sockets.
     ConfigurePost(m_sock);
 
-    for (size_t i = 0; i < targets.size(); ++i)
+    for (size_t j = 0; j < targets.size(); ++j)
     {
         // As m_group_nodes is simply transformed into 'targets',
         // one index can be used to index them all. You don't
         // have to check if they have equal addresses because they
         // are equal by definition.
-        if (targets[i].id != -1 && targets[i].errorcode == SRT_SUCCESS)
+        if (targets[j].id != -1 && targets[j].errorcode == SRT_SUCCESS)
         {
-            m_group_nodes[i].socket = targets[i].id;
+            m_group_nodes[j].socket = targets[j].id;
         }
     }
 
@@ -1159,9 +1159,9 @@ Connect_Again:
     }
     m_group_data.resize(size);
 
-    for (size_t i = 0; i < m_group_nodes.size(); ++i)
+    for (size_t j = 0; j < m_group_nodes.size(); ++j)
     {
-        SRTSOCKET insock = m_group_nodes[i].socket;
+        SRTSOCKET insock = m_group_nodes[j].socket;
         if (insock == -1)
         {
             Verb() << "TARGET '" << sockaddr_any(targets[i].peeraddr).str() << "' connection failed.";
@@ -1194,11 +1194,11 @@ Connect_Again:
                     NULL, NULL) != -1)
         {
             Verb() << "[C]" << VerbNoEOL;
-            for (int i = 0; i < len1; ++i)
-                Verb() << " " << ready_conn[i] << VerbNoEOL;
+            for (int ii = 0; ii < len1; ++ii)
+                Verb() << " " << ready_conn[ii] << VerbNoEOL;
             Verb() << "[E]" << VerbNoEOL;
-            for (int i = 0; i < len2; ++i)
-                Verb() << " " << ready_err[i] << VerbNoEOL;
+            for (int ii = 0; ii < len2; ++ii)
+                Verb() << " " << ready_err[ii] << VerbNoEOL;
 
             Verb() << "";
 
