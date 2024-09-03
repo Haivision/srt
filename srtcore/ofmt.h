@@ -1,10 +1,5 @@
 // Formatting library for C++ - C++03 compat version of on-demand tagged format API.
 //
-// Copyright (c) 2024 - present, Mikołaj Małecki
-// All rights reserved.
-//
-// For the license information refer to format.h.
-
 // This is a header-only lightweight C++03-compatible formatting library,
 // which provides the on-demand tagged format API and iostream-style wrapper
 // for FILE type from stdio. It has nothing to do with the rest of the {fmt}
