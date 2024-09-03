@@ -112,7 +112,7 @@ struct LogConfig
     std::ostream* log_stream;
     SRT_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
-    srt::sync::Mutex mutex;
+    mutable srt::sync::Mutex mutex;
     int flags;
 
     LogConfig(const fa_bitset_t& efa,
@@ -132,10 +132,10 @@ struct LogConfig
     }
 
     SRT_ATTR_ACQUIRE(mutex)
-    void lock() { mutex.lock(); }
+    void lock() const { mutex.lock(); }
 
     SRT_ATTR_RELEASE(mutex)
-    void unlock() { mutex.unlock(); }
+    void unlock() const { mutex.unlock(); }
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -460,8 +460,10 @@ inline bool LogDispatcher::CheckEnabled()
     // when the enabler check is tested here. Worst case, the log
     // will be printed just a moment after it was turned off.
     const LogConfig* config = src_config; // to enforce using const operator[]
+    config->lock();
     int configured_enabled_fa = config->enabled_fa[fa];
     int configured_maxlevel = config->max_level;
+    config->unlock();
 
     return configured_enabled_fa && level <= configured_maxlevel;
 }

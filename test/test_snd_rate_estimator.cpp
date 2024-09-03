@@ -3,6 +3,7 @@
 #include "gtest/gtest.h"
 #include "buffer_tools.h"
 #include "sync.h"
+#include "packet.h"
 
 using namespace srt;
 using namespace std;
@@ -53,6 +54,7 @@ TEST_F(CSndRateEstFixture, Empty)
 
 TEST_F(CSndRateEstFixture, CBRSending)
 {
+    const size_t hdrBytes = srt::CPacket::HDR_SIZE;
     // Generate CBR sending for 2.1 seconds to wrap the buffer around.
     for (int i = 0; i < 2100; ++i)
     {
@@ -61,7 +63,7 @@ TEST_F(CSndRateEstFixture, CBRSending)
         
         const auto rate = m_rateEst.getRate();
         if (i >= 100)
-            EXPECT_EQ(rate, 1316000) << "i=" << i;
+            EXPECT_EQ(rate, 1316000 + 1000 * hdrBytes) << "i=" << i;
         else
             EXPECT_EQ(rate, 0) << "i=" << i;
     }
@@ -72,6 +74,7 @@ TEST_F(CSndRateEstFixture, CBRSending)
 // only for one sampling period.
 TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
 {
+    const size_t hdrBytes = srt::CPacket::HDR_SIZE;
     // Send 100 packets with 1000 bytes each
     for (int i = 0; i < 3100; ++i)
     {
@@ -82,7 +85,7 @@ TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
 
         const auto rate = m_rateEst.getRate();
         if (i >= 100 && !(i >= 2000 && i < 2100))
-            EXPECT_EQ(rate, 1316000) << "i=" << i;
+            EXPECT_EQ(rate, 1316000 + 1000 * hdrBytes) << "i=" << i;
         else
             EXPECT_EQ(rate, 0) << "i=" << i;
     }
@@ -92,6 +95,7 @@ TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
 // Those empty samples should be included in bitrate estimation.
 TEST_F(CSndRateEstFixture, CBRSendingShortPause)
 {
+    const size_t hdrBytes = srt::CPacket::HDR_SIZE;
     // Send 100 packets with 1000 bytes each
     for (int i = 0; i < 3100; ++i)
     {
@@ -102,9 +106,9 @@ TEST_F(CSndRateEstFixture, CBRSendingShortPause)
 
         const auto rate = m_rateEst.getRate();
         if (i >= 1500 && i < 2000)
-            EXPECT_EQ(rate, 658000) << "i=" << i;
+            EXPECT_EQ(rate, 658000 + 500 * hdrBytes) << "i=" << i;
         else if (i >= 100)
-            EXPECT_EQ(rate, 1316000) << "i=" << i;
+            EXPECT_EQ(rate, 1316000 + 1000 * hdrBytes) << "i=" << i;
         else
             EXPECT_EQ(rate, 0) << "i=" << i;
     }

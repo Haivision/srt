@@ -262,7 +262,7 @@ TEST(TestConnectionAPI, Accept)
     {
         // Do extra checks only if you know that this was returned.
         EXPECT_EQ(ready[0].fd, caller_sock);
-        EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, 0);
+        EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, 0u);
     }
     srt_close(caller_sock);
     srt_close(listener_sock);
