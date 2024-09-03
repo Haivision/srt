@@ -35,7 +35,6 @@ written by
 #include <memory>
 #include <iomanip>
 #include <utility>
-#include <sstream>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -588,7 +587,7 @@ inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 template <class... Args>
 inline std::string Sprint(Args&&... args)
 {
-    std::ostringstream sout;
+    srt::ofmtstream sout;
     Print(sout, args...);
     return sout.str();
 }
@@ -677,10 +676,12 @@ inline std::string Sprint(const Arg1& arg)
     return srt::fmts(arg);
 }
 
+// Ok, let's make another version with two arguments to sweeten
+// a bit the API for C++03 users.
 template <class Arg1, class Arg2>
 inline std::string Sprint(const Arg1& arg, const Arg2& arg2)
 {
-    std::stringstream out;
+    srt::ofmtstream out;
     out << arg << arg2;
     return out.str();
 }

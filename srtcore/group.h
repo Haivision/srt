@@ -313,6 +313,8 @@ private:
 
     void send_CheckValidSockets();
 
+    SRT_KM_STATE getGroupEncryptionState();
+
 public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
 

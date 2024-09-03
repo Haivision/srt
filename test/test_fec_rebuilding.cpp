@@ -544,7 +544,7 @@ TEST(TestFEC, ConnectionMess)
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
-    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config

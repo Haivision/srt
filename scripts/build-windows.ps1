@@ -10,7 +10,7 @@
 ################################################################################
 
 param (
-    [Parameter()][String]$VS_VERSION = "2019",
+    [Parameter()][String]$VS_VERSION = "2022",
     [Parameter()][String]$CONFIGURATION = "Release",
     [Parameter()][String]$DEVENV_PLATFORM = "x64",
     [Parameter()][String]$ENABLE_ENCRYPTION = "OFF",
@@ -49,10 +49,10 @@ if ( $Env:APPVEYOR ) {
     $CONFIGURATION = $Env:CONFIGURATION
 
     #appveyor has many openssl installations - place the latest one in the default location unless VS2013
-	Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-	Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-	Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
-	Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
+    Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+    Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+    Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
+    Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
 }
 
 # persist VS_VERSION so it can be used in an artifact name later

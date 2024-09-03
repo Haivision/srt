@@ -144,7 +144,7 @@ sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family
 
 string Join(const vector<string>& in, string sep)
 {
-    if ( in.empty() )
+    if (in.empty())
         return "";
 
     srt::ofmtstream os;
