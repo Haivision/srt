@@ -4393,18 +4393,6 @@ srt::CUDT* srt::CUDT::getUDTHandle(SRTSOCKET u)
     }
 }
 
-/* UNUSED. Restore if needed. NOTE: SRT_TSA_NEEDS_LOCKED(CUDTUnited::m_GlobControlLock)
-vector<SRTSOCKET> srt::CUDT::existingSockets()
-{
-    vector<SRTSOCKET> out;
-    for (CUDTUnited::sockets_t::iterator i = uglobal().m_Sockets.begin(); i != uglobal().m_Sockets.end(); ++i)
-    {
-        out.push_back(i->first);
-    }
-    return out;
-}
-*/
-
 SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
 {
     try
