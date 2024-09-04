@@ -475,7 +475,7 @@ public:
 private:
 
 #if ENABLE_LOGGING
-    static int m_counter;
+    static srt::sync::atomic<int> m_counter;
 #endif
 
     CSndQueue(const CSndQueue&);
@@ -560,9 +560,8 @@ private:
     void storePktClone(int32_t id, const CPacket& pkt);
 
 private:
-    sync::Mutex       m_LSLock;
-    CUDT*             m_pListener;        // pointer to the (unique, if any) listening UDT entity
-    CRendezvousQueue* m_pRendezvousQueue; // The list of sockets in rendezvous mode
+    sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
+    CRendezvousQueue*            m_pRendezvousQueue; // The list of sockets in rendezvous mode
 
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
     sync::Mutex        m_IDLock;

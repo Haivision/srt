@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.3)
+set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -162,6 +162,7 @@ option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting 
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
+option(DISABLE_UNITTESTS_DISCOVERY "Do not discover unit tests when enabled" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
@@ -1383,7 +1384,6 @@ if (ENABLE_APPS)
 		# srt-multiplex temporarily blocked
 		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
-		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -1421,7 +1421,6 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
-		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
@@ -1529,7 +1528,9 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
-		#gtest_discover_tests(test-srt)
+		if (NOT DISABLE_UNITTESTS_DISCOVERY)
+			gtest_discover_tests(test-srt)
+		endif()
 	endif()
 
 	enable_testing()

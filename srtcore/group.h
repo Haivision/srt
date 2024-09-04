@@ -328,6 +328,8 @@ private:
 
     void send_CheckValidSockets();
 
+    SRT_KM_STATE getGroupEncryptionState();
+
 public:
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
     int recv_old(char* buf, int len, SRT_MSGCTRL& w_mc);
@@ -965,13 +967,6 @@ public:
     {
         return m_pRcvBuffer->getPktTsbPdTime(usPktTimestamp);
     }
-
-    /*
-    int32_t getOldestRcvSeqNo() const
-    {
-        return m_pRcvBuffer->getStartSeqNo();
-    }
-    */
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);

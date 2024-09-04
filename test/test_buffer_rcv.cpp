@@ -239,7 +239,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketGap)
     {
         const size_t msg_bytelen = m_payload_sz;
         EXPECT_TRUE(rcv_buffer.isRcvDataReady());
-        EXPECT_EQ(readMessage(buff.data(), buff.size()), msg_bytelen);
+        EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) msg_bytelen);
         EXPECT_TRUE(verifyPayload(buff.data(), msg_bytelen, CSeqNo::incseq(m_init_seqno, pktno)));
     }
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
@@ -320,7 +320,7 @@ TEST_F(CRcvBufferReadMsg, PacketDropByMsgNoSeqNo)
 
     // Let's say SND does not have the very first packet of the message,
     // therefore seqnolo of the msg drop request starts with the second packet of the message.
-    EXPECT_EQ(rcv_buffer.dropMessage(CSeqNo::incseq(m_init_seqno), CSeqNo::incseq(m_init_seqno, msg_len_pkts - 1), msgno, CRcvBuffer::KEEP_EXISTING), msg_len_pkts);
+    EXPECT_EQ(rcv_buffer.dropMessage(CSeqNo::incseq(m_init_seqno), CSeqNo::incseq(m_init_seqno, msg_len_pkts - 1), msgno, CRcvBuffer::KEEP_EXISTING), (int) msg_len_pkts);
     EXPECT_FALSE(hasAvailablePackets());
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
 
@@ -346,7 +346,7 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
     EXPECT_TRUE(hasAvailablePackets());
 
     const int res2 = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res2, msg_bytelen);
+    EXPECT_EQ(res2, (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), res2, m_init_seqno));
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
@@ -422,7 +422,7 @@ TEST_F(CRcvBufferReadMsg, MsgAcked)
     EXPECT_TRUE(hasAvailablePackets());
 
     const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         const ptrdiff_t offset = i * m_payload_sz;
@@ -481,7 +481,7 @@ TEST_F(CRcvBufferReadMsg, MsgHalfAck)
     EXPECT_TRUE(hasAvailablePackets());
 
     const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         const ptrdiff_t offset = i * m_payload_sz;
@@ -505,7 +505,7 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgNoACK)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         const ptrdiff_t offset = i * m_payload_sz;
@@ -532,7 +532,7 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgGap)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         const ptrdiff_t offset = i * m_payload_sz;
@@ -601,7 +601,7 @@ TEST_F(CRcvBufferReadMsg, LongMsgReadReady)
     EXPECT_TRUE(hasAvailablePackets());
 
     const int res = readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         const ptrdiff_t offset = i * m_payload_sz;
@@ -624,7 +624,7 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderDrop)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
     int res = m_rcv_buffer->readMessage(buff.data(), buff.size());
-    EXPECT_EQ(res, msg_bytelen);
+    EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
         EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, msg_seqno + int(i)));
@@ -734,7 +734,7 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderAfterInOrder)
     for (int msg_i = 0; msg_i < 3; ++msg_i)
     {
         EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size()), msg_bytelen);
+        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size()), (int) msg_bytelen);
         for (size_t i = 0; i < msg_pkts; ++i)
         {
             EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, int(m_init_seqno + msg_i * msg_pkts + i)));
@@ -780,7 +780,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
 
     // Read out the first message
     const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size());
-    EXPECT_EQ(read_len, msg_bytelen);
+    EXPECT_EQ(read_len, (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 
     // Check the state after a packet was read
@@ -842,7 +842,7 @@ TEST_F(CRcvBufferReadMsg, TSBPDGapBeforeValid)
 
     const size_t msg_bytelen = m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
-    EXPECT_EQ(readMessage(buff.data(), buff.size()), msg_bytelen);
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, seqno));
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }

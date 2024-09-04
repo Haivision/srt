@@ -780,6 +780,7 @@ private:
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
     /// @param reason A reason for dropping (see @a DropReason).
     /// @return The number of packets dropped.
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock, m_RcvLossLock)
     int rcvDropTooLateUpTo(int seqno, DropReason reason = DROP_TOO_LATE);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
@@ -956,13 +957,15 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
     static const size_t
-                MAX_FREQLOGFA = 2,
                 FREQLOGFA_ENCRYPTION_FAILURE = 0,
-                FREQLOGFA_RCV_DROPPED = 1;
-    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
-                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
-                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
-    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+                FREQLOGFA_RCV_DROPPED = 1,
+                FREQLOGFA_ACKACK_OUTOFORDER = 2,
+                MAX_FREQLOGFA = 3;
+
+    atomic_time_point m_tsLogSlowDown[MAX_FREQLOGFA]; // The last time a log message from the "slow down" group was shown.
+                                                      // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                      // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired;       // Can't use bitset because atomic
     sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
 
     /// @brief Check if a frequent log can be shown.
@@ -971,6 +974,7 @@ private: // Timers
     bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
 
 private: // Receiving related data
+    SRT_ATTR_GUARDED_BY(m_RcvBufferLock)
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
@@ -1001,10 +1005,11 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
+    SRT_ATTR_GUARDED_BY(m_RcvTsbPdStartupLock)
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
     sync::atomic<bool> m_bTsbPdNeedsWakeup;      // Expected to wake up TSBPD when a read-ready data packet is received.
-    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
+    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creation and joining.
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
@@ -1143,6 +1148,8 @@ private: // Generation and processing of packets
     bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
     void removeSndLossUpTo(int32_t seq);
 
+    /// Also excludes srt::CUDTUnited::m_GlobControlLock.
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit);
 
     /// This function passes the incoming packet to the initial processing
@@ -1176,8 +1183,10 @@ private: // Generation and processing of packets
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 #endif
 
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock)
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnTsbPdThread();
+
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
@@ -1194,9 +1203,9 @@ private: // Generation and processing of packets
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
-    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     size_t getAvailRcvBufferSizeNoLock() const;
 
 private: // Trace
