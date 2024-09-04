@@ -3440,6 +3440,9 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
         // but between them there's a 30s distance, considered large enough
         // time to not fill a network window.
         enterCS(m_RecvLock);
+        // NOTE: Here is theoretically also the buffer lock required, but this
+        // function is called from acceptAndRespond when no modifications in the
+        // buffer or reading from any thread are for the time being possible.
         m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000, rcv_buffer_udrift);
         m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
         leaveCS(m_RecvLock);
@@ -9187,7 +9190,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime = currtime;
+    m_tsLastRspTime = currtime; // XXX Requires lock m_RecvAckLock?
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
@@ -10348,7 +10351,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
-    m_tsLastRspTime.store(steady_clock::now());
+    m_tsLastRspTime.store(steady_clock::now()); // XXX Requires lock m_RecvAckLock
 
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
@@ -11514,6 +11517,8 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
 
     // In UDT the m_bUserDefinedRTO and m_iRTO were in CCC class.
     // There's nothing in the original code that alters these values.
+
+    // XXX lock on m_RecvAckLock ?
 
     steady_clock::time_point next_exp_time;
     if (m_CongCtl->RTO())
