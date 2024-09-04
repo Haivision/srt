@@ -8031,7 +8031,10 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     }
     if (m_config.bTSBPD || !m_config.bMessageAPI)
     {
-        // The getFirstNonreadSeqNo() function retuens the sequence number of the first packet
+        // NOTE: it's not only about protecting the buffer itself, it's also protecting
+        // the section where the m_iRcvCurrSeqNo is updated.
+        ScopedLock buflock (m_RcvBufferLock);
+        // The getFirstNonreadSeqNo() function returns the sequence number of the first packet
         // that cannot be read. In cases when a message can consist of several data packets,
         // an existing packet of partially available message also cannot be read.
         // If TSBPD mode is enabled, a message must consist of a single data packet only.
