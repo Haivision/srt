@@ -7948,30 +7948,27 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
             leaveCS(m_StatsLock);
         }
         // Call with no arguments - get loss list from internal data.
-        else
+        else if (m_pRcvLossList->getLossLength() > 0)
         {
-            if (m_pRcvLossList->getLossLength() > 0)
+            // this is periodically NAK report; make sure NAK cannot be sent back too often
+
+            // read loss list from the local receiver loss list
+            int32_t *data = new int32_t[m_iMaxSRTPayloadSize / 4];
+            int      losslen;
+            m_pRcvLossList->getLossArray(data, losslen, m_iMaxSRTPayloadSize / 4);
+
+            if (0 < losslen)
             {
-                // this is periodically NAK report; make sure NAK cannot be sent back too often
+                ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
+                ctrlpkt.set_id(m_PeerID);
+                nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
-                // read loss list from the local receiver loss list
-                int32_t *data = new int32_t[m_iMaxSRTPayloadSize / 4];
-                int      losslen;
-                m_pRcvLossList->getLossArray(data, losslen, m_iMaxSRTPayloadSize / 4);
-
-                if (0 < losslen)
-                {
-                    ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
-                    ctrlpkt.set_id(m_PeerID);
-                    nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
-
-                    enterCS(m_StatsLock);
-                    m_stats.rcvr.sentNak.count(1);
-                    leaveCS(m_StatsLock);
-                }
-
-                delete[] data;
+                enterCS(m_StatsLock);
+                m_stats.rcvr.sentNak.count(1);
+                leaveCS(m_StatsLock);
             }
+
+            delete[] data;
         }
 
         // update next NAK time, which should wait enough time for the retansmission, but not too long
