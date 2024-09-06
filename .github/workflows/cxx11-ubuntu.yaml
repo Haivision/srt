@@ -14,6 +14,8 @@ jobs:
       BUILD_WRAPPER_OUT_DIR: sonar-output # Directory where build-wrapper output will be placed
     steps:
     - uses: actions/checkout@v3
+      with:
+         submodules: true
     - name: Install sonar-scanner and build-wrapper
       uses: sonarsource/sonarcloud-github-c-cpp@v2
     - name: configure

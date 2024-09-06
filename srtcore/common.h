@@ -63,6 +63,10 @@ modified by
    // #include <winsock2.h>
    //#include <windows.h>
 #endif
+#include <string_view>
+
+#include "fmt/format.h"
+#include "fmt/ostream.h" // use ffprint with ostringstream
 
 #include "srt.h"
 #include "utilities.h"
@@ -1437,20 +1441,33 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 
 inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
 {
+    using namespace fmt;
     std::ostringstream os;
 
-    os << "[ ";
+    ffprint(os, "[ ");
+
     for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
     {
         int len = CSeqNo::seqoff(i->first, i->second);
-        os << "%" << i->first;
+        ffprint(os, "%", i->first);
         if (len > 1)
-            os << "+" << len;
-        os << " ";
+            ffprint(os, "+", len);
+        ffprint(os, " ");
     }
 
-    os << "]";
+    ffprint(os, "]");
     return os.str();
+}
+
+inline fmt::string_view GroupTypeStr(SRT_GROUP_TYPE gt)
+{
+    if (gt == SRT_GTYPE_BROADCAST)
+        return "broadcast";
+
+    if (gt== SRT_GTYPE_BACKUP)
+        return "backup";
+
+    return "undefined";
 }
 
 } // namespace srt

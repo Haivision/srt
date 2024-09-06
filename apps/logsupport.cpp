@@ -173,7 +173,9 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
 {
-    std::ostringstream son, soff;
+    using namespace fmt;
+
+    memory_buffer son, soff;
 
     for (auto& s: speclist)
     {
@@ -190,13 +192,13 @@ void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
             name = s;
 
         if (on)
-            son << "," << name;
+            ffwrite(son, ",", name);
         else
-            soff << "," << name;
+            ffwrite(soff, ",", name);
     }
 
-    const string& sons = son.str();
-    const string& soffs = soff.str();
+    string sons = ffcat(son);
+    string soffs = ffcat(soff);
 
     w_on = sons.empty() ? string() : sons.substr(1);
     w_off = soffs.empty() ? string() : soffs.substr(1);

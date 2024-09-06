@@ -34,7 +34,6 @@ written by
 #include <functional>
 #include <memory>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 
 #if HAVE_CXX11
@@ -45,6 +44,8 @@ written by
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+
+#include "fmt/format.h"
 
 // -------------- UTILITIES ------------------------
 
@@ -484,9 +485,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::stringstream ss;
-        ss << "Index " << i << "out of range";
-        throw std::runtime_error(ss.str());
+        throw std::runtime_error(fmt::ffcat("Index ", i, "out of range"));
     }
 
 private:
@@ -530,8 +529,8 @@ private:
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op
 {
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    template <class Stream, class Value1, class Value2>
+    Stream& operator<<(Stream& s, const std::pair<Value1, Value2>& v)
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
@@ -571,52 +570,11 @@ namespace any_op
 template <class In>
 inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
 
-// Gluing string of any type, wrapper for operator <<
-
-template <class Stream>
-inline Stream& Print(Stream& in) { return in;}
-
-template <class Stream, class Arg1, class... Args>
-inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
-{
-    sout << std::forward<Arg1>(arg1);
-    return Print(sout, args...);
-}
-
-template <class... Args>
-inline std::string Sprint(Args&&... args)
-{
-    std::ostringstream sout;
-    Print(sout, args...);
-    return sout.str();
-}
-
 // We need to use UniquePtr, in the form of C++03 it will be a #define.
 // Naturally will be used std::move() so that it can later painlessly
 // switch to C++11.
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
-
-template <class Container, class Value = typename Container::value_type, typename... Args> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
-{
-    using namespace srt_pair_op;
-    std::ostringstream os;
-    Print(os, args...);
-    os << "[ ";
-    for (auto i: in)
-        os << Value(i) << " ";
-    os << "]";
-    return os.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    using Value = typename Container::value_type;
-    return Printable(in, Value());
-}
 
 template<typename Map, typename Key>
 auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
@@ -689,38 +647,6 @@ public:
     operator bool () const { return 0!= get(); }
 };
 
-// A primitive one-argument versions of Sprint and Printable
-template <class Arg1>
-inline std::string Sprint(const Arg1& arg)
-{
-    std::ostringstream sout;
-    sout << arg;
-    return sout.str();
-}
-
-// Ok, let it be 2-arg, in case when a manipulator is needed
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
-{
-    std::ostringstream sout;
-    sout << arg1 << arg2;
-    return sout.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
-    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-
-    return os.str();
-}
-
 template<typename Map, typename Key>
 typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
 {
@@ -751,19 +677,57 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 
 #endif
 
+template <class Container, class Value> inline
+std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = "")
+{
+    using namespace fmt;
+    memory_buffer os;
+    ffwrite(os, "[ ");
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        ffwrite(os,ffmt<Value>(*i, fmt), " ");
+    ffwrite(os, "]");
+    return ffcat(os);
+}
+
+// Separate version for pairs, used for std::map
+template <class Container, class Key, class Value> inline
+std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = "", const char* fmtv = "")
+{
+    using namespace srt_pair_op;
+    using namespace fmt;
+    memory_buffer os;
+    ffwrite(os, "[ ");
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        ffwrite(os, ffmt<Key>(i->first, fmtk), ":", ffmt<Value>(i->second, fmtv), " ");
+    ffwrite(os, "]");
+    return ffcat(os);
+}
+
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    return Printable(in, Value());
+}
+
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
 template <class Container> inline
 std::string PrintableMod(const Container& in, const std::string& prefix)
 {
     using namespace srt_pair_op;
+    using namespace fmt;
     typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
+    fmt::memory_buffer os;
+    ffwrite(os, "[ ");
     for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
-        os << prefix << Value(*y) << " ";
-    os << "]";
-    return os.str();
+        ffwrite(os, prefix, Value(*y), " ");
+    ffwrite(os, "]");
+    return ffcat(os);
 }
 
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
@@ -978,36 +942,17 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
+    using namespace fmt;
     if ( size == 0 )
         return "";
 
-    //char buf[256];
-    using namespace std;
+    memory_buffer os;
 
-    ostringstream os;
-
-    // I know, it's funny to use sprintf and ostringstream simultaneously,
-    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
-    // Too noisy. OTOH ostringstream solves the problem of memory allocation
-    // for a string of unpredictable size.
-    //sprintf(buf, "%02X", int(bytes[0]));
-
-    os.fill('0');
-    os.width(2);
-    os.setf(ios::basefield, ios::hex);
-    os.setf(ios::uppercase);
-
-    //os << buf;
-    os << int(bytes[0]);
-
-
-    for (size_t i = 1; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        //sprintf(buf, " %02X", int(bytes[i]));
-        //os << buf;
-        os << int(bytes[i]);
+        ffwrite(os, ffmt<int>(bytes[i], fillzero, width(2), uhex));
     }
-    return os.str();
+    return ffcat(os);
 }
 
 
@@ -1171,10 +1116,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    ostringstream os;
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
+    return fmt::ffmts(sum, fmt::uhex, fmt::fillzero, fmt::width(8));
 }
 
 template <class OutputIterator>

@@ -1,0 +1,3 @@
+[submodule "submodules/fmt"]
+	path = submodules/fmt
+	url = git@github.com:ethouris/fmt.git

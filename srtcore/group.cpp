@@ -15,6 +15,8 @@ extern const int32_t SRT_DEF_VERSION;
 
 namespace srt {
 
+static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
+
 int32_t CUDTGroup::s_tokenGen = 0;
 
 // [[using locked(this->m_GroupLock)]];
@@ -342,7 +344,7 @@ void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
 void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     HLOGC(gmlog.Debug,
-          log << "GROUP $" << id() << " OPTION: #" << optName
+          log << "GROUP $" << id() << " OPTION: #" << int(optName)
               << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
 
     switch (optName)
@@ -1096,7 +1098,7 @@ int CUDTGroup::send(const char* buf, int len, SRT_MSGCTRL& w_mc)
     switch (m_type)
     {
     default:
-        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << m_type);
+        LOGC(gslog.Error, log << "CUDTGroup::send: not implemented for type #" << (int)m_type);
         throw CUDTException(MJ_SETUP, MN_INVAL, 0);
 
     case SRT_GTYPE_BROADCAST:
@@ -2279,8 +2281,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         if (!m_bOpened || !m_bConnected)
         {
             LOGC(grlog.Error,
-                 log << boolalpha << "grp/recv: $" << id() << ": ABANDONING: opened=" << m_bOpened
-                     << " connected=" << m_bConnected);
+                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << fmt_onoff(m_bOpened)
+                     << " connected" << fmt_onoff(m_bConnected));
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 

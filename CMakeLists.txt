@@ -52,6 +52,8 @@ set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
 include(GNUInstallDirs)
 
+add_subdirectory(submodules/fmt)
+
 # The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
 
@@ -1025,6 +1027,7 @@ list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
 add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt} ${SOURCES_haicrypt} ${SOURCES_common})
+add_dependencies(srt_virtual fmt)
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
@@ -1057,6 +1060,7 @@ if (srt_libspec_shared)
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
+	target_link_libraries(${TARGET_srt}_shared PRIVATE fmt)
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
@@ -1082,6 +1086,7 @@ endif()
 
 if (srt_libspec_static)
 	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+    target_link_libraries(${TARGET_srt}_static PRIVATE fmt)
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
@@ -1115,6 +1120,7 @@ if (srt_libspec_static)
 endif()
 
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
+target_include_directories(srt_virtual PRIVATE submodules/fmt/include)
 
 if (MICROSOFT)
 	if (OPENSSL_USE_STATIC_LIBS)
@@ -1281,6 +1287,8 @@ macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+    target_include_directories(${name} PRIVATE submodules/fmt/include)
+	#message(STATUS "PROGRAM: ${name} with apps, common, fmt; SOURCES: ${ARGN}")
 endmacro()
 
 macro(srt_add_program name)
@@ -1364,6 +1372,8 @@ if (ENABLE_APPS)
 	# library should be changed into a static one and made useful
 	# for users.
 	add_library(srtsupport_virtual OBJECT ${SOURCES_support})
+	add_dependencies(srtsupport_virtual fmt)
+	target_include_directories(srtsupport_virtual PRIVATE submodules/fmt/include)
 	srt_set_stdcxx(srtsupport_virtual "${USE_CXX_STD_APP}")
 	set (VIRTUAL_srtsupport $<TARGET_OBJECTS:srtsupport_virtual>)
 
@@ -1404,6 +1414,7 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(utility-test)
 		srt_set_stdcxx(utility-test "${USE_CXX_STD_APP}")
+	    target_link_libraries(utility-test PRIVATE fmt)
 		if (NOT WIN32)
 			# This program is symlinked under git-cygwin.
 			# Avoid misleading syntax error.

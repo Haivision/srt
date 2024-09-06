@@ -215,7 +215,7 @@ inline EncryptionKeySpec GetEncryptionKeySpec(int32_t msgno)
 
 const int32_t PUMASK_SEQNO_PROBE = 0xF;
 
-std::string PacketMessageFlagStr(uint32_t msgno_field);
+fmt::memory_buffer FmtPacketMessageFlag(uint32_t msgno_field);
 
 class CPacket
 {
@@ -391,11 +391,11 @@ public:
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if ENABLE_LOGGING
-    std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
-    std::string Info();
+    fmt::memory_buffer FmtMessageFlag() { return FmtPacketMessageFlag(m_nHeader[SRT_PH_MSGNO]); }
+    fmt::memory_buffer Info();
 #else
-    std::string           MessageFlagStr() { return std::string(); }
-    std::string           Info() { return std::string(); }
+    fmt::memory_buffer FmtMessageFlag() { return fmt::memory_buffer(); }
+    fmt::memory_buffer Info() { return fmt::memory_buffer(); }
 #endif
 };
 
