@@ -330,3 +330,157 @@ TEST(Bonding, CloseGroupAndSocket)
     listen_promise.wait();
 }
 
+TEST(Bonding, Options)
+{
+    using namespace std;
+    using namespace srt;
+
+    TestInit srtinit;
+
+    // Create a group
+    const SRTSOCKET grp = srt_create_group(SRT_GTYPE_BROADCAST);
+
+    // rendezvous shall not be allowed to be set on the group
+    // XXX actually it is possible, but no one tested it. POSTPONE.
+    //int yes = 1;
+    //EXPECT_EQ(srt_setsockflag(grp, SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_ERROR);
+
+#ifdef SRT_ENABLE_ENCRYPTION
+    string pass = "longenoughpassword";
+    // passphrase should be ok.
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PASSPHRASE, pass.c_str(), pass.size()), SRT_ERROR);
+
+    uint32_t val = 16;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, sizeof val), SRT_ERROR);
+
+#ifdef ENABLE_AEAD_API_PREVIEW
+    val = 1;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_CRYPTOMODE, &val, sizeof val), SRT_ERROR);
+#endif
+#endif
+
+    int lat = 500;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_RCVLATENCY, &lat, sizeof lat), SRT_ERROR);
+
+    mutex mx;
+    condition_variable latch;
+    atomic<bool> started {false};
+
+    thread accept_and_close { [&]() {
+
+        unique_lock<mutex> ux(mx);
+
+        SRTSOCKET lsn = srt_create_socket();
+#ifdef SRT_ENABLE_ENCRYPTION
+        EXPECT_NE(srt_setsockflag(lsn, SRTO_PASSPHRASE, pass.c_str(), pass.size()), SRT_ERROR);
+#endif
+        int allow = 1;
+        ASSERT_NE(srt_setsockflag(lsn, SRTO_GROUPCONNECT, &allow, sizeof allow), SRT_ERROR);
+        sockaddr_any sa = CreateAddr("127.0.0.1", 5555, AF_INET);
+        ASSERT_NE(srt_bind(lsn, sa.get(), sa.size()), SRT_ERROR);
+        ASSERT_NE(srt_listen(lsn, 1), SRT_ERROR);
+        started = true;
+
+        // First wait - until it's let go with accepting
+        latch.wait(ux);
+
+        sockaddr_any revsa;
+        SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
+        ASSERT_NE(gs, SRT_ERROR);
+
+        // Connected, wait to close
+        latch.wait(ux);
+
+        srt_close(gs);
+        srt_close(lsn);
+    }};
+
+    // Give the thread a chance to start
+    this_thread::yield();
+
+    while (!started)
+    {
+        // In case of a bad luck, just wait for the thread to
+        // acquire the mutex before you do
+        this_thread::sleep_for(chrono::milliseconds(10));
+    }
+
+    // Wait for the possibility to connect
+    {
+        // Make sure that the thread reached the wait() call.
+        unique_lock<mutex> ux(mx);
+        latch.notify_all();
+    }
+
+    // Now the thread is accepting, so we call the connect.
+    sockaddr_any sa = CreateAddr("127.0.0.1", 5555, AF_INET);
+    SRTSOCKET member = srt_connect(grp, sa.get(), sa.size());
+
+    // We've released the mutex and signaled the CV, so accept should proceed now.
+    // Exit from srt_connect() means also exit from srt_accept().
+
+    EXPECT_NE(member, SRT_INVALID_SOCK);
+
+    // conenct_res should be a socket
+    EXPECT_NE(member, 0); // XXX Change to SRT_SOCKID_CONNREQ
+
+    // Now get the option value from the group
+
+    int revlat = -1;
+    int optsize = sizeof revlat;
+    EXPECT_NE(srt_getsockflag(grp, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
+    EXPECT_EQ(revlat, 500);
+
+    revlat = -1;
+    optsize = sizeof revlat;
+    // Expect the same value set on the member socket
+    EXPECT_NE(srt_getsockflag(member, SRTO_RCVLATENCY, &revlat, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof revlat);
+    EXPECT_EQ(revlat, 500);
+
+    // Individual socket option modified on group
+    int ohead = 12;
+    optsize = sizeof ohead;
+    EXPECT_NE(srt_setsockflag(grp, SRTO_OHEADBW, &ohead, optsize), SRT_ERROR);
+
+    // Modifyting a post-option should be possible on a socket
+    ohead = 11;
+    optsize = sizeof ohead;
+    EXPECT_NE(srt_setsockflag(member, SRTO_OHEADBW, &ohead, optsize), SRT_ERROR);
+
+    // But getting the option value should be equal to the group setting
+    EXPECT_NE(srt_getsockflag(grp, SRTO_OHEADBW, &ohead, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof ohead);
+    EXPECT_EQ(ohead, 12);
+
+#if SRT_ENABLE_ENCRYPTION
+
+    uint32_t kms = -1;
+
+    EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
+
+    EXPECT_NE(srt_getsockflag(grp, SRTO_PBKEYLEN, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, 16);
+
+#ifdef ENABLE_AEAD_API_PREVIEW
+    EXPECT_NE(srt_getsockflag(grp, SRTO_CRYPTOMODE, &kms, &optsize), SRT_ERROR);
+    EXPECT_EQ(optsize, sizeof kms);
+    EXPECT_EQ(kms, 1);
+#endif
+#endif
+
+    // We're done, the thread can close connection and exit
+    {
+        // Make sure that the thread reached the wait() call.
+        std::unique_lock<std::mutex> ux(mx);
+        latch.notify_all();
+    }
+
+    accept_and_close.join();
+    srt_close(grp);
+}
+

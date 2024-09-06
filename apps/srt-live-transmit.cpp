@@ -65,7 +65,7 @@
 #include <thread>
 #include <list>
 
-
+#include "srt_compat.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"

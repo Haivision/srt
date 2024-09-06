@@ -305,9 +305,12 @@ TEST(TestFEC, Connection)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
-    SRTSOCKET la[] = { l };
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
+    SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
@@ -361,6 +364,9 @@ TEST(TestFEC, ConnectionReorder)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
@@ -417,6 +423,9 @@ TEST(TestFEC, ConnectionFull1)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
@@ -471,6 +480,9 @@ TEST(TestFEC, ConnectionFull2)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
@@ -527,9 +539,12 @@ TEST(TestFEC, ConnectionMess)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
-    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
@@ -579,6 +594,9 @@ TEST(TestFEC, ConnectionForced)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
@@ -630,6 +648,9 @@ TEST(TestFEC, RejectionConflict)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
 
@@ -670,6 +691,9 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -715,6 +739,9 @@ TEST(TestFEC, RejectionIncomplete)
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -809,7 +836,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -886,7 +913,7 @@ TEST_F(TestFECRebuilding, Rebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -904,7 +931,7 @@ TEST_F(TestFECRebuilding, Rebuild)
 
     // Set artificially the SN_REXMIT flag in the skipped source packet
     // because the rebuilt packet shall have REXMIT flag set.
-    skipped.m_iMsgNo |= MSGNO_REXMIT::wrap(true);
+    skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
 
     // Compare the header
     EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);

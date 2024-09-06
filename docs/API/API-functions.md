@@ -174,6 +174,8 @@ Since SRT v1.5.0.
 | [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
+See the full list in [Rejection Reason Codes](./rejection-codes.md).
+
 <h4 id="error-codes">Error Codes</h4>
 
 | *Error Code*                                      | *Description*                                                                                                  |
@@ -678,19 +680,19 @@ and group connection by checking the `SRTGROUP_MASK` bit on the returned
 successful value. There are some important differences to single socket
 connections:
 
-1. Accepting a group connection can be done only once per connection. The
-actual connection reporter is a socket, like before, but once you call
-`srt_accept` and receive this group ID, it is the group considered connected,
-and any other member connections of the same group will be handled in the
-background.
+1. Accepting a group connection can be done only once per connection, even
+though particular member connections can get broken or established while
+the group is connected. The actual connection reporter (listener) is a socket,
+like before, but once you call `srt_accept` and receive this group ID, it is
+the group considered connected, and any member connections of the same group
+will be handled in the background.
 
 2. If a group was extracted from the `srt_accept` call, the address reported in
 `addr` parameter is still the address of the connection that has triggered the
-group connection extraction. While the group is connected, potentially new
-connections may be added and any existing ones get broken at any time. The
-information about all member connections, that are active at the moment, can be
-obtained at any time through [`srt_group_data`](#srt_group_data) or the data
-filled by [`srt_sendmsg2`](#srt_sendmsg2) and [`srt_recvmsg2`](#srt_recvmsg2)
+group connection extraction. The information about all member links in the
+group at the moment can be obtained at any time through
+[`srt_group_data`](#srt_group_data) or the data filled by
+[`srt_sendmsg2`](#srt_sendmsg2) and [`srt_recvmsg2`](#srt_recvmsg2)
 in the [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure.
 
 3. Listening sockets are not bound to groups anyhow. You can allow multiple

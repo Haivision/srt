@@ -68,8 +68,6 @@ modified by
 #include "packet.h"
 #include "threadname.h"
 
-#include <srt_compat.h> // SysStrError
-
 using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;

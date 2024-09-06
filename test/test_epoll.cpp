@@ -67,7 +67,7 @@ TEST(CEPoll, WaitEmptyCall)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -90,7 +90,7 @@ TEST(CEPoll, UWaitEmptyCall)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no = 0;
@@ -113,7 +113,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -147,7 +147,7 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -175,7 +175,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
@@ -198,7 +198,7 @@ TEST(CEPoll, HandleEpollEvent)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -259,7 +259,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     srt::TestInit srtinit;
 
     // 1. Prepare client
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     ASSERT_NE(client_sock, SRT_ERROR);
 
     const int yes SRT_ATR_UNUSED = 1;
@@ -281,7 +281,7 @@ TEST(CEPoll, NotifyConnectionBreak)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa_client.sin_addr), 1);
 
     // 2. Prepare server
-    srt::UniqueSocket server_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(server_sock, "server_sock", srt_create_socket());
     ASSERT_NE(server_sock, SRT_ERROR);
 
     ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
@@ -373,7 +373,7 @@ TEST(CEPoll, HandleEpollEvent2)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -434,7 +434,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int yes = 1;
@@ -484,7 +484,7 @@ TEST(CEPoll, ThreadedUpdate)
 {
     srt::TestInit srtinit;
 
-    srt::UniqueSocket client_sock = srt_create_socket();
+    MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
     EXPECT_NE(client_sock, SRT_ERROR);
 
     const int no  = 0;
