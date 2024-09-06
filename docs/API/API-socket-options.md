@@ -58,7 +58,7 @@ Exchange for the initial key is done in the handshake.
 
 - `SRT_KM_S_SECURED` (`2`): KM exchange was successful and the data will be sent
 encrypted and will be decrypted by the receiver. This state is only possible on
-both sides in both directions simultaneously.
+both sides in both directions simultaneously. Any unencrypted packet will be dropped by the receiver.
 
 - `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`),
 then it means that the sending party has set a passphrase, but the peer did not.
@@ -301,7 +301,8 @@ connection is rejected - **however** you may also change the value of this
 option for the accepted socket in the listener callback (see `srt_listen_callback`)
 if an appropriate instruction was given in the Stream ID.
 
-Currently supported congestion controllers are designated as "live" and "file"
+Currently supported congestion controllers are designated as "live" and "file",
+which correspond to the Live and File modes.
 
 Note that it is not recommended to change this option manually, but you should
 rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
@@ -772,7 +773,8 @@ for more details.
 | `SRTO_LATENCY`        | 1.0.2 | pre      | `int32_t`  | ms     | 120 *    | 0..    | RW  | GSD    |
 
 This option sets both [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY) and [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY)
-to the same value specified.
+to the same value specified. Note that the default value for `SRTO_RCVLATENCY` is modified by the
+[`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
 
 Prior to SRT version 1.3.0 `SRTO_LATENCY` was the only option to set the latency.
 However it is effectively equivalent to setting `SRTO_PEERLATENCY` in the sending direction
@@ -1212,6 +1214,8 @@ considered broken on timeout.
 The latency value (as described in [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY)) provided by the sender
 side as a minimum value for the receiver.
 
+This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
+
 Reading the value of the option on an unconnected socket reports the configured value.
 Reading the value on a connected socket reports the effective receiver buffering latency of the peer.
 
@@ -1296,15 +1300,21 @@ This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabl
 **Default value**: 120 ms in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
 The latency value defines the **minimum** receiver buffering delay before delivering an SRT data packet
-from a receiving SRT socket to a receiving application. The provided value is used in the connection establishment (handshake exchange) stage
-to fix the end-to-end latency of the transmission. The effective end-to-end latency `L` will be fixed
-as the network transmission time of the final handshake packet (~1/2 RTT) plus the **negotiated** latency value `Ln`.
-Data packets will stay in the receiver buffer for at least `L` microseconds since the timestamp of the
-packet, independent of the actual network transmission times (RTT variations) of these packets.
+from a receiving SRT socket to a receiving application.
 
 The actual value of the receiver buffering delay `Ln` (the negotiated latency) used on a connection
 is determined by the negotiation in the connection establishment (handshake exchange) phase as the maximum of the
 `SRTO_RCVLATENCY` value and the value of [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY) set by the peer.
+
+The general idea for the latency mechanism is to keep the time distance between two consecutive
+received packets the same as the time when these same packets were scheduled for sending by the
+sender application (or per the time explicitly declared when sending - see
+[`srt_sendmsg2`](API-functions.md#srt_sendmsg2) for details). This keeps any packets that have arrived
+earlier than their delivery time in the receiver buffer until their delivery time comes. This should
+compensate for any jitter in the network and provides an extra delay needed for a packet retransmission.
+
+For detailed information on how the latency setting influences the actual packet delivery time and
+how this time is defined, refer to the [latency documentation](../features/latency.md).
 
 Reading the `SRTO_RCVLATENCY` value on a socket after the connection is established provides the actual (negotiated)
 latency value `Ln`.
@@ -1638,9 +1648,19 @@ enabled in sender if receiver supports it.
 
 Sets the transmission type for the socket, in particular, setting this option
 sets multiple other parameters to their default values as required for a
-particular transmission type.
+particular transmission type. This sets the following options to their defaults
+in particular mode:
 
-Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
+* [`SRTO_CONGESTION`](#SRTO_CONGESTION)
+* [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)
+* [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)
+* [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY), also set as [`SRTO_LATENCY`](#SRTO_LATENCY)
+* [`SRTO_TLPKTDROP`](#SRTO_TLPKTDROP)
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+
+
+
+Values defined by enum [`SRT_TRANSTYPE`](#SRT_TRANSTYPE).
 
 [Return to list](#list-of-options)
 

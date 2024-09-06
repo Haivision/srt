@@ -70,6 +70,9 @@ public:
         };
         auto accept_res = async(launch::async, accept_async, m_listen_sock);
 
+        // Make sure the thread was kicked
+        this_thread::yield();
+
         const int connect_res = Connect();
         EXPECT_EQ(connect_res, SRT_SUCCESS);
 
@@ -188,9 +191,12 @@ const OptionTestEntry g_test_matrix_options[] =
     { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1} },
     //SRTO_LINGER
     { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
-    //SRTO_MAXBW
+    { SRTO_MAXBW,                 "SRTO_MAXBW", RestrictionType::POST, sizeof(int64_t),      int64_t(-1),  INT64_MAX, int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+#ifdef ENABLE_MAXREXMITBW
+    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),     int64_t(-1), INT64_MAX,  int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+#endif
     { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
-    //SRTO_MININPUTBW
+    { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)}},
     { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
     { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75} },
     { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
@@ -234,12 +240,12 @@ template<class ValueType>
 void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, const char* desc)
 {
     ValueType opt_val;
-    int opt_len = 0;
+    int opt_len = (int) entry.opt_len;
     EXPECT_EQ(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
     EXPECT_EQ(opt_val, value) << desc << ": Wrong " << entry.optname << " value " << opt_val;
-    EXPECT_EQ(opt_len, entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
+    EXPECT_EQ(opt_len, (int) entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
 }
 
 typedef char const* strptr;
@@ -252,7 +258,7 @@ void CheckGetSockOpt<strptr>(const OptionTestEntry& entry, SRTSOCKET sock, const
         << "Getting " << entry.optname << " returned error: " << srt_getlasterror_str();
 
     EXPECT_EQ(strncmp(opt_val, value, min(opt_len, (int)entry.opt_len)), 0) << desc << ": Wrong " << entry.optname << " value " << opt_val;
-    EXPECT_EQ(opt_len, entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
+    EXPECT_EQ(opt_len, (int) entry.opt_len) << desc << "Wrong " << entry.optname << " value length";
 }
 
 template<class ValueType>
@@ -847,6 +853,29 @@ TEST_F(TestSocketOptions, StreamIDWrongLen)
         buffer[i] = 'a' + i % 25;
 
     EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, buffer, CSrtConfig::MAX_SID_LENGTH+1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+}
+
+//Check if setting -1 as optlen returns an error 
+TEST_F(TestSocketOptions, StringOptLenInvalid)
+{
+    const string test_string = "test1234567";
+    const string srto_congestion_string ="live";
+    const string fec_config = "fec,cols:10,rows:10";
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_BINDTODEVICE, test_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_CONGESTION, srto_congestion_string.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_PACKETFILTER, fec_config.c_str(), -1), SRT_ERROR);
+    EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
+
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_PASSPHRASE, test_string.c_str(), -1), SRT_ERROR);
     EXPECT_EQ(srt_getlasterror(NULL), SRT_EINVPARAM);
 }
 

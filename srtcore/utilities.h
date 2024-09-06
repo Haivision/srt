@@ -35,6 +35,7 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -236,17 +237,20 @@ written by
 
 #endif
 
-// Hardware <--> Network (big endian) convention
+/// Hardware --> Network (big-endian) byte order conversion
+/// @param size source length in four octets
 inline void HtoNLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = htonl(src[i]);
+        dst[i] = htobe32(src[i]);
 }
 
+/// Network (big-endian) --> Hardware byte order conversion
+/// @param size source length in four octets
 inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = ntohl(src[i]);
+        dst[i] = be32toh(src[i]);
 }
 
 // Hardware <--> Intel (little endian) convention
@@ -575,7 +579,7 @@ inline Stream& Print(Stream& in) { return in;}
 template <class Stream, class Arg1, class... Args>
 inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 {
-    sout << arg1;
+    sout << std::forward<Arg1>(arg1);
     return Print(sout, args...);
 }
 
@@ -682,7 +686,7 @@ public:
     bool operator==(const element_type* two) const { return get() == two; }
     bool operator!=(const element_type* two) const { return get() != two; }
 
-    operator bool () { return 0!= get(); }
+    operator bool () const { return 0!= get(); }
 };
 
 // A primitive one-argument versions of Sprint and Printable
@@ -1417,6 +1421,7 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
 #define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_ARG(type, name, expr) void set_##name(type arg) { expr; }
 #define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& set_##name(type arg) { field = arg; return *this; }
 #define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
