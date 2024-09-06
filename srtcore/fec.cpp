@@ -598,6 +598,9 @@ void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
     g.flag_clip = g.flag_clip ^ kflg;
     g.timestamp_clip = g.timestamp_clip ^ timestamp_hw;
 
+    HLOGC(pflog.Debug, log << "FEC CLIP: data pkt.size=" << payload_size
+            << " to a clip buffer size=" << payloadSize());
+
     // Payload goes "as is".
     for (size_t i = 0; i < payload_size; ++i)
     {
@@ -852,7 +855,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     loss_seqs_t irrecover_row, irrecover_col;
 
 #if ENABLE_HEAVY_LOGGING
-    static string hangname [] = {"SUCCESS", "PAST", "CRAZY", "NOT-DONE"};
+    static string hangname [] = {"NOT-DONE", "SUCCESS", "PAST", "CRAZY"};
 #endif
 
     // Required for EHangStatus

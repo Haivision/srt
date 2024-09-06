@@ -29,7 +29,7 @@
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
 | [srt_listen](#srt_listen)                         | Sets up the listening state on a socket                                                                        |
 | [srt_accept](#srt_accept)                         | Accepts a connection; creates/returns a new socket or group ID                                                 |
-| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size               |
+| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size         |
 | [srt_listen_callback](#srt_listen_callback)       | Installs/executes a callback hook on a socket created to handle the incoming connection <br/> on a listening socket  |
 | [srt_connect](#srt_connect)                       | Connects a socket or a group to a remote party with a specified address and port                               |
 | [srt_connect_bind](#srt_connect_bind)             | Same as [`srt_bind`](#srt_bind) then [`srt_connect`](#srt_connect) if called with socket [`u`](#u)             |
@@ -167,14 +167,16 @@ Since SRT v1.5.0.
 | [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
 | [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                    |
 | [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                          |
-| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                |
+| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                  |
 | [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
 | [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
-| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
-| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
-| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
-| [SRT_REJ_CONFIG](#SRT_REJ_CONFIG)        | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
-| <img width=290px height=1px/>                |           |                                                                                                                |
+| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                               |
+| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                                 |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                                 |
+| [SRT_REJ_CONFIG](#SRT_REJ_CONFIG)            | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
+| <img width=290px height=1px/>                |           |                                                                                                                  |
+
+See the full list in [Rejection Reason Codes](./rejection-codes.md).
 
 <h4 id="error-codes">Error Codes</h4>
 
@@ -1887,7 +1889,8 @@ call [`srt_sendmsg2`](#srt_sendmsg) or [`srt_recvmsg2`](#srt_recvmsg2) function
 for a group, you should pass an array here so that you can retrieve the status of
 particular member sockets. If you pass an array that is too small, your `grpdata_size`
 field will be rewritten with the current number of members, but without filling in
-the array. For details, see the [SRT Connection Bonding: Quick Start](../features/bonding-intro.md) and
+the array; otherwise both fields are updated to reflect the current connection state
+of the group. For details, see the [SRT Connection Bonding: Quick Start](../features/bonding-intro.md) and
 [SRT Connection Bonding: Socket Groups](../features/socket-groups.md) documents.
 
 **Helpers for [`SRT_MSGCTRL`](#SRT_MSGCTRL):**

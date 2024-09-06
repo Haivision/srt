@@ -134,6 +134,8 @@ public:
    static int getBandwidth_in(const int* window, int* replica, size_t psize);
 
    static void initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size);
+
+   static int ceilPerMega(double value, double count);
 };
 
 template <size_t ASIZE = 16, size_t PSIZE = 16>
@@ -242,7 +244,7 @@ public:
    void probeArrival(const CPacket& pkt, bool unordered)
    {
        SRT_ASSERT(m_zHeaderSize != 0 && m_zPayloadSize != 0);
-       const int inorder16 = pkt.m_iSeqNo & PUMASK_SEQNO_PROBE;
+       const int inorder16 = pkt.seqno() & PUMASK_SEQNO_PROBE;
 
        // for probe1, we want 16th packet
        if (inorder16 == 0)
@@ -264,7 +266,7 @@ public:
    void probe1Arrival(const CPacket& pkt, bool unordered)
    {
        SRT_ASSERT(m_zHeaderSize != 0 && m_zPayloadSize != 0);
-       if (unordered && pkt.m_iSeqNo == m_Probe1Sequence)
+       if (unordered && pkt.seqno() == m_Probe1Sequence)
        {
            // Reset the starting probe into "undefined", when
            // a packet has come as retransmitted before the
@@ -274,7 +276,7 @@ public:
        }
 
        m_tsProbeTime = sync::steady_clock::now();
-       m_Probe1Sequence = pkt.m_iSeqNo; // Record the sequence where 16th packet probe was taken
+       m_Probe1Sequence = pkt.seqno(); // Record the sequence where 16th packet probe was taken
    }
 
    /// Record the arrival time of the second probing packet and the interval between packet pairs.
@@ -290,7 +292,7 @@ public:
        // expected packet pair, behave as if the 17th packet was lost.
 
        // no start point yet (or was reset) OR not very next packet
-       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.m_iSeqNo)
+       if (m_Probe1Sequence == SRT_SEQNO_NONE || CSeqNo::incseq(m_Probe1Sequence) != pkt.seqno())
            return;
 
        // Grab the current time before trying to acquire

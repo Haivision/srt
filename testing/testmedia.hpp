@@ -29,8 +29,6 @@ extern std::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
-using namespace std;
-
 const srt_logging::LogFA SRT_LOGFA_APP = 10;
 extern srt_logging::Logger applog;
 
@@ -57,7 +55,7 @@ protected:
 
     struct ConnectionBase
     {
-        string host;
+        std::string host;
         int port;
         int weight = 0;
         SRTSOCKET socket = SRT_INVALID_SOCK;
@@ -65,7 +63,7 @@ protected:
         srt::sockaddr_any target;
         int token = -1;
 
-        ConnectionBase(string h, int p): host(h), port(p), source(AF_INET) {}
+        ConnectionBase(std::string h, int p): host(h), port(p), source(AF_INET) {}
     };
 
     struct Connection: ConnectionBase
@@ -76,7 +74,7 @@ protected:
         int error = SRT_SUCCESS;
         int reason = SRT_REJ_UNKNOWN;
 
-        Connection(string h, int p): ConnectionBase(h, p) {}
+        Connection(std::string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
 #if ENABLE_BONDING
@@ -101,15 +99,15 @@ protected:
     int m_timeout = 0; //< enforces using SRTO_SNDTIMEO or SRTO_RCVTIMEO, depending on @a m_direction
     bool m_tsbpdmode = true;
     int m_outgoing_port = 0;
-    string m_mode;
-    string m_adapter;
-    map<string, string> m_options; // All other options, as provided in the URI
+    std::string m_mode;
+    std::string m_adapter;
+    std::map<std::string, std::string> m_options; // All other options, as provided in the URI
     SRT_TRANSTYPE m_transtype = SRTT_LIVE;
-    vector<Connection> m_group_nodes;
-    string m_group_type;
-    string m_group_config;
+    std::vector<Connection> m_group_nodes;
+    std::string m_group_type;
+    std::string m_group_config;
 #if ENABLE_BONDING
-    vector<SRT_SOCKGROUPDATA> m_group_data;
+    std::vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER
     int32_t m_group_seqno = -1;
 
@@ -118,7 +116,7 @@ protected:
         int32_t sequence;
         bytevector packet;
     };
-    map<SRTSOCKET, ReadPos> m_group_positions;
+    std::map<SRTSOCKET, ReadPos> m_group_positions;
     SRTSOCKET m_group_active; // The link from which the last packet was delivered
 #endif
 #endif
@@ -132,8 +130,8 @@ protected:
     void UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpdata_size);
 
 public:
-    void InitParameters(string host, string path, map<string,string> par);
-    void PrepareListener(string host, int port, int backlog);
+    void InitParameters(std::string host, std::string path, std::map<std::string,std::string> par);
+    void PrepareListener(std::string host, int port, int backlog);
     void StealFrom(SrtCommon& src);
     void AcceptNewClient();
 
@@ -151,22 +149,22 @@ public:
 
 protected:
 
-    void Error(string src, int reason = SRT_REJ_UNKNOWN, int force_result = 0);
-    void Init(string host, int port, string path, map<string,string> par, SRT_EPOLL_OPT dir);
+    void Error(std::string src, int reason = SRT_REJ_UNKNOWN, int force_result = 0);
+    void Init(std::string host, int port, std::string path, std::map<std::string,std::string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
     virtual int ConfigurePost(SRTSOCKET sock);
     virtual int ConfigurePre(SRTSOCKET sock);
 
-    void OpenClient(string host, int port);
+    void OpenClient(std::string host, int port);
 #if ENABLE_BONDING
     void OpenGroupClient();
 #endif
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
-    void ConnectClient(string host, int port);
-    void SetupRendezvous(string adapter, string host, int port);
+    void ConnectClient(std::string host, int port);
+    void SetupRendezvous(std::string adapter, std::string host, int port);
 
-    void OpenServer(string host, int port, int backlog = 1)
+    void OpenServer(std::string host, int port, int backlog = 1)
     {
         PrepareListener(host, port, backlog);
         if (transmit_accept_hook_fn)
@@ -176,7 +174,7 @@ protected:
         AcceptNewClient();
     }
 
-    void OpenRendezvous(string adapter, string host, int port)
+    void OpenRendezvous(std::string adapter, std::string host, int port)
     {
         PrepareClient();
         SetupRendezvous(adapter, host, port);
@@ -285,11 +283,11 @@ class SrtModel: public SrtCommon
 public:
     bool is_caller = false;
     bool is_rend = false;
-    string m_host;
+    std::string m_host;
     int m_port = 0;
 
 
-    SrtModel(string host, int port, map<string,string> par);
+    SrtModel(std::string host, int port, std::map<std::string,std::string> par);
     void Establish(std::string& w_name);
 
     void Close()
@@ -321,7 +319,7 @@ class UdpSource: public virtual Source, public virtual UdpCommon
     bool eof = true;
 public:
 
-    UdpSource(string host, int port, const map<string,string>& attr);
+    UdpSource(std::string host, int port, const std::map<std::string,std::string>& attr);
 
     MediaPacket Read(size_t chunk) override;
 
@@ -332,7 +330,7 @@ public:
 class UdpTarget: public virtual Target, public virtual UdpCommon
 {
 public:
-    UdpTarget(string host, int port, const map<string,string>& attr);
+    UdpTarget(std::string host, int port, const std::map<std::string,std::string>& attr);
 
     void Write(const MediaPacket& data) override;
     bool IsOpen() override { return m_sock != -1; }
@@ -342,7 +340,7 @@ public:
 class UdpRelay: public Relay, public UdpSource, public UdpTarget
 {
 public:
-    UdpRelay(string host, int port, const map<string,string>& attr):
+    UdpRelay(std::string host, int port, const std::map<std::string,std::string>& attr):
         UdpSource(host, port, attr),
         UdpTarget(host, port, attr)
     {
