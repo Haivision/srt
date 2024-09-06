@@ -305,7 +305,7 @@ that is, over a direct connection.
 
 The general idea of groups is that there can be multiple sockets belonging
 to a group, and various operations, normally done on single sockets, can
-be simply done on a group. How an operation done on a group is then 
+be simply done on a group. How an operation done on a group is then
 implemented by doing operations on sockets, depends on the group type and
 the operation itself.
 

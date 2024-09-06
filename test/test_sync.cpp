@@ -159,7 +159,7 @@ TEST(SyncRandom, GenRandomInt)
     {
         const int rand_val = genRandomInt(0, int(mn.size()) - 1);
         ASSERT_GE(rand_val, 0);
-        ASSERT_LT(rand_val, mn.size());
+        ASSERT_LT(rand_val, (int) mn.size());
         ++mn[rand_val];
     }
 
@@ -385,9 +385,9 @@ TEST(SyncEvent, WaitForNotifyOne)
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        CUniqueSync cc (*mutex, *cond);
-        return cc.wait_for(timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        CUniqueSync cc (*m, *cv);
+        return cc.wait_for(tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -406,9 +406,9 @@ TEST(SyncEvent, WaitNotifyOne)
     Condition cond;
     cond.init();
 
-    auto wait_async = [](Condition* cond, Mutex* mutex) {
-        UniqueLock lock(*mutex);
-        return cond->wait(lock);
+    auto wait_async = [](Condition* cv, Mutex* m) {
+        UniqueLock lock(*m);
+        return cv->wait(lock);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
@@ -432,9 +432,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     srt::sync::atomic<bool> resource_ready(true);
 
-    auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
-        UniqueLock lock(*mutex);
-        if (cond->wait_for(lock, timeout) && resource_ready)
+    auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
+        UniqueLock lock(*m);
+        if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
@@ -445,7 +445,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
-    future_t future_result[2] = {
+    std::array<future_t, 2> future_result = {
         async(launch::async, wait_async, &cond, &mutex, timeout, 0),
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
@@ -462,9 +462,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(500))),
-        move(future_result[1].wait_for(chrono::microseconds(500)))
+    std::array<wait_t, 2> wait_state = {
+        future_result[0].wait_for(chrono::microseconds(500)),
+        future_result[1].wait_for(chrono::microseconds(500))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
@@ -536,9 +536,9 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -565,9 +565,9 @@ TEST(SyncEvent, WaitForNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -587,7 +587,8 @@ TEST(SyncEvent, WaitForNotifyAll)
  /*****************************************************************************/
 void* dummythread(void* param)
 {
-    *(bool*)(param) = true;
+    auto& thread_finished = *(srt::sync::atomic<bool>*)param;
+    thread_finished = true;
     return nullptr;
 }
 
@@ -607,6 +608,91 @@ TEST(SyncThread, Joinable)
     foo.join();
     EXPECT_FALSE(foo.joinable());
 }
+
+/*****************************************************************************/
+/*
+ * SharedMutex
+ */
+ /*****************************************************************************/
+TEST(SharedMutex, LockWriteRead)
+{
+    SharedMutex mut;
+        
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock_shared());
+
+}
+
+TEST(SharedMutex, LockReadWrite)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+}
+
+TEST(SharedMutex, LockReadTwice)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    mut.lock_shared();
+    EXPECT_TRUE(mut.try_lock_shared());
+}
+
+TEST(SharedMutex, LockWriteTwice)
+{
+    SharedMutex mut;
+
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockWrite)
+{
+    SharedMutex mut;
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+    mut.unlock();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockRead)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+    mut.unlock_shared();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockedReadCount)
+{
+    SharedMutex mut;
+    int count = 0;
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    EXPECT_TRUE(mut.try_lock());
+}
+
 
 /*****************************************************************************/
 /*

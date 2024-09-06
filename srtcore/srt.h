@@ -16,6 +16,22 @@ written by
 #ifndef INC_SRTC_H
 #define INC_SRTC_H
 
+#ifndef SRT_API
+#ifdef _WIN32
+   #ifdef SRT_DYNAMIC
+      #ifdef SRT_EXPORTS
+         #define SRT_API __declspec(dllexport)
+      #else
+         #define SRT_API __declspec(dllimport)
+      #endif
+   #else // !SRT_DYNAMIC
+      #define SRT_API
+   #endif
+#else
+   #define SRT_API __attribute__ ((visibility("default")))
+#endif
+#endif
+
 #include "version.h"
 
 #include "platform_sys.h"
@@ -32,34 +48,6 @@ written by
 
 //if compiling with MinGW, it only works on XP or above
 //use -D_WIN32_WINNT=0x0501
-
-
-#ifdef _WIN32
-   #ifndef __MINGW32__
-      // Explicitly define 32-bit and 64-bit numbers
-      typedef __int32 int32_t;
-      typedef __int64 int64_t;
-      typedef unsigned __int32 uint32_t;
-      #ifndef LEGACY_WIN32
-         typedef unsigned __int64 uint64_t;
-      #else
-         // VC 6.0 does not support unsigned __int64: may cause potential problems.
-         typedef __int64 uint64_t;
-      #endif
-   #endif
-   #ifdef SRT_DYNAMIC
-      #ifdef SRT_EXPORTS
-         #define SRT_API __declspec(dllexport)
-      #else
-         #define SRT_API __declspec(dllimport)
-      #endif
-   #else // !SRT_DYNAMIC
-      #define SRT_API
-   #endif
-#else
-   #define SRT_API __attribute__ ((visibility("default")))
-#endif
-
 
 // For feature tests if you need.
 // You can use these constants with SRTO_MINVERSION option.
@@ -241,6 +229,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
 #ifdef ENABLE_AEAD_API_PREVIEW
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
+#endif
+#ifdef ENABLE_MAXREXMITBW
+   SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
 #endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
@@ -646,7 +637,7 @@ enum SRT_KM_STATE
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
 #ifdef ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong ccryptographic mode is used, cannot decrypt. Since v1.6.0.
+    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
 #endif
 };
 

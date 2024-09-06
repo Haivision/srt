@@ -74,6 +74,8 @@ class IOVector
 #endif
 {
 public:
+    IOVector() { set(NULL, 0); }
+
     inline void set(void* buffer, size_t length)
     {
 #ifdef _WIN32
@@ -150,7 +152,7 @@ const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
 
 inline int32_t CreateControlSeqNo(UDTMessageType type)
 {
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(type));
+    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(uint32_t(type));
 }
 
 inline int32_t CreateControlExtSeqNo(int exttype)
@@ -331,8 +333,10 @@ public:
     };
 
 public:
-    void toNL();
-    void toHL();
+    /// @brief Convert the packet inline to a network byte order (Little-endian).
+    void toNetworkByteOrder();
+	/// @brief Convert the packet inline to a host byte order.
+    void toHostByteOrder();
 
 protected:
     // DynamicStruct is the same as array of given type and size, just it
@@ -352,11 +356,14 @@ protected:
     CPacket(const CPacket&);
 
 public:
-    int32_t& m_iSeqNo;     // alias: sequence number
-    int32_t& m_iMsgNo;     // alias: message number
-    int32_t& m_iTimeStamp; // alias: timestamp
-    int32_t& m_iID;        // alias: destination SRT socket ID
     char*&   m_pcData;     // alias: payload (data packet) / control information fields (control packet)
+
+    SRTU_PROPERTY_RO(SRTSOCKET, id, SRTSOCKET(m_nHeader[SRT_PH_ID]));
+    SRTU_PROPERTY_WO_ARG(SRTSOCKET, id, m_nHeader[SRT_PH_ID] = int32_t(arg));
+
+    SRTU_PROPERTY_RW(int32_t, seqno, m_nHeader[SRT_PH_SEQNO]);
+    SRTU_PROPERTY_RW(int32_t, msgflags, m_nHeader[SRT_PH_MSGNO]);
+    SRTU_PROPERTY_RW(int32_t, timestamp, m_nHeader[SRT_PH_TIMESTAMP]);
 
     // Experimental: sometimes these references don't work!
     char* getData();

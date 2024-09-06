@@ -44,7 +44,7 @@ namespace srt
             m_crypt.setCryptoKeylen(cfg.iSndCryptoKeyLen);
 
             cfg.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_GCM;
-            EXPECT_EQ(m_crypt.init(HSD_INITIATOR, cfg, true), HaiCrypt_IsAESGCM_Supported() != 0);
+            EXPECT_TRUE(m_crypt.init(HSD_INITIATOR, cfg, true, HaiCrypt_IsAESGCM_Supported()));
 
             const unsigned char* kmmsg = m_crypt.getKmMsg_data(0);
             const size_t km_len = m_crypt.getKmMsg_size(0);
@@ -53,7 +53,7 @@ namespace srt
 
             std::array<uint32_t, 72> km_nworder;
             NtoHLA(km_nworder.data(), reinterpret_cast<const uint32_t*>(kmmsg), km_len);
-            m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, kmout, kmout_len);
+            m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3), kmout, kmout_len);
         }
 
         void TearDown() override
@@ -85,9 +85,9 @@ namespace srt
         const int inorder = 1;
         const int kflg = m_crypt.getSndCryptoFlags();
 
-        pkt.m_iSeqNo = seqno;
-        pkt.m_iMsgNo = msgno | inorder | PacketBoundaryBits(PB_SOLO) | MSGNO_ENCKEYSPEC::wrap(kflg);;
-        pkt.m_iTimeStamp = 356;
+        pkt.set_seqno(seqno);
+        pkt.set_msgflags(msgno | inorder | PacketBoundaryBits(PB_SOLO) | MSGNO_ENCKEYSPEC::wrap(kflg));
+        pkt.set_timestamp(356);
 
         std::iota(pkt.data(), pkt.data() + pld_size, '0');
         pkt.setLength(pld_size);
@@ -103,7 +103,6 @@ namespace srt
         // Modify the payload and expect auth to fail.
         pkt_enc->data()[10] = '5';
         EXPECT_EQ(m_crypt.decrypt(*pkt_enc.get()), ENCS_FAILED);
-        
     }
 
 } // namespace srt

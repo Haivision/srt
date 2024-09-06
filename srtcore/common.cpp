@@ -68,8 +68,6 @@ modified by
 #include "packet.h"
 #include "threadname.h"
 
-#include <srt_compat.h> // SysStrError
-
 using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
@@ -168,11 +166,7 @@ void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
     else
     {
-      const sockaddr_in6* a = &addr.sin6;
-      ip[3] = (a->sin6_addr.s6_addr[15] << 24) + (a->sin6_addr.s6_addr[14] << 16) + (a->sin6_addr.s6_addr[13] << 8) + a->sin6_addr.s6_addr[12];
-      ip[2] = (a->sin6_addr.s6_addr[11] << 24) + (a->sin6_addr.s6_addr[10] << 16) + (a->sin6_addr.s6_addr[9] << 8) + a->sin6_addr.s6_addr[8];
-      ip[1] = (a->sin6_addr.s6_addr[7] << 24) + (a->sin6_addr.s6_addr[6] << 16) + (a->sin6_addr.s6_addr[5] << 8) + a->sin6_addr.s6_addr[4];
-      ip[0] = (a->sin6_addr.s6_addr[3] << 24) + (a->sin6_addr.s6_addr[2] << 16) + (a->sin6_addr.s6_addr[1] << 8) + a->sin6_addr.s6_addr[0];
+        std::memcpy(ip, addr.sin6.sin6_addr.s6_addr, 16);
     }
 }
 
@@ -209,7 +203,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     {
         // Check if the peer address is a model of IPv4-mapped-on-IPv6.
         // If so, it means that the `ip` array should be interpreted as IPv4.
-        const bool is_mapped_ipv4 = checkMappedIPv4((uint16_t*)peer.sin6.sin6_addr.s6_addr);
+        const bool is_mapped_ipv4 = checkMappedIPv4(peer.sin6);
 
         sockaddr_in6* a = (&w_addr.sin6);
 
@@ -223,18 +217,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
             // Here both agent and peer use IPv6, in which case
             // `ip` contains the full IPv6 address, so just copy
             // it as is.
-
-            // XXX Possibly, a simple
-            // memcpy( (a->sin6_addr.s6_addr), ip, 16);
-            // would do the same thing, and faster. The address in `ip`,
-            // even though coded here as uint32_t, is still big endian.
-            for (int i = 0; i < 4; ++ i)
-            {
-                a->sin6_addr.s6_addr[i * 4 + 0] = ip[i] & 0xFF;
-                a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
-                a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
-                a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
-            }
+            std::memcpy(a->sin6_addr.s6_addr, ip, 16);
             return; // The address is written, nothing left to do.
         }
 
@@ -540,128 +523,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 }
 #endif
 
-// Logging system implementation
-
-#if ENABLE_LOGGING
-
-srt::logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
-{
-    if (that_enabled)
-    {
-        i_file = "";
-        i_line = 0;
-        flags = that.src_config->flags;
-        // Create logger prefix
-        that.CreateLogLinePrefix(os);
-    }
-}
-
-LogDispatcher::Proxy LogDispatcher::operator()()
-{
-    return Proxy(*this);
-}
-
-void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
-{
-    using namespace std;
-    using namespace srt;
-
-    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
-                      "ThreadName::BUFSIZE is too small to be used for strftime");
-    char tmp_buf[ThreadName::BUFSIZE];
-    if ( !isset(SRT_LOGF_DISABLE_TIME) )
-    {
-        // Not necessary if sending through the queue.
-        timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
-
-        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
-        {
-            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
-        }
-    }
-
-    string out_prefix;
-    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
-    {
-        out_prefix = prefix;
-    }
-
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
-    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
-    {
-        serr << "/" << tmp_buf << out_prefix << ": ";
-    }
-    else
-    {
-        serr << out_prefix << ": ";
-    }
-}
-
-std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
-{
-    if ( pretty_function == "" )
-        return "";
-    size_t pos = pretty_function.find('(');
-    if ( pos == std::string::npos )
-        return pretty_function; // return unchanged.
-
-    pretty_function = pretty_function.substr(0, pos);
-
-    // There are also template instantiations where the instantiating
-    // parameters are encrypted inside. Therefore, search for the first
-    // open < and if found, search for symmetric >.
-
-    int depth = 1;
-    pos = pretty_function.find('<');
-    if ( pos != std::string::npos )
-    {
-        size_t end = pos+1;
-        for(;;)
-        {
-            ++pos;
-            if ( pos == pretty_function.size() )
-            {
-                --pos;
-                break;
-            }
-            if ( pretty_function[pos] == '<' )
-            {
-                ++depth;
-                continue;
-            }
-
-            if ( pretty_function[pos] == '>' )
-            {
-                --depth;
-                if ( depth <= 0 )
-                    break;
-                continue;
-            }
-        }
-
-        std::string afterpart = pretty_function.substr(pos+1);
-        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
-    }
-
-    // Now see how many :: can be found in the name.
-    // If this occurs more than once, take the last two.
-    pos = pretty_function.rfind("::");
-
-    if ( pos == std::string::npos || pos < 2 )
-        return pretty_function; // return whatever this is. No scope name.
-
-    // Find the next occurrence of :: - if found, copy up to it. If not,
-    // return whatever is found.
-    pos -= 2;
-    pos = pretty_function.rfind("::", pos);
-    if ( pos == std::string::npos )
-        return pretty_function; // nothing to cut
-
-    return pretty_function.substr(pos+2);
-}
-#endif
 
 } // (end namespace srt_logging)
 
