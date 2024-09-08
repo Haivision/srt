@@ -1453,6 +1453,14 @@ inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t
     return os.str();
 }
 
+struct LocalInterface
+{
+    sockaddr_any addr;
+    std::string name;
+};
+
+std::vector<LocalInterface> GetLocalInterfaces();
+
 } // namespace srt
 
 #endif
