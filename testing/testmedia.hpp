@@ -15,7 +15,8 @@
 #include <map>
 #include <stdexcept>
 #include <deque>
-#include <atomic>
+
+#include <sync.h> // use srt::sync::atomic instead of std::atomic for the sake of logging
 
 #include "apputil.hpp"
 #include "statswriter.hpp"
@@ -25,7 +26,7 @@
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
-extern std::atomic<bool> transmit_int_state;
+extern srt::sync::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 

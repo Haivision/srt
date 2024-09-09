@@ -13,7 +13,6 @@ using namespace std;
 using namespace srt;
 
 
-
 TEST(CEPoll, InfiniteWait)
 {
     srt::TestInit srtinit;
