@@ -233,6 +233,7 @@ typedef enum SRT_SOCKOPT {
 #ifdef ENABLE_MAXREXMITBW
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
 #endif
+   SRTO_GROUPCONFIG = 70,
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -939,6 +940,7 @@ typedef enum SRT_GROUP_TYPE
     SRT_GTYPE_UNDEFINED,
     SRT_GTYPE_BROADCAST,
     SRT_GTYPE_BACKUP,
+    SRT_GTYPE_BALANCING,
     // ...
     SRT_GTYPE_E_END
 } SRT_GROUP_TYPE;

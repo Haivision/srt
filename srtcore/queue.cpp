@@ -65,10 +65,11 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
-srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
+srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)
+    , m_OwnerID(owner)
 {
     CQEntry* tempq = allocateEntry(m_iBlockSize, m_iMSS);
 
@@ -126,6 +127,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
     for (int i = 0; i < iNumUnits; ++i)
     {
         tempu[i].m_bTaken = false;
+        tempu[i].m_pParentQueue = this;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
 
@@ -585,10 +587,10 @@ void* srt::CSndQueue::worker(void* param)
         CPacket pkt;
         steady_clock::time_point next_send_time;
         sockaddr_any source_addr;
-        const bool res = u->packData((pkt), (next_send_time), (source_addr));
+        const bool valid = u->packData((pkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
-        if (res == false)
+        if (!valid)
         {
             IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
             continue;
@@ -1198,13 +1200,13 @@ srt::CRcvQueue::~CRcvQueue()
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
-void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
+void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t, SRTSOCKET owner)
 {
     m_iIPversion    = version;
     m_szPayloadSize = payload;
 
     SRT_ASSERT(m_pUnitQueue == NULL);
-    m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
+    m_pUnitQueue = new CUnitQueue(qsize, (int)payload, owner);
 
     m_pHash = new CHash;
     m_pHash->init(hsize);
@@ -1412,6 +1414,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_un
         w_id = w_unit->m_Packet.id();
         HLOGC(qrlog.Debug,
               log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
+                  << "NOW=" << FormatTime(sync::steady_clock::now()) << " "
                   << w_unit->m_Packet.Info());
     }
     return rst;

@@ -134,7 +134,8 @@ public:
         return m_iBusy;
     }
 
-
+    // XXX Controversial as to whether it should be guarded by this lock.
+    // It is used in many places without the lock, and it is also atomic.
     SRT_ATTR_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
@@ -486,7 +487,10 @@ public:
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
         {
             if (s == NULL)
+            {
+                socket = NULL;
                 return false;
+            }
             const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;

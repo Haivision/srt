@@ -148,6 +148,17 @@ void srt::CUDTSocket::setBrokenClosed()
 
 bool srt::CUDTSocket::readReady()
 {
+#if ENABLE_BONDING
+
+    // If this is a group member socket, then reading happens exclusively from
+    // the group and the socket is only used as a connection point, packet
+    // dispatching and single link management. Data buffering and hence ability
+    // to deliver a packet through API is exclusively the matter of group,
+    // therefore a single socket is never "read ready".
+
+    if (m_GroupOf)
+        return false;
+#endif
     if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
         return true;
 
@@ -714,35 +725,17 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                 g->m_bConnected = true;
             }
 
-            // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
-            // but groupwise connections could be accepted from multiple listeners for the same group!
-            // m_listener MUST BE A CONTAINER, NOT POINTER!!!
-            // ALSO: Maybe checking "the same listener" is not necessary as subscruption may be done
-            // multiple times anyway?
-            if (!g->m_listener)
-            {
-                // Newly created group from the listener, which hasn't yet
-                // the listener set.
-                g->m_listener = ls;
+            // In the new recvbuffer mode (and common receiver buffer) there's no waiting for reception
+            // on a socket and no reading from a socket directly is being done; instead the reading API
+            // is directly bound to the group and reading happens directly from the group's buffer.
+            // This includes also a situation of a newly connected socket, which will be delivering packets
+            // into the same common receiver buffer for the group, so readable will be the group itself
+            // when it has its own common buffer read-ready, by whatever reason. Packets to the buffer
+            // will be delivered by the sockets' receiver threads, so all these things happen strictly
+            // in the background.
 
-                // Listen on both first connected socket and continued sockets.
-                // This might help with jump-over situations, and in regular continued
-                // sockets the IN event won't be reported anyway.
-                int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
-                epoll_add_usock_INTERNAL(g->m_RcvEID, ls, &listener_modes);
-
-                // This listening should be done always when a first connected socket
-                // appears as accepted off the listener. This is for the sake of swait() calls
-                // inside the group receiving and sending functions so that they get
-                // interrupted when a new socket is connected.
-            }
-
-            // Add also per-direction subscription for the about-to-be-accepted socket.
-            // Both first accepted socket that makes the group-accept and every next
-            // socket that adds a new link.
-            int read_modes  = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            // Keep per-socket sender ready EID.
             int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-            epoll_add_usock_INTERNAL(g->m_RcvEID, ns, &read_modes);
             epoll_add_usock_INTERNAL(g->m_SndEID, ns, &write_modes);
 
             // With app reader, do not set groupPacketArrival (block the
@@ -1437,7 +1430,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
+        srt::groups::SocketData data = srt::groups::prepareSocketData(ns, g.type());
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -1528,7 +1521,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // connection succeeded or failed and whether the new socket is
         // ready to use or needs to be closed.
         epoll_add_usock_INTERNAL(g.m_SndEID, ns, &connect_modes);
-        epoll_add_usock_INTERNAL(g.m_RcvEID, ns, &connect_modes);
 
         // Adding a socket on which we need to block to BOTH these tracking EIDs
         // and the blocker EID. We'll simply remove from them later all sockets that
@@ -1650,7 +1642,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
                 f->sndstate = SRT_GST_BROKEN;
                 f->rcvstate = SRT_GST_BROKEN;
                 epoll_remove_socket_INTERNAL(g.m_SndEID, ns);
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, ns);
             }
             else
             {
@@ -1736,7 +1727,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, y->second);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, y->second);
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, y->second);
             }
         }
 
@@ -1776,7 +1766,6 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
 
                 epoll_remove_socket_INTERNAL(eid, s);
                 epoll_remove_socket_INTERNAL(g.m_SndEID, s);
-                epoll_remove_socket_INTERNAL(g.m_RcvEID, s);
 
                 continue;
             }
@@ -2302,6 +2291,8 @@ int srt::CUDTUnited::select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSE
     return count;
 }
 
+// XXX This may crash when a member socket is added to selectEx.
+// Consider revising to prevent a member socket from being used.
 int srt::CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                               vector<SRTSOCKET>*       readfds,
                               vector<SRTSOCKET>*       writefds,
@@ -2676,6 +2667,12 @@ void srt::CUDTUnited::checkBrokenSockets()
                 continue;
         }
         else
+
+        // Additional note on group receiver: with the new group
+        // receiver m_pRcvBuffer in the socket core is NULL always,
+        // but that's not a problem - you can close the member socket
+        // safely without worrying about reading data because they are
+        // in the group anyway.
         {
             CUDT& u = s->core();
 
@@ -3262,7 +3259,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue = new CSndQueue;
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
-        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer, s->m_SocketID);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
