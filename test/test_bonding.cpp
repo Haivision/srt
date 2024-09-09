@@ -547,14 +547,17 @@ TEST(Bonding, InitialFailure)
     char outbuf[1316];
     SRT_MSGCTRL mc = srt_msgctrl_default;
     int recvlen = srt_recvmsg2(gs, outbuf, 1316, &mc);
-    EXPECT_EQ(recvlen, packet_data.size());
-    outbuf[recvlen] = 0;
+    EXPECT_EQ(recvlen, int(packet_data.size()));
 
-    EXPECT_EQ(outbuf, packet_data);
+    if (recvlen > 0)
+    {
+        outbuf[recvlen] = 0;
+        EXPECT_EQ(outbuf, packet_data);
+    }
     EXPECT_EQ(mc.pktseq, lsn_isn);
 
     recvlen = srt_recv(gs, outbuf, 80);
-    EXPECT_EQ(recvlen, SRT_ERROR);
+    EXPECT_EQ(recvlen, int(SRT_ERROR));
 
     srt_close(gs);
     srt_close(grp);
