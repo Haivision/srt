@@ -656,7 +656,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
 
         // SUBSCRIBED EVENTS: IN, UPDATE.
         // expected: UPDATE only.
-        EXPECT_EQ(fdset[0].events, SRT_EPOLL_UPDATE);
+        EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
         SRTSOCKET joined = extra_call.get();
         EXPECT_NE(joined, SRT_INVALID_SOCK);
         std::cout << Sprint("Extra joined: @", joined, "\n");
@@ -915,7 +915,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
 
     // SUBSCRIBED EVENTS: IN, UPDATE.
     // expected: UPDATE only.
-    EXPECT_EQ(fdset[0].events, SRT_EPOLL_UPDATE);
+    EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
     EXPECT_NE(extra_call.get(), SRT_INVALID_SOCK);
 
     std::cout << "Joining connector thread(s)\n";
