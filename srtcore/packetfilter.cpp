@@ -26,7 +26,7 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
@@ -43,13 +43,13 @@ bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config, PacketFilter::F
     return true;
 }
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& w_config)
+bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config)
 {
     return ParseFilterConfig(s, (w_config), NULL);
 }
 
 // Parameters are passed by value because they need to be potentially modicied inside.
-bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
+bool srt::CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
 {
     PacketFilter::Factory* fac = PacketFilter::find(w_agent.type);
     if (!fac)
@@ -109,18 +109,20 @@ bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
     return true;
 }
 
-struct SortBySequence
-{
-    bool operator()(const CUnit* u1, const CUnit* u2)
+namespace srt {
+    struct SortBySequence
     {
-        int32_t s1 = u1->m_Packet.getSeqNo();
-        int32_t s2 = u2->m_Packet.getSeqNo();
+        bool operator()(const CUnit* u1, const CUnit* u2)
+        {
+            int32_t s1 = u1->m_Packet.getSeqNo();
+            int32_t s2 = u2->m_Packet.getSeqNo();
 
-        return CSeqNo::seqcmp(s1, s2) < 0;
-    }
-};
+            return CSeqNo::seqcmp(s1, s2) < 0;
+        }
+    };
+} // namespace srt
 
-void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
+void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
 {
     const CPacket& rpkt = unit->m_Packet;
 
@@ -128,7 +130,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_iFlag = CUnit::GOOD;
+        unit->m_bTaken = true;
         HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
         w_incoming.push_back(unit);
     }
@@ -136,8 +138,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     {
         // Packet not to be passthru, update stats
         ScopedLock lg(m_parent->m_StatsLock);
-        ++m_parent->m_stats.rcvFilterExtra;
-        ++m_parent->m_stats.rcvFilterExtraTotal;
+        m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
     }
 
     // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
@@ -150,8 +151,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         if (dist > 0)
         {
             ScopedLock lg(m_parent->m_StatsLock);
-            m_parent->m_stats.rcvFilterLoss += dist;
-            m_parent->m_stats.rcvFilterLossTotal += dist;
+            m_parent->m_stats.rcvr.lossFilter.count(dist);
         }
         else
         {
@@ -169,8 +169,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         InsertRebuilt(w_incoming, m_unitq);
 
         ScopedLock lg(m_parent->m_StatsLock);
-        m_parent->m_stats.rcvFilterSupply += nsupply;
-        m_parent->m_stats.rcvFilterSupplyTotal += nsupply;
+        m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
 
     // Now that all units have been filled as they should be,
@@ -179,11 +178,11 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     // Wanted units will be set GOOD flag, unwanted will remain
     // with FREE and therefore will be returned at the next
     // call to getNextAvailUnit().
-    unit->m_iFlag = CUnit::FREE;
+    unit->m_bTaken = false;
     for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
     {
         CUnit* u = *i;
-        u->m_iFlag = CUnit::FREE;
+        u->m_bTaken = false;
     }
 
     // Packets must be sorted by sequence number, ascending, in order
@@ -206,7 +205,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
 
 }
 
-bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
+bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
     bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
     if (!have)
@@ -227,7 +226,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    w_packet.m_iMsgNo = SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    w_packet.set_msgflags(SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
@@ -238,7 +237,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 }
 
 
-void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
     if (m_provided.empty())
         return;
@@ -252,9 +251,9 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
             break;
         }
 
-        // LOCK the unit as GOOD because otherwise the next
+        // LOCK the unit as taken because otherwise the next
         // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_iFlag = CUnit::GOOD;
+        u->m_bTaken = true;
         // After returning from this function, all units will be
         // set back to FREE so that the buffer can decide whether
         // it wants them or not.
@@ -273,19 +272,21 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
     m_provided.clear();
 }
 
-bool PacketFilter::IsBuiltin(const string& s)
+bool srt::PacketFilter::IsBuiltin(const string& s)
 {
     return builtin_filters.count(s);
 }
 
+namespace srt {
 std::set<std::string> PacketFilter::builtin_filters;
 PacketFilter::filters_map_t PacketFilter::filters;
+}
 
-PacketFilter::Factory::~Factory()
+srt::PacketFilter::Factory::~Factory()
 {
 }
 
-void PacketFilter::globalInit()
+void srt::PacketFilter::globalInit()
 {
     // Add here builtin packet filters and mark them
     // as builtin. This will disallow users to register
@@ -295,7 +296,7 @@ void PacketFilter::globalInit()
     builtin_filters.insert("fec");
 }
 
-bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
     m_parent = parent;
 
@@ -313,8 +314,14 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     init.socket_id = parent->socketID();
     init.snd_isn = parent->sndSeqNo();
     init.rcv_isn = parent->rcvSeqNo();
-    init.payload_size = parent->OPT_PayloadSize();
+
+    // XXX This is a formula for a full "SRT payload" part that undergoes transmission,
+    // might be nice to have this formula as something more general.
+    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize();
     init.rcvbuf_size = parent->m_config.iRcvBufSize;
+
+    HLOGC(pflog.Debug, log << "PFILTER: @" << init.socket_id << " payload size="
+            << init.payload_size << " rcvbuf size=" << init.rcvbuf_size);
 
     // Found a filter, so call the creation function
     m_filter = selector->second->Create(init, m_provided, confstr);
@@ -329,7 +336,7 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     return true;
 }
 
-bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
+bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
 {
     const string* pname = map_getp(conf.parameters, "type");
 
@@ -346,7 +353,7 @@ bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
     return true;
 }
 
-PacketFilter::~PacketFilter()
+srt::PacketFilter::~PacketFilter()
 {
     delete m_filter;
 }

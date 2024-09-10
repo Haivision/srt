@@ -3,6 +3,7 @@
 #include <future>
 
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "packet.h"
 #include "fec.h"
 #include "core.h"
@@ -13,8 +14,9 @@
 #include "api.h"
 
 using namespace std;
+using namespace srt;
 
-class TestFECRebuilding: public testing::Test
+class TestFECRebuilding: public srt::Test
 {
 protected:
     FECFilterBuiltin* fec = nullptr;
@@ -30,7 +32,7 @@ protected:
         PacketFilter::globalInit();
     }
 
-    void SetUp() override
+    void setup() override
     {
         int timestamp = 10;
 
@@ -71,7 +73,7 @@ protected:
             // Randomly chose the size
 
             int minsize = 732;
-            int divergence = plsize - minsize - 1;
+            int divergence = int(plsize) - minsize - 1;
             size_t length = minsize + rand() % divergence;
 
             p.setLength(length);
@@ -85,22 +87,24 @@ protected:
         }
     }
 
-    void TearDown() override
+    void teardown() override
     {
         delete fec;
     }
 };
 
-class TestMockCUDT
-{
-public:
-    CUDT* core;
-
-    bool checkApplyFilterConfig(const string& s)
+namespace srt {
+    class TestMockCUDT
     {
-        return core->checkApplyFilterConfig(s);
-    }
-};
+    public:
+        CUDT* core;
+
+        bool checkApplyFilterConfig(const string& s)
+        {
+            return core->checkApplyFilterConfig(s);
+        }
+    };
+}
 
 // The expected whole procedure of connection using FEC is
 // expected to:
@@ -204,11 +208,11 @@ bool filterConfigSame(const string& config1, const string& config2)
 
 TEST(TestFEC, ConfigExchange)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
-    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
 
     TestMockCUDT m1;
     m1.core = &s1->core();
@@ -231,16 +235,16 @@ TEST(TestFEC, ConfigExchange)
     string exp_config = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
-    srt_cleanup();
+    srt_close(sid1);
 }
 
 TEST(TestFEC, ConfigExchangeFaux)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     CUDTSocket* s1;
 
-    SRTSOCKET sid1 = CUDT::uglobal()->newSocket(&s1);
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
 
     const char* fec_config_wrong [] = {
         "FEC,Cols:20", // D: unknown filter
@@ -254,7 +258,7 @@ TEST(TestFEC, ConfigExchangeFaux)
 
     for (auto badconfig: fec_config_wrong)
     {
-        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, strlen(badconfig)), -1);
+        ASSERT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, badconfig, (int)strlen(badconfig)), -1);
     }
 
     TestMockCUDT m1;
@@ -270,12 +274,12 @@ TEST(TestFEC, ConfigExchangeFaux)
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
-    srt_cleanup();
+    srt_close(sid1);
 }
 
 TEST(TestFEC, Connection)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -287,33 +291,39 @@ TEST(TestFEC, Connection)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:10,rows:10";
-    char fec_config2 [] = "fec,cols:10,arq:never";
-    char fec_config_final [] = "fec,cols:10,rows:10,arq:never,layout:staircase";
+    const char fec_config1 [] = "fec,cols:10,rows:10";
+    const char fec_config2 [] = "fec,cols:10,arq:never";
+    const char fec_config_final [] = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
+    // Given 2s timeout for accepting as it has occasionally happened with Travis
+    // that 1s might not be enough.
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
-    srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
-    srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size);
+    EXPECT_NE(srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size), -1);
+    EXPECT_NE(srt_getsockflag(a, SRTO_PACKETFILTER, result_config2, &result_config2_size), -1);
 
     string caller_config = result_config1;
     string accept_config = result_config2;
@@ -322,12 +332,14 @@ TEST(TestFEC, Connection)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionReorder)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -339,29 +351,33 @@ TEST(TestFEC, ConnectionReorder)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:10,rows:10";
-    char fec_config2 [] = "fec,rows:10,cols:10";
-    char fec_config_final [] = "fec,cols:10,rows:10,arq:onreq,layout:staircase";
+    const char fec_config1 [] = "fec,cols:10,rows:10";
+    const char fec_config2 [] = "fec,rows:10,cols:10";
+    const char fec_config_final [] = "fec,cols:10,rows:10,arq:onreq,layout:staircase";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -374,12 +390,14 @@ TEST(TestFEC, ConnectionReorder)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionFull1)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -391,29 +409,33 @@ TEST(TestFEC, ConnectionFull1)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:10,rows:20,arq:never,layout:even";
-    char fec_config2 [] = "fec,layout:even,rows:20,cols:10,arq:never";
-    char fec_config_final [] = "fec,cols:10,rows:20,arq:never,layout:even";
+    const char fec_config1 [] = "fec,cols:10,rows:20,arq:never,layout:even";
+    const char fec_config2 [] = "fec,layout:even,rows:20,cols:10,arq:never";
+    const char fec_config_final [] = "fec,cols:10,rows:20,arq:never,layout:even";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -426,11 +448,14 @@ TEST(TestFEC, ConnectionFull1)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
+
 TEST(TestFEC, ConnectionFull2)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -442,29 +467,33 @@ TEST(TestFEC, ConnectionFull2)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:10,rows:20,arq:always,layout:even";
-    char fec_config2 [] = "fec,layout:even,rows:20,cols:10,arq:always";
-    char fec_config_final [] = "fec,cols:10,rows:20,arq:always,layout:even";
+    const char fec_config1 [] = "fec,cols:10,rows:20,arq:always,layout:even";
+    const char fec_config2 [] = "fec,layout:even,rows:20,cols:10,arq:always";
+    const char fec_config_final [] = "fec,cols:10,rows:20,arq:always,layout:even";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -477,12 +506,14 @@ TEST(TestFEC, ConnectionFull2)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionMess)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -494,29 +525,33 @@ TEST(TestFEC, ConnectionMess)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:,cols:10";
-    char fec_config2 [] = "fec,cols:,rows:10";
-    char fec_config_final [] = "fec,cols:10,rows:10,arq:onreq,layout:staircase";
+    const char fec_config1 [] = "fec,cols:,cols:10";
+    const char fec_config2 [] = "fec,cols:,rows:10";
+    const char fec_config_final [] = "fec,cols:10,rows:10,arq:onreq,layout:staircase";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -529,12 +564,14 @@ TEST(TestFEC, ConnectionMess)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionForced)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -546,27 +583,31 @@ TEST(TestFEC, ConnectionForced)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,rows:20,cols:20";
-    char fec_config_final [] = "fec,cols:20,rows:20";
+    const char fec_config1 [] = "fec,rows:20,cols:20";
+    const char fec_config_final [] = "fec,cols:20,rows:20";
 
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 1000);
-    EXPECT_NE(a, SRT_ERROR);
+    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
     // Now that the connection is established, check negotiated config
 
-    char result_config1[200];
+    char result_config1[200] = "";
     int result_config1_size = 200;
-    char result_config2[200];
+    char result_config2[200] = "";
     int result_config2_size = 200;
 
     srt_getsockflag(s, SRTO_PACKETFILTER, result_config1, &result_config1_size);
@@ -575,12 +616,14 @@ TEST(TestFEC, ConnectionForced)
     EXPECT_TRUE(filterConfigSame(result_config1, fec_config_final));
     EXPECT_TRUE(filterConfigSame(result_config2, fec_config_final));
 
-    srt_cleanup();
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionConflict)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -592,17 +635,21 @@ TEST(TestFEC, RejectionConflict)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,cols:10,rows:10";
-    char fec_config2 [] = "fec,cols:20,arq:never";
+    const char fec_config1 [] = "fec,cols:10,rows:10";
+    const char fec_config2 [] = "fec,cols:20,arq:never";
 
     srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1);
     srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1);
 
+    srt_listen(l, 1);
+
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -617,12 +664,13 @@ TEST(TestFEC, RejectionConflict)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionIncompleteEmpty)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -634,15 +682,18 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,rows:10";
-
+    const char fec_config1 [] = "fec,rows:10";
     srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1);
+
+    srt_listen(l, 1);
 
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -657,13 +708,14 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
+    srt_close(s);
+    srt_close(l);
 }
 
 
 TEST(TestFEC, RejectionIncomplete)
 {
-    srt_startup();
+    srt::TestInit srtinit;
 
     SRTSOCKET s = srt_create_socket();
     SRTSOCKET l = srt_create_socket();
@@ -675,17 +727,21 @@ TEST(TestFEC, RejectionIncomplete)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     srt_bind(l, (sockaddr*)& sa, sizeof(sa));
-    srt_listen(l, 1);
 
-    char fec_config1 [] = "fec,rows:10";
-    char fec_config2 [] = "fec,arq:never";
+    const char fec_config1 [] = "fec,rows:10";
+    const char fec_config2 [] = "fec,arq:never";
 
     srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1);
     srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1);
 
+    srt_listen(l, 1);
+
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
+
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
 
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
@@ -700,7 +756,8 @@ TEST(TestFEC, RejectionIncomplete)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
-    srt_cleanup();
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST_F(TestFECRebuilding, Prepare)
@@ -740,7 +797,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
 
     // Use the sequence number of the last packet, as usual.
-    bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
+    const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
 
     ASSERT_EQ(have_fec_ctl, true);
     // By having all packets and FEC CTL packet, now stuff in
@@ -779,7 +836,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -788,7 +845,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
 
     bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
-    EXPECT_EQ(provided.size(), 0); // Confirm that nothing was rebuilt
+    EXPECT_EQ(provided.size(), 0U); // Confirm that nothing was rebuilt
 
     /*
     // XXX With such a short sequence, losses will not be reported.
@@ -817,7 +874,7 @@ TEST_F(TestFECRebuilding, Rebuild)
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
 
     // Use the sequence number of the last packet, as usual.
-    bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
+    const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
 
     ASSERT_EQ(have_fec_ctl, true);
     // By having all packets and FEC CTL packet, now stuff in
@@ -856,25 +913,25 @@ TEST_F(TestFECRebuilding, Rebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
 
     // And now receive the FEC control packet
 
-    bool want_passthru_fec = fec->receive(*fecpkt, loss);
+    const bool want_passthru_fec = fec->receive(*fecpkt, loss);
     EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
 
-    EXPECT_EQ(loss.size(), 0);
-    ASSERT_EQ(provided.size(), 1);
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
 
     SrtPacket& rebuilt = provided[0];
     CPacket& skipped = *source[4];
 
     // Set artificially the SN_REXMIT flag in the skipped source packet
     // because the rebuilt packet shall have REXMIT flag set.
-    skipped.m_iMsgNo |= MSGNO_REXMIT::wrap(true);
+    skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
 
     // Compare the header
     EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);

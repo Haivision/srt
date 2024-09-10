@@ -32,10 +32,6 @@ written by
 #ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
-   #if defined(_MSC_VER)
-      #pragma warning(disable:4267)
-      #pragma warning(disable:4018)
-   #endif
 #else
    #include <sys/time.h>
 #endif
@@ -139,6 +135,25 @@ typedef struct hcrypt_Session_str {
             hcrypt_XorStream(&(iv)[0], (nonce), 112/8); \
         } while(0)
 
+/* HaiCrypt-TP GCM mode IV (96-bit) - SRT 1.5.4:
+ *    0   1   2   3   4   5  6   7   8   9   10  11 
+ * +---+---+---+---+---+---+---+---+---+---+---+---+
+ * |                   0s          |      pki      |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+
+ *                         XOR                   
+ * +---+---+---+---+---+---+---+---+---+---+---+---+
+ * |                      nonce                    +
+ * +---+---+---+---+---+---+---+---+---+---+---+---+
+ *
+ * pki   (32-bit): packet index
+ * nonce (96-bit): number used once (salt)
+ */
+#define hcrypt_SetGcmIV(pki, nonce, iv) do { \
+            memset(&(iv)[0], 0, 96/8); \
+            memcpy(&(iv)[8], (pki), HCRYPT_PKI_SZ); \
+            hcrypt_XorStream(&(iv)[0], (nonce), 96/8); \
+        } while(0)
+
 #define hcrypt_XorStream(dst, strm, len) do { \
             int __XORSTREAMi; \
             for (__XORSTREAMi = 0 \
@@ -163,7 +178,18 @@ int hcryptCtx_Tx_AsmKM(hcrypt_Session *crypto, hcrypt_Ctx *ctx, unsigned char *a
 int hcryptCtx_Tx_ManageKM(hcrypt_Session *crypto);
 int hcryptCtx_Tx_InjectKM(hcrypt_Session *crypto, void *out_p[], size_t out_len_p[], int maxout);
 
+/// @brief Initialize receiving crypto context.
+/// @param crypto library instance handle.
+/// @param ctx additional crypto context.
+/// @param cfg crypto configuration.
+/// @return -1 on error, 0 otherwise.
 int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cfg *cfg);
+
+/// @brief Parse an incoming message related to cryptography module.
+/// @param crypto library instance handle.
+/// @param msg a message to parse.
+/// @param msg_len length of the message in bytes.
+/// @return 0 on success; -3 on cipher mode mismatch; -2 on unmatched shared secret; -1 on other failures.
 int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *msg, size_t msg_len);
 
 #endif /* HCRYPT_H */

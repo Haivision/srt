@@ -64,11 +64,11 @@
 #include <chrono>
 #include <thread>
 
+#include "srt_compat.h"
 #include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmedia.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -101,7 +101,7 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool timer_state = false;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
@@ -268,7 +268,7 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_
     for (string& a: adrs)
         w_outspec += a + ",";
 
-    Verb() << "NOTE: " << prefix << " specification set as: " << (w_outspec);
+    Verb("NOTE: ", prefix, " specification set as: ", (w_outspec));
 
     return true;
 }
@@ -280,7 +280,7 @@ namespace srt_logging
     extern Logger glog;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -294,20 +294,20 @@ extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr
     int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
-    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << VerbNoEOL;
+    Verb("listener: @", acpsock, " - accepting ", (type ? "GROUP" : "SINGLE"), VerbNoEOL);
     if (type != 0)
     {
         SRT_GROUP_TYPE gt;
         size = sizeof gt;
         if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
         {
-            if (gt < Size(gtypes))
-                Verb() << " type=" << gtypes[gt] << VerbNoEOL;
+            if (size_t(gt) < Size(gtypes))
+                Verb(" type=", gtypes[gt], VerbNoEOL);
             else
-                Verb() << " type=" << int(gt) << VerbNoEOL;
+                Verb(" type=", int(gt), VerbNoEOL);
         }
     }
-    Verb() << " connection";
+    Verb(" connection");
 
     return 0;
 }
@@ -317,7 +317,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
 {
     if (hsv < 5)
     {
-        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        Verb("SrtUserPasswordHook: HS version 4 doesn't support extended handshake");
         return -1;
     }
 
@@ -357,7 +357,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));
 
     return 0;
 }
@@ -376,37 +376,6 @@ extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sock
     srt::setstreamid(acpsock, data->streaminfo);
 
     return -1;
-}
-
-void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
-{
-    std::ostringstream son, soff;
-
-    for (auto& s: speclist)
-    {
-        string name;
-        bool on = true;
-        if (s[0] == '+')
-            name = s.substr(1);
-        else if (s[0] == '~')
-        {
-            name = s.substr(1);
-            on = false;
-        }
-        else
-            name = s;
-
-        if (on)
-            son << "," << name;
-        else
-            soff << "," << name;
-    }
-
-    const string& sons = son.str();
-    const string& soffs = soff.str();
-
-    w_on = sons.empty() ? string() : sons.substr(1);
-    w_off = soffs.empty() ? string() : soffs.substr(1);
 }
 
 int main( int argc, char** argv )
@@ -447,7 +416,7 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
@@ -462,7 +431,7 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
 #endif
     vector<string> source_items, target_items;
@@ -471,7 +440,7 @@ int main( int argc, char** argv )
     {
         // You may still need help.
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -678,7 +647,7 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
@@ -849,7 +818,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
+        Verb("MEDIA CREATION FAILED: ", x.what(), " - exiting.");
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -878,10 +847,10 @@ int main( int argc, char** argv )
 
     if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
     {
-        Verb() << "WARNING: -st option is effective only if the target type is SRT";
+        Verb("WARNING: -st option is effective only if the target type is SRT");
     }
 
-    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
+    Verb("STARTING TRANSMISSION: '", source_spec, "' --> '", target_spec, "'");
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -889,7 +858,7 @@ int main( int argc, char** argv )
     if (stoptime != 0)
     {
         int elapsed = end_time - start_time;
-        int remain = stoptime - elapsed;
+        int remain = int(stoptime) - elapsed;
 
         if (remain <= final_delay)
         {
@@ -907,41 +876,41 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
-                Verb() << "[." << VerbNoEOL;
+                Verb("[.", VerbNoEOL);
                 alarm(timeout);
             }
             else
             {
                 alarm(0);
             }
-            Verb() << " << ... " << VerbNoEOL;
+            Verb(", ... ", VerbNoEOL);
             g_interrupt_reason = "reading";
             const MediaPacket& data = src->Read(chunk);
-            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            Verb(", ", data.payload.size(), "  ->  ", VerbNoEOL);
             if ( data.payload.empty() && src->End() )
             {
-                Verb() << "EOS";
+                Verb("EOS");
                 break;
             }
             g_interrupt_reason = "writing";
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
-                Verb() << ".] " << VerbNoEOL;
+                Verb(".] ", VerbNoEOL);
                 alarm(0);
             }
 
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken";
+                Verb(" OUTPUT broken");
                 break;
             }
 
-            Verb() << "sent";
+            Verb("sent");
 
             if (::transmit_int_state)
             {
-                Verror() << "\n (interrupted on request)";
+                Verror("\n (interrupted on request)");
                 break;
             }
 
@@ -950,10 +919,10 @@ int main( int argc, char** argv )
             if (stoptime != 0)
             {
                 int elapsed = time(0) - end_time;
-                int remain = stoptime - final_delay - elapsed;
+                int remain = int(stoptime - final_delay - elapsed);
                 if (remain < 0)
                 {
-                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
+                    Verror("\n (interrupted on timeout: elapsed ", elapsed, "s) - waiting ", final_delay, "s for cleanup");
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -965,17 +934,17 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror("(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n");
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    Verror() << "(DEBUG) DEPLETED. Done.\n";
+                    Verror("(DEBUG) DEPLETED. Done.\n");
                     break;
                 }
 
-                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror("(DEBUG)... still ", still, " bytes (sleep 1s)\n");
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
@@ -983,16 +952,16 @@ int main( int argc, char** argv )
 
         if (stoptime != 0 && ::timer_state)
         {
-            Verror() << "Exit on timeout.";
+            Verror("Exit on timeout.");
         }
         else if (::transmit_int_state)
         {
-            Verror() << "Exit on interrupt.";
+            Verror("Exit on interrupt.");
             // Do nothing.
         }
         else
         {
-            Verror() << "STD EXCEPTION: " << x.what();
+            Verror("STD EXCEPTION: ", x.what());
         }
 
         if ( crashonx )
@@ -1000,7 +969,7 @@ int main( int argc, char** argv )
 
         if (final_delay > 0)
         {
-            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
+            Verror("Waiting ", final_delay, "s for possible cleanup...");
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -1010,7 +979,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        Verror() << "UNKNOWN type of EXCEPTION";
+        Verror("UNKNOWN type of EXCEPTION");
         if ( crashonx )
             throw;
 
@@ -1026,8 +995,14 @@ int main( int argc, char** argv )
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
     char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    if ( opaque ) {
+#ifdef _MSC_VER
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
+#else
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
+#endif
+    }
     time_t now;
     time(&now);
     char buf[1024];

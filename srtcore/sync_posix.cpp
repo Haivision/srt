@@ -38,7 +38,7 @@ namespace srt
 namespace sync
 {
 
-void rdtsc(uint64_t& x)
+static void rdtsc(uint64_t& x)
 {
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_IA32_RDTSC
     uint32_t lval, hval;
@@ -52,7 +52,7 @@ void rdtsc(uint64_t& x)
     asm("mov %0=ar.itc" : "=r"(x)::"memory");
 #elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_AMD64_RDTSC
     uint32_t lval, hval;
-    asm("rdtsc" : "=a"(lval), "=d"(hval));
+    asm volatile("rdtsc" : "=a"(lval), "=d"(hval));
     x = hval;
     x = (x << 32) | lval;
 #elif SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_WINQPC
@@ -77,7 +77,7 @@ void rdtsc(uint64_t& x)
 #endif
 }
 
-int64_t get_cpu_frequency()
+static int64_t get_cpu_frequency()
 {
     int64_t frequency = 1; // 1 tick per microsecond.
 
@@ -86,6 +86,12 @@ int64_t get_cpu_frequency()
     if (QueryPerformanceFrequency(&ccf))
     {
         frequency = ccf.QuadPart / 1000000; // counts per microsecond
+        if (frequency == 0)
+        {
+            LOGC(inlog.Warn, log << "Win QPC frequency of " << ccf.QuadPart
+                << " counts/s is below the required 1 us accuracy. Please consider using C++11 timing (-DENABLE_STDCXX_SYNC=ON) instead.");
+            frequency = 1; // set back to 1 to avoid division by zero.
+        }
     }
     else
     {
@@ -224,18 +230,6 @@ bool srt::sync::Mutex::try_lock()
     return (pthread_mutex_trylock(&m_mutex) == 0);
 }
 
-srt::sync::ScopedLock::ScopedLock(Mutex& m)
-    : m_mutex(m)
-{
-    m_mutex.lock();
-}
-
-srt::sync::ScopedLock::~ScopedLock()
-{
-    m_mutex.unlock();
-}
-
-
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
 {
@@ -244,22 +238,27 @@ srt::sync::UniqueLock::UniqueLock(Mutex& m)
 
 srt::sync::UniqueLock::~UniqueLock()
 {
-    unlock();
+    if (m_iLocked == 0)
+    {
+        unlock();
+    }
 }
 
 void srt::sync::UniqueLock::lock()
 {
-    if (m_iLocked == -1)
-        m_iLocked = m_Mutex.lock();
+    if (m_iLocked != -1)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_iLocked = m_Mutex.lock();
 }
 
 void srt::sync::UniqueLock::unlock()
 {
-    if (m_iLocked == 0)
-    {
-        m_Mutex.unlock();
-        m_iLocked = -1;
-    }
+    if (m_iLocked != 0)
+        throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
+
+    m_Mutex.unlock();
+    m_iLocked = -1;
 }
 
 srt::sync::Mutex* srt::sync::UniqueLock::mutex()
