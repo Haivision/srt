@@ -640,15 +640,12 @@ TEST(Bonding, DeadLinkUpdate)
         cout << "[T] Killing the group and exitting.\n";
         // And close
         srt_close(group);
-
         cout << "[T] exit\n";
     });
 
     cout << "Accepting (10s timeout)...\n";
-
-    SRTSOCKET lsnra [] = { listener };
-
     // Using srt_accept_bond to apply accept timeout
+    SRTSOCKET lsnra [] = { listener };
     const SRTSOCKET acp = srt_accept_bond(lsnra, 1, 10*1000);
 
     EXPECT_NE(acp, -1) << "srt_accept:" << srt_getlasterror_str();

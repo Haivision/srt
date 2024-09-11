@@ -805,6 +805,15 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         // acknowledge INTERNAL users waiting for new connections on the listening socket
         // that are reported when a new socket is connected within an already connected group.
         m_EPoll.update_events(listen, ls->core().m_sPollID, SRT_EPOLL_UPDATE, true);
+#if ENABLE_BONDING
+      // Note that the code in this current IF branch can only be executed in case
+      // of group members. Otherwise should_submit_to_accept will be always true.
+      if (ns->m_GroupOf)
+      {
+          HLOGC(gmlog.Debug, log << "GROUP UPDATE $" << ns->m_GroupOf->id() << " per connected socket @" << ns->m_SocketID);
+          m_EPoll.update_events(ns->m_GroupOf->id(), ns->m_GroupOf->m_sPollID, SRT_EPOLL_UPDATE, true);
+      }
+#endif
         CGlobEvent::triggerEvent();
     }
 
