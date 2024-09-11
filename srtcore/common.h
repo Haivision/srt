@@ -861,7 +861,6 @@ struct CIPAddress
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
    static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
-   static std::string show(const struct sockaddr* adr);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

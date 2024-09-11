@@ -665,7 +665,7 @@ void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
 int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
 {
 #if ENABLE_HEAVY_LOGGING
-    ostringstream dsrc;
+    ofmtstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
     dsrc << " sourceIP=" << (m_bBindMasked && !source_addr.isany() ? source_addr.str() : "default");
 #endif
@@ -673,7 +673,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     LOGC(kslog.Debug,
          log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.id()
              << " size=" << packet.getLength() << " pkt.ts=" << packet.timestamp()
-             << dsrc.str() << " " << packet.Info());
+             << dsrc << " " << packet.Info());
 #endif
 
 #ifdef SRT_TEST_FAKE_LOSS
@@ -1045,7 +1045,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     {
 #if ENABLE_HEAVY_LOGGING
 
-        std::ostringstream flg;
+        ofmtstream flg;
 
 #if !defined(_WIN32)
 
@@ -1074,8 +1074,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 
         HLOGC(krlog.Debug,
               log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x"
-                  << fmt(msg_flags, fmtc().hex())
-                  << ", detected flags:" << flg.str());
+                  << fmt(msg_flags, fmtc().hex()) << ", detected flags:" << flg);
 #endif
         status = RST_AGAIN;
         goto Return_error;

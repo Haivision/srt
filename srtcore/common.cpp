@@ -296,59 +296,6 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
 }
 
 
-namespace srt {
-static string ShowIP4(const sockaddr_in* sin)
-{
-    ostringstream os;
-    union
-    {
-        in_addr sinaddr;
-        unsigned char ip[4];
-    };
-    sinaddr = sin->sin_addr;
-
-    os << int(ip[0]);
-    os << ".";
-    os << int(ip[1]);
-    os << ".";
-    os << int(ip[2]);
-    os << ".";
-    os << int(ip[3]);
-    return os.str();
-}
-
-static string ShowIP6(const sockaddr_in6* sin)
-{
-    ostringstream os;
-    os.setf(ios::uppercase);
-
-    bool sep = false;
-    for (size_t i = 0; i < 16; ++i)
-    {
-        int v = sin->sin6_addr.s6_addr[i];
-        if ( v )
-        {
-            if ( sep )
-                os << ":";
-
-            os << hex << v;
-            sep = true;
-        }
-    }
-
-    return os.str();
-}
-
-string CIPAddress::show(const sockaddr* adr)
-{
-    if ( adr->sa_family == AF_INET )
-        return ShowIP4((const sockaddr_in*)adr);
-    else if ( adr->sa_family == AF_INET6 )
-        return ShowIP6((const sockaddr_in6*)adr);
-    else
-        return "(unsupported sockaddr type)";
-}
-} // namespace srt
 
 //
 void srt::CMD5::compute(const char* input, unsigned char result[16])
